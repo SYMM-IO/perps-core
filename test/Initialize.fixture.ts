@@ -12,14 +12,14 @@ export async function initializeFixture(): Promise<RunContext> {
 		reportGas: true,
 	})
 	let multicall = process.env.DEPLOY_MULTICALL == "true" ? await run("deploy:multicall") : undefined
-
+	const admin = process.env.ADMIN_PUBLIC_KEY || await (await ethers.getSigners())[0].getAddress()
 	const multiAccount = await run("deploy:multiAccount", {
 		symmioAddress: await diamond.getAddress(),
-		admin: process.env.ADMIN_PUBLIC_KEY,
+		admin: admin,
 	})
 	const multiAccount2 = await run("deploy:multiAccount", {
 		symmioAddress: await diamond.getAddress(),
-		admin: process.env.ADMIN_PUBLIC_KEY,
+		admin: admin,
 	})
 
 	let context = await createRunContext(

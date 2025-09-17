@@ -156,7 +156,7 @@ export function shouldBehaveLikeControlFacet(): void {
 
 			await expect(
 				context.controlFacet.connect(owner).addSymbol("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period),
-			).to.be.revertedWith("ControlFacet: High trading fee")
+			).to.be.revertedWith("ControlFacet: High default fee")
 		})
 	})
 
@@ -474,7 +474,7 @@ export function shouldBehaveLikeControlFacet(): void {
 
 			await expect(
 				context.controlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.be.revertedWith("ControlFacet: High trading fee")
+			).to.be.revertedWith("ControlFacet: High default fee")
 		})
 	})
 
@@ -544,7 +544,7 @@ export function shouldBehaveLikeControlFacet(): void {
 					isValid: true,
 					minAcceptableQuoteValue: BigInt("100000000000000000000"),
 					minAcceptablePortionLF: BigInt(4000000000000000),
-					tradingFee: decimal(2n),
+					tradingFee: BigInt(2e18),
 					maxLeverage: BigInt("60000000000000000000"),
 					fundingRateEpochDuration: BigInt(28800),
 					fundingRateWindowTime: BigInt(900),
@@ -552,32 +552,32 @@ export function shouldBehaveLikeControlFacet(): void {
 				},
 			]
 
-			await expect(context.controlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("ControlFacet: High trading fee")
+			await expect(context.controlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("ControlFacet: High default fee")
 		})
 	})
 
 	describe("setAffiliateFee", () => {
 		it("should failed when the provided address as affiliate is not affiliate", async () => {
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, decimal(1n), decimal(1n))).to.revertedWith(
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(1e18), BigInt(1e18))).to.revertedWith(
 				"ControlFacet: Invalid affiliate",
 			)
 		})
 
 		it("should set fee for affiliate successfully", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, decimal(1n), decimal(1n))).to.not.reverted
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(1e18), BigInt(1e18))).to.not.reverted
 
 			const fee = await context.viewFacet.getAffiliateFee(context.signers.hedger)
 
-			expect(fee.openFee).to.equal(decimal(1n))
-			expect(fee.closeFee).to.equal(decimal(1n))
+			expect(fee.openFee).to.equal(BigInt(1e18))
+			expect(fee.closeFee).to.equal(BigInt(1e18))
 		})
 
 		it("should failed if fee is high", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, decimal(2n), decimal(1n))).to.revertedWith("ControlFacet: High fee")
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, decimal(1n), decimal(2n))).to.revertedWith("ControlFacet: High fee")
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, decimal(2n), decimal(2n))).to.revertedWith("ControlFacet: High fee")
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(2e18), BigInt(1e18))).to.revertedWith("ControlFacet: High fee")
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(1e18), BigInt(2e18))).to.revertedWith("ControlFacet: High fee")
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(2e18), BigInt(2e18))).to.revertedWith("ControlFacet: High fee")
 		})
 	})
 }
