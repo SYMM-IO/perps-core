@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import "../libraries/LibLockedValues.sol";
+import "./QuoteStorage.sol";
 
 library GlobalAppStorage {
 	bytes32 internal constant GLOBAL_APP_STORAGE_SLOT = keccak256("diamond.standard.storage.global");
@@ -25,6 +26,8 @@ library GlobalAppStorage {
 		mapping(address => address) affiliateFeeCollector;
 		address signatureVerifier;
 		bool externalTransferPaused;
+		mapping(address => Fee) affiliateFee;
+		mapping(address => bool) isAffiliateFeeSet;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

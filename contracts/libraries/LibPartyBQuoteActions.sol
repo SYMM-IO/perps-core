@@ -8,7 +8,6 @@ import "../storages/QuoteStorage.sol";
 import "../storages/MAStorage.sol";
 import "../storages/SymbolStorage.sol";
 import "./LibAccount.sol";
-import "./LibLockedValues.sol";
 
 library LibPartyBQuoteActions {
 	using LockedValuesOps for LockedValues;

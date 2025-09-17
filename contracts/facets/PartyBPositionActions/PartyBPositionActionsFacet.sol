@@ -3,13 +3,13 @@
 // Copyright (c) 2023 Symmetry Labs AG
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
+
 import "./PartyBPositionActionsFacetImpl.sol";
 import "./IPartyBPositionActionsFacet.sol";
 import "../../utils/Accessibility.sol";
 import "../../utils/Pausable.sol";
 
 contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet {
-
 	/**
 	 * @notice Opens a position for the specified quote. The opened position's size can't be excessively small or large.
 	 * 			If it's like 99/100, the leftover will be a minuscule quote that falls below the minimum acceptable quote value.

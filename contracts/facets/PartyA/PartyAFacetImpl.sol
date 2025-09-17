@@ -4,18 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibLockedValues.sol";
 import "../../libraries/muon/LibMuonPartyA.sol";
 import "../../libraries/LibAccount.sol";
-import "../../libraries/LibSolvency.sol";
 import "../../libraries/LibQuote.sol";
-import "../../libraries/LibLiquidation.sol";
 import "../../libraries/LibAccessibility.sol";
 import "../../libraries/SharedEvents.sol";
-import "../../libraries/LibSettlement.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
-import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../storages/SymbolStorage.sol";
 
@@ -36,12 +31,14 @@ library PartyAFacetImpl {
 		uint256 maxFundingRate,
 		uint256 deadline,
 		address affiliate,
-		SingleUpnlAndPriceSig memory upnlSig
+		SingleUpnlAndPriceSig memory upnlSig,
+		bytes memory data
 	) internal returns (uint256 currentId) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
 		require(!LibAccessibility.hasRole(msg.sender, LibAccessibility.LIQUIDATOR_ROLE), "PartyAFacet: Liquidator can't be partyA");
 		require(
@@ -72,11 +69,14 @@ library PartyAFacetImpl {
 			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, msg.sender, symbolId);
 		}
 
+		Fee memory affiliateFee = appLayout.affiliateFee[affiliate];
+		uint256 openFee = appLayout.isAffiliateFeeSet[affiliate] ? affiliateFee.openFee : symbolLayout.symbols[symbolId].tradingFee;
+		uint256 closeFee = appLayout.isAffiliateFeeSet[affiliate] ? affiliateFee.closeFee : symbolLayout.symbols[symbolId].tradingFee;
+
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, msg.sender);
 		require(availableBalance > 0, "PartyAFacet: Available balance is lower than zero");
 		require(
-			uint256(availableBalance) >=
-				lockedValues.totalForPartyA() + ((quantity * tradingPrice * symbolLayout.symbols[symbolId].tradingFee) / 1e36),
+			uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * openFee) / 1e36),
 			"PartyAFacet: insufficient available balance"
 		);
 		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
@@ -112,9 +112,11 @@ library PartyAFacetImpl {
 			quantityToClose: 0,
 			lastFundingPaymentTimestamp: 0,
 			deadline: deadline,
-			tradingFee: symbolLayout.symbols[symbolId].tradingFee,
+			tradingFee: openFee,
 			affiliate: affiliate,
-			accumulatedPaidFunding: 0
+			accumulatedPaidFunding: 0,
+			closeFee: closeFee,
+			data: data
 		});
 		quoteLayout.quoteIdsOf[msg.sender].push(currentId);
 		quoteLayout.partyAPendingQuotes[msg.sender].push(currentId);

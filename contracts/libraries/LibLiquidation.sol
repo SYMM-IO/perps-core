@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/MuonStorage.sol";
 import "../storages/QuoteStorage.sol";
 import "../libraries/SharedEvents.sol";
 import "./LibAccount.sol";
@@ -33,7 +32,6 @@ library LibLiquidation {
 
 		uint256 liquidatorShare;
 		uint256 remainingLf;
-
 
 		// Determine liquidator share and remaining locked funds
 		if (uint256(-availableBalance) < accountLayout.partyBLockedBalances[partyB][partyA].lf) {
@@ -69,7 +67,6 @@ library LibLiquidation {
 				index++;
 			}
 		}
-
 
 		// Update allocated balances for Party A
 		uint256 value = accountLayout.partyBAllocatedBalances[partyB][partyA] - remainingLf;

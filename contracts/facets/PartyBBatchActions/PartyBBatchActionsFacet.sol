@@ -3,6 +3,7 @@
 // Copyright (c) 2023 Symmetry Labs AG
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
+
 import "./PartyBBatchActionsFacetImpl.sol";
 import "../../utils/Accessibility.sol";
 import "../../utils/Pausable.sol";
@@ -79,7 +80,15 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 		);
 		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
 		for (uint256 i = 0; i < quoteIds.length; i++) {
-			emit FillCloseRequest(quoteIds[i], firstQuote.partyA, firstQuote.partyB, filledAmounts[i], closedPrices[i], quoteStatuses[i], closeIds[i]);
+			emit FillCloseRequest(
+				quoteIds[i],
+				firstQuote.partyA,
+				firstQuote.partyB,
+				filledAmounts[i],
+				closedPrices[i],
+				quoteStatuses[i],
+				closeIds[i]
+			);
 		}
 	}
 }

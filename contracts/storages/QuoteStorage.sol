@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import "./MuonStorage.sol";
+
 enum PositionType {
 	LONG,
 	SHORT
@@ -66,9 +68,16 @@ struct Quote {
 	uint256 statusModifyTimestamp;
 	uint256 lastFundingPaymentTimestamp;
 	uint256 deadline;
-	uint256 tradingFee;
+	uint256 tradingFee; // openFee
 	address affiliate;
 	int256 accumulatedPaidFunding;
+	uint256 closeFee;
+	bytes data;
+}
+
+struct Fee {
+	uint256 openFee;
+	uint256 closeFee;
 }
 
 library QuoteStorage {

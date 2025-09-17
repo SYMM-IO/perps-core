@@ -4,17 +4,11 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibLockedValues.sol";
 import "../../libraries/muon/LibMuonLiquidation.sol";
 import "../../libraries/LibAccount.sol";
-import "../../libraries/LibQuote.sol";
-import "../../libraries/LibLiquidation.sol";
-import "../../libraries/SharedEvents.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
-import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
-import "../../storages/SymbolStorage.sol";
 
 library DeferredLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;

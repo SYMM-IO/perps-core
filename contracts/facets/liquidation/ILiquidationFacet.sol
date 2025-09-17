@@ -5,8 +5,6 @@
 pragma solidity >=0.8.18;
 
 import "./ILiquidationEvents.sol";
-import "../../storages/AccountStorage.sol";
-import "../../storages/MuonStorage.sol";
 
 interface ILiquidationFacet is ILiquidationEvents {
 	function liquidatePartyA(address partyA, LiquidationSig memory liquidationSig) external;

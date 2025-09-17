@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import "./IPartyAEvents.sol";
-import "../../storages/MuonStorage.sol";
 
 interface IPartyAFacet is IPartyAEvents {
 	function sendQuote(
@@ -40,6 +39,24 @@ interface IPartyAFacet is IPartyAEvents {
 		address affiliate,
 		SingleUpnlAndPriceSig memory upnlSig
 	) external returns (uint256);
+
+	function sendQuoteWithAffiliateAndData(
+		address[] memory partyBsWhiteList,
+		uint256 symbolId,
+		PositionType positionType,
+		OrderType orderType,
+		uint256 price,
+		uint256 quantity,
+		uint256 cva,
+		uint256 lf,
+		uint256 partyAmm,
+		uint256 partyBmm,
+		uint256 maxFundingRate,
+		uint256 deadline,
+		address affiliate,
+		SingleUpnlAndPriceSig memory upnlSig,
+		bytes memory data
+	) external returns (uint256 quoteId);
 
 	function expireQuote(uint256[] memory expiredQuoteIds) external;
 

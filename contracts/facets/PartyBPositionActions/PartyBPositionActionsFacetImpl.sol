@@ -113,6 +113,7 @@ library PartyBPositionActionsFacetImpl {
 			LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, quote.partyB, quote.partyA) >= 0,
 			"PartyBFacet: PartyB should be solvent"
 		);
+
 		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
 		accountLayout.partyANonces[quote.partyA] += 1;
 		LibQuote.closeQuote(quote, filledAmount, upnlSig.price);

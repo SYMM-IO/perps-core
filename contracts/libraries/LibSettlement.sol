@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import "../storages/MAStorage.sol";
-import "../storages/MuonStorage.sol";
 import "../storages/AccountStorage.sol";
 import "./LibQuote.sol";
 import "./LibAccount.sol";
@@ -20,7 +19,10 @@ library LibSettlement {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		require(settleSig.quotesSettlementsData.length > 0 && settleSig.quotesSettlementsData.length == updatedPrices.length, "LibSettlement: Invalid length");
+		require(
+			settleSig.quotesSettlementsData.length > 0 && settleSig.quotesSettlementsData.length == updatedPrices.length,
+			"LibSettlement: Invalid length"
+		);
 		require(
 			LibAccount.partyAAvailableBalanceForLiquidation(settleSig.upnlPartyA, accountLayout.allocatedBalances[partyA], partyA) >= 0,
 			"LibSettlement: PartyA is insolvent"
@@ -85,7 +87,7 @@ library LibSettlement {
 			);
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
 			require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
-			
+
 			if (!isForceClose && msg.sender != partyB) {
 				require(
 					block.timestamp >=

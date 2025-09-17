@@ -153,6 +153,19 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.layout().affiliateFeeCollector[affiliate] = feeCollector;
 	}
 
+	/// @notice Sets the open and close trading fees for an specific affiliate in the system.
+	/// @param affiliate The address of affiliate.
+	/// @param openFee The open trading fee.
+	/// @param closeFee The open trading fee.
+	function setAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
+		require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
+		emit SetAffiliateFee(affiliate, appLayout.affiliateFee[affiliate].openFee, openFee, appLayout.affiliateFee[affiliate].closeFee, closeFee);
+		appLayout.affiliateFee[affiliate] = Fee(openFee, closeFee);
+		appLayout.isAffiliateFeeSet[affiliate] = true;
+	}
+
 	/// @notice Sets the address of the default fee collector.
 	/// @param feeCollector The address of fee collector.
 	function setDefaultFeeCollector(address feeCollector) external onlyRole(LibAccessibility.SETTER_ROLE) {
@@ -195,7 +208,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		uint256 fundingRateWindowTime
 	) public onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		require(fundingRateWindowTime < fundingRateEpochDuration / 2, "ControlFacet: High window time");
-		require(tradingFee <= 1e18, "ControlFacet: High trading fee");
+		require(tradingFee <= 1e18, "ControlFacet: High default fee");
 		uint256 lastId = ++SymbolStorage.layout().lastId;
 		Symbol memory symbol = Symbol(
 			lastId,
@@ -225,7 +238,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param name The name of the trading symbol.
 	/// @param minAcceptableQuoteValue The minimum acceptable quote value for the symbol.
 	/// @param minAcceptablePortionLF The minimum acceptable portion of liquidation fee in quote.
-	/// @param tradingFee The trading fee for the symbol.
+	/// @param tradingFee The default fee for the symbol.
 	/// @param maxLeverage The maximum leverage allowed for the symbol.
 	/// @param fundingRateEpochDuration The duration of each funding rate epoch for the symbol.
 	/// @param fundingRateWindowTime The window time for calculating the funding rate.
@@ -339,8 +352,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		symbolLayout.symbols[symbolId].minAcceptablePortionLF = minAcceptablePortionLF;
 	}
 
-	/// @notice Sets the trading fee for a specific symbol.
-	/// @param symbolId The ID of the symbol whose trading fee is to be set.
+	/// @notice Sets the default fee for a specific symbol.
+	/// @param symbolId The ID of the symbol whose default fee is to be set.
 	/// @param tradingFee The new trading fee for the symbol.
 	function setSymbolTradingFee(uint256 symbolId, uint256 tradingFee) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();

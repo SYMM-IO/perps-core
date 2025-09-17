@@ -1,19 +1,24 @@
 import {setBalance} from "@nomicfoundation/hardhat-network-helpers"
 import {BigNumberish, ethers, EventLog} from "ethers"
 
-import {getPriceFetcher, serializeToJson, unDecimal} from "../utils/Common"
-import {logger} from "../utils/LoggerUtils"
-import {getPrice} from "../utils/PriceUtils"
-import {PositionType} from "./Enums"
-import {RunContext} from "./RunContext"
-import {CloseRequest, limitCloseRequestBuilder} from "./requestModels/CloseRequest"
-import {limitQuoteRequestBuilder, QuoteRequest} from "./requestModels/QuoteRequest"
-import {runTx} from "../utils/TxUtils"
-import {getDummyLiquidationSig} from "../utils/SignatureUtils"
-import {LiquidationSigStruct} from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
-import {QuoteStructOutput, SettlementSigStruct} from "../../src/types/contracts/interfaces/ISymmio"
-import {HighLowPriceSigStruct} from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
-import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
+import { getPriceFetcher, serializeToJson, unDecimal } from "../utils/Common"
+import { logger } from "../utils/LoggerUtils"
+import { getPrice } from "../utils/PriceUtils"
+import { PositionType } from "./Enums"
+import { RunContext } from "./RunContext"
+import { CloseRequest, limitCloseRequestBuilder } from "./requestModels/CloseRequest"
+import {
+	limitQuoteRequestBuilder,
+	limitQuoteRequestWithDataBuilder,
+	QuoteRequest,
+	QuoteRequestWithData,
+} from "./requestModels/QuoteRequest";
+import { runTx } from "../utils/TxUtils"
+import { getDummyLiquidationSig } from "../utils/SignatureUtils"
+import { LiquidationSigStruct } from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
+import { QuoteStructOutput, SettlementSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
+import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 
 export class User {
 	constructor(private context: RunContext, private signer: SignerWithAddress) {
@@ -62,6 +67,49 @@ export class User {
 				await request.deadline,
 				this.context.multiAccount,
 				await request.upnlSig,
+			)
+		const receipt = await tx.wait()
+
+		if (receipt && receipt.logs) {
+			const sendQuoteEvent = receipt.logs.find((log): log is EventLog => {
+				return (log as EventLog).eventName === "SendQuote"
+			})
+
+			if (sendQuoteEvent && sendQuoteEvent.args) {
+				const id = sendQuoteEvent.args.quoteId
+				logger.info("User::::SendQuote: " + id)
+				return id.toString()
+			}
+		}
+		throw new Error("SendQuote event not found in transaction receipt")
+	}
+
+	public async sendQuoteWithData(request: QuoteRequestWithData = limitQuoteRequestWithDataBuilder().build()): Promise<bigint> {
+		logger.detailedDebug(
+			serializeToJson({
+				request: request,
+				userBalanceInfo: await this.getBalanceInfo(),
+				userUpnl: await this.getUpnl(),
+			}),
+		)
+		let tx = await this.context.partyAFacet
+			.connect(this.signer)
+			.sendQuoteWithAffiliateAndData(
+				request.partyBWhiteList,
+				request.symbolId,
+				request.positionType,
+				request.orderType,
+				request.price,
+				request.quantity,
+				request.cva,
+				request.lf,
+				request.partyAmm,
+				request.partyBmm,
+				request.maxFundingRate,
+				await request.deadline,
+				this.context.multiAccount,
+				await request.upnlSig,
+				request.data
 			)
 		const receipt = await tx.wait()
 

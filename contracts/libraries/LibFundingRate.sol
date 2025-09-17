@@ -31,7 +31,6 @@ library LibFundingRate {
 	}
 
 	function updateAccumulatedRates(FundingFee storage fundingFee) internal returns (int256 accumulatedLongRate, int256 accumulatedShortRate) {
-
 		uint256 newEpochs = getEpochsSinceLastUpdate(fundingFee);
 		uint256 previousEpochs = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
 

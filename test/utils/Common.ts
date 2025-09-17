@@ -125,6 +125,46 @@ export async function getTradingFeeForQuoteWithFilledAmount(context: RunContext,
 	return out
 }
 
+export async function getOpenTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
+	let out = 0n
+	let q = await context.viewFacet.getQuote(quoteId)
+	let tf = q.tradingFee
+	if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(filledAmounts * q.requestedOpenPrice * tf, 36)
+	else out += unDecimal(filledAmounts * q.marketPrice * tf, 36)
+	return out
+}
+
+export async function getCloseTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
+	let out = 0n
+	let q = await context.viewFacet.getQuote(quoteId)
+	let tf = q.closeFee
+	if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(filledAmounts * q.requestedOpenPrice * tf, 36)
+	else out += unDecimal(filledAmounts * q.marketPrice * tf, 36)
+	return out
+}
+
+export async function getCloseTradingFeeForQuotes(context: RunContext, quoteIds: bigint[]): Promise<bigint> {
+	let out = 0n
+	for (const quoteId of quoteIds) {
+		let q = await context.viewFacet.getQuote(quoteId)
+		let tf = q.closeFee
+		if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(q.quantity * q.requestedOpenPrice * tf, 36)
+		else out += unDecimal(q.quantity * q.marketPrice * tf, 36)
+	}
+	return out
+}
+
+export async function getOpenTradingFeeForQuotes(context: RunContext, quoteIds: bigint[]): Promise<bigint> {
+	let out = 0n
+	for (const quoteId of quoteIds) {
+		let q = await context.viewFacet.getQuote(quoteId)
+		let tf = q.tradingFee
+		if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(q.quantity * q.requestedOpenPrice * tf, 36)
+		else out += unDecimal(q.quantity * q.marketPrice * tf, 36)
+	}
+	return out
+}
+
 export async function pausePartyB(context: RunContext): Promise<void> {
 	await context.controlFacet.connect(context.signers.admin).pausePartyBActions()
 }

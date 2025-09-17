@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibLockedValues.sol";
 import "../../libraries/muon/LibMuonLiquidation.sol";
 import "../../libraries/LibAccount.sol";
 import "../../libraries/LibQuote.sol";
@@ -14,7 +13,6 @@ import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
-import "../../storages/SymbolStorage.sol";
 import "../../interfaces/ISymmioHook.sol";
 
 library LiquidationFacetImpl {
@@ -208,6 +206,7 @@ library LiquidationFacetImpl {
 			quote.avgClosedPrice =
 				(quote.avgClosedPrice * quote.closedAmount + LibQuote.quoteOpenAmount(quote) * liquidationPrice) /
 				(quote.closedAmount + LibQuote.quoteOpenAmount(quote));
+
 			quote.closedAmount = quote.quantity;
 
 			LibQuote.removeFromOpenPositions(quote.id);
@@ -290,6 +289,7 @@ library LiquidationFacetImpl {
 			accountLayout.liquidationDetails[partyA].involvedPartyBCounts -= 1;
 
 			int256 settleAmount = accountLayout.settlementStates[partyA][partyB].actualAmount;
+
 			accountLayout.partyBAllocatedBalances[partyB][partyA] += accountLayout.settlementStates[partyA][partyB].cva;
 			emit SharedEvents.BalanceChangePartyB(
 				partyB,

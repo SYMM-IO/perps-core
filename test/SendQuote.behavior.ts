@@ -9,6 +9,7 @@ import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/re
 import { SendQuoteValidator } from "./models/validators/SendQuoteValidator"
 import { decimal, getBlockTimestamp, pausePartyA } from "./utils/Common"
 import { getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils"
+import { ethers } from "ethers";
 
 export function shouldBehaveLikeSendQuote(): void {
 	let user: User, context: RunContext
@@ -143,6 +144,28 @@ export function shouldBehaveLikeSendQuote(): void {
 				.partyBWhiteList([await context.signers.hedger2.getAddress()])
 				.build(),
 		)
+		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
+	})
+
+	it("Should store data by sending quote with data successfully for limit", async function () {
+		let validator = new SendQuoteValidator()
+		const before = await validator.before(context, { user: user })
+		let qId = await user.sendQuoteWithData()
+		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
+		let quote = await context.viewFacet.getQuote(qId)
+		let text = ethers.AbiCoder.defaultAbiCoder().decode(
+			["string"],
+			quote.data
+		);
+		 expect(text[0]).to.be.equal("hello-world")
+	})
+
+	it("should send quote with correct affiliate fee", async function () {
+		await context.controlFacet.registerAffiliate(context.signers.hedger)
+		await context.controlFacet.setAffiliateFee(context.signers.hedger, decimal(1n,17), decimal(1n,17))
+		let validator = new SendQuoteValidator()
+		const before = await validator.before(context, { user: user })
+		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
 		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
 	})
 }

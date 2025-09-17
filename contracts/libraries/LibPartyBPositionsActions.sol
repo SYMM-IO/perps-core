@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import "../storages/QuoteStorage.sol";
 import "./LibQuote.sol";
-import "./LibFundingRate.sol";
 
 library LibPartyBPositionsActions {
 	using LockedValuesOps for LockedValues;
@@ -136,7 +135,9 @@ library LibPartyBPositionsActions {
 				deadline: quote.deadline,
 				tradingFee: quote.tradingFee,
 				affiliate: quote.affiliate,
-				accumulatedPaidFunding: 0
+				accumulatedPaidFunding: 0,
+				closeFee: quote.closeFee,
+				data: quote.data
 			});
 
 			quoteLayout.quoteIdsOf[quote.partyA].push(currentId);

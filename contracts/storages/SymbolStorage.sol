@@ -10,7 +10,7 @@ struct Symbol {
 	bool isValid;
 	uint256 minAcceptableQuoteValue;
 	uint256 minAcceptablePortionLF;
-	uint256 tradingFee;
+	uint256 tradingFee; // default Fee
 	uint256 maxLeverage;
 	uint256 fundingRateEpochDuration;
 	uint256 fundingRateWindowTime;
@@ -22,7 +22,7 @@ struct SymbolWithType {
 	bool isValid;
 	uint256 minAcceptableQuoteValue;
 	uint256 minAcceptablePortionLF;
-	uint256 tradingFee;
+	uint256 tradingFee; //default fee
 	uint256 maxLeverage;
 	uint256 fundingRateEpochDuration;
 	uint256 fundingRateWindowTime;
