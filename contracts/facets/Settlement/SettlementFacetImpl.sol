@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import "../../libraries/muon/LibMuonSettlement.sol";
 import "../../libraries/LibSettlement.sol";
-import "../../facets/PartyBBatchActions/PartyBBatchActionsFacetImpl.sol";
 
 library SettlementFacetImpl {
 	function settleUpnl(
@@ -17,19 +16,4 @@ library SettlementFacetImpl {
 		LibMuonSettlement.verifySettlement(settleSig, partyA);
 		return LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, false);
 	}
-
-	// // TODO: handle nonce and upnls
-	// function settleUpnlAndFillCloseRequests(
-	// 	SettlementSig memory settleSig,
-	// 	uint256[] memory updatedPrices,
-	// 	address partyA,
-	// 	uint256[] memory quoteIds,
-	// 	uint256[] memory filledAmounts,
-	// 	uint256[] memory closedPrices,
-	// 	PairUpnlAndPricesSig memory upnlSig
-	// ) internal returns (uint256[] memory newPartyBsAllocatedBalances, QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) {
-	// 	LibMuonSettlement.verifySettlement(settleSig, partyA);
-	// 	newPartyBsAllocatedBalances = LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, false);
-	// 	(quoteStatuses, closeIds) = PartyBBatchActionsFacetImpl.fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig);
-	// }
 }

@@ -1048,7 +1048,7 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().affiliateHooks[affiliate];
 	}
 
-	function getAffiliateFee(address affiliate)  external view returns (Fee memory) {
+	function getAffiliateFee(address affiliate) external view returns (Fee memory) {
 		return GlobalAppStorage.layout().affiliateFee[affiliate];
 	}
 }

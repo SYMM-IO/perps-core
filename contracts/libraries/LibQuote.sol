@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./LibLockedValues.sol";
 import "../libraries/SharedEvents.sol";
 import "../libraries/LibFundingRate.sol";
 import "../storages/QuoteStorage.sol";
@@ -174,6 +173,7 @@ library LibQuote {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
 		require(
 			quote.lockedValues.cva == 0 || (quote.lockedValues.cva * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0,

@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibLockedValues.sol";
 import "../../libraries/muon/LibMuonLiquidation.sol";
 import "../../libraries/LibAccount.sol";
 import "../../libraries/LibQuote.sol";
@@ -14,7 +13,6 @@ import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
-import "../../storages/SymbolStorage.sol";
 import "../../interfaces/ISymmioHook.sol";
 
 library LiquidationFacetImpl {
@@ -178,8 +176,7 @@ library LiquidationFacetImpl {
 					accountLayout.settlementStates[partyA][quote.partyB].actualAmount -= int256(amount);
 				}
 				accountLayout.settlementStates[partyA][quote.partyB].expectedAmount = accountLayout
-					.settlementStates[partyA][quote.partyB]
-					.actualAmount;
+				.settlementStates[partyA][quote.partyB].actualAmount;
 			} else if (accountLayout.liquidationDetails[partyA].liquidationType == LiquidationType.LATE) {
 				accountLayout.settlementStates[partyA][quote.partyB].cva +=
 					quote.lockedValues.cva -
@@ -190,8 +187,7 @@ library LiquidationFacetImpl {
 					accountLayout.settlementStates[partyA][quote.partyB].actualAmount -= int256(amount);
 				}
 				accountLayout.settlementStates[partyA][quote.partyB].expectedAmount = accountLayout
-					.settlementStates[partyA][quote.partyB]
-					.actualAmount;
+				.settlementStates[partyA][quote.partyB].actualAmount;
 			} else if (accountLayout.liquidationDetails[partyA].liquidationType == LiquidationType.OVERDUE) {
 				if (hasMadeProfit) {
 					accountLayout.settlementStates[partyA][quote.partyB].actualAmount += int256(amount);

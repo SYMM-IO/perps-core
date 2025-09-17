@@ -9,7 +9,6 @@ import "../../libraries/LibSolvency.sol";
 import "../../libraries/LibPartyBPositionsActions.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
-import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
 
 library PartyBBatchActionsFacetImpl {

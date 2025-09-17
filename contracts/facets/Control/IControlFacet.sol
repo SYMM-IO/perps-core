@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import "./IControlEvents.sol";
 import "../../storages/SymbolStorage.sol";
-import "../../storages/MuonStorage.sol";
 
 interface IControlFacet is IControlEvents {
 	function transferOwnership(address owner) external;

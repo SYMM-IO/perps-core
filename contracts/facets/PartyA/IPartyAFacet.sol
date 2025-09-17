@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import "./IPartyAEvents.sol";
-import "../../storages/MuonStorage.sol";
 
 interface IPartyAFacet is IPartyAEvents {
 	function sendQuote(

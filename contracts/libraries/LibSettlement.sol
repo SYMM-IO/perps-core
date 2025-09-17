@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import "../storages/MAStorage.sol";
-import "../storages/MuonStorage.sol";
 import "../storages/AccountStorage.sol";
 import "./LibQuote.sol";
 import "./LibAccount.sol";
@@ -69,10 +68,12 @@ library LibSettlement {
 			}
 			if (quote.positionType == PositionType.LONG) {
 				settleAmounts[data.partyBUpnlIndex] +=
-					((int256(updatedPrices[i]) - int256(quote.openedPrice)) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
+					((int256(updatedPrices[i]) - int256(quote.openedPrice)) * int256(LibQuote.quoteOpenAmount(quote))) /
+					1e18;
 			} else {
 				settleAmounts[data.partyBUpnlIndex] +=
-					((int256(quote.openedPrice) - int256(updatedPrices[i])) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
+					((int256(quote.openedPrice) - int256(updatedPrices[i])) * int256(LibQuote.quoteOpenAmount(quote))) /
+					1e18;
 			}
 			quote.openedPrice = updatedPrices[i];
 		}

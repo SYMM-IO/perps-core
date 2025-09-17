@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import "../storages/QuoteStorage.sol";
 import "./LibQuote.sol";
-import "./LibFundingRate.sol";
 
 library LibPartyBPositionsActions {
 	using LockedValuesOps for LockedValues;
@@ -104,7 +103,7 @@ library LibPartyBPositionsActions {
 			require(
 				newStatus == QuoteStatus.CANCELED ||
 					(quote.lockedValues.totalForPartyA() - filledLockedValues.totalForPartyA()) >=
-						SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue,
+					SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue,
 				"PartyBFacet: Quote value is low"
 			);
 

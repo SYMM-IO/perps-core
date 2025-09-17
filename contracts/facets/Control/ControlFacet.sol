@@ -161,7 +161,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
-		emit SetAffiliateFee(affiliate, openFee, closeFee);
+		emit SetAffiliateFee(affiliate, appLayout.affiliateFee[affiliate].openFee, openFee, appLayout.affiliateFee[affiliate].closeFee, closeFee);
 		appLayout.affiliateFee[affiliate] = Fee(openFee, closeFee);
 		appLayout.isAffiliateFeeSet[affiliate] = true;
 	}

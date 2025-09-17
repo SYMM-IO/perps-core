@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/MuonStorage.sol";
 import "../storages/QuoteStorage.sol";
 import "../libraries/SharedEvents.sol";
 import "./LibAccount.sol";
@@ -40,7 +39,8 @@ library LibLiquidation {
 			liquidatorShare = (remainingLf * maLayout.liquidatorShare) / 1e18;
 
 			maLayout.partyBPositionLiquidatorsShare[partyB][partyA] =
-				(remainingLf - liquidatorShare) / quoteLayout.partyBPositionsCount[partyB][partyA];
+				(remainingLf - liquidatorShare) /
+				quoteLayout.partyBPositionsCount[partyB][partyA];
 		} else {
 			maLayout.partyBPositionLiquidatorsShare[partyB][partyA] = 0;
 		}
