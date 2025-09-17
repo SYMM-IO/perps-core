@@ -22,7 +22,7 @@ import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavio
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior"
 
 describe("UnitTests", function () {
-	if (process.env.TEST_MODE == "static") {
+	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
 		describe("Diamond", async function () {
 			shouldBehaveLikeDiamond()
 		})
