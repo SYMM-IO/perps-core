@@ -42,7 +42,7 @@ export class FillCloseRequestValidator implements TransactionValidator {
 
 	async after(context: RunContext, arg: FillCloseRequestValidatorAfterArg) {
 		logger.debug("After FillCloseRequestValidator...")
-		// Check Quote
+// Check Quote
 		const newQuote = await context.viewFacet.getQuote(arg.quoteId)
 		const oldQuote = arg.beforeOutput.quote
 		const zeroToClose = newQuote.quantityToClose === 0n
@@ -58,7 +58,7 @@ export class FillCloseRequestValidator implements TransactionValidator {
 
 		expect(newQuote.closedAmount.toString()).to.equal((BigInt(oldQuote.closedAmount) + BigInt(arg.fillAmount)).toString())
 
-		// TODO: Sometimes fillCloseRequest has Error
+// TODO: Sometimes fillCloseRequest has Error
 
 		expect(newQuote.quantityToClose.toString()).to.equal((BigInt(oldQuote.quantityToClose) - BigInt(arg.fillAmount)).toString())
 
@@ -78,7 +78,7 @@ export class FillCloseRequestValidator implements TransactionValidator {
 		const returnedLockedValuesPartyA = (BigInt(oldLockedValuesPartyA) * BigInt(arg.fillAmount)) / BigInt(oldQuote.quantity)
 		const returnedLockedValuesPartyB = (BigInt(oldLockedValuesPartyB) * BigInt(arg.fillAmount)) / BigInt(oldQuote.quantity)
 
-		// Check Balances partyA
+// Check Balances partyA
 		const newBalanceInfoPartyA = await arg.user.getBalanceInfo()
 		const oldBalanceInfoPartyA = arg.beforeOutput.balanceInfoPartyA
 
@@ -97,10 +97,8 @@ export class FillCloseRequestValidator implements TransactionValidator {
 		const oldBalanceInfoPartyB = arg.beforeOutput.balanceInfoPartyB
 
 		expect(newBalanceInfoPartyB.totalPendingLockedPartyB.toString()).to.equal(oldBalanceInfoPartyB.totalPendingLockedPartyB.toString())
-		expectToBeApproximately(
-			BigInt(newBalanceInfoPartyB.totalLockedPartyB),
-			BigInt(oldBalanceInfoPartyB.totalLockedPartyB) - returnedLockedValuesPartyB,
-		)
+		expectToBeApproximately(BigInt(newBalanceInfoPartyB.totalLockedPartyB), BigInt(oldBalanceInfoPartyB.totalLockedPartyB) - returnedLockedValuesPartyB)
 		expectToBeApproximately(BigInt(newBalanceInfoPartyB.allocatedBalances), BigInt(oldBalanceInfoPartyB.allocatedBalances) - profit)
+
 	}
 }

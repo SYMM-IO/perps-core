@@ -32,7 +32,21 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
 	function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
 		AccountFacetImpl.virtualDepositFor(user, amount);
-		emit Deposit(msg.sender, user, amount);
+		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
+	}
+
+	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer and allocate them.
+	/// @param user The recipient address for the deposit.
+	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
+	function virtualDepositAndAllocateFor(
+		address user,
+		uint256 amount
+	) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
+		AccountFacetImpl.virtualDepositFor(user, amount);
+		AccountFacetImpl.allocate(user, amount);
+		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
+		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
+		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows either PartyA or PartyB to withdraw a specified amount of collateral, provided that the withdrawal cooldown period has elapsed.

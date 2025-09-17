@@ -150,11 +150,11 @@ library LibQuote {
 	}
 
 	/**
-	 * @notice Gets the open fee for a quote.
-	 * @param quoteId The ID of the quote for which to get the open fee.
-	 * @return fee The open fee for the quote.
+	 * @notice Gets the trading fee for a quote.
+	 * @param quoteId The ID of the quote for which to get the trading fee.
+	 * @return fee The trading fee for the quote.
 	 */
-	function getOpenFee(uint256 quoteId) internal view returns (uint256 fee) {
+	function getTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		if (quote.orderType == OrderType.LIMIT) {
@@ -174,7 +174,6 @@ library LibQuote {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
 		require(
 			quote.lockedValues.cva == 0 || (quote.lockedValues.cva * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0,
@@ -300,8 +299,8 @@ library LibQuote {
 			quote.statusModifyTimestamp = block.timestamp;
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
 
-			// send Open Fee back to partyA
-			uint256 fee = LibQuote.getOpenFee(quote.id);
+			// send trading Fee back to partyA
+			uint256 fee = LibQuote.getTradingFee(quote.id);
 			accountLayout.allocatedBalances[quote.partyA] += fee;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 

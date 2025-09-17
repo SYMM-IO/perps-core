@@ -110,7 +110,7 @@ library LiquidationFacetImpl {
 				delete quoteLayout.partyBPendingQuotes[quote.partyB][partyA];
 				accountLayout.partyBPendingLockedBalances[quote.partyB][partyA].makeZero();
 			}
-			uint256 fee = LibQuote.getOpenFee(quote.id);
+			uint256 fee = LibQuote.getTradingFee(quote.id);
 			accountLayout.partyAReimbursement[partyA] += fee;
 			emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 			quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
@@ -206,9 +206,7 @@ library LiquidationFacetImpl {
 				}
 			}
 			accountLayout.partyBLockedBalances[quote.partyB][partyA].subQuote(quote);
-
 			uint256 liquidationPrice = accountLayout.symbolsPrices[partyA][quote.symbolId].price;
-
 			quote.avgClosedPrice =
 				(quote.avgClosedPrice * quote.closedAmount + LibQuote.quoteOpenAmount(quote) * liquidationPrice) /
 				(quote.closedAmount + LibQuote.quoteOpenAmount(quote));

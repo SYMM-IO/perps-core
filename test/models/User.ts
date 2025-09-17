@@ -1,5 +1,5 @@
-import { setBalance } from "@nomicfoundation/hardhat-network-helpers"
-import { BigNumberish, ethers, EventLog } from "ethers"
+import {setBalance} from "@nomicfoundation/hardhat-network-helpers"
+import {BigNumberish, ethers, EventLog} from "ethers"
 
 import { getPriceFetcher, serializeToJson, unDecimal } from "../utils/Common"
 import { logger } from "../utils/LoggerUtils"
@@ -21,7 +21,8 @@ import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceAct
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 
 export class User {
-	constructor(private context: RunContext, private signer: SignerWithAddress) {}
+	constructor(private context: RunContext, private signer: SignerWithAddress) {
+	}
 
 	public async setup() {
 		await this.context.manager.registerUser(this)
@@ -181,6 +182,7 @@ export class User {
 		}
 	}
 
+
 	public async requestToClosePosition(id: BigNumberish, request: CloseRequest = limitCloseRequestBuilder().build()) {
 		logger.detailedDebug(
 			serializeToJson({
@@ -209,12 +211,7 @@ export class User {
 		logger.info(`User::::ForceClosePosition: ${id}`)
 	}
 
-	public async settleAndForceClosePosition(
-		id: BigNumberish,
-		highLowPriceSigStruct: HighLowPriceSigStruct,
-		settleSig: SettlementSigStruct,
-		updatedPrices: bigint[],
-	) {
+	public async settleAndForceClosePosition(id: BigNumberish, highLowPriceSigStruct: HighLowPriceSigStruct, settleSig: SettlementSigStruct, updatedPrices: bigint[]) {
 		logger.detailedDebug(
 			serializeToJson({
 				highLowPriceSigStruct: highLowPriceSigStruct,
@@ -251,11 +248,11 @@ export class User {
 		let openPositions = await this.getOpenPositions()
 		let upnl = 0n
 		for (const pos of openPositions) {
-			const priceDiff =
-				pos.openedPrice -
-				(symbolIdPriceFetcher != null
+			const priceDiff = pos.openedPrice - (
+				symbolIdPriceFetcher != null
 					? await symbolIdPriceFetcher(pos.symbolId)
-					: await symbolNamePriceFetcher((await this.context.viewFacet.getSymbol(pos.symbolId)).name))
+					: await symbolNamePriceFetcher((await this.context.viewFacet.getSymbol(pos.symbolId)).name)
+			)
 			const amount = pos.quantity - pos.closedAmount
 			upnl += unDecimal(amount * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? -1n : 1n)
 		}
@@ -269,11 +266,11 @@ export class User {
 		let openPositions = await this.getOpenPositions()
 		let upnl = 0n
 		for (const pos of openPositions) {
-			const priceDiff =
-				pos.openedPrice -
-				(symbolIdPriceFetcher != null
+			const priceDiff = pos.openedPrice - (
+				symbolIdPriceFetcher != null
 					? await symbolIdPriceFetcher(pos.symbolId)
-					: await symbolNamePriceFetcher((await this.context.viewFacet.getSymbol(pos.symbolId)).name))
+					: await symbolNamePriceFetcher((await this.context.viewFacet.getSymbol(pos.symbolId)).name)
+			)
 			const amount = pos.quantity - pos.closedAmount
 			upnl += unDecimal(amount * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? 0n : 1n)
 		}
@@ -289,8 +286,9 @@ export class User {
 			let mm = balanceInfo.lockedMmPartyA
 			let mUpnl = -upnl
 			let considering_mm = mUpnl > mm ? mUpnl : mm
-			available =
-				balanceInfo.allocatedBalances - (balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.totalPendingLockedPartyA) - considering_mm
+			available = balanceInfo.allocatedBalances
+				- (balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.totalPendingLockedPartyA)
+				- considering_mm
 		}
 		return available
 	}

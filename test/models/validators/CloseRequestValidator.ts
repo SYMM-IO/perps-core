@@ -6,7 +6,6 @@ import {Hedger} from "../Hedger"
 import {RunContext} from "../RunContext"
 import {BalanceInfo, User} from "../User"
 import {TransactionValidator} from "./TransactionValidator"
-import { getCloseTradingFeeForQuotes, getCloseTradingFeeForQuoteWithFilledAmount } from "../../utils/Common"
 
 export type CloseRequestValidatorBeforeArg = {
 	user: User
@@ -43,6 +42,7 @@ export class CloseRequestValidator implements TransactionValidator {
 		logger.debug("After CloseRequestValidator...")
 		// Check Quote
 		const newQuote = await context.viewFacet.getQuote(arg.quoteId)
+		const oldQuote = arg.beforeOutput.quote
 		expect(newQuote.quoteStatus).to.be.equal(QuoteStatus.CLOSE_PENDING)
 		expect(newQuote.quantityToClose).to.be.equal(arg.quantityToClose)
 		expect(newQuote.requestedClosePrice).to.be.equal(arg.closePrice)

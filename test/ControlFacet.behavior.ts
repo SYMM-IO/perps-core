@@ -6,7 +6,6 @@ import { keccak256 } from "js-sha3"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 import { ethers } from "hardhat"
 import { ZeroAddress } from "ethers"
-import { decimal } from "./utils/Common"
 
 const DISPUTE_ROLE = `0x${keccak256("DISPUTE_ROLE")}`
 const PARTY_B_MANAGER_ROLE = `0x${keccak256("PARTY_B_MANAGER_ROLE")}`
@@ -157,7 +156,7 @@ export function shouldBehaveLikeControlFacet(): void {
 
 			await expect(
 				context.controlFacet.connect(owner).addSymbol("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period),
-			).to.be.revertedWith("ControlFacet: High default fee")
+			).to.be.revertedWith("ControlFacet: High trading fee")
 		})
 	})
 
@@ -414,7 +413,9 @@ export function shouldBehaveLikeControlFacet(): void {
 
 		it("Should fail to add zero address as external transfer target", async function () {
 			await expect(
-				context.controlFacet.connect(context.signers.admin).addRelayerForExternalTransferTarget(ZeroAddress, context.signers.others[1].address),
+				context.controlFacet
+					.connect(context.signers.admin)
+					.addRelayerForExternalTransferTarget(ZeroAddress, context.signers.others[1].address),
 			).to.be.revertedWith("ControlFacet: Zero address")
 		})
 	})
@@ -473,7 +474,7 @@ export function shouldBehaveLikeControlFacet(): void {
 
 			await expect(
 				context.controlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.be.revertedWith("ControlFacet: High default fee")
+			).to.be.revertedWith("ControlFacet: High trading fee")
 		})
 	})
 
@@ -551,7 +552,7 @@ export function shouldBehaveLikeControlFacet(): void {
 				},
 			]
 
-			await expect(context.controlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("ControlFacet: High default fee")
+			await expect(context.controlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("ControlFacet: High trading fee")
 		})
 	})
 

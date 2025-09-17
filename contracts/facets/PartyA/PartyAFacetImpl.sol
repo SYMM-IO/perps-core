@@ -127,7 +127,7 @@ library PartyAFacetImpl {
 		quoteLayout.partyAPendingQuotes[msg.sender].push(currentId);
 		quoteLayout.quotes[currentId] = quote;
 
-		uint256 fee = LibQuote.getOpenFee(currentId);
+		uint256 fee = LibQuote.getTradingFee(currentId);
 		accountLayout.allocatedBalances[msg.sender] -= fee;
 		emit SharedEvents.BalanceChangePartyA(msg.sender, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 	}
@@ -142,7 +142,7 @@ library PartyAFacetImpl {
 			result = LibQuote.expireQuote(quoteId);
 		} else if (quote.quoteStatus == QuoteStatus.PENDING) {
 			quote.quoteStatus = QuoteStatus.CANCELED;
-			uint256 fee = LibQuote.getOpenFee(quote.id);
+			uint256 fee = LibQuote.getTradingFee(quote.id);
 			accountLayout.allocatedBalances[quote.partyA] += fee;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
