@@ -1048,7 +1048,21 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().affiliateHooks[affiliate];
 	}
 
+	/**
+	 * @notice Retrieves the affiliate fee of an affiliate.
+	 * @param affiliate The address of the affiliate.
+	 * @return fee The affiliate fee of the affiliate.
+	 */
 	function getAffiliateFee(address affiliate) external view returns (Fee memory) {
 		return GlobalAppStorage.layout().affiliateFee[affiliate];
+	}
+
+	/**
+	 * @notice Retrieves the ADL enabled status of a party B.
+	 * @param partyB The address of the party B.
+	 * @return enabled The ADL enabled status of the party B.
+	 */
+	function isADLEnabled(address partyB) external view returns (bool) {
+		return MAStorage.layout().adlEnabled[partyB];
 	}
 }

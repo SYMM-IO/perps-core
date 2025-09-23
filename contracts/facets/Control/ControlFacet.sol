@@ -690,4 +690,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		AccountStorage.layout().affiliateHooks[affiliate] = hook;
 		emit RegisterHook(affiliate, hook);
 	}
+
+	/// @notice Sets the ADL enabled status for a party B.
+	/// @param partyB The address of the party B.
+	/// @param enabled The ADL enabled status to be set.
+	function setADLEnabled(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		MAStorage.layout().adlEnabled[partyB] = enabled;
+		emit SetADLEnabled(partyB, enabled);
+	}
 }
