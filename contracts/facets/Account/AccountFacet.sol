@@ -226,4 +226,36 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		AccountFacetImpl.completeUnbindRequest(partyA);
 		emit CompleteUnbindRequest(partyA, msg.sender);
 	}
+
+	/**
+	 * @notice Enables the instant action mode for a PartyA
+	 * @dev Only callable by PartyA accounts, not PartyB
+	 */
+	function activateInstantActionMode() external userNotPartyB(msg.sender) whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused {
+		AccountFacetImpl.activateInstantActionMode();
+		emit ActivateInstantActionMode(msg.sender, block.timestamp);
+	}
+
+	/**
+	 * @notice Initiates the process to deactivate instant action mode
+	 * @dev Only callable by PartyA accounts, starts a time-delayed process
+	 */
+	function proposeToDeactivateInstantActionMode()
+		external
+		userNotPartyB(msg.sender)
+		whenInstantModeIsActive(msg.sender)
+		whenNotPartyAActionsPaused
+	{
+		AccountFacetImpl.proposeToDeactivateInstantActionMode();
+		emit ProposeToDeactivateInstantActionMode(msg.sender, block.timestamp);
+	}
+
+	/**
+	 * @notice Completes the deactivation of instant action mode after proposal
+	 * @dev Only callable by PartyA accounts after the waiting period has passed
+	 */
+	function deactivateInstantActionMode() external userNotPartyB(msg.sender) whenNotPartyAActionsPaused {
+		AccountFacetImpl.deactivateInstantActionMode();
+		emit DeactivateInstantActionMode(msg.sender, block.timestamp);
+	}
 }
