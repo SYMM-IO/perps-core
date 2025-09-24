@@ -8,9 +8,8 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
-import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-
-import { SignatureVerifier } from "../helpers/SignatureVerifier.sol";
+import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, IERC1271 {
 	bytes32 public constant TRUSTED_ROLE = keccak256("TRUSTED_ROLE");
@@ -21,14 +20,12 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	/// @notice Role for updating contract configuration and signer settings.
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 
-	address public symmioAddress;
-
-	/// @notice Address of the authorized signer for EIP-1271 signature verification.
-	address public signer;
-
 	mapping(bytes4 => bool) public restrictedSelectors; // selector -> isRestricted
 	mapping(address => bool) public multicastWhitelist; // contractAddress -> isAllowedForMulticast
 	uint256 private _guardCounter;
+
+	address public symmioAddress;
+	address public signer;
 
 	/// @custom:oz-upgrades-unsafe-allow constructor
 	constructor() {
@@ -209,7 +206,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	 * @dev Delegates signature verification to the SignatureVerifier base contract
 	 *      using the configured signer address for validation.
 	 */
-	function isValidSignature(bytes32 hash, bytes calldata signature) external view override returns (bytes4) {
-		return SignatureVerifier.isValidSignatureEIP1271(signer, hash, signature);
+	function isValidSignature(bytes32 hash, bytes memory signature) external view returns (bytes4 magicValue) {
+		magicValue = SignatureChecker.isValidSignatureNow(signer, hash, signature) ? bytes4(0x1626ba7e) : bytes4(0xffffffff);
 	}
 }

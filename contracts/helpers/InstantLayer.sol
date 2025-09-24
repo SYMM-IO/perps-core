@@ -29,10 +29,8 @@ import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessCo
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /* ────────────────────────── Errors ────────────────────────── */
-
 
 /* ────────────────────────── External Interfaces ────────────────────────── */
 
@@ -41,6 +39,8 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
  */
 interface IMultiAccount {
 	function _call(address account, bytes[] calldata _callDatas) external;
+
+	function isValidSignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bool);
 }
 
 /**
@@ -176,7 +176,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ─────────────────────────────── Errors ─────────────────────────────── */
 
-	error InvalidSignature(address signer); // signature verification failed
+	error InvalidSignature(); // signature verification failed
 	error DeadlineExpired(uint256 deadline); // signed operation expired
 	error InvalidNonce(address user, uint256 expected, uint256 provided); // nonce mismatch for ordered execution
 	error TemplateNotActive(uint256 templateId); // template is disabled
@@ -389,22 +389,23 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	function _verifyOperation(SignedOperation calldata signedOp) private {
 		if (signedOp.deadline < block.timestamp) revert DeadlineExpired(signedOp.deadline);
 
+		bytes32 hash = getOperationHash(signedOp);
+
 		// Validate registration status
 		if (signedOp.accountSource == address(0)) {
 			// For PartyB operations, ensure the signer (PartyB) is registered
 			if (!isPartyBRegistered(signedOp.signer)) revert UnregisteredPartyB(signedOp.signer);
+			if (!SignatureChecker.isValidSignatureNow(signedOp.signer, hash, signedOp.signature)) revert InvalidSignature();
 		} else {
 			// For PartyA operations, ensure the accountSource (MultiAccount) is registered
 			if (!isMultiAccountRegistered(signedOp.accountSource)) revert UnregisteredMultiAccount(signedOp.accountSource);
+			if (!IMultiAccount(signedOp.accountSource).isValidSignatureOfAccount(signedOp.signer, hash, signedOp.signature))
+				revert InvalidSignature();
 		}
-
-		bytes32 hash = getOperationHash(signedOp);
 
 		// Check for replay attacks - this should be done for ALL operations
 		if (usedOperationHashes[hash]) revert OperationAlreadyExecuted(hash);
 		usedOperationHashes[hash] = true;
-
-		if (!isValidSignature(signedOp.signer, hash, signedOp.signature)) revert InvalidSignature(signedOp.signer);
 
 		// Check nonce only if it's not 0 (0 means no nonce protection, relies on salt)
 		if (signedOp.nonce != 0) {
@@ -551,16 +552,5 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	function getTemplateOperations(uint256 templateId) external view returns (Operation[] memory) {
 		return templates[templateId].operations;
-	}
-
-	/**
-	 * @notice Verify a signature externally (useful for testing and validation).
-	 * @param signer    Expected signer address.
-	 * @param hash      Message hash to verify.
-	 * @param signature Signature bytes.
-	 * @return Whether the signature is valid.
-	 */
-	function isValidSignature(address signer, bytes32 hash, bytes calldata signature) public view returns (bool) {
-		return SignatureChecker.isValidSignatureNow(signer, ECDSA.toEthSignedMessageHash(hash), signature);
 	}
 }

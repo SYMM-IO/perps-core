@@ -34,7 +34,6 @@ library MAStorage {
 		address liquidationInsuranceVault;
 		uint256 maxLiquidationProfitPerPosition;
 		uint256 unbindCooldown;
-		//Instant Layer
 		bool callFromInstantLayer;
 		mapping(address => bool) adlEnabled;
 	}

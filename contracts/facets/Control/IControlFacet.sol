@@ -8,8 +8,6 @@ import "./IControlEvents.sol";
 import "../../storages/SymbolStorage.sol";
 
 interface IControlFacet is IControlEvents {
-	function setCallFromInstantLayer(bool callFromInstantLayer) external;
-
 	function transferOwnership(address owner) external;
 
 	function acceptOwnership() external;
@@ -161,4 +159,6 @@ interface IControlFacet is IControlEvents {
 	function registerHook(address affiliate, address hook) external;
 
 	function setADLEnabled(address partyB, bool enabled) external;
+
+	function setCallFromInstantLayer(bool callFromInstantLayer) external;
 }

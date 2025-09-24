@@ -10,8 +10,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
-import { SignatureVerifier } from "../helpers/SignatureVerifier.sol";
 import "../interfaces/ISymmio.sol";
 import "../interfaces/ISymmioPartyA.sol";
 import "../interfaces/IMultiAccount.sol";
@@ -84,12 +84,11 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 	 * @param account   Account address to verify signature for.
 	 * @param hash      Hash of the data that was signed.
 	 * @param signature Signature bytes to verify.
-	 * @return Magic value (0x1626ba7e) if signature is valid, 0xffffffff otherwise.
-	 *
+	 * @return isValid Whether the signature is valid.
 	 * @dev Delegates signature verification to the account owner using SignatureVerifier.
 	 */
-	function verifySignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bytes4) {
-		return SignatureVerifier.isValidSignatureEIP1271(owners[account], hash, signature);
+	function isValidSignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bool) {
+		return SignatureChecker.isValidSignatureNow(owners[account], hash, signature);
 	}
 
 	/**

@@ -5,8 +5,6 @@
 pragma solidity >=0.8.18;
 
 interface IMultiAccount {
-	function verifySignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bytes4);
-
 	struct Account {
 		address accountAddress;
 		string name;
@@ -25,4 +23,6 @@ interface IMultiAccount {
 	event DelegateAccesses(address account, address target, bytes4[] selector, bool state);
 	event ProposeToRevokeAccesses(address account, address target, bytes4[] selector);
 	event SetRevokeCooldown(uint256 oldCooldown, uint256 newCooldown);
+
+	function isValidSignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bool);
 }

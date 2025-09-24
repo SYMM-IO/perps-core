@@ -691,16 +691,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit RegisterHook(affiliate, hook);
 	}
 
-	// ═══════════════════════════════════════════════════════════════════════════
-	//                          INSTANT LAYER MANAGEMENT
-	// ═══════════════════════════════════════════════════════════════════════════
-
 	/**
 	 * @notice Sets the call from instant layer
 	 * @param _callFromInstantLayer The call from instant layer
 	 */
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "System Error: Instant Layer Paused");
+		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
 		MAStorage.layout().callFromInstantLayer = _callFromInstantLayer;
 	}
 
