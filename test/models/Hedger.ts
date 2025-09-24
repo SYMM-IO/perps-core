@@ -49,13 +49,10 @@ export class Hedger {
 			)
 		}
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).lockQuote(id, await getDummySingleUpnlSig(upnl)))
-
-		logger.info(`Hedger::LockQuote: ${id}`)
 	}
 
 	public async unlockQuote(id: BigNumberish) {
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).unlockQuote(id))
-		logger.info(`Hedger::UnLockQuote: ${id}`)
 	}
 
 	public async openPosition(id: BigNumberish, request: OpenRequest = limitOpenRequestBuilder().build()) {

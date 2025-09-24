@@ -10,6 +10,7 @@ import "../../libraries/LibPartyBPositionsActions.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
+import "hardhat/console.sol";
 
 library PartyBBatchActionsFacetImpl {
 	function openPositions(
@@ -85,8 +86,9 @@ library PartyBBatchActionsFacetImpl {
 
 		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
 
-		// Verify the upnl and prices
-		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
+		if (accountLayout.bindState[firstQuote.partyA].partyB != msg.sender) {
+			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
+		}
 
 		LibSolvency.isSolventAfterClosePosition(
 			quoteIds,
@@ -117,6 +119,66 @@ library PartyBBatchActionsFacetImpl {
 			LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);
 			quoteStatuses[i] = quote.quoteStatus;
 			closeIds[i] = quoteLayout.closeIds[quoteId];
+		}
+	}
+
+	function adlClosePositions(
+		uint256[] memory quoteIds,
+		uint256[] memory filledAmounts,
+		uint256[] memory closedPrices,
+		PairUpnlAndPricesSig memory upnlSig
+	) internal returns (QuoteStatus[] memory quoteStatuses) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		require(
+			quoteIds.length == filledAmounts.length && quoteIds.length == closedPrices.length && quoteIds.length > 0,
+			"PartyBFacet: Invalid length"
+		);
+
+		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
+		address firstQuotePartyA = firstQuote.partyA;
+		address firstQuotePartyB = firstQuote.partyB;
+
+		if (accountLayout.bindState[firstQuote.partyA].partyB != msg.sender) {
+			// Verify the upnl and prices
+			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
+		}
+
+		LibSolvency.isSolventAfterClosePosition(
+			quoteIds,
+			filledAmounts,
+			closedPrices,
+			upnlSig.prices,
+			upnlSig.upnlPartyB,
+			upnlSig.upnlPartyA,
+			firstQuote.partyB,
+			firstQuote.partyA
+		);
+
+		// Solvency checks
+		require(!maLayout.liquidationStatus[firstQuote.partyA], "PartyBFacet: PartyA isn't solvent");
+		require(!maLayout.partyBLiquidationStatus[firstQuote.partyB][firstQuote.partyA], "PartyBFacet: PartyB isn't solvent");
+		require(!accountLayout.crossLiquidationDetails[firstQuote.partyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+
+		accountLayout.partyBNonces[firstQuote.partyB][firstQuote.partyA] += 1;
+		accountLayout.partyANonces[firstQuote.partyA] += 1;
+
+		console.log("111111");
+
+		quoteStatuses = new QuoteStatus[](quoteIds.length);
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+			require(quote.partyB == firstQuotePartyB, "PartyBBatchActionsFacet: All positions must have same partyB");
+			require(quote.partyA == firstQuotePartyA, "PartyBBatchActionsFacet: All positions must have same partyA");
+			console.log("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa");
+			require(quote.quoteStatus == QuoteStatus.OPENED, "PartyBBatchActionsFacet: Invalid position state");
+			require(LibQuote.quoteOpenAmount(quote) >= filledAmounts[i] && filledAmounts[i] > 0, "PartyBBatchActionsFacet: Invalid filled amount");
+			require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBBatchActionsFacet: Symbol is not valid");
+			quote.quantityToClose = filledAmounts[i];
+			LibQuote.closeQuote(quote, filledAmounts[i], closedPrices[i]);
+			quoteStatuses[i] = quote.quoteStatus;
 		}
 	}
 }

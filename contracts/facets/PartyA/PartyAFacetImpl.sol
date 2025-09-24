@@ -60,11 +60,9 @@ library PartyAFacetImpl {
 			require(partyBsWhiteList[i] != msg.sender, "PartyAFacet: Sender isn't allowed in partyBWhiteList");
 		}
 
-		if (accountLayout.bindState[msg.sender].partyB != address(0)) {
-			require(
-				partyBsWhiteList.length == 1 && partyBsWhiteList[0] == accountLayout.bindState[msg.sender].partyB,
-				"PartyAFacet: PartyA is bound to a different PartyB"
-			);
+		address boundedPartyB = accountLayout.bindState[msg.sender].partyB;
+		if (boundedPartyB != address(0)) {
+			require(partyBsWhiteList.length == 1 && partyBsWhiteList[0] == boundedPartyB, "PartyAFacet: PartyA is bound to a different PartyB");
 		} else {
 			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, msg.sender, symbolId);
 		}

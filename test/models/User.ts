@@ -77,7 +77,6 @@ export class User {
 
 			if (sendQuoteEvent && sendQuoteEvent.args) {
 				const id = sendQuoteEvent.args.quoteId
-				logger.info("User::::SendQuote: " + id)
 				return id.toString()
 			}
 		}
@@ -120,7 +119,6 @@ export class User {
 
 			if (sendQuoteEvent && sendQuoteEvent.args) {
 				const id = sendQuoteEvent.args.quoteId
-				logger.info("User::::SendQuote: " + id)
 				return id.toString()
 			}
 		}
