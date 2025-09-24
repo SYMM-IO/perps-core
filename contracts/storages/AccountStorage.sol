@@ -107,6 +107,10 @@ library AccountStorage {
 		mapping(address => CrossLiquidationDetail) crossLiquidationDetails;
 		mapping(address => address) externalTransferTargetsRelayers;
 		mapping(address => address) affiliateHooks;
+		// Instant Actions
+		mapping(address => bool) instantActionsMode;
+		mapping(address => uint256) instantActionsModeDeactivateTime;
+		uint256 deactiveInstantActionModeCooldown;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

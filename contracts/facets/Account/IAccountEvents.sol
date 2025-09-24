@@ -27,4 +27,8 @@ interface IAccountEvents {
 	event CancelUnbindRequest(address partyA);
 	event CompleteUnbindRequest(address partyA, address partyB);
 	event RequestToUnbindFromPartyB(address partyA);
+	//Instant Actions Events
+	event ActivateInstantActionMode(address partyA, uint256 time);
+	event ProposeToDeactivateInstantActionMode(address partyA, uint256 time);
+	event DeactivateInstantActionMode(address partyA, uint256 time);
 }

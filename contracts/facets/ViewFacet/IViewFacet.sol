@@ -165,6 +165,8 @@ interface IViewFacet {
 
 	function lastUpnlSettlementTimestamp(address senderPartyB, address targetPartyB, address partyA) external view returns (uint256);
 
+	function isCallFromInstantLayer() external view returns (bool);
+
 	///////////////////////////////////////////
 
 	function getMuonConfig() external view returns (uint256 upnlValidTime, uint256 priceValidTime);

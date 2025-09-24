@@ -5,10 +5,13 @@
 pragma solidity >=0.8.18;
 
 interface IMultiAccount {
+	function verifySignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bytes4);
+
 	struct Account {
 		address accountAddress;
 		string name;
 	}
+
 	event SetAccountImplementation(bytes oldAddress, bytes newAddress);
 	event SetSymmioAddress(address oldAddress, address newAddress);
 	event DeployContract(address sender, address contractAddress);

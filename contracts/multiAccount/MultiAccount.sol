@@ -10,6 +10,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+import { SignatureVerifier } from "../helpers/SignatureVerifier.sol";
 import "../interfaces/ISymmio.sol";
 import "../interfaces/ISymmioPartyA.sol";
 import "../interfaces/IMultiAccount.sol";
@@ -75,6 +77,19 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 		require(target != msg.sender && target != account, "MultiAccount: Invalid target");
 		emit DelegateAccess(account, target, selector, true);
 		delegatedAccesses[account][target][selector] = true;
+	}
+
+	/**
+	 * @notice Verify signature for an account using EIP-1271 standard.
+	 * @param account   Account address to verify signature for.
+	 * @param hash      Hash of the data that was signed.
+	 * @param signature Signature bytes to verify.
+	 * @return Magic value (0x1626ba7e) if signature is valid, 0xffffffff otherwise.
+	 *
+	 * @dev Delegates signature verification to the account owner using SignatureVerifier.
+	 */
+	function verifySignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bytes4) {
+		return SignatureVerifier.isValidSignatureEIP1271(owners[account], hash, signature);
 	}
 
 	/**
@@ -260,7 +275,7 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 		innerCall(account, _callData);
 	}
 
-	function innerCall(address account, bytes memory _callData) internal {
+	function innerCall(address account, bytes memory _callData) internal returns (bytes memory) {
 		(bool _success, bytes memory _resultData) = ISymmioPartyA(account)._call(_callData);
 		emit Call(msg.sender, account, _callData, _success, _resultData);
 		if (!_success) {
@@ -268,6 +283,7 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 				revert(add(_resultData, 32), mload(_resultData))
 			}
 		}
+		return _resultData;
 	}
 
 	/**
@@ -275,8 +291,9 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 	 * @param account The address of the account to execute the calls on behalf of.
 	 * @param _callDatas An array of call data to execute.
 	 */
-	function _call(address account, bytes[] memory _callDatas) public whenNotPaused {
+	function _call(address account, bytes[] memory _callDatas) public whenNotPaused returns (bytes[] memory) {
 		bool isOwner = owners[account] == msg.sender;
+		bytes[] memory results = new bytes[](_callDatas.length);
 		for (uint8 i; i < _callDatas.length; i++) {
 			bytes memory _callData = _callDatas[i];
 			if (!isOwner) {
@@ -286,9 +303,13 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 					functionSelector := mload(add(_callData, 0x20))
 				}
 				require(delegatedAccesses[account][msg.sender][functionSelector], "MultiAccount: Unauthorized access");
+				require(ISymmio(symmioAddress).isCallFromInstantLayer(), "Unauthorized Access");
 			}
-			innerCall(account, _callData);
+
+			bytes memory result = innerCall(account, _callData);
+			results[i] = result;
 		}
+		return results;
 	}
 
 	//////////////////////////////// VIEWS ////////////////////////////////////

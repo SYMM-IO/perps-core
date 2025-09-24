@@ -207,4 +207,27 @@ library AccountFacetImpl {
 		bindState.status = BindStatus.NOT_BOUND;
 		bindState.modifyTimestamp = block.timestamp;
 	}
+
+	function activateInstantActionMode() internal {
+		require(AccountStorage.layout().bindState[msg.sender].status == BindStatus.BOUND, "AccountFacet: Invalid state");
+		AccountStorage.layout().instantActionsMode[msg.sender] = true;
+	}
+
+	function proposeToDeactivateInstantActionMode() internal {
+		AccountStorage.Layout storage layout = AccountStorage.layout();
+		layout.instantActionsModeDeactivateTime[msg.sender] = block.timestamp + layout.deactiveInstantActionModeCooldown;
+	}
+
+	function deactivateInstantActionMode() internal {
+		AccountStorage.Layout storage layout = AccountStorage.layout();
+
+		if (layout.instantActionsModeDeactivateTime[msg.sender] == 0) revert("Instant Action Deactivation not proposed yet");
+
+		if (layout.instantActionsModeDeactivateTime[msg.sender] > block.timestamp) {
+			revert("Instant Actions Mode Deactivate Timeout not passed");
+		}
+
+		layout.instantActionsMode[msg.sender] = false;
+		layout.instantActionsModeDeactivateTime[msg.sender] = 0;
+	}
 }

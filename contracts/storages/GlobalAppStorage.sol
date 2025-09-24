@@ -19,6 +19,7 @@ library GlobalAppStorage {
 		bool partyBActionsPaused;
 		bool partyAActionsPaused;
 		bool emergencyMode;
+		bool instantLayerPaused;
 		uint256 balanceLimitPerUser;
 		mapping(address => bool) partyBEmergencyStatus;
 		mapping(address => mapping(bytes32 => bool)) hasRole;

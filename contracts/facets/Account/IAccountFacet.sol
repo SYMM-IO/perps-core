@@ -39,6 +39,12 @@ interface IAccountFacet is IAccountEvents {
 
 	function completeUnbindRequest(address partyA) external;
 
+	function activateInstantActionMode() external;
+
+	function proposeToDeactivateInstantActionMode() external;
+
+	function deactivateInstantActionMode() external;
+
 	// PartyB
 	function allocateForPartyB(uint256 amount, address partyA) external;
 

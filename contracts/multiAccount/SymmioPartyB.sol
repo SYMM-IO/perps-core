@@ -8,13 +8,24 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
+import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
-contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable {
+import { SignatureVerifier } from "../helpers/SignatureVerifier.sol";
+
+contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, IERC1271 {
 	bytes32 public constant TRUSTED_ROLE = keccak256("TRUSTED_ROLE");
-	address public symmioAddress;
 	bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
+
+	/// @notice Role for updating contract configuration and signer settings.
+	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
+
+	address public symmioAddress;
+
+	/// @notice Address of the authorized signer for EIP-1271 signature verification.
+	address public signer;
+
 	mapping(bytes4 => bool) public restrictedSelectors; // selector -> isRestricted
 	mapping(address => bool) public multicastWhitelist; // contractAddress -> isAllowedForMulticast
 	uint256 private _guardCounter;
@@ -175,5 +186,30 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	 */
 	function unpause() external onlyRole(UNPAUSER_ROLE) {
 		_unpause();
+	}
+
+	/* ──────────────────── ERC-1271 Implementation ──────────────────── */
+
+	/**
+	 * @notice Set the authorized signer for EIP-1271 signature verification.
+	 * @param _signer Address of the new authorized signer.
+	 *
+	 * @dev Only callable by accounts with SETTER_ROLE.
+	 */
+	function setSigner(address _signer) external onlyRole(SETTER_ROLE) {
+		signer = _signer;
+	}
+
+	/**
+	 * @notice Verify signature validity using ERC-1271 standard for contract-based authentication.
+	 * @param hash      Hash of the data that was signed.
+	 * @param signature Signature bytes to verify.
+	 * @return magicValue Magic value (0x1626ba7e) if signature is valid, 0xffffffff otherwise.
+	 *
+	 * @dev Delegates signature verification to the SignatureVerifier base contract
+	 *      using the configured signer address for validation.
+	 */
+	function isValidSignature(bytes32 hash, bytes calldata signature) external view override returns (bytes4) {
+		return SignatureVerifier.isValidSignatureEIP1271(signer, hash, signature);
 	}
 }

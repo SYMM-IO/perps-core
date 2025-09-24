@@ -76,4 +76,14 @@ abstract contract Accessibility {
 		require(!AccountStorage.layout().suspendedAddresses[user], "Accessibility: Sender is Suspended");
 		_;
 	}
+
+	modifier whenInstantModeIsNotActive(address sender) {
+		require(!(AccountStorage.layout().instantActionsMode[sender] && !MAStorage.layout().callFromInstantLayer), "Instant Mode Not Active");
+		_;
+	}
+
+	modifier whenInstantModeIsActive(address sender) {
+		require (AccountStorage.layout().instantActionsMode[sender],"Instant Mode Not Active");
+		_;
+	}
 }

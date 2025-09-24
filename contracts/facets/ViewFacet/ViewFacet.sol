@@ -1051,4 +1051,12 @@ contract ViewFacet is IViewFacet {
 	function getAffiliateFee(address affiliate) external view returns (Fee memory) {
 		return GlobalAppStorage.layout().affiliateFee[affiliate];
 	}
+
+	/**
+	 * @notice Checks if being called from instant layer
+	 * @return Whether the call is from instant layer
+	 */
+	function isCallFromInstantLayer() external view returns (bool) {
+		return MAStorage.layout().callFromInstantLayer;
+	}
 }

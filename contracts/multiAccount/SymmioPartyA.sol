@@ -5,21 +5,28 @@
 pragma solidity >=0.8.18;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
-contract SymmioPartyA is AccessControl {
+import { IMultiAccount } from "../interfaces/IMultiAccount.sol";
+
+contract SymmioPartyA is AccessControl, IERC1271 {
 	bytes32 public constant MULTIACCOUNT_ROLE = keccak256("MULTIACCOUNT_ROLE");
 	address public symmioAddress;
+
+	/// @notice Address of the MultiAccount contract that manages this Party A account.
+	address public multiAccountAddress;
 
 	/**
 	 * @dev Constructor to initialize the contract with roles and Symmio address.
 	 * @param admin The address of the default admin role.
-	 * @param multiAccountAddress The address assigned the MULTIACCOUNT_ROLE.
+	 * @param multiAccountAddress_ The address assigned the MULTIACCOUNT_ROLE.
 	 * @param symmioAddress_ The address of the Symmio contract.
 	 */
-	constructor(address admin, address multiAccountAddress, address symmioAddress_) {
+	constructor(address admin, address multiAccountAddress_, address symmioAddress_) {
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
-		_grantRole(MULTIACCOUNT_ROLE, multiAccountAddress);
+		_grantRole(MULTIACCOUNT_ROLE, multiAccountAddress_);
 		symmioAddress = symmioAddress_;
+		multiAccountAddress = multiAccountAddress_;
 	}
 
 	/**
@@ -46,5 +53,18 @@ contract SymmioPartyA is AccessControl {
 	 */
 	function _call(bytes memory _callData) external onlyRole(MULTIACCOUNT_ROLE) returns (bool _success, bytes memory _resultData) {
 		return symmioAddress.call{ value: 0 }(_callData);
+	}
+
+	/**
+	 * @notice Verify signature validity using ERC-1271 standard for contract-based authentication.
+	 * @param hash      Hash of the data that was signed.
+	 * @param signature Signature bytes to verify.
+	 * @return Magic value (0x1626ba7e) if signature is valid, 0xffffffff otherwise.
+	 *
+	 * @dev Delegates signature verification to the MultiAccount contract which
+	 *      manages account ownership and signature validation logic.
+	 */
+	function isValidSignature(bytes32 hash, bytes calldata signature) external view override returns (bytes4) {
+		return IMultiAccount(multiAccountAddress).verifySignatureOfAccount(address(this), hash, signature);
 	}
 }
