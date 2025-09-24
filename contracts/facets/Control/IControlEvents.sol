@@ -86,4 +86,5 @@ interface IControlEvents {
 	event AddRelayerForExternalTransferTarget(address target, address relayer);
 	event RemoveRelayerForExternalTransferTarget(address target);
 	event RegisterHook(address affiliate, address hook);
+	event SetADLEnabled(address partyB, bool enabled);
 }

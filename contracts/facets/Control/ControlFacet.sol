@@ -703,4 +703,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "System Error: Instant Layer Paused");
 		MAStorage.layout().callFromInstantLayer = _callFromInstantLayer;
 	}
+
+	/// @notice Sets the ADL enabled status for a party B.
+	/// @param partyB The address of the party B.
+	/// @param enabled The ADL enabled status to be set.
+	function setADLEnabled(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		MAStorage.layout().adlEnabled[partyB] = enabled;
+		emit SetADLEnabled(partyB, enabled);
+	}
 }

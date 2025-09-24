@@ -216,4 +216,6 @@ interface IViewFacet {
 	function getBindState(address user) external view returns (BindState memory);
 
 	function getAffiliateHook(address affiliate) external view returns (address hook);
+
+	function isADLEnabled(address partyB) external view returns (bool);
 }

@@ -36,6 +36,7 @@ library MAStorage {
 		uint256 unbindCooldown;
 		//Instant Layer
 		bool callFromInstantLayer;
+		mapping(address => bool) adlEnabled;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
