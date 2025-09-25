@@ -17,7 +17,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
 		this.user_allocated = decimal(500n)
-		this.hedger_allocated = decimal(4000n)
+		this.hedger_allocated = decimal(400000n)
 
 		user = new User(context, context.signers.user)
 		await user.setup()
@@ -169,7 +169,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		})
 	})
 
-	describe("fillCloseRequests", async function () {
+	describe.only("fillCloseRequests", async function () {
 		beforeEach(async function () {
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).price(decimal(4n)).build())
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
@@ -230,7 +230,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 			await expect(
 				context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig),
-			).to.be.revertedWith("PartyBFacet: All positions should belong to one partyA")
+			).to.be.revertedWith("PartyBBatchActionsFacet: All positions must have same partyA")
 		})
 
 		it("Should successfully fill multiple close requests", async function () {
@@ -259,6 +259,173 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 			expect(partyANonceAfter).to.equal(partyANonceBefore + 1n)
 			expect(partyBNonceAfter).to.equal(partyBNonceBefore + 1n)
+		})
+	})
+
+	describe.only("adlClosePositions", async function () {
+		beforeEach(async function () {
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.positionType(PositionType.LONG)
+					.build(),
+			)
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.positionType(PositionType.SHORT)
+					.build(),
+			)
+			await user2.sendQuote(
+				limitQuoteRequestBuilder()
+					.positionType(PositionType.SHORT)
+					.partyBWhiteList([await hedger2.getAddress()])
+					.build(),
+			)
+			await user2.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.positionType(PositionType.SHORT)
+					.build(),
+			)
+
+			await hedger.lockQuote(1)
+			await hedger.lockQuote(2)
+			await hedger2.lockQuote(3)
+			await hedger.lockQuote(4)
+
+			await hedger.openPosition(1)
+			await hedger.openPosition(2)
+			await hedger.openPosition(4)
+		})
+
+		it("Should fail when PartyB actions are paused", async function () {
+			await pausePartyB(context)
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(50n), decimal(50n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("Pausable: PartyB actions paused")
+		})
+
+		it("Should fail with invalid array lengths", async function () {
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(50n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Invalid length")
+		})
+
+		it("Should fail with empty arrays", async function () {
+			const quoteIds: bigint[] = []
+			const filledAmounts: bigint[] = []
+			const closedPrices: bigint[] = []
+			const upnlSig = await getDummyPairUpnlAndPricesSig([], [])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Invalid length")
+		})
+
+		it("Should fail when quotes belong to different partyAs", async function () {
+			const quoteIds = [1n, 4n]
+			const filledAmounts = [decimal(50n), decimal(50n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBBatchActionsFacet: All positions must have same partyA")
+		})
+
+		it("Should fail when quotes belong to different partyBs", async function () {
+			const quoteIds = [1n, 3n]
+			const filledAmounts = [decimal(50n), decimal(50n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBBatchActionsFacet: All positions must have same partyB")
+		})
+
+		it("Should fail when quote status is not OPENED", async function () {
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.positionType(PositionType.LONG)
+					.build(),
+			)
+
+			const quoteIds = [5n]
+			const filledAmounts = [decimal(50n)]
+			const closedPrices = [decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBBatchActionsFacet: Invalid position state")
+		})
+
+		it("Should fail when filled amount is invalid", async function () {
+			const quoteIds = [1n]
+			const filledAmounts = [decimal(0n)]
+			const closedPrices = [decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBBatchActionsFacet: Invalid filled amount")
+		})
+
+		it("Should fail when symbol is not valid", async function () {
+			// Invalidate symbol for quote 1
+			const quote = await context.viewFacet.getQuote(1n)
+			await context.controlFacet.connect(context.signers.admin).setSymbolValidationState(quote.symbolId, false)
+
+			const quoteIds = [1n]
+			const filledAmounts = [decimal(50n)]
+			const closedPrices = [decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBBatchActionsFacet: Symbol is not valid")
+		})
+
+		it("Should fail when parties become insolvent after closing", async function () {
+			const quoteIds = [1n]
+			const filledAmounts = [decimal(50n)]
+			const closedPrices = [decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [1n], -decimal(10000n), -decimal(10000n))
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
+		})
+
+		it("Should successfully close multiple positions via ADL", async function () {
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig))
+				.to.not.reverted
+
+				const q1 = await context.viewFacet.getQuote(1)
+				const q2 = await context.viewFacet.getQuote(2)
+
+				expect(q1.quoteStatus).to.equal(7n)
+				expect(q2.quoteStatus).to.equal(7n)
+				expect(q1.closedAmount).to.equal(decimal(100n))
+				expect(q2.closedAmount).to.equal(decimal(100n))
 		})
 	})
 

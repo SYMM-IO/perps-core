@@ -194,6 +194,7 @@ library LibQuote {
 			quote.lockedValues.partyAmm - ((quote.lockedValues.partyAmm * filledAmount) / (LibQuote.quoteOpenAmount(quote))),
 			quote.lockedValues.partyBmm - ((quote.lockedValues.partyBmm * filledAmount) / (LibQuote.quoteOpenAmount(quote)))
 		);
+
 		accountLayout.lockedBalances[quote.partyA].subQuote(quote).add(lockedValues);
 		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].subQuote(quote).add(lockedValues);
 		accountLayout.partyBTotalCva[quote.partyB] -= quote.lockedValues.cva;
@@ -270,6 +271,7 @@ library LibQuote {
 		if (systemHook != address(0)) {
 			try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
 		}
+
 	}
 
 	/**

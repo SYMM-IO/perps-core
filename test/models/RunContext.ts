@@ -16,7 +16,7 @@ import {
 	PartyBQuoteActionsFacet,
 	SettlementFacet,
 	ViewFacet,
-} from "../../src/types"
+} from "../../src/types/"
 import {TestManager} from "./TestManager"
 import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
 
