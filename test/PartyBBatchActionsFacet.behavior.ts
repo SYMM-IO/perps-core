@@ -363,8 +363,6 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 					.build(),
 			)
 
-			console.log("XXX::::", (await context.viewFacet.getQuote(5)).quoteStatus)
-
 			const quoteIds = [5n]
 			const filledAmounts = [decimal(50n)]
 			const closedPrices = [decimal(1n)]

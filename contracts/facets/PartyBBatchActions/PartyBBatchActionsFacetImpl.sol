@@ -10,7 +10,6 @@ import "../../libraries/LibPartyBPositionsActions.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
-import "hardhat/console.sol";
 
 library PartyBBatchActionsFacetImpl {
 	function openPositions(
@@ -165,14 +164,11 @@ library PartyBBatchActionsFacetImpl {
 		accountLayout.partyBNonces[firstQuote.partyB][firstQuote.partyA] += 1;
 		accountLayout.partyANonces[firstQuote.partyA] += 1;
 
-		console.log("111111");
-
 		quoteStatuses = new QuoteStatus[](quoteIds.length);
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
 			require(quote.partyB == firstQuotePartyB, "PartyBBatchActionsFacet: All positions must have same partyB");
 			require(quote.partyA == firstQuotePartyA, "PartyBBatchActionsFacet: All positions must have same partyA");
-			console.log("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa");
 			require(quote.quoteStatus == QuoteStatus.OPENED, "PartyBBatchActionsFacet: Invalid position state");
 			require(LibQuote.quoteOpenAmount(quote) >= filledAmounts[i] && filledAmounts[i] > 0, "PartyBBatchActionsFacet: Invalid filled amount");
 			require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBBatchActionsFacet: Symbol is not valid");

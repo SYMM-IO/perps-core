@@ -12,7 +12,6 @@ import "../storages/GlobalAppStorage.sol";
 import "../storages/SymbolStorage.sol";
 import "../storages/MAStorage.sol";
 import "../interfaces/ISymmioHook.sol";
-import "hardhat/console.sol";
 
 library LibQuote {
 	using LockedValuesOps for LockedValues;
@@ -175,7 +174,6 @@ library LibQuote {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		console.log("BBBBB");
 
 		require(
 			quote.lockedValues.cva == 0 || (quote.lockedValues.cva * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0,
@@ -196,15 +194,12 @@ library LibQuote {
 			quote.lockedValues.partyAmm - ((quote.lockedValues.partyAmm * filledAmount) / (LibQuote.quoteOpenAmount(quote))),
 			quote.lockedValues.partyBmm - ((quote.lockedValues.partyBmm * filledAmount) / (LibQuote.quoteOpenAmount(quote)))
 		);
-		console.log("CCCCCCCCC");
 
 		accountLayout.lockedBalances[quote.partyA].subQuote(quote).add(lockedValues);
-		console.log("DDDDD");
 		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].subQuote(quote).add(lockedValues);
 		accountLayout.partyBTotalCva[quote.partyB] -= quote.lockedValues.cva;
 		accountLayout.partyBTotalLf[quote.partyB] -= quote.lockedValues.lf;
 		quote.lockedValues = lockedValues;
-		console.log("EEEEEE");
 
 		if (LibQuote.quoteOpenAmount(quote) == quote.quantityToClose) {
 			require(
@@ -217,7 +212,6 @@ library LibQuote {
 		if (SymbolStorage.layout().fundingFees[quote.symbolId][quote.partyB].epochDuration > 0) {
 			chargeAccumulatedFundingFee(quote.id);
 		}
-		console.log("FFFFFFFF");
 
 		(bool hasMadeProfit, uint256 pnl) = LibQuote.getValueOfQuoteForPartyA(closedPrice, filledAmount, quote);
 
@@ -241,29 +235,18 @@ library LibQuote {
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 
-		console.log("GGGGGGGGGGGG");
-
 		quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + filledAmount * closedPrice) / (quote.closedAmount + filledAmount);
 
 		uint256 fee = (filledAmount * closedPrice * quote.closeFee) / 1e36;
-		console.log("G1");
 		accountLayout.allocatedBalances[quote.partyA] -= fee;
-		console.log("G2");
 		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 		address feeCollector = appLayout.affiliateFeeCollector[quote.affiliate] == address(0)
 			? appLayout.defaultFeeCollector
 			: appLayout.affiliateFeeCollector[quote.affiliate];
-		console.log("G3");
 		accountLayout.balances[feeCollector] += fee;
-		console.log("G31");
 		quote.closedAmount += filledAmount;
-		console.log("G32");
-		console.log(quote.quantityToClose);
-		console.log(filledAmount);
 		quote.quantityToClose -= filledAmount;
-		console.log("G4");
 
-		console.log("HHHHHHHHHHHH");
 		if (quote.closedAmount == quote.quantity) {
 			quote.statusModifyTimestamp = block.timestamp;
 			quote.quoteStatus = QuoteStatus.CLOSED;
@@ -282,16 +265,12 @@ library LibQuote {
 		address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 		address systemHook = accountLayout.affiliateHooks[address(0)];
 
-		console.log("IIIIIII");
-
 		if (affiliateHook != address(0)) {
 			try ISymmioHook(affiliateHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
 		}
 		if (systemHook != address(0)) {
 			try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
 		}
-
-		console.log("END");
 
 	}
 
