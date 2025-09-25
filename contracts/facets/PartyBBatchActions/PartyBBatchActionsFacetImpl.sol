@@ -12,6 +12,8 @@ import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
 
 library PartyBBatchActionsFacetImpl {
+	using LockedValuesOps for LockedValues;
+
 	function openPositions(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -78,6 +80,7 @@ library PartyBBatchActionsFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 
 		require(
 			quoteIds.length == filledAmounts.length && quoteIds.length == closedPrices.length && quoteIds.length > 0,
@@ -123,14 +126,18 @@ library PartyBBatchActionsFacetImpl {
 			require(quote.partyA == firstQuotePartyA, "PartyBBatchActionsFacet: All positions must have same partyA");
 
 			if (isAdl) {
-				// ADL close flow
+				uint256 quantityToClose = filledAmounts[i];
+				uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 				require(quote.quoteStatus == QuoteStatus.OPENED, "PartyBBatchActionsFacet: Invalid position state");
-				require(
-					LibQuote.quoteOpenAmount(quote) >= filledAmounts[i] && filledAmounts[i] > 0,
-					"PartyBBatchActionsFacet: Invalid filled amount"
-				);
-				require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBBatchActionsFacet: Symbol is not valid");
-				quote.quantityToClose = filledAmounts[i];
+				require(openAmount >= quantityToClose && quantityToClose > 0, "PartyBBatchActionsFacet: Invalid filled amount");
+				if (openAmount > quantityToClose) {
+					require(
+						((openAmount - quantityToClose) * quote.lockedValues.totalForPartyA()) / openAmount >=
+							symbolLayout.symbols[quote.symbolId].minAcceptableQuoteValue,
+						"PartyBBatchActionsFacet: Remaining quote value is low"
+					);
+				}
+				quote.quantityToClose = quantityToClose;
 				LibQuote.closeQuote(quote, filledAmounts[i], closedPrices[i]);
 				quoteStatuses[i] = quote.quoteStatus;
 				closeIds[i] = 0; // not used in ADL
