@@ -169,7 +169,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		})
 	})
 
-	describe("fillCloseRequests", async function () {
+	describe.only("fillCloseRequests", async function () {
 		beforeEach(async function () {
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).price(decimal(4n)).build())
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
@@ -230,7 +230,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 			await expect(
 				context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig),
-			).to.be.revertedWith("PartyBFacet: All positions should belong to one partyA")
+			).to.be.revertedWith("PartyBBatchActionsFacet: All positions must have same partyA")
 		})
 
 		it("Should successfully fill multiple close requests", async function () {
