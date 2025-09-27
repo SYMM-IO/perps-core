@@ -11,6 +11,10 @@ import "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
+interface ISymmio {
+	function isCallFromInstantLayer() external view returns (bool);
+}
+
 contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, IERC1271 {
 	bytes32 public constant TRUSTED_ROLE = keccak256("TRUSTED_ROLE");
 	bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
@@ -132,7 +136,10 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 			if (restrictedSelectors[functionSelector]) {
 				_checkRole(MANAGER_ROLE, msg.sender);
 			} else {
-				require(hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender), "SymmioPartyB: Invalid access");
+				require(
+					hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
+					"SymmioPartyB: Invalid access"
+				);
 			}
 		} else {
 			require(multicastWhitelist[destAddress], "SymmioPartyB: Destination address is not whitelisted");
