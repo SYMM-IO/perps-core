@@ -169,7 +169,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		})
 	})
 
-	describe.only("fillCloseRequests", async function () {
+	describe("fillCloseRequests", async function () {
 		beforeEach(async function () {
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).price(decimal(4n)).build())
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
@@ -262,7 +262,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		})
 	})
 
-	describe.only("adlClosePositions", async function () {
+	describe("adlClosePositions", async function () {
 		beforeEach(async function () {
 			await user.sendQuote(
 				limitQuoteRequestBuilder()

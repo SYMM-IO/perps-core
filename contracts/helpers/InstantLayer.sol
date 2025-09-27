@@ -31,12 +31,15 @@ import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessCo
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /* ────────────────────────── External Interfaces ────────────────────────── */
 
 /**
  * @notice Interface for MultiAccount contract interactions.
  */
+import "hardhat/console.sol";
+
 interface IMultiAccount {
 	function _call(address account, bytes[] calldata _callDatas) external;
 
@@ -240,6 +243,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		_grantRole(OPERATOR_ROLE, _admin);
 		_grantRole(MANAGER_ROLE, _admin);
 		_grantRole(TRUSTED_ROLE, _admin);
+
+		console.log("Testing Instant Layer");
 	}
 
 	/* ───────────────────── Delegation Management ───────────────────── */
@@ -486,6 +491,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Verify signature and nonce (includes delegation check)
 			_verifyOperation(signedOps[i]);
 
+			console.log("Verified");
+
 			(success, results[i]) = _executeOperationSafe(signedOps[i], signedOps[i].callData);
 			if (!success) {
 				symmio.setCallFromInstantLayer(false);
@@ -510,7 +517,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	function _verifyOperation(SignedOperation calldata signedOp) private {
 		if (signedOp.deadline < block.timestamp) revert DeadlineExpired(signedOp.deadline);
 
-		bytes32 hash = getOperationHash(signedOp);
+		bytes32 hash = getOperationHash(signedOp, true);
 
 		// Determine who should have signed
 		address expectedSigner = signedOp.signer;
@@ -580,14 +587,17 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (signedOp.accountSource == address(0)) {
 			// PartyB operation - always use the original signer (PartyB address)
 			(success, result) = signedOp.signer.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
+			console.log("Symmio B Result");
 		} else {
 			// PartyA operation through MultiAccount - use original signer account
 			(success, result) = signedOp.accountSource.call(abi.encodeWithSelector(IMultiAccount._call.selector, signedOp.signer, callDatas));
+			console.log("MultiAccount Result");
 		}
 		if (result.length > 0) {
 			bytes[] memory arr = abi.decode(result, (bytes[]));
 			result = arr[0];
 		}
+		console.log("Result:", success ? "Succeeded" : "Faulty", "result Count:", result.length);
 	}
 
 	/**
@@ -655,7 +665,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @dev Includes salt for uniqueness protection in addition to standard parameters.
 	 *      Note: The hash is always computed with the original signer, even if signed by a delegate.
 	 */
-	function getOperationHash(SignedOperation calldata signedOp) public view returns (bytes32) {
+	function getOperationHash(SignedOperation calldata signedOp, bool isEthSignedMessage) public view returns (bytes32) {
 		bytes32 structHash = keccak256(
 			abi.encode(
 				OPERATION_TYPEHASH,
@@ -668,7 +678,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			)
 		);
 
-		return _hashTypedDataV4(structHash);
+		return isEthSignedMessage ? ECDSA.toEthSignedMessageHash(_hashTypedDataV4(structHash)) : _hashTypedDataV4(structHash);
 	}
 
 	/**

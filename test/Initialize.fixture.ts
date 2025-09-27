@@ -12,23 +12,32 @@ export async function initializeFixture(): Promise<RunContext> {
 		reportGas: true,
 	})
 	let multicall = process.env.DEPLOY_MULTICALL == "true" ? await run("deploy:multicall") : undefined
-	const admin = process.env.ADMIN_PUBLIC_KEY || await (await ethers.getSigners())[0].getAddress()
+	const admin = process.env.ADMIN_PUBLIC_KEY || (await (await ethers.getSigners())[0].getAddress())
 	const multiAccount = await run("deploy:multiAccount", {
 		symmioAddress: await diamond.getAddress(),
 		admin: admin,
 	})
+
 	const multiAccount2 = await run("deploy:multiAccount", {
 		symmioAddress: await diamond.getAddress(),
 		admin: admin,
 	})
 
-	let context = await createRunContext(
-		await diamond.getAddress(),
-		await collateral.getAddress(),
-		await multiAccount.getAddress(),
-		await multiAccount2.getAddress(),
-		true,
-	)
+	const symmioPartyB = await run("deploy:symmioPartyB", {
+		symmioAddress: await diamond.getAddress(),
+		admin: admin,
+	})
+
+	const instantLayer = await run("deploy:InstantLayer", {
+		symmioAddress: await diamond.getAddress(),
+		admin: admin,
+	})
+
+	let context = await createRunContext(await diamond.getAddress(), await collateral.getAddress(), true)
+	context.instantLayer = instantLayer
+	context.multiAccount = multiAccount
+	context.multiAccount2 = multiAccount2
+	context.symmioPartyB = symmioPartyB
 
 	await context.controlFacet.connect(context.signers.admin).setAdmin(context.signers.admin.getAddress())
 
@@ -70,6 +79,8 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("DEALLOCATE_COOLDOWN_SETTER_ROLE")))
+
+	await context.controlFacet.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 
 	// // Set Muon configuration with sufficient validity time for tests
 	// await context.controlFacet.connect(context.signers.admin).setMuonConfig(3600, 3600) // 1 hour validity

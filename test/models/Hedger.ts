@@ -15,9 +15,11 @@ import {PairUpnlSigStructOutput} from "../../src/types/contracts/facets/FundingR
 import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
 import {QuoteStructOutput, SingleUpnlSigStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
 import {SettlementSigStructOutput} from "../../src/types/contracts/facets/Settlement/SettlementFacet"
+import { PartyEntity } from "./partyEntitiy"
 
-export class Hedger {
-	constructor(private context: RunContext, private signer: SignerWithAddress) {
+export class Hedger extends PartyEntity {
+	constructor(context: RunContext, signer: SignerWithAddress) {
+		super(context, signer)
 	}
 
 	public async setup() {
@@ -44,9 +46,7 @@ export class Hedger {
 		if (allocateCoefficient != null) {
 			const quote = await this.context.viewFacet.getQuote(id)
 			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
-			await runTx(
-				this.context.accountFacet.connect(this.signer).allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA)
-			)
+			await runTx(this.context.accountFacet.connect(this.signer).allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA))
 		}
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).lockQuote(id, await getDummySingleUpnlSig(upnl)))
 	}
@@ -65,7 +65,7 @@ export class Hedger {
 				hedgerUpnl: await this.getUpnl(quote.partyA),
 				userBalanceInfo: await user.getBalanceInfo(),
 				userUpnl: await user.getUpnl(),
-			})
+			}),
 		)
 		await runTx(
 			this.context.partyBPositionActionsFacet
@@ -74,8 +74,8 @@ export class Hedger {
 					id,
 					request.filledAmount,
 					request.openPrice,
-					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB))
-				)
+					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
+				),
 		)
 		logger.info(`Hedger::OpenPosition: ${id}`)
 	}
@@ -118,7 +118,7 @@ export class Hedger {
 				hedgerUpnl: await this.getUpnl(quote.partyA),
 				userBalanceInfo: await user.getBalanceInfo(),
 				userUpnl: await user.getUpnl(),
-			})
+			}),
 		)
 		await runTx(
 			this.context.partyBPositionActionsFacet
@@ -127,8 +127,8 @@ export class Hedger {
 					id,
 					request.filledAmount,
 					request.closedPrice,
-					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB))
-				)
+					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
+				),
 		)
 		logger.info(`Hedger::FillCloseRequest: ${id}`)
 	}
@@ -145,7 +145,9 @@ export class Hedger {
 
 	public async liquidate(partyA: string, sig: SingleUpnlSigStructOutput | Promise<SingleUpnlSigStructOutput> = getDummySingleUpnlSig()) {
 		let signature = sig instanceof Promise ? await sig : sig
-		await runTx(this.context.liquidationFacet.connect(this.context.signers.liquidator).liquidatePartyB(await this.signer.getAddress(), partyA, signature))
+		await runTx(
+			this.context.liquidationFacet.connect(this.context.signers.liquidator).liquidatePartyB(await this.signer.getAddress(), partyA, signature),
+		)
 		logger.info(`Hedger::Liquidator: ${partyA}`)
 	}
 
@@ -159,17 +161,21 @@ export class Hedger {
 				hedgerUpnl: await this.getUpnl(quote.partyA),
 				userBalanceInfo: await user.getBalanceInfo(),
 				userUpnl: await user.getUpnl(),
-			})
+			}),
 		)
 		await runTx(
 			this.context.partyBPositionActionsFacet
 				.connect(this.signer)
-				.emergencyClosePosition(id, await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)))
+				.emergencyClosePosition(id, await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB))),
 		)
 		logger.info(`Hedger::EmergencyClosePosition: ${id}`)
 	}
 
-	public async settleUpnl(partyA: string, updatedPrices: bigint[], sig: Promise<SettlementSigStructOutput> | SettlementSigStructOutput = getDummySettlementSig()) {
+	public async settleUpnl(
+		partyA: string,
+		updatedPrices: bigint[],
+		sig: Promise<SettlementSigStructOutput> | SettlementSigStructOutput = getDummySettlementSig(),
+	) {
 		let signature = sig instanceof Promise ? await sig : sig
 
 		const user = this.context.manager.getUser(partyA)
@@ -180,15 +186,9 @@ export class Hedger {
 				sig: sig,
 				userBalanceInfo: await user.getBalanceInfo(),
 				userUpnl: await user.getUpnl(),
-			})
+			}),
 		)
-		await runTx(
-			this.context.settlementFacet.connect(this.signer).settleUpnl(
-				signature,
-				updatedPrices,
-				partyA
-			)
-		)
+		await runTx(this.context.settlementFacet.connect(this.signer).settleUpnl(signature, updatedPrices, partyA))
 		logger.info(`Hedger::settleUpnl`)
 	}
 
@@ -208,7 +208,7 @@ export class Hedger {
 
 		let upnl = 0n
 		for (const pos of openPositions) {
-			const priceDiff = pos.openedPrice - await getPrice()
+			const priceDiff = pos.openedPrice - (await getPrice())
 			const amount = pos.quantity - pos.closedAmount
 			upnl += unDecimal(BigInt(amount) * priceDiff) * (pos.positionType === BigInt(PositionType.LONG) ? -1n : 1n)
 		}

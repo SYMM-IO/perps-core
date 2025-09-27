@@ -200,7 +200,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	 *
 	 * @dev Only callable by accounts with SETTER_ROLE.
 	 */
-	function setSigner(address _signer) external onlyRole(SETTER_ROLE) {
+	function setSigner(address _signer) external onlyRole(DEFAULT_ADMIN_ROLE) {
 		signer = _signer;
 	}
 

@@ -16,6 +16,8 @@ import "../interfaces/ISymmio.sol";
 import "../interfaces/ISymmioPartyA.sol";
 import "../interfaces/IMultiAccount.sol";
 
+import "hardhat/console.sol";
+
 contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, AccessControlUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 
@@ -282,6 +284,7 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 				revert(add(_resultData, 32), mload(_resultData))
 			}
 		}
+		console.log("Symmio Party A called SuccessFully");
 		return _resultData;
 	}
 
@@ -309,6 +312,7 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 
 			bytes memory result = innerCall(account, _callData);
 			results[i] = result;
+			console.log("first parameter");
 		}
 		return results;
 	}

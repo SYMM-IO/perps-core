@@ -14,6 +14,8 @@ import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../storages/SymbolStorage.sol";
 
+import "hardhat/console.sol";
+
 library PartyAFacetImpl {
 	using LockedValuesOps for LockedValues;
 
@@ -80,11 +82,15 @@ library PartyAFacetImpl {
 
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, msg.sender);
 		require(availableBalance > 0, "PartyAFacet: Available balance is lower than zero");
+		console.log("Inner Quote 2-3");
 		require(
 			uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * fee.openFee) / 1e36),
 			"PartyAFacet: insufficient available balance"
 		);
+		console.log("Inner Quote 2-4");
 		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
+
+		console.log("Inner Quote 3");
 
 		// lock funds the in middle of way
 		accountLayout.pendingLockedBalances[msg.sender].add(lockedValues);
@@ -130,6 +136,8 @@ library PartyAFacetImpl {
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
 		accountLayout.allocatedBalances[msg.sender] -= feeAmount;
 		emit SharedEvents.BalanceChangePartyA(msg.sender, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
+
+		console.log("Inner Quote 4");
 	}
 
 	function requestToCancelQuote(uint256 quoteId) internal returns (QuoteStatus result) {

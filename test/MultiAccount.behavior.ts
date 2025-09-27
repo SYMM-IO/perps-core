@@ -93,7 +93,7 @@ export function shouldBehaveLikeMultiAccount() {
 		})
 
 		multiAccount = await MultiAccount.waitForDeployment()
-		symmioPartyB = await SymmioPartyBDeploy.waitForDeployment() as unknown as SymmioPartyB
+		symmioPartyB = (await SymmioPartyBDeploy.waitForDeployment()) as unknown as SymmioPartyB
 
 		await context.controlFacet.connect(context.signers.admin).registerPartyB(await symmioPartyB.getAddress())
 		await context.controlFacet.connect(context.signers.admin).registerAffiliate(await MultiAccount.getAddress())
@@ -349,7 +349,11 @@ export function shouldBehaveLikeMultiAccount() {
 
 			describe("Open quotes", function () {
 				beforeEach(async () => {
-					await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(await symmioPartyB.getAddress(), ((await context.viewFacet.getSymbolWithType(1)).symbolType), true)
+					await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(
+						await symmioPartyB.getAddress(),
+						(await context.viewFacet.getSymbolWithType(1)).symbolType,
+						true,
+					)
 					let lockQuote = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [1, await getDummySingleUpnlSig()])
 
 					await symmioPartyB.connect(context.signers.admin)._call([lockQuote])
