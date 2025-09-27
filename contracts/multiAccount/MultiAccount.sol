@@ -301,8 +301,10 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 				assembly {
 					functionSelector := mload(add(_callData, 0x20))
 				}
-				require(delegatedAccesses[account][msg.sender][functionSelector], "MultiAccount: Unauthorized access");
-				require(ISymmio(symmioAddress).isCallFromInstantLayer(), "Unauthorized Access");
+				require(
+					delegatedAccesses[account][msg.sender][functionSelector] || ISymmio(symmioAddress).isCallFromInstantLayer(),
+					"MultiAccount: Unauthorized access"
+				);
 			}
 
 			bytes memory result = innerCall(account, _callData);
