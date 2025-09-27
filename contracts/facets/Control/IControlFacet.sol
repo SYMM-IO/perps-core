@@ -161,4 +161,10 @@ interface IControlFacet is IControlEvents {
 	function setADLEnabled(address partyB, bool enabled) external;
 
 	function setCallFromInstantLayer(bool callFromInstantLayer) external;
+
+	function setAffiliateFee(address affiliate, uint256 symbolId, uint256 openFee, uint256 closeFee) external;
+
+	function setDefaultAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external;
+
+	function setDefaultFeeCollector(address feeCollector) external;
 }

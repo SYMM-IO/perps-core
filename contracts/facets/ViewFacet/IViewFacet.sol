@@ -217,5 +217,9 @@ interface IViewFacet {
 
 	function getAffiliateHook(address affiliate) external view returns (address hook);
 
+	function getDefaultAffiliateFee(address affiliate) external view returns (Fee memory);
+
+	function getAffiliateFee(address affiliate, uint256 symbolId) external view returns (Fee memory);
+
 	function isADLEnabled(address partyB) external view returns (bool);
 }

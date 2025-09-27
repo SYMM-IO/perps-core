@@ -146,7 +146,7 @@ library LibPartyBPositionsActions {
 
 			if (newStatus == QuoteStatus.CANCELED) {
 				// send trading Fee back to partyA
-				uint256 fee = LibQuote.getTradingFee(newQuote.id);
+				uint256 fee = LibQuote.getOpenTradingFee(newQuote.id);
 				accountLayout.allocatedBalances[newQuote.partyA] += fee;
 				emit SharedEvents.BalanceChangePartyA(newQuote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 

@@ -153,7 +153,7 @@ library LibQuote {
 	 * @param quoteId The ID of the quote for which to get the trading fee.
 	 * @return fee The trading fee for the quote.
 	 */
-	function getTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
+	function getOpenTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		if (quote.orderType == OrderType.LIMIT) {
@@ -209,7 +209,7 @@ library LibQuote {
 			);
 		}
 
-		if (SymbolStorage.layout().fundingFees[quote.symbolId][quote.partyB].epochDuration > 0) {
+		if (symbolLayout.fundingFees[quote.symbolId][quote.partyB].epochDuration > 0) {
 			chargeAccumulatedFundingFee(quote.id);
 		}
 
@@ -240,6 +240,7 @@ library LibQuote {
 		uint256 fee = (filledAmount * closedPrice * quote.closeFee) / 1e36;
 		accountLayout.allocatedBalances[quote.partyA] -= fee;
 		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
+
 		address feeCollector = appLayout.affiliateFeeCollector[quote.affiliate] == address(0)
 			? appLayout.defaultFeeCollector
 			: appLayout.affiliateFeeCollector[quote.affiliate];
@@ -271,7 +272,6 @@ library LibQuote {
 		if (systemHook != address(0)) {
 			try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
 		}
-
 	}
 
 	/**
@@ -302,7 +302,7 @@ library LibQuote {
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
 
 			// send trading Fee back to partyA
-			uint256 fee = LibQuote.getTradingFee(quote.id);
+			uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 			accountLayout.allocatedBalances[quote.partyA] += fee;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 

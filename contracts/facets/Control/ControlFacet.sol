@@ -155,9 +155,10 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Sets the open and close trading fees for an specific affiliate in the system.
 	/// @param affiliate The address of affiliate.
+	/// @param symbolId The id of symbol.
 	/// @param openFee The open trading fee.
 	/// @param closeFee The open trading fee.
-	function setAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external {
+	function setAffiliateFee(address affiliate, uint256 symbolId, uint256 openFee, uint256 closeFee) external {
 		require(
 			LibAccessibility.hasRole(msg.sender, LibAccessibility.AFFILIATE_MANAGER_ROLE) || msg.sender == affiliate,
 			"ControlFacet: Not authorized"
@@ -165,9 +166,31 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
-		emit SetAffiliateFee(affiliate, appLayout.affiliateFee[affiliate].openFee, openFee, appLayout.affiliateFee[affiliate].closeFee, closeFee);
-		appLayout.affiliateFee[affiliate] = Fee(openFee, closeFee);
-		appLayout.isAffiliateFeeSet[affiliate] = true;
+		emit SetAffiliateFee(
+			affiliate,
+			symbolId,
+			appLayout.affiliateFee[affiliate][symbolId].openFee,
+			openFee,
+			appLayout.affiliateFee[affiliate][symbolId].closeFee,
+			closeFee
+		);
+		appLayout.affiliateFee[affiliate][symbolId] = Fee(openFee, closeFee, true);
+	}
+
+	/// @notice Sets the default open and close trading fees for an specific affiliate in the system.
+	/// @param affiliate The address of affiliate.
+	/// @param openFee The open trading fee.
+	/// @param closeFee The close trading fee.
+	function setDefaultAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
+		emit SetDefaultAffiliateFee(
+			affiliate,
+			GlobalAppStorage.layout().defaultAffiliateFee[affiliate].openFee,
+			openFee,
+			GlobalAppStorage.layout().defaultAffiliateFee[affiliate].closeFee,
+			closeFee
+		);
+		GlobalAppStorage.layout().defaultAffiliateFee[affiliate] = Fee(openFee, closeFee, true);
 	}
 
 	/// @notice Sets the address of the default fee collector.

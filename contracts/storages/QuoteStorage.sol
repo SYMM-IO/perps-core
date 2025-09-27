@@ -78,6 +78,7 @@ struct Quote {
 struct Fee {
 	uint256 openFee;
 	uint256 closeFee;
+	bool isSet; // true if the fee is explicitly set, false if default (unset/zero)
 }
 
 library QuoteStorage {

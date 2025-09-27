@@ -26,8 +26,8 @@ library GlobalAppStorage {
 		mapping(address => address) affiliateFeeCollector;
 		address signatureVerifier;
 		bool externalTransferPaused;
-		mapping(address => Fee) affiliateFee;
-		mapping(address => bool) isAffiliateFeeSet;
+		mapping(address => mapping(uint256 => Fee)) affiliateFee; // affiliate => symbolId => fee
+		mapping(address => Fee) defaultAffiliateFee; // affiliate => fee
 		bool instantLayerPaused;
 	}
 

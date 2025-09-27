@@ -1049,12 +1049,22 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Retrieves the default affiliate fee of an affiliate.
+	 * @param affiliate The address of the affiliate.
+	 * @return fee The default affiliate fee of the affiliate.
+	 */
+	function getDefaultAffiliateFee(address affiliate) external view returns (Fee memory) {
+		return GlobalAppStorage.layout().defaultAffiliateFee[affiliate];
+	}
+
+	/**
 	 * @notice Retrieves the affiliate fee of an affiliate.
 	 * @param affiliate The address of the affiliate.
+	 * @param symbolId The id of the symbol.
 	 * @return fee The affiliate fee of the affiliate.
 	 */
-	function getAffiliateFee(address affiliate) external view returns (Fee memory) {
-		return GlobalAppStorage.layout().affiliateFee[affiliate];
+	function getAffiliateFee(address affiliate, uint256 symbolId) external view returns (Fee memory) {
+		return GlobalAppStorage.layout().affiliateFee[affiliate][symbolId];
 	}
 
 	/**
