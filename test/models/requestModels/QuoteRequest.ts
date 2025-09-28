@@ -1,16 +1,13 @@
-import {Builder} from "builder-pattern"
-import {BigNumberish} from "ethers"
+import { Builder } from "builder-pattern"
+import { BigNumberish, ZeroAddress } from "ethers"
 
-import {SingleUpnlAndPriceSigStruct} from "../../../src/types/contracts/facets/PartyA/PartyAFacet"
-import {decimal, getBlockTimestamp} from "../../utils/Common"
-import {getDummySingleUpnlAndPriceSig} from "../../utils/SignatureUtils"
-import {OrderType, PositionType} from "../Enums"
-import { ethers } from "hardhat";
+import { SingleUpnlAndPriceSigStruct } from "../../../src/types/contracts/facets/PartyA/PartyAFacet"
+import { decimal, getBlockTimestamp } from "../../utils/Common"
+import { getDummySingleUpnlAndPriceSig } from "../../utils/SignatureUtils"
+import { OrderType, PositionType } from "../Enums"
+import { ethers } from "hardhat"
 
-const data = ethers.AbiCoder.defaultAbiCoder().encode(
-	["string"],
-	["hello-world"]
-);
+const data = ethers.AbiCoder.defaultAbiCoder().encode(["string"], ["hello-world"])
 
 export interface QuoteRequest {
 	partyBWhiteList: string[]
@@ -60,7 +57,7 @@ const limitDefaultQuoteRequest: QuoteRequest = {
 	lf: decimal(3n),
 	maxFundingRate: decimal(2n, 16),
 	deadline: getBlockTimestamp(500n),
-	affiliate: "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d", //FIXME find a better way
+	affiliate: ZeroAddress,
 	upnlSig: getDummySingleUpnlAndPriceSig(decimal(1n)),
 }
 
@@ -79,7 +76,7 @@ const limitDataQuoteRequest: QuoteRequestWithData = {
 	deadline: getBlockTimestamp(500n),
 	affiliate: "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d", //FIXME find a better way
 	upnlSig: getDummySingleUpnlAndPriceSig(decimal(1n)),
-	data: data
+	data: data,
 }
 
 const marketDefaultQuoteRequest: QuoteRequest = {
@@ -100,5 +97,5 @@ const marketDefaultQuoteRequest: QuoteRequest = {
 }
 
 export const limitQuoteRequestBuilder = () => Builder(limitDefaultQuoteRequest)
-export const limitQuoteRequestWithDataBuilder = ()=>Builder(limitDataQuoteRequest)
+export const limitQuoteRequestWithDataBuilder = () => Builder(limitDataQuoteRequest)
 export const marketQuoteRequestBuilder = () => Builder(marketDefaultQuoteRequest)

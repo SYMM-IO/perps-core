@@ -491,9 +491,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Verify signature and nonce (includes delegation check)
 			_verifyOperation(signedOps[i]);
 
-			console.log("Verified");
+			console.log("sig verified!");
 
 			(success, results[i]) = _executeOperationSafe(signedOps[i], signedOps[i].callData);
+			console.log("Execution Finished",string(results[0]));
 			if (!success) {
 				symmio.setCallFromInstantLayer(false);
 				revert OperationFailed(i, results[i]);
@@ -526,7 +527,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Check if actualSigner is provided and different from signer (delegation case)
 		if (signedOp.actualSigner != address(0) && signedOp.actualSigner != signedOp.signer) {
 			// Verify delegation is active
-			if (!isDelegationActive(signedOp.signer, signedOp.actualSigner)) {
+			if (!isDelegationActive(signedOp.actualSigner, signedOp.signer)) {
+				console.log("Party Delegation Reverted!");
 				revert InvalidDelegation();
 			}
 			expectedSigner = signedOp.actualSigner;
@@ -540,6 +542,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 			// Check signature from either signer or delegate
 			if (!SignatureChecker.isValidSignatureNow(expectedSigner, hash, signedOp.signature)) {
+				console.log("Party B signature Reverted!");
 				revert InvalidSignature();
 			}
 		} else {
@@ -547,11 +550,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			if (!isMultiAccountRegistered(signedOp.accountSource)) revert UnregisteredMultiAccount(signedOp.accountSource);
 
 			if (isDelegated) {
+				console.log("Delegated Signer!");
 				if (!SignatureChecker.isValidSignatureNow(expectedSigner, hash, signedOp.signature)) {
+					console.log("Party A signature Reverted!");
 					revert InvalidSignature();
 				}
 			} else {
 				if (!IMultiAccount(signedOp.accountSource).isValidSignatureOfAccount(expectedSigner, hash, signedOp.signature)) {
+					console.log("Party A2 signature Reverted!");
 					revert InvalidSignature();
 				}
 			}
@@ -587,11 +593,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (signedOp.accountSource == address(0)) {
 			// PartyB operation - always use the original signer (PartyB address)
 			(success, result) = signedOp.signer.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
-			console.log("Symmio B Result");
+			console.log("Symmio B Result, result length:",result.length, string(result));
 		} else {
 			// PartyA operation through MultiAccount - use original signer account
 			(success, result) = signedOp.accountSource.call(abi.encodeWithSelector(IMultiAccount._call.selector, signedOp.signer, callDatas));
-			console.log("MultiAccount Result");
+			console.log("MultiAccount Result, result length:",result.length, string(result));
 		}
 		if (result.length > 0) {
 			bytes[] memory arr = abi.decode(result, (bytes[]));
