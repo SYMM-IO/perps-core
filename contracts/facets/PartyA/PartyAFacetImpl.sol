@@ -86,8 +86,6 @@ library PartyAFacetImpl {
 		);
 		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
 
-		console.log("Inner Quote 3");
-
 		// lock funds the in middle of way
 		accountLayout.pendingLockedBalances[msg.sender].add(lockedValues);
 		currentId = ++quoteLayout.lastId;
@@ -133,7 +131,6 @@ library PartyAFacetImpl {
 		accountLayout.allocatedBalances[msg.sender] -= feeAmount;
 		emit SharedEvents.BalanceChangePartyA(msg.sender, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 
-		console.log("Inner Quote 4");
 	}
 
 	function requestToCancelQuote(uint256 quoteId) internal returns (QuoteStatus result) {
