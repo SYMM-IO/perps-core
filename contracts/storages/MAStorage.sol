@@ -6,6 +6,12 @@ pragma solidity >=0.8.18;
 
 import "../libraries/LibLockedValues.sol";
 
+struct EntityMetadata {
+	string name;
+	string brandColor;
+	string metadata;
+}
+
 library MAStorage {
 	bytes32 internal constant MA_STORAGE_SLOT = keccak256("diamond.standard.storage.masteragreement");
 
@@ -36,6 +42,7 @@ library MAStorage {
 		uint256 unbindCooldown;
 		bool callFromInstantLayer;
 		mapping(address => bool) adlEnabled;
+		mapping(address => EntityMetadata) entitiesMetadata;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

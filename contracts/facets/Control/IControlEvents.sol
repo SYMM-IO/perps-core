@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import "../../storages/MAStorage.sol";
+
 interface IControlEvents {
 	event RoleGranted(bytes32 role, address user);
 	event RoleRevoked(bytes32 role, address user);
@@ -88,4 +90,5 @@ interface IControlEvents {
 	event RemoveRelayerForExternalTransferTarget(address target);
 	event RegisterHook(address affiliate, address hook);
 	event SetADLEnabled(address partyB, bool enabled);
+	event SetEntityMetadata(address entity, EntityMetadata metadata);
 }

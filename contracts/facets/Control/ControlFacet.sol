@@ -215,6 +215,22 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		BridgeStorage.layout().invalidBridgedAmountsPool = pool;
 	}
 
+	/// @notice Sets the metadata for an affiliate.
+	/// @param affiliate The address of the affiliate.
+	/// @param metadata The metadata for the affiliate.
+	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
+		MAStorage.layout().entitiesMetadata[affiliate] = metadata;
+		emit SetEntityMetadata(affiliate, metadata);
+	}
+
+	/// @notice Sets the metadata for a party B.
+	/// @param partyB The address of the party B.
+	/// @param metadata The metadata for the party B.
+	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		MAStorage.layout().entitiesMetadata[partyB] = metadata;
+		emit SetEntityMetadata(partyB, metadata);
+	}
+
 	// Symbol State //////////////////////////////////////////////////////////////////
 
 	/// @notice Adds a new trading symbol.

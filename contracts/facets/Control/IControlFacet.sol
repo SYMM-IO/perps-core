@@ -167,4 +167,8 @@ interface IControlFacet is IControlEvents {
 	function setDefaultAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external;
 
 	function setDefaultFeeCollector(address feeCollector) external;
+
+	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external;
+
+	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external;
 }
