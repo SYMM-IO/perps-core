@@ -44,6 +44,8 @@ interface IMultiAccount {
 	function _call(address account, bytes[] calldata _callDatas) external;
 
 	function isValidSignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bool);
+
+	function owners(address account) external view returns (address);
 }
 
 /**
@@ -243,8 +245,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		_grantRole(OPERATOR_ROLE, _admin);
 		_grantRole(MANAGER_ROLE, _admin);
 		_grantRole(TRUSTED_ROLE, _admin);
-
-		console.log("Testing Instant Layer");
 	}
 
 	/* ───────────────────── Delegation Management ───────────────────── */
@@ -491,10 +491,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Verify signature and nonce (includes delegation check)
 			_verifyOperation(signedOps[i]);
 
-			console.log("sig verified!");
+			console.log("Verified");
 
 			(success, results[i]) = _executeOperationSafe(signedOps[i], signedOps[i].callData);
-			console.log("Execution Finished",string(results[0]));
+			console.log("Execution Finished", string(results[0]));
 			if (!success) {
 				symmio.setCallFromInstantLayer(false);
 				revert OperationFailed(i, results[i]);
@@ -524,17 +524,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		address expectedSigner = signedOp.signer;
 		bool isDelegated = false;
 
-		// Check if actualSigner is provided and different from signer (delegation case)
-		if (signedOp.actualSigner != address(0) && signedOp.actualSigner != signedOp.signer) {
-			// Verify delegation is active
-			if (!isDelegationActive(signedOp.actualSigner, signedOp.signer)) {
-				console.log("Party Delegation Reverted!");
-				revert InvalidDelegation();
-			}
-			expectedSigner = signedOp.actualSigner;
-			isDelegated = true;
-		}
-
 		// Validate registration status and signature
 		if (signedOp.accountSource == address(0)) {
 			// For PartyB operations
@@ -546,11 +535,19 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				revert InvalidSignature();
 			}
 		} else {
+			// Check if actualSigner is provided and different from signer (delegation case)
+			if (signedOp.actualSigner != address(0) && signedOp.actualSigner != signedOp.signer) {
+				// Verify delegation is active
+				if (!isDelegationActive(IMultiAccount(signedOp.accountSource).owners(signedOp.signer), signedOp.actualSigner)) {
+					revert InvalidDelegation();
+				}
+				expectedSigner = signedOp.actualSigner;
+				isDelegated = true;
+			}
 			// For PartyA operations through MultiAccount
 			if (!isMultiAccountRegistered(signedOp.accountSource)) revert UnregisteredMultiAccount(signedOp.accountSource);
 
 			if (isDelegated) {
-				console.log("Delegated Signer!");
 				if (!SignatureChecker.isValidSignatureNow(expectedSigner, hash, signedOp.signature)) {
 					console.log("Party A signature Reverted!");
 					revert InvalidSignature();
@@ -592,12 +589,13 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 		if (signedOp.accountSource == address(0)) {
 			// PartyB operation - always use the original signer (PartyB address)
+			console.log("Symmio B Run!");
 			(success, result) = signedOp.signer.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
-			console.log("Symmio B Result, result length:",result.length, string(result));
+			console.log("Symmio B Result, result length:", result.length, string(result));
 		} else {
 			// PartyA operation through MultiAccount - use original signer account
 			(success, result) = signedOp.accountSource.call(abi.encodeWithSelector(IMultiAccount._call.selector, signedOp.signer, callDatas));
-			console.log("MultiAccount Result, result length:",result.length, string(result));
+			console.log("MultiAccount Result, result length:", result.length, string(result));
 		}
 		if (result.length > 0) {
 			bytes[] memory arr = abi.decode(result, (bytes[]));

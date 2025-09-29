@@ -312,7 +312,6 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 
 			bytes memory result = innerCall(account, _callData);
 			results[i] = result;
-			console.log("first parameter");
 		}
 		return results;
 	}

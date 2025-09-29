@@ -10,7 +10,17 @@ import { limitQuoteRequestBuilder, marketQuoteRequestBuilder, QuoteRequest, Quot
 import { OpenPositionValidator } from "../models/validators/OpenPositionValidator"
 import { decimal, getBlockTimestamp, getQuoteQuantity, pausePartyB } from "../utils/Common"
 import { ethers, network } from "hardhat"
-import { AbiCoder, encodeBytes32String, InterfaceAbi, ZeroAddress, AddressLike, toUtf8Bytes, EthersError, BytesLike } from "ethers"
+import {
+	AbiCoder,
+	encodeBytes32String,
+	InterfaceAbi,
+	ZeroAddress,
+	AddressLike,
+	toUtf8Bytes,
+	EthersError,
+	BytesLike,
+	MulticoinProviderPlugin,
+} from "ethers"
 import { bigint, int } from "hardhat/internal/core/params/argumentTypes"
 import { config } from "dotenv"
 
@@ -29,6 +39,7 @@ import { QuoteStruct } from "../../src/types/contracts/interfaces/ISymmio"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
 import { IMultiAccount } from "../../src/types/contracts/multiAccount/MultiAccount"
 import { bindCallback } from "rxjs"
+import { multiAccount } from "../../src/types/contracts"
 
 export function shouldBehaveLikeInstantLayer(): void {
 	let context: RunContext, partyA1: User, partyA2: User, partyB1: Hedger, partyB2: Hedger
@@ -343,6 +354,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 		beforeEach(async function () {
 			const deadline = await getBlockTimestamp(300n)
 
+			// Granting Roles
+			await context.instantLayer.registerPartyB(context.symmioPartyB) // Admin with SETTER Role
+			await context.instantLayer.registerMultiAccount(context.multiAccount) // Admin with SETTER Role
+			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
+
 			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
 			accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
 
@@ -355,8 +371,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.accountFacet.connect(partyA1.getSigner).internalTransfer(accounts[0].accountAddress, decimal(1000n))
 
 			//Delegating Access
-			await context.instantLayer.connect(partyA1.getSigner).grantDelegation(accounts[0].accountAddress, await getBlockTimestamp(100n))
-			await context.instantLayer.connect(partyB1.getSigner).grantDelegation(await context.symmioPartyB.getAddress(), await getBlockTimestamp(100n))
+			await context.instantLayer.connect(partyA1.getSigner).grantDelegation(context.signers.admin.address, await getBlockTimestamp(100n))
+			// await context.instantLayer.connect(partyB1.getSigner).grantDelegation(await context.symmioPartyB.getAddress(), await getBlockTimestamp(100n))
 
 			// Bind to Party B
 			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
@@ -373,7 +389,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				salt: saltOpen1,
 				deadline: deadline,
 				signature: new Uint8Array([0x1, 0x2]),
-				actualSigner: partyA1.address,
+				actualSigner: context.signers.admin.address,
 			}
 			opSendQuoteA2 = {
 				accountSource: await context.multiAccount.getAddress(),
@@ -455,42 +471,19 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
 			const multiAccount = context.multiAccount
 			// Granting Roles
-			await context.instantLayer.registerPartyB(context.symmioPartyB) // Admin with SETTER Role
-			await context.instantLayer.registerMultiAccount(context.multiAccount) // Admin with SETTER Role
-			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
+			// await context.instantLayer.registerPartyB(context.symmioPartyB) // Admin with SETTER Role
+			// await context.instantLayer.registerMultiAccount(context.multiAccount) // Admin with SETTER Role
+			// await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
 
 			//Sign using getOperationHash
 			const opSendAHash1 = await instantLayer.getOperationHash(opSendQuoteA1, false)
 			const opSendAHash2 = await instantLayer.getOperationHash(opSendQuoteA2, false)
 			const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
 			const opOpenBHash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
-			opSendQuoteA1.signature = await partyA1.sign(ethers.getBytes(opSendAHash1))
+			opSendQuoteA1.signature = await context.signers.admin.signMessage(ethers.getBytes(opSendAHash1))
 			opSendQuoteA2.signature = await partyA1.sign(ethers.getBytes(opSendAHash2))
 			opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
 			opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opOpenBHash))
-
-			console.log("PartyA address:", partyA1.address)
-			console.log("PartyA Account address:", accounts[0].accountAddress)
-			console.log("PartyB1 address:", partyB1.address)
-			console.log("Symmio PartyB address:", await context.symmioPartyB.getAddress())
-			console.log("MultiAccount address:", await multiAccount.getAddress())
-			console.log("Signature and length PartyA Open:", opSendQuoteA1.signature.length, opSendQuoteA1.signature)
-			console.log("Signature and length PartyB Lock:", opLockB1.signature.length, opLockB1.signature)
-			console.log("Signature and length PartyB Fill:", opOpenQuoteB1.signature.length, opOpenQuoteB1.signature)
-			try {
-				let recoveredAddress = ethers.verifyMessage(ethers.getBytes(opSendAHash1), opSendQuoteA1.signature)
-				console.log("Party A Verifyed:", recoveredAddress === partyA1.address)
-				console.log("signer vs Recovered", opSendQuoteA1.signer, " vs ", recoveredAddress)
-				recoveredAddress = ethers.verifyMessage(ethers.getBytes(opLockBHash), opLockB1.signature)
-				console.log("Party B Verifyed:", recoveredAddress === opLockB1.signer)
-				console.log("signer vs Recovered", opLockB1.signer, " vs ", recoveredAddress)
-				recoveredAddress = ethers.verifyMessage(ethers.getBytes(opOpenBHash), opOpenQuoteB1.signature)
-				console.log("Party B Fill Verifyed:", recoveredAddress === opOpenQuoteB1.signer)
-				console.log("signer vs Recovered", opOpenQuoteB1.signer, " vs ", recoveredAddress)
-			} catch (error) {
-				console.error("Verification failed:", error)
-				return false
-			}
 
 			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1]
 			await expect(instantLayer.executeBatch(signedOps)).not.to.be.reverted
@@ -500,7 +493,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
 		})
 
-		it.only("should allow Sending Intent, Locking and Filling in a single batch Seperately", async function () {
+		it("should allow Sending Intent, Locking and Filling in a single batch Seperately", async function () {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet } = context
 			const multiAccount = context.multiAccount
 
@@ -515,7 +508,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const opSendAHash1 = await instantLayer.getOperationHash(opSendQuoteA1, false)
 			const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
 			const opOpenBHash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
-			opSendQuoteA1.signature = await partyA1.sign(ethers.getBytes(opSendAHash1))
+			opSendQuoteA1.signature = await context.signers.admin.signMessage(ethers.getBytes(opSendAHash1))
 			opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
 			opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opOpenBHash))
 
@@ -527,7 +520,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(quote.requestedOpenPrice).to.be.equal(requestSendQuote.price)
 			expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
 			console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.PENDING) ? "Pending" : quote.quoteStatus)
-
 
 			const signedOpsLock: InstantLayer.SignedOperationStruct[] = [opLockB1]
 			await expect(instantLayer.executeBatch(signedOpsLock)).not.to.be.reverted
@@ -652,6 +644,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			//TODO
 		})
 	})
+
 	describe("execute Template", async function () {
 		// 	let opOpenA1: InstantLayer.SignedOperationStruct, opOpenA2: InstantLayer.SignedOperationStruct
 		// 	let opLockB1: InstantLayer.SignedOperationStruct, opFillB1: InstantLayer.SignedOperationStruct
