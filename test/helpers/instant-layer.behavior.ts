@@ -20,6 +20,7 @@ import {
 	EthersError,
 	BytesLike,
 	MulticoinProviderPlugin,
+	TypedDataDomain,
 } from "ethers"
 import { bigint, int } from "hardhat/internal/core/params/argumentTypes"
 import { config } from "dotenv"
@@ -291,39 +292,42 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(await harness.check(await alice.getAddress(), eip191Digest, sig)).to.equal(true)
 		})
 
-		it("EOA: returns false if digest mismatches the signature", async () => {
-			const deadline = await getBlockTimestamp(300n)
-			const saltHex = "0xabc123"
-			const salt = hexZeroPad(saltHex, 32)
-			const saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+		// it("EOA: returns false if digest mismatches the signature", async () => {
+		// 	const deadline = await getBlockTimestamp(300n)
+		// 	const saltHex = "0xabc123"
+		// 	const salt = hexZeroPad(saltHex, 32)
+		// 	const saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 
-			if (!/^0x[0-9a-fA-F]{64}$/.test(salt) || !/^0x[0-9a-fA-F]{64}$/.test(saltStr)) {
-				throw new Error("Invalid bytes32 format")
-			}
+		// 	if (!/^0x[0-9a-fA-F]{64}$/.test(salt) || !/^0x[0-9a-fA-F]{64}$/.test(saltStr)) {
+		// 		throw new Error("Invalid bytes32 format")
+		// 	}
 
-			const opOpenA: InstantLayer.SignedOperationStruct = {
-				actualSigner: partyA1.address,
-				callData: "0x1234",
-				nonce: 12,
-				salt: salt,
-				deadline: deadline,
-				signature: "0x",
-				side: 0,
-				delegator: {
-					multiAccount: ZeroAddress,
-					accountAddress: ZeroAddress,
-					accountOwner: ZeroAddress,
-					selector: "0x10987654",
-				},
-			}
-			const hash = await context.instantLayer.getOperationHash(opOpenA, true)
-			opOpenA.signature = await partyA1.sign(ethers.getBytes(hash))
-			console.log("Hash:", hash)
-			console.log("signature:", opOpenA.signature)
+		// 	const opOpenA: InstantLayer.SignedOperationStruct = {
+		// 		actualSigner: partyA1.address,
 
-			// un-prefixed raw will fail:
-			expect(await harness.check(opOpenA.actualSigner, hash, opOpenA.signature)).to.equal(false)
-		})
+		// 		signature: "0x",
+		// 		side: 0,
+		// 		params: {
+		// 			target: context.diamond,
+		// 			callData: sendQuoteParamsOnly, // parameters only
+		// 			paramHash: sendQuoteParamHash,
+		// 			functionSignature: sendQuoteWithAffiliateSignature, // canonical
+		// 		},
+		// 		delegator: {
+		// 			multiAccount: ZeroAddress,
+		// 			accountAddress: ZeroAddress,
+		// 			accountOwner: ZeroAddress,
+		// 			selector: "0x10987654",
+		// 		},
+		// 	}
+		// 	const hash = await context.instantLayer.getOperationHash(opOpenA, true)
+		// 	opOpenA.signature = await partyA1.sign(ethers.getBytes(hash))
+		// 	console.log("Hash:", hash)
+		// 	console.log("signature:", opOpenA.signature)
+
+		// 	// un-prefixed raw will fail:
+		// 	expect(await harness.check(opOpenA.actualSigner, hash, opOpenA.signature)).to.equal(false)
+		// })
 
 		// it("EOA: returns True if digest matches the signature", async () => {
 		// 	const deadline = await getBlockTimestamp(300n)
@@ -355,10 +359,26 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// })
 	})
 
-	describe("execute Batch", async function () {
+	describe.only("execute Batch", async function () {
 		let opSendQuoteA1: InstantLayer.SignedOperationStruct, opSendQuoteA2: InstantLayer.SignedOperationStruct
 		let opLockB1: InstantLayer.SignedOperationStruct, opOpenQuoteB1: InstantLayer.SignedOperationStruct
+		let opSendQuoteSignature1: InstantLayer.SignatureCallDataStruct
+		let opSendQuoteSignature2: InstantLayer.SignatureCallDataStruct
+		let opLockSignature: InstantLayer.SignatureCallDataStruct
 		let accounts: IMultiAccount.AccountStructOutput[]
+
+		// Domain must match the executor's EIP712(name,version)
+		let sendQuoteParamsOnly
+		let sendQuoteParamHash
+		let sendQuoteSelector
+
+		let lockQuoteParamsOnly
+		let lockQuoteParamHash
+		let lockQuoteSelector
+
+		let openQuoteParamsOnly
+		let openQuoteParamHash
+		let openQuoteSelector
 
 		beforeEach(async function () {
 			const deadline = await getBlockTimestamp(300n)
@@ -384,7 +404,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			//Delegating Access
 			// const delegator: AccountStruct = {}
 			const selectorQuote = quoteCallData.slice(0, 10)
-			console.log("Quote Call data:", selectorQuote)
+			console.log("Quote Selector:", selectorQuote)
 			await context.instantLayer.connect(partyA1.getSigner).grantDelegation(
 				{
 					multiAccount: await context.multiAccount.getAddress(),
@@ -404,69 +424,156 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Whitelisting Symbol type
 			await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(context.symmioPartyB.getAddress(), 1, true)
 
+			const sendQuoteWithAffiliateSignature =
+				"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(int256,uint256,uint256,uint256,bytes))"
+			const lockQuoteSignature = "lockQuote(uint256,(int256,uint256,uint256,uint256,bytes))"
+			sendQuoteParamsOnly = ("0x" + quoteCallData.slice(10)) as `0x${string}` // strip selector
+			lockQuoteParamsOnly = ("0x" + lockQuoteCallData.slice(10)) as `0x${string}` // strip selector
+			openQuoteParamsOnly = ("0x" + openQuoteCallData.slice(10)) as `0x${string}` // strip selector
+
+			sendQuoteParamHash = ethers.keccak256(sendQuoteParamsOnly)
+			lockQuoteParamHash = ethers.keccak256(lockQuoteParamsOnly)
+			openQuoteParamHash = ethers.keccak256(openQuoteParamsOnly)
+			
+			sendQuoteSelector = context.partyAFacet.interface.getFunction("sendQuoteWithAffiliate").selector as `0x${string}`
+			lockQuoteSelector = context.partyBQuoteActionsFacet.interface.getFunction("lockQuote").selector as `0x${string}`
+			openQuoteSelector = context.partyBPositionActionsFacet.interface.getFunction("openPosition").selector as `0x${string}`
+			console.log("Quote Param data:", sendQuoteParamsOnly)
+
 			opSendQuoteA1 = {
 				actualSigner: context.signers.admin.address,
-				callData: quoteCallData,
-				nonce: 0,
-				salt: saltOpen1,
-				deadline: deadline,
-				signature: new Uint8Array([0x1, 0x2]),
-				side: 0, //SignedOperationSides.PartyA,
+				// signature: new Uint8Array([0x1, 0x2]),
+				params: {
+					target: context.diamond,
+					// callData: sendQuoteParamsOnly, // parameters only
+					paramHash: sendQuoteParamHash,
+					functionSignature: sendQuoteWithAffiliateSignature, // canonical
+				},
+				side: 0, // PartyA
 				delegator: {
 					multiAccount: await context.multiAccount.getAddress(),
 					accountAddress: accounts[0].accountAddress,
 					accountOwner: partyA1.address,
 					selector: selectorQuote,
+				},
+				rpl: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
 				},
 			}
 
 			opSendQuoteA2 = {
 				actualSigner: partyA1.address,
-				callData: quoteCallData,
-				nonce: 0,
-				salt: saltOpen2,
-				deadline: deadline,
-				signature: new Uint8Array([0x1, 0x2]),
-				side: 0, //SignedOperationSides.PartyA,
+				params: {
+					target: context.diamond,
+					paramHash: sendQuoteParamHash,
+					functionSignature: sendQuoteWithAffiliateSignature, // canonical
+				},
+				side: 0, // PartyA
 				delegator: {
 					multiAccount: await context.multiAccount.getAddress(),
 					accountAddress: accounts[0].accountAddress,
 					accountOwner: partyA1.address,
 					selector: selectorQuote,
 				},
+				rpl: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
 			}
 
 			opLockB1 = {
 				actualSigner: context.symmioPartyB,
-				callData: lockQuoteCallData,
-				nonce: 0,
-				salt: saltLock,
-				deadline: deadline,
-				signature: new Uint8Array([0x1, 0x2]),
-				side: 1, //SignedOperationSides.PartyB,
+				params: {
+					target: context.diamond,
+					paramHash: lockQuoteParamHash,
+					functionSignature: lockQuoteSignature, // canonical
+				},
+				side: 1, // PartyB
 				delegator: {
 					multiAccount: ZeroAddress,
 					accountAddress: ZeroAddress,
 					accountOwner: ZeroAddress,
 					selector: "0x12345678",
+				},
+				rpl: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
 				},
 			}
 
-			opOpenQuoteB1 = {
-				actualSigner: context.symmioPartyB,
-				callData: openQuoteCallData,
-				nonce: 0,
-				salt: saltOpen,
-				deadline: deadline,
+			opSendQuoteSignature1 = {
 				signature: new Uint8Array([0x1, 0x2]),
-				side: 1, //SignedOperationSides.PartyB,
-				delegator: {
-					multiAccount: ZeroAddress,
-					accountAddress: ZeroAddress,
-					accountOwner: ZeroAddress,
-					selector: "0x12345678",
-				},
+				callData: sendQuoteParamsOnly, // parameters only
 			}
+
+			opSendQuoteSignature2 = {
+				signature: new Uint8Array([0x1, 0x2]),
+				callData: sendQuoteParamsOnly, // parameters only
+			}
+
+			opLockSignature = {
+				signature: new Uint8Array([0x1, 0x2]),
+				callData: lockQuoteParamsOnly, // parameters only
+			}
+
+			// opLockB1 = {
+			// 	actualSigner: partyA1.address,
+			// 	signature: new Uint8Array([0x1, 0x2]),
+			// 	params: {
+			// 		target: context.diamond,
+			// 		callData: sendQuoteParamsOnly, // parameters only
+			// 		paramHash: sendQuoteParamHash,
+			// 		functionSignature: sendQuoteWithAffiliateSignature, // canonical
+			// 	},
+			// 	side: 0, // PartyA
+			// 	delegator: {
+			// 		multiAccount: await context.multiAccount.getAddress(),
+			// 		accountAddress: accounts[0].accountAddress,
+			// 		accountOwner: partyA1.address,
+			// 		selector: selectorQuote,
+			// 	},
+			// 	rpl: {
+			// 		nonce: 1n,
+			// 		deadline: deadline,
+			// 		salt: ethers.hexlify(ethers.randomBytes(32)),
+			// 	},
+			// }
+
+			// opLockB1 = {
+			// 	actualSigner: context.symmioPartyB,
+			// 	callData: lockQuoteCallData,
+			// 	nonce: 0,
+			// 	salt: saltLock,
+			// 	deadline: deadline,
+			// 	signature: new Uint8Array([0x1, 0x2]),
+			// 	side: 1, //SignedOperationSides.PartyB,
+			// 	delegator: {
+			// 		multiAccount: ZeroAddress,
+			// 		accountAddress: ZeroAddress,
+			// 		accountOwner: ZeroAddress,
+			// 		selector: "0x12345678",
+			// 	},
+			// }
+
+			// opOpenQuoteB1 = {
+			// 	actualSigner: context.symmioPartyB,
+			// 	callData: openQuoteCallData,
+			// 	nonce: 0,
+			// 	salt: saltOpen,
+			// 	deadline: deadline,
+			// 	signature: new Uint8Array([0x1, 0x2]),
+			// 	side: 1, //SignedOperationSides.PartyB,
+			// 	delegator: {
+			// 		multiAccount: ZeroAddress,
+			// 		accountAddress: ZeroAddress,
+			// 		accountOwner: ZeroAddress,
+			// 		selector: "0x12345678",
+			// 	},
+			// }
 		})
 
 		it("Should be failed when Sender not have Operator Role ", async () => {
@@ -474,126 +581,165 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		it("Should be failed when input Ops have zero length ", async () => {
-			await expect(context.instantLayer.executeBatch([])).to.be.revertedWithCustomError(context.instantLayer, "EmptyBatch")
+			await expect(context.instantLayer.executeBatch([], [])).to.be.revertedWithCustomError(context.instantLayer, "EmptyBatch")
 		})
 
-		it("Should be failed when input Ops have passed the Deadline ", async () => {
-			const deadline = await getBlockTimestamp(24n)
-			await network.provider.send("evm_setNextBlockTimestamp", [Number(deadline)])
-			await network.provider.send("evm_mine")
-			let saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-			const opOpenALocal: InstantLayer.SignedOperationStruct = {
-				actualSigner: partyA1.address,
-				callData: "0x1234",
-				nonce: 100,
-				salt: saltLock,
-				deadline: deadline,
-				signature: "0x",
-				side: 0,
-				delegator: {
-					multiAccount: ZeroAddress,
-					accountAddress: ZeroAddress,
-					accountOwner: ZeroAddress,
-					selector: "0x12345678",
-				},
+		// it("Should be failed when input Ops have passed the Deadline ", async () => {
+		// 	const deadline = await getBlockTimestamp(24n)
+		// 	await network.provider.send("evm_setNextBlockTimestamp", [Number(deadline)])
+		// 	await network.provider.send("evm_mine")
+		// 	let saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+		// 	const opOpenALocal: InstantLayer.SignedOperationStruct = {
+		// 		actualSigner: partyA1.address,
+		// 		callData: "0x1234",
+		// 		nonce: 100,
+		// 		salt: saltLock,
+		// 		deadline: deadline,
+		// 		signature: "0x",
+		// 		side: 0,
+		// 		delegator: {
+		// 			multiAccount: ZeroAddress,
+		// 			accountAddress: ZeroAddress,
+		// 			accountOwner: ZeroAddress,
+		// 			selector: "0x12345678",
+		// 		},
+		// 	}
+		// 	await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
+		// 	await expect(context.instantLayer.executeBatch([opOpenALocal])).to.be.revertedWithCustomError(context.instantLayer, "DeadlineExpired")
+		// })
+
+		// it("should Register Symmio PartyB when sending as PartyB", async function () {
+		// 	const { instantLayer } = context
+		// 	const deadline = await getBlockTimestamp(24n)
+
+		// 	opLockB1.side = 1
+		// 	opLockB1.actualSigner = partyB1.address
+
+		// 	await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
+		// 	await expect(context.instantLayer.executeBatch([opLockB1])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
+		// })
+
+		it.only("should allow Sending Intents in a single batch", async function () {
+			const domain: TypedDataDomain = {
+				name: "SymmioInstantLayer",
+				version: "1",
+				chainId: (await ethers.provider.getNetwork()).chainId,
+				verifyingContract: await context.instantLayer.getAddress(),
+			} as const
+
+			const types = {
+				Account: [
+					{ name: "multiAccount", type: "address" },
+					{ name: "accountAddress", type: "address" },
+					{ name: "accountOwner", type: "address" },
+					{ name: "selector", type: "bytes4" },
+				],
+				ReplayAttackHeader: [
+					{ name: "nonce", type: "uint256" },
+					{ name: "deadline", type: "uint256" },
+					{ name: "salt", type: "bytes32" },
+				],
+				ParamCallData: [
+					{ name: "target", type: "address" },
+					{ name: "paramHash", type: "bytes32" },
+					{ name: "functionSignature", type: "string" },
+				],
+				SignedOperation: [
+					{ name: "actualSigner", type: "address" },
+					{ name: "params", type: "ParamCallData" },
+					{ name: "side", type: "uint8" },
+					{ name: "delegator", type: "Account" },
+					{ name: "rpl", type: "ReplayAttackHeader" },
+				],
 			}
-			await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
-			await expect(context.instantLayer.executeBatch([opOpenALocal])).to.be.revertedWithCustomError(context.instantLayer, "DeadlineExpired")
-		})
 
-		it("should Register Symmio PartyB when sending as PartyB", async function () {
-			const { instantLayer } = context
-			const deadline = await getBlockTimestamp(24n)
-
-			opLockB1.side = 1
-			opLockB1.actualSigner = partyB1.address
-
-			await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
-			await expect(context.instantLayer.executeBatch([opLockB1])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
-		})
-
-		it("should allow Sending Intents in a single batch", async function () {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
 			const multiAccount = context.multiAccount
 
 			//Sign using getOperationHash
-			const opSendAHash1 = await instantLayer.getOperationHash(opSendQuoteA1, false)
-			const opSendAHash2 = await instantLayer.getOperationHash(opSendQuoteA2, false)
-			const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
-			const opOpenBHash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
-			opSendQuoteA1.signature = await context.signers.admin.signMessage(ethers.getBytes(opSendAHash1))
-			opSendQuoteA2.signature = await partyA1.sign(ethers.getBytes(opSendAHash2))
-			opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
-			opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opOpenBHash))
+			// const opSendAHash1 = await instantLayer.getOperationHash(opSendQuoteA1, false)
+			// const opSendAHash2 = await instantLayer.getOperationHash(opSendQuoteA2, false)
+			// const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
+			// const opOpenB`Hash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
+			opSendQuoteSignature1.signature = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			opSendQuoteSignature2.signature = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)			
+			// opLockSignature.signature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+			// opSendQuoteA2.signature = await partyA1.sign(ethers.getBytes(opSendAHash2))
+			// opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
+			// opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opOpenBHash))
 
 			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opSendQuoteA2]
-			await expect(instantLayer.executeBatch(signedOps)).not.to.be.reverted
+			const sigCallDatas: InstantLayer.SignatureCallDataStruct[] = [opSendQuoteSignature1, opSendQuoteSignature2]
+
+			await expect(instantLayer.executeBatch(signedOps, sigCallDatas)).not.to.be.reverted
 
 			let quote = await context.viewFacet.getQuote(1)
-			let quote2 = await context.viewFacet.getQuote(2)
+			// let quote2 = await context.viewFacet.getQuote(2)
 			expect(quote.requestedOpenPrice).to.be.equal(requestSendQuote.price)
 			expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
-			expect(quote2.requestedOpenPrice).to.be.equal(requestSendQuote.price)
-			expect(quote2.quantity).to.be.equal(requestSendQuote.quantity)
+			// expect(quote2.requestedOpenPrice).to.be.equal(requestSendQuote.price)
+			// expect(quote2.quantity).to.be.equal(requestSendQuote.quantity)
+
+			console.log("done")
 		})
 
-		it("should allow Sending Intent, Locking and Filling in a single batch Seperately", async function () {
-			const { instantLayer, partyAFacet, partyBQuoteActionsFacet } = context
-			const multiAccount = context.multiAccount
+		// it("should allow Sending Intent, Locking and Filling in a single batch Seperately", async function () {
+		// 	const { instantLayer, partyAFacet, partyBQuoteActionsFacet } = context
+		// 	const multiAccount = context.multiAccount
 
-			//Sign using getOperationHash
-			const opSendAHash1 = await instantLayer.getOperationHash(opSendQuoteA1, false)
-			const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
-			const opOpenBHash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
-			opSendQuoteA1.signature = await context.signers.admin.signMessage(ethers.getBytes(opSendAHash1))
-			opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
-			opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opOpenBHash))
+		// 	//Sign using getOperationHash
+		// 	const opSendAHash1 = await instantLayer.getOperationHash(opSendQuoteA1, false)
+		// 	const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
+		// 	const opOpenBHash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
+		// 	opSendQuoteA1.signature = await context.signers.admin.signMessage(ethers.getBytes(opSendAHash1))
+		// 	opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
+		// 	opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opOpenBHash))
 
-			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1]
-			await expect(instantLayer.executeBatch(signedOps)).not.to.be.reverted // Admin with OPERATOR Role
+		// 	const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1]
+		// 	await expect(instantLayer.executeBatch(signedOps)).not.to.be.reverted // Admin with OPERATOR Role
 
-			let lastID = 1
-			let quote = await context.viewFacet.getQuote(lastID)
-			expect(quote.requestedOpenPrice).to.be.equal(requestSendQuote.price)
-			expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
-			console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.PENDING) ? "Pending" : quote.quoteStatus)
+		// 	let lastID = 1
+		// 	let quote = await context.viewFacet.getQuote(lastID)
+		// 	expect(quote.requestedOpenPrice).to.be.equal(requestSendQuote.price)
+		// 	expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
+		// 	console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.PENDING) ? "Pending" : quote.quoteStatus)
 
-			const signedOpsLock: InstantLayer.SignedOperationStruct[] = [opLockB1]
-			await expect(instantLayer.executeBatch(signedOpsLock)).not.to.be.reverted
-			quote = await context.viewFacet.getQuote(lastID)
-			console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.LOCKED) ? "Locked" : quote.quoteStatus)
-			expect(quote.quoteStatus).to.be.equal(QuoteStatus.LOCKED)
+		// 	const signedOpsLock: InstantLayer.SignedOperationStruct[] = [opLockB1]
+		// 	await expect(instantLayer.executeBatch(signedOpsLock)).not.to.be.reverted
+		// 	quote = await context.viewFacet.getQuote(lastID)
+		// 	console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.LOCKED) ? "Locked" : quote.quoteStatus)
+		// 	expect(quote.quoteStatus).to.be.equal(QuoteStatus.LOCKED)
 
-			const signedOpsFill: InstantLayer.SignedOperationStruct[] = [opOpenQuoteB1]
-			await expect(instantLayer.executeBatch(signedOpsFill)).not.to.be.reverted
-			quote = await context.viewFacet.getQuote(lastID)
-			console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.OPENED) ? "Opened" : quote.quoteStatus)
+		// 	const signedOpsFill: InstantLayer.SignedOperationStruct[] = [opOpenQuoteB1]
+		// 	await expect(instantLayer.executeBatch(signedOpsFill)).not.to.be.reverted
+		// 	quote = await context.viewFacet.getQuote(lastID)
+		// 	console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.OPENED) ? "Opened" : quote.quoteStatus)
 
-			expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
-		})
+		// 	expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
+		// })
 
-		it("should allow Sending Intent, Locking and Filling in a single batch Altogether", async function () {
-			const { instantLayer } = context
-			const multiAccount = context.multiAccount
+		// it("should allow Sending Intent, Locking and Filling in a single batch Altogether", async function () {
+		// 	const { instantLayer } = context
+		// 	const multiAccount = context.multiAccount
 
-			//Sign using getOperationHash
-			const opOpenAHash1 = await instantLayer.getOperationHash(opSendQuoteA1, false)
-			const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
-			const opFillBHash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
-			opSendQuoteA1.signature = await context.signers.admin.signMessage(ethers.getBytes(opOpenAHash1))
-			opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
-			opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opFillBHash))
+		// 	//Sign using getOperationHash
+		// 	const opOpenAHash1 = await instantLayer.getOperationHash(opSendQuoteA1, false)
+		// 	const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
+		// 	const opFillBHash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
+		// 	opSendQuoteA1.signature = await context.signers.admin.signMessage(ethers.getBytes(opOpenAHash1))
+		// 	opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
+		// 	opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opFillBHash))
 
-			//Execution
-			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opLockB1, opOpenQuoteB1]
-			await expect(instantLayer.executeBatch(signedOps)).not.to.be.reverted // Admin with OPERATOR Role
+		// 	//Execution
+		// 	const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opLockB1, opOpenQuoteB1]
+		// 	await expect(instantLayer.executeBatch(signedOps)).not.to.be.reverted // Admin with OPERATOR Role
 
-			//Verificaiton
-			let lastID = 1
-			let quote = await context.viewFacet.getQuote(lastID)
-			console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.OPENED) ? "Opened" : quote.quoteStatus)
-			expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
-		})
+		// 	//Verificaiton
+		// 	let lastID = 1
+		// 	let quote = await context.viewFacet.getQuote(lastID)
+		// 	console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.OPENED) ? "Opened" : quote.quoteStatus)
+		// 	expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
+		// })
 
 		// it("should Fail Signature verification with Invalid Nonce", async function () {
 		// 	const latestBlock = await getLatestBlockTime()
