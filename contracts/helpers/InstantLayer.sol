@@ -38,8 +38,6 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 /**
  * @notice Interface for MultiAccount contract interactions.
  */
-import "hardhat/console.sol";
-
 interface IMultiAccount {
 	function _call(address account, bytes[] calldata _callDatas) external;
 
@@ -79,9 +77,20 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ────────────────────── EIP-712 Configuration ────────────────────── */
 
-	/// @notice EIP-712 type hash for signed operations with salt-based uniqueness.
-	bytes32 public constant OPERATION_TYPEHASH =
-		keccak256("SignedOperation(address accountSource,address signer,bytes callData,uint256 nonce,bytes32 salt,uint256 deadline)");
+	bytes32 public constant ACCOUNT_TYPEHASH = keccak256("Account(address multiAccount,address accountAddress,address accountOwner,bytes4 selector)");
+
+	bytes32 public constant PARAM_CALLDATA_TYPEHASH = keccak256("ParamCallData(address target,bytes32 paramHash,string functionSignature)");
+
+	bytes32 public constant REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
+
+	// NOTE: No 'bytes signature' field here (excluded by design)
+	bytes32 public constant SIGNED_OPERATION_TYPEHASH =
+		keccak256(
+			"SignedOperation(address actualSigner,ParamCallData params,uint8 side,Account delegator,ReplayAttackHeader rpl)"
+			"Account(address multiAccount,address accountAddress,address accountOwner,bytes4 selector)"
+			"ParamCallData(address target,bytes32 paramHash,string functionSignature)"
+			"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
+		);
 
 	/// @notice EIP-712 type hash for delegation authorization.
 	bytes32 public constant DELEGATION_TYPEHASH =
@@ -157,38 +166,46 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bool active;
 	}
 
-	/**
-	 * @notice Signed operation with flexible authentication and execution details.
-	 * @param accountSource MultiAccount contract address (for PartyA operations).
-	 * @param signer        Original signer address (account owner for PartyA, PartyB address for PartyB).
-	 * @param callData      Encoded function call data for Symmio core.
-	 * @param nonce         Optional nonce (0 = no nonce protection, non-zero = ordered execution).
-	 * @param salt          Salt for uniqueness (always required for replay protection).
-	 * @param deadline      Operation expiration timestamp.
-	 * @param signature     EIP-712 signature authorizing the operation (can be from signer or their delegate).
-	 * @param actualSigner  Address that actually signed (either signer or their delegate).
-	 */
-	struct SignedOperation {
-		address actualSigner;
-		bytes callData;
-		uint256 nonce;
-		bytes32 salt;
-		uint256 deadline;
-		bytes signature;
-		SignedOperationSides side;
-		Account delegator;
-	}
-
-	/**
-	 * @notice Account Source.
-	 * @param accountManager MultiAccount contract address (for PartyA operations).
-	 * @param signer        Original signer address (account owner for PartyA).
-	 */
 	struct Account {
 		address multiAccount;
 		address accountAddress;
 		address accountOwner;
-		bytes4 selector;
+		bytes4 selector; // function selector to be called
+	}
+
+	/**
+	 * @notice Call Data Params structure.
+	 * @param target    Target contract
+	 * @param callData  Parameters only (NO selector). Off-chain binds via paramHash
+	 * @param paramHash keccak256(callData)
+	 * @param functionSignature Canonical signature, e.g. "foo(address,uint256)"
+	 */
+	struct ParamCallData {
+		address target;
+		bytes32 paramHash;
+		string functionSignature;
+	}
+
+	struct SignatureCallData {
+		bytes callData;
+		bytes signature; // excluded from EIP-712 struct hash
+	}
+	/**
+	 * Transport struct (includes signature). Signature is NOT hashed.
+	 */
+	struct SignedOperation {
+		address actualSigner;
+		ParamCallData params;
+		SignedOperationSides side; // enum => uint8 in type string
+		Account delegator;
+		ReplayAttackHeader rpl;
+	}
+
+	struct ReplayAttackHeader {
+		// anti-replay
+		uint256 nonce; // 0 -> disabled (salt-only)
+		uint256 deadline;
+		bytes32 salt;
 	}
 
 	/* ─────────────────────────────── Events ─────────────────────────────── */
@@ -232,6 +249,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/* ─────────────────────────────── Errors ─────────────────────────────── */
 
 	error InvalidSignature(); // signature verification failed
+	error InvalidCallData(); // CallData verification failed
 	error DeadlineExpired(uint256 deadline); // signed operation expired
 	error InvalidNonce(address user, uint256 expected, uint256 provided); // nonce mismatch for ordered execution
 	error TemplateNotActive(uint256 templateId); // template is disabled
@@ -468,12 +486,17 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 *      by the template's insertion points and source indices.
 	 *      Supports delegated signatures where actualSigner can be different from signer.
 	 */
-	function executeTemplate(uint256 templateId, SignedOperation[] calldata signedOps) external nonReentrant onlyRole(OPERATOR_ROLE) {
+	function executeTemplate(
+		uint256 templateId,
+		SignedOperation[] calldata signedOps,
+		SignatureCallData[] calldata sigCallDatas
+	) external nonReentrant onlyRole(OPERATOR_ROLE) {
 		if (templateId >= nextTemplateId) revert InvalidTemplate(templateId);
 
 		Template storage template = templates[templateId];
 		if (!template.active) revert TemplateNotActive(templateId);
 		if (signedOps.length != template.operations.length) revert ArrayLengthMismatch();
+		if (signedOps.length != sigCallDatas.length) revert ArrayLengthMismatch();
 
 		// Set instant mode active
 		symmio.setCallFromInstantLayer(true);
@@ -484,12 +507,13 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		for (uint256 i = 0; i < signedOps.length && success; i++) {
 			Operation memory op = template.operations[i];
 			SignedOperation calldata signedOp = signedOps[i];
+			SignatureCallData calldata sigCallData = sigCallDatas[i];
 
 			// Verify signature and nonce (includes delegation check)
-			_verifyOperation(signedOp);
+			_verifyOperation(signedOp, sigCallData);
 
 			// Prepare calldata with insertions from previous results
-			bytes memory finalCallData = _insertResults(signedOp.callData, op.insertionPoints, op.sourceIndices, results);
+			bytes memory finalCallData = _insertResults(sigCallData.callData, op.insertionPoints, op.sourceIndices, results);
 
 			// Execute operation
 			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData);
@@ -512,7 +536,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 *      All operations must succeed for the transaction to complete.
 	 *      Supports delegated signatures where actualSigner can be different from signer.
 	 */
-	function executeBatch(SignedOperation[] calldata signedOps) external nonReentrant onlyRole(OPERATOR_ROLE) {
+	function executeBatch(
+		SignedOperation[] calldata signedOps,
+		SignatureCallData[] calldata sigCalldDta
+	) external nonReentrant onlyRole(OPERATOR_ROLE) {
 		if (signedOps.length == 0) revert EmptyBatch();
 
 		symmio.setCallFromInstantLayer(true);
@@ -522,12 +549,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bool success = true;
 		for (uint256 i = 0; i < signedOps.length && success; i++) {
 			// Verify signature and nonce (includes delegation check)
-			_verifyOperation(signedOps[i]);
+			_verifyOperation(signedOps[i], sigCalldDta[i]);
 
-			console.log("Verified");
+			// (success, results[i]) = _executeOperationSafe(signedOps[i], sigCalldDta[i].callData);
+			(success, results[i]) = _executeOperationSafe(signedOps[i], abi.encodePacked(signedOps[i].delegator.selector, sigCalldDta[i].callData));
 
-			(success, results[i]) = _executeOperationSafe(signedOps[i], signedOps[i].callData);
-			console.log("Execution Finished", string(results[0]));
 			if (!success) {
 				symmio.setCallFromInstantLayer(false);
 				revert OperationFailed(i, results[i]);
@@ -548,21 +574,15 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 *      Validates that PartyB contracts and MultiAccount contracts are properly registered.
 	 *      Now also supports delegated signatures where actualSigner != signer.
 	 */
-	function _verifyOperation(SignedOperation calldata signedOp) private {
-		if (signedOp.deadline < block.timestamp) revert DeadlineExpired(signedOp.deadline);
+	function _verifyOperation(SignedOperation calldata signedOp, SignatureCallData calldata sigCalldDta) private {
+		if (signedOp.rpl.deadline < block.timestamp) revert DeadlineExpired(signedOp.rpl.deadline);
 
-		bytes32 hash = getOperationHash(signedOp, true);
+		bytes32 hash = getOperationHash(signedOp, false);
 
-		// Validate registration status and signature
+		// 1) Validate registration status and signature
 		if (signedOp.side == SignedOperationSides.PartyB) {
 			// For PartyB operations
 			if (!isPartyBRegistered(signedOp.actualSigner)) revert UnregisteredPartyB(signedOp.actualSigner);
-
-			// Check signature from either signer or delegate
-			if (!SignatureChecker.isValidSignatureNow(signedOp.actualSigner, hash, signedOp.signature)) {
-				console.log("Party B signature Reverted!");
-				revert InvalidSignature();
-			}
 		} else {
 			// For PartyA operations through MultiAccount
 			if (!isMultiAccountRegistered(signedOp.delegator.multiAccount)) revert UnregisteredMultiAccount(signedOp.delegator.multiAccount);
@@ -574,23 +594,25 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 					revert InvalidDelegation();
 				}
 			}
-
-			if (!SignatureChecker.isValidSignatureNow(signedOp.actualSigner, hash, signedOp.signature)) {
-				console.log("Party A signature Reverted!");
-				revert InvalidSignature();
-			}
 		}
 
-		// Check for replay attacks
+		if (!SignatureChecker.isValidSignatureNow(signedOp.actualSigner, hash, sigCalldDta.signature)) {
+			revert InvalidSignature();
+		}
+
+		// 2) bind exact params: callData must match signed paramHash commitment
+		if (keccak256(sigCalldDta.callData) != signedOp.params.paramHash) revert InvalidCallData();
+
+		// 3) Check for replay attacks
 		if (usedOperationHashes[hash]) revert OperationAlreadyExecuted(hash);
 		usedOperationHashes[hash] = true;
 
 		// Check nonce only if it's not 0 (0 means no nonce protection, relies on salt)
 		// For delegated operations, we still use the original signer's nonce
-		if (signedOp.nonce != 0) {
+		if (signedOp.rpl.nonce != 0) {
 			uint256 expectedNonce = nonces[signedOp.actualSigner] + 1;
-			if (signedOp.nonce != expectedNonce) {
-				revert InvalidNonce(signedOp.actualSigner, expectedNonce, signedOp.nonce);
+			if (signedOp.rpl.nonce != expectedNonce) {
+				revert InvalidNonce(signedOp.actualSigner, expectedNonce, signedOp.rpl.nonce);
 			}
 			nonces[signedOp.actualSigner]++;
 			emit NonceIncremented(signedOp.actualSigner, nonces[signedOp.actualSigner]);
@@ -610,20 +632,17 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 		if (signedOp.side == SignedOperationSides.PartyB) {
 			// PartyB operation - always use the original signer (PartyB address)
-			console.log("Symmio B Run!");
 			(success, result) = signedOp.actualSigner.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
-			console.log("Symmio B Result, result length:", result.length, string(result));
 		} else {
 			// PartyA operation through MultiAccount - use original signer account
-			(success, result) = signedOp.delegator.multiAccount.call(abi.encodeWithSelector(IMultiAccount._call.selector, signedOp.delegator.accountAddress, callDatas));
-			console.log("MultiAccount Result,",success?"succeeded ":"failed ", result.length, string(result));
-			console.log("Calldata:",string(signedOp.callData));
+			(success, result) = signedOp.delegator.multiAccount.call(
+				abi.encodeWithSelector(IMultiAccount._call.selector, signedOp.delegator.accountAddress, callDatas)
+			);
 		}
 		if (result.length > 0) {
 			bytes[] memory arr = abi.decode(result, (bytes[]));
 			result = arr[0];
 		}
-		console.log("Result:", success ? "Succeeded" : "Faulty", "result Count:", result.length);
 	}
 
 	/**
@@ -683,28 +702,30 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		return registeredMultiAccounts[addr];
 	}
 
-	/**
-	 * @notice Get the EIP-712 typed data hash for an operation.
-	 * @param signedOp The signed operation.
-	 * @return The EIP-712 hash that should be signed.
-	 *
-	 * @dev Includes salt for uniqueness protection in addition to standard parameters.
-	 *      Note: The hash is always computed with the original signer, even if signed by a delegate.
-	 */
-	function getOperationHash(SignedOperation calldata signedOp, bool isEthSignedMessage) public view returns (bytes32) {
-		bytes32 structHash = keccak256(
-			abi.encode(
-				OPERATION_TYPEHASH,
-				signedOp.delegator.multiAccount,
-				signedOp.actualSigner,
-				keccak256(signedOp.callData),
-				signedOp.nonce,
-				signedOp.salt,
-				signedOp.deadline
-			)
-		);
+	// ───────────────────────── Hash helpers ─────────────────────────
 
-		return isEthSignedMessage ? ECDSA.toEthSignedMessageHash(_hashTypedDataV4(structHash)) : _hashTypedDataV4(structHash);
+	function _hashAccount(Account memory a) internal pure returns (bytes32) {
+		return keccak256(abi.encode(ACCOUNT_TYPEHASH, a.multiAccount, a.accountAddress, a.accountOwner, a.selector));
+	}
+
+	function _hashReplay(ReplayAttackHeader memory r) internal pure returns (bytes32) {
+		return keccak256(abi.encode(REPLAY_HEADER_TYPEHASH, r.nonce, r.deadline, r.salt));
+	}
+
+	function _hashParams(ParamCallData memory p) internal pure returns (bytes32) {
+		// dynamic fields (bytes, string) are hashed inside the struct hash
+		return keccak256(abi.encode(PARAM_CALLDATA_TYPEHASH, p.target, p.paramHash, keccak256(bytes(p.functionSignature))));
+	}
+
+	/// @notice EIP-712 digest for the *signable subset* of SignedOperation (excludes `signature`)
+	function getOperationHash(SignedOperation memory signedOp, bool isEthSignedMessage) public view returns (bytes32) {
+		bytes32 hParams = _hashParams(signedOp.params);
+		bytes32 hAcct = _hashAccount(signedOp.delegator);
+		bytes32 hReplay = _hashReplay(signedOp.rpl);
+
+		bytes32 structHash = keccak256(abi.encode(SIGNED_OPERATION_TYPEHASH, signedOp.actualSigner, hParams, uint8(signedOp.side), hAcct, hReplay));
+
+		return isEthSignedMessage ? ECDSA.toEthSignedMessageHash(_hashTypedDataV4(structHash)) : _hashTypedDataV4(structHash); // "\x19Ethereum Signed Message:\n32" || EIP-191 0x1901 || domain || structHash
 	}
 
 	/**
