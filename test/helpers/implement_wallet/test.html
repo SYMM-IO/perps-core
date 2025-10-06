@@ -1,0 +1,365 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>InstantLayer EIP-712 Demo (no framework)</title>
+		<style>
+			body {
+				font-family:
+					ui-sans-serif,
+					system-ui,
+					-apple-system,
+					Segoe UI,
+					Roboto,
+					Helvetica,
+					Arial;
+				padding: 20px;
+			}
+
+			button {
+				padding: 8px 14px;
+				cursor: pointer;
+			}
+
+			.row {
+				margin: 10px 0;
+			}
+
+			code {
+				background: #f4f4f4;
+				padding: 2px 6px;
+				border-radius: 4px;
+			}
+
+			.mono {
+				font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+			}
+		</style>
+	</head>
+
+	<body>
+		<h2>InstantLayer → sendQuoteWithAffiliate (EIP-712)</h2>
+
+		<div class="row">
+			<button id="connect">Connect Wallet</button>
+			<span id="who" class="mono"></span>
+		</div>
+
+		<div class="row">
+			<button id="run">Sign & Execute</button>
+		</div>
+
+		<pre id="log" class="mono" style="white-space: pre-wrap"></pre>
+
+		<!-- Ethers v6 ESM (CDN) -->
+		<script type="module">
+			import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.min.js";
+
+			// ===========================
+			// 🔧 CONFIG — FILL THESE IN
+			// ===========================
+			// InstantLayer deployed address (verifier/executor for EIP-712)
+			const INSTANT_LAYER_ADDR = "0x4A679253410272dd5232B3Ff7cF5dbB88f295319";
+			// Diamond (PartyAFacet target) address
+			const DIAMOND_ADDR = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
+			// MultiAccount deployed address
+			const MULTIACCOUNT_ADDR = "0x59b670e9fA9D0A427751Af201D676719a970857b";
+
+			// If your EIP-712 domain in Solidity includes a domain salt, add it below:
+			const DOMAIN_SALT = null; // e.g. "0x0000...". Keep null if not used in contract's domain.
+
+			// ===========================
+			// Minimal ABIs
+			// ===========================
+			// Only functions we actually use here
+			// const INSTANT_LAYER_ABI = [
+			// 	// executeBatch((SignedOperation)[], (SignatureCallData)[])
+			// 	// SignedOperation = (address actualSigner, (address target, bytes callData, bytes32 paramHash, string functionSignature) params, uint8 side, (address,address,address,bytes4) delegator, (uint256 nonce,uint256 deadline,bytes32 salt) rpl)
+			// 	// SignatureCallData = (bytes signature, bytes callData)
+			// 	"function executeBatch((address,(address,bytes,bytes32,string),uint8,(address,address,address,bytes4),(uint256,uint256,bytes32))[],(bytes,bytes)[]) external",
+			// ];
+			const INSTANT_LAYER_ABI = [
+				// note: every tuple component is named
+				"function executeBatch((" +
+					"address actualSigner," +
+					"(address target,bytes32 paramHash,string functionSignature) params," +
+					"uint8 side," +
+					"(address multiAccount,address accountAddress,address accountOwner,bytes4 selector) delegator," +
+					"(uint256 nonce,uint256 deadline,bytes32 salt) rpl" +
+					")[] signedOps," +
+					"(bytes signature,bytes callData)[] sigCallDatas)",
+			];
+
+			// We don’t call PartyAFacet directly, but we need its interface to encode params.
+			const PARTY_A_FACET_ABI = [
+				"function sendQuoteWithAffiliate(address[] partyBsWhiteList,uint256 symbolId,uint8 positionType,uint8 orderType,uint256 price,uint256 quantity,uint256 cva,uint256 lf,uint256 partyAmm,uint256 partyBmm,uint256 maxFundingRate,uint256 deadline,address affiliate,(int256 upnl,uint256 price,uint256 timestamp,uint256 reqId,bytes gatewaySignature) upnlSig) external returns (uint256)",
+			];
+
+			// ===========================
+			// Canonical function signature string
+			// ===========================
+			const FN_SIGNATURE =
+				"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(int256,uint256,uint256,uint256,bytes))";
+
+			// ===========================
+			// EIP-712 "types" (must match Solidity exactly)
+			// ===========================
+			const TYPES_712 = {
+				Account: [
+					{ name: "multiAccount", type: "address" },
+					{ name: "accountAddress", type: "address" },
+					{ name: "accountOwner", type: "address" },
+					{ name: "selector", type: "bytes4" },
+				],
+				ReplayAttackHeader: [
+					{ name: "nonce", type: "uint256" },
+					{ name: "deadline", type: "uint256" },
+					{ name: "salt", type: "bytes32" },
+				],
+				ParamCallData: [
+					// NOTE: NO callData inside the signed struct
+					{ name: "target", type: "address" },
+					{ name: "paramHash", type: "bytes32" },
+					{ name: "functionSignature", type: "string" },
+				],
+				SignedOperation: [
+					{ name: "actualSigner", type: "address" },
+					{ name: "params", type: "ParamCallData" },
+					{ name: "side", type: "uint8" }, // enum -> uint8 (0 = PartyA, 1 = PartyB)
+					{ name: "delegator", type: "Account" },
+					{ name: "rpl", type: "ReplayAttackHeader" },
+				],
+			};
+
+			// ===========================
+			// helpers
+			// ===========================
+			const logEl = document.getElementById("log");
+			function log(...args) {
+				console.log(...args);
+				logEl.textContent += args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ") + "\n";
+			}
+
+			// Utility: wait for injection and prefer MetaMask if multiple providers exist
+			async function detectProvider(timeoutMs = 1500) {
+				if (window.ethereum) return window.ethereum;
+				await new Promise(resolve => {
+					window.addEventListener("ethereum#initialized", resolve, { once: true });
+					setTimeout(resolve, timeoutMs);
+				});
+				let eth = window.ethereum || null;
+				if (eth?.providers?.length) {
+					eth = eth.providers.find(p => p.isMetaMask) || eth.providers[0];
+				}
+				return eth;
+			}
+
+			// Utility: switch to target chain (and optionally add if missing)
+			async function ensureChain(ethereum, requiredChainIdHex, addChainParams) {
+				try {
+					await ethereum.request({
+						method: "wallet_switchEthereumChain",
+						params: [{ chainId: requiredChainIdHex }],
+					});
+				} catch (err) {
+					// 4902 = unknown chain; add it if params are provided
+					if (err?.code === 4902 && addChainParams) {
+						await ethereum.request({
+							method: "wallet_addEthereumChain",
+							params: [addChainParams],
+						});
+					} else {
+						throw err;
+					}
+				}
+				console.log("chain is Ethereum!");
+			}
+
+			async function connectWallet(options = {}) {
+				const {
+					requiredChainId, // number (e.g., 31337) or hex string (e.g., '0x7a69'); optional
+					addChainParams, // EIP-3085 params to add the chain if missing; optional
+					onAccountsChanged, // callback(addresses[])
+					onChainChanged, // callback(chainIdHex)
+				} = options;
+
+				// 1) Detect provider
+				const ethereum = await detectProvider();
+				if (!ethereum) {
+					throw new Error("No injected wallet found. Install MetaMask or open in a wallet browser.");
+				}
+
+				// 2) Request account access (handle pending requests)
+				try {
+					await ethereum.request({ method: "eth_requestAccounts" });
+				} catch (err) {
+					if (err?.code === 4001) throw new Error("User rejected the connection request.");
+					if (err?.code === -32002) throw new Error("A connection request is already pending in your wallet.");
+					throw err;
+				}
+
+				// 3) Wrap with ethers v6
+				const { ethers } = await import("https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.min.js");
+				const provider = new ethers.BrowserProvider(ethereum);
+				const signer = await provider.getSigner();
+
+				// 4) Optionally enforce a specific chain
+				if (requiredChainId != null) {
+					const requiredHex = typeof requiredChainId === "string" ? requiredChainId : "0x" + requiredChainId.toString(16);
+					await ensureChain(ethereum, requiredHex, addChainParams);
+				}
+
+				// 5) Read current state
+				const who = await signer.getAddress();
+				const net = await provider.getNetwork();
+				const chainId = Number(net.chainId); // ethers v6 chainId is bigint
+
+				// 6) Clean up only if we actually have old listeners
+				if (typeof window.__onAccountsChanged === "function") {
+					ethereum.removeListener?.("accountsChanged", window.__onAccountsChanged);
+				}
+				if (typeof window.__onChainChanged === "function") {
+					ethereum.removeListener?.("chainChanged", window.__onChainChanged);
+				}
+
+				// attach fresh listeners
+				window.__onAccountsChanged = accs => {
+					onAccountsChanged?.(accs);
+					// You might want to update UI here, e.g.:
+					// document.getElementById('who').textContent = accs[0] ? `Connected: ${accs[0]}` : 'Disconnected';
+				};
+				window.__onChainChanged = cid => {
+					onChainChanged?.(cid);
+					// Most dapps reload on chain change to reset providers/signers:
+					// window.location.reload();
+				};
+
+				ethereum.on?.("accountsChanged", window.__onAccountsChanged);
+				ethereum.on?.("chainChanged", window.__onChainChanged);
+
+				// 7) Update UI and return
+				const whoEl = document.getElementById("who");
+				if (whoEl) whoEl.textContent = `Connected: ${who} (chainId=${chainId})`;
+
+				return { ethers, provider, signer, who, chainId, ethereum };
+			}
+
+			function encodeParamsOnly(args) {
+				// Build full calldata first, then strip the first 4 bytes (selector)
+				const iface = new ethers.Interface(PARTY_A_FACET_ABI);
+				const full = iface.encodeFunctionData("sendQuoteWithAffiliate", args); // 0x + selector + params
+				const selector = full.slice(0, 10); // 0x + 8 hex chars
+				const paramsOnly = "0x" + full.slice(10);
+				const paramHash = ethers.keccak256(paramsOnly);
+				return { selector, paramsOnly, paramHash };
+			}
+
+			function buildDomain(chainId) {
+				// Must match your Solidity EIP-712 domain (name, version, chainId, verifyingContract[, salt])
+				const domain = {
+					name: "SymmioInstantLayer",
+					version: "1",
+					chainId,
+					verifyingContract: INSTANT_LAYER_ADDR,
+				};
+				if (DOMAIN_SALT) domain.salt = DOMAIN_SALT;
+				return domain;
+			}
+
+			// ===========================
+			// UI events
+			// ===========================
+			let context = null;
+			document.getElementById("connect").onclick = async () => {
+				try {
+					context = await connectWallet();
+				} catch (e) {
+					log("Connect error:", e.message ?? e);
+				}
+			};
+
+			document.getElementById("run").onclick = async () => {
+				try {
+					if (!context) context = await connectWallet();
+					const { provider, signer, who, chainId } = context;
+
+					// --------------------------
+					// Example args (fill with real values)
+					// --------------------------
+					const now = Math.floor(Date.now() / 1000);
+					const args = [
+						/* partyBsWhiteList */ [],
+						/* symbolId        */ 1n,
+						/* positionType    */ 1, // LONG (uint8)
+						/* orderType       */ 0, // LIMIT (uint8)
+						/* price           */ 10n,
+						/* quantity        */ 100n,
+						/* cva             */ 22n,
+						/* lf              */ 3n,
+						/* partyAmm        */ 75n,
+						/* partyBmm        */ 40n,
+						/* maxFundingRate  */ 2n, // 0.02 with 18 decimals, adjust to your spec
+						/* deadline        */ BigInt(now + 600),
+						/* affiliate       */ "0x0000000000000000000000000000000000000000",
+						/* upnlSig         */ {
+							upnl: 0n,
+							price: 0n,
+							timestamp: BigInt(now),
+							reqId: 0n,
+							gatewaySignature: "0x",
+						},
+					];
+
+					// 1) Encode paramsOnly + hash
+					const { selector, paramsOnly, paramHash } = encodeParamsOnly(args);
+					log("selector:", selector);
+					log("paramHash:", paramHash);
+					log("Params:", paramsOnly);
+
+					// 2) Build signable object (NO callData, NO signature)
+					const sop = {
+						actualSigner: who,
+						params: {
+							target: DIAMOND_ADDR,
+							paramHash,
+							functionSignature: FN_SIGNATURE,
+						},
+						side: 0, // PartyA
+						delegator: {
+							multiAccount: MULTIACCOUNT_ADDR,
+							accountAddress: "0x0000000000000000000000000000000000000000", // fill with your account address
+							accountOwner: who,
+							selector, // bytes4 for function; optional consistency check on-chain
+						},
+						rpl: {
+							nonce: 1n,
+							deadline: BigInt(now + 600),
+							salt: ethers.hexlify(ethers.randomBytes(32)), // replay guard salt (NOT the domain salt)
+						},
+					};
+
+					// 3) EIP-712 domain
+					const domain = buildDomain(chainId);
+
+					// 4) Ask the wallet to sign typed data
+					const signature = await signer.signTypedData(domain, TYPES_712, sop);
+					log("signature:", signature);
+
+					// 5) Call InstantLayer.executeBatch
+					const instant = new ethers.Contract(INSTANT_LAYER_ADDR, INSTANT_LAYER_ABI, signer);
+
+					// SignatureCallData struct contains signature + callData (paramsOnly bytes)
+					const sigCallData = { signature: signature, callData: paramsOnly };
+
+					const tx = await instant.executeBatch([sop], [sigCallData]);
+					log("tx sent:", tx.hash);
+					const rcpt = await tx.wait();
+					log("tx confirmed in block", rcpt.blockNumber);
+				} catch (e) {
+					console.error(e);
+					log("ERROR:", e.reason ?? e.message ?? String(e));
+				}
+			};
+		</script>
+	</body>
+</html>
