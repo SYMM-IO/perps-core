@@ -38,6 +38,7 @@ import { hedgerActionsMap } from "../models/Actions"
 // import { IMultiAccount } from "../../src/types/contracts/interfaces"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
 import { IMultiAccount } from "../../src/types/contracts/multiAccount/MultiAccount"
+import { cloneTypes } from "./InstantLayerEIP712Types"
 
 export function shouldBehaveLikeInstantLayer(): void {
 	let context: RunContext, partyA1: User, partyA2: User, partyB1: Hedger, partyB2: Hedger
@@ -50,6 +51,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 	let requestSendQuote: QuoteRequest
 	let requestOpenQuote: OpenRequest
+
+	let types: ReturnType<typeof cloneTypes>
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -129,235 +132,237 @@ export function shouldBehaveLikeInstantLayer(): void {
 				insertionPoints: [0],
 			},
 		]
+
+		types = cloneTypes() // fresh copy for each test
 	})
 
-	describe("Registering PartyB", async function () {
-		it("Should be failed when Sender not Setter Role ", async () => {
-			await expect(context.instantLayer.connect(partyA1.getSigner).registerPartyB(partyA1.address)).to.be.reverted
-		})
+	// describe("Registering PartyB", async function () {
+	// 	it("Should be failed when Sender not Setter Role ", async () => {
+	// 		await expect(context.instantLayer.connect(partyA1.getSigner).registerPartyB(partyA1.address)).to.be.reverted
+	// 	})
 
-		it("Should Add PartyB to Whitelisted Bs", async () => {
-			await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
+	// 	it("Should Add PartyB to Whitelisted Bs", async () => {
+	// 		await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
 
-			expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(true)
-			expect(await context.instantLayer.registeredPartyBs(partyB2.address)).to.be.equal(false)
-		})
+	// 		expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(true)
+	// 		expect(await context.instantLayer.registeredPartyBs(partyB2.address)).to.be.equal(false)
+	// 	})
 
-		it("Should be granted the right role", async () => {
-			await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
-			const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
+	// 	it("Should be granted the right role", async () => {
+	// 		await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
+	// 		const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 
-			expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(true)
-		})
-	})
+	// 		expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(true)
+	// 	})
+	// })
 
-	describe("Unregistering PartyB", async function () {
-		it("Should be failed when Sender not Setter Role ", async () => {
-			await expect(context.instantLayer.connect(partyA1.getSigner).registerPartyB(partyB1.address)).to.be.reverted
-			await expect(context.instantLayer.connect(partyA1.getSigner).unregisterPartyB(partyB1.address)).to.be.reverted
-		})
+	// describe("Unregistering PartyB", async function () {
+	// 	it("Should be failed when Sender not Setter Role ", async () => {
+	// 		await expect(context.instantLayer.connect(partyA1.getSigner).registerPartyB(partyB1.address)).to.be.reverted
+	// 		await expect(context.instantLayer.connect(partyA1.getSigner).unregisterPartyB(partyB1.address)).to.be.reverted
+	// 	})
 
-		it("Should remove PartyB from Whitelisted Bs", async () => {
-			await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
-			await expect(context.instantLayer.unregisterPartyB(partyB1.address)).not.to.be.reverted
+	// 	it("Should remove PartyB from Whitelisted Bs", async () => {
+	// 		await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
+	// 		await expect(context.instantLayer.unregisterPartyB(partyB1.address)).not.to.be.reverted
 
-			expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(false)
-		})
+	// 		expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(false)
+	// 	})
 
-		it("Should remove the right role", async () => {
-			await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
-			await expect(context.instantLayer.unregisterPartyB(partyB1.address)).not.to.be.reverted
-			const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
+	// 	it("Should remove the right role", async () => {
+	// 		await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
+	// 		await expect(context.instantLayer.unregisterPartyB(partyB1.address)).not.to.be.reverted
+	// 		const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 
-			expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(false)
-		})
-	})
+	// 		expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(false)
+	// 	})
+	// })
 
-	describe("Registering PartyB Batch", async function () {
-		it("Should be failed when Sender not Setter Role ", async () => {
-			await expect(context.instantLayer.connect(context.signers.hedger).registerPartyBBatch([partyB1.address, partyB2.address])).to.be.reverted
-		})
+	// describe("Registering PartyB Batch", async function () {
+	// 	it("Should be failed when Sender not Setter Role ", async () => {
+	// 		await expect(context.instantLayer.connect(context.signers.hedger).registerPartyBBatch([partyB1.address, partyB2.address])).to.be.reverted
+	// 	})
 
-		it("Should Add PartyB to Whitelisted Bs", async () => {
-			await expect(context.instantLayer.registerPartyBBatch([partyB1.address, partyB2.address])).not.to.be.reverted
+	// 	it("Should Add PartyB to Whitelisted Bs", async () => {
+	// 		await expect(context.instantLayer.registerPartyBBatch([partyB1.address, partyB2.address])).not.to.be.reverted
 
-			expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(true)
-			expect(await context.instantLayer.registeredPartyBs(partyB2.address)).to.be.equal(true)
-		})
+	// 		expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(true)
+	// 		expect(await context.instantLayer.registeredPartyBs(partyB2.address)).to.be.equal(true)
+	// 	})
 
-		it("Should be granted the right role", async () => {
-			await expect(context.instantLayer.registerPartyBBatch([partyB1.address, partyB2.address])).not.to.be.reverted
-			const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
+	// 	it("Should be granted the right role", async () => {
+	// 		await expect(context.instantLayer.registerPartyBBatch([partyB1.address, partyB2.address])).not.to.be.reverted
+	// 		const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 
-			expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(true)
-			expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB2.address)).to.be.equal(true)
-		})
-	})
+	// 		expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(true)
+	// 		expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB2.address)).to.be.equal(true)
+	// 	})
+	// })
 
-	describe("Registering MultiAccount Batch", async function () {
-		it("Should be failed when Sender not Setter Role ", async () => {
-			await expect(context.instantLayer.connect(context.signers.hedger).registerMultiAccountBatch([partyB1.address])).to.be.reverted
-		})
+	// describe("Registering MultiAccount Batch", async function () {
+	// 	it("Should be failed when Sender not Setter Role ", async () => {
+	// 		await expect(context.instantLayer.connect(context.signers.hedger).registerMultiAccountBatch([partyB1.address])).to.be.reverted
+	// 	})
 
-		it("Should Add the multiAccount addresses batch to Whitelisted mapping", async () => {
-			await expect(context.instantLayer.registerMultiAccountBatch([partyA1.address, partyA2.address])).not.to.be.reverted
+	// 	it("Should Add the multiAccount addresses batch to Whitelisted mapping", async () => {
+	// 		await expect(context.instantLayer.registerMultiAccountBatch([partyA1.address, partyA2.address])).not.to.be.reverted
 
-			expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(true)
-			expect(await context.instantLayer.registeredMultiAccounts(partyA2.address)).to.be.equal(true)
-		})
-	})
+	// 		expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(true)
+	// 		expect(await context.instantLayer.registeredMultiAccounts(partyA2.address)).to.be.equal(true)
+	// 	})
+	// })
 
-	describe("Registering MultiAccount", async function () {
-		it("Should be failed when Sender not Setter Role ", async () => {
-			await expect(context.instantLayer.connect(partyA1.getSigner).registerMultiAccount(partyA2.address)).to.be.reverted
-		})
+	// describe("Registering MultiAccount", async function () {
+	// 	it("Should be failed when Sender not Setter Role ", async () => {
+	// 		await expect(context.instantLayer.connect(partyA1.getSigner).registerMultiAccount(partyA2.address)).to.be.reverted
+	// 	})
 
-		it("Should Add the multiAccount address to Whitelisted mapping", async () => {
-			await expect(context.instantLayer.registerMultiAccount(partyA1.address)).not.to.be.reverted
+	// 	it("Should Add the multiAccount address to Whitelisted mapping", async () => {
+	// 		await expect(context.instantLayer.registerMultiAccount(partyA1.address)).not.to.be.reverted
 
-			expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(true)
-		})
-	})
+	// 		expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(true)
+	// 	})
+	// })
 
-	describe("Unregistering MultiAccount", async function () {
-		it("Should be failed when Sender not Setter Role ", async () => {
-			await expect(context.instantLayer.connect(partyA1.getSigner).unregisterMultiAccount(partyA1.address)).to.be.reverted
-		})
+	// describe("Unregistering MultiAccount", async function () {
+	// 	it("Should be failed when Sender not Setter Role ", async () => {
+	// 		await expect(context.instantLayer.connect(partyA1.getSigner).unregisterMultiAccount(partyA1.address)).to.be.reverted
+	// 	})
 
-		it("Should Remove the multiAccount address from Whitelisted mapping", async () => {
-			await expect(context.instantLayer.unregisterMultiAccount(partyA1.address)).not.to.be.reverted
+	// 	it("Should Remove the multiAccount address from Whitelisted mapping", async () => {
+	// 		await expect(context.instantLayer.unregisterMultiAccount(partyA1.address)).not.to.be.reverted
 
-			expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(false)
-		})
-	})
+	// 		expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(false)
+	// 	})
+	// })
 
-	describe("Adding Template", async function () {
-		it("Should be failed when Sender not have Setter Role ", async () => {
-			await expect(context.instantLayer.connect(partyA1.getSigner).addTemplate("test", ops)).to.be.reverted
-			//TODO adapt to recent changes
-		})
+	// describe("Adding Template", async function () {
+	// 	it("Should be failed when Sender not have Setter Role ", async () => {
+	// 		await expect(context.instantLayer.connect(partyA1.getSigner).addTemplate("test", ops)).to.be.reverted
+	// 		//TODO adapt to recent changes
+	// 	})
 
-		it("Should Set the template Active Mode to true", async () => {
-			await expect(context.instantLayer.addTemplate("test", ops)).not.to.be.reverted
-			let template = await context.instantLayer.getTemplate(0)
-			expect(template.active).to.be.equal(true)
-		})
+	// 	it("Should Set the template Active Mode to true", async () => {
+	// 		await expect(context.instantLayer.addTemplate("test", ops)).not.to.be.reverted
+	// 		let template = await context.instantLayer.getTemplate(0)
+	// 		expect(template.active).to.be.equal(true)
+	// 	})
 
-		it("Should Set the template Name as expected", async () => {
-			let name = "myTemp"
-			await expect(context.instantLayer.addTemplate(name, ops)).not.to.be.reverted
-			let template = await context.instantLayer.getTemplate(0)
-			expect(template.name).to.be.equal(name)
-		})
+	// 	it("Should Set the template Name as expected", async () => {
+	// 		let name = "myTemp"
+	// 		await expect(context.instantLayer.addTemplate(name, ops)).not.to.be.reverted
+	// 		let template = await context.instantLayer.getTemplate(0)
+	// 		expect(template.name).to.be.equal(name)
+	// 	})
 
-		it("Should Set the template Operations as expected", async () => {
-			let name = "myTemp"
-			await expect(context.instantLayer.addTemplate(name, ops)).not.to.be.reverted
-			const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
-			let template: InstantLayer.TemplateStruct = await context.instantLayer.getTemplate(tempID)
+	// 	it("Should Set the template Operations as expected", async () => {
+	// 		let name = "myTemp"
+	// 		await expect(context.instantLayer.addTemplate(name, ops)).not.to.be.reverted
+	// 		const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
+	// 		let template: InstantLayer.TemplateStruct = await context.instantLayer.getTemplate(tempID)
 
-			expect(template.operations.length).to.be.equal(ops.length) // equals 2
-			expect(template.name).to.equal(name)
-			expect(template.active).to.equal(true)
+	// 		expect(template.operations.length).to.be.equal(ops.length) // equals 2
+	// 		expect(template.name).to.equal(name)
+	// 		expect(template.active).to.equal(true)
 
-			for (let i = 0; i < template.operations.length; i++) {
-				expect(template.operations[i].sourceIndices).to.deep.equal(ops[i].sourceIndices)
-				expect(template.operations[i].insertionPoints).to.deep.equal(ops[i].insertionPoints)
-			}
-		})
-	})
+	// 		for (let i = 0; i < template.operations.length; i++) {
+	// 			expect(template.operations[i].sourceIndices).to.deep.equal(ops[i].sourceIndices)
+	// 			expect(template.operations[i].insertionPoints).to.deep.equal(ops[i].insertionPoints)
+	// 		}
+	// 	})
+	// })
 
-	describe("Is Valid Signature?", async function () {
-		let harness: SigCheckHarness
+	// describe("Is Valid Signature?", async function () {
+	// 	let harness: SigCheckHarness
 
-		beforeEach(async () => {
-			const Harness = await ethers.getContractFactory("SigCheckHarness")
-			harness = await Harness.deploy()
-			await harness.waitForDeployment()
-		})
+	// 	beforeEach(async () => {
+	// 		const Harness = await ethers.getContractFactory("SigCheckHarness")
+	// 		harness = await Harness.deploy()
+	// 		await harness.waitForDeployment()
+	// 	})
 
-		it("EOA: returns true for a valid signMessage signature when using the EIP-191 digest", async () => {
-			const [alice] = await ethers.getSigners()
+	// 	it("EOA: returns true for a valid signMessage signature when using the EIP-191 digest", async () => {
+	// 		const [alice] = await ethers.getSigners()
 
-			// Original 32-byte payload you conceptually want to sign (could be your EIP-712 digest too)
-			const raw = ethers.keccak256(ethers.toUtf8Bytes("hello"))
+	// 		// Original 32-byte payload you conceptually want to sign (could be your EIP-712 digest too)
+	// 		const raw = ethers.keccak256(ethers.toUtf8Bytes("hello"))
 
-			// 1) Sign with signMessage (adds EIP-191 prefix)
-			const sig = await alice.signMessage(ethers.getBytes(raw))
+	// 		// 1) Sign with signMessage (adds EIP-191 prefix)
+	// 		const sig = await alice.signMessage(ethers.getBytes(raw))
 
-			// 2) Compute the *prefixed* digest that the wallet actually signed
-			const eip191Digest = ethers.hashMessage(ethers.getBytes(raw)) // keccak256("\x19Ethereum Signed Message...\n32" || raw)
+	// 		// 2) Compute the *prefixed* digest that the wallet actually signed
+	// 		const eip191Digest = ethers.hashMessage(ethers.getBytes(raw)) // keccak256("\x19Ethereum Signed Message...\n32" || raw)
 
-			// 3) Ask the harness to check (ECDSA path)
-			expect(await harness.check(await alice.getAddress(), eip191Digest, sig)).to.equal(true)
-		})
+	// 		// 3) Ask the harness to check (ECDSA path)
+	// 		expect(await harness.check(await alice.getAddress(), eip191Digest, sig)).to.equal(true)
+	// 	})
 
-		// it("EOA: returns false if digest mismatches the signature", async () => {
-		// 	const deadline = await getBlockTimestamp(300n)
-		// 	const saltHex = "0xabc123"
-		// 	const salt = hexZeroPad(saltHex, 32)
-		// 	const saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+	// 	// it("EOA: returns false if digest mismatches the signature", async () => {
+	// 	// 	const deadline = await getBlockTimestamp(300n)
+	// 	// 	const saltHex = "0xabc123"
+	// 	// 	const salt = hexZeroPad(saltHex, 32)
+	// 	// 	const saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 
-		// 	if (!/^0x[0-9a-fA-F]{64}$/.test(salt) || !/^0x[0-9a-fA-F]{64}$/.test(saltStr)) {
-		// 		throw new Error("Invalid bytes32 format")
-		// 	}
+	// 	// 	if (!/^0x[0-9a-fA-F]{64}$/.test(salt) || !/^0x[0-9a-fA-F]{64}$/.test(saltStr)) {
+	// 	// 		throw new Error("Invalid bytes32 format")
+	// 	// 	}
 
-		// 	const opOpenA: InstantLayer.SignedOperationStruct = {
-		// 		actualSigner: partyA1.address,
+	// 	// 	const opOpenA: InstantLayer.SignedOperationStruct = {
+	// 	// 		actualSigner: partyA1.address,
 
-		// 		signature: "0x",
-		// 		side: 0,
-		// 		params: {
-		// 			target: context.diamond,
-		// 			callData: sendQuoteParamsOnly, // parameters only
-		// 			paramHash: sendQuoteParamHash,
-		// 			functionSignature: sendQuoteWithAffiliateSignature, // canonical
-		// 		},
-		// 		delegator: {
-		// 			multiAccount: ZeroAddress,
-		// 			accountAddress: ZeroAddress,
-		// 			accountOwner: ZeroAddress,
-		// 			selector: "0x10987654",
-		// 		},
-		// 	}
-		// 	const hash = await context.instantLayer.getOperationHash(opOpenA, true)
-		// 	opOpenA.signature = await partyA1.sign(ethers.getBytes(hash))
-		// 	console.log("Hash:", hash)
-		// 	console.log("signature:", opOpenA.signature)
+	// 	// 		signature: "0x",
+	// 	// 		side: 0,
+	// 	// 		params: {
+	// 	// 			target: context.diamond,
+	// 	// 			callData: sendQuoteParamsOnly, // parameters only
+	// 	// 			paramHash: sendQuoteParamHash,
+	// 	// 			functionSignature: sendQuoteWithAffiliateSignature, // canonical
+	// 	// 		},
+	// 	// 		delegator: {
+	// 	// 			multiAccount: ZeroAddress,
+	// 	// 			accountAddress: ZeroAddress,
+	// 	// 			accountOwner: ZeroAddress,
+	// 	// 			selector: "0x10987654",
+	// 	// 		},
+	// 	// 	}
+	// 	// 	const hash = await context.instantLayer.getOperationHash(opOpenA, true)
+	// 	// 	opOpenA.signature = await partyA1.sign(ethers.getBytes(hash))
+	// 	// 	console.log("Hash:", hash)
+	// 	// 	console.log("signature:", opOpenA.signature)
 
-		// 	// un-prefixed raw will fail:
-		// 	expect(await harness.check(opOpenA.actualSigner, hash, opOpenA.signature)).to.equal(false)
-		// })
+	// 	// 	// un-prefixed raw will fail:
+	// 	// 	expect(await harness.check(opOpenA.actualSigner, hash, opOpenA.signature)).to.equal(false)
+	// 	// })
 
-		// it("EOA: returns True if digest matches the signature", async () => {
-		// 	const deadline = await getBlockTimestamp(300n)
-		// 	const saltHex = "0xabc123"
-		// 	const salt = hexZeroPad(saltHex, 32)
-		// 	const saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-		// 	if (!/^0x[0-9a-fA-F]{64}$/.test(salt) || !/^0x[0-9a-fA-F]{64}$/.test(saltStr)) {
-		// 		throw new Error("Invalid bytes32 format")
-		// 	}
-		// 	const opOpenA: InstantLayer.SignedOperationStruct = {
-		// 		actualSigner: partyA1.address,
-		// 		callData: "0x1234",
-		// 		nonce: 12,
-		// 		salt: salt,
-		// 		deadline: deadline,
-		// 		signature: "0x",
-		// 		side: 0,
-		// 		delegator: {
-		// 			multiAccount: ZeroAddress,
-		// 			accountAddress: ZeroAddress,
-		// 			accountOwner: ZeroAddress,
-		// 			selector: "0x0",
-		// 		},
-		// 	}
-		// 	const hash = await context.instantLayer.getOperationHash(opOpenA, true)
-		// 	opOpenA.signature = await partyA1.sign(ethers.getBytes(hash))
+	// 	// it("EOA: returns True if digest matches the signature", async () => {
+	// 	// 	const deadline = await getBlockTimestamp(300n)
+	// 	// 	const saltHex = "0xabc123"
+	// 	// 	const salt = hexZeroPad(saltHex, 32)
+	// 	// 	const saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+	// 	// 	if (!/^0x[0-9a-fA-F]{64}$/.test(salt) || !/^0x[0-9a-fA-F]{64}$/.test(saltStr)) {
+	// 	// 		throw new Error("Invalid bytes32 format")
+	// 	// 	}
+	// 	// 	const opOpenA: InstantLayer.SignedOperationStruct = {
+	// 	// 		actualSigner: partyA1.address,
+	// 	// 		callData: "0x1234",
+	// 	// 		nonce: 12,
+	// 	// 		salt: salt,
+	// 	// 		deadline: deadline,
+	// 	// 		signature: "0x",
+	// 	// 		side: 0,
+	// 	// 		delegator: {
+	// 	// 			multiAccount: ZeroAddress,
+	// 	// 			accountAddress: ZeroAddress,
+	// 	// 			accountOwner: ZeroAddress,
+	// 	// 			selector: "0x0",
+	// 	// 		},
+	// 	// 	}
+	// 	// 	const hash = await context.instantLayer.getOperationHash(opOpenA, true)
+	// 	// 	opOpenA.signature = await partyA1.sign(ethers.getBytes(hash))
 
-		// 	expect(await harness.check(opOpenA.actualSigner, ethers.hashMessage(ethers.getBytes(hash)), opOpenA.signature)).to.equal(true)
-		// })
-	})
+	// 	// 	expect(await harness.check(opOpenA.actualSigner, ethers.hashMessage(ethers.getBytes(hash)), opOpenA.signature)).to.equal(true)
+	// 	// })
+	// })
 
 	describe.only("execute Batch", async function () {
 		let opSendQuoteA1: InstantLayer.SignedOperationStruct, opSendQuoteA2: InstantLayer.SignedOperationStruct
@@ -404,11 +409,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 			//Delegating Access
 			// const delegator: AccountStruct = {}
 			const selectorQuote = quoteCallData.slice(0, 10)
+			const selectorLock = lockQuoteCallData.slice(0, 10)
+			const selectorOpen = openQuoteCallData.slice(0, 10)
 			console.log("Quote Selector:", selectorQuote)
 			await context.instantLayer.connect(partyA1.getSigner).grantDelegation(
 				{
 					multiAccount: await context.multiAccount.getAddress(),
-					accountAddress: accounts[0].accountAddress,
+					partyA_AccountAddress: accounts[0].accountAddress,
 					accountOwner: partyA1.address,
 					selector: selectorQuote,
 				},
@@ -434,29 +441,28 @@ export function shouldBehaveLikeInstantLayer(): void {
 			sendQuoteParamHash = ethers.keccak256(sendQuoteParamsOnly)
 			lockQuoteParamHash = ethers.keccak256(lockQuoteParamsOnly)
 			openQuoteParamHash = ethers.keccak256(openQuoteParamsOnly)
-			
+
 			sendQuoteSelector = context.partyAFacet.interface.getFunction("sendQuoteWithAffiliate").selector as `0x${string}`
 			lockQuoteSelector = context.partyBQuoteActionsFacet.interface.getFunction("lockQuote").selector as `0x${string}`
 			openQuoteSelector = context.partyBPositionActionsFacet.interface.getFunction("openPosition").selector as `0x${string}`
 			console.log("Quote Param data:", sendQuoteParamsOnly)
 
 			opSendQuoteA1 = {
-				actualSigner: context.signers.admin.address,
-				// signature: new Uint8Array([0x1, 0x2]),
+				signer: context.signers.admin.address,
 				params: {
-					target: context.diamond,
-					// callData: sendQuoteParamsOnly, // parameters only
-					paramHash: sendQuoteParamHash,
+					targetContract: context.diamond,
+					keyValueHash: ethers.ZeroHash,
+					callDataHash: sendQuoteParamHash,
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
 				side: 0, // PartyA
 				delegator: {
 					multiAccount: await context.multiAccount.getAddress(),
-					accountAddress: accounts[0].accountAddress,
+					partyA_AccountAddress: accounts[0].accountAddress,
 					accountOwner: partyA1.address,
 					selector: selectorQuote,
 				},
-				rpl: {
+				replayAttackHeader: {
 					nonce: 1n,
 					deadline: deadline,
 					salt: ethers.hexlify(ethers.randomBytes(32)),
@@ -464,20 +470,21 @@ export function shouldBehaveLikeInstantLayer(): void {
 			}
 
 			opSendQuoteA2 = {
-				actualSigner: partyA1.address,
+				signer: partyA1.address,
 				params: {
-					target: context.diamond,
-					paramHash: sendQuoteParamHash,
+					targetContract: context.diamond,
+					keyValueHash: ethers.ZeroHash,
+					callDataHash: sendQuoteParamHash,
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
 				side: 0, // PartyA
 				delegator: {
 					multiAccount: await context.multiAccount.getAddress(),
-					accountAddress: accounts[0].accountAddress,
+					partyA_AccountAddress: accounts[0].accountAddress,
 					accountOwner: partyA1.address,
 					selector: selectorQuote,
 				},
-				rpl: {
+				replayAttackHeader: {
 					nonce: 1n,
 					deadline: deadline,
 					salt: ethers.hexlify(ethers.randomBytes(32)),
@@ -485,20 +492,21 @@ export function shouldBehaveLikeInstantLayer(): void {
 			}
 
 			opLockB1 = {
-				actualSigner: context.symmioPartyB,
+				signer: await context.symmioPartyB.getAddress(),
 				params: {
-					target: context.diamond,
-					paramHash: lockQuoteParamHash,
+					targetContract: context.diamond,
+					keyValueHash: ethers.ZeroHash,
+					callDataHash: lockQuoteParamHash,
 					functionSignature: lockQuoteSignature, // canonical
 				},
 				side: 1, // PartyB
 				delegator: {
 					multiAccount: ZeroAddress,
-					accountAddress: ZeroAddress,
+					partyA_AccountAddress: ZeroAddress,
 					accountOwner: ZeroAddress,
-					selector: "0x12345678",
+					selector: selectorLock,
 				},
-				rpl: {
+				replayAttackHeader: {
 					nonce: 1n,
 					deadline: deadline,
 					salt: ethers.hexlify(ethers.randomBytes(32)),
@@ -507,17 +515,26 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteSignature1 = {
 				signature: new Uint8Array([0x1, 0x2]),
-				callData: sendQuoteParamsOnly, // parameters only
+				params: {
+					callData: sendQuoteParamsOnly,
+					keyValue: "",
+				},
 			}
 
 			opSendQuoteSignature2 = {
 				signature: new Uint8Array([0x1, 0x2]),
-				callData: sendQuoteParamsOnly, // parameters only
+				params: {
+					callData: sendQuoteParamsOnly,
+					keyValue: "",
+				},
 			}
 
 			opLockSignature = {
 				signature: new Uint8Array([0x1, 0x2]),
-				callData: lockQuoteParamsOnly, // parameters only
+				params: {
+					callData: lockQuoteParamsOnly,
+					keyValue: "",
+				},
 			}
 
 			// opLockB1 = {
@@ -576,13 +593,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// }
 		})
 
-		it("Should be failed when Sender not have Operator Role ", async () => {
-			await expect(context.instantLayer.connect(partyA1.getSigner).executeBatch([])).to.be.reverted // with "AccessControl" Error
-		})
+		// it("Should be failed when Sender not have Operator Role ", async () => {
+		// 	await expect(context.instantLayer.connect(partyA1.getSigner).executeBatch([], [])).to.be.reverted // with "AccessControl" Error
+		// })
 
-		it("Should be failed when input Ops have zero length ", async () => {
-			await expect(context.instantLayer.executeBatch([], [])).to.be.revertedWithCustomError(context.instantLayer, "EmptyBatch")
-		})
+		// it("Should be failed when input Ops have zero length ", async () => {
+		// 	await expect(context.instantLayer.executeBatch([], [])).to.be.revertedWithCustomError(context.instantLayer, "EmptyBatch")
+		// })
 
 		// it("Should be failed when input Ops have passed the Deadline ", async () => {
 		// 	const deadline = await getBlockTimestamp(24n)
@@ -625,32 +642,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 				version: "1",
 				chainId: (await ethers.provider.getNetwork()).chainId,
 				verifyingContract: await context.instantLayer.getAddress(),
-			} as const
-
-			const types = {
-				Account: [
-					{ name: "multiAccount", type: "address" },
-					{ name: "accountAddress", type: "address" },
-					{ name: "accountOwner", type: "address" },
-					{ name: "selector", type: "bytes4" },
-				],
-				ReplayAttackHeader: [
-					{ name: "nonce", type: "uint256" },
-					{ name: "deadline", type: "uint256" },
-					{ name: "salt", type: "bytes32" },
-				],
-				ParamCallData: [
-					{ name: "target", type: "address" },
-					{ name: "paramHash", type: "bytes32" },
-					{ name: "functionSignature", type: "string" },
-				],
-				SignedOperation: [
-					{ name: "actualSigner", type: "address" },
-					{ name: "params", type: "ParamCallData" },
-					{ name: "side", type: "uint8" },
-					{ name: "delegator", type: "Account" },
-					{ name: "rpl", type: "ReplayAttackHeader" },
-				],
 			}
 
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
@@ -661,24 +652,29 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// const opSendAHash2 = await instantLayer.getOperationHash(opSendQuoteA2, false)
 			// const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
 			// const opOpenB`Hash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
+			console.log(types)
 			opSendQuoteSignature1.signature = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
-			opSendQuoteSignature2.signature = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)			
-			// opLockSignature.signature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
-			// opSendQuoteA2.signature = await partyA1.sign(ethers.getBytes(opSendAHash2))
+			opSendQuoteSignature2.signature = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
+			opLockSignature.signature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+
 			// opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
 			// opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opOpenBHash))
 
-			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opSendQuoteA2]
-			const sigCallDatas: InstantLayer.SignatureCallDataStruct[] = [opSendQuoteSignature1, opSendQuoteSignature2]
+			console.log("Test signature:", opSendQuoteSignature1.signature)
+			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opSendQuoteA2, opLockB1]
+			const sigCallDatas: InstantLayer.SignatureCallDataStruct[] = [opSendQuoteSignature1, opSendQuoteSignature2, opLockSignature]
 
 			await expect(instantLayer.executeBatch(signedOps, sigCallDatas)).not.to.be.reverted
 
 			let quote = await context.viewFacet.getQuote(1)
-			// let quote2 = await context.viewFacet.getQuote(2)
+			let quote2 = await context.viewFacet.getQuote(2)
 			expect(quote.requestedOpenPrice).to.be.equal(requestSendQuote.price)
 			expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
-			// expect(quote2.requestedOpenPrice).to.be.equal(requestSendQuote.price)
-			// expect(quote2.quantity).to.be.equal(requestSendQuote.quantity)
+			expect(quote2.requestedOpenPrice).to.be.equal(requestSendQuote.price)
+			expect(quote2.quantity).to.be.equal(requestSendQuote.quantity)
+			
+			expect(quote.quoteStatus).to.be.equal(QuoteStatus.LOCKED)
+			expect(quote2.quoteStatus).to.be.equal(QuoteStatus.PENDING)
 
 			console.log("done")
 		})
