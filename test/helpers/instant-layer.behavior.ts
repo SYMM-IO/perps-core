@@ -452,6 +452,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				params: {
 					targetContract: context.diamond,
 					keyValueHash: ethers.ZeroHash,
+					keyValue: "",
 					callDataHash: sendQuoteParamHash,
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
@@ -474,6 +475,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				params: {
 					targetContract: context.diamond,
 					keyValueHash: ethers.ZeroHash,
+					keyValue: "",
 					callDataHash: sendQuoteParamHash,
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
@@ -496,6 +498,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				params: {
 					targetContract: context.diamond,
 					keyValueHash: ethers.ZeroHash,
+					keyValue: "",
 					callDataHash: lockQuoteParamHash,
 					functionSignature: lockQuoteSignature, // canonical
 				},
@@ -515,26 +518,19 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteSignature1 = {
 				signature: new Uint8Array([0x1, 0x2]),
-				params: {
-					callData: sendQuoteParamsOnly,
-					keyValue: "",
-				},
+				callData: sendQuoteParamsOnly,
 			}
 
 			opSendQuoteSignature2 = {
 				signature: new Uint8Array([0x1, 0x2]),
-				params: {
-					callData: sendQuoteParamsOnly,
-					keyValue: "",
-				},
+				callData: sendQuoteParamsOnly,
+				
 			}
 
 			opLockSignature = {
 				signature: new Uint8Array([0x1, 0x2]),
-				params: {
-					callData: lockQuoteParamsOnly,
-					keyValue: "",
-				},
+				callData: lockQuoteParamsOnly,
+				
 			}
 
 			// opLockB1 = {
@@ -672,7 +668,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
 			expect(quote2.requestedOpenPrice).to.be.equal(requestSendQuote.price)
 			expect(quote2.quantity).to.be.equal(requestSendQuote.quantity)
-			
+
 			expect(quote.quoteStatus).to.be.equal(QuoteStatus.LOCKED)
 			expect(quote2.quoteStatus).to.be.equal(QuoteStatus.PENDING)
 

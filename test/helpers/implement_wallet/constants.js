@@ -13,6 +13,7 @@ export const BASE_TYPES = Object.freeze({
 	ParamCallDataSignable: Object.freeze([
 		{ name: "targetContract", type: "address" },
 		{ name: "callDataHash", type: "bytes32" },
+		{ name: "keyValue", type: "string" },
 		{ name: "keyValueHash", type: "bytes32" },
 		{ name: "functionSignature", type: "string" },
 	]),

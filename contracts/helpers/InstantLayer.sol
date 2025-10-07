@@ -82,7 +82,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		keccak256("Account(address multiAccount,address partyA_AccountAddress,address accountOwner,bytes4 selector)");
 
 	bytes32 public constant PARAMS_SIGNABLE_TYPEHASH =
-		keccak256("ParamCallDataSignable(address targetContract,bytes32 callDataHash,bytes32 keyValueHash,string functionSignature)");
+		keccak256("ParamCallDataSignable(address targetContract,bytes32 callDataHash,string keyValue,bytes32 keyValueHash,string functionSignature)");
 
 	bytes32 public constant REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
 
@@ -98,7 +98,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				"ReplayAttackHeader replayAttackHeader",
 				")",
 				"Account(address multiAccount,address partyA_AccountAddress,address accountOwner,bytes4 selector)",
-				"ParamCallDataSignable(address targetContract,bytes32 callDataHash,bytes32 keyValueHash,string functionSignature)",
+				"ParamCallDataSignable(address targetContract,bytes32 callDataHash,string keyValue,bytes32 keyValueHash,string functionSignature)",
 				"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
 			)
 		);
@@ -178,25 +178,16 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @dev Use hashes of dynamic data so wallets sign small, stable messages.
 	 * @param targetContract     Target contract to be called
 	 * @param callDataHash       keccak256(callData) where callData contains *parameters only* (no selector)
+	 * @param keyValue       // human-readable, shown in wallet
 	 * @param keyValueHash       keccak256(bytes(keyValue)) of a canonical display string; 0x0 if unused
 	 * @param functionSignature  Canonical signature string (e.g., "sendQuoteWithAffiliate(address[],uint256,...)")
 	 */
 	struct ParamCallDataSignable {
 		address targetContract;
 		bytes32 callDataHash;
+		string keyValue;
 		bytes32 keyValueHash;
 		string functionSignature;
-	}
-
-	/**
-	 * @notice Full transport payload for parameters (NOT signed).
-	 * @dev `callData` is parameters-only (no selector). `keyValue` is human-readable display.
-	 * @param callData           ABI-encoded parameters only (no selector)
-	 * @param keyValue           Canonical "key=value;..." string for human display
-	 */
-	struct ParamCallData {
-		bytes callData; // parameters only (no selector)
-		string keyValue;
 	}
 
 	/**
@@ -206,7 +197,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	struct SignatureCallData {
 		bytes signature; // excluded from EIP-712 struct hash
-		ParamCallData params;
+		bytes callData; // parameters only (no selector)
 	}
 
 	/**
@@ -567,7 +558,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			_verifyOperation(signedOp, sigCallData);
 
 			// Prepare calldata with insertions from previous results
-			bytes memory finalCallData = _insertResults(sigCallData.params.callData, op.insertionPoints, op.sourceIndices, results);
+			bytes memory finalCallData = _insertResults(sigCallData.callData, op.insertionPoints, op.sourceIndices, results);
 
 			// Execute operation
 			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData);
@@ -607,10 +598,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			_verifyOperation(signedOps[i], sigCalldDta[i]);
 
 			// (success, results[i]) = _executeOperationSafe(signedOps[i], sigCalldDta[i].callData);
-			(success, results[i]) = _executeOperationSafe(
-				signedOps[i],
-				abi.encodePacked(signedOps[i].delegator.selector, sigCalldDta[i].params.callData)
-			);
+			(success, results[i]) = _executeOperationSafe(signedOps[i], abi.encodePacked(signedOps[i].delegator.selector, sigCalldDta[i].callData));
 
 			if (!success) {
 				symmio.setCallFromInstantLayer(false);
@@ -659,9 +647,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 
 		// 2) bind exact params: callData must match signed paramHash commitment
-		if (keccak256(sigCalldDta.params.callData) != signedOp.params.callDataHash) revert InvalidCallData();
+		if (keccak256(sigCalldDta.callData) != signedOp.params.callDataHash) revert InvalidCallData();
 		if (signedOp.params.keyValueHash != bytes32(0)) {
-			if (keccak256(bytes(sigCalldDta.params.keyValue)) != signedOp.params.keyValueHash) revert InvalidCallData();
+			if (keccak256(bytes(signedOp.params.keyValue)) != signedOp.params.keyValueHash) revert InvalidCallData();
 		}
 
 		// 3) Check for replay attacks
@@ -780,6 +768,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 					PARAMS_SIGNABLE_TYPEHASH,
 					p.targetContract,
 					p.callDataHash,
+					keccak256(bytes(p.keyValue)),
 					p.keyValueHash,
 					keccak256(bytes(p.functionSignature)) // string inside struct per EIP-712
 				)
