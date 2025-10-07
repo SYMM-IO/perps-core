@@ -38,7 +38,7 @@ import { hedgerActionsMap } from "../models/Actions"
 // import { IMultiAccount } from "../../src/types/contracts/interfaces"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
 import { IMultiAccount } from "../../src/types/contracts/multiAccount/MultiAccount"
-import { cloneTypes } from "./InstantLayerEIP712Types"
+import { cloneTypes } from "./instantLayerEIP712Types"
 
 export function shouldBehaveLikeInstantLayer(): void {
 	let context: RunContext, partyA1: User, partyA2: User, partyB1: Hedger, partyB2: Hedger

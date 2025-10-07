@@ -191,17 +191,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/**
 	 * @notice Full transport payload for parameters (NOT signed).
 	 * @dev `callData` is parameters-only (no selector). `keyValue` is human-readable display.
-	 * @param targetContract     Target contract to be called
 	 * @param callData           ABI-encoded parameters only (no selector)
-	 * @param callDataHash       keccak256(callData) – should match the signed one
-	 * @param functionSignature  Canonical signature string (e.g., "sendQuoteWithAffiliate(address[],uint256,...)")
 	 * @param keyValue           Canonical "key=value;..." string for human display
 	 */
 	struct ParamCallData {
-		// address targetContract;
 		bytes callData; // parameters only (no selector)
-		// bytes32 callDataHash; // keccak256(callData)
-		// string functionSignature;
 		string keyValue;
 	}
 

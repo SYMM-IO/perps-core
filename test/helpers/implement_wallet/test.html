@@ -54,6 +54,7 @@
 		<!-- Ethers v6 ESM (CDN) -->
 		<script type="module">
 			import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.min.js";
+			import { BASE_TYPES, PartyAFacetAbi, InstantLayerAbi, FN_SIGNATURE } from "./constants.js";
 
 			// ===========================
 			// 🔧 CONFIG — FILL THESE IN
@@ -67,69 +68,6 @@
 
 			// If your EIP-712 domain in Solidity includes a domain salt, add it below:
 			const DOMAIN_SALT = null; // e.g. "0x0000...". Keep null if not used in contract's domain.
-
-			// ===========================
-			// Minimal ABIs
-			// ===========================
-			// Only functions we actually use here
-			// const INSTANT_LAYER_ABI = [
-			// 	// executeBatch((SignedOperation)[], (SignatureCallData)[])
-			// 	// SignedOperation = (address actualSigner, (address target, bytes callData, bytes32 paramHash, string functionSignature) params, uint8 side, (address,address,address,bytes4) delegator, (uint256 nonce,uint256 deadline,bytes32 salt) rpl)
-			// 	// SignatureCallData = (bytes signature, bytes callData)
-			// 	"function executeBatch((address,(address,bytes,bytes32,string),uint8,(address,address,address,bytes4),(uint256,uint256,bytes32))[],(bytes,bytes)[]) external",
-			// ];
-			const INSTANT_LAYER_ABI = [
-				// note: every tuple component is named
-				"function executeBatch((" +
-					"address actualSigner," +
-					"(address target,bytes32 paramHash,string functionSignature) params," +
-					"uint8 side," +
-					"(address multiAccount,address accountAddress,address accountOwner,bytes4 selector) delegator," +
-					"(uint256 nonce,uint256 deadline,bytes32 salt) rpl" +
-					")[] signedOps," +
-					"(bytes signature,bytes callData)[] sigCallDatas)",
-			];
-
-			// We don’t call PartyAFacet directly, but we need its interface to encode params.
-			const PARTY_A_FACET_ABI = [
-				"function sendQuoteWithAffiliate(address[] partyBsWhiteList,uint256 symbolId,uint8 positionType,uint8 orderType,uint256 price,uint256 quantity,uint256 cva,uint256 lf,uint256 partyAmm,uint256 partyBmm,uint256 maxFundingRate,uint256 deadline,address affiliate,(int256 upnl,uint256 price,uint256 timestamp,uint256 reqId,bytes gatewaySignature) upnlSig) external returns (uint256)",
-			];
-
-			// ===========================
-			// Canonical function signature string
-			// ===========================
-			const FN_SIGNATURE =
-				"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(int256,uint256,uint256,uint256,bytes))";
-
-			// ===========================
-			// EIP-712 "types" (must match Solidity exactly)
-			// ===========================
-			const TYPES_712 = {
-				Account: [
-					{ name: "multiAccount", type: "address" },
-					{ name: "accountAddress", type: "address" },
-					{ name: "accountOwner", type: "address" },
-					{ name: "selector", type: "bytes4" },
-				],
-				ReplayAttackHeader: [
-					{ name: "nonce", type: "uint256" },
-					{ name: "deadline", type: "uint256" },
-					{ name: "salt", type: "bytes32" },
-				],
-				ParamCallData: [
-					// NOTE: NO callData inside the signed struct
-					{ name: "target", type: "address" },
-					{ name: "paramHash", type: "bytes32" },
-					{ name: "functionSignature", type: "string" },
-				],
-				SignedOperation: [
-					{ name: "actualSigner", type: "address" },
-					{ name: "params", type: "ParamCallData" },
-					{ name: "side", type: "uint8" }, // enum -> uint8 (0 = PartyA, 1 = PartyB)
-					{ name: "delegator", type: "Account" },
-					{ name: "rpl", type: "ReplayAttackHeader" },
-				],
-			};
 
 			// ===========================
 			// helpers
@@ -246,7 +184,7 @@
 
 			function encodeParamsOnly(args) {
 				// Build full calldata first, then strip the first 4 bytes (selector)
-				const iface = new ethers.Interface(PARTY_A_FACET_ABI);
+				const iface = new ethers.Interface(PartyAFacetAbi);
 				const full = iface.encodeFunctionData("sendQuoteWithAffiliate", args); // 0x + selector + params
 				const selector = full.slice(0, 10); // 0x + 8 hex chars
 				const paramsOnly = "0x" + full.slice(10);
@@ -309,49 +247,69 @@
 							gatewaySignature: "0x",
 						},
 					];
+					log("Args");
 
 					// 1) Encode paramsOnly + hash
 					const { selector, paramsOnly, paramHash } = encodeParamsOnly(args);
 					log("selector:", selector);
 					log("paramHash:", paramHash);
 					log("Params:", paramsOnly);
+					log("Signer:", await signer.getAddress());
+					log("Account:", who);
 
-					// 2) Build signable object (NO callData, NO signature)
+					const keyValue = ""; // or your "symbolId=1;price=10;..." string
+					const keyValueHash = keyValue ? ethers.keccak256(ethers.toUtf8Bytes(keyValue)) : ethers.ZeroHash;
+
+					// 2) Build signable object ( NO signature)
 					const sop = {
-						actualSigner: who,
+						signer: who,
 						params: {
-							target: DIAMOND_ADDR,
-							paramHash,
+							targetContract: DIAMOND_ADDR,
+							callDataHash: paramHash,
+							keyValueHash: keyValueHash,
 							functionSignature: FN_SIGNATURE,
 						},
 						side: 0, // PartyA
 						delegator: {
 							multiAccount: MULTIACCOUNT_ADDR,
-							accountAddress: "0x0000000000000000000000000000000000000000", // fill with your account address
+							partyA_AccountAddress: "0x0000000000000000000000000000000000000000", // fill with your account address
 							accountOwner: who,
 							selector, // bytes4 for function; optional consistency check on-chain
 						},
-						rpl: {
+						replayAttackHeader: {
 							nonce: 1n,
 							deadline: BigInt(now + 600),
 							salt: ethers.hexlify(ethers.randomBytes(32)), // replay guard salt (NOT the domain salt)
 						},
 					};
+					log("Structure generated!");
 
 					// 3) EIP-712 domain
 					const domain = buildDomain(chainId);
-
+					log("Domain Built:", domain);
 					// 4) Ask the wallet to sign typed data
-					const signature = await signer.signTypedData(domain, TYPES_712, sop);
+					const signature = await signer.signTypedData(domain, BASE_TYPES, sop);
 					log("signature:", signature);
 
 					// 5) Call InstantLayer.executeBatch
-					const instant = new ethers.Contract(INSTANT_LAYER_ADDR, INSTANT_LAYER_ABI, signer);
+					const instant = new ethers.Contract(INSTANT_LAYER_ADDR, InstantLayerAbi, signer);
+					log("Instant Object Generated!");
 
 					// SignatureCallData struct contains signature + callData (paramsOnly bytes)
-					const sigCallData = { signature: signature, callData: paramsOnly };
+					const sigCallData = {
+						signature: signature,
+						params: {
+							callData: paramsOnly, // bytes, params-only (no selector)
+							keyValue, // string
+						},
+					};
+					log("sigCallData Genrated!");
 
-					const tx = await instant.executeBatch([sop], [sigCallData]);
+					const OPERATOR_ROLE = await instant.OPERATOR_ROLE();
+					let tx = await instant.grantRole(OPERATOR_ROLE, who);
+					await tx.wait();
+                    log("Role Granted!")
+					tx = await instant.executeBatch([sop], [sigCallData]);
 					log("tx sent:", tx.hash);
 					const rcpt = await tx.wait();
 					log("tx confirmed in block", rcpt.blockNumber);
