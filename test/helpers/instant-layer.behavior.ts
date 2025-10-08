@@ -453,7 +453,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					callData: sendQuoteParamsOnly,
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
-				delegator: {
+				account: {
 					multiAccount: await context.multiAccount.getAddress(),
 					addr: accounts[0].accountAddress,
 					owner: partyA1.address,
@@ -472,7 +472,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					callData: sendQuoteParamsOnly,
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
-				delegator: {
+				account: {
 					multiAccount: await context.multiAccount.getAddress(),
 					addr: accounts[0].accountAddress,
 					owner: partyA1.address,
@@ -491,7 +491,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					callData: lockQuoteParamsOnly,
 					functionSignature: lockQuoteSignature, // canonical
 				},
-				delegator: {
+				account: {
 					multiAccount: ZeroAddress,
 					addr: ZeroAddress,
 					owner: ZeroAddress,

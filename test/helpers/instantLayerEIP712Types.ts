@@ -20,7 +20,7 @@ export const BASE_TYPES = Object.freeze({
 	SignedOperation: Object.freeze([
 		{ name: "signer", type: "address" },
 		{ name: "params", type: "ParamCallDataSignable" },
-		{ name: "delegator", type: "Account" },
+		{ name: "account", type: "Account" },
 		{ name: "replayAttackHeader", type: "ReplayAttackHeader" },
 	]),
 })

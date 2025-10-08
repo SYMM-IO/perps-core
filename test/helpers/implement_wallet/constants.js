@@ -17,7 +17,7 @@ export const BASE_TYPES = Object.freeze({
 	SignedOperation: Object.freeze([
 		{ name: "signer", type: "address" },
 		{ name: "params", type: "ParamCallDataSignable" },
-		{ name: "delegator", type: "Account" },
+		{ name: "account", type: "Account" },
 		{ name: "replayAttackHeader", type: "ReplayAttackHeader" },
 	]),
 });
@@ -89,21 +89,17 @@ export const InstantLayerAbi = [
 						name: "params",
 						type: "tuple",
 						components: [
-							{ name: "targetContract", type: "address" },
 							{ name: "callData", type: "bytes" },
-							{ name: "callDataHash", type: "bytes32" },
-							{ name: "keyValueHash", type: "bytes32" },
 							{ name: "functionSignature", type: "string" },
 						],
 					},
-					{ name: "side", type: "uint8" },
 					{
-						name: "delegator",
+						name: "account",
 						type: "tuple",
 						components: [
 							{ name: "multiAccount", type: "address" },
-							{ name: "partyA_AccountAddress", type: "address" },
-							{ name: "accountOwner", type: "address" },
+							{ name: "addr", type: "address" },
+							{ name: "owner", type: "address" },
 							{ name: "selector", type: "bytes4" },
 						],
 					},
