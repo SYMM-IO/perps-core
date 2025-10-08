@@ -415,8 +415,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.instantLayer.connect(partyA1.getSigner).grantDelegation(
 				{
 					multiAccount: await context.multiAccount.getAddress(),
-					partyA_AccountAddress: accounts[0].accountAddress,
-					accountOwner: partyA1.address,
+					addr: accounts[0].accountAddress,
+					owner: partyA1.address,
 					selector: selectorQuote,
 				},
 				context.signers.admin.address,
@@ -450,18 +450,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 			opSendQuoteA1 = {
 				signer: context.signers.admin.address,
 				params: {
-					targetContract: context.diamond,
 					callData: sendQuoteParamsOnly,
-					callDataHash: sendQuoteParamHash,
-					keyValueHash: ethers.ZeroHash,
-					keyValue: "",
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
-				side: 0, // PartyA
 				delegator: {
 					multiAccount: await context.multiAccount.getAddress(),
-					partyA_AccountAddress: accounts[0].accountAddress,
-					accountOwner: partyA1.address,
+					addr: accounts[0].accountAddress,
+					owner: partyA1.address,
 					selector: selectorQuote,
 				},
 				replayAttackHeader: {
@@ -474,18 +469,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 			opSendQuoteA2 = {
 				signer: partyA1.address,
 				params: {
-					targetContract: context.diamond,
 					callData: sendQuoteParamsOnly,
-					callDataHash: sendQuoteParamHash,
-					keyValueHash: ethers.ZeroHash,
-					keyValue: "",
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
-				side: 0, // PartyA
 				delegator: {
 					multiAccount: await context.multiAccount.getAddress(),
-					partyA_AccountAddress: accounts[0].accountAddress,
-					accountOwner: partyA1.address,
+					addr: accounts[0].accountAddress,
+					owner: partyA1.address,
 					selector: selectorQuote,
 				},
 				replayAttackHeader: {
@@ -498,18 +488,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 			opLockB1 = {
 				signer: await context.symmioPartyB.getAddress(),
 				params: {
-					targetContract: context.diamond,
 					callData: lockQuoteParamsOnly,
-					callDataHash: lockQuoteParamHash,
-					keyValueHash: ethers.ZeroHash,
-					keyValue: "",
 					functionSignature: lockQuoteSignature, // canonical
 				},
-				side: 1, // PartyB
 				delegator: {
 					multiAccount: ZeroAddress,
-					partyA_AccountAddress: ZeroAddress,
-					accountOwner: ZeroAddress,
+					addr: ZeroAddress,
+					owner: ZeroAddress,
 					selector: selectorLock,
 				},
 				replayAttackHeader: {
