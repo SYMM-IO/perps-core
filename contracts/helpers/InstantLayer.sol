@@ -39,6 +39,8 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
  * @notice Interface for MultiAccount contract interactions.
  */
 
+import "hardhat/console.sol";
+
 interface IMultiAccount {
 	function _call(address account, bytes[] calldata _callDatas) external;
 
@@ -82,7 +84,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		keccak256("Account(address multiAccount,address partyA_AccountAddress,address accountOwner,bytes4 selector)");
 
 	bytes32 public constant PARAMS_SIGNABLE_TYPEHASH =
-		keccak256("ParamCallDataSignable(address targetContract,bytes32 callDataHash,string keyValue,bytes32 keyValueHash,string functionSignature)");
+		keccak256(
+			"ParamCallDataSignable(address targetContract,bytes callData,bytes32 callDataHash,string keyValue,bytes32 keyValueHash,string functionSignature)"
+		);
 
 	bytes32 public constant REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
 
@@ -98,7 +102,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				"ReplayAttackHeader replayAttackHeader",
 				")",
 				"Account(address multiAccount,address partyA_AccountAddress,address accountOwner,bytes4 selector)",
-				"ParamCallDataSignable(address targetContract,bytes32 callDataHash,string keyValue,bytes32 keyValueHash,string functionSignature)",
+				"ParamCallDataSignable(address targetContract,bytes callData,bytes32 callDataHash,string keyValue,bytes32 keyValueHash,string functionSignature)",
 				"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
 			)
 		);
@@ -184,6 +188,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	struct ParamCallDataSignable {
 		address targetContract;
+		bytes callData;
 		bytes32 callDataHash;
 		string keyValue;
 		bytes32 keyValueHash;
@@ -197,7 +202,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	struct SignatureCallData {
 		bytes signature; // excluded from EIP-712 struct hash
-		bytes callData; // parameters only (no selector)
+		// bytes callData; // parameters only (no selector)
 	}
 
 	/**
@@ -558,7 +563,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			_verifyOperation(signedOp, sigCallData);
 
 			// Prepare calldata with insertions from previous results
-			bytes memory finalCallData = _insertResults(sigCallData.callData, op.insertionPoints, op.sourceIndices, results);
+			bytes memory finalCallData = _insertResults(signedOp.params.callData, op.insertionPoints, op.sourceIndices, results);
 
 			// Execute operation
 			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData);
@@ -598,7 +603,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			_verifyOperation(signedOps[i], sigCalldDta[i]);
 
 			// (success, results[i]) = _executeOperationSafe(signedOps[i], sigCalldDta[i].callData);
-			(success, results[i]) = _executeOperationSafe(signedOps[i], abi.encodePacked(signedOps[i].delegator.selector, sigCalldDta[i].callData));
+			(success, results[i]) = _executeOperationSafe(
+				signedOps[i],
+				abi.encodePacked(signedOps[i].delegator.selector, signedOps[i].params.callData)
+			);
 
 			if (!success) {
 				symmio.setCallFromInstantLayer(false);
@@ -642,12 +650,16 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			}
 		}
 
+		console.log("here");
+
 		if (!SignatureChecker.isValidSignatureNow(signedOp.signer, hash, sigCalldDta.signature)) {
 			revert InvalidSignature();
 		}
 
+		console.log("there");
+
 		// 2) bind exact params: callData must match signed paramHash commitment
-		if (keccak256(sigCalldDta.callData) != signedOp.params.callDataHash) revert InvalidCallData();
+		if (keccak256(signedOp.params.callData) != signedOp.params.callDataHash) revert InvalidCallData();
 		if (signedOp.params.keyValueHash != bytes32(0)) {
 			if (keccak256(bytes(signedOp.params.keyValue)) != signedOp.params.keyValueHash) revert InvalidCallData();
 		}
@@ -767,6 +779,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				abi.encode(
 					PARAMS_SIGNABLE_TYPEHASH,
 					p.targetContract,
+					keccak256(p.callData),
 					p.callDataHash,
 					keccak256(bytes(p.keyValue)),
 					p.keyValueHash,

@@ -265,8 +265,9 @@
 						signer: who,
 						params: {
 							targetContract: DIAMOND_ADDR,
+							callData: paramsOnly, // bytes, params-only (no selector)
 							callDataHash: paramHash,
-							keyValue:"",
+							keyValue: "",
 							keyValueHash: keyValueHash,
 							functionSignature: FN_SIGNATURE,
 						},
@@ -299,17 +300,13 @@
 					// SignatureCallData struct contains signature + callData (paramsOnly bytes)
 					const sigCallData = {
 						signature: signature,
-						params: {
-							callData: paramsOnly, // bytes, params-only (no selector)
-							keyValue, // string
-						},
 					};
 					log("sigCallData Genrated!");
 
 					const OPERATOR_ROLE = await instant.OPERATOR_ROLE();
 					let tx = await instant.grantRole(OPERATOR_ROLE, who);
 					await tx.wait();
-                    log("Role Granted!")
+					log("Role Granted!");
 					tx = await instant.executeBatch([sop], [sigCallData]);
 					log("tx sent:", tx.hash);
 					const rcpt = await tx.wait();

@@ -451,9 +451,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: context.signers.admin.address,
 				params: {
 					targetContract: context.diamond,
+					callData: sendQuoteParamsOnly,
+					callDataHash: sendQuoteParamHash,
 					keyValueHash: ethers.ZeroHash,
 					keyValue: "",
-					callDataHash: sendQuoteParamHash,
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
 				side: 0, // PartyA
@@ -474,9 +475,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: partyA1.address,
 				params: {
 					targetContract: context.diamond,
+					callData: sendQuoteParamsOnly,
+					callDataHash: sendQuoteParamHash,
 					keyValueHash: ethers.ZeroHash,
 					keyValue: "",
-					callDataHash: sendQuoteParamHash,
 					functionSignature: sendQuoteWithAffiliateSignature, // canonical
 				},
 				side: 0, // PartyA
@@ -497,9 +499,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: await context.symmioPartyB.getAddress(),
 				params: {
 					targetContract: context.diamond,
+					callData: lockQuoteParamsOnly,
+					callDataHash: lockQuoteParamHash,
 					keyValueHash: ethers.ZeroHash,
 					keyValue: "",
-					callDataHash: lockQuoteParamHash,
 					functionSignature: lockQuoteSignature, // canonical
 				},
 				side: 1, // PartyB
@@ -518,19 +521,14 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteSignature1 = {
 				signature: new Uint8Array([0x1, 0x2]),
-				callData: sendQuoteParamsOnly,
 			}
 
 			opSendQuoteSignature2 = {
 				signature: new Uint8Array([0x1, 0x2]),
-				callData: sendQuoteParamsOnly,
-				
 			}
 
 			opLockSignature = {
 				signature: new Uint8Array([0x1, 0x2]),
-				callData: lockQuoteParamsOnly,
-				
 			}
 
 			// opLockB1 = {
@@ -643,18 +641,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
 			const multiAccount = context.multiAccount
 
-			//Sign using getOperationHash
-			// const opSendAHash1 = await instantLayer.getOperationHash(opSendQuoteA1, false)
-			// const opSendAHash2 = await instantLayer.getOperationHash(opSendQuoteA2, false)
-			// const opLockBHash = await instantLayer.getOperationHash(opLockB1, false)
-			// const opOpenB`Hash = await instantLayer.getOperationHash(opOpenQuoteB1, false)
 			console.log(types)
 			opSendQuoteSignature1.signature = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
 			opSendQuoteSignature2.signature = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
 			opLockSignature.signature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
-
-			// opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
-			// opOpenQuoteB1.signature = await partyB1.sign(ethers.getBytes(opOpenBHash))
 
 			console.log("Test signature:", opSendQuoteSignature1.signature)
 			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opSendQuoteA2, opLockB1]

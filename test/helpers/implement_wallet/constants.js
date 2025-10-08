@@ -12,6 +12,7 @@ export const BASE_TYPES = Object.freeze({
 	]),
 	ParamCallDataSignable: Object.freeze([
 		{ name: "targetContract", type: "address" },
+		{ name: "callData", type: "bytes" },
 		{ name: "callDataHash", type: "bytes32" },
 		{ name: "keyValue", type: "string" },
 		{ name: "keyValueHash", type: "bytes32" },
@@ -94,6 +95,7 @@ export const InstantLayerAbi = [
 						type: "tuple",
 						components: [
 							{ name: "targetContract", type: "address" },
+							{ name: "callData", type: "bytes" },
 							{ name: "callDataHash", type: "bytes32" },
 							{ name: "keyValueHash", type: "bytes32" },
 							{ name: "functionSignature", type: "string" },
@@ -124,17 +126,7 @@ export const InstantLayerAbi = [
 			{
 				name: "sigCalldDta",
 				type: "tuple[]",
-				components: [
-					{ name: "signature", type: "bytes" },
-					{
-						name: "params",
-						type: "tuple",
-						components: [
-							{ name: "callData", type: "bytes" }, // params-only (no selector)
-							{ name: "keyValue", type: "string" }, // human readable KV display
-						],
-					},
-				],
+				components: [{ name: "signature", type: "bytes" }],
 			},
 		],
 		outputs: [],
