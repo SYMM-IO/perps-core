@@ -247,15 +247,9 @@
 							gatewaySignature: "0x",
 						},
 					];
-					log("Args");
 
 					// 1) Encode paramsOnly + hash
 					const { selector, paramsOnly, paramHash } = encodeParamsOnly(args);
-					log("selector:", selector);
-					log("paramHash:", paramHash);
-					log("Params:", paramsOnly);
-					log("Signer:", await signer.getAddress());
-					log("Account:", who);
 
 					const keyValue = ""; // or your "symbolId=1;price=10;..." string
 					const keyValueHash = keyValue ? ethers.keccak256(ethers.toUtf8Bytes(keyValue)) : ethers.ZeroHash;
@@ -264,18 +258,13 @@
 					const sop = {
 						signer: who,
 						params: {
-							targetContract: DIAMOND_ADDR,
 							callData: paramsOnly, // bytes, params-only (no selector)
-							callDataHash: paramHash,
-							keyValue: "",
-							keyValueHash: keyValueHash,
 							functionSignature: FN_SIGNATURE,
 						},
-						side: 0, // PartyA
-						delegator: {
+						account: {
 							multiAccount: MULTIACCOUNT_ADDR,
-							partyA_AccountAddress: "0x0000000000000000000000000000000000000000", // fill with your account address
-							accountOwner: who,
+							addr: "0x0000000000000000000000000000000000000000", // fill with your account address
+							owner: who,
 							selector, // bytes4 for function; optional consistency check on-chain
 						},
 						replayAttackHeader: {
@@ -284,29 +273,25 @@
 							salt: ethers.hexlify(ethers.randomBytes(32)), // replay guard salt (NOT the domain salt)
 						},
 					};
-					log("Structure generated!");
 
 					// 3) EIP-712 domain
 					const domain = buildDomain(chainId);
-					log("Domain Built:", domain);
+
 					// 4) Ask the wallet to sign typed data
 					const signature = await signer.signTypedData(domain, BASE_TYPES, sop);
-					log("signature:", signature);
 
 					// 5) Call InstantLayer.executeBatch
 					const instant = new ethers.Contract(INSTANT_LAYER_ADDR, InstantLayerAbi, signer);
-					log("Instant Object Generated!");
 
 					// SignatureCallData struct contains signature + callData (paramsOnly bytes)
 					const sigCallData = {
 						signature: signature,
 					};
-					log("sigCallData Genrated!");
 
 					const OPERATOR_ROLE = await instant.OPERATOR_ROLE();
 					let tx = await instant.grantRole(OPERATOR_ROLE, who);
 					await tx.wait();
-					log("Role Granted!");
+
 					tx = await instant.executeBatch([sop], [sigCallData]);
 					log("tx sent:", tx.hash);
 					const rcpt = await tx.wait();
