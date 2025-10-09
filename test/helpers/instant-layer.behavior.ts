@@ -393,7 +393,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
 			await context.instantLayer.registerMultiAccount(context.multiAccount) // Admin with SETTER Role
 			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
-			// await context.symmioPartyB.setMulticastWhitelist(context.diamond, true)
 
 			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
 			accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
@@ -407,7 +406,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.accountFacet.connect(partyA1.getSigner).internalTransfer(accounts[0].accountAddress, decimal(1000n))
 
 			//Delegating Access
-			// const delegator: AccountStruct = {}
 			const selectorQuote = quoteCallData.slice(0, 10)
 			const selectorLock = lockQuoteCallData.slice(0, 10)
 			const selectorOpen = openQuoteCallData.slice(0, 10)
@@ -416,13 +414,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 				{
 					multiAccount: await context.multiAccount.getAddress(),
 					addr: accounts[0].accountAddress,
-					owner: partyA1.address,
-					selector: selectorQuote,
 				},
 				context.signers.admin.address,
+				selectorQuote,
 				await getBlockTimestamp(100n),
 			)
-			// await context.instantLayer.connect(partyB1.getSigner).grantDelegation(await context.symmioPartyB.getAddress(), await getBlockTimestamp(100n))
 
 			// Bind to Party B
 			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
@@ -450,14 +446,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 			opSendQuoteA1 = {
 				signer: context.signers.admin.address,
 				params: {
-					callData: sendQuoteParamsOnly,
-					functionSignature: sendQuoteWithAffiliateSignature, // canonical
+					callData: quoteCallData,
 				},
-				account: {
+				signerInfo: {
 					multiAccount: await context.multiAccount.getAddress(),
 					addr: accounts[0].accountAddress,
-					owner: partyA1.address,
-					selector: selectorQuote,
 				},
 				replayAttackHeader: {
 					nonce: 1n,
@@ -469,14 +462,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 			opSendQuoteA2 = {
 				signer: partyA1.address,
 				params: {
-					callData: sendQuoteParamsOnly,
-					functionSignature: sendQuoteWithAffiliateSignature, // canonical
+					callData: quoteCallData,
 				},
-				account: {
+				signerInfo: {
 					multiAccount: await context.multiAccount.getAddress(),
 					addr: accounts[0].accountAddress,
-					owner: partyA1.address,
-					selector: selectorQuote,
 				},
 				replayAttackHeader: {
 					nonce: 1n,
@@ -488,14 +478,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 			opLockB1 = {
 				signer: await context.symmioPartyB.getAddress(),
 				params: {
-					callData: lockQuoteParamsOnly,
-					functionSignature: lockQuoteSignature, // canonical
+					callData: lockQuoteCallData,
 				},
-				account: {
+				signerInfo: {
 					multiAccount: ZeroAddress,
 					addr: ZeroAddress,
-					owner: ZeroAddress,
-					selector: selectorLock,
 				},
 				replayAttackHeader: {
 					nonce: 1n,

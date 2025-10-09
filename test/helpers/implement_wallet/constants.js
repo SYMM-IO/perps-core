@@ -2,22 +2,17 @@ export const BASE_TYPES = Object.freeze({
 	Account: Object.freeze([
 		{ name: "multiAccount", type: "address" },
 		{ name: "addr", type: "address" },
-		{ name: "owner", type: "address" },
-		{ name: "selector", type: "bytes4" },
 	]),
 	ReplayAttackHeader: Object.freeze([
 		{ name: "nonce", type: "uint256" },
 		{ name: "deadline", type: "uint256" },
 		{ name: "salt", type: "bytes32" },
 	]),
-	ParamCallDataSignable: Object.freeze([
-		{ name: "callData", type: "bytes" },
-		{ name: "functionSignature", type: "string" },
-	]),
+	ParamCallDataSignable: Object.freeze([{ name: "callData", type: "bytes" }]),
 	SignedOperation: Object.freeze([
 		{ name: "signer", type: "address" },
 		{ name: "params", type: "ParamCallDataSignable" },
-		{ name: "account", type: "Account" },
+		{ name: "signerInfo", type: "Account" },
 		{ name: "replayAttackHeader", type: "ReplayAttackHeader" },
 	]),
 });

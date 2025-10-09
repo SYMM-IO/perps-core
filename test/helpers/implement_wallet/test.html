@@ -189,7 +189,7 @@
 				const selector = full.slice(0, 10); // 0x + 8 hex chars
 				const paramsOnly = "0x" + full.slice(10);
 				const paramHash = ethers.keccak256(paramsOnly);
-				return { selector, paramsOnly, paramHash };
+				return { full, selector, paramsOnly, paramHash };
 			}
 
 			function buildDomain(chainId) {
@@ -249,7 +249,7 @@
 					];
 
 					// 1) Encode paramsOnly + hash
-					const { selector, paramsOnly, paramHash } = encodeParamsOnly(args);
+					const { full, selector, paramsOnly, paramHash } = encodeParamsOnly(args);
 
 					const keyValue = ""; // or your "symbolId=1;price=10;..." string
 					const keyValueHash = keyValue ? ethers.keccak256(ethers.toUtf8Bytes(keyValue)) : ethers.ZeroHash;
@@ -258,14 +258,11 @@
 					const sop = {
 						signer: who,
 						params: {
-							callData: paramsOnly, // bytes, params-only (no selector)
-							functionSignature: FN_SIGNATURE,
+							callData: full, // bytes, params-only (no selector)
 						},
-						account: {
+						signerInfo: {
 							multiAccount: MULTIACCOUNT_ADDR,
 							addr: "0x0000000000000000000000000000000000000000", // fill with your account address
-							owner: who,
-							selector, // bytes4 for function; optional consistency check on-chain
 						},
 						replayAttackHeader: {
 							nonce: 1n,
