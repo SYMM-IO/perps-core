@@ -43,6 +43,7 @@ import { cloneTypes } from "./instantLayerEIP712Types"
 export function shouldBehaveLikeInstantLayer(): void {
 	let context: RunContext, partyA1: User, partyA2: User, partyB1: Hedger, partyB2: Hedger
 	let quoteCallData: string, lockQuoteCallData: string, openQuoteCallData: string, bindToPartyBCallData: string
+	let lockQuoteCallDataTemplate: string, openQuoteCallDataTemplate: string
 	let saltOpen1: string, saltOpen2: string, saltLock: string, saltOpen: string
 
 	let ops: InstantLayer.OperationStruct[]
@@ -53,6 +54,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 	let requestOpenQuote: OpenRequest
 
 	let types: ReturnType<typeof cloneTypes>
+	let domain: TypedDataDomain
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -112,6 +114,14 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await getDummyPairUpnlAndPriceSig(10n),
 		])
 
+		lockQuoteCallDataTemplate = partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [6, await getDummySingleUpnlSig(10n)])
+		openQuoteCallDataTemplate = partyBPositionActionsFacet.interface.encodeFunctionData("openPosition", [
+			4,
+			requestOpenQuote.filledAmount,
+			requestOpenQuote.openPrice,
+			await getDummyPairUpnlAndPriceSig(10n),
+		])
+
 		bindToPartyBCallData = accountFacet.interface.encodeFunctionData("bindToPartyB", [await context.symmioPartyB.getAddress()])
 
 		ops = [
@@ -134,6 +144,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 		]
 
 		types = cloneTypes() // fresh copy for each test
+		domain = {
+			name: "SymmioInstantLayer",
+			version: "1",
+			chainId: (await ethers.provider.getNetwork()).chainId,
+			verifyingContract: await context.instantLayer.getAddress(),
+		}
 	})
 
 	// describe("Registering PartyB", async function () {
@@ -370,6 +386,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		let opSendQuoteSignature1: InstantLayer.SignatureCallDataStruct
 		let opSendQuoteSignature2: InstantLayer.SignatureCallDataStruct
 		let opLockSignature: InstantLayer.SignatureCallDataStruct
+		let opOpenSignature: InstantLayer.SignatureCallDataStruct
 		let accounts: IMultiAccount.AccountStructOutput[]
 
 		// Domain must match the executor's EIP712(name,version)
@@ -398,8 +415,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
 
 			await expect(context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)).not.reverted
-			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("TRUSTED_ROLE")), partyA1.address)
-			await expect(context.symmioPartyB.connect(partyA1.getSigner)._approve(context.collateral, decimal(30n))).not.to.be.reverted // for symmoio contract
+			// await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("TRUSTED_ROLE")), partyA1.address)
+			// await expect(context.symmioPartyB.connect(partyA1.getSigner)._approve(context.collateral, decimal(30n))).not.to.be.reverted // for symmoio contract
 
 			await expect(context.collateral.connect(partyA1.getSigner).mint(accounts[0].accountAddress, decimal(30n))).to.not.reverted
 			await context.accountFacet.connect(partyA1.getSigner).depositFor(accounts[0].accountAddress, decimal(20n))
@@ -441,7 +458,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 			sendQuoteSelector = context.partyAFacet.interface.getFunction("sendQuoteWithAffiliate").selector as `0x${string}`
 			lockQuoteSelector = context.partyBQuoteActionsFacet.interface.getFunction("lockQuote").selector as `0x${string}`
 			openQuoteSelector = context.partyBPositionActionsFacet.interface.getFunction("openPosition").selector as `0x${string}`
-			console.log("Quote Param data:", sendQuoteParamsOnly)
 
 			opSendQuoteA1 = {
 				signer: context.signers.admin.address,
@@ -491,6 +507,22 @@ export function shouldBehaveLikeInstantLayer(): void {
 				},
 			}
 
+			opOpenQuoteB1 = {
+				signer: await context.symmioPartyB.getAddress(),
+				params: {
+					callData: openQuoteCallData,
+				},
+				signerInfo: {
+					multiAccount: ZeroAddress,
+					addr: ZeroAddress,
+				},
+				replayAttackHeader: {
+					nonce: 2n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
 			opSendQuoteSignature1 = {
 				signature: new Uint8Array([0x1, 0x2]),
 			}
@@ -503,60 +535,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signature: new Uint8Array([0x1, 0x2]),
 			}
 
-			// opLockB1 = {
-			// 	actualSigner: partyA1.address,
-			// 	signature: new Uint8Array([0x1, 0x2]),
-			// 	params: {
-			// 		target: context.diamond,
-			// 		callData: sendQuoteParamsOnly, // parameters only
-			// 		paramHash: sendQuoteParamHash,
-			// 		functionSignature: sendQuoteWithAffiliateSignature, // canonical
-			// 	},
-			// 	side: 0, // PartyA
-			// 	delegator: {
-			// 		multiAccount: await context.multiAccount.getAddress(),
-			// 		accountAddress: accounts[0].accountAddress,
-			// 		accountOwner: partyA1.address,
-			// 		selector: selectorQuote,
-			// 	},
-			// 	rpl: {
-			// 		nonce: 1n,
-			// 		deadline: deadline,
-			// 		salt: ethers.hexlify(ethers.randomBytes(32)),
-			// 	},
-			// }
-
-			// opLockB1 = {
-			// 	actualSigner: context.symmioPartyB,
-			// 	callData: lockQuoteCallData,
-			// 	nonce: 0,
-			// 	salt: saltLock,
-			// 	deadline: deadline,
-			// 	signature: new Uint8Array([0x1, 0x2]),
-			// 	side: 1, //SignedOperationSides.PartyB,
-			// 	delegator: {
-			// 		multiAccount: ZeroAddress,
-			// 		accountAddress: ZeroAddress,
-			// 		accountOwner: ZeroAddress,
-			// 		selector: "0x12345678",
-			// 	},
-			// }
-
-			// opOpenQuoteB1 = {
-			// 	actualSigner: context.symmioPartyB,
-			// 	callData: openQuoteCallData,
-			// 	nonce: 0,
-			// 	salt: saltOpen,
-			// 	deadline: deadline,
-			// 	signature: new Uint8Array([0x1, 0x2]),
-			// 	side: 1, //SignedOperationSides.PartyB,
-			// 	delegator: {
-			// 		multiAccount: ZeroAddress,
-			// 		accountAddress: ZeroAddress,
-			// 		accountOwner: ZeroAddress,
-			// 		selector: "0x12345678",
-			// 	},
-			// }
+			opOpenSignature = {
+				signature: new Uint8Array([0x1, 0x2]),
+			}
 		})
 
 		// it("Should be failed when Sender not have Operator Role ", async () => {
@@ -602,23 +583,14 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	await expect(context.instantLayer.executeBatch([opLockB1])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
 		// })
 
-		it.only("should allow Sending Intents in a single batch", async function () {
-			const domain: TypedDataDomain = {
-				name: "SymmioInstantLayer",
-				version: "1",
-				chainId: (await ethers.provider.getNetwork()).chainId,
-				verifyingContract: await context.instantLayer.getAddress(),
-			}
-
+		it("should allow Sending Intents in a single batch", async function () {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
 			const multiAccount = context.multiAccount
 
-			console.log(types)
 			opSendQuoteSignature1.signature = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
 			opSendQuoteSignature2.signature = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
 			opLockSignature.signature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
 
-			console.log("Test signature:", opSendQuoteSignature1.signature)
 			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opSendQuoteA2, opLockB1]
 			const sigCallDatas: InstantLayer.SignatureCallDataStruct[] = [opSendQuoteSignature1, opSendQuoteSignature2, opLockSignature]
 
@@ -633,8 +605,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			expect(quote.quoteStatus).to.be.equal(QuoteStatus.LOCKED)
 			expect(quote2.quoteStatus).to.be.equal(QuoteStatus.PENDING)
-
-			console.log("done")
 		})
 
 		// it("should allow Sending Intent, Locking and Filling in a single batch Seperately", async function () {
@@ -763,68 +733,152 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 	})
 
-	describe("execute Template", async function () {
-		// 	let opOpenA1: InstantLayer.SignedOperationStruct, opOpenA2: InstantLayer.SignedOperationStruct
-		// 	let opLockB1: InstantLayer.SignedOperationStruct, opFillB1: InstantLayer.SignedOperationStruct
-		// 	let accounts: MultiAccount.AccountStruct[]
-		// 	beforeEach(async function () {
-		// 		const latestBlock = await getLatestBlockTime()
-		// 		const deadline = latestBlock + 300
-		// 		await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
-		// 		accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
-		// 		// await expect(context.collateral.connect(partyA1.getSigner).approve(context.common.diamondAddress, ethers.MaxUint256)).not.reverted
-		// 		await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("TRUSTED_ROLE")), partyA1.address)
-		// 		await expect(context.symmioPartyB.connect(partyA1.getSigner)._approve(context.collateral, e(30))).not.to.be.reverted // for symmoio contract
-		// 		await expect(context.collateral.connect(partyA1.getSigner).mint(accounts[0].account, e(30))).to.not.reverted
-		// 		await expect(context.collateralNL.connect(partyA1.getSigner).mint(accounts[0].account, e(30))).to.not.reverted
-		// 		await context.accountFacet.connect(partyA1.getSigner).depositFor(await context.collateral.getAddress(), accounts[0].account, e(20))
-		// 		await context.accountFacet.connect(partyA1.getSigner).depositFor(await context.collateralNL.getAddress(), accounts[0].account, e(20))
-		// 		opOpenA1 = {
-		// 			accountSource: await context.multiAccount.getAddress(),
-		// 			signer: accounts[0].account,
-		// 			callData: openIntentCallData,
-		// 			nonce: 0,
-		// 			salt: saltOpen1,
-		// 			deadline: deadline,
-		// 			signature: new Uint8Array([0x1, 0x2]),
-		// 		}
-		// 		opOpenA2 = {
-		// 			accountSource: await context.multiAccount.getAddress(),
-		// 			signer: accounts[0].account,
-		// 			callData: openIntentCallData,
-		// 			nonce: 0,
-		// 			salt: saltOpen2,
-		// 			deadline: deadline,
-		// 			signature: new Uint8Array([0x1, 0x2]),
-		// 		}
-		// 		opLockB1 = {
-		// 			accountSource: ethers.ZeroAddress,
-		// 			signer: await context.symmioPartyB.getAddress(),
-		// 			callData: lockIntentCallData,
-		// 			nonce: 0,
-		// 			salt: saltLock,
-		// 			deadline: deadline,
-		// 			signature: new Uint8Array([0x1, 0x2]),
-		// 		}
-		// 		opFillB1 = {
-		// 			accountSource: ethers.ZeroAddress,
-		// 			signer: await context.symmioPartyB.getAddress(),
-		// 			callData: fillIntentCallData,
-		// 			nonce: 0,
-		// 			salt: saltFill,
-		// 			deadline: deadline,
-		// 			signature: new Uint8Array([0x1, 0x2]),
-		// 		}
-		// 		await context.instantLayer.addTemplate("MyTemp", ops)
-		// 	})
-		// 	it("Should be failed when Sender not have Operator Role ", async () => {
-		// 		await expect(context.instantLayer.connect(partyA1.getSigner).executeTemplate(1, [])).to.be.reverted // with "AccessControl" Error
-		// 	})
-		// 	it("Should be failed when Template Inactive ", async () => {
-		// 		const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
-		// 		await context.instantLayer.setTemplateActive(tempID, false)
-		// 		await expect(context.instantLayer.executeTemplate(tempID, [])).to.be.revertedWithCustomError(context.instantLayer, "TemplateNotActive")
-		// 	})
+	describe.only("execute Template", async function () {
+		let opSendQuoteA1: InstantLayer.SignedOperationStruct, opSendQuoteA2: InstantLayer.SignedOperationStruct
+		let opLockB1: InstantLayer.SignedOperationStruct, opOpenQuoteB1: InstantLayer.SignedOperationStruct
+		let opSendQuoteSignature1: InstantLayer.SignatureCallDataStruct
+		let opSendQuoteSignature2: InstantLayer.SignatureCallDataStruct
+		let opLockSignature: InstantLayer.SignatureCallDataStruct
+		let opOpenSignature: InstantLayer.SignatureCallDataStruct
+		let accounts: IMultiAccount.AccountStructOutput[]
+
+		beforeEach(async function () {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Granting Roles
+			await context.instantLayer.registerPartyB(context.symmioPartyB) // Admin with SETTER Role
+			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
+			await context.instantLayer.registerMultiAccount(context.multiAccount) // Admin with SETTER Role
+			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
+
+			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
+			accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
+
+			await expect(context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)).not.reverted
+			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("TRUSTED_ROLE")), partyA1.address)
+			await expect(context.symmioPartyB.connect(partyA1.getSigner)._approve(context.collateral, decimal(30n))).not.to.be.reverted // for symmoio contract
+
+			await expect(context.collateral.connect(partyA1.getSigner).mint(accounts[0].accountAddress, decimal(30n))).to.not.reverted
+			await context.accountFacet.connect(partyA1.getSigner).depositFor(accounts[0].accountAddress, decimal(20n))
+			await context.accountFacet.connect(partyA1.getSigner).internalTransfer(accounts[0].accountAddress, decimal(1000n))
+
+			//Delegating Access
+			const selectorQuote = quoteCallData.slice(0, 10)
+			await context.instantLayer.connect(partyA1.getSigner).grantDelegation(
+				{
+					multiAccount: await context.multiAccount.getAddress(),
+					addr: accounts[0].accountAddress,
+				},
+				context.signers.admin.address,
+				selectorQuote,
+				await getBlockTimestamp(100n),
+			)
+
+			// Bind to Party B
+			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
+
+			// Whitelisting Symbol type
+			await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(context.symmioPartyB.getAddress(), 1, true)
+
+			const sendQuoteWithAffiliateSignature =
+				"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(int256,uint256,uint256,uint256,bytes))"
+			const lockQuoteSignature = "lockQuote(uint256,(int256,uint256,uint256,uint256,bytes))"
+
+			opSendQuoteA1 = {
+				signer: context.signers.admin.address,
+				params: {
+					callData: quoteCallData,
+				},
+				signerInfo: {
+					multiAccount: await context.multiAccount.getAddress(),
+					addr: accounts[0].accountAddress,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			opSendQuoteA2 = {
+				signer: partyA1.address,
+				params: {
+					callData: quoteCallData,
+				},
+				signerInfo: {
+					multiAccount: await context.multiAccount.getAddress(),
+					addr: accounts[0].accountAddress,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			opLockB1 = {
+				signer: await context.symmioPartyB.getAddress(),
+				params: {
+					callData: lockQuoteCallDataTemplate,
+				},
+				signerInfo: {
+					multiAccount: ZeroAddress,
+					addr: ZeroAddress,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			opOpenQuoteB1 = {
+				signer: await context.symmioPartyB.getAddress(),
+				params: {
+					callData: openQuoteCallDataTemplate,
+				},
+				signerInfo: {
+					multiAccount: ZeroAddress,
+					addr: ZeroAddress,
+				},
+				replayAttackHeader: {
+					nonce: 2n,  // second nonce for the the same signer
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			opSendQuoteSignature1 = {
+				signature: new Uint8Array([0x1, 0x2]),
+			}
+
+			opSendQuoteSignature2 = {
+				signature: new Uint8Array([0x1, 0x2]),
+			}
+
+			opLockSignature = {
+				signature: new Uint8Array([0x1, 0x2]),
+			}
+
+			opOpenSignature = {
+				signature: new Uint8Array([0x1, 0x2]),
+			}
+
+			await context.instantLayer.addTemplate("MyTempFull", ops)
+		})
+		it("Should be failed when Sender not have Operator Role ", async () => {
+			await expect(context.instantLayer.connect(partyA1.getSigner).executeTemplate(1, [], [])).to.be.reverted // with "AccessControl" Error
+		})
+
+		it("Should be failed when Template Inactive ", async () => {
+			const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
+			await context.instantLayer.setTemplateActive(tempID, false)
+			await expect(context.instantLayer.executeTemplate(tempID, [opSendQuoteA1], [opSendQuoteSignature1])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"TemplateNotActive",
+			)
+		})
+
 		// 	it("Should be failed when Template Operation Input length Mismatch ", async () => {
 		// 		const opsLocal: InstantLayer.OperationStruct[] = [
 		// 			{
@@ -946,52 +1000,45 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 		expect(intent.price).to.be.equal(request.price)
 		// 		expect(intent.tradeAgreements.quantity).to.be.equal(request.quantity)
 		// 	})
-		// 	it("should allow Sending Intent, Locking and Filling in a single batch Altogether", async function () {
-		// 		const { instantLayer, collateralNL, partyAOpenFacet, partyBOpenFacet, symmioPartyB } = context
-		// 		const multiAccount = context.multiAccount
-		// 		// Granting Roles
-		// 		await context.instantLayer.registerPartyB(symmioPartyB)
-		// 		await context.instantLayer.registerMultiAccount(multiAccount)
-		// 		await context.symmioPartyB.setSigner(partyB1.getSigner)
-		// 		// await context.symmioPartyB.setMulticastWhitelist(context.common.diamondAddress, true)
-		// 		await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
-		// 		await context.controlFacet.setPartyBConfig(context.symmioPartyB.getAddress(), {
-		// 			// Admin with PARTY_B_MANAGER_ROLE
-		// 			isActive: true,
-		// 			lossCoverage: 0,
-		// 			oracleId: 1,
-		// 		})
-		// 		await context.controlFacet.setPartyBSupportedSymbolTypes(context.symmioPartyB.getAddress(), [0], [true])
-		// 		//Sign using getOperationHash
-		// 		const opOpenAHash1 = await instantLayer.getOperationHash(opOpenA1)
-		// 		const opOpenAHash2 = await instantLayer.getOperationHash(opOpenA2)
-		// 		const opLockBHash = await instantLayer.getOperationHash(opLockB1)
-		// 		const opFillBHash = await instantLayer.getOperationHash(opFillB1)
-		// 		opOpenA1.signature = await partyA1.sign(ethers.getBytes(opOpenAHash1))
-		// 		opOpenA2.signature = await partyA1.sign(ethers.getBytes(opOpenAHash2))
-		// 		opLockB1.signature = await partyB1.sign(ethers.getBytes(opLockBHash))
-		// 		opFillB1.signature = await partyB1.sign(ethers.getBytes(opFillBHash))
-		// 		const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
-		// 		//Execution
-		// 		const signedOps: InstantLayer.SignedOperationStruct[] = [opOpenA1, opOpenA2, opLockB1, opFillB1]
-		// 		await expect(instantLayer.executeTemplate(tempID, signedOps)).not.to.be.reverted
-		// 		// try {
-		// 		// 	await instantLayer.executeTemplate(tempID, signedOps) // Admin with OPERATOR Role
-		// 		// } catch (error: unknown) {
-		// 		// 	console.log("Error Fetched:", error)
-		// 		// }
-		// 		//Verification
-		// 		const lastID = await context.viewFacet.getLastOpenIntentId()
-		// 		expect(lastID).to.equal(2)
-		// 		let intent: OpenIntentStruct = await context.viewFacet.getOpenIntent(1)
-		// 		expect(intent.price).to.be.equal(request.price)
-		// 		expect(intent.tradeAgreements.quantity).to.be.equal(request.quantity)
-		// 		console.log("Intent Status", 1, intent.status == IntentStatus.FILLED ? "Filled" : intent.status)
-		// 		expect(intent.status).to.be.equal(IntentStatus.FILLED)
-		// 		const lastTradeId = await context.viewFacet.getLastTradeId()
-		// 		let trade: TradeStruct = await context.viewFacet.getTrade(lastTradeId)
-		// 		expect(trade.openIntentId).to.be.equal(intent.id)
-		// 	})
+
+		it("should allow Sending Intent, Locking and Filling in a single batch Altogether", async function () {
+			// console.log(types)
+			opSendQuoteSignature1.signature = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			opSendQuoteSignature2.signature = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
+			opLockSignature.signature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+			opOpenSignature.signature = await context.signers.hedger.signTypedData(domain, types, opOpenQuoteB1)
+
+			opLockB1.params.callData = lockQuoteCallDataTemplate
+			opOpenQuoteB1.params.callData = openQuoteCallDataTemplate
+
+			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opSendQuoteA2, opLockB1, opOpenQuoteB1]
+			const sigCallDatas: InstantLayer.SignatureCallDataStruct[] = [opSendQuoteSignature1, opSendQuoteSignature2, opLockSignature, opOpenSignature]
+
+			const { instantLayer, symmioPartyB } = context
+			const multiAccount = context.multiAccount
+			// Granting Roles
+			await context.instantLayer.registerPartyB(symmioPartyB)
+			await context.instantLayer.registerMultiAccount(multiAccount)
+			await context.symmioPartyB.setSigner(partyB1.getSigner)
+			// await context.symmioPartyB.setMulticastWhitelist(context.common.diamondAddress, true)
+
+			const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
+			//Execution
+
+			await expect(instantLayer.executeTemplate(tempID, signedOps, sigCallDatas)).not.to.be.reverted
+
+			//Verification
+			let quote = await context.viewFacet.getQuote(1)
+			let quote2 = await context.viewFacet.getQuote(2)
+			expect(quote.requestedOpenPrice).to.be.equal(requestSendQuote.price)
+			expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
+			expect(quote2.requestedOpenPrice).to.be.equal(requestSendQuote.price)
+			expect(quote2.quantity).to.be.equal(requestSendQuote.quantity)
+
+			expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
+			expect(quote2.quoteStatus).to.be.equal(QuoteStatus.PENDING)
+		})
+
 		// 	it("should Fail Signature verification with Invalid Nonce", async function () {
 		// 		const latestBlock = await getLatestBlockTime()
 		// 		const deadline = latestBlock + 300

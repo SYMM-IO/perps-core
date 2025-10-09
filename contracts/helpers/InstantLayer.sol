@@ -39,8 +39,6 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
  * @notice Interface for MultiAccount contract interactions.
  */
 
-import "hardhat/console.sol";
-
 interface IMultiAccount {
 	function _call(address account, bytes[] calldata _callDatas) external;
 
@@ -513,12 +511,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		SignatureCallData[] calldata sigCallDatas
 	) external nonReentrant onlyRole(OPERATOR_ROLE) {
 		if (templateId >= nextTemplateId) revert InvalidTemplate(templateId);
+		if (signedOps.length != sigCallDatas.length) revert ArrayLengthMismatch();
 		if (signedOps.length == 0) revert EmptyBatch();
 
 		Template storage template = templates[templateId];
 		if (!template.active) revert TemplateNotActive(templateId);
 		if (signedOps.length != template.operations.length) revert ArrayLengthMismatch();
-		if (signedOps.length != sigCallDatas.length) revert ArrayLengthMismatch();
 
 		// Set instant mode active
 		symmio.setCallFromInstantLayer(true);
@@ -539,6 +537,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 			// Execute operation
 			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData);
+
 			if (!success) {
 				symmio.setCallFromInstantLayer(false);
 				revert OperationFailed(i, results[i]);
@@ -615,7 +614,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Check if actualSigner is provided and different from signer (delegation case)
 			if (accountOwner != address(0) && accountOwner != signedOp.signer) {
 				// Verify delegation is active
-				console.log("Function signature: ", string(signedOp.params.callData[0:4]));
 				if (!isDelegationActive(signedOp.signerInfo, signedOp.signer, bytes4(signedOp.params.callData[0:4]))) {
 					revert InvalidDelegation();
 				}
