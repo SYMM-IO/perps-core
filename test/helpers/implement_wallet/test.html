@@ -46,8 +46,12 @@
 		</div>
 
 		<div class="row">
-			<button id="run">Sign & Execute</button>
+			<button id="executeBatch">Sign & Execute Batch</button>
 		</div>
+
+		<!-- <div class="row">
+			<button id="executeTemplate">Sign & Execute Batch using Template</button>
+		</div> -->
 
 		<pre id="log" class="mono" style="white-space: pre-wrap"></pre>
 
@@ -204,6 +208,62 @@
 				return domain;
 			}
 
+			// ----------------------------------------------------
+			// Template helpers (mirror test shape)
+			// ----------------------------------------------------
+
+			// Example "ops graph" like your test. Adjust as needed.
+			// Here: 4 slots; op[2] & op[3] depend on op[0].
+			const TEMPLATE_OPS = [
+				{ sourceIndices: [], insertionPoints: [] },
+				{ sourceIndices: [], insertionPoints: [] },
+				{ sourceIndices: [], insertionPoints: [] },
+				{ sourceIndices: [], insertionPoints: [] },
+			];
+
+			// Create a template if it doesn't exist; return its ID.
+			async function ensureTemplate(instant) {
+				// getLastTemplateID() returns next id to be assigned in many patterns; adapt if your contract differs.
+
+				const lastId = await instant.getLastTemplateID();
+				const maybeExisting = lastId > 0n ? lastId - 1n : 0n;
+				console.log("Template ID:", lastId);
+
+				// If there is at least one template, reuse the latest and ensure it's active.
+				if (lastId > 0n) {
+					const isActive = await instant.isTemplateActive(maybeExisting); // if you don't have this view, skip and trust it's active
+					if (!isActive) {
+						const tx = await instant.setTemplateActive(maybeExisting, true);
+						await tx.wait();
+					}
+					return maybeExisting;
+				}
+
+				// Otherwise, add a fresh one
+				const tx = await instant.addTemplate("MyTempFull", TEMPLATE_OPS);
+				const rcpt = await tx.wait();
+				// Some contracts emit an event with the new ID; if not, query again:
+				const newId = (await instant.getLastTemplateID()) - 1n;
+				return newId;
+			}
+
+			// Build a SignedOperation in the same shape as your tests
+			function buildSignedOp({ signerAddr, callData, multiAccount, accountAddr, nonce, deadline, salt }) {
+				return {
+					signer: signerAddr,
+					params: { callData },
+					signerInfo: {
+						multiAccount: multiAccount ?? ethers.ZeroAddress,
+						addr: accountAddr ?? ethers.ZeroAddress,
+					},
+					replayAttackHeader: {
+						nonce: BigInt(nonce),
+						deadline: BigInt(deadline),
+						salt,
+					},
+				};
+			}
+
 			// ===========================
 			// UI events
 			// ===========================
@@ -216,7 +276,7 @@
 				}
 			};
 
-			document.getElementById("run").onclick = async () => {
+			document.getElementById("executeBatch").onclick = async () => {
 				try {
 					if (!context) context = await connectWallet();
 					const { provider, signer, who, chainId } = context;
@@ -298,6 +358,142 @@
 					log("ERROR:", e.reason ?? e.message ?? String(e));
 				}
 			};
+			// document.getElementById("executeTemplate").onclick = async () => {
+			// 	try {
+			// 		if (!context) context = await connectWallet();
+			// 		const { provider, signer, who, chainId } = context;
+
+			// 		const now = Math.floor(Date.now() / 1000);
+			// 		const domain = buildDomain(chainId);
+
+			// 		// Contracts
+			// 		const instant = new ethers.Contract(INSTANT_LAYER_ADDR, InstantLayerAbi, signer);
+			// 		const partyA = new ethers.Contract(DIAMOND_ADDR, PartyAFacetAbi, signer); // only used for ABI/encode if needed
+
+			// 		// ----------------------------------------------------
+			// 		// EXAMPLE PARAMS (same as your executeBatch demo)
+			// 		// ----------------------------------------------------
+			// 		const argsSendQuote = [
+			// 			/* partyBsWhiteList */ [],
+			// 			/* symbolId        */ 1n,
+			// 			/* positionType    */ 1, // LONG
+			// 			/* orderType       */ 0, // LIMIT
+			// 			/* price           */ 10n,
+			// 			/* quantity        */ 100n,
+			// 			/* cva             */ 22n,
+			// 			/* lf              */ 3n,
+			// 			/* partyAmm        */ 75n,
+			// 			/* partyBmm        */ 40n,
+			// 			/* maxFundingRate  */ 2n,
+			// 			/* deadline        */ BigInt(now + 600),
+			// 			/* affiliate       */ "0x0000000000000000000000000000000000000000",
+			// 			/* upnlSig         */ {
+			// 				upnl: 0n,
+			// 				price: 0n,
+			// 				timestamp: BigInt(now),
+			// 				reqId: 0n,
+			// 				gatewaySignature: "0x",
+			// 			},
+			// 		];
+
+			// 		// Build calldata for op0 (sendQuoteWithAffiliate)
+			// 		const ifaceA = new ethers.Interface(PartyAFacetAbi);
+			// 		const quoteCallData = ifaceA.encodeFunctionData("sendQuoteWithAffiliate", argsSendQuote);
+
+			// 		// For template demo, we’ll just reuse op0 calldata in other slots.
+			// 		// In your real flow, you’ll encode the PartyB lock/open calls or param templates as in tests.
+			// 		const op0CallData = quoteCallData;
+			// 		const op1CallData = quoteCallData; // placeholder
+			// 		const op2CallData = quoteCallData; // placeholder (template can splice outputs via sourceIndices)
+			// 		const op3CallData = quoteCallData; // placeholder
+
+			// 		// ----------------------------------------------------
+			// 		// Ensure a template exists and is active
+			// 		// ----------------------------------------------------
+			// 		// const templateId = await ensureTemplate(instant);
+			// 		// const tx1 = await instant.addTemplate("MyTempFull", TEMPLATE_OPS);
+			// 		// const rcpt1 = await tx.wait();
+			// 		const templateId = 1;
+
+			// 		// ----------------------------------------------------
+			// 		// Build four SignedOperation structs
+			// 		// (In your tests, different signers sign each op. In the browser
+			// 		// demo we use the connected account for all four for simplicity.)
+			// 		// ----------------------------------------------------
+			// 		const salt = ethers.hexlify(ethers.randomBytes(32));
+			// 		const deadline = BigInt(now + 600);
+
+			// 		console.log("Template ID fetched!");
+			// 		const signedOps = [
+			// 			buildSignedOp({
+			// 				signerAddr: who,
+			// 				callData: op0CallData,
+			// 				multiAccount: MULTIACCOUNT_ADDR, // put ZeroAddress if not relevant for this op
+			// 				accountAddr: "0x0000000000000000000000000000000000000000", // or the actual MultiAccount subaccount
+			// 				nonce: 1n,
+			// 				deadline,
+			// 				salt,
+			// 			}),
+			// 			buildSignedOp({
+			// 				signerAddr: who,
+			// 				callData: op1CallData,
+			// 				multiAccount: MULTIACCOUNT_ADDR,
+			// 				accountAddr: "0x0000000000000000000000000000000000000000",
+			// 				nonce: 2n,
+			// 				deadline,
+			// 				salt: ethers.hexlify(ethers.randomBytes(32)),
+			// 			}),
+			// 			buildSignedOp({
+			// 				signerAddr: who,
+			// 				callData: op2CallData,
+			// 				nonce: 3n,
+			// 				deadline,
+			// 				salt: ethers.hexlify(ethers.randomBytes(32)),
+			// 			}),
+			// 			buildSignedOp({
+			// 				signerAddr: who,
+			// 				callData: op3CallData,
+			// 				nonce: 4n, // different nonce like your test’s second op for same signer
+			// 				deadline,
+			// 				salt: ethers.hexlify(ethers.randomBytes(32)),
+			// 			}),
+			// 		];
+			// 		console.log("Structures Built!");
+
+			// 		// ----------------------------------------------------
+			// 		// Sign each op via EIP-712 (types must match your Solidity)
+			// 		// ----------------------------------------------------
+			// 		const sigs = [];
+			// 		for (const sop of signedOps) {
+			// 			const signature = await signer.signTypedData(domain, BASE_TYPES, sop);
+			// 			sigs.push({ signature });
+			// 		}
+			// 		console.log("Signed!");
+
+			// 		// ----------------------------------------------------
+			// 		// (Optional) Grant OPERATOR_ROLE to sender once
+			// 		// ----------------------------------------------------
+			// 		const OPERATOR_ROLE = await instant.OPERATOR_ROLE();
+			// 		const hasOpRole = await instant.hasRole(OPERATOR_ROLE, who).catch(() => false);
+			// 		if (!hasOpRole) {
+			// 			const tx = await instant.grantRole(OPERATOR_ROLE, who);
+			// 			await tx.wait();
+			// 		}
+
+			// 		console.log("role Granted!");
+
+			// 		// ----------------------------------------------------
+			// 		// Execute via template
+			// 		// ----------------------------------------------------
+			// 		const tx = await instant.executeTemplate(templateId, signedOps, sigs);
+			// 		log("executeTemplate tx:", tx.hash);
+			// 		const rcpt = await tx.wait();
+			// 		log("executeTemplate confirmed in block", rcpt.blockNumber);
+			// 	} catch (e) {
+			// 		console.error(e);
+			// 		log("ERROR (executeTemplate):", e.reason ?? e.message ?? String(e));
+			// 	}
+			// };
 		</script>
 	</body>
 </html>

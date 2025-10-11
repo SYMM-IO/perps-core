@@ -394,7 +394,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @param delegate  The address that received delegation.
 	 * @return Whether the delegation is currently active.
 	 */
-	function isDelegationActive(Account memory delegator, address delegate, bytes4 selector) public view returns (bool) {
+	function isDelegationActive(Account calldata delegator, address delegate, bytes4 selector) public view returns (bool) {
 		uint256 expiry = delegations[delegator.addr][delegate][selector];
 		return expiry > block.timestamp;
 	}
@@ -614,7 +614,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Check if actualSigner is provided and different from signer (delegation case)
 			if (accountOwner != address(0) && accountOwner != signedOp.signer) {
 				// Verify delegation is active
-				if (!isDelegationActive(signedOp.signerInfo, signedOp.signer, bytes4(signedOp.params.callData[0:4]))) {
+				bytes calldata cd = signedOp.params.callData;
+				bytes4 selector;
+				assembly ("memory-safe") {
+					selector := calldataload(cd.offset) // keep only the first 4 bytes (big-endian)
+				}
+				if (!isDelegationActive(signedOp.signerInfo, signedOp.signer, selector)) {
 					revert InvalidDelegation();
 				}
 			}
@@ -769,7 +774,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @return activeDelegates Array of currently active delegates and their expiry times.
 	 */
 	function getActiveDelegations(
-		Account memory _delegator,
+		Account calldata _delegator,
 		address[] calldata delegates,
 		bytes4[] calldata selectors
 	) external view returns (DelegationInfo[] memory activeDelegates) {

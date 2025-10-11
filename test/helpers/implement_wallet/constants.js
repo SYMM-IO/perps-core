@@ -52,7 +52,37 @@ export const PartyAFacetAbi = [
 	},
 ];
 
+const TemplateOperationComponents = [
+  { name: "insertionPoints", type: "uint256[]" },
+  { name: "sourceIndices",   type: "uint256[]" },
+];
+
+// If you want an explicit "Operation" tuple reference:
+export const TemplateOperationTuple = [...TemplateOperationComponents];
+
+
 export const InstantLayerAbi = [
+	{
+		type: "function",
+		name: "getLastTemplateID",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ name: "", type: "uint256" }],
+	},
+	{
+		type: "function",
+		name: "addTemplate",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "name", type: "string" },
+			{
+				name: "operations",
+				type: "tuple[]",
+				components: [...TemplateOperationTuple],
+			},
+		],
+		outputs: [],
+	},
 	{
 		type: "function",
 		name: "grantRole",
