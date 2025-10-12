@@ -240,6 +240,7 @@ library LibQuote {
 		uint256 fee = (filledAmount * closedPrice * quote.closeFee) / 1e36;
 		accountLayout.allocatedBalances[quote.partyA] -= fee;
 		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
+		emit SharedEvents.TradingFeeCharged(fee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, SharedEvents.TradingFeeType.CLOSE);
 
 		address feeCollector = appLayout.affiliateFeeCollector[quote.affiliate] == address(0)
 			? appLayout.defaultFeeCollector
@@ -272,6 +273,14 @@ library LibQuote {
 		if (systemHook != address(0)) {
 			try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
 		}
+
+		emit SharedEvents.TradeVolumeRecorded(
+			(filledAmount * closedPrice) / 1e18,
+			quote.partyA,
+			quote.partyB,
+			quote.symbolId,
+			SharedEvents.TradeVolumeType.CLOSE
+		);
 	}
 
 	/**

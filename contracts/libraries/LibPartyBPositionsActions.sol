@@ -188,5 +188,21 @@ library LibPartyBPositionsActions {
 		if (systemHook != address(0)) {
 			try ISymmioHook(systemHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch {}
 		}
+
+		emit SharedEvents.TradeVolumeRecorded(
+			(filledAmount * quote.openedPrice) / 1e18,
+			quote.partyA,
+			quote.partyB,
+			quote.symbolId,
+			SharedEvents.TradeVolumeType.OPEN
+		);
+		emit SharedEvents.TradingFeeCharged(
+			(filledAmount * quote.openedPrice * quote.tradingFee) / 1e36,
+			quote.partyA,
+			quote.partyB,
+			quote.symbolId,
+			quote.affiliate,
+			SharedEvents.TradingFeeType.OPEN
+		);
 	}
 }

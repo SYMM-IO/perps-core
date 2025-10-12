@@ -241,6 +241,13 @@ library LiquidationFacetImpl {
 					ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)
 				{} catch {}
 			}
+			emit SharedEvents.TradeVolumeRecorded(
+				(liquidatedAmounts[index] * liquidationPrice) / 1e18,
+				quote.partyA,
+				quote.partyB,
+				quote.symbolId,
+				SharedEvents.TradeVolumeType.LIQUIDATE
+			);
 		}
 		if (
 			quoteLayout.partyAPositionsCount[partyA] == 0 &&
