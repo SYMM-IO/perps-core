@@ -242,10 +242,12 @@ library LiquidationFacetImpl {
 				{} catch {}
 			}
 			emit SharedEvents.TradeVolumeRecorded(
+				quote.id,
 				(liquidatedAmounts[index] * liquidationPrice) / 1e18,
 				quote.partyA,
 				quote.partyB,
 				quote.symbolId,
+				quote.affiliate,
 				SharedEvents.TradeVolumeType.LIQUIDATE
 			);
 		}

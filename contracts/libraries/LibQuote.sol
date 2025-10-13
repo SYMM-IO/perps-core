@@ -240,7 +240,15 @@ library LibQuote {
 		uint256 fee = (filledAmount * closedPrice * quote.closeFee) / 1e36;
 		accountLayout.allocatedBalances[quote.partyA] -= fee;
 		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
-		emit SharedEvents.TradingFeeCharged(fee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, SharedEvents.TradingFeeType.CLOSE);
+		emit SharedEvents.TradingFeeCharged(
+			quote.id,
+			fee,
+			quote.partyA,
+			quote.partyB,
+			quote.symbolId,
+			quote.affiliate,
+			SharedEvents.TradingFeeType.CLOSE
+		);
 
 		address feeCollector = appLayout.affiliateFeeCollector[quote.affiliate] == address(0)
 			? appLayout.defaultFeeCollector
@@ -275,10 +283,12 @@ library LibQuote {
 		}
 
 		emit SharedEvents.TradeVolumeRecorded(
+			quote.id,
 			(filledAmount * closedPrice) / 1e18,
 			quote.partyA,
 			quote.partyB,
 			quote.symbolId,
+			quote.affiliate,
 			SharedEvents.TradeVolumeType.CLOSE
 		);
 	}

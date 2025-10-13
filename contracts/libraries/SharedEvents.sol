@@ -35,7 +35,23 @@ library SharedEvents {
 
 	event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, BalanceChangeType _type);
 
-	event TradeVolumeRecorded(uint256 amount, address partyA, address partyB, uint256 symbolId, TradeVolumeType _type);
+	event TradeVolumeRecorded(
+		uint256 quoteId,
+		uint256 amount,
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		address affiliate,
+		TradeVolumeType _type
+	);
 
-	event TradingFeeCharged(uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, TradingFeeType _type);
+	event TradingFeeCharged(
+		uint256 quoteId,
+		uint256 amount,
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		address affiliate,
+		TradingFeeType _type
+	);
 }
