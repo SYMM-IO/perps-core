@@ -380,7 +380,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 	// 	// })
 	// })
 
-	describe.only("execute Batch", async function () {
+	describe("execute Batch", async function () {
 		let opSendQuoteA1: InstantLayer.SignedOperationStruct, opSendQuoteA2: InstantLayer.SignedOperationStruct
 		let opLockB1: InstantLayer.SignedOperationStruct, opOpenQuoteB1: InstantLayer.SignedOperationStruct
 		let opSendQuoteSignature1: InstantLayer.SignatureCallDataStruct
@@ -735,7 +735,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 	})
 
-	describe.only("execute Template", async function () {
+	describe("execute Template", async function () {
 		let opSendQuoteA1: InstantLayer.SignedOperationStruct, opSendQuoteA2: InstantLayer.SignedOperationStruct
 		let opLockB1: InstantLayer.SignedOperationStruct, opOpenQuoteB1: InstantLayer.SignedOperationStruct
 		let opSendQuoteSignature1: InstantLayer.SignatureCallDataStruct
@@ -1109,7 +1109,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	// })
 	})
 
-	describe.only("grantBatchDelegationBySig", () => {
+	describe("grantBatchDelegationBySig", () => {
 		let accounts: IMultiAccount.AccountStructOutput[]
 		beforeEach(async () => {
 			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
