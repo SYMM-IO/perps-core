@@ -1,11 +1,11 @@
-import {task} from "hardhat/config"
+import { task } from "hardhat/config"
 
 task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
 	.addParam("symmioAddress", "The address of the Symmio contract")
 	.addParam("admin", "The admin address")
 	.addParam("symmioShare", "The symmio share")
 	.addParam("symmioShareReceiver", "The symmio share receiver")
-	.setAction(async ({symmioAddress, admin, symmioShareReceiver, symmioShare}, {ethers, upgrades, run}) => {
+	.setAction(async ({ symmioAddress, admin, symmioShareReceiver, symmioShare }, { ethers, upgrades, run }) => {
 		console.log("Running deploy:feeDistributor")
 
 		const [deployer] = await ethers.getSigners()
@@ -14,7 +14,10 @@ task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
 
 		// Deploy SymmioFeeDistributor as upgradeable
 		const factory = await ethers.getContractFactory("SymmioFeeDistributor")
-		const contract = await upgrades.deployProxy(factory, [admin, symmioAddress, symmioShareReceiver, symmioShare], {initializer: "initialize"})
+		const contract = await upgrades.deployProxy(factory, [admin, symmioAddress, symmioShareReceiver, symmioShare], {
+			initializer: "initialize",
+			kind: "transparent",
+		})
 		await contract.waitForDeployment()
 
 		const addresses = {
