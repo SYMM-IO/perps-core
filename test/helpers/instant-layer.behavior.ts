@@ -38,7 +38,7 @@ import { hedgerActionsMap } from "../models/Actions"
 // import { IMultiAccount } from "../../src/types/contracts/interfaces"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
 import { IMultiAccount } from "../../src/types/contracts/multiAccount/MultiAccount"
-import { cloneTypes } from "./instantLayerEIP712Types"
+import { cloneTypes, DELEGATE_TYPES } from "./instantLayerEIP712Types"
 
 export function shouldBehaveLikeInstantLayer(): void {
 	let context: RunContext, partyA1: User, partyA2: User, partyB1: Hedger, partyB2: Hedger
@@ -427,15 +427,17 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const selectorLock = lockQuoteCallData.slice(0, 10)
 			const selectorOpen = openQuoteCallData.slice(0, 10)
 			console.log("Quote Selector:", selectorQuote)
-			await context.instantLayer.connect(partyA1.getSigner).grantDelegation(
+			await context.instantLayer.connect(partyA1.getSigner).grantDelegationBatch([
 				{
-					multiAccount: await context.multiAccount.getAddress(),
-					addr: accounts[0].accountAddress,
+					account: {
+						multiAccount: await context.multiAccount.getAddress(),
+						addr: accounts[0].accountAddress,
+					},
+					delegatedSigner: context.signers.admin.address,
+					selectors: [selectorQuote],
+					expiryTimestamp: await getBlockTimestamp(100n),
 				},
-				context.signers.admin.address,
-				selectorQuote,
-				await getBlockTimestamp(100n),
-			)
+			])
 
 			// Bind to Party B
 			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
@@ -476,7 +478,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			}
 
 			opSendQuoteA2 = {
-				signer: partyA1.address,
+				signer: partyA1.address, // it should work for contracts as well as EOAs
 				params: {
 					callData: quoteCallData,
 				},
@@ -764,15 +766,17 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			//Delegating Access
 			const selectorQuote = quoteCallData.slice(0, 10)
-			await context.instantLayer.connect(partyA1.getSigner).grantDelegation(
+			await context.instantLayer.connect(partyA1.getSigner).grantDelegationBatch([
 				{
-					multiAccount: await context.multiAccount.getAddress(),
-					addr: accounts[0].accountAddress,
+					account: {
+						multiAccount: await context.multiAccount.getAddress(),
+						addr: accounts[0].accountAddress,
+					},
+					delegatedSigner: context.signers.admin.address,
+					selectors: [selectorQuote],
+					expiryTimestamp: await getBlockTimestamp(100n),
 				},
-				context.signers.admin.address,
-				selectorQuote,
-				await getBlockTimestamp(100n),
-			)
+			])
 
 			// Bind to Party B
 			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
@@ -842,7 +846,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					addr: ZeroAddress,
 				},
 				replayAttackHeader: {
-					nonce: 2n,  // second nonce for the the same signer
+					nonce: 2n, // second nonce for the the same signer
 					deadline: deadline,
 					salt: ethers.hexlify(ethers.randomBytes(32)),
 				},
@@ -1103,5 +1107,74 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	// 	// await expect(context.instantLayer.executeBatch(signedOps)).not.to.be.reverted
 		// 	// 	//TODO
 		// 	// })
+	})
+
+	describe.only("grantBatchDelegationBySig", () => {
+		let accounts: IMultiAccount.AccountStructOutput[]
+		beforeEach(async () => {
+			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
+			accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
+		})
+
+		function ifaceSelectors(...fragments: string[]): string[] {
+			// Build function selectors as 0x........ (bytes4)
+			const IF = new ethers.Interface(fragments.map(sig => `function ${sig}`))
+			return fragments.map(sig => IF.getFunction(sig)!.selector)
+		}
+
+		it("grants batch delegations and bumps nonce", async () => {
+			// --- Arrange
+			const acc = {
+				multiAccount: await context.multiAccount.getAddress(), // adjust to your onlyOwner policy
+				addr: accounts[0].accountAddress, // account being delegated for
+			}
+
+			const selectors = quoteCallData.slice(0, 10)
+
+			const now = BigInt((await ethers.provider.getBlock("latest"))!.timestamp)
+			const expiry = now + 3600n // 1 hour future
+			const deadline = now + 600n // 10 mins future
+
+			const nonceBefore: bigint = 1n
+
+			const replayAttackHeader = {
+				nonce: nonceBefore,
+				deadline,
+				salt: ethers.id("unique-salt-1"), // bytes32
+			}
+
+			const delegationInfo = {
+				account: acc,
+				delegatedSigner: await context.signers.admin.getAddress(),
+				selectors: [selectors],
+				expiryTimestamp: expiry,
+			}
+
+			const signedDelegation = {
+				delegationInfo,
+				replayAttackHeader,
+			}
+
+			const sig: BytesLike = await context.signers.user.signTypedData(domain, DELEGATE_TYPES, signedDelegation)
+
+			// --- Act
+			// submitter sends the tx (meta-tx style)
+			await expect(context.instantLayer.connect(partyA1.getSigner).grantBatchDelegationBySig(signedDelegation, sig))
+				.not.to.reverted
+				// .to.emit(context.instantLayer, "DelegationGranted")
+				// .withArgs(acc.addr, await context.signers.admin.getAddress(), selectors[0], expiry)
+				// .and.to.emit(context.instantLayer, "DelegationGranted")
+				// .withArgs(acc.addr, await context.signers.admin.getAddress(), selectors[1], expiry)
+				// .and.to.emit(context.instantLayer, "DelegationNonceIncremented")
+				// .withArgs(acc.addr, nonceBefore + 1n)
+
+			//--- Assert storage
+			const exp0 = await context.instantLayer.delegations(acc.addr, await context.signers.admin.getAddress(), selectors)			
+			expect(exp0).to.equal(expiry)
+			
+
+			const nonceAfter: bigint = await context.instantLayer.delegationNonces(acc.addr)
+			expect(nonceAfter).to.equal(nonceBefore )
+		})
 	})
 }
