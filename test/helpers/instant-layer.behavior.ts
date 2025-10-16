@@ -409,6 +409,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.instantLayer.registerPartyB(context.symmioPartyB) // Admin with SETTER Role
 			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
 			await context.instantLayer.registerMultiAccount(context.multiAccount) // Admin with SETTER Role
+			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())			
 			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
 
 			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
@@ -751,6 +752,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.instantLayer.registerPartyB(context.symmioPartyB) // Admin with SETTER Role
 			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
 			await context.instantLayer.registerMultiAccount(context.multiAccount) // Admin with SETTER Role
+			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
 
 			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
@@ -758,6 +760,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			await expect(context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)).not.reverted
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("TRUSTED_ROLE")), partyA1.address)
+			
 			await expect(context.symmioPartyB.connect(partyA1.getSigner)._approve(context.collateral, decimal(30n))).not.to.be.reverted // for symmoio contract
 
 			await expect(context.collateral.connect(partyA1.getSigner).mint(accounts[0].accountAddress, decimal(30n))).to.not.reverted
