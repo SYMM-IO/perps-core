@@ -90,7 +90,7 @@ library ForceActionsFacetImpl {
 		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
 
 		uint256 reservedBalance;
-		if (AccountStorage.layout().masterAccountMode[quote.partyB]) {
+		if (accountLayout.masterAccountMode[quote.partyB]) {
 			reservedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][address(0)];
 		} else {
 			reservedBalance = accountLayout.reserveVault[quote.partyB];
@@ -122,7 +122,7 @@ library ForceActionsFacetImpl {
 			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
 		} else if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
 			uint256 available = uint256(-partyBAvailableBalance);
-			if (AccountStorage.layout().masterAccountMode[quote.partyB]) {
+			if (accountLayout.masterAccountMode[quote.partyB]) {
 				accountLayout.partyBAllocatedBalances[quote.partyB][address(0)] -= available;
 			} else {
 				accountLayout.reserveVault[quote.partyB] -= available;
@@ -135,7 +135,7 @@ library ForceActionsFacetImpl {
 			}
 			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
 		} else {
-			if (AccountStorage.layout().masterAccountMode[quote.partyB]) {
+			if (accountLayout.masterAccountMode[quote.partyB]) {
 				accountLayout.partyBAllocatedBalances[quote.partyB][address(0)] = 0;
 			} else {
 				accountLayout.reserveVault[quote.partyB] = 0;
@@ -150,6 +150,6 @@ library ForceActionsFacetImpl {
 			upnlPartyB = sig.upnlPartyB + diff;
 			LibLiquidation.liquidatePartyB(quote.partyB, quote.partyA, upnlPartyB, block.timestamp);
 		}
-		partyBAllocatedBalance = AccountStorage.layout().partyBAllocatedBalances[quote.partyB][quote.partyA];
+		partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
 	}
 }
