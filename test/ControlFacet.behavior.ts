@@ -413,9 +413,7 @@ export function shouldBehaveLikeControlFacet(): void {
 
 		it("Should fail to add zero address as external transfer target", async function () {
 			await expect(
-				context.controlFacet
-					.connect(context.signers.admin)
-					.addRelayerForExternalTransferTarget(ZeroAddress, context.signers.others[1].address),
+				context.controlFacet.connect(context.signers.admin).addRelayerForExternalTransferTarget(ZeroAddress, context.signers.others[1].address),
 			).to.be.revertedWith("ControlFacet: Zero address")
 		})
 	})
@@ -558,16 +556,16 @@ export function shouldBehaveLikeControlFacet(): void {
 
 	describe("setAffiliateFee", () => {
 		it("should failed when the provided address as affiliate is not affiliate", async () => {
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(1e18), BigInt(1e18))).to.revertedWith(
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(1e18), BigInt(1e18))).to.revertedWith(
 				"ControlFacet: Invalid affiliate",
 			)
 		})
 
 		it("should set fee for affiliate successfully", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(1e18), BigInt(1e18))).to.not.reverted
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(1e18), BigInt(1e18))).to.not.reverted
 
-			const fee = await context.viewFacet.getAffiliateFee(context.signers.hedger)
+			const fee = await context.viewFacet.getAffiliateFee(context.signers.hedger, 1)
 
 			expect(fee.openFee).to.equal(BigInt(1e18))
 			expect(fee.closeFee).to.equal(BigInt(1e18))
@@ -575,9 +573,15 @@ export function shouldBehaveLikeControlFacet(): void {
 
 		it("should failed if fee is high", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(2e18), BigInt(1e18))).to.revertedWith("ControlFacet: High fee")
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(1e18), BigInt(2e18))).to.revertedWith("ControlFacet: High fee")
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, BigInt(2e18), BigInt(2e18))).to.revertedWith("ControlFacet: High fee")
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(2e18), BigInt(1e18))).to.revertedWith(
+				"ControlFacet: High fee",
+			)
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(1e18), BigInt(2e18))).to.revertedWith(
+				"ControlFacet: High fee",
+			)
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(2e18), BigInt(2e18))).to.revertedWith(
+				"ControlFacet: High fee",
+			)
 		})
 	})
 }

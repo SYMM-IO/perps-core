@@ -206,6 +206,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 		const filledAmount = oldQuote.quantity / 4n
 		const openedPrice = decimal(9n, 17)
 		await hedger.openPosition(1, limitOpenRequestBuilder().filledAmount(filledAmount).openPrice(openedPrice).price(decimal(1n, 17)).build())
+		
 		await validator.after(context, {
 			user: user,
 			hedger: hedger,

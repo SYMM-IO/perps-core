@@ -31,16 +31,20 @@ import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessCo
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /* ────────────────────────── External Interfaces ────────────────────────── */
 
 /**
  * @notice Interface for MultiAccount contract interactions.
  */
+
 interface IMultiAccount {
 	function _call(address account, bytes[] calldata _callDatas) external;
 
 	function isValidSignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bool);
+
+	function owners(address account) external view returns (address);
 }
 
 /**
@@ -74,13 +78,41 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ────────────────────── EIP-712 Configuration ────────────────────── */
 
-	/// @notice EIP-712 type hash for signed operations with salt-based uniqueness.
-	bytes32 public constant OPERATION_TYPEHASH =
-		keccak256("SignedOperation(address accountSource,address signer,bytes callData,uint256 nonce,bytes32 salt,uint256 deadline)");
+	bytes32 public constant ACCOUNT_TYPEHASH = keccak256("Account(address multiAccount,address addr)");
 
-	/// @notice EIP-712 type hash for delegation authorization.
-	bytes32 public constant DELEGATION_TYPEHASH =
-		keccak256("DelegationAuthorization(address delegator,address delegate,uint256 expiryTimestamp,uint256 nonce,uint256 chainId)");
+	bytes32 public constant PARAMS_SIGNABLE_TYPEHASH = keccak256("ParamCallDataSignable(bytes callData)");
+
+	bytes32 public constant REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
+
+	// Compose dependency types in the tail of the primary type per EIP-712 rules
+	bytes32 internal constant SIGNED_OPERATION_TYPEHASH =
+		keccak256(
+			abi.encodePacked(
+				"SignedOperation(",
+				"address signer,",
+				"ParamCallDataSignable params,",
+				"Account signerInfo,",
+				"ReplayAttackHeader replayAttackHeader",
+				")",
+				"Account(address multiAccount,address addr)",
+				"ParamCallDataSignable(bytes callData)",
+				"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
+			)
+		);
+
+	bytes32 public constant DELEGATIONINFO_TYPEHASH =
+		keccak256(
+			"DelegationInfo(Account account,address delegatedSigner,bytes4[] selectors,uint256 expiryTimestamp)"
+			"Account(address multiAccount,address addr)"
+		);
+
+	bytes32 public constant SIGNEDDELEGATION_TYPEHASH =
+		keccak256(
+			"SignedDelegation(DelegationInfo delegationInfo,ReplayAttackHeader replayAttackHeader)"
+			"Account(address multiAccount,address addr)"
+			"DelegationInfo(Account account,address delegatedSigner,bytes4[] selectors,uint256 expiryTimestamp)"
+			"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
+		);
 
 	/* ──────────────────────── Storage Variables ──────────────────────── */
 
@@ -107,7 +139,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/// @notice Mapping of delegations: delegator => delegate => expiry timestamp
 	/// @dev A non-zero timestamp indicates active delegation until that time
-	mapping(address => mapping(address => uint256)) public delegations;
+	mapping(address => mapping(address => mapping(bytes4 => uint256))) public delegations;
 
 	/// @notice Nonce for delegation signatures to prevent replay
 	mapping(address => uint256) public delegationNonces;
@@ -115,12 +147,76 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/* ─────────────────────────────── Structs ─────────────────────────────── */
 
 	/**
+	 * @notice Account context used for delegated execution.
+	 * @param multiAccount        Address of the MultiAccount contract in use for PartyA flows
+	 * @param addr				  The PartyA account (owned wallet/contract) the action applies to
+	 */
+	struct Account {
+		address multiAccount;
+		address addr;
+	}
+
+	/**
+	 * @notice Anti-replay header for a signed message.
+	 * @param nonce      0 means disabled (salt-only). Non-zero enforces monotonic counter per signer.
+	 * @param deadline   UNIX timestamp after which the message is invalid
+	 * @param salt       32-byte unique salt for replay protection (used always)
+	 */
+	struct ReplayAttackHeader {
+		uint256 nonce; // 0 -> disabled (salt-only)
+		uint256 deadline;
+		bytes32 salt;
+	}
+
+	/**
+	 * @notice Parameters used to *sign* a call without including heavy/dynamic strings.
+	 * @dev Use hashes of dynamic data so wallets sign small, stable messages.
+	 * @param callData      callData contains *parameters only* (no selector)
+	 * @param functionSignature  Canonical signature string (e.g., "sendQuoteWithAffiliate(address[],uint256,...)")
+	 */
+	struct ParamCallDataSignable {
+		bytes callData;
+	}
+
+	/**
+	 * @notice Signature envelope (NOT part of the EIP-712 struct hash).
+	 * @dev Kept separate so the signed struct never contains bytes signatures (common pattern).
+	 * @param signature  EIP-712 signature produced off-chain
+	 */
+	struct SignatureCallData {
+		bytes signature; // excluded from EIP-712 struct hash
+	}
+
+	/**
+	 * @notice The message that is actually signed (no bytes/signature inside).
+	 * @dev This is what EIP-712 covers. It references hashes of dynamic transport fields.
+	 * @param signer             The address authorizing the action
+	 * @param params             ParamCallDataSignable (hashes + functionSignature)
+	 * @param account          Delegation context
+	 * @param replayAttackHeader Nonce/deadline/salt anti-replay info
+	 */
+	struct SignedOperation {
+		address signer;
+		ParamCallDataSignable params;
+		Account signerInfo;
+		ReplayAttackHeader replayAttackHeader;
+	}
+
+	struct SignedDelegation {
+		DelegationInfo delegationInfo;
+		ReplayAttackHeader replayAttackHeader;
+	}
+
+	/**
 	 * @notice Delegation information structure.
+	 * @param account       Delegator/Signer of signing
 	 * @param delegate        Address authorized to sign on behalf of delegator.
 	 * @param expiryTimestamp Unix timestamp when delegation expires.
 	 */
 	struct DelegationInfo {
-		address delegate;
+		Account account;
+		address delegatedSigner;
+		bytes4[] selectors;
 		uint256 expiryTimestamp;
 	}
 
@@ -144,28 +240,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		string name;
 		Operation[] operations;
 		bool active;
-	}
-
-	/**
-	 * @notice Signed operation with flexible authentication and execution details.
-	 * @param accountSource MultiAccount contract address (for PartyA operations).
-	 * @param signer        Original signer address (account owner for PartyA, PartyB address for PartyB).
-	 * @param callData      Encoded function call data for Symmio core.
-	 * @param nonce         Optional nonce (0 = no nonce protection, non-zero = ordered execution).
-	 * @param salt          Salt for uniqueness (always required for replay protection).
-	 * @param deadline      Operation expiration timestamp.
-	 * @param signature     EIP-712 signature authorizing the operation (can be from signer or their delegate).
-	 * @param actualSigner  Address that actually signed (either signer or their delegate).
-	 */
-	struct SignedOperation {
-		address accountSource;
-		address signer;
-		bytes callData;
-		uint256 nonce;
-		bytes32 salt;
-		uint256 deadline;
-		bytes signature;
-		address actualSigner;
 	}
 
 	/* ─────────────────────────────── Events ─────────────────────────────── */
@@ -198,7 +272,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	event MultiAccountUnregistered(address indexed multiAccount);
 
 	/// @notice Emitted when a delegation is granted.
-	event DelegationGranted(address indexed delegator, address indexed delegate, uint256 expiryTimestamp);
+	event DelegationGranted(address indexed delegator, address indexed delegate, bytes4 selector, uint256 expiryTimestamp);
 
 	/// @notice Emitted when a delegation is revoked.
 	event DelegationRevoked(address indexed delegator, address indexed delegate);
@@ -209,12 +283,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/* ─────────────────────────────── Errors ─────────────────────────────── */
 
 	error InvalidSignature(); // signature verification failed
+	error InvalidCallData(); // CallData verification failed
 	error DeadlineExpired(uint256 deadline); // signed operation expired
 	error InvalidNonce(address user, uint256 expected, uint256 provided); // nonce mismatch for ordered execution
 	error TemplateNotActive(uint256 templateId); // template is disabled
 	error InvalidTemplate(uint256 templateId); // template does not exist
 	error OperationFailed(uint256 operationIndex, bytes revertData); // operation execution failed
 	error ArrayLengthMismatch(); // input arrays have different lengths
+	error CallDataLengthMismatch(); // Min CallData level length is 4
 	error UnregisteredMultiAccount(address multiAccount); // MultiAccount not registered
 	error UnregisteredPartyB(address partyB); // PartyB not registered
 	error OperationAlreadyExecuted(bytes32 hash); // operation already executed
@@ -223,7 +299,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	error DelegationExpired(uint256 expiryTimestamp); // delegation has expired
 	error InvalidDelegationExpiry(); // expiry timestamp is in the past
 	error SelfDelegation(); // cannot delegate to self
-	error InvalidSourceIndex(uint256 sourceIndex); // source index is invalid
+	error InvalidSourceIndex(uint256 sourceIndex); // source index is
+	error NotOwnerOfAccount(address sender, address accountManager, address owner); // caller not account owner
 
 	/* ─────────────────────────── Initialization ─────────────────────────── */
 
@@ -244,60 +321,69 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ───────────────────── Delegation Management ───────────────────── */
 
-	/**
-	 * @notice Grant delegation authority to another address.
-	 * @param delegate        Address to authorize as delegate.
-	 * @param expiryTimestamp Unix timestamp when delegation expires.
-	 *
-	 * @dev Delegator can be either a regular EOA or a smart contract that supports EIP-1271.
-	 *      The delegation allows the delegate to sign operations on behalf of the delegator
-	 *      until the expiry timestamp is reached.
-	 */
-	function grantDelegation(address delegate, uint256 expiryTimestamp) external {
-		if (delegate == msg.sender) revert SelfDelegation();
-		if (expiryTimestamp <= block.timestamp) revert InvalidDelegationExpiry();
+	function grantBatchDelegationBySig(
+		SignedDelegation calldata signedInfo,
+		bytes calldata signature
+	) external onlyOwner(signedInfo.delegationInfo.account, msg.sender) {
+		// ---- cache calldata fields ----
+		DelegationInfo calldata info = signedInfo.delegationInfo;
+		ReplayAttackHeader calldata rh = signedInfo.replayAttackHeader;
 
-		delegations[msg.sender][delegate] = expiryTimestamp;
-		emit DelegationGranted(msg.sender, delegate, expiryTimestamp);
-	}
+		address signerAccount = info.account.addr;
+		address owner = IMultiAccount(info.account.multiAccount).owners(signerAccount);
+		address delegate = info.delegatedSigner;
+		uint256 expiry = info.expiryTimestamp;
+		bytes4[] calldata selectors = info.selectors;
 
-	/**
-	 * @notice Grant delegation with signature (allows gasless delegation setup).
-	 * @param delegator       Address granting the delegation.
-	 * @param delegate        Address to authorize as delegate.
-	 * @param expiryTimestamp Unix timestamp when delegation expires.
-	 * @param nonce           Nonce for replay protection.
-	 * @param signature       EIP-712 signature from delegator.
-	 *
-	 * @dev This allows a delegate to submit the delegation transaction on behalf of the delegator.
-	 */
-	function grantDelegationBySig(address delegator, address delegate, uint256 expiryTimestamp, uint256 nonce, bytes calldata signature) external {
-		if (delegate == delegator) revert SelfDelegation();
-		if (expiryTimestamp <= block.timestamp) revert InvalidDelegationExpiry();
-		if (nonce != delegationNonces[delegator]) revert InvalidNonce(delegator, delegationNonces[delegator], nonce);
+		// ---- basic checks ----
+		if (delegate == owner) revert SelfDelegation(); // delegate must not equal signer (safer than msg.sender for meta-tx)
+		if (expiry <= block.timestamp) revert InvalidDelegationExpiry();
+		if (rh.deadline != 0 && block.timestamp > rh.deadline) revert InvalidDelegationExpiry();
 
-		// Verify EIP-712 signature
-		bytes32 structHash = keccak256(abi.encode(DELEGATION_TYPEHASH, delegator, delegate, expiryTimestamp, nonce, block.chainid));
-		bytes32 hash = _hashTypedDataV4(structHash);
+		// Nonce is typically tracked per "signer" (not submitter). If you intentionally key by msg.sender, swap back.
+		uint256 expected = delegationNonces[delegate];
+		if (rh.nonce != expected + 1) {
+			revert InvalidNonce(delegate, expected, rh.nonce);
+		}
 
-		if (!SignatureChecker.isValidSignatureNow(delegator, hash, signature)) {
+		// ---- signature check ----
+		// digest = EIP-712 typed data hash of SignedDelegation(signedInfo)
+		bytes32 digest = _signedDelegationDigest(signedInfo, false);
+
+		if (!SignatureChecker.isValidSignatureNow(owner, digest, signature)) {
 			revert InvalidSignature();
 		}
 
-		delegationNonces[delegator]++;
-		delegations[delegator][delegate] = expiryTimestamp;
-		emit DelegationGranted(delegator, delegate, expiryTimestamp);
-		emit DelegationNonceIncremented(delegator, delegationNonces[delegator]);
+		// ---- state updates ----
+		// increment nonce once
+		unchecked {
+			delegationNonces[signerAccount] = expected + 1;
+		}
+		emit DelegationNonceIncremented(delegate, delegationNonces[delegate]);
+
+		// write all selectors to the same nested slot
+		mapping(bytes4 => uint256) storage slot = delegations[signerAccount][delegate];
+
+		for (uint256 i = 0; i < selectors.length; ) {
+			bytes4 sel = selectors[i];
+			slot[sel] = expiry;
+
+			emit DelegationGranted(signerAccount, delegate, sel, expiry);
+
+			unchecked {
+				++i;
+			}
+		}
 	}
 
 	/**
 	 * @notice Revoke a previously granted delegation.
 	 * @param delegate Address to revoke delegation from.
 	 */
-	function revokeDelegation(address delegate) external {
-		delegations[msg.sender][delegate] = 0;
-		emit DelegationRevoked(msg.sender, delegate);
-	}
+	// function revokeDelegation(Account memory accountSource,address delegate) external {
+	// 	delegations[accountSource.accountAddress][delegate]  = 0;
+	// 	emit DelegationRevoked(msg.sender, delegate);
+	// }
 
 	/**
 	 * @notice Grant multiple delegations in a single transaction.
@@ -305,11 +391,17 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	function grantDelegationBatch(DelegationInfo[] calldata delegates) external {
 		for (uint256 i = 0; i < delegates.length; i++) {
-			if (delegates[i].delegate == msg.sender) revert SelfDelegation();
+			if (delegates[i].delegatedSigner == msg.sender || delegates[i].delegatedSigner == delegates[i].account.addr) revert SelfDelegation();
 			if (delegates[i].expiryTimestamp <= block.timestamp) revert InvalidDelegationExpiry();
-
-			delegations[msg.sender][delegates[i].delegate] = delegates[i].expiryTimestamp;
-			emit DelegationGranted(msg.sender, delegates[i].delegate, delegates[i].expiryTimestamp);
+			for (uint256 j = 0; j < delegates[i].selectors.length; j++) {
+				delegations[delegates[i].account.addr][delegates[i].delegatedSigner][delegates[i].selectors[j]] = delegates[i].expiryTimestamp;
+				emit DelegationGranted(
+					delegates[i].account.addr,
+					delegates[i].delegatedSigner,
+					delegates[i].selectors[j],
+					delegates[i].expiryTimestamp
+				);
+			}
 		}
 	}
 
@@ -319,8 +411,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @param delegate  The address that received delegation.
 	 * @return Whether the delegation is currently active.
 	 */
-	function isDelegationActive(address delegator, address delegate) public view returns (bool) {
-		uint256 expiry = delegations[delegator][delegate];
+	function isDelegationActive(Account calldata delegator, address delegate, bytes4 selector) public view returns (bool) {
+		uint256 expiry = delegations[delegator.addr][delegate][selector];
 		return expiry > block.timestamp;
 	}
 
@@ -430,8 +522,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 *      by the template's insertion points and source indices.
 	 *      Supports delegated signatures where actualSigner can be different from signer.
 	 */
-	function executeTemplate(uint256 templateId, SignedOperation[] calldata signedOps) external nonReentrant onlyRole(OPERATOR_ROLE) {
+	function executeTemplate(
+		uint256 templateId,
+		SignedOperation[] calldata signedOps,
+		SignatureCallData[] calldata sigCallDatas
+	) external nonReentrant onlyRole(OPERATOR_ROLE) {
 		if (templateId >= nextTemplateId) revert InvalidTemplate(templateId);
+		if (signedOps.length != sigCallDatas.length) revert ArrayLengthMismatch();
+		if (signedOps.length == 0) revert EmptyBatch();
 
 		Template storage template = templates[templateId];
 		if (!template.active) revert TemplateNotActive(templateId);
@@ -446,15 +544,17 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		for (uint256 i = 0; i < signedOps.length && success; i++) {
 			Operation memory op = template.operations[i];
 			SignedOperation calldata signedOp = signedOps[i];
+			SignatureCallData calldata sigCallData = sigCallDatas[i];
 
 			// Verify signature and nonce (includes delegation check)
-			_verifyOperation(signedOp);
+			_verifyOperation(signedOp, sigCallData);
 
 			// Prepare calldata with insertions from previous results
-			bytes memory finalCallData = _insertResults(signedOp.callData, op.insertionPoints, op.sourceIndices, results);
+			bytes memory finalCallData = _insertResults(signedOp.params.callData, op.insertionPoints, op.sourceIndices, results);
 
 			// Execute operation
 			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData);
+
 			if (!success) {
 				symmio.setCallFromInstantLayer(false);
 				revert OperationFailed(i, results[i]);
@@ -474,8 +574,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 *      All operations must succeed for the transaction to complete.
 	 *      Supports delegated signatures where actualSigner can be different from signer.
 	 */
-	function executeBatch(SignedOperation[] calldata signedOps) external nonReentrant onlyRole(OPERATOR_ROLE) {
+	function executeBatch(
+		SignedOperation[] calldata signedOps,
+		SignatureCallData[] calldata sigCalldDta
+	) external nonReentrant onlyRole(OPERATOR_ROLE) {
 		if (signedOps.length == 0) revert EmptyBatch();
+		if (signedOps.length != sigCalldDta.length) revert ArrayLengthMismatch();
 
 		symmio.setCallFromInstantLayer(true);
 
@@ -484,9 +588,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bool success = true;
 		for (uint256 i = 0; i < signedOps.length && success; i++) {
 			// Verify signature and nonce (includes delegation check)
-			_verifyOperation(signedOps[i]);
 
-			(success, results[i]) = _executeOperationSafe(signedOps[i], signedOps[i].callData);
+			_verifyOperation(signedOps[i], sigCalldDta[i]);
+
+			(success, results[i]) = _executeOperationSafe(signedOps[i], signedOps[i].params.callData);
+
 			if (!success) {
 				symmio.setCallFromInstantLayer(false);
 				revert OperationFailed(i, results[i]);
@@ -507,59 +613,49 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 *      Validates that PartyB contracts and MultiAccount contracts are properly registered.
 	 *      Now also supports delegated signatures where actualSigner != signer.
 	 */
-	function _verifyOperation(SignedOperation calldata signedOp) private {
-		if (signedOp.deadline < block.timestamp) revert DeadlineExpired(signedOp.deadline);
+	function _verifyOperation(SignedOperation calldata signedOp, SignatureCallData calldata sigCalldDta) private {
+		if (signedOp.replayAttackHeader.deadline < block.timestamp) revert DeadlineExpired(signedOp.replayAttackHeader.deadline);
+		if (signedOp.params.callData.length <= 4) revert CallDataLengthMismatch();
 
-		bytes32 hash = getOperationHash(signedOp);
+		bytes32 hash = getOperationHash(signedOp, false);
 
-		// Determine who should have signed
-		address expectedSigner = signedOp.signer;
-		bool isDelegated = false;
-
-		// Check if actualSigner is provided and different from signer (delegation case)
-		if (signedOp.actualSigner != address(0) && signedOp.actualSigner != signedOp.signer) {
-			// Verify delegation is active
-			if (!isDelegationActive(signedOp.signer, signedOp.actualSigner)) {
-				revert InvalidDelegation();
-			}
-			expectedSigner = signedOp.actualSigner;
-			isDelegated = true;
-		}
-
-		// Validate registration status and signature
-		if (signedOp.accountSource == address(0)) {
+		// 1) Validate registration status and signature
+		if (signedOp.signerInfo.multiAccount == address(0)) {
 			// For PartyB operations
 			if (!isPartyBRegistered(signedOp.signer)) revert UnregisteredPartyB(signedOp.signer);
-
-			// Check signature from either signer or delegate
-			if (!SignatureChecker.isValidSignatureNow(expectedSigner, hash, signedOp.signature)) {
-				revert InvalidSignature();
-			}
 		} else {
 			// For PartyA operations through MultiAccount
-			if (!isMultiAccountRegistered(signedOp.accountSource)) revert UnregisteredMultiAccount(signedOp.accountSource);
+			if (!isMultiAccountRegistered(signedOp.signerInfo.multiAccount)) revert UnregisteredMultiAccount(signedOp.signerInfo.multiAccount);
 
-			if (isDelegated) {
-				if (!SignatureChecker.isValidSignatureNow(expectedSigner, hash, signedOp.signature)) {
-					revert InvalidSignature();
+			address accountOwner = IMultiAccount(signedOp.signerInfo.multiAccount).owners(signedOp.signerInfo.addr);
+			// Check if actualSigner is provided and different from signer (delegation case)
+			if (accountOwner != address(0) && accountOwner != signedOp.signer) {
+				// Verify delegation is active
+				bytes calldata cd = signedOp.params.callData;
+				bytes4 selector;
+				assembly ("memory-safe") {
+					selector := calldataload(cd.offset) // keep only the first 4 bytes (big-endian)
 				}
-			} else {
-				if (!IMultiAccount(signedOp.accountSource).isValidSignatureOfAccount(expectedSigner, hash, signedOp.signature)) {
-					revert InvalidSignature();
+				if (!isDelegationActive(signedOp.signerInfo, signedOp.signer, selector)) {
+					revert InvalidDelegation();
 				}
 			}
 		}
 
-		// Check for replay attacks
+		if (!SignatureChecker.isValidSignatureNow(signedOp.signer, hash, sigCalldDta.signature)) {
+			revert InvalidSignature();
+		}
+
+		// 2) Check for replay attacks
 		if (usedOperationHashes[hash]) revert OperationAlreadyExecuted(hash);
 		usedOperationHashes[hash] = true;
 
 		// Check nonce only if it's not 0 (0 means no nonce protection, relies on salt)
 		// For delegated operations, we still use the original signer's nonce
-		if (signedOp.nonce != 0) {
+		if (signedOp.replayAttackHeader.nonce != 0) {
 			uint256 expectedNonce = nonces[signedOp.signer] + 1;
-			if (signedOp.nonce != expectedNonce) {
-				revert InvalidNonce(signedOp.signer, expectedNonce, signedOp.nonce);
+			if (signedOp.replayAttackHeader.nonce != expectedNonce) {
+				revert InvalidNonce(signedOp.signer, expectedNonce, signedOp.replayAttackHeader.nonce);
 			}
 			nonces[signedOp.signer]++;
 			emit NonceIncremented(signedOp.signer, nonces[signedOp.signer]);
@@ -577,12 +673,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = callData;
 
-		if (signedOp.accountSource == address(0)) {
+		if (signedOp.signerInfo.multiAccount == address(0)) {
 			// PartyB operation - always use the original signer (PartyB address)
 			(success, result) = signedOp.signer.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
 		} else {
 			// PartyA operation through MultiAccount - use original signer account
-			(success, result) = signedOp.accountSource.call(abi.encodeWithSelector(IMultiAccount._call.selector, signedOp.signer, callDatas));
+			(success, result) = signedOp.signerInfo.multiAccount.call(
+				abi.encodeWithSelector(IMultiAccount._call.selector, signedOp.signerInfo.addr, callDatas)
+			);
 		}
 		if (result.length > 0) {
 			bytes[] memory arr = abi.decode(result, (bytes[]));
@@ -647,72 +745,129 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		return registeredMultiAccounts[addr];
 	}
 
-	/**
-	 * @notice Get the EIP-712 typed data hash for an operation.
-	 * @param signedOp The signed operation.
-	 * @return The EIP-712 hash that should be signed.
-	 *
-	 * @dev Includes salt for uniqueness protection in addition to standard parameters.
-	 *      Note: The hash is always computed with the original signer, even if signed by a delegate.
-	 */
-	function getOperationHash(SignedOperation calldata signedOp) public view returns (bytes32) {
-		bytes32 structHash = keccak256(
-			abi.encode(
-				OPERATION_TYPEHASH,
-				signedOp.accountSource,
-				signedOp.signer,
-				keccak256(signedOp.callData),
-				signedOp.nonce,
-				signedOp.salt,
-				signedOp.deadline
-			)
-		);
+	// ───────────────────────── Hash helpers ─────────────────────────
 
-		return _hashTypedDataV4(structHash);
+	function _hashAccount(Account memory a) internal pure returns (bytes32) {
+		return keccak256(abi.encode(ACCOUNT_TYPEHASH, a.multiAccount, a.addr));
 	}
 
-	/**
-	 * @notice Get the EIP-712 typed data hash for a delegation authorization.
-	 * @param delegator       Address granting delegation.
-	 * @param delegate        Address receiving delegation.
-	 * @param expiryTimestamp Expiry timestamp for delegation.
-	 * @param nonce           Nonce for replay protection.
-	 * @return The EIP-712 hash that should be signed.
-	 */
-	function getDelegationHash(address delegator, address delegate, uint256 expiryTimestamp, uint256 nonce) public view returns (bytes32) {
-		bytes32 structHash = keccak256(abi.encode(DELEGATION_TYPEHASH, delegator, delegate, expiryTimestamp, nonce));
-
-		return _hashTypedDataV4(structHash);
+	function _hashReplay(ReplayAttackHeader memory r) internal pure returns (bytes32) {
+		return keccak256(abi.encode(REPLAY_HEADER_TYPEHASH, r.nonce, r.deadline, r.salt));
 	}
+
+	function _hashParams(ParamCallDataSignable memory p) internal pure returns (bytes32) {
+		return keccak256(abi.encode(PARAMS_SIGNABLE_TYPEHASH, keccak256(p.callData)));
+	}
+
+	/// @notice EIP-712 digest for the *signable subset* of SignedOperation (excludes `signature`)
+	function getOperationHash(SignedOperation memory signedOp, bool isEthSignedMessage) public view returns (bytes32) {
+		bytes32 hParams = _hashParams(signedOp.params);
+		bytes32 hAcct = _hashAccount(signedOp.signerInfo);
+		bytes32 hReplay = _hashReplay(signedOp.replayAttackHeader);
+		bytes32 structHash = keccak256(abi.encode(SIGNED_OPERATION_TYPEHASH, signedOp.signer, hParams, hAcct, hReplay));
+		return _GetReadyToSignHash(structHash, isEthSignedMessage);
+	}
+
+	/// @dev EIP-712 array encoding = keccak256(concatenation of each element’s
+	///      own EIP-712 encoding). For bytes4 items, the element encoding is the
+	///      32-byte right-padded value, so we upcast each to bytes32 first and
+	///      then `abi.encodePacked` the whole array.
+	// Hash bytes4[] per EIP-712: keccak256( concat( 32-byte-encoded elements ) )
+	function _hashBytes4Array(bytes4[] calldata arr) internal pure returns (bytes32) {
+		if (arr.length == 0) return keccak256("");
+		bytes32[] memory words = new bytes32[](arr.length);
+		for (uint256 i = 0; i < arr.length; i++) {
+			// zero-padded to 32 bytes as in ABI encoding for fixed-size bytes
+			words[i] = bytes32(arr[i]); // right-pad to 32 bytes (EVM/ABI rule for bytesN)
+		}
+		return keccak256(abi.encodePacked(words)); // Concatenate 32-byte encodings and hash once.
+	}
+
+	function _hashDelegationInfo(DelegationInfo calldata d) internal pure returns (bytes32) {
+		return
+			keccak256(
+				abi.encode(DELEGATIONINFO_TYPEHASH, _hashAccount(d.account), d.delegatedSigner, _hashBytes4Array(d.selectors), d.expiryTimestamp)
+			);
+	}
+
+	function _signedDelegationDigest(SignedDelegation calldata s, bool isEthSignedMessage) internal view returns (bytes32) {
+		return
+			_GetReadyToSignHash(
+				keccak256(abi.encode(SIGNEDDELEGATION_TYPEHASH, _hashDelegationInfo(s.delegationInfo), _hashReplay(s.replayAttackHeader))),
+				isEthSignedMessage
+			);
+	}
+
+	function _GetReadyToSignHash(bytes32 structHash, bool isEthSignedMessage) internal view returns (bytes32) {
+		return isEthSignedMessage ? ECDSA.toEthSignedMessageHash(_hashTypedDataV4(structHash)) : _hashTypedDataV4(structHash); // "\x19Ethereum Signed Message:\n32" || EIP-191 0x1901 || domain || structHash
+	}
+
+	////////////////////////////////////////////////////////////////////////////
 
 	/**
 	 * @notice Get all active delegations for a delegator.
-	 * @param delegator Address to check delegations for.
+	 * @param _delegator Address to check delegations for.
 	 * @param delegates Array of potential delegates to check.
 	 * @return activeDelegates Array of currently active delegates and their expiry times.
 	 */
-	function getActiveDelegations(address delegator, address[] calldata delegates) external view returns (DelegationInfo[] memory activeDelegates) {
+	function getActiveDelegations(
+		Account calldata _delegator,
+		address[] calldata delegates,
+		bytes4[][] calldata selectors
+	) external view returns (DelegationInfo[] memory activeDelegates) {
+		if (delegates.length != selectors.length) revert ArrayLengthMismatch();
 		uint256 activeCount = 0;
 
-		// Count active delegations
+		// 1) Count how many delegates have at least one active selector
 		for (uint256 i = 0; i < delegates.length; i++) {
-			if (isDelegationActive(delegator, delegates[i])) {
-				activeCount++;
+			bytes4[] calldata sels = selectors[i];
+			bool anyActive = false;
+			for (uint256 j = 0; j < sels.length; j++) {
+				if (isDelegationActive(_delegator, delegates[i], sels[j])) {
+					anyActive = true;
+					break;
+				}
 			}
+			if (anyActive) activeCount++;
 		}
 
-		// Populate result array
+		// 2) Build the result
 		activeDelegates = new DelegationInfo[](activeCount);
-		uint256 currentIndex = 0;
+		uint256 k = 0;
 
 		for (uint256 i = 0; i < delegates.length; i++) {
-			if (isDelegationActive(delegator, delegates[i])) {
-				activeDelegates[currentIndex] = DelegationInfo({ delegate: delegates[i], expiryTimestamp: delegations[delegator][delegates[i]] });
-				currentIndex++;
-			}
-		}
+			bytes4[] calldata sels = selectors[i];
 
-		return activeDelegates;
+			// count active selectors for this delegate
+			uint256 c = 0;
+			for (uint256 j = 0; j < sels.length; j++) {
+				if (isDelegationActive(_delegator, delegates[i], sels[j])) {
+					c++;
+				}
+			}
+			if (c == 0) continue;
+
+			// collect active selectors and compute a representative expiry
+			bytes4[] memory activeSels = new bytes4[](c);
+			uint256 idx = 0;
+			uint256 minExpiry = type(uint256).max;
+
+			for (uint256 j = 0; j < sels.length; j++) {
+				bytes4 sel = sels[j];
+				if (isDelegationActive(_delegator, delegates[i], sel)) {
+					activeSels[idx++] = sel;
+					uint256 exp = delegations[_delegator.addr][delegates[i]][sel];
+					if (exp < minExpiry) minExpiry = exp; // choose min expiry across active selectors
+				}
+			}
+
+			activeDelegates[k++] = DelegationInfo({
+				account: _delegator,
+				delegatedSigner: delegates[i],
+				selectors: activeSels,
+				expiryTimestamp: minExpiry
+			});
+		}
 	}
 
 	/**
@@ -747,5 +902,18 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	function getTemplateOperations(uint256 templateId) external view returns (Operation[] memory) {
 		return templates[templateId].operations;
+	}
+
+	/* ─────────────────────────────── Modifiers ─────────────────────────────── */
+
+	/**
+	 * @notice Restricts function access to the owner of the specified account.
+	 * @param accountSource Account Source structure that specifies the address of manager and account owner.
+	 * @param sender  Address to verify as owner.
+	 */
+	modifier onlyOwner(Account memory accountSource, address sender) {
+		if (IMultiAccount(accountSource.multiAccount).owners(accountSource.addr) != msg.sender)
+			revert NotOwnerOfAccount(sender, accountSource.multiAccount, accountSource.addr);
+		_;
 	}
 }

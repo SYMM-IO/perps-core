@@ -19,9 +19,11 @@ import { LiquidationSigStruct } from "../../src/types/contracts/facets/liquidati
 import { QuoteStructOutput, SettlementSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
 import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
+import { PartyEntity } from "./partyEntitiy"
 
-export class User {
-	constructor(private context: RunContext, private signer: SignerWithAddress) {
+export class User extends PartyEntity {
+	constructor(context: RunContext, signer: SignerWithAddress) {
+		super(context, signer)
 	}
 
 	public async setup() {

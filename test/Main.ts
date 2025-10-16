@@ -20,6 +20,7 @@ import { shouldBehaveLikeHooks } from "./Hooks.behavior"
 import { shouldBehaveLikeSettlement } from "./Settlement.behavior"
 import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior"
+import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior"
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
@@ -105,6 +106,10 @@ describe("UnitTests", function () {
 
 		describe("PartyBBatchActionsFacet", async function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
+		})
+		
+		describe("InstantLayer", async function () {
+			shouldBehaveLikeInstantLayer()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {
