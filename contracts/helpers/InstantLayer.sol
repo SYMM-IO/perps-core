@@ -168,9 +168,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @dev    MultiAccount contracts must be registered before they can manage accounts
 	mapping(address => bool) public registeredMultiAccounts;
 
-	/// @notice Counter for generating unique sequential template IDs
-	uint256 public nextTemplateId;
-
 	/// @notice Tracking of executed operation hashes to prevent replay attacks
 	/// @dev    Each operation can only be executed once
 	mapping(bytes32 => bool) public usedOperationHashes;
@@ -186,11 +183,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Sequential nonce for delegation signatures to prevent replay
 	mapping(address => uint256) public delegationNonces;
 
+	/// delegator => delegate => selector => eta (0 = none scheduled)
+	mapping(address => mapping(address => mapping(bytes4 => uint256))) public pendingRevocationEta;
+
 	/// @notice Cooldown period for revoking delegation permissions
 	uint256 public revocationCooldown; // in seconds
 
-	/// delegator => delegate => selector => eta (0 = none scheduled)
-	mapping(address => mapping(address => mapping(bytes4 => uint256))) public pendingRevocationEta;
+	/// @notice Counter for generating unique sequential template IDs
+	uint256 public nextTemplateId;
 
 	/* ═══════════════════════════════ STRUCTS ═══════════════════════════════ */
 
@@ -445,6 +445,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param length The length of the calldata
 	error InsertionPointOutOfBounds(uint256 offset, uint256 length);
 
+	/// @notice Cooldown not over
+	/// @param eta The eta that has not passed
+	error RevocationCooldownNotOver(uint256 eta);
+
 	/* ════════════════════════════ CONSTRUCTOR ════════════════════════════ */
 
 	/**
@@ -461,7 +465,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		_grantRole(SETTER_ROLE, _admin);
 		_grantRole(OPERATOR_ROLE, _admin);
 
-		revocationCooldown = 30 minutes;
+		revocationCooldown = 10 minutes;
 		emit RevocationCooldownUpdated(0, revocationCooldown);
 	}
 
@@ -477,6 +481,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature) external {
 		DelegationInfo calldata info = signedDelegation.delegationInfo;
 		ReplayAttackHeader calldata rh = signedDelegation.replayAttackHeader;
+
+		if (!registeredMultiAccounts[info.account.multiAccount]) revert UnregisteredMultiAccount(info.account.multiAccount);
 
 		address delegator = info.account.addr;
 		address owner = IMultiAccount(info.account.multiAccount).owners(delegator);
@@ -691,7 +697,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			bytes4 sel = selectors[i];
 			uint256 eta = pendingRevocationEta[account.addr][delegate][sel];
 			if (eta == 0) continue; // not scheduled
-			if (block.timestamp < eta) revert DeadlineExpired(eta); // still cooling
+			if (block.timestamp < eta) revert RevocationCooldownNotOver(eta); // still cooling
 
 			// delete pending & active delegation
 			delete pendingRevocationEta[account.addr][delegate][sel];
@@ -855,7 +861,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			revert InvalidSignature();
 		}
 
-		// 2) Check for replay attacks
+		// Check for replay attacks
 		if (usedOperationHashes[hash]) revert OperationAlreadyExecuted(hash);
 		usedOperationHashes[hash] = true;
 
@@ -935,7 +941,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				bytes32 value = abi.decode(results[sourceIndices[i]], (bytes32));
 
 				uint256 offset = insertionPoints[i];
-				if (offset + 36 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 36, modifiedCallData.length);
+				if (offset + 68 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 68, modifiedCallData.length);
 
 				// Insert at calldata offset + 4 (selector) + 32 (length)
 				assembly {
@@ -978,7 +984,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	function isDelegationActive(Account calldata delegator, address delegate, bytes4 selector) public view returns (bool) {
 		uint256 expiry = delegations[delegator.addr][delegate][selector];
-		return expiry > block.timestamp;
+		uint256 eta = pendingRevocationEta[delegator.addr][delegate][selector];
+		return expiry > block.timestamp && (eta == 0 || eta > block.timestamp);
 	}
 
 	/**
