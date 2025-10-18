@@ -106,12 +106,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Role identifier for executing operations and templates
 	bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
-	/// @notice Role identifier for trusted operations including token approvals and external calls
-	bytes32 public constant TRUSTED_ROLE = keccak256("TRUSTED_ROLE");
-
-	/// @notice Role identifier for managing restricted functions and token withdrawals
-	bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
-
 	/* ════════════════════════ EIP-712 TYPE HASHES ════════════════════════ */
 
 	/// @notice EIP-712 type hash for Account struct
@@ -401,9 +395,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/// @notice Caller is not the owner of the specified account
 	/// @param sender The address that attempted the operation
-	/// @param accountManager The MultiAccount contract address
-	/// @param owner The actual owner of the account
-	error NotOwnerOfAccount(address sender, address accountManager, address owner);
+	/// @param multiAccount The MultiAccount contract address
+	/// @param account The actual account address
+	error NotOwnerOfAccount(address sender, address multiAccount, address account);
 
 	/// @notice Template has no operations
 	error EmptyTemplate();
@@ -436,8 +430,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 		_grantRole(SETTER_ROLE, _admin);
 		_grantRole(OPERATOR_ROLE, _admin);
-		_grantRole(MANAGER_ROLE, _admin);
-		_grantRole(TRUSTED_ROLE, _admin);
 	}
 
 	/* ═════════════════════ DELEGATION MANAGEMENT ═════════════════════ */
@@ -470,7 +462,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			revert InvalidNonce(delegator, expected, rh.nonce);
 		}
 		delegationNonces[delegator] = expected + 1;
-		emit DelegationNonceIncremented(delegator, delegationNonces[delegate]);
+		emit DelegationNonceIncremented(delegator, delegationNonces[delegator]);
 
 		// Verify signature
 		bytes32 digest = _signedDelegationDigest(signedDelegation, false);
@@ -726,7 +718,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	function _verifyOperation(SignedOperation calldata signedOp, bytes calldata sigCallData) private {
 		// Check expiry
-		if (signedOp.replayAttackHeader.deadline < block.timestamp) revert DeadlineExpired(signedOp.replayAttackHeader.deadline);
+		if (signedOp.replayAttackHeader.deadline != 0 && signedOp.replayAttackHeader.deadline < block.timestamp)
+			revert DeadlineExpired(signedOp.replayAttackHeader.deadline);
 
 		// Validate calldata has at least selector
 		if (signedOp.callData.length <= 4) revert CallDataLengthMismatch();
@@ -801,7 +794,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 
 		// Decode nested result array
-		if (result.length > 0) {
+		if (success && result.length > 0) {
 			bytes[] memory arr = abi.decode(result, (bytes[]));
 			result = arr[0];
 		}
@@ -843,7 +836,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				bytes32 value = abi.decode(results[sourceIndices[i]], (bytes32));
 
 				uint256 offset = insertionPoints[i];
-				if (offset + 32 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 32, modifiedCallData.length);
+				if (offset + 36 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 32, modifiedCallData.length);
 
 				// Insert at calldata offset + 4 (selector) + 32 (length)
 				assembly {
