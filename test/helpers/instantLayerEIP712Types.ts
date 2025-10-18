@@ -35,11 +35,10 @@ export const BASE_TYPES = Object.freeze({
 		{ name: "deadline", type: "uint256" },
 		{ name: "salt", type: "bytes32" },
 	]),
-	ParamCallDataSignable: Object.freeze([{ name: "callData", type: "bytes" }]),
 	SignedOperation: Object.freeze([
 		{ name: "signer", type: "address" },
-		{ name: "params", type: "ParamCallDataSignable" },
-		{ name: "signerInfo", type: "Account" },
+		{ name: "callData", type: "bytes" },
+		{ name: "signerAccount", type: "Account" },
 		{ name: "replayAttackHeader", type: "ReplayAttackHeader" },
 	]),
 })
@@ -49,7 +48,6 @@ export function cloneTypes(): TypedDataTypes {
 	return {
 		Account: [...BASE_TYPES.Account],
 		ReplayAttackHeader: [...BASE_TYPES.ReplayAttackHeader],
-		ParamCallDataSignable: [...BASE_TYPES.ParamCallDataSignable],
 		SignedOperation: [...BASE_TYPES.SignedOperation],
 	}
 }

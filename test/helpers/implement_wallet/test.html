@@ -317,10 +317,8 @@
 					// 2) Build signable object ( NO signature)
 					const sop = {
 						signer: who,
-						params: {
-							callData: full, // bytes, params-only (no selector)
-						},
-						signerInfo: {
+						callData: full, // bytes, params-only (no selector)
+						signerAccount: {
 							multiAccount: MULTIACCOUNT_ADDR,
 							addr: "0x0000000000000000000000000000000000000000", // fill with your account address
 						},
@@ -340,16 +338,13 @@
 					// 5) Call InstantLayer.executeBatch
 					const instant = new ethers.Contract(INSTANT_LAYER_ADDR, InstantLayerAbi, signer);
 
-					// SignatureCallData struct contains signature + callData (paramsOnly bytes)
-					const sigCallData = {
-						signature: signature,
-					};
+			
 
 					const OPERATOR_ROLE = await instant.OPERATOR_ROLE();
 					let tx = await instant.grantRole(OPERATOR_ROLE, who);
 					await tx.wait();
 
-					tx = await instant.executeBatch([sop], [sigCallData]);
+					tx = await instant.executeBatch([sop], [signature]);
 					log("tx sent:", tx.hash);
 					const rcpt = await tx.wait();
 					log("tx confirmed in block", rcpt.blockNumber);

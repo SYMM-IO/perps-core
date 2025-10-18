@@ -125,8 +125,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		keccak256(
 			abi.encodePacked(
 				"SignedOperation(",
+				"address signer,",
 				"bytes callData,",
-				"Account signerInfo,",
+				"Account signerAccount,",
 				"ReplayAttackHeader replayAttackHeader",
 				")",
 				"Account(address multiAccount,address addr)",
@@ -732,7 +733,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Validate registration and delegation
 		if (signedOp.signerAccount.multiAccount == address(0)) {
 			// PartyB operation
-			if (!isPartyBRegistered(signedOp.signerAccount.addr)) revert UnregisteredPartyB(signedOp.signerAccount.addr);
+			if (!isPartyBRegistered(signer)) revert UnregisteredPartyB(signedOp.signerAccount.addr);
 		} else {
 			// PartyA operation through MultiAccount
 			if (!isMultiAccountRegistered(signedOp.signerAccount.multiAccount)) revert UnregisteredMultiAccount(signedOp.signerAccount.multiAccount);
@@ -757,7 +758,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			revert InvalidSignature();
 		}
 
-		// Prevent replay attacks
+		// 2) Check for replay attacks
 		if (usedOperationHashes[hash]) revert OperationAlreadyExecuted(hash);
 		usedOperationHashes[hash] = true;
 
@@ -884,7 +885,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/**
 	 * @notice Get all currently active delegations for a delegator.
 	 * @param _delegator Account to check delegations for
-	 * @param delegates  Array of potential delegates to check
+	 * @param delegates Array of potential delegates to check
 	 * @param selectors  Array of selector arrays to check for each delegate
 	 * @return activeDelegates Array of active delegation information
 	 */
@@ -1008,7 +1009,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bytes32 hCallData = keccak256(signedOp.callData);
 		bytes32 hAcct = _hashAccount(signedOp.signerAccount);
 		bytes32 hReplay = _hashReplay(signedOp.replayAttackHeader);
-		bytes32 structHash = keccak256(abi.encode(SIGNED_OPERATION_TYPEHASH, hCallData, hAcct, hReplay));
+		bytes32 structHash = keccak256(abi.encode(SIGNED_OPERATION_TYPEHASH, signedOp.signer, hCallData, hAcct, hReplay));
 		return _computeEIP712Digest(structHash, isEthSignedMessage);
 	}
 
@@ -1022,7 +1023,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		for (uint256 i = 0; i < arr.length; i++) {
 			words[i] = bytes32(arr[i]); // Right-pad to 32 bytes
 		}
-		return keccak256(abi.encodePacked(words)); // Concatenate and hash
+		return keccak256(abi.encodePacked(words)); // Concatenate 32-byte encodings and hash once.
 	}
 
 	/**
@@ -1050,7 +1051,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @dev Compute final EIP-712 digest with optional personal_sign wrapping.
 	 */
 	function _computeEIP712Digest(bytes32 structHash, bool isEthSignedMessage) internal view returns (bytes32) {
-		return isEthSignedMessage ? ECDSA.toEthSignedMessageHash(_hashTypedDataV4(structHash)) : _hashTypedDataV4(structHash);
+		return isEthSignedMessage ? ECDSA.toEthSignedMessageHash(_hashTypedDataV4(structHash)) : _hashTypedDataV4(structHash); // "\x19Ethereum Signed Message:\n32" || EIP-191 0x1901 || domain || structHash
 	}
 
 	/* ═══════════════════════════ MODIFIERS ═══════════════════════════ */

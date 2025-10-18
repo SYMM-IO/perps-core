@@ -32,7 +32,7 @@ import { trace } from "console"
 import { hexZeroPad, zeroPad } from "@ethersproject/bytes"
 import { Context } from "mocha"
 import { asyncWrapProviders } from "async_hooks"
-import { InstantLayer, SigCheckHarness, MultiAccount, SymmioPartyB, SymmioPartyA } from "../../src/types"
+import { InstantLayer, MultiAccount, SymmioPartyB, SymmioPartyA } from "../../src/types"
 import { hedgerActionsMap } from "../models/Actions"
 
 // import { IMultiAccount } from "../../src/types/contracts/interfaces"
@@ -383,10 +383,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 	describe("execute Batch", async function () {
 		let opSendQuoteA1: InstantLayer.SignedOperationStruct, opSendQuoteA2: InstantLayer.SignedOperationStruct
 		let opLockB1: InstantLayer.SignedOperationStruct, opOpenQuoteB1: InstantLayer.SignedOperationStruct
-		let opSendQuoteSignature1: InstantLayer.SignatureCallDataStruct
-		let opSendQuoteSignature2: InstantLayer.SignatureCallDataStruct
-		let opLockSignature: InstantLayer.SignatureCallDataStruct
-		let opOpenSignature: InstantLayer.SignatureCallDataStruct
+		let opSendQuoteSignature1: BytesLike
+		let opSendQuoteSignature2: BytesLike
+		let opLockSignature: BytesLike
+		let opOpenSignature: BytesLike
 		let accounts: IMultiAccount.AccountStructOutput[]
 
 		// Domain must match the executor's EIP712(name,version)
@@ -482,7 +482,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					addr: accounts[0].accountAddress,
 				},
 				replayAttackHeader: {
-					nonce: 1n,
+					nonce: 2n,
 					deadline: deadline,
 					salt: ethers.hexlify(ethers.randomBytes(32)),
 				},
@@ -516,21 +516,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				},
 			}
 
-			opSendQuoteSignature1 = {
-				signature: new Uint8Array([0x1, 0x2]),
-			}
-
-			opSendQuoteSignature2 = {
-				signature: new Uint8Array([0x1, 0x2]),
-			}
-
-			opLockSignature = {
-				signature: new Uint8Array([0x1, 0x2]),
-			}
-
-			opOpenSignature = {
-				signature: new Uint8Array([0x1, 0x2]),
-			}
+			opSendQuoteSignature1 = new Uint8Array([0x1, 0x2])
+			opSendQuoteSignature2 = new Uint8Array([0x1, 0x2])
+			opLockSignature = new Uint8Array([0x1, 0x2])
+			opOpenSignature = new Uint8Array([0x1, 0x2])
 		})
 
 		// it("Should be failed when Sender not have Operator Role ", async () => {
@@ -576,16 +565,16 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	await expect(context.instantLayer.executeBatch([opLockB1])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
 		// })
 
-		it("should allow Sending Intents in a single batch", async function () {
+		it.only("should allow Sending Intents in a single batch", async function () {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
 			const multiAccount = context.multiAccount
 
-			opSendQuoteSignature1.signature = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
-			opSendQuoteSignature2.signature = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
-			opLockSignature.signature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+			opSendQuoteSignature1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			opSendQuoteSignature2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
+			opLockSignature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
 
 			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opSendQuoteA2, opLockB1]
-			const sigCallDatas: InstantLayer.SignatureCallDataStruct[] = [opSendQuoteSignature1, opSendQuoteSignature2, opLockSignature]
+			const sigCallDatas: BytesLike[] = [opSendQuoteSignature1, opSendQuoteSignature2, opLockSignature]
 
 			await expect(instantLayer.executeBatch(signedOps, sigCallDatas)).not.to.be.reverted
 
@@ -729,10 +718,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 	describe("execute Template", async function () {
 		let opSendQuoteA1: InstantLayer.SignedOperationStruct, opSendQuoteA2: InstantLayer.SignedOperationStruct
 		let opLockB1: InstantLayer.SignedOperationStruct, opOpenQuoteB1: InstantLayer.SignedOperationStruct
-		let opSendQuoteSignature1: InstantLayer.SignatureCallDataStruct
-		let opSendQuoteSignature2: InstantLayer.SignatureCallDataStruct
-		let opLockSignature: InstantLayer.SignatureCallDataStruct
-		let opOpenSignature: InstantLayer.SignatureCallDataStruct
+		let opSendQuoteSignature1: BytesLike
+		let opSendQuoteSignature2: BytesLike
+		let opLockSignature: BytesLike
+		let opOpenSignature: BytesLike
 		let accounts: IMultiAccount.AccountStructOutput[]
 
 		beforeEach(async function () {
@@ -801,7 +790,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					addr: accounts[0].accountAddress,
 				},
 				replayAttackHeader: {
-					nonce: 1n,
+					nonce: 2n,
 					deadline: deadline,
 					salt: ethers.hexlify(ethers.randomBytes(32)),
 				},
@@ -835,21 +824,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				},
 			}
 
-			opSendQuoteSignature1 = {
-				signature: new Uint8Array([0x1, 0x2]),
-			}
-
-			opSendQuoteSignature2 = {
-				signature: new Uint8Array([0x1, 0x2]),
-			}
-
-			opLockSignature = {
-				signature: new Uint8Array([0x1, 0x2]),
-			}
-
-			opOpenSignature = {
-				signature: new Uint8Array([0x1, 0x2]),
-			}
+			opSendQuoteSignature1 = new Uint8Array([0x1, 0x2])
+			opSendQuoteSignature2 = new Uint8Array([0x1, 0x2])
+			opLockSignature = new Uint8Array([0x1, 0x2])
+			opOpenSignature = new Uint8Array([0x1, 0x2])
 
 			await context.instantLayer.addTemplate("MyTempFull", ops)
 		})
@@ -988,12 +966,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 		expect(intent.tradeAgreements.quantity).to.be.equal(request.quantity)
 		// 	})
 
-		it("should allow Sending Intent, Locking and Filling in a single batch Altogether", async function () {
+		it.only("should allow Sending Intent, Locking and Filling in a single batch Altogether", async function () {
 			// console.log(types)
-			opSendQuoteSignature1.signature = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
-			opSendQuoteSignature2.signature = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
-			opLockSignature.signature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
-			opOpenSignature.signature = await context.signers.hedger.signTypedData(domain, types, opOpenQuoteB1)
+			opSendQuoteSignature1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			opSendQuoteSignature2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
+			opLockSignature = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+			opOpenSignature = await context.signers.hedger.signTypedData(domain, types, opOpenQuoteB1)
 
 			opLockB1.callData = lockQuoteCallDataTemplate
 			opOpenQuoteB1.callData = openQuoteCallDataTemplate

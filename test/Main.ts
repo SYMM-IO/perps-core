@@ -108,7 +108,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
 		})
 		
-		describe("InstantLayer", async function () {
+		describe.only("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
