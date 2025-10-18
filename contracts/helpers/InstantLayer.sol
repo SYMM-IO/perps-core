@@ -106,6 +106,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Role identifier for executing operations and templates
 	bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
+	/// @notice Role identifier for revoking delegation permissions
+	bytes32 public constant REVOKER_ROLE = keccak256("REVOKER_ROLE");
+
 	/* ════════════════════════ EIP-712 TYPE HASHES ════════════════════════ */
 
 	/// @notice EIP-712 type hash for Account struct
@@ -172,12 +175,22 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @dev    Each operation can only be executed once
 	mapping(bytes32 => bool) public usedOperationHashes;
 
+	/// @notice Tracking of executed delegation hashes to prevent replay attacks
+	/// @dev    Each delegation can only be executed once
+	mapping(bytes32 => bool) public usedDelegationHashes;
+
 	/// @notice Delegation permissions: delegator => delegate => selector => expiry timestamp
 	/// @dev    Non-zero timestamp indicates active delegation until that time
 	mapping(address => mapping(address => mapping(bytes4 => uint256))) public delegations;
 
 	/// @notice Sequential nonce for delegation signatures to prevent replay
 	mapping(address => uint256) public delegationNonces;
+
+	/// @notice Cooldown period for revoking delegation permissions
+	uint256 public revocationCooldown; // in seconds
+
+	/// delegator => delegate => selector => eta (0 = none scheduled)
+	mapping(address => mapping(address => mapping(bytes4 => uint256))) public pendingRevocationEta;
 
 	/* ═══════════════════════════════ STRUCTS ═══════════════════════════════ */
 
@@ -322,6 +335,24 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param newNonce The new delegation nonce value
 	event DelegationNonceIncremented(address indexed delegator, uint256 newNonce);
 
+	/// @notice Emitted when the revocation cooldown is updated
+	/// @param oldCooldown The old cooldown period
+	/// @param newCooldown The new cooldown period
+	event RevocationCooldownUpdated(uint256 oldCooldown, uint256 newCooldown);
+
+	/// @notice Emitted when a delegation selector is scheduled for revocation
+	/// @param delegator Address whose delegation is being revoked
+	/// @param delegate Address whose delegation is being revoked
+	/// @param selector Function selector being revoked
+	/// @param eta The eta at which the revocation will take effect
+	event RevocationScheduled(address indexed delegator, address indexed delegate, bytes4 selector, uint256 eta);
+
+	/// @notice Emitted when a delegation selector is revoked
+	/// @param delegator Address whose delegation is being revoked
+	/// @param delegate Address whose delegation is being revoked
+	/// @param selector Function selector being revoked
+	event DelegationSelectorRevoked(address indexed delegator, address indexed delegate, bytes4 selector);
+
 	/* ═══════════════════════════════ ERRORS ═══════════════════════════════ */
 
 	/// @notice Signature verification failed
@@ -370,6 +401,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Operation hash has already been executed
 	/// @param hash The operation hash that was already used
 	error OperationAlreadyExecuted(bytes32 hash);
+
+	/// @notice Delegation hash has already been executed
+	/// @param hash The delegation hash that was already used
+	error DelegationAlreadyExecuted(bytes32 hash);
 
 	/// @notice Batch operation array is empty
 	error EmptyBatch();
@@ -425,6 +460,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 		_grantRole(SETTER_ROLE, _admin);
 		_grantRole(OPERATOR_ROLE, _admin);
+
+		revocationCooldown = 30 minutes;
+		emit RevocationCooldownUpdated(0, revocationCooldown);
 	}
 
 	/* ═════════════════════ DELEGATION MANAGEMENT ═════════════════════ */
@@ -460,10 +498,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit DelegationNonceIncremented(delegator, delegationNonces[delegator]);
 
 		// Verify signature
-		bytes32 digest = _signedDelegationDigest(signedDelegation, false);
-		if (!SignatureChecker.isValidSignatureNow(owner, digest, signature)) {
+		bytes32 hash = getDelegationHash(signedDelegation, false);
+		if (!SignatureChecker.isValidSignatureNow(owner, hash, signature)) {
 			revert InvalidSignature();
 		}
+
+		// Check for replay attacks
+		if (usedDelegationHashes[hash]) revert DelegationAlreadyExecuted(hash);
+		usedDelegationHashes[hash] = true;
 
 		// Update delegation mappings
 		mapping(bytes4 => uint256) storage slot = delegations[delegator][delegate];
@@ -471,6 +513,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		for (uint256 i = 0; i < selectors.length; ) {
 			bytes4 selector = selectors[i];
 			slot[selector] = expiry;
+			delete pendingRevocationEta[delegator][delegate][selector];
 			emit DelegationGranted(delegator, delegate, selector, expiry);
 
 			unchecked {
@@ -494,6 +537,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Grant each selector permission
 		for (uint256 j = 0; j < info.selectors.length; j++) {
 			delegations[delegator][delegate][info.selectors[j]] = info.expiryTimestamp;
+			delete pendingRevocationEta[delegator][delegate][info.selectors[j]];
 			emit DelegationGranted(delegator, delegate, info.selectors[j], info.expiryTimestamp);
 		}
 	}
@@ -595,6 +639,66 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (templateId >= nextTemplateId) revert InvalidTemplate(templateId);
 		templates[templateId].active = active;
 		emit TemplateUpdated(templateId, active);
+	}
+
+	/* ═════════════════════ REVOKE DELEGATION FUNCTIONS ═════════════════════ */
+
+	/**
+	 * @notice Update the global cooldown for delegation revocations.
+	 * @dev    Only SETTER_ROLE. Add guardrails to prevent absurd values.
+	 *         Example policy: 1 minute ≤ cooldown ≤ 30 days.
+	 */
+	function setRevocationCooldown(uint256 newCooldown) external onlyRole(SETTER_ROLE) {
+		// Adjust bounds to taste; 0 disallowed to keep the two-step invariant.
+		if (newCooldown < 1 minutes || newCooldown > 30 days) revert InvalidCallData();
+		uint256 old = revocationCooldown;
+		revocationCooldown = newCooldown;
+		emit RevocationCooldownUpdated(old, newCooldown);
+	}
+
+	/**
+	 * @notice Schedule revocation of specific selectors; takes effect after cooldown.
+	 * @dev    Who may schedule: account owner (delegator), the delegate themselves, or REVOKER_ROLE.
+	 *         No-ops for selectors not currently active.
+	 */
+	function initiateRevokeDelegation(Account calldata account, address delegate, bytes4[] calldata selectors) external {
+		bool callerIsOwner = _isAccountOwner(account);
+		bool callerIsDelegate = (msg.sender == delegate);
+		bool callerIsAdmin = hasRole(REVOKER_ROLE, msg.sender);
+		if (!(callerIsOwner || callerIsDelegate || callerIsAdmin)) {
+			revert NotOwnerOfAccount(msg.sender, account.multiAccount, account.addr);
+		}
+
+		for (uint256 i = 0; i < selectors.length; ++i) {
+			bytes4 sel = selectors[i];
+
+			// only schedule if currently active
+			uint256 currentExpiry = delegations[account.addr][delegate][sel];
+			if (currentExpiry <= block.timestamp) continue;
+
+			uint256 eta = block.timestamp + revocationCooldown;
+			pendingRevocationEta[account.addr][delegate][sel] = eta;
+			emit RevocationScheduled(account.addr, delegate, sel, eta);
+		}
+	}
+
+	/**
+	 * @notice Finalize after cooldown; actually deletes the delegation.
+	 * @dev    Anyone may call once ETA has passed.
+	 */
+	function finalizeRevokeDelegation(Account calldata account, address delegate, bytes4[] calldata selectors) external {
+		for (uint256 i = 0; i < selectors.length; ++i) {
+			bytes4 sel = selectors[i];
+			uint256 eta = pendingRevocationEta[account.addr][delegate][sel];
+			if (eta == 0) continue; // not scheduled
+			if (block.timestamp < eta) revert DeadlineExpired(eta); // still cooling
+
+			// delete pending & active delegation
+			delete pendingRevocationEta[account.addr][delegate][sel];
+			delete delegations[account.addr][delegate][sel];
+
+			emit DelegationSelectorRevoked(account.addr, delegate, sel);
+		}
 	}
 
 	/* ═════════════════════ OPERATION EXECUTION ═════════════════════ */
@@ -981,6 +1085,68 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/* ═════════════════════ EIP-712 HASH FUNCTIONS ═════════════════════ */
 
 	/**
+	 * @notice Calculate the EIP-712 hash for a signed operation.
+	 * @param signedOp           Operation to hash
+	 * @param isEthSignedMessage Whether to use personal_sign format
+	 * @return EIP-712 compliant hash
+	 */
+	function getOperationHash(SignedOperation memory signedOp, bool isEthSignedMessage) public view returns (bytes32) {
+		bytes32 structHash = keccak256(
+			abi.encode(
+				SIGNED_OPERATION_TYPEHASH,
+				signedOp.signer,
+				keccak256(signedOp.callData),
+				_hashAccount(signedOp.signerAccount),
+				_hashReplay(signedOp.replayAttackHeader)
+			)
+		);
+		return _computeEIP712Digest(structHash, isEthSignedMessage);
+	}
+
+	/**
+	 * @notice Calculate the EIP-712 hash for a signed delegation.
+	 * @param signedDelegation       Delegation to hash
+	 * @param isEthSignedMessage Whether to use personal_sign format
+	 * @return EIP-712 compliant hash
+	 */
+	function getDelegationHash(SignedDelegation memory signedDelegation, bool isEthSignedMessage) public view returns (bytes32) {
+		return
+			_computeEIP712Digest(
+				keccak256(
+					abi.encode(
+						SIGNED_DELEGATION_TYPEHASH,
+						_hashDelegationInfo(signedDelegation.delegationInfo),
+						_hashReplay(signedDelegation.replayAttackHeader)
+					)
+				),
+				isEthSignedMessage
+			);
+	}
+
+	/**
+	 * @dev Hash a bytes4 array according to EIP-712 array encoding rules.
+	 * Each bytes4 is right-padded to 32 bytes, then all are concatenated and hashed.
+	 */
+	function _hashBytes4Array(bytes4[] memory arr) internal pure returns (bytes32) {
+		if (arr.length == 0) return keccak256("");
+		bytes32[] memory words = new bytes32[](arr.length);
+		for (uint256 i = 0; i < arr.length; i++) {
+			words[i] = bytes32(arr[i]); // Right-pad to 32 bytes
+		}
+		return keccak256(abi.encodePacked(words)); // Concatenate 32-byte encodings and hash once.
+	}
+
+	/**
+	 * @dev Hash a DelegationInfo struct according to EIP-712.
+	 */
+	function _hashDelegationInfo(DelegationInfo memory d) internal pure returns (bytes32) {
+		return
+			keccak256(
+				abi.encode(DELEGATION_INFO_TYPEHASH, _hashAccount(d.account), d.delegatedSigner, _hashBytes4Array(d.selectors), d.expiryTimestamp)
+			);
+	}
+
+	/**
 	 * @dev Hash an Account struct according to EIP-712.
 	 */
 	function _hashAccount(Account memory a) internal pure returns (bytes32) {
@@ -995,58 +1161,15 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	}
 
 	/**
-	 * @notice Calculate the EIP-712 hash for a signed operation.
-	 * @param signedOp           Operation to hash
-	 * @param isEthSignedMessage Whether to use personal_sign format
-	 * @return EIP-712 compliant hash
-	 */
-	function getOperationHash(SignedOperation memory signedOp, bool isEthSignedMessage) public view returns (bytes32) {
-		bytes32 hCallData = keccak256(signedOp.callData);
-		bytes32 hAcct = _hashAccount(signedOp.signerAccount);
-		bytes32 hReplay = _hashReplay(signedOp.replayAttackHeader);
-		bytes32 structHash = keccak256(abi.encode(SIGNED_OPERATION_TYPEHASH, signedOp.signer, hCallData, hAcct, hReplay));
-		return _computeEIP712Digest(structHash, isEthSignedMessage);
-	}
-
-	/**
-	 * @dev Hash a bytes4 array according to EIP-712 array encoding rules.
-	 * Each bytes4 is right-padded to 32 bytes, then all are concatenated and hashed.
-	 */
-	function _hashBytes4Array(bytes4[] calldata arr) internal pure returns (bytes32) {
-		if (arr.length == 0) return keccak256("");
-		bytes32[] memory words = new bytes32[](arr.length);
-		for (uint256 i = 0; i < arr.length; i++) {
-			words[i] = bytes32(arr[i]); // Right-pad to 32 bytes
-		}
-		return keccak256(abi.encodePacked(words)); // Concatenate 32-byte encodings and hash once.
-	}
-
-	/**
-	 * @dev Hash a DelegationInfo struct according to EIP-712.
-	 */
-	function _hashDelegationInfo(DelegationInfo calldata d) internal pure returns (bytes32) {
-		return
-			keccak256(
-				abi.encode(DELEGATION_INFO_TYPEHASH, _hashAccount(d.account), d.delegatedSigner, _hashBytes4Array(d.selectors), d.expiryTimestamp)
-			);
-	}
-
-	/**
-	 * @dev Calculate the EIP-712 digest for a signed delegation.
-	 */
-	function _signedDelegationDigest(SignedDelegation calldata s, bool isEthSignedMessage) internal view returns (bytes32) {
-		return
-			_computeEIP712Digest(
-				keccak256(abi.encode(SIGNED_DELEGATION_TYPEHASH, _hashDelegationInfo(s.delegationInfo), _hashReplay(s.replayAttackHeader))),
-				isEthSignedMessage
-			);
-	}
-
-	/**
 	 * @dev Compute final EIP-712 digest with optional personal_sign wrapping.
 	 */
 	function _computeEIP712Digest(bytes32 structHash, bool isEthSignedMessage) internal view returns (bytes32) {
 		return isEthSignedMessage ? ECDSA.toEthSignedMessageHash(_hashTypedDataV4(structHash)) : _hashTypedDataV4(structHash); // "\x19Ethereum Signed Message:\n32" || EIP-191 0x1901 || domain || structHash
+	}
+
+	function _isAccountOwner(Account memory account) internal view returns (bool) {
+		if (!registeredMultiAccounts[account.multiAccount]) revert UnregisteredMultiAccount(account.multiAccount);
+		return IMultiAccount(account.multiAccount).owners(account.addr) == msg.sender;
 	}
 
 	/* ═══════════════════════════ MODIFIERS ═══════════════════════════ */
@@ -1054,13 +1177,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/**
 	 * @notice Restrict function access to the owner of a specific account.
 	 * @dev    Verifies caller owns the account through the MultiAccount contract.
-	 * @param accountSource Account information including MultiAccount and address
+	 * @param account Account information including MultiAccount and address
 	 */
-	modifier onlyOwner(Account memory accountSource) {
-		address multiAccount = accountSource.multiAccount;
-		if (!registeredMultiAccounts[multiAccount]) revert UnregisteredMultiAccount(multiAccount);
-		if (IMultiAccount(multiAccount).owners(accountSource.addr) != msg.sender)
-			revert NotOwnerOfAccount(msg.sender, multiAccount, accountSource.addr);
+	modifier onlyOwner(Account memory account) {
+		if (!_isAccountOwner(account)) revert NotOwnerOfAccount(msg.sender, account.multiAccount, account.addr);
 		_;
 	}
 }
