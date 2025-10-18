@@ -392,9 +392,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param expiryTimestamp The expiry time that has passed
 	error DelegationExpired(uint256 expiryTimestamp);
 
-	/// @notice Delegation expiry timestamp is invalid (in the past)
-	error InvalidDelegationExpiry();
-
 	/// @notice Cannot delegate to oneself
 	error SelfDelegation();
 
@@ -413,6 +410,16 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/// @notice Number of operations doesn't match template requirements
 	error TemplateOperationLengthMismatch();
+
+	/// @notice Signer and account mismatch
+	/// @param signer The signer address
+	/// @param account The account address
+	error MismatchSignerAndAccount(address signer, address account);
+
+	/// @notice Insertion point is out of bounds
+	/// @param offset The offset that is out of bounds
+	/// @param length The length of the calldata
+	error InsertionPointOutOfBounds(uint256 offset, uint256 length);
 
 	/* ════════════════════════════ CONSTRUCTOR ════════════════════════════ */
 
@@ -442,10 +449,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @param signedDelegation Delegation details including permissions and anti-replay parameters
 	 * @param signature        EIP-712 signature from the account owner
 	 */
-	function grantBatchDelegationBySig(
-		SignedDelegation calldata signedDelegation,
-		bytes calldata signature
-	) external onlyOwner(signedDelegation.delegationInfo.account) {
+	function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature) external {
 		DelegationInfo calldata info = signedDelegation.delegationInfo;
 		ReplayAttackHeader calldata rh = signedDelegation.replayAttackHeader;
 
@@ -457,8 +461,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 		// Validate delegation parameters
 		if (delegate == owner) revert SelfDelegation();
-		if (expiry <= block.timestamp) revert InvalidDelegationExpiry();
-		if (rh.deadline != 0 && block.timestamp > rh.deadline) revert InvalidDelegationExpiry();
+		if (expiry <= block.timestamp) revert DelegationExpired(expiry);
+		if (rh.deadline != 0 && block.timestamp > rh.deadline) revert DeadlineExpired(rh.deadline);
 
 		// Verify and update nonce
 		uint256 expected = delegationNonces[delegator];
@@ -466,7 +470,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			revert InvalidNonce(delegator, expected, rh.nonce);
 		}
 		delegationNonces[delegator] = expected + 1;
-		emit DelegationNonceIncremented(delegate, delegationNonces[delegate]);
+		emit DelegationNonceIncremented(delegator, delegationNonces[delegate]);
 
 		// Verify signature
 		bytes32 digest = _signedDelegationDigest(signedDelegation, false);
@@ -495,7 +499,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	function grantDelegation(DelegationInfo calldata info) external onlyOwner(info.account) {
 		if (info.delegatedSigner == msg.sender) revert SelfDelegation();
-		if (info.expiryTimestamp <= block.timestamp) revert InvalidDelegationExpiry();
+		if (info.expiryTimestamp <= block.timestamp) revert DelegationExpired(info.expiryTimestamp);
 
 		address delegator = info.account.addr;
 		address delegate = info.delegatedSigner;
@@ -733,7 +737,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Validate registration and delegation
 		if (signedOp.signerAccount.multiAccount == address(0)) {
 			// PartyB operation
-			if (!isPartyBRegistered(signer)) revert UnregisteredPartyB(signedOp.signerAccount.addr);
+			if (signer != signedOp.signerAccount.addr) revert MismatchSignerAndAccount(signer, signedOp.signerAccount.addr);
+			if (!isPartyBRegistered(signer)) revert UnregisteredPartyB(signer);
 		} else {
 			// PartyA operation through MultiAccount
 			if (!isMultiAccountRegistered(signedOp.signerAccount.multiAccount)) revert UnregisteredMultiAccount(signedOp.signerAccount.multiAccount);
@@ -838,6 +843,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				bytes32 value = abi.decode(results[sourceIndices[i]], (bytes32));
 
 				uint256 offset = insertionPoints[i];
+				if (offset + 32 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 32, modifiedCallData.length);
+
 				// Insert at calldata offset + 4 (selector) + 32 (length)
 				assembly {
 					mstore(add(modifiedCallData, add(36, offset)), value)
@@ -967,10 +974,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	}
 
 	/**
-	 * @notice Get the last assigned template ID.
+	 * @notice Get the next assigned template ID.
 	 * @return Current value of the template ID counter
 	 */
-	function getLastTemplateID() external view returns (uint256) {
+	function getNextTemplateId() external view returns (uint256) {
 		return nextTemplateId;
 	}
 
@@ -1062,8 +1069,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @param accountSource Account information including MultiAccount and address
 	 */
 	modifier onlyOwner(Account memory accountSource) {
-		if (IMultiAccount(accountSource.multiAccount).owners(accountSource.addr) != msg.sender)
-			revert NotOwnerOfAccount(msg.sender, accountSource.multiAccount, accountSource.addr);
+		address multiAccount = accountSource.multiAccount;
+		if (!registeredMultiAccounts[multiAccount]) revert UnregisteredMultiAccount(multiAccount);
+		if (IMultiAccount(multiAccount).owners(accountSource.addr) != msg.sender)
+			revert NotOwnerOfAccount(msg.sender, multiAccount, accountSource.addr);
 		_;
 	}
 }
