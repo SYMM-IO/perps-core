@@ -722,7 +722,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			revert DeadlineExpired(signedOp.replayAttackHeader.deadline);
 
 		// Validate calldata has at least selector
-		if (signedOp.callData.length <= 4) revert CallDataLengthMismatch();
+		if (signedOp.callData.length < 4) revert CallDataLengthMismatch();
 
 		bytes32 hash = getOperationHash(signedOp, false);
 		address signer = signedOp.signer;
