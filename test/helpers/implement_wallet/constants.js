@@ -8,11 +8,10 @@ export const BASE_TYPES = Object.freeze({
 		{ name: "deadline", type: "uint256" },
 		{ name: "salt", type: "bytes32" },
 	]),
-	ParamCallDataSignable: Object.freeze([{ name: "callData", type: "bytes" }]),
 	SignedOperation: Object.freeze([
 		{ name: "signer", type: "address" },
-		{ name: "params", type: "ParamCallDataSignable" },
-		{ name: "signerInfo", type: "Account" },
+		{ name: "callData", type: "bytes" },
+		{ name: "signerAccount", type: "Account" },
 		{ name: "replayAttackHeader", type: "ReplayAttackHeader" },
 	]),
 });
@@ -53,13 +52,12 @@ export const PartyAFacetAbi = [
 ];
 
 const TemplateOperationComponents = [
-  { name: "insertionPoints", type: "uint256[]" },
-  { name: "sourceIndices",   type: "uint256[]" },
+	{ name: "insertionPoints", type: "uint256[]" },
+	{ name: "sourceIndices", type: "uint256[]" },
 ];
 
 // If you want an explicit "Operation" tuple reference:
 export const TemplateOperationTuple = [...TemplateOperationComponents];
-
 
 export const InstantLayerAbi = [
 	{
