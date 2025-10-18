@@ -308,7 +308,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	function grantBatchDelegationBySig(
 		SignedDelegation calldata signedDelegation,
 		bytes calldata signature
-	) external onlyOwner(signedDelegation.delegationInfo.account, msg.sender) {
+	) external onlyOwner(signedDelegation.delegationInfo.account) {
 		DelegationInfo calldata info = signedDelegation.delegationInfo;
 		ReplayAttackHeader calldata rh = signedDelegation.replayAttackHeader;
 
@@ -358,7 +358,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @notice Grant a delegation.
 	 * @param info Delegation information.
 	 */
-	function grantDelegation(DelegationInfo calldata info) external {
+	function grantDelegation(DelegationInfo calldata info) external onlyOwner(info.account, msg.sender) {
 		if (info.delegatedSigner == msg.sender) revert SelfDelegation();
 		if (info.expiryTimestamp <= block.timestamp) revert InvalidDelegationExpiry();
 		address delegator = info.account.addr;
@@ -563,7 +563,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				assembly ("memory-safe") {
 					selector := calldataload(callData.offset) // keep only the first 4 bytes (big-endian)
 				}
-				if (!isDelegationActive(signedOp.signerAccount, signedOp.signerAccount.addr, selector)) {
+				if (!isDelegationActive(signedOp.signerAccount, signedOp.signer, selector)) {
 					revert InvalidDelegation();
 				}
 			}
@@ -843,11 +843,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/**
 	 * @notice Restricts function access to the owner of the specified account.
 	 * @param accountSource Account Source structure that specifies the address of manager and account owner.
-	 * @param sender  Address to verify as owner.
 	 */
-	modifier onlyOwner(Account memory accountSource, address sender) {
+	modifier onlyOwner(Account memory accountSource) {
 		if (IMultiAccount(accountSource.multiAccount).owners(accountSource.addr) != msg.sender)
-			revert NotOwnerOfAccount(sender, accountSource.multiAccount, accountSource.addr);
+			revert NotOwnerOfAccount(msg.sender, accountSource.multiAccount, accountSource.addr);
 		_;
 	}
 }
