@@ -358,7 +358,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @notice Grant a delegation.
 	 * @param info Delegation information.
 	 */
-	function grantDelegation(DelegationInfo calldata info) external onlyOwner(info.account, msg.sender) {
+	function grantDelegation(DelegationInfo calldata info) external onlyOwner(info.account) {
 		if (info.delegatedSigner == msg.sender) revert SelfDelegation();
 		if (info.expiryTimestamp <= block.timestamp) revert InvalidDelegationExpiry();
 		address delegator = info.account.addr;
