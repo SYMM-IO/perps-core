@@ -317,11 +317,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param expiryTimestamp When the delegation expires
 	event DelegationGranted(address indexed delegator, address indexed delegate, bytes4 selector, uint256 expiryTimestamp);
 
-	/// @notice Emitted when delegation permission is revoked
-	/// @param delegator Address that revoked delegation
-	/// @param delegate Address whose delegation was revoked
-	event DelegationRevoked(address indexed delegator, address indexed delegate);
-
 	/// @notice Emitted when a delegation nonce is incremented
 	/// @param delegator Address whose delegation nonce was incremented
 	/// @param newNonce The new delegation nonce value
