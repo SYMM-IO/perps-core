@@ -122,13 +122,14 @@ library LiquidationFacetImpl {
 	function liquidatePositionsPartyA(
 		address partyA,
 		uint256[] memory quoteIds
-	) internal returns (bool, uint256[] memory liquidatedAmounts, uint256[] memory closeIds, bytes memory liquidationId) {
+	) internal returns (bool, uint256[] memory liquidatedAmounts, uint256[] memory closeIds, uint256[] memory averageClosedPrices, bytes memory liquidationId) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
 		liquidatedAmounts = new uint256[](quoteIds.length);
 		closeIds = new uint256[](quoteIds.length);
+		averageClosedPrices = new uint256[](quoteIds.length);
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
 
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
@@ -246,6 +247,7 @@ library LiquidationFacetImpl {
 					ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)
 				{} catch {}
 			}
+			averageClosedPrices[index] = quote.avgClosedPrice;
 
 			// Track unique partyBs
 			bool found = false;
@@ -277,9 +279,9 @@ library LiquidationFacetImpl {
 			accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl != accountLayout.liquidationDetails[partyA].upnl
 		) {
 			accountLayout.liquidationDetails[partyA].disputed = true;
-			return (true, liquidatedAmounts, closeIds, liquidationId);
+			return (true, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 		}
-		return (false, liquidatedAmounts, closeIds, liquidationId);
+		return (false, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 	}
 
 	function resolveLiquidationDispute(
@@ -377,7 +379,7 @@ library LiquidationFacetImpl {
 		address partyB,
 		address partyA,
 		QuotePriceSig memory priceSig
-	) internal returns (uint256[] memory liquidatedAmounts, uint256[] memory closeIds) {
+	) internal returns (uint256[] memory liquidatedAmounts, uint256[] memory closeIds, uint256[] memory averageClosedPrices) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -392,6 +394,7 @@ library LiquidationFacetImpl {
 
 		liquidatedAmounts = new uint256[](priceSig.quoteIds.length);
 		closeIds = new uint256[](priceSig.quoteIds.length);
+		averageClosedPrices = new uint256[](priceSig.quoteIds.length);
 
 		for (uint256 i = 0; i < priceSig.quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[priceSig.quoteIds[i]];
@@ -435,6 +438,7 @@ library LiquidationFacetImpl {
 			if (systemHook != address(0)) {
 				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB) {} catch {}
 			}
+			averageClosedPrices[i] = quote.avgClosedPrice;
 		}
 		if (maLayout.partyBPositionLiquidatorsShare[partyB][partyA] > 0) {
 			uint256 lf = maLayout.partyBPositionLiquidatorsShare[partyB][partyA] * priceSig.quoteIds.length;
@@ -447,6 +451,6 @@ library LiquidationFacetImpl {
 			maLayout.partyBLiquidationTimestamp[partyB][partyA] = 0;
 			accountLayout.partyBNonces[partyB][partyA] += 1;
 		}
-		return (liquidatedAmounts, closeIds);
+		return (liquidatedAmounts, closeIds, averageClosedPrices);
 	}
 }
