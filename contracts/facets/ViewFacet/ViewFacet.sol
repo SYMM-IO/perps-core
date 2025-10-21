@@ -315,6 +315,109 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Returns an array of symbols with their types starting from a specific index.
+	 * @param start The starting index.
+	 * @param size The size of the array.
+	 * @return An array of symbols with their types.
+	 */
+	function getSymbolsWithType(uint256 start, uint256 size) external view returns (SymbolWithType[] memory) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		if (symbolLayout.lastId < start + size) {
+			size = symbolLayout.lastId - start;
+		}
+		SymbolWithType[] memory symbols = new SymbolWithType[](size);
+		for (uint256 i = start; i < start + size; i++) {
+			Symbol memory symbol = symbolLayout.symbols[i + 1];
+			symbols[i - start] = SymbolWithType(
+				symbol.symbolId,
+				symbol.name,
+				symbol.isValid,
+				symbol.minAcceptableQuoteValue,
+				symbol.minAcceptablePortionLF,
+				symbol.tradingFee,
+				symbol.maxLeverage,
+				symbol.fundingRateEpochDuration,
+				symbol.fundingRateWindowTime,
+				symbolLayout.symbolTypes[symbol.symbolId]
+			);
+		}
+		return symbols;
+	}
+
+	/**
+	 * @notice Returns the connected party Bs of Party A.
+	 * @param partyA The address of Party A.
+	 * @return An array of connected party Bs.
+	 */
+	function getConnectedPartyBs(address partyA) external view returns (address[] memory) {
+		return AccountStorage.layout().connectedPartyBs[partyA];
+	}
+
+	/**
+	 * @notice Returns the connected party Bs of Party A.
+	 * @param partyA The address of Party A.
+	 * @return An array of connected party Bs.
+	 */
+	function isConnectedPartyB(address partyA, address partyB) external view returns (bool) {
+		return AccountStorage.layout().isConnectedPartyB[partyA][partyB];
+	}
+
+	/**
+	 * @notice Returns the allowed symbols of Party A.
+	 * @param partyA The address of Party A.
+	 * @param start The starting index.
+	 * @param size The size of the array.
+	 * @return An array of allowed symbols.
+	 */
+	function getAllowedSymbolsForPartyA(address partyA, uint256 start, uint256 size) external view returns (Symbol[] memory) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		if (symbolLayout.lastId < start + size) {
+			size = symbolLayout.lastId - start;
+		}
+		Symbol[] memory symbols = new Symbol[](size);
+		for (uint256 i = start; i < start + size; i++) {
+			Symbol memory symbol = symbolLayout.symbols[i + 1];
+			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
+				symbols[i - start] = symbol;
+			}
+		}
+		return symbols;
+	}
+
+	/**
+	 * @notice Returns an array of symbols with their types associated with a party A.
+	 * @param partyA The address of Party A.
+	 * @param start The starting index.
+	 * @param size The size of the array.
+	 * @return An array of symbols with their types.
+	 */
+	function getAllowedSymbolsWithTypeForPartyA(address partyA, uint256 start, uint256 size) external view returns (SymbolWithType[] memory) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		if (symbolLayout.lastId < start + size) {
+			size = symbolLayout.lastId - start;
+		}
+		SymbolWithType[] memory symbols = new SymbolWithType[](size);
+		for (uint256 i = start; i < start + size; i++) {
+			Symbol memory symbol = symbolLayout.symbols[i + 1];
+			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
+				symbols[i - start] = SymbolWithType(
+					symbol.symbolId,
+					symbol.name,
+					symbol.isValid,
+					symbol.minAcceptableQuoteValue,
+					symbol.minAcceptablePortionLF,
+					symbol.tradingFee,
+					symbol.maxLeverage,
+					symbol.fundingRateEpochDuration,
+					symbol.fundingRateWindowTime,
+					symbolLayout.symbolTypes[symbol.symbolId]
+				);
+			}
+		}
+		return symbols;
+	}
+
+	/**
 	 * @notice Returns an array of symbols associated with an array of quote IDs.
 	 * @param quoteIds An array of quote IDs.
 	 * @return An array of symbols.

@@ -150,6 +150,14 @@ interface IControlFacet is IControlEvents {
 
 	function setLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit) external;
 
+	function whitelistSymbolType(address partyB, uint256 symbolType) external;
+
+	function whitelistSymbols(address partyB, uint256[] memory symbolIds) external;
+
+	function removeSymbolTypeFromWhitelist(address partyB, uint256 symbolType) external;
+
+	function removeSymbolsFromWhitelist(address partyB, uint256[] memory symbolIds) external;
+
 	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external;
 
 	function addRelayerForExternalTransferTarget(address target, address relayer) external;

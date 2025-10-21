@@ -10,6 +10,7 @@ import "../../libraries/LibPartyBPositionsActions.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
+import "../../libraries/LibConnections.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -31,6 +32,15 @@ library PartyBBatchActionsFacetImpl {
 		);
 
 		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
+
+		// Check symbol restrictions for all quotes
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+			require(
+				LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
+				"PartyBFacet: Symbol not allowed due to connection restrictions"
+			);
+		}
 
 		// PartyA and PartyB are not suspended
 		require(!accountLayout.suspendedAddresses[firstQuote.partyA], "PartyBFacet: PartyA is Suspended");
@@ -58,6 +68,9 @@ library PartyBBatchActionsFacetImpl {
 			require(quote.partyB == msg.sender, "PartyBFacet: Sender should be the partyB");
 			require(firstQuote.partyA == quote.partyA, "PartyBFacet: All positions should belong to one partyA");
 			currentIds[i] = LibPartyBPositionsActions.openPosition(quoteId, filledAmounts[i], openedPrices[i]);
+			if (quote.quoteStatus == QuoteStatus.OPENED) {
+				LibConnections.addConnection(quote.partyA, quote.partyB);
+			}
 		}
 		LibSolvency.isSolventAfterOpenPosition(
 			quoteIds,

@@ -99,18 +99,21 @@ library AccountStorage {
 		mapping(address => mapping(address => SettlementState)) settlementStates;
 		mapping(address => uint256) reserveVault;
 		mapping(address => BindState) bindState;
-		// partyB => symbolType => status
-		mapping(address => mapping(uint256 => bool)) partyBWhitelistedSymbolTypes;
 		mapping(address => bool) masterAccountMode;
 		mapping(address => uint256) partyBTotalCva;
 		mapping(address => uint256) partyBTotalLf;
 		mapping(address => CrossLiquidationDetail) crossLiquidationDetails;
 		mapping(address => address) externalTransferTargetsRelayers;
 		mapping(address => address) affiliateHooks;
-		// Instant Actions
+		// ---- Instant Actions ----
 		mapping(address => bool) instantActionsMode;
 		mapping(address => uint256) instantActionsModeDeactivateTime;
 		uint256 deactiveInstantActionModeCooldown;
+		// ---- symbol whitelisting ----
+		mapping(address => mapping(uint256 => bool)) partyBWhitelistedSymbolTypes;
+		mapping(address => mapping(uint256 => bool)) partyBWhitelistedSymbols;
+		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
+		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
 	}
 
 	function layout() internal pure returns (Layout storage l) {

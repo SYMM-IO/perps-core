@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../libraries/muon/LibMuonPartyB.sol";
 import "../../libraries/LibSolvency.sol";
 import "../../libraries/LibPartyBPositionsActions.sol";
+import "../../libraries/LibConnections.sol";
 
 library PartyBPositionActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -27,10 +28,21 @@ library PartyBPositionActionsFacetImpl {
 		require(!appLayout.partyBEmergencyStatus[quote.partyB], "PartyBFacet: PartyB is in emergency mode");
 		require(!appLayout.emergencyMode, "PartyBFacet: System is in emergency mode");
 
+		// Check symbol restriction based on connections
+		require(
+			LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
+			"PartyBFacet: Symbol not allowed due to connection restrictions"
+		);
+
 		accountLayout.partyANonces[quote.partyA] += 1;
 		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
 
 		currentId = LibPartyBPositionsActions.openPosition(quoteId, filledAmount, openedPrice);
+
+		if (quote.quoteStatus == QuoteStatus.OPENED) {
+			LibConnections.addConnection(quote.partyA, quote.partyB);
+		}
+
 		if (accountLayout.bindState[quote.partyA].partyB != quote.partyB) {
 			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
 

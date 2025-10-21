@@ -685,17 +685,46 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit SetLiquidationInsuranceVaultParams(insuranceVault, maxLiquidationProfit);
 	}
 
-	/// @notice Sets the whitelisted symbol type status for a party B.
+	/// @notice Whitelists a symbol type for a party B.
 	/// @param partyB The address of the party B.
-	/// @param symbolType The type of the symbol.
-	/// @param isWhiteList The status of the symbol type.
-	function setPartyBWhitelistedSymbolTypeStatus(
-		address partyB,
-		uint256 symbolType,
-		bool isWhiteList
-	) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = isWhiteList;
-		emit SetPartyBWhitelistedSymbolTypeStatus(partyB, symbolType, isWhiteList);
+	/// @param symbolType The type of the symbol to be whitelisted.
+	function whitelistSymbolType(address partyB, uint256 symbolType) external {
+		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
+		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = true;
+		emit WhitelistSymbolType(partyB, symbolType);
+	}
+
+	/// @notice Whitelists symbols for a party B.
+	/// @param partyB The address of the party B.
+	/// @param symbolIds The IDs of the symbols to be whitelisted.
+	function whitelistSymbols(address partyB, uint256[] memory symbolIds) external {
+		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		for (uint256 i = 0; i < symbolIds.length; i++) {
+			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
+		}
+		emit WhitelistSymbols(partyB, symbolIds);
+	}
+
+	/// @notice Removes a symbol type from the whitelist for a party B.
+	/// @param partyB The address of the party B.
+	/// @param symbolType The type of the symbol to be removed from the whitelist.
+	function removeSymbolTypeFromWhitelist(address partyB, uint256 symbolType) external {
+		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
+		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = false;
+		emit RemoveSymbolTypeFromWhitelist(partyB, symbolType);
+	}
+
+	/// @notice Removes symbols from the whitelist for a party B.
+	/// @param partyB The address of the party B.
+	/// @param symbolIds The IDs of the symbols to be removed from the whitelist.
+	function removeSymbolsFromWhitelist(address partyB, uint256[] memory symbolIds) external {
+		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		for (uint256 i = 0; i < symbolIds.length; i++) {
+			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
+		}
+		emit RemoveSymbolsFromWhitelist(partyB, symbolIds);
 	}
 
 	/// @notice Sets the signature verifier address.

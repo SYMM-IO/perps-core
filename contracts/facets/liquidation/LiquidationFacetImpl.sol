@@ -132,6 +132,11 @@ library LiquidationFacetImpl {
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
 
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
+
+		// Track unique partyBs for connection cleanup
+		address[] memory partyBsToCheck = new address[](quoteIds.length);
+		uint256 uniquePartyBs = 0;
+
 		for (uint256 index = 0; index < quoteIds.length; index++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[index]];
 			require(
@@ -241,6 +246,19 @@ library LiquidationFacetImpl {
 					ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)
 				{} catch {}
 			}
+
+			// Track unique partyBs
+			bool found = false;
+			for (uint256 j = 0; j < uniquePartyBs; j++) {
+				if (partyBsToCheck[j] == quote.partyB) {
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				partyBsToCheck[uniquePartyBs++] = quote.partyB;
+			}
+			
 			emit SharedEvents.TradeVolumeRecorded(
 				quote.id,
 				(liquidatedAmounts[index] * liquidationPrice) / 1e18,
@@ -250,6 +268,9 @@ library LiquidationFacetImpl {
 				quote.affiliate,
 				SharedEvents.TradeVolumeType.LIQUIDATE
 			);
+		}
+		for (uint256 i = 0; i < uniquePartyBs; i++) {
+			LibConnections.removeConnectionIfNoPositions(partyA, partyBsToCheck[i]);
 		}
 		if (
 			quoteLayout.partyAPositionsCount[partyA] == 0 &&

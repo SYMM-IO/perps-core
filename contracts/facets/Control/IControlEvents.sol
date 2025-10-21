@@ -84,7 +84,10 @@ interface IControlEvents {
 	event AddBridge(address bridge, bool isVirtual);
 	event RemoveBridge(address bridge);
 	event SetLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit);
-	event SetPartyBWhitelistedSymbolTypeStatus(address partyB, uint256 symbolType, bool isWhiteList);
+	event WhitelistSymbolType(address partyB, uint256 symbolType);
+	event WhitelistSymbols(address partyB, uint256[] symbolIds);
+	event RemoveSymbolTypeFromWhitelist(address partyB, uint256 symbolType);
+	event RemoveSymbolsFromWhitelist(address partyB, uint256[] symbolIds);
 	event SetSignatureVerifierAddress(address SignatureVerifier);
 	event AddRelayerForExternalTransferTarget(address target, address relayer);
 	event RemoveRelayerForExternalTransferTarget(address target);
