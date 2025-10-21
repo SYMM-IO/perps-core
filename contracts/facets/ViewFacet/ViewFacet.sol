@@ -278,8 +278,8 @@ contract ViewFacet is IViewFacet {
 	 * @return A SymbolWithType struct containing the symbol details and its type.
 	 */
 	function getSymbolWithType(uint256 symbolId) external view returns (SymbolWithType memory) {
-		Symbol memory symbol = SymbolStorage.layout().symbols[symbolId];
-		uint256 symbolType = SymbolStorage.layout().symbolTypes[symbolId];
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		Symbol memory symbol = symbolLayout.symbols[symbolId];
 
 		return
 			SymbolWithType(
@@ -292,7 +292,7 @@ contract ViewFacet is IViewFacet {
 				symbol.maxLeverage,
 				symbol.fundingRateEpochDuration,
 				symbol.fundingRateWindowTime,
-				symbolType
+				symbolLayout.symbolTypes[symbolId]
 			);
 	}
 
@@ -304,12 +304,18 @@ contract ViewFacet is IViewFacet {
 	 */
 	function getSymbols(uint256 start, uint256 size) external view returns (Symbol[] memory) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+
 		if (symbolLayout.lastId < start + size) {
 			size = symbolLayout.lastId - start;
 		}
+
 		Symbol[] memory symbols = new Symbol[](size);
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			symbols[i - start] = symbolLayout.symbols[i + 1];
+			unchecked {
+				++i;
+			}
 		}
 		return symbols;
 	}
@@ -326,7 +332,8 @@ contract ViewFacet is IViewFacet {
 			size = symbolLayout.lastId - start;
 		}
 		SymbolWithType[] memory symbols = new SymbolWithType[](size);
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			symbols[i - start] = SymbolWithType(
 				symbol.symbolId,
@@ -340,6 +347,9 @@ contract ViewFacet is IViewFacet {
 				symbol.fundingRateWindowTime,
 				symbolLayout.symbolTypes[symbol.symbolId]
 			);
+			unchecked {
+				++i;
+			}
 		}
 		return symbols;
 	}
@@ -375,10 +385,14 @@ contract ViewFacet is IViewFacet {
 			size = symbolLayout.lastId - start;
 		}
 		Symbol[] memory symbols = new Symbol[](size);
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
 				symbols[i - start] = symbol;
+			}
+			unchecked {
+				++i;
 			}
 		}
 		return symbols;
@@ -397,7 +411,8 @@ contract ViewFacet is IViewFacet {
 			size = symbolLayout.lastId - start;
 		}
 		SymbolWithType[] memory symbols = new SymbolWithType[](size);
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
 				symbols[i - start] = SymbolWithType(
@@ -412,6 +427,9 @@ contract ViewFacet is IViewFacet {
 					symbol.fundingRateWindowTime,
 					symbolLayout.symbolTypes[symbol.symbolId]
 				);
+			}
+			unchecked {
+				++i;
 			}
 		}
 		return symbols;
@@ -509,8 +527,12 @@ contract ViewFacet is IViewFacet {
 			size = quoteLayout.quoteIdsOf[partyA].length - start;
 		}
 		uint256[] memory quoteIds = new uint256[](size);
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			quoteIds[i - start] = quoteLayout.quoteIdsOf[partyA][i];
+			unchecked {
+				++i;
+			}
 		}
 		return quoteIds;
 	}
@@ -528,8 +550,12 @@ contract ViewFacet is IViewFacet {
 			size = quoteLayout.quoteIdsOf[partyA].length - start;
 		}
 		Quote[] memory quotes = new Quote[](size);
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			quotes[i - start] = quoteLayout.quotes[quoteLayout.quoteIdsOf[partyA][i]];
+			unchecked {
+				++i;
+			}
 		}
 		return quotes;
 	}
@@ -585,8 +611,12 @@ contract ViewFacet is IViewFacet {
 			size = quoteLayout.partyAOpenPositions[partyA].length - start;
 		}
 		Quote[] memory quotes = new Quote[](size);
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			quotes[i - start] = quoteLayout.quotes[quoteLayout.partyAOpenPositions[partyA][i]];
+			unchecked {
+				++i;
+			}
 		}
 		return quotes;
 	}
@@ -605,8 +635,12 @@ contract ViewFacet is IViewFacet {
 			size = quoteLayout.partyBOpenPositions[partyB][partyA].length - start;
 		}
 		Quote[] memory quotes = new Quote[](size);
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			quotes[i - start] = quoteLayout.quotes[quoteLayout.partyBOpenPositions[partyB][partyA][i]];
+			unchecked {
+				++i;
+			}
 		}
 		return quotes;
 	}
@@ -622,11 +656,15 @@ contract ViewFacet is IViewFacet {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote[] memory quotes = new Quote[](size);
 		uint j = 0;
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			Quote memory quote = quoteLayout.quotes[i];
 			if (quote.partyB == partyB) {
 				quotes[j] = quote;
 				j += 1;
+			}
+			unchecked {
+				++i;
 			}
 		}
 		return quotes;
@@ -643,7 +681,8 @@ contract ViewFacet is IViewFacet {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote[] memory quotes = new Quote[](size);
 		uint j = 0;
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			Quote memory quote = quoteLayout.quotes[i];
 			if (
 				quote.partyB == partyB &&
@@ -653,6 +692,9 @@ contract ViewFacet is IViewFacet {
 			) {
 				quotes[j] = quote;
 				j += 1;
+			}
+			unchecked {
+				++i;
 			}
 		}
 		return quotes;
@@ -669,7 +711,8 @@ contract ViewFacet is IViewFacet {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote[] memory quotes = new Quote[](size);
 		uint j = 0;
-		for (uint256 i = start; i < start + size; i++) {
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
 			Quote memory quote = quoteLayout.quotes[i];
 			if (
 				quote.partyB == partyB &&
@@ -680,6 +723,9 @@ contract ViewFacet is IViewFacet {
 			) {
 				quotes[j] = quote;
 				j += 1;
+			}
+			unchecked {
+				++i;
 			}
 		}
 		return quotes;
