@@ -158,10 +158,6 @@ interface IControlFacet is IControlEvents {
 
 	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external;
 
-	function blacklistSymbolType(address partyB, uint256 symbolType) external;
-
-	function removeBlacklistedSymbolTypes(address partyB, uint256 symbolType) external;
-
 	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external;
 
 	function removeBlacklistedSymbols(address partyB, uint256[] calldata symbolIds) external;
