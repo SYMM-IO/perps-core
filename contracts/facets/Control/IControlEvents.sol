@@ -91,11 +91,12 @@ interface IControlEvents {
 	event BlacklistSymbolType(address indexed partyB, uint256 indexed symbolType);
 	event RemoveBlacklistSymbolType(address indexed partyB, uint256 indexed symbolType);
 	event BlacklistSymbols(address indexed partyB, uint256[] indexed symbolId);
-	event RemoveBlacklistSymbols(address indexed partyB, uint256[] indexed symbolId);
+	event RemoveSymbolsFromBlacklist(address indexed partyB, uint256[] indexed symbolId);
 	event SetSignatureVerifierAddress(address SignatureVerifier);
 	event AddRelayerForExternalTransferTarget(address target, address relayer);
 	event RemoveRelayerForExternalTransferTarget(address target);
 	event RegisterHook(address affiliate, address hook);
 	event SetADLEnabled(address partyB, bool enabled);
 	event SetEntityMetadata(address entity, EntityMetadata metadata);
+	event SetMaxConnectedCounterParty(uint256 maxLimit);
 }

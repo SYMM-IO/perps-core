@@ -160,7 +160,7 @@ interface IControlFacet is IControlEvents {
 
 	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external;
 
-	function removeBlacklistedSymbols(address partyB, uint256[] calldata symbolIds) external;
+	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external;
 
 	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external;
 
@@ -183,4 +183,6 @@ interface IControlFacet is IControlEvents {
 	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external;
 
 	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external;
+
+	function setMaxPartyAConnectionLimit(uint256 maxLimit) external;
 }

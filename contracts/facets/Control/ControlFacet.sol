@@ -687,33 +687,20 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Whitelists a symbol type for a party B. Reverts if the type is blacklisted.
 	function whitelistSymbolType(address partyB, uint256 symbolType) external {
-		authorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(msg.sender, partyB);
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
-		// Revert on conflict
-		require(!accountLayout.partyBBlacklistedSymbolTypes[partyB][symbolType], "Black List Conflict");
-
 		accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType] = true;
 		emit WhitelistSymbolType(partyB, symbolType);
 	}
 
 	/// @notice Whitelists symbols for a party B. Reverts if any symbol is blacklisted.
 	function whitelistSymbols(address partyB, uint256[] calldata symbolIds) external {
-		authorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(msg.sender, partyB);
 
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
-		// Pre-check for conflicts; revert on the first conflicting id
 		for (uint256 i; i < symbolIds.length; ) {
 			uint256 id = symbolIds[i];
-			require(!accountLayout.partyBBlacklistedSymbols[partyB][id], "Black List Conflict");
-			unchecked {
-				++i;
-			}
-		}
-
-		// Apply changes
-		for (uint256 i; i < symbolIds.length; ) {
+			require(!accountLayout.partyBBlacklistedSymbols[partyB][id], "ControlFacet: Blacklist conflict");
 			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
 			unchecked {
 				++i;
@@ -725,14 +712,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Removes a symbol type from the whitelist for a party B.
 	function removeSymbolTypeFromWhitelist(address partyB, uint256 symbolType) external {
-		authorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(msg.sender, partyB);
 		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = false;
 		emit RemoveSymbolTypeFromWhitelist(partyB, symbolType);
 	}
 
 	/// @notice Removes symbols from the whitelist for a party B.
 	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external {
-		authorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(msg.sender, partyB);
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
@@ -745,21 +732,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Blacklists symbols for a party B. Reverts if any is whitelisted.
 	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external {
-		authorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(msg.sender, partyB);
 
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
-		// Pre-check for conflicts; revert on the first conflicting id
 		for (uint256 i; i < symbolIds.length; ) {
 			uint256 id = symbolIds[i];
-			require(!accountLayout.partyBWhitelistedSymbols[partyB][id], "White List Conflict");
-			unchecked {
-				++i;
-			}
-		}
-
-		// Apply changes
-		for (uint256 i; i < symbolIds.length; ) {
+			require(!accountLayout.partyBWhitelistedSymbols[partyB][id], "ControlFacet: Whitelist conflict");
 			accountLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
 			unchecked {
 				++i;
@@ -770,8 +748,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Removes symbols from the blacklist for a party B.
-	function removeBlacklistedSymbols(address partyB, uint256[] calldata symbolIds) external {
-		authorizationCheck(msg.sender, partyB);
+	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external {
+		symbolListingAuthorizationCheck(msg.sender, partyB);
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			accountLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
@@ -779,7 +757,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 				++i;
 			}
 		}
-		emit RemoveBlacklistSymbols(partyB, symbolIds);
+		emit RemoveSymbolsFromBlacklist(partyB, symbolIds);
 	}
 
 	/// @notice Sets the signature verifier address.
@@ -831,7 +809,16 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit SetADLEnabled(partyB, enabled);
 	}
 
-	function authorizationCheck(address sender, address partyB) private view {
+	/// @notice Sets PartyA Max Connection with PartyB.
+	/// @param maxLimit Max Connection limit.
+	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		require(maxLimit > 0, "ControlFacet: Value must be greater than zero");
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		maLayout.maxConnectedCounterParty = maxLimit;
+		emit SetMaxConnectedCounterParty(maxLimit);
+	}
+
+	function symbolListingAuthorizationCheck(address sender, address partyB) private view {
 		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
 	}
 

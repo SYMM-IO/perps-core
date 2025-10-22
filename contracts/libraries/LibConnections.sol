@@ -7,7 +7,6 @@ import "../storages/SymbolStorage.sol";
 import "../storages/MAStorage.sol";
 
 library LibConnections {
-	error PartyAConnectionsLimitExceeds();
 	/**
 	 * @notice Adds a connection between partyA and partyB if not already connected
 	 */
@@ -16,8 +15,10 @@ library LibConnections {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		if (!accountLayout.isConnectedPartyB[partyA][partyB]) {
-			if(accountLayout.connectedPartyBs[partyA].length >= maLayout.maxConnectedCounterParty[partyA])
-				revert PartyAConnectionsLimitExceeds();
+			require(
+				accountLayout.connectedPartyBs[partyA].length < maLayout.maxConnectedCounterParty,
+				"AccountFacet: PartyA max connection limit exceeded"
+			);
 			accountLayout.connectedPartyBs[partyA].push(partyB);
 			accountLayout.isConnectedPartyB[partyA][partyB] = true;
 		}
