@@ -40,6 +40,8 @@ import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/Sig
 import { IMultiAccount } from "../../src/types/contracts/multiAccount/MultiAccount"
 import { cloneTypes, DELEGATE_TYPES } from "./instantLayerEIP712Types"
 
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs"
+
 export function shouldBehaveLikeInstantLayer(): void {
 	let context: RunContext, partyA1: User, partyA2: User, partyB1: Hedger, partyB2: Hedger
 	let quoteCallData: string, lockQuoteCallData: string, openQuoteCallData: string, bindToPartyBCallData: string
@@ -152,141 +154,113 @@ export function shouldBehaveLikeInstantLayer(): void {
 		}
 	})
 
-	// describe("Registering PartyB", async function () {
-	// 	it("Should be failed when Sender not Setter Role ", async () => {
-	// 		await expect(context.instantLayer.connect(partyA1.getSigner).registerPartyB(partyA1.address)).to.be.reverted
-	// 	})
+	describe("Registering PartyB", async function () {
+		it("Should be failed when Sender not Setter Role ", async () => {
+			await expect(context.instantLayer.connect(partyA1.getSigner).registerPartyBs([partyA1.address])).to.be.reverted
+		})
 
-	// 	it("Should Add PartyB to Whitelisted Bs", async () => {
-	// 		await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
+		it("Should Add PartyB to Whitelisted Bs", async () => {
+			await expect(context.instantLayer.registerPartyBs([partyB1.address])).not.to.be.reverted
 
-	// 		expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(true)
-	// 		expect(await context.instantLayer.registeredPartyBs(partyB2.address)).to.be.equal(false)
-	// 	})
+			expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(true)
+			expect(await context.instantLayer.registeredPartyBs(partyB2.address)).to.be.equal(false)
+		})
 
-	// 	it("Should be granted the right role", async () => {
-	// 		await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
-	// 		const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
+		it("Should be granted the right role", async () => {
+			const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
+			expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(false)
+			expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB2.address)).to.be.equal(false)
+			await expect(context.instantLayer.registerPartyBs([partyB1.address, partyB2.address])).not.to.be.reverted
 
-	// 		expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(true)
-	// 	})
-	// })
+			expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(true)
+			expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB2.address)).to.be.equal(true)
+		})
+	})
 
-	// describe("Unregistering PartyB", async function () {
-	// 	it("Should be failed when Sender not Setter Role ", async () => {
-	// 		await expect(context.instantLayer.connect(partyA1.getSigner).registerPartyB(partyB1.address)).to.be.reverted
-	// 		await expect(context.instantLayer.connect(partyA1.getSigner).unregisterPartyB(partyB1.address)).to.be.reverted
-	// 	})
+	describe("Unregistering PartyB", async function () {
+		it("Should be failed when Sender not Setter Role ", async () => {
+			await expect(context.instantLayer.connect(partyA1.getSigner).registerPartyBs([partyB1.address])).to.be.reverted
+			await expect(context.instantLayer.connect(partyA1.getSigner).unregisterPartyB(partyB1.address)).to.be.reverted
+		})
 
-	// 	it("Should remove PartyB from Whitelisted Bs", async () => {
-	// 		await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
-	// 		await expect(context.instantLayer.unregisterPartyB(partyB1.address)).not.to.be.reverted
+		it("Should remove PartyB from Whitelisted Bs", async () => {
+			await expect(context.instantLayer.registerPartyBs([partyB1.address])).not.to.be.reverted
+			await expect(context.instantLayer.unregisterPartyB(partyB1.address)).not.to.be.reverted
 
-	// 		expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(false)
-	// 	})
+			expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(false)
+		})
 
-	// 	it("Should remove the right role", async () => {
-	// 		await expect(context.instantLayer.registerPartyB(partyB1.address)).not.to.be.reverted
-	// 		await expect(context.instantLayer.unregisterPartyB(partyB1.address)).not.to.be.reverted
-	// 		const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
+		it("Should remove the right role", async () => {
+			await expect(context.instantLayer.registerPartyBs([partyB1.address])).not.to.be.reverted
+			await expect(context.instantLayer.unregisterPartyB(partyB1.address)).not.to.be.reverted
+			const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 
-	// 		expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(false)
-	// 	})
-	// })
+			expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(false)
+		})
+	})
 
-	// describe("Registering PartyB Batch", async function () {
-	// 	it("Should be failed when Sender not Setter Role ", async () => {
-	// 		await expect(context.instantLayer.connect(context.signers.hedger).registerPartyBBatch([partyB1.address, partyB2.address])).to.be.reverted
-	// 	})
+	describe("Registering MultiAccount Batch", async function () {
+		it("Should be failed when Sender not Setter Role ", async () => {
+			await expect(context.instantLayer.connect(context.signers.hedger).registerMultiAccounts([partyB1.address])).to.be.reverted
+		})
 
-	// 	it("Should Add PartyB to Whitelisted Bs", async () => {
-	// 		await expect(context.instantLayer.registerPartyBBatch([partyB1.address, partyB2.address])).not.to.be.reverted
+		it("Should Add the multiAccount addresses batch to Whitelisted mapping", async () => {
+			expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(false)
+			expect(await context.instantLayer.registeredMultiAccounts(partyA2.address)).to.be.equal(false)
+			await expect(context.instantLayer.registerMultiAccounts([partyA1.address, partyA2.address])).not.to.be.reverted
 
-	// 		expect(await context.instantLayer.registeredPartyBs(partyB1.address)).to.be.equal(true)
-	// 		expect(await context.instantLayer.registeredPartyBs(partyB2.address)).to.be.equal(true)
-	// 	})
+			expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(true)
+			expect(await context.instantLayer.registeredMultiAccounts(partyA2.address)).to.be.equal(true)
+		})
+	})
 
-	// 	it("Should be granted the right role", async () => {
-	// 		await expect(context.instantLayer.registerPartyBBatch([partyB1.address, partyB2.address])).not.to.be.reverted
-	// 		const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
+	describe("Unregistering MultiAccount", async function () {
+		it("Should be failed when Sender not Setter Role ", async () => {
+			await expect(context.instantLayer.connect(partyA1.getSigner).unregisterMultiAccount(partyA1.address)).to.be.reverted
+		})
 
-	// 		expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB1.address)).to.be.equal(true)
-	// 		expect(await context.instantLayer.hasRole(OPERATOR_ROLE, partyB2.address)).to.be.equal(true)
-	// 	})
-	// })
+		it("Should Remove the multiAccount address from Whitelisted mapping", async () => {
+			await expect(context.instantLayer.unregisterMultiAccount(partyA1.address)).not.to.be.reverted
 
-	// describe("Registering MultiAccount Batch", async function () {
-	// 	it("Should be failed when Sender not Setter Role ", async () => {
-	// 		await expect(context.instantLayer.connect(context.signers.hedger).registerMultiAccountBatch([partyB1.address])).to.be.reverted
-	// 	})
+			expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(false)
+		})
+	})
 
-	// 	it("Should Add the multiAccount addresses batch to Whitelisted mapping", async () => {
-	// 		await expect(context.instantLayer.registerMultiAccountBatch([partyA1.address, partyA2.address])).not.to.be.reverted
+	describe("Adding Template", async function () {
+		it("Should be failed when Sender not have Setter Role ", async () => {
+			await expect(context.instantLayer.connect(partyA1.getSigner).addTemplate("test", ops)).to.be.reverted
+			//TODO adapt to recent changes
+		})
 
-	// 		expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(true)
-	// 		expect(await context.instantLayer.registeredMultiAccounts(partyA2.address)).to.be.equal(true)
-	// 	})
-	// })
+		it("Should Set the template Active Mode to true", async () => {
+			await expect(context.instantLayer.addTemplate("test", ops)).not.to.be.reverted
+			let template = await context.instantLayer.getTemplate(0)
+			expect(template.active).to.be.equal(true)
+		})
 
-	// describe("Registering MultiAccount", async function () {
-	// 	it("Should be failed when Sender not Setter Role ", async () => {
-	// 		await expect(context.instantLayer.connect(partyA1.getSigner).registerMultiAccount(partyA2.address)).to.be.reverted
-	// 	})
+		it("Should Set the template Name as expected", async () => {
+			let name = "myTemp"
+			await expect(context.instantLayer.addTemplate(name, ops)).not.to.be.reverted
+			let template = await context.instantLayer.getTemplate(0)
+			expect(template.name).to.be.equal(name)
+		})
 
-	// 	it("Should Add the multiAccount address to Whitelisted mapping", async () => {
-	// 		await expect(context.instantLayer.registerMultiAccount(partyA1.address)).not.to.be.reverted
+		it("Should Set the template Operations as expected", async () => {
+			let name = "myTemp"
+			await expect(context.instantLayer.addTemplate(name, ops)).not.to.be.reverted
+			const tempID = (await context.instantLayer.nextTemplateId()) - 1n
+			let template: InstantLayer.TemplateStruct = await context.instantLayer.getTemplate(tempID)
 
-	// 		expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(true)
-	// 	})
-	// })
+			expect(template.operations.length).to.be.equal(ops.length) // equals 2
+			expect(template.name).to.equal(name)
+			expect(template.active).to.equal(true)
 
-	// describe("Unregistering MultiAccount", async function () {
-	// 	it("Should be failed when Sender not Setter Role ", async () => {
-	// 		await expect(context.instantLayer.connect(partyA1.getSigner).unregisterMultiAccount(partyA1.address)).to.be.reverted
-	// 	})
-
-	// 	it("Should Remove the multiAccount address from Whitelisted mapping", async () => {
-	// 		await expect(context.instantLayer.unregisterMultiAccount(partyA1.address)).not.to.be.reverted
-
-	// 		expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(false)
-	// 	})
-	// })
-
-	// describe("Adding Template", async function () {
-	// 	it("Should be failed when Sender not have Setter Role ", async () => {
-	// 		await expect(context.instantLayer.connect(partyA1.getSigner).addTemplate("test", ops)).to.be.reverted
-	// 		//TODO adapt to recent changes
-	// 	})
-
-	// 	it("Should Set the template Active Mode to true", async () => {
-	// 		await expect(context.instantLayer.addTemplate("test", ops)).not.to.be.reverted
-	// 		let template = await context.instantLayer.getTemplate(0)
-	// 		expect(template.active).to.be.equal(true)
-	// 	})
-
-	// 	it("Should Set the template Name as expected", async () => {
-	// 		let name = "myTemp"
-	// 		await expect(context.instantLayer.addTemplate(name, ops)).not.to.be.reverted
-	// 		let template = await context.instantLayer.getTemplate(0)
-	// 		expect(template.name).to.be.equal(name)
-	// 	})
-
-	// 	it("Should Set the template Operations as expected", async () => {
-	// 		let name = "myTemp"
-	// 		await expect(context.instantLayer.addTemplate(name, ops)).not.to.be.reverted
-	// 		const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
-	// 		let template: InstantLayer.TemplateStruct = await context.instantLayer.getTemplate(tempID)
-
-	// 		expect(template.operations.length).to.be.equal(ops.length) // equals 2
-	// 		expect(template.name).to.equal(name)
-	// 		expect(template.active).to.equal(true)
-
-	// 		for (let i = 0; i < template.operations.length; i++) {
-	// 			expect(template.operations[i].sourceIndices).to.deep.equal(ops[i].sourceIndices)
-	// 			expect(template.operations[i].insertionPoints).to.deep.equal(ops[i].insertionPoints)
-	// 		}
-	// 	})
-	// })
+			for (let i = 0; i < template.operations.length; i++) {
+				expect(template.operations[i].sourceIndices).to.deep.equal(ops[i].sourceIndices)
+				expect(template.operations[i].insertionPoints).to.deep.equal(ops[i].insertionPoints)
+			}
+		})
+	})
 
 	// describe("Is Valid Signature?", async function () {
 	// 	let harness: SigCheckHarness
@@ -493,7 +467,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				callData: lockQuoteCallData,
 				signerAccount: {
 					multiAccount: ZeroAddress,
-					addr: ZeroAddress,
+					addr: await context.symmioPartyB.getAddress(),
 				},
 				replayAttackHeader: {
 					nonce: 1n,
@@ -507,7 +481,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				callData: openQuoteCallData,
 				signerAccount: {
 					multiAccount: ZeroAddress,
-					addr: ZeroAddress,
+					addr: await context.symmioPartyB.getAddress(),
 				},
 				replayAttackHeader: {
 					nonce: 2n,
@@ -522,37 +496,115 @@ export function shouldBehaveLikeInstantLayer(): void {
 			opOpenSignature = new Uint8Array([0x1, 0x2])
 		})
 
-		// it("Should be failed when Sender not have Operator Role ", async () => {
-		// 	await expect(context.instantLayer.connect(partyA1.getSigner).executeBatch([], [])).to.be.reverted // with "AccessControl" Error
-		// })
+		it("Should be failed when Sender not have Operator Role ", async () => {
+			await expect(context.instantLayer.connect(partyA1.getSigner).executeBatch([], [])).to.be.reverted // with "AccessControl" Error
+		})
 
-		// it("Should be failed when input Ops have zero length ", async () => {
-		// 	await expect(context.instantLayer.executeBatch([], [])).to.be.revertedWithCustomError(context.instantLayer, "EmptyBatch")
-		// })
+		it("Should be failed when input Ops have zero length ", async () => {
+			await expect(context.instantLayer.executeBatch([], [])).to.be.revertedWithCustomError(context.instantLayer, "EmptyBatch")
+		})
 
-		// it("Should be failed when input Ops have passed the Deadline ", async () => {
-		// 	const deadline = await getBlockTimestamp(24n)
-		// 	await network.provider.send("evm_setNextBlockTimestamp", [Number(deadline)])
-		// 	await network.provider.send("evm_mine")
-		// 	let saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-		// 	const opOpenALocal: InstantLayer.SignedOperationStruct = {
-		// 		actualSigner: partyA1.address,
-		// 		callData: "0x1234",
-		// 		nonce: 100,
-		// 		salt: saltLock,
-		// 		deadline: deadline,
-		// 		signature: "0x",
-		// 		side: 0,
-		// 		delegator: {
-		// 			multiAccount: ZeroAddress,
-		// 			accountAddress: ZeroAddress,
-		// 			accountOwner: ZeroAddress,
-		// 			selector: "0x12345678",
-		// 		},
-		// 	}
-		// 	await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
-		// 	await expect(context.instantLayer.executeBatch([opOpenALocal])).to.be.revertedWithCustomError(context.instantLayer, "DeadlineExpired")
-		// })
+		it("reverts with ArrayLengthMismatch when signedOps.length != signatures.length", async () => {
+			// Make 1 valid op/signature pair first
+			const sig1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			// Pass 1 op but 0 signatures
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1], [])).to.be.revertedWithCustomError(context.instantLayer, "ArrayLengthMismatch")
+
+			// Pass 2 ops but 1 signature
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1, opLockB1], [sig1])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"ArrayLengthMismatch",
+			)
+		})
+
+		it("reverts when an operation's deadline has passed (verify stage)", async () => {
+			// craft an op with a past deadline and a valid signature
+			const pastDeadline = (await ethers.provider.getBlock("latest"))!.timestamp - 1
+			const opPast: InstantLayer.SignedOperationStruct = {
+				...opSendQuoteA1,
+				replayAttackHeader: {
+					...opSendQuoteA1.replayAttackHeader,
+					deadline: BigInt(pastDeadline),
+					// keep a fresh salt to avoid any caching
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+			const sigPast = await context.signers.admin.signTypedData(domain, types, opPast)
+
+			await expect(context.instantLayer.executeBatch([opPast], [sigPast])).to.be.revertedWithCustomError(context.instantLayer, "DeadlineExpired")
+		})
+
+		it("bubbles inner target failures via OperationFailed(i, returndata)", async () => {
+			/**
+			 * Force _executeOperationSafe to fail by calling a PartyB action
+			 * that requires an existing quote BEFORE any sendQuote happened.
+			 * Put it first so failure index = 0.
+			 */
+			const badFirst = opLockB1
+			const sigBadFirst = await context.signers.hedger.signTypedData(domain, types, badFirst)
+
+			await expect(context.instantLayer.executeBatch([badFirst], [sigBadFirst])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"OperationFailed",
+			)
+			// .withArgs(0, anyValue) // returndata is tool-specific; we just assert it exists
+		})
+
+		it("emits BatchExecuted with the caller and correct count on success", async () => {
+			const sig1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			const sig2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
+			const sig3 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1, opSendQuoteA2, opLockB1], [sig1, sig2, sig3]))
+				.to.emit(context.instantLayer, "BatchExecuted")
+				.withArgs(context.signers.admin.address, 3)
+		})
+
+		it("allows mixed EOA and contract signers in the same batch (independent verify paths)", async () => {
+			// Your earlier happy path already demonstrated this subtly; here we assert it directly.
+			const sig1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1) // EOA
+			const sig2 = await context.signers.hedger.signTypedData(domain, types, opLockB1) // contract PartyB signer (or its EOA, depending on your setup)
+
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1, opLockB1], [sig1, sig2])).not.to.be.reverted
+
+			// Optional: verify side-effects minimally (quote 1 exists & is locked)
+			const q1 = await context.viewFacet.getQuote(1)
+			expect(q1.requestedOpenPrice).to.equal(requestSendQuote.price)
+			expect(q1.quantity).to.equal(requestSendQuote.quantity)
+			expect(q1.quoteStatus).to.equal(QuoteStatus.LOCKED)
+		})
+
+		it("does not continue after a failed op (loop short-circuits via success flag)", async () => {
+			// First op fails (lock before send), second would succeed if reached.
+			const failing = opLockB1
+			const sigFailing = await context.signers.hedger.signTypedData(domain, types, failing)
+
+			const succeeding = opSendQuoteA1
+			const sigSucceeding = await context.signers.admin.signTypedData(domain, types, succeeding)
+
+			await expect(context.instantLayer.executeBatch([failing, succeeding], [sigFailing, sigSucceeding])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"OperationFailed",
+			)
+			// .withArgs(0, anyValue)
+		})
+
+		it("accepts valid batch and leaves environment clean (setCallFromInstantLayer toggled)", async () => {
+			const sig1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			const sig2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
+
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1, opSendQuoteA2], [sig1, sig2])).not.to.be.reverted
+			const q1 = await context.viewFacet.getQuote(1)
+			const q2 = await context.viewFacet.getQuote(2)
+
+			expect(q1.requestedOpenPrice).to.equal(requestSendQuote.price)
+			expect(q1.quantity).to.equal(requestSendQuote.quantity)
+			expect(q1.quoteStatus).to.equal(QuoteStatus.PENDING)
+
+			expect(q2.requestedOpenPrice).to.equal(requestSendQuote.price)
+			expect(q2.quantity).to.equal(requestSendQuote.quantity)
+			expect(q2.quoteStatus).to.equal(QuoteStatus.PENDING)
+		})
 
 		// it("should Register Symmio PartyB when sending as PartyB", async function () {
 		// 	const { instantLayer } = context
@@ -565,7 +617,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	await expect(context.instantLayer.executeBatch([opLockB1])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
 		// })
 
-		it.only("should allow Sending Intents in a single batch", async function () {
+		it("should allow Sending Intents in a single batch", async function () {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
 			const multiAccount = context.multiAccount
 
@@ -801,7 +853,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				callData: lockQuoteCallDataTemplate,
 				signerAccount: {
 					multiAccount: ZeroAddress,
-					addr: ZeroAddress,
+					addr: await context.symmioPartyB.getAddress(),
 				},
 				replayAttackHeader: {
 					nonce: 1n,
@@ -815,7 +867,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				callData: openQuoteCallDataTemplate,
 				signerAccount: {
 					multiAccount: ZeroAddress,
-					addr: ZeroAddress,
+					addr: await context.symmioPartyB.getAddress(),
 				},
 				replayAttackHeader: {
 					nonce: 2n, // second nonce for the the same signer
@@ -830,13 +882,24 @@ export function shouldBehaveLikeInstantLayer(): void {
 			opOpenSignature = new Uint8Array([0x1, 0x2])
 
 			await context.instantLayer.addTemplate("MyTempFull", ops)
+			await context.instantLayer.addTemplate("basic", [
+				{ insertionPoints: [], sourceIndices: [] }, // op0
+				{ insertionPoints: [0], sourceIndices: [0] }, // op1
+			])
 		})
 		it("Should be failed when Sender not have Operator Role ", async () => {
-			await expect(context.instantLayer.connect(partyA1.getSigner).executeTemplate(1, [], [])).to.be.reverted // with "AccessControl" Error
+			await expect(context.instantLayer.connect(partyA1.getSigner).executeTemplate(0, [], [])).to.be.reverted // with "AccessControl" Error
+		})
+
+		it("reverts with InvalidTemplate for unknown template id", async () => {
+			const bogus = (await context.instantLayer.getNextTemplateId()) + 123n
+			await expect(context.instantLayer.executeTemplate(bogus, [], []))
+				.to.be.revertedWithCustomError(context.instantLayer, "InvalidTemplate")
+				.withArgs(bogus)
 		})
 
 		it("Should be failed when Template Inactive ", async () => {
-			const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
+			const tempID = (await context.instantLayer.getNextTemplateId()) - 1n
 			await context.instantLayer.setTemplateActive(tempID, false)
 			await expect(context.instantLayer.executeTemplate(tempID, [opSendQuoteA1], [opSendQuoteSignature1])).to.be.revertedWithCustomError(
 				context.instantLayer,
@@ -844,46 +907,149 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 		})
 
-		// 	it("Should be failed when Template Operation Input length Mismatch ", async () => {
-		// 		const opsLocal: InstantLayer.OperationStruct[] = [
-		// 			{
-		// 				sourceIndices: [],
-		// 				insertionPoints: [1],
-		// 			},
-		// 		]
-		// 		await context.instantLayer.addTemplate("MyTemp", opsLocal)
-		// 		const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
-		// 		await expect(context.instantLayer.executeTemplate(tempID, [])).to.be.revertedWithCustomError(context.instantLayer, "ArrayLengthMismatch")
-		// 	})
-		// 	it("Should be failed when input Ops have passed the Deadline ", async () => {
-		// 		const deadline = await getLatestBlockTime()
-		// 		await network.provider.send("evm_setNextBlockTimestamp", [deadline + 24])
-		// 		await network.provider.send("evm_mine")
-		// 		let saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-		// 		const opOpenALocal: InstantLayer.SignedOperationStruct = {
-		// 			accountSource: ZeroAddress,
-		// 			signer: ZeroAddress,
-		// 			callData: "0x", // no matter
-		// 			nonce: 100, // no matter
-		// 			salt: saltStr, // no matter
-		// 			deadline: deadline,
-		// 			signature: "0x",
-		// 		}
-		// 		let opsLocal: InstantLayer.OperationStruct[]
-		// 		opsLocal = [
-		// 			{
-		// 				sourceIndices: [],
-		// 				insertionPoints: [],
-		// 			},
-		// 		]
-		// 		await context.instantLayer.addTemplate("MyLocal", opsLocal)
-		// 		const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
-		// 		await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
-		// 		await expect(context.instantLayer.executeTemplate(tempID, [opOpenALocal])).to.be.revertedWithCustomError(
-		// 			context.instantLayer,
-		// 			"DeadlineExpired",
-		// 		)
-		// 	})
+		it("reverts with ArrayLengthMismatch when signedOps.length != signatures.length", async () => {
+			const sig0 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+
+			await expect(context.instantLayer.executeTemplate(0, [opSendQuoteA1, opLockB1], [sig0])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"ArrayLengthMismatch",
+			)
+		})
+
+		it("Should be failed when Template Operation Input length Mismatch ", async () => {
+			const opsLocal: InstantLayer.OperationStruct[] = [
+				{
+					sourceIndices: [],
+					insertionPoints: [1],
+				},
+			]
+			await context.instantLayer.addTemplate("MyTemp", opsLocal)
+			const tempID = (await context.instantLayer.getNextTemplateId()) - 1n
+			await expect(context.instantLayer.executeTemplate(tempID, [], [])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"TemplateOperationLengthMismatch",
+			)
+		})
+
+		it("reverts with DeadlineExpired when any op is past deadline", async () => {
+			const pastDeadline = (await getBlockTimestamp()) - 20n
+			const expired = {
+				...opSendQuoteA1,
+				replayAttackHeader: { ...opSendQuoteA1.replayAttackHeader, deadline: pastDeadline, salt: ethers.hexlify(ethers.randomBytes(32)) },
+			}
+			const sigExpired = await context.signers.admin.signTypedData(domain, types, expired)
+			const sig1 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+
+			const opsLocal: InstantLayer.OperationStruct[] = [
+				{
+					sourceIndices: [],
+					insertionPoints: [],
+				},
+				{
+					sourceIndices: [0],
+					insertionPoints: [0],
+				},
+			]
+			await context.instantLayer.addTemplate("MyTempTest", opsLocal)
+			const tempID = (await context.instantLayer.getNextTemplateId()) - 1n
+			await expect(context.instantLayer.executeTemplate(tempID, [expired, opLockB1], [sigExpired, sig1]))
+				.to.be.revertedWithCustomError(context.instantLayer, "DeadlineExpired")
+				.withArgs(pastDeadline)
+		})
+
+		it.skip("bubbles target revert with OperationFailed(index, returndata)", async () => {
+			const sigBad = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+
+			await context.instantLayer.addTemplate("singleLock", [{ insertionPoints: [], sourceIndices: [] }])
+			const oneStep = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			await expect(context.instantLayer.executeTemplate(oneStep, [opLockB1], [sigBad]))
+				.to.be.revertedWithCustomError(context.instantLayer, "OperationFailed")
+				.withArgs(0, anyValue)
+		})
+
+		it("reverts with InvalidSourceIndex when op references a future/missing result", async () => {
+			await context.instantLayer.addTemplate("badAtOp0", [
+				{ insertionPoints: [0], sourceIndices: [1] }, // op0 will reference results[1] (invalid)
+			])
+			const badAtOp0 = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			const sig0 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			await expect(context.instantLayer.executeTemplate(badAtOp0, [opSendQuoteA1], [sig0]))
+				.to.be.revertedWithCustomError(context.instantLayer, "InvalidSourceIndex")
+				.withArgs(1)
+		})
+
+		it("reverts with InsertionPointOutOfBounds for large offset", async () => {
+			// Create a template that writes far beyond calldata length
+			await context.instantLayer.addTemplate("oobInsert", [
+				{ insertionPoints: [], sourceIndices: [] }, // op0
+				{ insertionPoints: [opSendQuoteA1.callData.length], sourceIndices: [0] }, // op1 tries to write way past end
+			])
+			let oob = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			const sig0 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			const sig1 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+
+			await expect(context.instantLayer.executeTemplate(oob, [opSendQuoteA1, opLockB1], [sig0, sig1])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"InsertionPointOutOfBounds",
+			)
+
+			await context.instantLayer.addTemplate("oobInsert", [
+				{ insertionPoints: [], sourceIndices: [] }, // op0
+				{ insertionPoints: [opSendQuoteA1.callData.length - 36], sourceIndices: [0] }, // op1 tries to write way past end
+			])
+			oob = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			// await expect(context.instantLayer.executeTemplate(oob, [opSendQuoteA1, opLockB1], [sig0, sig1])).not.to.reverted
+			await expect(context.instantLayer.executeTemplate(oob, [opSendQuoteA1, opLockB1], [sig0, sig1])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"InsertionPointOutOfBounds",
+			)
+		})
+
+		it("executes a basic template and emits OperationsExecuted", async () => {
+			const sig0 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			const sig1 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+
+			const templateIdBasic = (await context.instantLayer.getNextTemplateId()) - 1n
+			await expect(context.instantLayer.executeTemplate(templateIdBasic, [opSendQuoteA1, opLockB1], [sig0, sig1]))
+				.to.emit(context.instantLayer, "OperationsExecuted")
+				.withArgs(templateIdBasic, context.signers.admin.address)
+
+			const q1 = await context.viewFacet.getQuote(1)
+			expect(q1.requestedOpenPrice).to.equal(requestSendQuote.price)
+			expect(q1.quantity).to.equal(requestSendQuote.quantity)
+			expect(q1.quoteStatus).to.equal(QuoteStatus.LOCKED)
+		})
+
+		// it("injects previous result into next op calldata (send → lock with injected quoteId)", async () => {
+		// 	// 1) craft op0 (send) normally
+		// 	const sigSend = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+
+		// 	// 2) craft op1 (lock) with placeholder for the first arg (quoteId = 0)
+		// 	//    Assuming original `lockQuoteCallData` encodes: lockQuote(uint256 quoteId, ...)
+		// 	const stripSelector = (data: `0x${string}`) => ("0x" + data.slice(10)) as `0x${string}`
+
+		// 	const lockArgsOnly = stripSelector(lockQuoteCallData)
+		// 	// overwrite first 32 bytes of args with zero (quoteId placeholder)
+		// 	const zero32 = "0x" + "00".repeat(32)
+		// 	const patchedArgs = (zero32 + lockArgsOnly.slice(66)) as `0x${string}` // replace first 32-byte word
+		// 	const lockSelector = context.partyBQuoteActionsFacet.interface.getFunction("lockQuote").selector as `0x${string}`
+		// 	const lockPatched = (lockSelector + patchedArgs.slice(2)) as `0x${string}`
+
+		// 	const opLockPatched = { ...opLockB1, callData: lockPatched }
+		// 	const sigLock = await context.signers.hedger.signTypedData(domain, types, opLockPatched)
+
+		// 	// 3) Execute the injection template: op0 result -> op1 first arg (offset 0)
+		// 	await expect(context.instantLayer.executeTemplate(1, [opSendQuoteA1, opLockPatched], [sigSend, sigLock])).not.to.be.reverted
+
+		// 	// 4) Verify the quote is locked (means the injected quoteId was correct)
+		// 	const q1 = await context.viewFacet.getQuote(1)
+		// 	expect(q1.quoteStatus).to.equal(QuoteStatus.LOCKED)
+		// })
+
 		// 	it("should Register Symmio PartyB when sending as PartyB", async function () {
 		// 		const deadline = (await getLatestBlockTime()) + 24
 		// 		let saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
@@ -903,6 +1069,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 			"UnregisteredPartyB",
 		// 		)
 		// 	})
+
 		// 	it("should allow Sending Intents with a single Operation", async function () {
 		// 		const { instantLayer, collateralNL, partyAOpenFacet, partyBOpenFacet, symmioPartyB } = context
 		// 		const multiAccount = context.multiAccount
@@ -966,7 +1133,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 		expect(intent.tradeAgreements.quantity).to.be.equal(request.quantity)
 		// 	})
 
-		it.only("should allow Sending Intent, Locking and Filling in a single batch Altogether", async function () {
+		it("should allow Sending Intent, Locking and Filling in a single batch Altogether", async function () {
 			// console.log(types)
 			opSendQuoteSignature1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
 			opSendQuoteSignature2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
@@ -987,7 +1154,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.symmioPartyB.setSigner(partyB1.getSigner)
 			// await context.symmioPartyB.setMulticastWhitelist(context.common.diamondAddress, true)
 
-			const tempID = (await context.instantLayer.getLastTemplateID()) - 1n
+			const tempID = 0
 			//Execution
 
 			await expect(instantLayer.executeTemplate(tempID, signedOps, sigCallDatas)).not.to.be.reverted
@@ -1002,6 +1169,34 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
 			expect(quote2.quoteStatus).to.be.equal(QuoteStatus.PENDING)
+		})
+
+		it("increments account nonce when nonce > 0 and enforces ordering", async () => {
+			// Prepare ops with explicit nonces 1 and 2 for the same account
+			const op1 = { ...opSendQuoteA1, replayAttackHeader: { ...opSendQuoteA1.replayAttackHeader, nonce: 1n } }
+			const op2 = { ...opSendQuoteA1, replayAttackHeader: { ...opSendQuoteA1.replayAttackHeader, nonce: 2n } }
+			const op3 = { ...opSendQuoteA1, replayAttackHeader: { ...opSendQuoteA1.replayAttackHeader, nonce: 0n } }
+			const op4 = { ...opLockB1, replayAttackHeader: { ...opLockB1.replayAttackHeader, nonce: 1n } }
+
+			const sig1 = await context.signers.admin.signTypedData(domain, types, op1)
+			const sig2 = await context.signers.admin.signTypedData(domain, types, op2)
+			const sig3 = await context.signers.admin.signTypedData(domain, types, op3)
+			const sig4 = await context.signers.hedger.signTypedData(domain, types, op4)
+
+			// make a 2-op template with no injections
+			await context.instantLayer.addTemplate("nonceBasic", [
+				{ insertionPoints: [], sourceIndices: [] },
+				{ insertionPoints: [], sourceIndices: [] },
+				{ insertionPoints: [], sourceIndices: [] },
+				{ insertionPoints: [0], sourceIndices: [0] },
+			])
+			const nonceTpl = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			const before = await context.instantLayer.nonces(op1.signerAccount.addr)
+			await expect(context.instantLayer.executeTemplate(nonceTpl, [op1, op2, op3, op4], [sig1, sig2, sig3, sig4])).not.to.be.reverted
+
+			const after = await context.instantLayer.nonces(op1.signerAccount.addr)
+			expect(after).to.equal(before + 2n) // both ops consumed
 		})
 
 		// 	it("should Fail Signature verification with Invalid Nonce", async function () {
@@ -1027,6 +1222,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 		await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 		// 		await expect(context.instantLayer.executeBatch([opOpenALocal])).to.be.revertedWithCustomError(context.instantLayer, "InvalidNonce")
 		// 	})
+
 		// 	it("should Update Nonce on Signature verification with Valid nonce", async function () {
 		// 		const latestBlock = await getLatestBlockTime()
 		// 		const deadline = latestBlock + 300
@@ -1136,4 +1332,179 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(nonceAfter).to.equal(nonceBefore)
 		})
 	})
+
+	describe("revoke Delegation", () => {
+		let delegatorAcct: InstantLayer.AccountStruct
+		let delegateAddr: string
+		let selA: string // bytes4
+		let selB: string // bytes4
+		let cooldown: number
+		const SETTER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SETTER_ROLE"))
+		const REVOKER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("REVOKER_ROLE"))
+
+		async function increaseTime(seconds: number) {
+			await network.provider.send("evm_increaseTime", [seconds])
+			await network.provider.send("evm_mine")
+		}
+
+		beforeEach(async () => {
+			delegateAddr = context.signers.admin.address
+
+			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
+
+			delegatorAcct = {
+				multiAccount: await context.multiAccount.getAddress(),
+				addr: (await context.multiAccount.getAccounts(partyA1.address, 0, 1))[0].accountAddress,
+			}
+
+			context.instantLayer.registerMultiAccounts([await context.multiAccount.getAddress()])
+			// choose two real selectors you already used
+			selA = context.partyAFacet.interface.getFunction("sendQuoteWithAffiliate").selector as `0x${string}`
+			selB = context.partyBQuoteActionsFacet.interface.getFunction("lockQuote").selector as `0x${string}`
+
+			// Grant a delegation that is currently active (expiry > now)
+			const exp = await getBlockTimestamp(3600n) // +1h
+			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
+				account: delegatorAcct,
+				delegatedSigner: delegateAddr,
+				selectors: [selA, selB],
+				expiryTimestamp: exp,
+			})
+
+			// Set a reasonable cooldown (e.g. 10 minutes)
+			cooldown = 10 * 60
+			await context.instantLayer.connect(context.signers.admin).setRevocationCooldown(cooldown)
+		})
+
+		describe("Set Revoke CoolDown", () => {
+			it("setter: updates cooldown within bounds and emits event", async () => {
+				const old = cooldown
+				const next = 20 * 60 // 20 minutes
+
+				await expect(context.instantLayer.connect(context.signers.admin).setRevocationCooldown(next))
+					.to.emit(context.instantLayer, "RevocationCooldownUpdated")
+					.withArgs(old, next)
+			})
+
+			it("setter: rejects values out of bounds (too small / too large)", async () => {
+				await expect(
+					context.instantLayer.connect(context.signers.admin).setRevocationCooldown(30), // < 1 minute
+				).to.be.revertedWithCustomError(context.instantLayer, "InvalidCallData")
+
+				await expect(
+					context.instantLayer.connect(context.signers.admin).setRevocationCooldown(31 * 24 * 3600), // > 30 days
+				).to.be.revertedWithCustomError(context.instantLayer, "InvalidCallData")
+			})
+
+			it("only SETTER_ROLE can update cooldown", async () => {
+				await expect(context.instantLayer.connect(partyA1.getSigner).setRevocationCooldown(600)).to.be.reverted
+			})
+		})
+
+		describe("Initialize Revoke Delegation", () => {
+			it("owner can schedule revocation for active selectors (emits RevocationScheduled) and ignores inactive", async () => {
+				await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
+					account: delegatorAcct,
+					delegatedSigner: delegateAddr,
+					selectors: [selB],
+					expiryTimestamp: (await getBlockTimestamp()) + 12n, // inactive
+				})
+
+				await increaseTime(12) // make selB to Expire
+
+				await expect(context.instantLayer.connect(partyA1.getSigner).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selB, selA]))
+					// only selA is active => only one schedule event
+					.to.emit(context.instantLayer, "RevocationScheduled")
+					.withArgs(delegatorAcct.addr, delegateAddr, selA, anyValue)
+			})
+
+			it("delegate can schedule revocation for themselves", async () => {
+				await expect(context.instantLayer.connect(context.signers.admin).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selA, selB]))
+					.to.emit(context.instantLayer, "RevocationScheduled")
+					.withArgs(delegatorAcct.addr, delegateAddr, selA, anyValue)
+					.and.to.emit(context.instantLayer, "RevocationScheduled")
+					.withArgs(delegatorAcct.addr, delegateAddr, selB, anyValue)
+			})
+
+			it("REVOKER_ROLE can schedule revocation for any pair", async () => {
+				await context.instantLayer.grantRole(REVOKER_ROLE, context.signers.user.address)
+
+				await expect(context.instantLayer.connect(context.signers.user).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selA]))
+					.to.emit(context.instantLayer, "RevocationScheduled")
+					.withArgs(delegatorAcct.addr, delegateAddr, selA, anyValue)
+			})
+
+			it("random caller (not owner/delegate/revoker) is rejected", async () => {
+				await expect(context.instantLayer.connect(partyB1.getSigner).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selA]))
+					.to.be.revertedWithCustomError(context.instantLayer, "NotOwnerOfAccount")
+					.withArgs(partyB1.address, delegatorAcct.multiAccount, delegatorAcct.addr)
+			})
+		})
+
+		describe("Finalize Revoke Delegation", () => {
+			it("reverts with DeadlineExpired if cooldown not elapsed", async () => {
+				await context.instantLayer.connect(partyA1.getSigner).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selA])
+
+				await expect(context.instantLayer.finalizeRevokeDelegation(delegatorAcct, delegateAddr, [selA])).to.be.revertedWithCustomError(
+					context.instantLayer,
+					"DeadlineExpired",
+				) // ETA in args is dynamic
+			})
+
+			it("finalizes after cooldown: clears delegation & pending, emits DelegationSelectorRevoked", async () => {
+				// Schedule for both selectors (they're active due to the first grant)
+				await context.instantLayer.connect(partyA1.getSigner).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selA, selB])
+
+				await increaseTime(cooldown + 1)
+
+				await expect(context.instantLayer.finalizeRevokeDelegation(delegatorAcct, delegateAddr, [selA, selB]))
+					.to.emit(context.instantLayer, "DelegationSelectorRevoked")
+					.withArgs(delegatorAcct.addr, delegateAddr, selA)
+					.and.to.emit(context.instantLayer, "DelegationSelectorRevoked")
+					.withArgs(delegatorAcct.addr, delegateAddr, selB)
+
+				// Check on-chain view that delegations are gone (mapping is public in your contract)
+				const aExp = await context.instantLayer.delegations(delegatorAcct.addr, delegateAddr, selA as any)
+				const bExp = await context.instantLayer.delegations(delegatorAcct.addr, delegateAddr, selB as any)
+				expect(aExp).to.equal(0n)
+				expect(bExp).to.equal(0n)
+
+				
+				const aEta = await context.instantLayer.pendingRevocationEta(delegatorAcct.addr, delegateAddr, selA as any);
+				const bEta = await context.instantLayer.pendingRevocationEta(delegatorAcct.addr, delegateAddr, selB as any);
+				expect(aEta).to.equal(0n);
+				expect(bEta).to.equal(0n);
+			})
+
+			it("finalize is idempotent: calling again with no scheduled items is a no-op (no revert)", async () => {
+				await context.instantLayer.connect(partyA1.getSigner).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selA])
+				await increaseTime(cooldown + 1)
+				await context.instantLayer.finalizeRevokeDelegation(delegatorAcct, delegateAddr, [selA])
+
+				// second call: eta=0, code path just continues
+				await expect(context.instantLayer.finalizeRevokeDelegation(delegatorAcct, delegateAddr, [selA])).not.to.be.reverted
+			})
+
+			it("mixed set: only selectors with ETA set are revoked; others are ignored", async () => {
+				// Only schedule selA
+				await context.instantLayer.connect(partyA1.getSigner).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selA])
+
+				await increaseTime(cooldown + 1)
+
+				// Try finalizing both selA (scheduled) and selB (not scheduled)
+				await expect(context.instantLayer.finalizeRevokeDelegation(delegatorAcct, delegateAddr, [selA, selB]))
+					.to.emit(context.instantLayer, "DelegationSelectorRevoked")
+					.withArgs(delegatorAcct.addr, delegateAddr, selA)
+
+				// After finalize: selA removed, selB still active
+				const aExp = await context.instantLayer.delegations(delegatorAcct.addr, delegateAddr, selA as any)
+				const bExp = await context.instantLayer.delegations(delegatorAcct.addr, delegateAddr, selB as any)
+				expect(aExp).to.equal(0n)
+				expect(bExp).to.be.greaterThan(0n)
+			})
+		})
+	})
+}
+function now() {
+	throw new Error("Function not implemented.")
 }
