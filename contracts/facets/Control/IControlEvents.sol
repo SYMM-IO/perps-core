@@ -88,6 +88,10 @@ interface IControlEvents {
 	event WhitelistSymbols(address partyB, uint256[] symbolIds);
 	event RemoveSymbolTypeFromWhitelist(address partyB, uint256 symbolType);
 	event RemoveSymbolsFromWhitelist(address partyB, uint256[] symbolIds);
+	event BlacklistSymbolType(address indexed partyB, uint256 indexed symbolType);
+	event RemoveBlacklistSymbolType(address indexed partyB, uint256 indexed symbolType);
+	event BlacklistSymbols(address indexed partyB, uint256[] indexed symbolId);
+	event RemoveBlacklistSymbols(address indexed partyB, uint256[] indexed symbolId);
 	event SetSignatureVerifierAddress(address SignatureVerifier);
 	event AddRelayerForExternalTransferTarget(address target, address relayer);
 	event RemoveRelayerForExternalTransferTarget(address target);

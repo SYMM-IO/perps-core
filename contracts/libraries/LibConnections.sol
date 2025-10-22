@@ -65,7 +65,12 @@ library LibConnections {
 		uint256 symbolType = symbolLayout.symbolTypes[symbolId];
 		for (uint256 i = 0; i < connections.length; i++) {
 			address partyB = connections[i];
-			if (!accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType] && !accountLayout.partyBWhitelistedSymbols[partyB][symbolId]) {
+
+			if (accountLayout.partyBBlacklistedSymbols[partyB][symbolId] || accountLayout.partyBBlacklistedSymbolTypes[partyB][symbolType]) {
+				return false;
+			}
+
+			if (!accountLayout.partyBWhitelistedSymbols[partyB][symbolId] && !accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType]) {
 				return false;
 			}
 		}
