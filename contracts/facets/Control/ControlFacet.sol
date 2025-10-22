@@ -767,7 +767,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Removes a symbol type from the blacklist for a party B.
-	function removeBlacklistSymbolTypes(address partyB, uint256 symbolType) external {
+	function removeBlacklistedSymbolTypes(address partyB, uint256 symbolType) external {
 		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
 		AccountStorage.Layout storage L = AccountStorage.layout();
 		L.partyBBlacklistedSymbolTypes[partyB][symbolType] = false;
@@ -803,7 +803,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Removes symbols from the blacklist for a party B.
-	function removeBlacklistSymbols(address partyB, uint256[] calldata symbolIds) external {
+	function removeBlacklistedSymbols(address partyB, uint256[] calldata symbolIds) external {
 		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
 		AccountStorage.Layout storage L = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
