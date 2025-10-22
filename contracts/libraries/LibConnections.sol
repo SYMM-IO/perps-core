@@ -4,15 +4,20 @@ pragma solidity >=0.8.18;
 import "../storages/AccountStorage.sol";
 import "../storages/QuoteStorage.sol";
 import "../storages/SymbolStorage.sol";
+import "../storages/MAStorage.sol";
 
 library LibConnections {
+	error PartyAConnectionsLimitExceeds();
 	/**
 	 * @notice Adds a connection between partyA and partyB if not already connected
 	 */
 	function addConnection(address partyA, address partyB) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		if (!accountLayout.isConnectedPartyB[partyA][partyB]) {
+			if(accountLayout.connectedPartyBs[partyA].length >= maLayout.maxConnectedCounterParty[partyA])
+				revert PartyAConnectionsLimitExceeds();
 			accountLayout.connectedPartyBs[partyA].push(partyB);
 			accountLayout.isConnectedPartyB[partyA][partyB] = true;
 		}
@@ -66,7 +71,7 @@ library LibConnections {
 		for (uint256 i = 0; i < connections.length; i++) {
 			address partyB = connections[i];
 
-			if (accountLayout.partyBBlacklistedSymbols[partyB][symbolId] || accountLayout.partyBBlacklistedSymbolTypes[partyB][symbolType]) {
+			if (accountLayout.partyBBlacklistedSymbols[partyB][symbolId]) {
 				return false;
 			}
 
