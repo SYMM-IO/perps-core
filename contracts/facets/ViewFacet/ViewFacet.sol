@@ -975,6 +975,16 @@ contract ViewFacet is IViewFacet {
 		return MAStorage.layout().lastUpnlSettlementTimestamp[senderPartyB][targetPartyB][partyA];
 	}
 
+
+	/**
+	 * @notice Returns the maxConnectedCounterParty.
+	 * @return maxConnectedCounterParty max Party A to Party B connection Count Limit.
+	 */
+	function maxConnectedCounterParty() external view returns (uint256) {
+		return MAStorage.layout().maxConnectedCounterParty;
+	}
+
+
 	/**
 	 * @notice Retrieves the configuration parameters of the Muon system.
 	 * @return upnlValidTime The validity period of UPNL.

@@ -514,6 +514,15 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().unbindCooldown = unbindCooldown;
 	}
 
+	/// @notice Sets PartyA Max Connection with PartyB.
+	/// @param maxLimit Max Connection limit.
+	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		require(maxLimit > 0, "ControlFacet: Value must be greater than zero");
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		maLayout.maxConnectedCounterParty = maxLimit;
+		emit SetMaxConnectedCounterParty(maxLimit);
+	}
+
 	// Pause State //////////////////////////////////////////////////
 
 	/// @notice Pauses global operations.
@@ -792,10 +801,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit RegisterHook(affiliate, hook);
 	}
 
-	/**
-	 * @notice Sets the call from instant layer
-	 * @param _callFromInstantLayer The call from instant layer
-	 */
+	/// @notice Sets the call from instant layer
+	/// @param _callFromInstantLayer The call from instant layer
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
 		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
 		MAStorage.layout().callFromInstantLayer = _callFromInstantLayer;
@@ -807,15 +814,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	function setADLEnabled(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		MAStorage.layout().adlEnabled[partyB] = enabled;
 		emit SetADLEnabled(partyB, enabled);
-	}
-
-	/// @notice Sets PartyA Max Connection with PartyB.
-	/// @param maxLimit Max Connection limit.
-	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		require(maxLimit > 0, "ControlFacet: Value must be greater than zero");
-		MAStorage.Layout storage maLayout = MAStorage.layout();
-		maLayout.maxConnectedCounterParty = maxLimit;
-		emit SetMaxConnectedCounterParty(maxLimit);
 	}
 
 	function symbolListingAuthorizationCheck(address sender, address partyB) private view {
