@@ -518,9 +518,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param maxLimit Max Connection limit.
 	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		require(maxLimit > 0, "ControlFacet: Value must be greater than zero");
-		MAStorage.Layout storage maLayout = MAStorage.layout();
-		maLayout.maxConnectedCounterParty = maxLimit;
-		emit SetMaxConnectedCounterParty(maxLimit);
+		MAStorage.layout().maxPartyAConnectionLimit = maxLimit;
+		emit SetMaxPartyAConnectionLimit(maxLimit);
 	}
 
 	// Pause State //////////////////////////////////////////////////

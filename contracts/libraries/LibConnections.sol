@@ -16,7 +16,7 @@ library LibConnections {
 
 		if (!accountLayout.isConnectedPartyB[partyA][partyB]) {
 			require(
-				accountLayout.connectedPartyBs[partyA].length < maLayout.maxConnectedCounterParty,
+				accountLayout.connectedPartyBs[partyA].length < maLayout.maxPartyAConnectionLimit,
 				"AccountFacet: PartyA max connection limit exceeded"
 			);
 			accountLayout.connectedPartyBs[partyA].push(partyB);

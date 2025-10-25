@@ -10,7 +10,7 @@ import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { LockQuoteValidator } from "./models/validators/LockQuoteValidator"
 import { UnlockQuoteValidator } from "./models/validators/UnlockQuoteValidator"
 import { decimal, pausePartyB } from "./utils/Common"
-import { getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
+import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
 import { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
 
 export function shouldBehaveLikeLockQuote(): void {
@@ -89,8 +89,15 @@ export function shouldBehaveLikeLockQuote(): void {
 	})
 
 	it("Should fail when symbol type is not whitelisted", async function () {
-		await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(context.signers.hedger.address, 1, false)
-		await expect(hedger.lockQuote(1)).to.be.revertedWith("PartyBFacet: symbol type is not whitelisted")
+		await expect(hedger.lockQuote(1)).not.to.be.reverted
+		const q1 = await context.viewFacet.getQuote(1n)
+		const upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
+		await expect(
+			context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig),
+		).to.not.be.reverted
+		await context.controlFacet.removeSymbolTypeFromWhitelist(context.signers.hedger.address, 1)
+		await context.controlFacet.removeSymbolsFromWhitelist(context.signers.hedger.address, [1])
+		await expect(hedger2.lockQuote(2)).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
 	})
 
 	it("Should run successfully", async function () {

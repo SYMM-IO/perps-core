@@ -98,5 +98,5 @@ interface IControlEvents {
 	event RegisterHook(address affiliate, address hook);
 	event SetADLEnabled(address partyB, bool enabled);
 	event SetEntityMetadata(address entity, EntityMetadata metadata);
-	event SetMaxConnectedCounterParty(uint256 maxLimit);
+	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
 }
