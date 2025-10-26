@@ -957,7 +957,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				.withArgs(pastDeadline)
 		})
 
-		it.skip("bubbles target revert with OperationFailed(index, returndata)", async () => {
+		it("bubbles target revert with OperationFailed(index, returndata)", async () => {
 			const sigBad = await context.signers.hedger.signTypedData(domain, types, opLockB1)
 
 			await context.instantLayer.addTemplate("singleLock", [{ insertionPoints: [], sourceIndices: [] }])
