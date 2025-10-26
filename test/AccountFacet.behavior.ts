@@ -148,13 +148,13 @@ export function shouldBehaveLikeAccountFacet(): void {
 				)
 			})
 
-			it.only("Should fail on partyA becoming liquidatable", async function () {
+			it("Should fail on partyA becoming liquidatable", async function () {
 				await expect(context.accountFacet.connect(context.signers.user).deallocate("300", await getDummySingleUpnlSig(-50n))).to.be.revertedWith(
 					"AccountFacet: partyA will be liquidatable",
 				)
 			})
 
-			it.only("Should fail on partyA becoming liquidatable(cva+lf)", async function () {
+			it("Should fail on partyA becoming liquidatable(cva+lf)", async function () {
 				await user.setBalances(decimal(500n), decimal(500n), decimal(500n))
 				const qid = await user.sendQuote()
 				await hedger.lockQuote(qid)
@@ -164,7 +164,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				).to.be.revertedWith("partyA will be liquidatable")
 			})
 
-			it.only("Should deallocate", async function () {
+			it("Should deallocate", async function () {
 				const userAddress = context.signers.user.getAddress()
 				await context.accountFacet.connect(context.signers.user).deallocate("50", await getDummySingleUpnlSig())
 				expect(await context.viewFacet.balanceOf(userAddress)).to.equal("50")

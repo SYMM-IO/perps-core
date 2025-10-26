@@ -1,14 +1,14 @@
-import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 
-import {initializeFixture} from "./Initialize.fixture"
-import {Hedger} from "./models/Hedger"
-import {RunContext} from "./models/RunContext"
-import {User} from "./models/User"
-import {decimal, unDecimal} from "./utils/Common"
-import {getDummyPairUpnlSig} from "./utils/SignatureUtils"
-import {expect} from "chai"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
-import {PositionType} from "./models/Enums"
+import { initializeFixture } from "./Initialize.fixture"
+import { Hedger } from "./models/Hedger"
+import { RunContext } from "./models/RunContext"
+import { User } from "./models/User"
+import { decimal, unDecimal } from "./utils/Common"
+import { getDummyPairUpnlSig } from "./utils/SignatureUtils"
+import { expect } from "chai"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { PositionType } from "./models/Enums"
 
 export function shouldBehaveLikeFundingRate(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -41,36 +41,53 @@ export function shouldBehaveLikeFundingRate(): void {
 		await hedger.openPosition(3)
 		await user.requestToClosePosition(3)
 		await hedger.fillCloseRequest(3)
+
+		await user.sendQuote()
+		await hedger.lockQuote(4)
 	})
 
 	it("Should fail on different length", async function () {
 		await expect(hedger.chargeFundingRate(await context.signers.user.getAddress(), [1], [], await getDummyPairUpnlSig())).to.be.revertedWith(
-			"ChargeFundingFacet: Length not match"
+			"ChargeFundingFacet: Length not match",
 		)
 	})
 
 	it("Should fail on invalid quote for partyB", async function () {
 		await expect(hedger.chargeFundingRate(await context.signers.user2.getAddress(), [1], [1], await getDummyPairUpnlSig())).to.be.revertedWith(
-			"ChargeFundingFacet: Invalid quote"
+			"ChargeFundingFacet: Invalid quote",
 		)
 	})
 
-	it("Should fail on invalid quote state", async function () {
-		await expect(hedger.chargeFundingRate(await context.signers.user.getAddress(), [3], [1], await getDummyPairUpnlSig())).to.be.revertedWith(
-			"ChargeFundingFacet: Invalid state"
-		)
+	it("Should not fail on invalid quote state(continue)", async function () {
+		let symbol = await context.viewFacet.getSymbol(1)
+		let duration = symbol.fundingRateEpochDuration
+		let window = symbol.fundingRateWindowTime
+		let currentEpoch = (BigInt(await time.latest()) / duration) * duration
+		let targetTime = duration * 2n + window - 1n + currentEpoch
+		let oldQuote1 = await context.viewFacet.getQuote(1)
+		let oldQuote4 = await context.viewFacet.getQuote(4)
+
+		await time.setNextBlockTimestamp(targetTime)
+		await expect(
+			hedger.chargeFundingRate(await context.signers.user.getAddress(), [3, 1], [decimal(1n, 16), decimal(1n, 16)], await getDummyPairUpnlSig()),
+		).to.not.reverted
+
+		let newQuote1 = await context.viewFacet.getQuote(1)
+		let newQuote4 = await context.viewFacet.getQuote(4)
+		expect(newQuote4.openedPrice).to.be.equal(oldQuote4.openedPrice)
+		expect(newQuote1.openedPrice).to.be.equal(unDecimal(oldQuote1.openedPrice * (decimal(1n) + decimal(1n, 16))))
 	})
 
 	it("Should fail on out of window request", async function () {
 		let symbol = await context.viewFacet.getSymbol(1)
 		let duration = symbol.fundingRateEpochDuration
 		let window = symbol.fundingRateWindowTime
-		let currentEpoch = BigInt(await time.latest()) / duration * duration
-		let targetTime = (duration * 2n) + window + 1n + currentEpoch
+		let currentEpoch = (BigInt(await time.latest()) / duration) * duration
+		let targetTime = duration * 2n + window + 1n + currentEpoch
 
 		await time.setNextBlockTimestamp(targetTime)
 		await expect(hedger.chargeFundingRate(await context.signers.user.getAddress(), [1], [1], await getDummyPairUpnlSig())).to.be.revertedWith(
-			"ChargeFundingFacet: Current timestamp is out of window"
+			"ChargeFundingFacet: Current timestamp is out of window",
 		)
 	})
 
@@ -78,12 +95,12 @@ export function shouldBehaveLikeFundingRate(): void {
 		let symbol = await context.viewFacet.getSymbol(1)
 		let duration = symbol.fundingRateEpochDuration
 		let window = symbol.fundingRateWindowTime
-		let currentEpoch = BigInt(await time.latest()) / duration * duration
-		let targetTime = (duration * 2n) + window - 1n + currentEpoch
+		let currentEpoch = (BigInt(await time.latest()) / duration) * duration
+		let targetTime = duration * 2n + window - 1n + currentEpoch
 
 		await time.setNextBlockTimestamp(targetTime)
 		await expect(
-			hedger.chargeFundingRate(await context.signers.user.getAddress(), [1], [decimal(3n, 16)], await getDummyPairUpnlSig())
+			hedger.chargeFundingRate(await context.signers.user.getAddress(), [1], [decimal(3n, 16)], await getDummyPairUpnlSig()),
 		).to.be.revertedWith("ChargeFundingFacet: High funding rate")
 	})
 
@@ -91,12 +108,12 @@ export function shouldBehaveLikeFundingRate(): void {
 		let symbol = await context.viewFacet.getSymbol(1)
 		let duration = symbol.fundingRateEpochDuration
 		let window = symbol.fundingRateWindowTime
-		let currentEpoch = BigInt(await time.latest()) / duration * duration
-		let targetTime = (duration * 2n) + window - 1n + currentEpoch
+		let currentEpoch = (BigInt(await time.latest()) / duration) * duration
+		let targetTime = duration * 2n + window - 1n + currentEpoch
 
 		await time.setNextBlockTimestamp(targetTime)
 		await expect(
-			hedger.chargeFundingRate(await context.signers.user.getAddress(), [1], [decimal(1n, 16)], await getDummyPairUpnlSig(decimal(4970n) * (-1n)))
+			hedger.chargeFundingRate(await context.signers.user.getAddress(), [1], [decimal(1n, 16)], await getDummyPairUpnlSig(decimal(4970n) * -1n)),
 		).to.be.revertedWith("ChargeFundingFacet: PartyA will be insolvent")
 	})
 
@@ -104,8 +121,8 @@ export function shouldBehaveLikeFundingRate(): void {
 		let symbol = await context.viewFacet.getSymbol(1)
 		let duration = symbol.fundingRateEpochDuration
 		let window = symbol.fundingRateWindowTime
-		let currentEpoch = BigInt(await time.latest()) / duration * duration
-		let targetTime = (duration * 2n) + window - 1n + currentEpoch
+		let currentEpoch = (BigInt(await time.latest()) / duration) * duration
+		let targetTime = duration * 2n + window - 1n + currentEpoch
 
 		await time.setNextBlockTimestamp(targetTime)
 		await expect(
@@ -113,8 +130,8 @@ export function shouldBehaveLikeFundingRate(): void {
 				await context.signers.user.getAddress(),
 				[1],
 				[decimal(1n, 15)],
-				await getDummyPairUpnlSig(BigInt(0), decimal(4970n) * -1n)
-			)
+				await getDummyPairUpnlSig(BigInt(0), decimal(4970n) * -1n),
+			),
 		).to.be.revertedWith("ChargeFundingFacet: PartyB will be insolvent")
 	})
 
@@ -122,8 +139,8 @@ export function shouldBehaveLikeFundingRate(): void {
 		let symbol = await context.viewFacet.getSymbol(1)
 		let duration = symbol.fundingRateEpochDuration
 		let window = symbol.fundingRateWindowTime
-		let currentEpoch = BigInt(await time.latest()) / duration * duration
-		let targetTime = (duration * 2n) + window - 1n + currentEpoch
+		let currentEpoch = (BigInt(await time.latest()) / duration) * duration
+		let targetTime = duration * 2n + window - 1n + currentEpoch
 
 		let oldQuote = await context.viewFacet.getQuote(1)
 
@@ -131,17 +148,15 @@ export function shouldBehaveLikeFundingRate(): void {
 		await hedger.chargeFundingRate(await context.signers.user.getAddress(), [1], [decimal(1n, 16)], await getDummyPairUpnlSig())
 
 		let newQuote = await context.viewFacet.getQuote(1)
-		expect(newQuote.openedPrice).to.be.equal(unDecimal(
-			oldQuote.openedPrice * (decimal(1n) + decimal(1n, 16)))
-		)
+		expect(newQuote.openedPrice).to.be.equal(unDecimal(oldQuote.openedPrice * (decimal(1n) + decimal(1n, 16))))
 	})
 
 	it("Should run successfully for short", async function () {
 		let symbol = await context.viewFacet.getSymbol(1)
 		let duration = symbol.fundingRateEpochDuration
 		let window = symbol.fundingRateWindowTime
-		let currentEpoch = BigInt(await time.latest()) / duration * duration
-		let targetTime = (duration * 2n) + window - 1n + currentEpoch
+		let currentEpoch = (BigInt(await time.latest()) / duration) * duration
+		let targetTime = duration * 2n + window - 1n + currentEpoch
 
 		let oldQuote = await context.viewFacet.getQuote(2)
 
@@ -149,8 +164,6 @@ export function shouldBehaveLikeFundingRate(): void {
 		await hedger.chargeFundingRate(await context.signers.user.getAddress(), [2], [decimal(1n, 16)], await getDummyPairUpnlSig())
 
 		let newQuote = await context.viewFacet.getQuote(2)
-		expect(newQuote.openedPrice).to.be.equal(unDecimal(
-			oldQuote.openedPrice * (decimal(1n) - decimal(1n, 16)))
-		)
+		expect(newQuote.openedPrice).to.be.equal(unDecimal(oldQuote.openedPrice * (decimal(1n) - decimal(1n, 16))))
 	})
 }
