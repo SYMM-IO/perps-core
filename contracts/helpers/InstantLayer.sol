@@ -504,7 +504,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit DelegationNonceIncremented(delegator, delegationNonces[delegator]);
 
 		// Verify signature
-		bytes32 hash = getDelegationHash(signedDelegation, false);
+		bytes32 hash = getDelegationHash(signedDelegation);
 		if (!SignatureChecker.isValidSignatureNow(owner, hash, signature)) {
 			revert InvalidSignature();
 		}
@@ -829,7 +829,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Validate calldata has at least selector
 		if (signedOp.callData.length < 4) revert CallDataLengthMismatch();
 
-		bytes32 hash = getOperationHash(signedOp, false);
+		bytes32 hash = getOperationHash(signedOp);
 		address signer = signedOp.signer;
 
 		// Validate registration and delegation
@@ -1094,40 +1094,37 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/**
 	 * @notice Calculate the EIP-712 hash for a signed operation.
 	 * @param signedOp           Operation to hash
-	 * @param isEthSignedMessage Whether to use personal_sign format
-	 * @return EIP-712 compliant hash
+	 * @return msgDigest EIP-712 compliant hash
 	 */
-	function getOperationHash(SignedOperation memory signedOp, bool isEthSignedMessage) public view returns (bytes32) {
-		bytes32 structHash = keccak256(
-			abi.encode(
-				SIGNED_OPERATION_TYPEHASH,
-				signedOp.signer,
-				keccak256(signedOp.callData),
-				_hashAccount(signedOp.signerAccount),
-				_hashReplay(signedOp.replayAttackHeader)
+	function getOperationHash(SignedOperation memory signedOp) public view returns (bytes32 msgDigest) {
+		msgDigest = _hashTypedDataV4(
+			keccak256(
+				abi.encode(
+					SIGNED_OPERATION_TYPEHASH,
+					signedOp.signer,
+					keccak256(signedOp.callData),
+					_hashAccount(signedOp.signerAccount),
+					_hashReplay(signedOp.replayAttackHeader)
+				)
 			)
 		);
-		return _computeEIP712Digest(structHash, isEthSignedMessage);
 	}
 
 	/**
 	 * @notice Calculate the EIP-712 hash for a signed delegation.
 	 * @param signedDelegation       Delegation to hash
-	 * @param isEthSignedMessage Whether to use personal_sign format
-	 * @return EIP-712 compliant hash
+	 * @return msgDigest EIP-712 compliant hash
 	 */
-	function getDelegationHash(SignedDelegation memory signedDelegation, bool isEthSignedMessage) public view returns (bytes32) {
-		return
-			_computeEIP712Digest(
-				keccak256(
-					abi.encode(
-						SIGNED_DELEGATION_TYPEHASH,
-						_hashDelegationInfo(signedDelegation.delegationInfo),
-						_hashReplay(signedDelegation.replayAttackHeader)
-					)
-				),
-				isEthSignedMessage
-			);
+	function getDelegationHash(SignedDelegation memory signedDelegation) public view returns (bytes32 msgDigest) {
+		msgDigest = _hashTypedDataV4(
+			keccak256(
+				abi.encode(
+					SIGNED_DELEGATION_TYPEHASH,
+					_hashDelegationInfo(signedDelegation.delegationInfo),
+					_hashReplay(signedDelegation.replayAttackHeader)
+				)
+			)
+		);
 	}
 
 	/**
@@ -1165,13 +1162,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	function _hashReplay(ReplayAttackHeader memory r) internal pure returns (bytes32) {
 		return keccak256(abi.encode(REPLAY_HEADER_TYPEHASH, r.nonce, r.deadline, r.salt));
-	}
-
-	/**
-	 * @dev Compute final EIP-712 digest with optional personal_sign wrapping.
-	 */
-	function _computeEIP712Digest(bytes32 structHash, bool isEthSignedMessage) internal view returns (bytes32) {
-		return isEthSignedMessage ? ECDSA.toEthSignedMessageHash(_hashTypedDataV4(structHash)) : _hashTypedDataV4(structHash); // "\x19Ethereum Signed Message:\n32" || EIP-191 0x1901 || domain || structHash
 	}
 
 	function _isAccountOwner(Account memory account) internal view returns (bool) {
