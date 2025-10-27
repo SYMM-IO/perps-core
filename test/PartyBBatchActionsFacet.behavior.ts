@@ -812,18 +812,18 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)
 		})
 
-		const openWith = async (b: Hedger, pos: any): Promise<bigint> => {
+		const openWith = async (b: Hedger): Promise<bigint> => {
 			await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.partyBWhiteList([await b.getAddress()])
 					.build(),
 			)
-
-			await b.lockQuote(pos)
-			const q = await context.viewFacet.getQuote(pos)
+			const lastID = await context.viewFacet.getNextQuoteId()
+			await b.lockQuote(lastID)
+			const q = await context.viewFacet.getQuote(lastID)
 			const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])
-			await context.partyBBatchActionsFacet.connect(b.getSigner).openPositions([pos], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
-			return pos
+			await context.partyBBatchActionsFacet.connect(b.getSigner).openPositions([lastID], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
+			return lastID
 		}
 
 		const requestAndFillClose = async (id: bigint, b: Hedger, filled: bigint) => {
@@ -847,7 +847,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		}
 
 		it("removes connection after the last (A,B) position is fully closed", async function () {
-			const id = await openWith(hedger, 1)
+			const id = await openWith(hedger)
 			await expectConnected(await hedger.getAddress(), true) // connection created
 
 			// Fully close (filled == 100%)
@@ -858,7 +858,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		})
 
 		it("does NOT remove connection after a partial close", async function () {
-			const id = await openWith(hedger, 1)
+			const id = await openWith(hedger)
 			await expectConnected(await hedger.getAddress(), true)
 
 			// Partial close (50%)
@@ -870,8 +870,8 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 		it("does NOT remove connection if another (A,B) position remains open", async function () {
 			// Open two positions with the same B
-			const id1 = await openWith(hedger, 1)
-			const id2 = await openWith(hedger, 2)
+			const id1 = await openWith(hedger)
+			const id2 = await openWith(hedger)
 			await expectConnected(await hedger.getAddress(), true)
 
 			// Fully close only the first
@@ -886,8 +886,8 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		})
 
 		it("removing B1’s connection does not affect other Bs (B2 stays connected)", async function () {
-			const idB1 = await openWith(hedger, 1)
-			const idB2 = await openWith(hedger2, 2)
+			const idB1 = await openWith(hedger)
+			const idB2 = await openWith(hedger2)
 
 			await expectConnected(await hedger.getAddress(), true)
 			await expectConnected(await hedger2.getAddress(), true)
