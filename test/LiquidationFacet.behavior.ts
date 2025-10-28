@@ -226,13 +226,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 					const available = userBalance.allocatedBalances - userBalance.lockedCva - userBalance.lockedLf + upnl
 					const diff = userBalance.lockedLf - -available
 					const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
-					console.log("hedgerBalance:", hedgerBalance.allocatedBalances)
-					console.log("userBalance:", userBalance.allocatedBalances)
-					console.log("Price:", price)
-					console.log("UPNL:", upnl)
-					console.log("Available:", available)
-					console.log("Diff:", diff)
-					console.log("partyBAfter:", partyBAfter)
 					await user.settleLiquidation()
 					expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.be.equal(partyBAfter)
 					let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()

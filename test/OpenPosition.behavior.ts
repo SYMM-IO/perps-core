@@ -477,7 +477,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 		})
 	})
 
-	describe.only("Connections: removeConnectionIfNoPositions()", function () {
+	describe("Connections: removeConnectionIfNoPositions()", function () {
 		beforeEach(async function () {
 			// Allow generous connection cap so we don't trip the limit mid-tests
 			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)

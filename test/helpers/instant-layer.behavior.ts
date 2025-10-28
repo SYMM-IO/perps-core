@@ -401,7 +401,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const selectorQuote = quoteCallData.slice(0, 10)
 			const selectorLock = lockQuoteCallData.slice(0, 10)
 			const selectorOpen = openQuoteCallData.slice(0, 10)
-			console.log("Quote Selector:", selectorQuote)
 			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
 				account: {
 					multiAccount: await context.multiAccount.getAddress(),
@@ -414,7 +413,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Bind to Party B
 			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
-			console.log("Bound to Party B")
 
 			// Whitelisting Symbol type
 			await context.controlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)

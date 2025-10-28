@@ -36,6 +36,40 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		await hedger2.setBalances(this.hedger_allocated, this.hedger_allocated)
 	})
 
+	const openWith = async (partyB: Hedger): Promise<bigint> => {
+		await user.sendQuote(
+			limitQuoteRequestBuilder()
+				.partyBWhiteList([await partyB.getAddress()])
+				.build(),
+		)
+		const lastID = await context.viewFacet.getNextQuoteId()
+		await partyB.lockQuote(lastID)
+		const q = await context.viewFacet.getQuote(lastID)
+		const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])
+		await context.partyBBatchActionsFacet.connect(partyB.getSigner).openPositions([lastID], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
+		return lastID
+	}
+
+	const requestAndFillClose = async (id: bigint, partyB: Hedger, filled: bigint) => {
+		// Party A requests close (LIMIT close; price is irrelevant with dummy oracle)
+		await user.requestToClosePosition(id, limitCloseRequestBuilder().build())
+		const q = await context.viewFacet.getQuote(id)
+		const upnlSig = await getDummyPairUpnlAndPricesSig([q.openedPrice], [id])
+		await context.partyBBatchActionsFacet.connect(partyB.getSigner).fillCloseRequests([id], [filled], [q.openedPrice], upnlSig)
+	}
+
+	const expectConnected = async (partyBAddr: string, expected: boolean) => {
+		const isConn = await context.viewFacet.isConnectedPartyB(context.signers.user.address, partyBAddr)
+		expect(isConn).to.equal(expected)
+
+		const conns = await context.viewFacet.getConnectedPartyBs(context.signers.user.address)
+		if (expected) {
+			expect(conns).to.include(partyBAddr)
+		} else {
+			expect(conns).to.not.include(partyBAddr)
+		}
+	}
+
 	describe("openPositions", async function () {
 		beforeEach(async function () {
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
@@ -714,27 +748,11 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 	describe("Connections: addConnection()", function () {
 		beforeEach(async function () {})
 
-		/** Helper: open a single quote fully with a specific B */
-		const openWith = async (b: Hedger, pos: any) => {
-			await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.partyBWhiteList([await b.getAddress()])
-					.build(),
-			)
-			// lock and open
-			const id = pos // or use running index you keep in your harness
-			await b.lockQuote(id)
-			const quote1 = await context.viewFacet.getQuote(id)
-			const upnlSig = await getDummyPairUpnlAndPricesSig([quote1.requestedOpenPrice], [1n])
-			await context.partyBBatchActionsFacet.connect(b.getSigner).openPositions([id], [decimal(100n)], [quote1.requestedOpenPrice], upnlSig)
-			return id
-		}
-
 		it("adds a connection on first successful open", async function () {
 			// Allow a roomy cap to avoid incidental reverts
 			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)
 
-			await openWith(hedger, 1)
+			await openWith(hedger)
 
 			// Assert via view (use whatever getters your ViewFacet exposes)
 			const connections = await context.viewFacet.getConnectedPartyBs(user.address) // e.g., address[]
@@ -747,11 +765,9 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 		it("is idempotent: opening again with the same B does not duplicate the connection", async function () {
 			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(1)
-			let position = 1
-			await openWith(hedger, position)
+			await openWith(hedger)
 			// Open another position with the SAME B — should not revert and should NOT add a second entry
-			position = 2
-			await openWith(hedger, position)
+			await openWith(hedger)
 
 			const connects = await context.viewFacet.getConnectedPartyBs(context.signers.user.address)
 			expect(connects.length).to.equal(1) // still one unique B
@@ -763,7 +779,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(1)
 
 			// First connection (A↔B1) succeeds
-			await openWith(hedger, 1)
+			await openWith(hedger)
 
 			// Second connection (A↔B2) should FAIL on the first time addConnection() is attempted
 			await user.sendQuote(
@@ -786,8 +802,8 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			// Cap = 1: A can keep trading with B1 freely
 			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(1)
 
-			await openWith(hedger, 1)
-			await openWith(hedger, 2) // should still be fine
+			await openWith(hedger)
+			await openWith(hedger) // should still be fine
 
 			// And still blocked for a *new* B
 			await user.sendQuote(
@@ -811,40 +827,6 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			// Allow generous connection cap so we don't trip the limit mid-tests
 			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)
 		})
-
-		const openWith = async (b: Hedger): Promise<bigint> => {
-			await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.partyBWhiteList([await b.getAddress()])
-					.build(),
-			)
-			const lastID = await context.viewFacet.getNextQuoteId()
-			await b.lockQuote(lastID)
-			const q = await context.viewFacet.getQuote(lastID)
-			const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])
-			await context.partyBBatchActionsFacet.connect(b.getSigner).openPositions([lastID], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
-			return lastID
-		}
-
-		const requestAndFillClose = async (id: bigint, b: Hedger, filled: bigint) => {
-			// Party A requests close (LIMIT close; price is irrelevant with dummy oracle)
-			await user.requestToClosePosition(id, limitCloseRequestBuilder().build())
-			const q = await context.viewFacet.getQuote(id)
-			const upnlSig = await getDummyPairUpnlAndPricesSig([q.openedPrice], [id])
-			await context.partyBBatchActionsFacet.connect(b.getSigner).fillCloseRequests([id], [filled], [q.openedPrice], upnlSig)
-		}
-
-		const expectConnected = async (partyBAddr: string, expected: boolean) => {
-			const isConn = await context.viewFacet.isConnectedPartyB(context.signers.user.address, partyBAddr)
-			expect(isConn).to.equal(expected)
-
-			const conns = await context.viewFacet.getConnectedPartyBs(context.signers.user.address)
-			if (expected) {
-				expect(conns).to.include(partyBAddr)
-			} else {
-				expect(conns).to.not.include(partyBAddr)
-			}
-		}
 
 		it("removes connection after the last (A,B) position is fully closed", async function () {
 			const id = await openWith(hedger)
