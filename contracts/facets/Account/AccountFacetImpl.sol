@@ -12,7 +12,6 @@ import "../../storages/MAStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../libraries/muon/LibMuonAccount.sol";
 import "../../libraries/LibAccount.sol";
-import "hardhat/console.sol";
 
 library AccountFacetImpl {
 	using SafeERC20 for IERC20;
@@ -55,11 +54,12 @@ library AccountFacetImpl {
 		);
 		require(accountLayout.allocatedBalances[msg.sender] >= amount, "AccountFacet: Insufficient allocated Balance");
 		LibMuonAccount.verifyPartyAUpnl(upnlSig, msg.sender);
-		uint256 availableBalance = uint256(LibAccount.partyAAvailableForQuote(upnlSig.upnl, msg.sender));
+		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, msg.sender);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
-		require(availableBalance >= amount, "AccountFacet: partyA will be liquidatable");
+		uint256 AvailableBalanceU = uint256(availableBalance);
+		require(AvailableBalanceU >= amount, "AccountFacet: partyA will be liquidatable");
 		LockedValues memory lv = accountLayout.lockedBalances[msg.sender];
-		require((availableBalance - amount) >= (lv.cva + lv.lf), "partyA will be liquidatable");
+		require((AvailableBalanceU - amount) >= (lv.cva + lv.lf), "partyA will be liquidatable");
 		accountLayout.allocatedBalances[msg.sender] -= amount;
 		accountLayout.balances[msg.sender] += amount;
 		accountLayout.withdrawCooldown[msg.sender] = block.timestamp;
@@ -75,9 +75,9 @@ library AccountFacetImpl {
 		// deallocate from origin
 		require(accountLayout.partyBAllocatedBalances[msg.sender][origin] >= amount, "PartyBFacet: Insufficient locked balance");
 		LibMuonAccount.verifyPartyBUpnl(upnlSig, msg.sender, origin);
-		uint256 availableBalance = uint256(LibAccount.partyBAvailableForQuote(upnlSig.upnl, msg.sender, origin));
+		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, msg.sender, origin);
 		require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");
-		require(availableBalance >= amount, "PartyBFacet: Will be liquidatable");
+		require(uint256(availableBalance) >= amount, "PartyBFacet: Will be liquidatable");
 
 		accountLayout.partyBAllocatedBalances[msg.sender][origin] -= amount;
 		// allocate for recipient
