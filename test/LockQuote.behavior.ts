@@ -43,91 +43,92 @@ export function shouldBehaveLikeLockQuote(): void {
 		)
 		await user.sendQuote()
 	})
-
-	it("Should fail on invalid quoteId", async function () {
-		await expect(hedger.lockQuote(6, 0n, null)).to.be.reverted
-	})
-
-	it("Should fail on low balance", async function () {
-		await expect(hedger.lockQuote(1, 0n, null)).to.be.revertedWith("PartyBFacet: insufficient available balance")
-	})
-
-	it("Should fail on low balance (negative upnl)", async function () {
-		await expect(hedger.lockQuote(1, decimal(-125n))).to.be.revertedWith("PartyBFacet: Available balance is lower than zero")
-	})
-
-	it("Should fail on invalid partyB", async function () {
-		await expect(context.partyBQuoteActionsFacet.connect(context.signers.user2).lockQuote(1, await getDummySingleUpnlSig())).to.be.revertedWith(
-			"Accessibility: Should be partyB",
-		)
-	})
-
-	it("Should fail on invalid state", async function () {
-		await hedger.lockQuote(1)
-		await expect(hedger.lockQuote(1)).to.be.revertedWith("PartyBFacet: Invalid state")
-	})
-
-	it("Should fail on liquidated partyA", async function () {
-		await hedger.lockQuote(2)
-		await hedger.openPosition(2)
-		await user.liquidateAndSetSymbolPrices([1n], [decimal(200n)])
-		await expect(hedger.lockQuote(1)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
-	})
-
-	it("Should fail on paused partyB", async function () {
-		await pausePartyB(context)
-		await expect(hedger.lockQuote(1)).to.be.revertedWith("Pausable: PartyB actions paused")
-	})
-
-	it("Should fail on paused partyB", async function () {
-		await expect(hedger2.lockQuote(4)).to.be.revertedWith("PartyBFacet: Sender isn't whitelisted")
-	})
-
-	it("Should fail on expired quote", async function () {
-		await time.increase(1000)
-		await expect(hedger.lockQuote(1)).to.be.revertedWith("PartyBFacet: Quote is expired")
-	})
-
-	it("Should fail when symbol type is not whitelisted", async function () {
-		await expect(hedger.lockQuote(1)).not.to.be.reverted
-		const q1 = await context.viewFacet.getQuote(1n)
-		const upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
-		await expect(
-			context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig),
-		).to.not.be.reverted
-		await context.controlFacet.removeSymbolTypeFromWhitelist(context.signers.hedger.address, 1)
-		await context.controlFacet.removeSymbolsFromWhitelist(context.signers.hedger.address, [1])
-		await expect(hedger2.lockQuote(2)).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
-	})
-
-	it("Should run successfully", async function () {
-		const validator = new LockQuoteValidator()
-		const beforeOut = await validator.before(context, {
-			user: user,
+	
+	describe("Unlock Quote", async function () {
+		it("Should fail on invalid quoteId", async function () {
+			await expect(hedger.lockQuote(6, 0n, null)).to.be.reverted
 		})
-		await hedger.lockQuote(1)
-		await validator.after(context, {
-			user: user,
-			hedger: hedger,
-			quoteId: BigInt(1),
-			beforeOutput: beforeOut,
+
+		it("Should fail on low balance", async function () {
+			await expect(hedger.lockQuote(1, 0n, null)).to.be.revertedWith("PartyBFacet: insufficient available balance")
+		})
+
+		it("Should fail on low balance (negative upnl)", async function () {
+			await expect(hedger.lockQuote(1, decimal(-125n))).to.be.revertedWith("PartyBFacet: Available balance is lower than zero")
+		})
+
+		it("Should fail on invalid partyB", async function () {
+			await expect(context.partyBQuoteActionsFacet.connect(context.signers.user2).lockQuote(1, await getDummySingleUpnlSig())).to.be.revertedWith(
+				"Accessibility: Should be partyB",
+			)
+		})
+
+		it("Should fail on invalid state", async function () {
+			await hedger.lockQuote(1)
+			await expect(hedger.lockQuote(1)).to.be.revertedWith("PartyBFacet: Invalid state")
+		})
+
+		it("Should fail on liquidated partyA", async function () {
+			await hedger.lockQuote(2)
+			await hedger.openPosition(2)
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(200n)])
+			await expect(hedger.lockQuote(1)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
+		})
+
+		it("Should fail on paused partyB", async function () {
+			await pausePartyB(context)
+			await expect(hedger.lockQuote(1)).to.be.revertedWith("Pausable: PartyB actions paused")
+		})
+
+		it("Should fail on paused partyB", async function () {
+			await expect(hedger2.lockQuote(4)).to.be.revertedWith("PartyBFacet: Sender isn't whitelisted")
+		})
+
+		it("Should fail on expired quote", async function () {
+			await time.increase(1000)
+			await expect(hedger.lockQuote(1)).to.be.revertedWith("PartyBFacet: Quote is expired")
+		})
+
+		it("Should fail when symbol type is not whitelisted", async function () {
+			await expect(hedger.lockQuote(1)).not.to.be.reverted
+			const q1 = await context.viewFacet.getQuote(1n)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig),
+			).to.not.be.reverted
+			await context.controlFacet.removeSymbolTypeFromWhitelist(context.signers.hedger.address, 1)
+			await context.controlFacet.removeSymbolsFromWhitelist(context.signers.hedger.address, [1])
+			await expect(hedger2.lockQuote(2)).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
+		})
+
+		it("Should run successfully", async function () {
+			const validator = new LockQuoteValidator()
+			const beforeOut = await validator.before(context, {
+				user: user,
+			})
+			await hedger.lockQuote(1)
+			await validator.after(context, {
+				user: user,
+				hedger: hedger,
+				quoteId: BigInt(1),
+				beforeOutput: beforeOut,
+			})
+		})
+
+		it("Should check bind partyB when bound", async function () {
+			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.getAddress())
+			await expect(hedger2.lockQuote(1)).to.be.revertedWith("PartyBFacet: PartyB is not bounded to this partyA")
+		})
+
+		it("Should skip sig check when not bound", async function () {
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.upnlSig(getDummySingleUpnlAndPriceSig(decimal(16n)))
+					.build(),
+			)
+			await expect(hedger2.lockQuote(1, decimal(-1000n))).to.be.revertedWith("PartyBFacet: Available balance is lower than zero")
 		})
 	})
-
-	it("Should check bind partyB when bound", async function () {
-		await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.getAddress())
-		await expect(hedger2.lockQuote(1)).to.be.revertedWith("PartyBFacet: PartyB is not bounded to this partyA")
-	})
-
-	it("Should skip sig check when not bound", async function () {
-		await user.sendQuote(
-			limitQuoteRequestBuilder()
-				.upnlSig(getDummySingleUpnlAndPriceSig(decimal(16n)))
-				.build(),
-		)
-		await expect(hedger2.lockQuote(1, decimal(-1000n))).to.be.revertedWith("PartyBFacet: Available balance is lower than zero")
-	})
-
 	describe("Unlock Quote", async function () {
 		beforeEach(async function () {
 			await hedger.lockQuote(1)

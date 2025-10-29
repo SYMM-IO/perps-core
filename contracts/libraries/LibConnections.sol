@@ -82,4 +82,22 @@ library LibConnections {
 		}
 		return true;
 	}
+
+	/**
+	 * @notice Checks if a symbol is allowed for partyA based on their connections
+	 */
+	function isSymbolAllowedForPartyB(address partyB, uint256 symbolId) internal view returns (bool) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+
+		if (accountLayout.partyBBlacklistedSymbols[partyB][symbolId]) {
+			return false;
+		}
+
+		uint256 symbolType = symbolLayout.symbolTypes[symbolId];
+		if (accountLayout.partyBWhitelistedSymbols[partyB][symbolId] || accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType]) {
+			return true;
+		}
+		return false;
+	}
 }

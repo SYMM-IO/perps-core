@@ -22,9 +22,13 @@ library LibPartyBQuoteActions {
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 		require(quoteId <= quoteLayout.lastId, "PartyBFacet: Invalid quoteId");
 		require(
-				LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
-				"PartyBFacet: Symbol not allowed due to connection restrictions"
-			);
+			LibConnections.isSymbolAllowedForPartyB(msg.sender, quote.symbolId),
+			"PartyBFacet: symbol is not whitelisted"
+		);
+		require(
+			LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
+			"PartyBFacet: Symbol not allowed due to connection restrictions"
+		);
 		require(!MAStorage.layout().partyBLiquidationStatus[msg.sender][quote.partyA], "PartyBFacet: PartyB isn't solvent");
 		require(!accountLayout.crossLiquidationDetails[msg.sender].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 		bool isValidPartyB;
