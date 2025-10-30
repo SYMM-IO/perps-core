@@ -16,14 +16,11 @@ import "../../libraries/LibDiamond.sol";
 import "../../storages/BridgeStorage.sol";
 
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
-	error WL_BL_Conflict_SymbolType(address partyB, uint256 symbolType);
-	error WL_BL_Conflict_SymbolId(address partyB, uint256 symbolId);
-
 	/// @notice Transfers ownership of the contract to a new address.
 	/// @dev This function can only be called by the current owner of the contract.
 	/// @param owner The address of the new owner.
 	function transferOwnership(address owner) external onlyOwner {
-		require(owner != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(owner);
 		LibDiamond.transferOwnership(owner);
 	}
 
@@ -37,7 +34,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @dev This function can only be called by the current owner of the contract.
 	/// @param user The address of the user to be granted admin role.
 	function setAdmin(address user) external onlyOwner {
-		require(user != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(user);
 		GlobalAppStorage.layout().hasRole[user][LibAccessibility.DEFAULT_ADMIN_ROLE] = true;
 		emit RoleGranted(LibAccessibility.DEFAULT_ADMIN_ROLE, user);
 	}
@@ -46,7 +43,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param user The address of the user to whom the role will be granted.
 	/// @param role The role to be granted
 	function grantRole(address user, bytes32 role) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		require(user != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(user);
 		if (role == LibAccessibility.LIQUIDATOR_ROLE) {
 			require(
 				QuoteStorage.layout().partyAPendingQuotes[user].length == 0 && QuoteStorage.layout().partyAOpenPositions[user].length == 0,
@@ -68,7 +65,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Registers a Party B into the system.
 	/// @param partyB The address of the Party B to be registered.
 	function registerPartyB(address partyB) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		require(partyB != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(partyB);
 		require(!MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is already registered");
 		MAStorage.layout().partyBStatus[partyB] = true;
 		MAStorage.layout().partyBList.push(partyB);
@@ -79,7 +76,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param partyB The address of the Party B to be deregistered.
 	/// @param index The index of the Party B address in the partyBList.
 	function deregisterPartyB(address partyB, uint256 index) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		require(partyB != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(partyB);
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
 		require(MAStorage.layout().partyBList[index] == partyB, "ControlFacet: Invalid index");
 		uint256 lastIndex = MAStorage.layout().partyBList.length - 1;
@@ -127,7 +124,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the address of the collateral token.
 	/// @param collateral The address of the collateral token.
 	function setCollateral(address collateral) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		require(collateral != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(collateral);
 		require(IERC20Metadata(collateral).decimals() <= 18, "ControlFacet: Token with more than 18 decimals not allowed");
 		if (GlobalAppStorage.layout().collateral != address(0)) {
 			require(
@@ -150,7 +147,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param affiliate The address of affiliate.
 	/// @param feeCollector The address of fee collector.
 	function setFeeCollector(address affiliate, address feeCollector) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
-		require(feeCollector != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(feeCollector);
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		emit SetFeeCollector(affiliate, GlobalAppStorage.layout().affiliateFeeCollector[affiliate], feeCollector);
 		GlobalAppStorage.layout().affiliateFeeCollector[affiliate] = feeCollector;
@@ -213,7 +210,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets invalid bridged amounts pool address.
 	/// @param pool the address of new pool.
 	function setInvalidBridgedAmountsPool(address pool) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		require(pool != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(pool);
 		emit SetInvalidBridgedAmountsPool(BridgeStorage.layout().invalidBridgedAmountsPool, pool);
 		BridgeStorage.layout().invalidBridgedAmountsPool = pool;
 	}
@@ -517,6 +514,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().unbindCooldown = unbindCooldown;
 	}
 
+	/// @notice Sets PartyA Max Connection with PartyB.
+	/// @param maxLimit Max Connection limit.
+	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		require(maxLimit > 0, "ControlFacet: Value must be greater than zero");
+		MAStorage.layout().maxPartyAConnectionLimit = maxLimit;
+		emit SetMaxPartyAConnectionLimit(maxLimit);
+	}
+
 	// Pause State //////////////////////////////////////////////////
 
 	/// @notice Pauses global operations.
@@ -619,7 +624,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Suspends a user's address.
 	/// @param user The address of the user to be suspended.
 	function suspendedAddress(address user) external onlyRole(LibAccessibility.SUSPENDER_ROLE) {
-		require(user != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(user);
 		emit SetSuspendedAddress(user, true);
 		AccountStorage.layout().suspendedAddresses[user] = true;
 	}
@@ -627,7 +632,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Unsuspends a user's address.
 	/// @param user The address of the user to be unsuspended.
 	function unsuspendedAddress(address user) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		require(user != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(user);
 		emit SetSuspendedAddress(user, false);
 		AccountStorage.layout().suspendedAddresses[user] = false;
 	}
@@ -650,7 +655,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param status The emergency status to be set.
 	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		for (uint256 i; i < partyBs.length; i++) {
-			require(partyBs[i] != address(0), "ControlFacet: Zero address");
+			checkZeroAddress(partyBs[i]);
 			GlobalAppStorage.layout().partyBEmergencyStatus[partyBs[i]] = status;
 			emit SetPartyBEmergencyStatus(partyBs[i], status);
 		}
@@ -660,7 +665,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param bridge The address of the bridge to be added.
 	/// @param isVirtual Whether the bridge is virtual.
 	function addBridge(address bridge, bool isVirtual) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		require(bridge != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(bridge);
 		BridgeStorage.layout().bridges[bridge] = true;
 		BridgeStorage.layout().virtualBridges[bridge] = isVirtual;
 		emit AddBridge(bridge, isVirtual);
@@ -681,7 +686,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		address insuranceVault,
 		uint256 maxLiquidationProfit
 	) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		require(insuranceVault != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(insuranceVault);
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		maLayout.liquidationInsuranceVault = insuranceVault;
 		maLayout.maxLiquidationProfitPerPosition = maxLiquidationProfit;
@@ -690,39 +695,21 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Whitelists a symbol type for a party B. Reverts if the type is blacklisted.
 	function whitelistSymbolType(address partyB, uint256 symbolType) external {
-		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
-
-		AccountStorage.Layout storage L = AccountStorage.layout();
-
-		// Revert on conflict
-		if (L.partyBBlacklistedSymbolTypes[partyB][symbolType]) {
-			revert WL_BL_Conflict_SymbolType(partyB, symbolType);
-		}
-
-		L.partyBWhitelistedSymbolTypes[partyB][symbolType] = true;
+		symbolListingAuthorizationCheck(msg.sender, partyB);
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType] = true;
 		emit WhitelistSymbolType(partyB, symbolType);
 	}
 
 	/// @notice Whitelists symbols for a party B. Reverts if any symbol is blacklisted.
 	function whitelistSymbols(address partyB, uint256[] calldata symbolIds) external {
-		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
+		symbolListingAuthorizationCheck(msg.sender, partyB);
 
-		AccountStorage.Layout storage L = AccountStorage.layout();
-
-		// Pre-check for conflicts; revert on the first conflicting id
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			uint256 id = symbolIds[i];
-			if (L.partyBBlacklistedSymbols[partyB][id]) {
-				revert WL_BL_Conflict_SymbolId(partyB, id);
-			}
-			unchecked {
-				++i;
-			}
-		}
-
-		// Apply changes
-		for (uint256 i; i < symbolIds.length; ) {
-			L.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
+			require(!accountLayout.partyBBlacklistedSymbols[partyB][id], "ControlFacet: Blacklist conflict");
+			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
 			unchecked {
 				++i;
 			}
@@ -733,17 +720,17 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Removes a symbol type from the whitelist for a party B.
 	function removeSymbolTypeFromWhitelist(address partyB, uint256 symbolType) external {
-		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
+		symbolListingAuthorizationCheck(msg.sender, partyB);
 		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = false;
 		emit RemoveSymbolTypeFromWhitelist(partyB, symbolType);
 	}
 
 	/// @notice Removes symbols from the whitelist for a party B.
 	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external {
-		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
-		AccountStorage.Layout storage L = AccountStorage.layout();
+		symbolListingAuthorizationCheck(msg.sender, partyB);
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
-			L.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
+			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked {
 				++i;
 			}
@@ -751,49 +738,15 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit RemoveSymbolsFromWhitelist(partyB, symbolIds);
 	}
 
-	/// @notice Blacklists a symbol type for a party B. Reverts if the type is whitelisted.
-	function blacklistSymbolType(address partyB, uint256 symbolType) external {
-		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
-
-		AccountStorage.Layout storage L = AccountStorage.layout();
-
-		// Revert on conflict
-		if (L.partyBWhitelistedSymbolTypes[partyB][symbolType]) {
-			revert WL_BL_Conflict_SymbolType(partyB, symbolType);
-		}
-
-		L.partyBBlacklistedSymbolTypes[partyB][symbolType] = true;
-		emit BlacklistSymbolType(partyB, symbolType);
-	}
-
-	/// @notice Removes a symbol type from the blacklist for a party B.
-	function removeBlacklistedSymbolTypes(address partyB, uint256 symbolType) external {
-		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
-		AccountStorage.Layout storage L = AccountStorage.layout();
-		L.partyBBlacklistedSymbolTypes[partyB][symbolType] = false;
-		emit RemoveBlacklistSymbolType(partyB, symbolType);
-	}
-
 	/// @notice Blacklists symbols for a party B. Reverts if any is whitelisted.
 	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external {
-		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
+		symbolListingAuthorizationCheck(msg.sender, partyB);
 
-		AccountStorage.Layout storage L = AccountStorage.layout();
-
-		// Pre-check for conflicts; revert on the first conflicting id
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			uint256 id = symbolIds[i];
-			if (L.partyBWhitelistedSymbols[partyB][id]) {
-				revert WL_BL_Conflict_SymbolId(partyB, id);
-			}
-			unchecked {
-				++i;
-			}
-		}
-
-		// Apply changes
-		for (uint256 i; i < symbolIds.length; ) {
-			L.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
+			require(!accountLayout.partyBWhitelistedSymbols[partyB][id], "ControlFacet: Whitelist conflict");
+			accountLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
 			unchecked {
 				++i;
 			}
@@ -803,16 +756,16 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Removes symbols from the blacklist for a party B.
-	function removeBlacklistedSymbols(address partyB, uint256[] calldata symbolIds) external {
-		require(LibAccessibility.hasRole(msg.sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || msg.sender == partyB, "ControlFacet: Not authorized");
-		AccountStorage.Layout storage L = AccountStorage.layout();
+	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external {
+		symbolListingAuthorizationCheck(msg.sender, partyB);
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
-			L.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
+			accountLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked {
 				++i;
 			}
 		}
-		emit RemoveBlacklistSymbols(partyB, symbolIds);
+		emit RemoveSymbolsFromBlacklist(partyB, symbolIds);
 	}
 
 	/// @notice Sets the signature verifier address.
@@ -826,7 +779,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param target The address of the target.
 	/// @param relayer The address of the relayer.
 	function addRelayerForExternalTransferTarget(address target, address relayer) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		require(target != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(target);
 		AccountStorage.layout().externalTransferTargetsRelayers[target] = relayer;
 		emit AddRelayerForExternalTransferTarget(target, relayer);
 	}
@@ -834,7 +787,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Removes a relayer for an external transfer target.
 	/// @param target The address of the target.
 	function removeRelayerForExternalTransferTarget(address target) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		require(target != address(0), "ControlFacet: Zero address");
+		checkZeroAddress(target);
 		AccountStorage.layout().externalTransferTargetsRelayers[target] = address(0);
 		emit RemoveRelayerForExternalTransferTarget(target);
 	}
@@ -847,10 +800,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit RegisterHook(affiliate, hook);
 	}
 
-	/**
-	 * @notice Sets the call from instant layer
-	 * @param _callFromInstantLayer The call from instant layer
-	 */
+	/// @notice Sets the call from instant layer
+	/// @param _callFromInstantLayer The call from instant layer
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
 		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
 		MAStorage.layout().callFromInstantLayer = _callFromInstantLayer;
@@ -862,5 +813,13 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	function setADLEnabled(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		MAStorage.layout().adlEnabled[partyB] = enabled;
 		emit SetADLEnabled(partyB, enabled);
+	}
+
+	function symbolListingAuthorizationCheck(address sender, address partyB) private view {
+		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
+	}
+
+	function checkZeroAddress(address target) private pure {
+		require(target != address(0), "ControlFacet: Zero address");
 	}
 }

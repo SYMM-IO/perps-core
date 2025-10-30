@@ -941,7 +941,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				bytes32 value = abi.decode(results[sourceIndices[i]], (bytes32));
 
 				uint256 offset = insertionPoints[i];
-				if (offset + 68 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 68, modifiedCallData.length);
+				if (offset + 36 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 32, modifiedCallData.length);
 
 				// Insert at calldata offset + 4 (selector) + 32 (length)
 				assembly {

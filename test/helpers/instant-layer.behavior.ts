@@ -401,7 +401,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const selectorQuote = quoteCallData.slice(0, 10)
 			const selectorLock = lockQuoteCallData.slice(0, 10)
 			const selectorOpen = openQuoteCallData.slice(0, 10)
-			console.log("Quote Selector:", selectorQuote)
 			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
 				account: {
 					multiAccount: await context.multiAccount.getAddress(),
@@ -414,10 +413,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Bind to Party B
 			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
-			console.log("Bound to Party B")
 
 			// Whitelisting Symbol type
-			await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(context.symmioPartyB.getAddress(), 1, true)
+			await context.controlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
 
 			const sendQuoteWithAffiliateSignature =
 				"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(int256,uint256,uint256,uint256,bytes))"
@@ -814,7 +812,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
 
 			// Whitelisting Symbol type
-			await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(context.symmioPartyB.getAddress(), 1, true)
+			await context.controlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
 
 			const sendQuoteWithAffiliateSignature =
 				"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(int256,uint256,uint256,uint256,bytes))"
@@ -957,7 +955,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				.withArgs(pastDeadline)
 		})
 
-		it.skip("bubbles target revert with OperationFailed(index, returndata)", async () => {
+		it("bubbles target revert with OperationFailed(index, returndata)", async () => {
 			const sigBad = await context.signers.hedger.signTypedData(domain, types, opLockB1)
 
 			await context.instantLayer.addTemplate("singleLock", [{ insertionPoints: [], sourceIndices: [] }])
@@ -1271,6 +1269,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		beforeEach(async () => {
 			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
 			accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
+			await context.instantLayer.registerMultiAccounts([context.multiAccount]) // Admin with SETTER Role
 		})
 
 		function ifaceSelectors(...fragments: string[]): string[] {
@@ -1442,12 +1441,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		describe("Finalize Revoke Delegation", () => {
-			it("reverts with DeadlineExpired if cooldown not elapsed", async () => {
+			it("reverts with RevocationCooldownNotOver if cooldown not elapsed", async () => {
 				await context.instantLayer.connect(partyA1.getSigner).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selA])
 
 				await expect(context.instantLayer.finalizeRevokeDelegation(delegatorAcct, delegateAddr, [selA])).to.be.revertedWithCustomError(
 					context.instantLayer,
-					"DeadlineExpired",
+					"RevocationCooldownNotOver",
 				) // ETA in args is dynamic
 			})
 
@@ -1469,11 +1468,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				expect(aExp).to.equal(0n)
 				expect(bExp).to.equal(0n)
 
-				
-				const aEta = await context.instantLayer.pendingRevocationEta(delegatorAcct.addr, delegateAddr, selA as any);
-				const bEta = await context.instantLayer.pendingRevocationEta(delegatorAcct.addr, delegateAddr, selB as any);
-				expect(aEta).to.equal(0n);
-				expect(bEta).to.equal(0n);
+				const aEta = await context.instantLayer.pendingRevocationEta(delegatorAcct.addr, delegateAddr, selA as any)
+				const bEta = await context.instantLayer.pendingRevocationEta(delegatorAcct.addr, delegateAddr, selB as any)
+				expect(aEta).to.equal(0n)
+				expect(bEta).to.equal(0n)
 			})
 
 			it("finalize is idempotent: calling again with no scheduled items is a no-op (no revert)", async () => {

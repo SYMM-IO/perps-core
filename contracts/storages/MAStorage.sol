@@ -43,7 +43,7 @@ library MAStorage {
 		bool callFromInstantLayer;
 		mapping(address => bool) adlEnabled;
 		mapping(address => EntityMetadata) entitiesMetadata;
-		mapping(address => uint256) maxConnectedCounterParty; // Party B Max number of Allowed party A
+		uint256 maxPartyAConnectionLimit; // Party A Max number of Allowed party B
 	}
 
 	function layout() internal pure returns (Layout storage l) {
