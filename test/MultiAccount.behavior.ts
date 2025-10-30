@@ -340,7 +340,7 @@ export function shouldBehaveLikeMultiAccount() {
 			it("Should be able to lock Quote", async () => {
 				await context.controlFacet
 					.connect(context.signers.admin)
-					.setPartyBWhitelistedSymbolTypeStatus(await symmioPartyB.getAddress(), (await context.viewFacet.getSymbolWithType(1)).symbolType, true)
+					.whitelistSymbolType(await symmioPartyB.getAddress(), (await context.viewFacet.getSymbolWithType(1)).symbolType)
 				let lockQuote = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [1, await getDummySingleUpnlSig()])
 
 				await expect(symmioPartyB.connect(context.signers.admin)._call([lockQuote])).to.not.be.reverted
@@ -349,10 +349,9 @@ export function shouldBehaveLikeMultiAccount() {
 
 			describe("Open quotes", function () {
 				beforeEach(async () => {
-					await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(
+					await context.controlFacet.whitelistSymbolType(
 						await symmioPartyB.getAddress(),
 						(await context.viewFacet.getSymbolWithType(1)).symbolType,
-						true,
 					)
 					let lockQuote = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [1, await getDummySingleUpnlSig()])
 

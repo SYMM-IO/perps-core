@@ -8,6 +8,7 @@ import "../storages/QuoteStorage.sol";
 import "../storages/MAStorage.sol";
 import "../storages/SymbolStorage.sol";
 import "./LibAccount.sol";
+import "./LibConnections.sol";
 
 library LibPartyBQuoteActions {
 	using LockedValuesOps for LockedValues;
@@ -15,15 +16,18 @@ library LibPartyBQuoteActions {
 	function lockQuote(uint256 quoteId) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(quote.quoteStatus == QuoteStatus.PENDING, "PartyBFacet: Invalid state");
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 		require(quoteId <= quoteLayout.lastId, "PartyBFacet: Invalid quoteId");
 		require(
-			accountLayout.partyBWhitelistedSymbolTypes[msg.sender][symbolLayout.symbolTypes[quote.symbolId]],
-			"PartyBFacet: symbol type is not whitelisted"
+			LibConnections.isSymbolAllowedForPartyB(msg.sender, quote.symbolId),
+			"PartyBFacet: symbol is not whitelisted"
+		);
+		require(
+			LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
+			"PartyBFacet: Symbol not allowed due to connection restrictions"
 		);
 		require(!MAStorage.layout().partyBLiquidationStatus[msg.sender][quote.partyA], "PartyBFacet: PartyB isn't solvent");
 		require(!accountLayout.crossLiquidationDetails[msg.sender].inProgress, "PartyBFacet: PartyB is in cross liquidation process");

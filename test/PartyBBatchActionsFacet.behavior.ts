@@ -36,6 +36,40 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		await hedger2.setBalances(this.hedger_allocated, this.hedger_allocated)
 	})
 
+	const openWith = async (partyB: Hedger): Promise<bigint> => {
+		await user.sendQuote(
+			limitQuoteRequestBuilder()
+				.partyBWhiteList([await partyB.getAddress()])
+				.build(),
+		)
+		const lastID = await context.viewFacet.getNextQuoteId()
+		await partyB.lockQuote(lastID)
+		const q = await context.viewFacet.getQuote(lastID)
+		const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])
+		await context.partyBBatchActionsFacet.connect(partyB.getSigner).openPositions([lastID], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
+		return lastID
+	}
+
+	const requestAndFillClose = async (id: bigint, partyB: Hedger, filled: bigint) => {
+		// Party A requests close (LIMIT close; price is irrelevant with dummy oracle)
+		await user.requestToClosePosition(id, limitCloseRequestBuilder().build())
+		const q = await context.viewFacet.getQuote(id)
+		const upnlSig = await getDummyPairUpnlAndPricesSig([q.openedPrice], [id])
+		await context.partyBBatchActionsFacet.connect(partyB.getSigner).fillCloseRequests([id], [filled], [q.openedPrice], upnlSig)
+	}
+
+	const expectConnected = async (partyBAddr: string, expected: boolean) => {
+		const isConn = await context.viewFacet.isConnectedPartyB(context.signers.user.address, partyBAddr)
+		expect(isConn).to.equal(expected)
+
+		const conns = await context.viewFacet.getConnectedPartyBs(context.signers.user.address)
+		if (expected) {
+			expect(conns).to.include(partyBAddr)
+		} else {
+			expect(conns).to.not.include(partyBAddr)
+		}
+	}
+
 	describe("openPositions", async function () {
 		beforeEach(async function () {
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
@@ -419,13 +453,13 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			await expect(context.partyBBatchActionsFacet.connect(context.signers.hedger).adlClosePositions(quoteIds, filledAmounts, closedPrices, upnlSig))
 				.to.not.reverted
 
-				const q1 = await context.viewFacet.getQuote(1)
-				const q2 = await context.viewFacet.getQuote(2)
+			const q1 = await context.viewFacet.getQuote(1)
+			const q2 = await context.viewFacet.getQuote(2)
 
-				expect(q1.quoteStatus).to.equal(7n)
-				expect(q2.quoteStatus).to.equal(7n)
-				expect(q1.closedAmount).to.equal(decimal(100n))
-				expect(q2.closedAmount).to.equal(decimal(100n))
+			expect(q1.quoteStatus).to.equal(7n)
+			expect(q2.quoteStatus).to.equal(7n)
+			expect(q1.closedAmount).to.equal(decimal(100n))
+			expect(q2.closedAmount).to.equal(decimal(100n))
 		})
 	})
 
@@ -533,6 +567,323 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			await expect(
 				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
 			).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
+		})
+	})
+
+	describe("Connections: Is Symbol Allowed For PartyA)", function () {
+		beforeEach(async function () {})
+
+		it("Baseline: with no connections, A can open with any B regardless of Bs whitelist", async function () {
+			// A sends a quote targeted to B2; no connections exist yet.
+			await user2.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.build(),
+			)
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.addSymbol("BTCUSDT_wrapped", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.controlFacet.connect(context.signers.admin).setSymbolTypes([2], [2])
+			await context.controlFacet.whitelistSymbolType(context.signers.hedger.address, 2)
+
+			await hedger2.lockQuote(1)
+
+			const q1 = await context.viewFacet.getQuote(1n)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [2n])
+
+			// Should succeed even if B2 hasn't whitelisted the symbol yet
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig),
+			).to.not.be.reverted
+		})
+
+		it("After connecting A↔B1 on Symbol1, opening Symbol2 with B2 reverts if B1 has NOT whitelisted Symbol2", async function () {
+			// 1) A opens a first position with B1 → connects A↔B1
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.build(),
+			)
+			await hedger.lockQuote(1)
+			const q1 = await context.viewFacet.getQuote(1n)
+			const symbol1 = q1.symbolId as bigint
+
+			let upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig)
+
+			// Sanity: A is now "connected" to B1 by the open above.
+
+			// 2) Try to open the SAME symbol with B2, but only B2 whitelists it (B1 does NOT)
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.addSymbol("BTCUSDT_wrapped", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.controlFacet.connect(context.signers.admin).setSymbolTypes([2], [2])
+			await context.controlFacet.whitelistSymbolType(context.signers.hedger2.address, 2)
+			const symbol2 = 2
+			await context.controlFacet.connect(context.signers.admin).whitelistSymbols(await hedger2.getAddress(), [symbol2]) // B2 ✅
+			// Important: do NOT whitelist for B1 here.
+
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.symbolId(symbol2) // ensure same symbol
+					.build(),
+			)
+			await expect(hedger2.lockQuote(2)).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
+		})
+
+		it("After connecting A↔B1 on Symbol1, opening Symbol1 with B2 SUCCEEDS when BOTH B1 and B2 whitelist Symbol1", async function () {
+			// Connect A↔B1 by opening first position on Symbol1
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.build(),
+			)
+			await hedger.lockQuote(1)
+			const q1 = await context.viewFacet.getQuote(1n)
+			const sym = q1.symbolId as bigint
+
+			let upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig)
+
+			// Whitelist Symbol1 for BOTH B1 and B2
+			await context.controlFacet.connect(context.signers.admin).whitelistSymbols(await hedger.getAddress(), [sym]) // B1 ✅
+			await context.controlFacet.connect(context.signers.admin).whitelistSymbols(await hedger2.getAddress(), [sym]) // B2 ✅
+
+			// Now try to open with B2 on the same symbol
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.symbolId(sym)
+					.build(),
+			)
+			await hedger2.lockQuote(2)
+			const q2 = await context.viewFacet.getQuote(2n)
+			upnlSig = await getDummyPairUpnlAndPricesSig([q2.requestedOpenPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([2n], [decimal(100n)], [q2.requestedOpenPrice], upnlSig),
+			).to.not.be.reverted
+		})
+
+		it("Consensus via symbol TYPE: succeeds if B1 lacks Symbol1 but HAS Symbol1's type whitelisted", async function () {
+			// Connect A↔B1 by opening first position on Symbol1
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.build(),
+			)
+			await hedger.lockQuote(1)
+			const q1 = await context.viewFacet.getQuote(1n)
+			const sym = q1.symbolId as bigint
+
+			let upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig)
+
+			// Get the symbol type
+			const symbolInfo = await context.viewFacet.getSymbolWithType(sym)
+			const symType = symbolInfo.symbolType
+
+			// B2 explicitly whitelists Symbol1; B1 whitelists only the type (not the symbol)
+			await context.controlFacet.connect(context.signers.admin).whitelistSymbols(await hedger2.getAddress(), [sym]) // B2 ✅ symbol
+			await context.controlFacet.connect(context.signers.admin).whitelistSymbolType(await hedger.getAddress(), symType) // B1 ✅ type
+
+			// Try to open with B2 on Symbol1 → should pass because check allows symbol OR type per B
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.symbolId(sym)
+					.build(),
+			)
+			await hedger2.lockQuote(2)
+			const q2 = await context.viewFacet.getQuote(2n)
+			upnlSig = await getDummyPairUpnlAndPricesSig([q2.requestedOpenPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([2n], [decimal(100n)], [q2.requestedOpenPrice], upnlSig),
+			).to.not.be.reverted
+		})
+
+		it("If any connected B blacklists Symbol1, opening with ANY B must revert", async function () {
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.addSymbol("BTCUSDT_wrapped", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.controlFacet.connect(context.signers.admin).setSymbolTypes([2], [2])
+			// Connect A↔B1 on Symbol1
+			await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).build())
+
+			const quote1 = await context.viewFacet.getQuote(1n)
+			const sym = quote1.symbolId as bigint
+			await context.controlFacet.connect(context.signers.admin).whitelistSymbols(await hedger.getAddress(), [sym])
+			await hedger.lockQuote(1)
+
+			let upnlSig = await getDummyPairUpnlAndPricesSig([quote1.requestedOpenPrice], [1n])
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [quote1.requestedOpenPrice], upnlSig)
+
+			// Whitelist Symbol1 for B2
+			await context.controlFacet.connect(context.signers.admin).whitelistSymbols(await hedger2.getAddress(), [sym])
+
+			// Try to open with B2 on the same Symbol1
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.symbolId(sym)
+					.build(),
+			)
+			await hedger2.lockQuote(2)
+			const quote2 = await context.viewFacet.getQuote(2n)
+			upnlSig = await getDummyPairUpnlAndPricesSig([quote2.requestedOpenPrice], [1n])
+
+			// Now blacklist Symbol1 on B1 → should trump the whitelist and block
+			await context.controlFacet.connect(context.signers.admin).removeSymbolsFromWhitelist(await hedger.getAddress(), [sym])
+			await context.controlFacet.connect(context.signers.admin).blacklistSymbols(await hedger.getAddress(), [sym])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([2n], [decimal(100n)], [quote2.requestedOpenPrice], upnlSig),
+			).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
+		})
+	})
+
+	describe("Connections: addConnection()", function () {
+		beforeEach(async function () {})
+
+		it("adds a connection on first successful open", async function () {
+			// Allow a roomy cap to avoid incidental reverts
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)
+
+			await openWith(hedger)
+
+			// Assert via view (use whatever getters your ViewFacet exposes)
+			const connections = await context.viewFacet.getConnectedPartyBs(user.address) // e.g., address[]
+			expect(connections).to.include(await hedger.getAddress())
+			expect(connections.length).to.equal(1)
+
+			const isConn = await context.viewFacet.isConnectedPartyB(context.signers.user.address, await hedger.getAddress())
+			expect(isConn).to.equal(true)
+		})
+
+		it("is idempotent: opening again with the same B does not duplicate the connection", async function () {
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(1)
+			await openWith(hedger)
+			// Open another position with the SAME B — should not revert and should NOT add a second entry
+			await openWith(hedger)
+
+			const connects = await context.viewFacet.getConnectedPartyBs(context.signers.user.address)
+			expect(connects.length).to.equal(1) // still one unique B
+			expect(connects[0]).to.equal(await hedger.getAddress())
+		})
+
+		it("enforces the max connection limit: reverts when trying to connect to a new B beyond the cap", async function () {
+			// Cap connections at 1
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(1)
+
+			// First connection (A↔B1) succeeds
+			await openWith(hedger)
+
+			// Second connection (A↔B2) should FAIL on the first time addConnection() is attempted
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.build(),
+			)
+			const id2 = await context.viewFacet.getNextQuoteId()
+			await hedger2.lockQuote(id2)
+
+			const q2 = await context.viewFacet.getQuote(id2)
+			const upnlSig2 = await getDummyPairUpnlAndPricesSig([q2.requestedOpenPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([id2], [decimal(100n)], [q2.requestedOpenPrice], upnlSig2),
+			).to.be.revertedWith("AccountFacet: PartyA max connection limit exceeded")
+		})
+
+		it("does not consume limit when re-opening with an already-connected B", async function () {
+			// Cap = 1: A can keep trading with B1 freely
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(1)
+
+			await openWith(hedger)
+			await openWith(hedger) // should still be fine
+
+			// And still blocked for a *new* B
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.build(),
+			)
+			const id2 = await context.viewFacet.getNextQuoteId()
+			await hedger2.lockQuote(id2)
+			const q2 = await context.viewFacet.getQuote(id2)
+			const upnlSig2 = await getDummyPairUpnlAndPricesSig([q2.requestedOpenPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([id2], [decimal(100n)], [q2.requestedOpenPrice], upnlSig2),
+			).to.be.revertedWith("AccountFacet: PartyA max connection limit exceeded")
+		})
+	})
+
+	describe("Connections: removeConnectionIfNoPositions()", function () {
+		beforeEach(async function () {
+			// Allow generous connection cap so we don't trip the limit mid-tests
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)
+		})
+
+		it("removes connection after the last (A,B) position is fully closed", async function () {
+			const id = await openWith(hedger)
+			await expectConnected(await hedger.getAddress(), true) // connection created
+
+			// Fully close (filled == 100%)
+			await requestAndFillClose(id, hedger, decimal(100n))
+
+			// Connection should be removed (positions count for (B,A) is now zero)
+			await expectConnected(await hedger.getAddress(), false)
+		})
+
+		it("does NOT remove connection after a partial close", async function () {
+			const id = await openWith(hedger)
+			await expectConnected(await hedger.getAddress(), true)
+
+			// Partial close (50%)
+			await requestAndFillClose(id, hedger, decimal(50n))
+
+			// Still an open remainder → connection must persist
+			await expectConnected(await hedger.getAddress(), true)
+		})
+
+		it("does NOT remove connection if another (A,B) position remains open", async function () {
+			// Open two positions with the same B
+			const id1 = await openWith(hedger)
+			const id2 = await openWith(hedger)
+			await expectConnected(await hedger.getAddress(), true)
+
+			// Fully close only the first
+			await requestAndFillClose(id1, hedger, decimal(100n))
+
+			// One position still open → connection must persist
+			await expectConnected(await hedger.getAddress(), true)
+
+			// Now close the second fully → connection should drop
+			await requestAndFillClose(id2, hedger, decimal(100n))
+			await expectConnected(await hedger.getAddress(), false)
+		})
+
+		it("removing B1’s connection does not affect other Bs (B2 stays connected)", async function () {
+			const idB1 = await openWith(hedger)
+			const idB2 = await openWith(hedger2)
+
+			await expectConnected(await hedger.getAddress(), true)
+			await expectConnected(await hedger2.getAddress(), true)
+
+			// Fully close B1 position(s)
+			await requestAndFillClose(idB1, hedger, decimal(100n))
+
+			// B1 should be removed; B2 must still be connected
+			await expectConnected(await hedger.getAddress(), false)
+			await expectConnected(await hedger2.getAddress(), true)
+
+			// Clean up: close B2 to avoid leakage across tests
+			await requestAndFillClose(idB2, hedger2, decimal(100n))
+			await expectConnected(await hedger2.getAddress(), false)
 		})
 	})
 }
