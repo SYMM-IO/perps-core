@@ -20,7 +20,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @dev This function can only be called by the current owner of the contract.
 	/// @param owner The address of the new owner.
 	function transferOwnership(address owner) external onlyOwner {
-		zeroAddressCheck(owner);
+		checkZeroAddress(owner);
 		LibDiamond.transferOwnership(owner);
 	}
 
@@ -34,7 +34,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @dev This function can only be called by the current owner of the contract.
 	/// @param user The address of the user to be granted admin role.
 	function setAdmin(address user) external onlyOwner {
-		zeroAddressCheck(user);
+		checkZeroAddress(user);
 		GlobalAppStorage.layout().hasRole[user][LibAccessibility.DEFAULT_ADMIN_ROLE] = true;
 		emit RoleGranted(LibAccessibility.DEFAULT_ADMIN_ROLE, user);
 	}
@@ -43,7 +43,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param user The address of the user to whom the role will be granted.
 	/// @param role The role to be granted
 	function grantRole(address user, bytes32 role) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		zeroAddressCheck(user);
+		checkZeroAddress(user);
 		if (role == LibAccessibility.LIQUIDATOR_ROLE) {
 			require(
 				QuoteStorage.layout().partyAPendingQuotes[user].length == 0 && QuoteStorage.layout().partyAOpenPositions[user].length == 0,
@@ -65,7 +65,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Registers a Party B into the system.
 	/// @param partyB The address of the Party B to be registered.
 	function registerPartyB(address partyB) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		zeroAddressCheck(partyB);
+		checkZeroAddress(partyB);
 		require(!MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is already registered");
 		MAStorage.layout().partyBStatus[partyB] = true;
 		MAStorage.layout().partyBList.push(partyB);
@@ -76,7 +76,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param partyB The address of the Party B to be deregistered.
 	/// @param index The index of the Party B address in the partyBList.
 	function deregisterPartyB(address partyB, uint256 index) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		zeroAddressCheck(partyB);
+		checkZeroAddress(partyB);
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
 		require(MAStorage.layout().partyBList[index] == partyB, "ControlFacet: Invalid index");
 		uint256 lastIndex = MAStorage.layout().partyBList.length - 1;
@@ -124,7 +124,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the address of the collateral token.
 	/// @param collateral The address of the collateral token.
 	function setCollateral(address collateral) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		zeroAddressCheck(collateral);
+		checkZeroAddress(collateral);
 		require(IERC20Metadata(collateral).decimals() <= 18, "ControlFacet: Token with more than 18 decimals not allowed");
 		if (GlobalAppStorage.layout().collateral != address(0)) {
 			require(
@@ -147,7 +147,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param affiliate The address of affiliate.
 	/// @param feeCollector The address of fee collector.
 	function setFeeCollector(address affiliate, address feeCollector) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
-		zeroAddressCheck(feeCollector);
+		checkZeroAddress(feeCollector);
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		emit SetFeeCollector(affiliate, GlobalAppStorage.layout().affiliateFeeCollector[affiliate], feeCollector);
 		GlobalAppStorage.layout().affiliateFeeCollector[affiliate] = feeCollector;
@@ -210,7 +210,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets invalid bridged amounts pool address.
 	/// @param pool the address of new pool.
 	function setInvalidBridgedAmountsPool(address pool) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		zeroAddressCheck(pool);
+		checkZeroAddress(pool);
 		emit SetInvalidBridgedAmountsPool(BridgeStorage.layout().invalidBridgedAmountsPool, pool);
 		BridgeStorage.layout().invalidBridgedAmountsPool = pool;
 	}
@@ -624,7 +624,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Suspends a user's address.
 	/// @param user The address of the user to be suspended.
 	function suspendedAddress(address user) external onlyRole(LibAccessibility.SUSPENDER_ROLE) {
-		zeroAddressCheck(user);
+		checkZeroAddress(user);
 		emit SetSuspendedAddress(user, true);
 		AccountStorage.layout().suspendedAddresses[user] = true;
 	}
@@ -632,7 +632,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Unsuspends a user's address.
 	/// @param user The address of the user to be unsuspended.
 	function unsuspendedAddress(address user) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		zeroAddressCheck(user);
+		checkZeroAddress(user);
 		emit SetSuspendedAddress(user, false);
 		AccountStorage.layout().suspendedAddresses[user] = false;
 	}
@@ -655,7 +655,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param status The emergency status to be set.
 	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		for (uint256 i; i < partyBs.length; i++) {
-			zeroAddressCheck(partyBs[i]);
+			checkZeroAddress(partyBs[i]);
 			GlobalAppStorage.layout().partyBEmergencyStatus[partyBs[i]] = status;
 			emit SetPartyBEmergencyStatus(partyBs[i], status);
 		}
@@ -665,7 +665,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param bridge The address of the bridge to be added.
 	/// @param isVirtual Whether the bridge is virtual.
 	function addBridge(address bridge, bool isVirtual) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		zeroAddressCheck(bridge);
+		checkZeroAddress(bridge);
 		BridgeStorage.layout().bridges[bridge] = true;
 		BridgeStorage.layout().virtualBridges[bridge] = isVirtual;
 		emit AddBridge(bridge, isVirtual);
@@ -686,7 +686,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		address insuranceVault,
 		uint256 maxLiquidationProfit
 	) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		zeroAddressCheck(insuranceVault);
+		checkZeroAddress(insuranceVault);
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		maLayout.liquidationInsuranceVault = insuranceVault;
 		maLayout.maxLiquidationProfitPerPosition = maxLiquidationProfit;
@@ -779,7 +779,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param target The address of the target.
 	/// @param relayer The address of the relayer.
 	function addRelayerForExternalTransferTarget(address target, address relayer) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		zeroAddressCheck(target);
+		checkZeroAddress(target);
 		AccountStorage.layout().externalTransferTargetsRelayers[target] = relayer;
 		emit AddRelayerForExternalTransferTarget(target, relayer);
 	}
@@ -787,7 +787,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Removes a relayer for an external transfer target.
 	/// @param target The address of the target.
 	function removeRelayerForExternalTransferTarget(address target) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		zeroAddressCheck(target);
+		checkZeroAddress(target);
 		AccountStorage.layout().externalTransferTargetsRelayers[target] = address(0);
 		emit RemoveRelayerForExternalTransferTarget(target);
 	}
@@ -819,7 +819,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
 	}
 
-	function zeroAddressCheck(address target) private pure {
+	function checkZeroAddress(address target) private pure {
 		require(target != address(0), "ControlFacet: Zero address");
 	}
 }

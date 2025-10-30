@@ -28,13 +28,10 @@ library LibConnections {
 	 * @notice Removes a connection between partyA and partyB if no positions remain
 	 */
 	function removeConnectionIfNoPositions(address partyA, address partyB) internal {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		// Check if any positions remain
-		if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
+		if (QuoteStorage.layout().partyBPositionsCount[partyB][partyA] == 0) {
 			if (accountLayout.isConnectedPartyB[partyA][partyB]) {
-				// Remove from array
 				address[] storage connections = accountLayout.connectedPartyBs[partyA];
 				for (uint256 i = 0; i < connections.length; i++) {
 					if (connections[i] == partyB) {
@@ -53,30 +50,20 @@ library LibConnections {
 	 */
 	function isSymbolAllowedForPartyA(address partyA, uint256 symbolId) internal view returns (bool) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-
-		// If partyA is bound, skip connection restrictions
-		if (accountLayout.bindState[partyA].status == BindStatus.BOUND) {
-			return true;
-		}
-
 		address[] storage connections = accountLayout.connectedPartyBs[partyA];
 
-		// If no connections, allow any symbol
-		if (connections.length == 0) {
+		if (accountLayout.bindState[partyA].status == BindStatus.BOUND || connections.length == 0) {
 			return true;
 		}
 
-		// All connected PartyBs must whitelist either this symbol or this symbol type
-		uint256 symbolType = symbolLayout.symbolTypes[symbolId];
+		uint256 symbolType = SymbolStorage.layout().symbolTypes[symbolId];
 		for (uint256 i = 0; i < connections.length; i++) {
 			address partyB = connections[i];
 
-			if (accountLayout.partyBBlacklistedSymbols[partyB][symbolId]) {
-				return false;
-			}
-
-			if (!accountLayout.partyBWhitelistedSymbols[partyB][symbolId] && !accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType]) {
+			if (
+				accountLayout.partyBBlacklistedSymbols[partyB][symbolId] ||
+				(!accountLayout.partyBWhitelistedSymbols[partyB][symbolId] && !accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType])
+			) {
 				return false;
 			}
 		}
@@ -88,16 +75,9 @@ library LibConnections {
 	 */
 	function isSymbolAllowedForPartyB(address partyB, uint256 symbolId) internal view returns (bool) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 
-		if (accountLayout.partyBBlacklistedSymbols[partyB][symbolId]) {
-			return false;
-		}
-
-		uint256 symbolType = symbolLayout.symbolTypes[symbolId];
-		if (accountLayout.partyBWhitelistedSymbols[partyB][symbolId] || accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType]) {
-			return true;
-		}
-		return false;
+		uint256 symbolType = SymbolStorage.layout().symbolTypes[symbolId];
+		return (!accountLayout.partyBBlacklistedSymbols[partyB][symbolId] &&
+			(accountLayout.partyBWhitelistedSymbols[partyB][symbolId] || accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType]));
 	}
 }
