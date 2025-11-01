@@ -1,13 +1,14 @@
-import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers"
-import {expect} from "chai"
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { expect } from "chai"
 
-import {initializeFixture} from "./Initialize.fixture"
-import {RunContext} from "./models/RunContext"
-import {User} from "./models/User"
-import {getDummySingleUpnlSig} from "./utils/SignatureUtils"
-import {Hedger} from "./models/Hedger"
-import {decimal, unDecimal} from "./utils/Common"
-import {ethers} from "hardhat"
+import { initializeFixture } from "./Initialize.fixture"
+import { RunContext } from "./models/RunContext"
+import { User } from "./models/User"
+import { getDummySingleUpnlSig } from "./utils/SignatureUtils"
+import { Hedger } from "./models/Hedger"
+import { decimal, unDecimal } from "./utils/Common"
+import { ethers } from "hardhat"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 
 export function shouldBehaveLikeAccountFacet(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger
@@ -15,7 +16,10 @@ export function shouldBehaveLikeAccountFacet(): void {
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
 		user = new User(context, context.signers.user)
+		hedger = new Hedger(context, context.signers.hedger)
 		await user.setup()
+		await hedger.setup()
+		await hedger.setBalances(decimal(500n), decimal(500n))
 		await user.setBalances("500")
 	})
 
@@ -150,6 +154,16 @@ export function shouldBehaveLikeAccountFacet(): void {
 				)
 			})
 
+			it("Should fail on partyA becoming liquidatable(cva+lf)", async function () {
+				await user.setBalances(decimal(500n), decimal(500n), decimal(500n))
+				const qid = await user.sendQuote()
+				await hedger.lockQuote(qid)
+				await hedger.openPosition(qid)
+				await expect(
+					context.accountFacet.connect(context.signers.user).deallocate(decimal(375n), await getDummySingleUpnlSig(50n)),
+				).to.be.revertedWith("partyA will be liquidatable")
+			})
+
 			it("Should deallocate", async function () {
 				const userAddress = context.signers.user.getAddress()
 				await context.accountFacet.connect(context.signers.user).deallocate("50", await getDummySingleUpnlSig())
@@ -160,9 +174,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			it("Should fail to deallocate too often", async function () {
 				const userAddress = context.signers.user.getAddress()
 				await context.accountFacet.connect(context.signers.user).deallocate("25", await getDummySingleUpnlSig())
-				await expect(
-					context.accountFacet.connect(context.signers.user).deallocate("25", await getDummySingleUpnlSig())
-				).to.be.revertedWith("AccountFacet: Too many deallocate in a short window")
+				await expect(context.accountFacet.connect(context.signers.user).deallocate("25", await getDummySingleUpnlSig())).to.be.revertedWith(
+					"AccountFacet: Too many deallocate in a short window",
+				)
 				await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
 				await context.accountFacet.connect(context.signers.user).deallocate("25", await getDummySingleUpnlSig())
 				expect(await context.viewFacet.balanceOf(userAddress)).to.equal("50")
@@ -244,12 +258,12 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.accountFacet.connect(context.signers.user).deposit("300")
 		})
 
-		it('should internal transfer successfully', async () => {
+		it("should internal transfer successfully", async () => {
 			await context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), "250")
-			expect(await context.viewFacet.balanceOf(await user2.getAddress())).to.be.equal('0')
-			expect(await context.viewFacet.allocatedBalanceOfPartyA(await user2.getAddress())).to.be.equal('250')
+			expect(await context.viewFacet.balanceOf(await user2.getAddress())).to.be.equal("0")
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(await user2.getAddress())).to.be.equal("250")
 
-			expect(await context.viewFacet.balanceOf(await user.getAddress())).to.be.equal('50')
+			expect(await context.viewFacet.balanceOf(await user.getAddress())).to.be.equal("50")
 		})
 	})
 }

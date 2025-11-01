@@ -26,14 +26,16 @@ library FundingRateFacetImpl {
 		uint256 windowTime;
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			if (
+				quote.quoteStatus != QuoteStatus.OPENED &&
+				quote.quoteStatus != QuoteStatus.CLOSE_PENDING &&
+				quote.quoteStatus != QuoteStatus.CANCEL_CLOSE_PENDING
+			) {
+				continue;
+			}
 			require(quote.partyA == partyA, "ChargeFundingFacet: Invalid quote");
 			require(quote.partyB == msg.sender, "ChargeFundingFacet: Sender isn't partyB of quote");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"ChargeFundingFacet: Invalid state"
-			);
+
 			epochDuration = SymbolStorage.layout().symbols[quote.symbolId].fundingRateEpochDuration;
 			require(epochDuration > 0, "ChargeFundingFacet: Zero funding epoch duration");
 			windowTime = SymbolStorage.layout().symbols[quote.symbolId].fundingRateWindowTime;

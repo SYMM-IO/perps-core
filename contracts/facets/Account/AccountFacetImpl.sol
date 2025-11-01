@@ -56,8 +56,10 @@ library AccountFacetImpl {
 		LibMuonAccount.verifyPartyAUpnl(upnlSig, msg.sender);
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, msg.sender);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
-		require(uint256(availableBalance) >= amount, "AccountFacet: partyA will be liquidatable");
-
+		uint256 AvailableBalanceU = uint256(availableBalance);
+		require(AvailableBalanceU >= amount, "AccountFacet: partyA will be liquidatable");
+		LockedValues memory lv = accountLayout.lockedBalances[msg.sender];
+		require((AvailableBalanceU - amount) >= (lv.cva + lv.lf), "partyA will be liquidatable");
 		accountLayout.allocatedBalances[msg.sender] -= amount;
 		accountLayout.balances[msg.sender] += amount;
 		accountLayout.withdrawCooldown[msg.sender] = block.timestamp;
