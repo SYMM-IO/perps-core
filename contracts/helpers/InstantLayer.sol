@@ -449,6 +449,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param eta The eta that has not passed
 	error RevocationCooldownNotOver(uint256 eta);
 
+	error MissingSourceResult();
+	error BadSourceResultLength(bytes res, uint256 length);
+
 	/* ════════════════════════════ CONSTRUCTOR ════════════════════════════ */
 
 	/**
@@ -937,11 +940,15 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Insert each result at its designated position
 		for (uint256 i = 0; i < insertionPoints.length; i++) {
 			if (sourceIndices[i] < results.length) {
+				bytes memory res = results[sourceIndices[i]];
+				if (res.length == 0) revert MissingSourceResult(); // nothing was written
+				if (res.length != 32) revert BadSourceResultLength(res, res.length); // if you expect bytes32
+
 				// Decode result as 32-byte value
 				bytes32 value = abi.decode(results[sourceIndices[i]], (bytes32));
 
 				uint256 offset = insertionPoints[i];
-				if (offset + 36 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 32, modifiedCallData.length);
+				if (offset + 36 >= modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 32, modifiedCallData.length);
 
 				// Insert at calldata offset + 4 (selector) + 32 (length)
 				assembly {
