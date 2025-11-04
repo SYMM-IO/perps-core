@@ -565,4 +565,20 @@ export function shouldBehaveLikeAccountFacet(): void {
 			expect(bindState2.partyB).to.equal(ZeroAddress)
 		})
 	})
+
+	describe("Master account activation gating", () => {
+		it("should revert when master account activation is disabled", async () => {
+			await expect(context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()).to.be.revertedWith(
+				"AccountFacet: Master account activation disabled",
+			)
+		})
+
+		it("should allow master account activation after enabled by admin", async () => {
+			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationEnabled(true)
+			await expect(context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode())
+				.to.emit(context.accountFacet, "ActivateMasterAccountMode")
+				.withArgs(context.signers.hedger.address)
+			expect(await context.viewFacet.isInMasterAccountMode(context.signers.hedger.address)).to.equal(true)
+		})
+	})
 }

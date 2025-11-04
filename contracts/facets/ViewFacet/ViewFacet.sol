@@ -819,6 +819,16 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().defaultFeeCollector;
 	}
 
+
+	/**
+	 * @notice Indicates whether Party B accounts are allowed to activate master account mode.
+	 * @return True if activation is globally enabled, false otherwise.
+	 */
+	function isMasterAccountActivationEnabled() external view returns (bool) {
+		return GlobalAppStorage.layout().masterAccountActivationEnabled;
+	}
+
+
 	/**
 	 * @notice Checks if a party A is liquidated.
 	 * @param partyA The address of party A.

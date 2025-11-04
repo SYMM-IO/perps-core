@@ -78,6 +78,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				.grantRole(context.signers.user2.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
 
 			// Activate master mode for hedger
+			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationEnabled(true)
 			await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
 
 			await expect(
@@ -122,6 +123,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 		describe("With Master Mode Active", () => {
 			beforeEach(async () => {
+				await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationEnabled(true)
 				await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
 			})
 
@@ -170,6 +172,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 	describe("deallocateForCrossLiquidation", () => {
 		beforeEach(async () => {
+			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationEnabled(true)
 			await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
 		})
 
