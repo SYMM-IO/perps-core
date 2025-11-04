@@ -45,7 +45,14 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		uint256 deadline,
 		address affiliate,
 		SingleUpnlAndPriceSig memory upnlSig
-	) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused notLiquidatedPartyA(msg.sender) notSuspended(msg.sender) returns (uint256 quoteId) {
+	)
+		external
+		whenInstantModeIsNotActive(msg.sender)
+		whenNotPartyAActionsPaused
+		notLiquidatedPartyA(msg.sender)
+		notSuspended(msg.sender)
+		returns (uint256 quoteId)
+	{
 		quoteId = PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
@@ -120,7 +127,14 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		address affiliate,
 		SingleUpnlAndPriceSig memory upnlSig,
 		bytes memory data
-	) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused notLiquidatedPartyA(msg.sender) notSuspended(msg.sender) returns (uint256 quoteId) {
+	)
+		external
+		whenInstantModeIsNotActive(msg.sender)
+		whenNotPartyAActionsPaused
+		notLiquidatedPartyA(msg.sender)
+		notSuspended(msg.sender)
+		returns (uint256 quoteId)
+	{
 		quoteId = PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
@@ -139,6 +153,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			data
 		);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		emit SendQuoteData(quoteId, data);
 		emit SendQuote(
 			msg.sender,
 			quoteId,
@@ -156,6 +171,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			quote.tradingFee,
 			deadline
 		);
+
 	}
 
 	/**
@@ -254,7 +270,9 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			Conversely, if the position has been opened, the user is unable to issue this request.
 	 * @param quoteId The ID of the quote to be canceled.
 	 */
-	function requestToCancelQuote(uint256 quoteId) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
+	function requestToCancelQuote(
+		uint256 quoteId
+	) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
 		QuoteStatus result = PartyAFacetImpl.requestToCancelQuote(quoteId);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
@@ -302,7 +320,9 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	 * @notice Requests to cancel a pending position closure request.
 	 * @param quoteId The ID of the quote associated with the position.
 	 */
-	function requestToCancelCloseRequest(uint256 quoteId) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
+	function requestToCancelCloseRequest(
+		uint256 quoteId
+	) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		QuoteStatus result = PartyAFacetImpl.requestToCancelCloseRequest(quoteId);
