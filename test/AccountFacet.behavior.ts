@@ -304,6 +304,30 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			expect(await context.viewFacet.balanceOf(await user.getAddress())).to.be.equal("50")
 		})
+
+		it("Should fail when internal transfers are paused", async function () {
+			await context.controlFacet.connect(context.signers.admin).pauseInternalTransfer()
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), "250"),
+			).to.be.revertedWith("Pausable: Internal transfer paused")
+		})
+
+		it("Should fail when accounting is paused", async function () {
+			await context.controlFacet.connect(context.signers.admin).pauseAccounting()
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), "250"),
+			).to.be.revertedWith("Pausable: Accounting paused")
+		})
+
+		it("Should fail when global pause is active", async function () {
+			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), "250"),
+			).to.be.revertedWith("Pausable: Global paused")
+		})
 	})
 
 	describe("ExternalTransfer", async function () {
@@ -441,12 +465,12 @@ export function shouldBehaveLikeAccountFacet(): void {
 			).to.be.revertedWith("Pausable: Accounting paused")
 		})
 
-		it("Should not fail when global pause is active", async function () {
+		it("Should fail when global pause is active", async function () {
 			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
 
 			await expect(
 				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
-			).to.not.be.reverted
+			).to.be.revertedWith("Pausable: Global paused")
 		})
 	})
 
