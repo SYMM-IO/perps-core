@@ -1,7 +1,7 @@
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 import { expect, use } from "chai";
 
-import { initializeFixture } from "./Initialize.fixture"
+import { initializeFixture, initializeExternalTransferRelayerFixture } from "./Initialize.fixture"
 import { RunContext } from "./models/RunContext"
 import { User } from "./models/User"
 import { getDummySingleUpnlSig } from "./utils/SignatureUtils"
@@ -10,6 +10,7 @@ import { decimal, unDecimal } from "./utils/Common"
 import { ethers } from "hardhat"
 import { ZeroAddress } from "ethers"
 import { toUtf8Bytes } from "ethers";
+import type { ExternalTransferRelayer as SymmioExternalTransferRelayer } from "../src/types"
 
 export function shouldBehaveLikeAccountFacet(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger
@@ -424,6 +425,72 @@ export function shouldBehaveLikeAccountFacet(): void {
 			).to.be.revertedWith("Relayer error")
 		})
 
+		it("Should fail when external transfers are paused", async function () {
+			await context.controlFacet.connect(context.signers.admin).pauseExternalTransfer()
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
+			).to.be.revertedWith("Pausable: External transfer paused")
+		})
+
+		it("Should fail when accounting is paused", async function () {
+			await context.controlFacet.connect(context.signers.admin).pauseAccounting()
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
+			).to.be.revertedWith("Pausable: Accounting paused")
+		})
+
+		it("Should not fail when global pause is active", async function () {
+			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
+			).to.not.be.reverted
+		})
+	})
+
+	describe("ExternalTransfer (relayer integration)", function () {
+		let sourceContext: RunContext
+		let targetContext: RunContext
+		let relayer: SymmioExternalTransferRelayer
+		let sourceUser: User
+
+		beforeEach(async function () {
+			const { source, target, relayer: deployedRelayer } = await loadFixture(initializeExternalTransferRelayerFixture)
+			sourceContext = source
+			targetContext = target
+			relayer = deployedRelayer
+
+			sourceUser = new User(sourceContext, sourceContext.signers.user)
+			await sourceUser.setup()
+			await sourceUser.setBalances("1000")
+		})
+
+		it("Should transfer funds to another diamond via relayer", async function () {
+			const receiver = sourceContext.signers.user2.address
+
+			await sourceContext.accountFacet.connect(sourceContext.signers.user).deposit("500")
+			await sourceContext.controlFacet
+				.connect(sourceContext.signers.admin)
+				.addRelayerForExternalTransferTarget(targetContext.diamond, await relayer.getAddress())
+
+			// first external transfer
+			await sourceContext.accountFacet.connect(sourceContext.signers.user).externalTransfer(receiver, "200", targetContext.diamond)
+			
+			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal("300")
+			expect(await targetContext.viewFacet.balanceOf(receiver)).to.equal("200")
+			expect(await sourceContext.collateral.balanceOf(await relayer.getAddress())).to.equal(0n)
+			expect(await sourceContext.collateral.allowance(await relayer.getAddress(), targetContext.diamond)).to.equal(0n)
+
+			// second external transfer
+			await sourceContext.accountFacet.connect(sourceContext.signers.user).externalTransfer(receiver, "111", targetContext.diamond)
+
+			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal("189")
+			expect(await targetContext.viewFacet.balanceOf(receiver)).to.equal("311")
+			expect(await sourceContext.collateral.balanceOf(await relayer.getAddress())).to.equal(0n)
+			expect(await sourceContext.collateral.allowance(await relayer.getAddress(), targetContext.diamond)).to.equal(0n)
+		})
 	})
 
 	describe("bindToPartyB", () => {
