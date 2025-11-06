@@ -574,7 +574,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("should allow master account activation after enabled by admin", async () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationEnabled(true)
+			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
 			await expect(context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode())
 				.to.emit(context.accountFacet, "ActivateMasterAccountMode")
 				.withArgs(context.signers.hedger.address)

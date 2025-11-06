@@ -135,7 +135,7 @@ interface IViewFacet {
 
 	function getDefaultFeeCollector() external view returns (address);
 
-	function isMasterAccountActivationEnabled() external view returns (bool);
+	function getMasterAccountActivationMode() external view returns (bool);
 
 	function isPartyALiquidated(address partyA) external view returns (bool);
 
