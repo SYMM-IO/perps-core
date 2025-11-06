@@ -171,7 +171,6 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			quote.tradingFee,
 			deadline
 		);
-
 	}
 
 	/**
