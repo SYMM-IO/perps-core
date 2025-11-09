@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
 interface IAccountHub {
 	enum AffiliateState {
 		NONE,
@@ -48,7 +54,7 @@ interface IAccountHub {
 
 	struct SubAccountData {
 		address owner;
-		address Affiliate;
+		address affiliate;
 		string name;
 		bytes metadata;
 		bool exists;
@@ -112,4 +118,9 @@ interface IAccountHub {
 	// Hook events
 	event HookSet(address indexed Affiliate, bytes4 indexed selector, address hook);
 	event HookRemoved(address indexed Affiliate, bytes4 indexed selector);
+
+	function createSubAccount(address affiliate, string memory name, bytes memory metadata) external returns (address account);
+	function depositForAccount(address account, uint256 amount) external;
+	function withdrawFromAccount(address account, uint256 amount) external;
+	function _call(address account, bytes[] memory _callDatas) external;
 }

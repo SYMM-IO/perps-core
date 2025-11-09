@@ -1,5 +1,11 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
 
 import "./interfaces/IAccountManager.sol";
+import "./interfaces/IAccountHub.sol";
 
 contract AccountManager is IAccountManager{
     address public hub;
@@ -10,35 +16,34 @@ contract AccountManager is IAccountManager{
         _;
     }
 
-    constructor(address _hub, address _affiliate) external {
+    function initialize(address _hub, address _affiliate) external{
         hub = _hub;
-        Affiliate = _affiliate;
+        affiliate = _affiliate;
     }
-
     // Backward compatible functions
     function addAccount(string memory name) external returns (address) {
-        return IAccountsHub(hub).createSubAccount(affiliate, name, "");
+        return IAccountHub(hub).createSubAccount(affiliate, name, "");
     }
 
     function depositForAccount(address account, uint256 amount) external {
-        IAccountsHub(hub).depositForAccount(account, amount);
+        IAccountHub(hub).depositForAccount(account, amount);
     }
 
     function withdrawFromAccount(address account, uint256 amount) external {
-        IAccountsHub(hub).withdrawFromAccount(account, amount);
+        IAccountHub(hub).withdrawFromAccount(account, amount);
     }
 
     function _call(address account, bytes[] memory callDatas) external {
-        IAccountsHub(hub)._call(account, callDatas);
+        IAccountHub(hub)._call(account, callDatas);
     }
 
-    function getAccountsLength(address user) external view returns (uint256) {
-        return IAccountsHub(hub).getAccountsLength(user);
-    }
+    // function getAccountsLength(address user) external view returns (uint256) {
+    //     return IAccountHub(hub).getAccountsLength(user);
+    // }
 
-    function getAccounts(address user, uint256 start, uint256 size) external view returns (IAccountsHub.Account[] memory) {
-        return IAccountsHub(hub).getAccounts(user, start, size);
-    }
+    // function getAccounts(address user, uint256 start, uint256 size) external view returns (IAccountHub.Account[] memory) {
+    //     return IAccountHub(hub).getAccounts(user, start, size);
+    // }
 
     function getHub() external view returns (address) {
         return hub;
