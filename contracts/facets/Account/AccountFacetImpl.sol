@@ -56,10 +56,12 @@ library AccountFacetImpl {
 		LibMuonAccount.verifyPartyAUpnl(upnlSig, msg.sender);
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, msg.sender);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
-		uint256 AvailableBalanceU = uint256(availableBalance);
-		require(AvailableBalanceU >= amount, "AccountFacet: partyA will be liquidatable");
+		require(uint256(availableBalance) >= amount, "AccountFacet: partyA will be liquidatable");
 		LockedValues memory lv = accountLayout.lockedBalances[msg.sender];
-		require((AvailableBalanceU - amount) >= (lv.cva + lv.lf), "partyA will be liquidatable");
+		require(
+			(accountLayout.allocatedBalances[msg.sender] - amount) >= (lv.cva + lv.lf),
+			"AccountFacet: Remaining allocated balance should cover locked cva and lf"
+		);
 		accountLayout.allocatedBalances[msg.sender] -= amount;
 		accountLayout.balances[msg.sender] += amount;
 		accountLayout.withdrawCooldown[msg.sender] = block.timestamp;
@@ -70,8 +72,8 @@ library AccountFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(!maLayout.partyBLiquidationStatus[msg.sender][origin], "PartyBFacet: PartyB isn't solvent");
 		require(!maLayout.partyBLiquidationStatus[msg.sender][recipient], "PartyBFacet: PartyB isn't solvent");
-		require(!MAStorage.layout().liquidationStatus[origin], "PartyBFacet: Origin isn't solvent");
-		require(!MAStorage.layout().liquidationStatus[recipient], "PartyBFacet: Recipient isn't solvent");
+		require(!maLayout.liquidationStatus[origin], "PartyBFacet: Origin isn't solvent");
+		require(!maLayout.liquidationStatus[recipient], "PartyBFacet: Recipient isn't solvent");
 		// deallocate from origin
 		require(accountLayout.partyBAllocatedBalances[msg.sender][origin] >= amount, "PartyBFacet: Insufficient locked balance");
 		LibMuonAccount.verifyPartyBUpnl(upnlSig, msg.sender, origin);
