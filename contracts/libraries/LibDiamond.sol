@@ -54,11 +54,11 @@ library LibDiamond {
 
 	function acceptOwnership() internal {
 		DiamondStorage storage ds = diamondStorage();
+		require(ds.pendingOwner != address(0), "LibDiamond: Pending owner is zero");
 		require(msg.sender == ds.pendingOwner, "LibDiamond: Sender should be the pendingOwner");
-		address previousOwner = ds.contractOwner;
+		emit OwnershipTransferred(ds.contractOwner, ds.pendingOwner);
 		ds.contractOwner = ds.pendingOwner;
 		ds.pendingOwner = address(0);
-		emit OwnershipTransferred(previousOwner, ds.contractOwner);
 	}
 
 	function contractOwner() internal view returns (address contractOwner_) {

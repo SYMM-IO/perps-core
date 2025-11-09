@@ -46,10 +46,40 @@ export function shouldBehaveLikeControlFacet(): void {
 	describe("transferOwnership", () => {
 		it("Should transferOwnership successfully", async function () {
 			await expect(context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())).to.not.reverted
+			expect(await context.viewFacet.pendingOwner()).to.equal(await user2.getAddress())
 		})
 
-		it("Should not transferOwnership to Address zero", async function () {
-			await expect(context.controlFacet.connect(owner).transferOwnership(ethers.ZeroAddress)).to.be.revertedWith("ControlFacet: Zero address")
+		it("Should allow owner to reset the pending owner by passing zero address", async function () {
+			// transfer to some user
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			// transfer to zero address to reset
+			await expect(context.controlFacet.connect(owner).transferOwnership(ZeroAddress)).to.not.reverted
+			expect(await context.viewFacet.pendingOwner()).to.equal(ZeroAddress)
+		})
+	})
+
+	describe("acceptOwnership", () => {
+		it("Should revert when no pending owner is set", async function () {
+			await expect(context.controlFacet.connect(owner).transferOwnership(ZeroAddress)).to.not.reverted
+			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.be.revertedWith("LibDiamond: Pending owner is zero")
+		})
+
+		it("Should revert when caller is not the pending owner", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await expect(context.controlFacet.connect(owner).acceptOwnership()).to.be.revertedWith("LibDiamond: Sender should be the pendingOwner")
+		})
+
+		it("Should allow pending owner to accept ownership", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.not.reverted
+			expect(await context.viewFacet.owner()).to.equal(await user2.getAddress())
+			expect(await context.viewFacet.pendingOwner()).to.equal(ZeroAddress)
+		})
+
+		it("Should not allow previous pending owner to accept after reset", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await context.controlFacet.connect(owner).transferOwnership(ZeroAddress)
+			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.be.revertedWith("LibDiamond: Pending owner is zero")
 		})
 	})
 
