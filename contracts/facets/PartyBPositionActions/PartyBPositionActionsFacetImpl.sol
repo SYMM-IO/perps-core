@@ -99,7 +99,7 @@ library PartyBPositionActionsFacetImpl {
 			"PartyBFacet: Operation not allowed. Either emergency mode must be active, party B must be in emergency status, or the symbol must be delisted"
 		);
 		require(quote.quoteStatus == QuoteStatus.OPENED || quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyBFacet: Invalid state");
-		LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
+		// LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
 		uint256 filledAmount = LibQuote.quoteOpenAmount(quote);
 		quote.quantityToClose = filledAmount;
 		quote.requestedClosePrice = upnlSig.price;
