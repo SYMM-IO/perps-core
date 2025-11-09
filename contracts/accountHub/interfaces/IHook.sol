@@ -5,6 +5,3 @@ interface IHooks {
     function onVirtualAccountCreation(address virtual, address parent) external returns (bool);
     function onPositionClose(address account) external returns (bool);
 }
-
-// Storage: frontend -> selector -> hook contract
-mapping(address => mapping(bytes4 => address)) frontendHooks;
