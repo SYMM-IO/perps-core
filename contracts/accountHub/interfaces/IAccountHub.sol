@@ -15,7 +15,8 @@ interface IAccountHub {
 	enum IsolationType {
 		NONE,
 		POSITION,
-		MARKET
+		MARKET_LONG,
+		MARKET_SHORT
 	}
 
 	struct Stakeholder {
@@ -67,7 +68,10 @@ interface IAccountHub {
 		bool isDeleted;
 		IsolationType isolationType;
 		uint256 marketId; // For market isolation (symbolId)
+		uint256 openPositionCount;
+		// uint256[] openPositionQuoteIds; 
 		uint256 createdAt;
+		bytes metadata;
 	}
 
 	struct SubAccountCreationData {
@@ -113,6 +117,7 @@ interface IAccountHub {
 
 	// Fee events
 	event FeesDistributed(address indexed Affiliate, uint256 total, address[] recipients, uint256[] amounts);
+	event FeeUpdateCancelled(address indexed Affiliate);
 	event SymmioFeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
 
 	// Hook events

@@ -16,43 +16,56 @@ import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountManager.sol";
 import "./interfaces/IHook.sol";
 
+// TODO ::: Fee distribution
+// TODO ::: accountManager logics(e.g. delegateAccesses, etc)?
+
 contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 
-	// ==================== Roles ====================
+	// ==================== Constants ====================
 	bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
-
+	
 	// ==================== Storage ====================
 	address public symmioAddress;
 	address public symmioFeeReceiver;
-	address public accountManagerImplementation;
+	bytes public accountManagerImplementation;
 
 	mapping(address => AffiliateData) public affiliates;
 	mapping(address => PendingFeeUpdate) public pendingFeeUpdates;
 
 	// Account related storage
-	mapping(address => SubAccountData) public subAccounts; // subAccountAddress => SubAccountData
-	mapping(address => VirtualAccountData) public virtualAccounts; // virtualAccount => virtualAccountData
-	mapping(address => address[]) userToSubAccounts;
-	mapping(address => address[]) userToVirtualAccounts;
-	mapping(address => mapping(address => uint256)) public userAccountNonce; // user => Affiliate => nonce
+	mapping(address => SubAccountData) public subAccounts;
+	mapping(address => VirtualAccountData) public virtualAccounts;
+	mapping(address => address[]) accountToSubAccounts;
+	mapping(address => address[]) subAccountToVirtualAccounts;
+	mapping(address => mapping(address => uint256)) public userAccountNonce;
 
-	//* Legacy support
+	// Legacy support
 	address[] legacyMultiAccounts;
 
 	// Hook system: Affiliate => selector => hook contract
 	mapping(address => mapping(bytes4 => address)) public affiliateHooks;
 
 	// For backward compatibility - maintain old structure
-	mapping(address => Account[]) public legacyAccounts; // user => accounts array
-	mapping(address => uint256) public legacyIndexOfAccount; // account => index in user's array
-	mapping(address => address) public legacyOwners; // account => user
+	mapping(address => Account[]) public legacyAccounts;
+	mapping(address => uint256) public legacyIndexOfAccount;
+	mapping(address => address) public legacyOwners;
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACCOUNT_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VIRTUAL_ACCOUNT_V1");
+
+	modifier isAffiliateAdmin(address affiliate, address admin) {
+		require(affiliates[affiliate].admin == admin, "AccountsHub: Not admin");
+		_;
+	}
+
+	modifier isAffiliateActive(address affiliate) {
+		require(affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountsHub: Affiliate not active");
+		_;
+	}
 
 	/// @custom:oz-upgrades-unsafe-allow constructor
 	constructor() {
@@ -63,11 +76,12 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address _admin,
 		address _symmioAddress,
 		address _symmioFeeReceiver,
-		address _accountManagerImplementation
+		bytes memory _accountManagerImplementation
 	) public initializer {
 		require(_admin != address(0), "AccountsHub: Zero admin");
 		require(_symmioAddress != address(0), "AccountsHub: Zero symmio");
 		require(_symmioFeeReceiver != address(0), "AccountsHub: Zero fee receiver");
+		require(_accountManagerImplementation.length > 0, "AccountsHub: Zero implementation");
 
 		__Pausable_init();
 		__AccessControl_init();
@@ -85,9 +99,10 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	function registerAffiliate(AffiliateRegistration memory reg) external whenNotPaused {
-		require(affiliates[msg.sender].state == AffiliateState.NONE, "AccountsHub: Already registered");
+		AffiliateState currentState = affiliates[msg.sender].state;
+		require(currentState == AffiliateState.NONE, "AccountsHub: Already registered or pending");
 		require(reg.admin != address(0), "AccountsHub: Zero admin");
-		require(bytes(reg.name).length > 0, "AccountsHub: Empty name");
+		require(bytes(reg.name).length > 0 && bytes(reg.name).length <= 100, "AccountsHub: Invalid name length");
 		require(reg.symmioShare <= 1e18, "AccountsHub: Invalid Symmio share");
 
 		uint256 totalShare = reg.symmioShare;
@@ -97,54 +112,61 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		}
 		require(totalShare == 1e18, "AccountsHub: Shares must sum to 100%");
 
-		AffiliateData storage Affiliate = affiliates[msg.sender];
-		Affiliate.name = reg.name;
-		Affiliate.brandColor = reg.brandColor;
-		Affiliate.admin = reg.admin;
-		Affiliate.state = AffiliateState.PENDING;
-		Affiliate.symmioShare = reg.symmioShare;
-		Affiliate.metadata = reg.metadata;
-		Affiliate.stakeholders = reg.stakeholders;
-		Affiliate.legacyMultiAccounts = reg.legacyMultiAccounts;
+		AffiliateData storage affiliate = affiliates[msg.sender];
+		affiliate.name = reg.name;
+		affiliate.brandColor = reg.brandColor;
+		affiliate.admin = reg.admin;
+		affiliate.state = AffiliateState.PENDING;
+		affiliate.symmioShare = reg.symmioShare;
+		affiliate.metadata = reg.metadata;
+		affiliate.stakeholders = reg.stakeholders;
+		affiliate.legacyMultiAccounts = reg.legacyMultiAccounts;
 
 		emit AffiliateRegistered(msg.sender, reg.name);
 	}
 
-	function cancelRegistration() external {
-		require(affiliates[msg.sender].state == AffiliateState.PENDING, "AccountsHub: Not pending");
-		delete affiliates[msg.sender];
-		emit RegistrationCancelled(msg.sender);
+	function cancelRegistration(address affiliate) external isAffiliateAdmin(affiliate, msg.sender) {
+		require(affiliates[affiliate].state == AffiliateState.PENDING, "AccountsHub: Not pending");
+		delete affiliates[affiliate];
+		emit RegistrationCancelled(affiliate);
 	}
 
-	function approveAffiliate(address Affiliate) external onlyRole(APPROVER_ROLE) {
-		require(affiliates[Affiliate].state == AffiliateState.PENDING, "AccountsHub: Not pending");
+	function approveAffiliate(address affiliate) external onlyRole(APPROVER_ROLE) {
+		require(affiliates[affiliate].state == AffiliateState.PENDING, "AccountsHub: Not pending");
 
-		// Deploy Account Manager for this Affiliate
-		address accountManager = _deployAccountManager(Affiliate);
+		// Deploy Account Manager for this affiliate
+		address accountManager = _deployAccountManager(affiliate);
 
-		affiliates[Affiliate].state = AffiliateState.ACTIVE;
-		affiliates[Affiliate].accountManager = accountManager;
-		address[] memory tmp = affiliates[Affiliate].legacyMultiAccounts; // TODO ::: better name for tmp
-		for (uint256 i = 0; i < tmp.length; i++) {
-			legacyMultiAccounts.push(tmp[i]);
+		affiliates[affiliate].state = AffiliateState.ACTIVE;
+		affiliates[affiliate].accountManager = accountManager;
+
+		address[] memory legacyAccounts = affiliates[affiliate].legacyMultiAccounts;
+		for (uint256 i = 0; i < legacyAccounts.length; i++) {
+			legacyMultiAccounts.push(legacyAccounts[i]);
 		}
 
-		emit AffiliateApproved(Affiliate, accountManager);
+		emit AffiliateApproved(affiliate, accountManager);
 	}
 
-	function updateAffiliateDetails(string memory name, string memory brandColor) external {
-		require(affiliates[msg.sender].state == AffiliateState.ACTIVE, "AccountsHub: Not active");
-		require(affiliates[msg.sender].admin == msg.sender, "AccountsHub: Not admin");
+	function updateAffiliateDetails(
+		address affiliate,
+		string memory name,
+		string memory brandColor
+	) external isAffiliateAdmin(affiliate, msg.sender) {
+		require(affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountsHub: Not active");
 
-		affiliates[msg.sender].name = name;
-		affiliates[msg.sender].brandColor = brandColor;
+		affiliates[affiliate].name = name;
+		affiliates[affiliate].brandColor = brandColor;
 
-		emit AffiliateUpdated(msg.sender, name, brandColor);
+		emit AffiliateUpdated(affiliate, name, brandColor);
 	}
 
-	function requestFeeUpdate(Stakeholder[] memory newStakeholders, uint256 newSymmioShare) external {
-		require(affiliates[msg.sender].state == AffiliateState.ACTIVE, "AccountsHub: Not active");
-		require(affiliates[msg.sender].admin == msg.sender, "AccountsHub: Not admin"); // TODO :::
+	function requestFeeUpdate(
+		address affiliate,
+		Stakeholder[] memory newStakeholders,
+		uint256 newSymmioShare
+	) external isAffiliateAdmin(affiliate, msg.sender) {
+		require(affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountsHub: Not active");
 		require(newSymmioShare <= 1e18, "AccountsHub: Invalid Symmio share");
 
 		// Validate shares
@@ -156,8 +178,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		require(totalShare == 1e18, "AccountsHub: Shares must sum to 100%");
 
 		// Store pending update
-		delete pendingFeeUpdates[msg.sender].stakeholders;
-		PendingFeeUpdate storage pending = pendingFeeUpdates[msg.sender];
+		delete pendingFeeUpdates[affiliate].stakeholders;
+		PendingFeeUpdate storage pending = pendingFeeUpdates[affiliate];
 		pending.symmioShare = newSymmioShare;
 		pending.timestamp = block.timestamp;
 		pending.exists = true;
@@ -166,47 +188,61 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			pending.stakeholders.push(newStakeholders[i]);
 		}
 
-		emit StakeholdersUpdateRequested(msg.sender);
+		emit StakeholdersUpdateRequested(affiliate);
 	}
 
-	function approveFeeUpdate(address Affiliate) external onlyRole(APPROVER_ROLE) {
-		require(pendingFeeUpdates[Affiliate].exists, "AccountsHub: No pending update");
+	function cancelFeeUpdate(address affiliate) external isAffiliateAdmin(affiliate, msg.sender) {
+		require(pendingFeeUpdates[affiliate].exists, "AccountsHub: No pending update");
+		delete pendingFeeUpdates[affiliate];
+		emit FeeUpdateCancelled(affiliate);
+	}
+
+	function approveFeeUpdate(address affiliate) external onlyRole(APPROVER_ROLE) {
+		require(pendingFeeUpdates[affiliate].exists, "AccountsHub: No pending update");
 
 		// Apply the update
-		delete affiliates[Affiliate].stakeholders;
-		affiliates[Affiliate].symmioShare = pendingFeeUpdates[Affiliate].symmioShare;
+		delete affiliates[affiliate].stakeholders;
+		affiliates[affiliate].symmioShare = pendingFeeUpdates[affiliate].symmioShare;
 
-		for (uint256 i = 0; i < pendingFeeUpdates[Affiliate].stakeholders.length; i++) {
-			affiliates[Affiliate].stakeholders.push(pendingFeeUpdates[Affiliate].stakeholders[i]);
+		for (uint256 i = 0; i < pendingFeeUpdates[affiliate].stakeholders.length; i++) {
+			affiliates[affiliate].stakeholders.push(pendingFeeUpdates[affiliate].stakeholders[i]);
 		}
 
-		delete pendingFeeUpdates[Affiliate];
-		emit StakeholdersUpdated(Affiliate);
+		delete pendingFeeUpdates[affiliate];
+		emit StakeholdersUpdated(affiliate);
 	}
 
-	function pauseAffiliate(address Affiliate, bool isPause) external {
+	function pauseAffiliate(address affiliate) external {
 		require(
-			hasRole(PAUSER_ROLE, msg.sender) || (affiliates[Affiliate].admin == msg.sender && affiliates[Affiliate].state == AffiliateState.ACTIVE),
+			hasRole(PAUSER_ROLE, msg.sender) || (affiliates[affiliate].admin == msg.sender && affiliates[affiliate].state == AffiliateState.ACTIVE),
 			"AccountsHub: Unauthorized"
 		);
+		require(affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountsHub: Not active");
 
-		if (isPause) {
-			affiliates[Affiliate].state = AffiliateState.PAUSED;
-		} else {
-			require(affiliates[Affiliate].state == AffiliateState.PAUSED, "AccountsHub: Not paused");
-			affiliates[Affiliate].state = AffiliateState.ACTIVE;
-		}
+		affiliates[affiliate].state = AffiliateState.PAUSED;
 
-		emit AffiliatePaused(Affiliate, isPause);
+		emit AffiliatePaused(affiliate, true);
+	}
+
+	function unpauseAffiliate(address affiliate) external {
+		require(
+			hasRole(UNPAUSER_ROLE, msg.sender) || (affiliates[affiliate].admin == msg.sender && affiliates[affiliate].state == AffiliateState.PAUSED),
+			"AccountsHub: Unauthorized"
+		);
+		require(affiliates[affiliate].state == AffiliateState.PAUSED, "AccountsHub: Not paused");
+
+		affiliates[affiliate].state = AffiliateState.ACTIVE;
+
+		emit AffiliatePaused(affiliate, false);
 	}
 
 	function createSubAccount(
 		address affiliate,
 		string memory name,
 		bytes memory metadata
-	) public whenNotPaused nonReentrant returns (address account) {
-		require(affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountsHub: affiliate not active");
-
+	) public isAffiliateActive(affiliate) whenNotPaused nonReentrant returns (address account) {
+		require(bytes(name).length > 0, "AccountsHub: Empty name");
+		
 		// Generate deterministic address
 		uint256 nonce = userAccountNonce[msg.sender][affiliate]++;
 		account = _generateSubAccountAddress(affiliate, msg.sender, nonce);
@@ -221,7 +257,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			virtualAccountCount: 0,
 			nonce: 0
 		});
-		userToSubAccounts[msg.sender].push(account);
+		accountToSubAccounts[msg.sender].push(account);
 
 		// Update backward compatibility mappings
 		legacyOwners[account] = msg.sender;
@@ -232,7 +268,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		_callHook(affiliate, IHooks.onAccountCreation.selector, abi.encode(account, metadata));
 
 		emit SubAccountCreated(account, msg.sender, affiliate, name);
-		emit AddAccount(msg.sender, account, name); // Legacy event
+		emit AddAccount(msg.sender, account, name);
 
 		return account;
 	}
@@ -241,13 +277,15 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address affiliate,
 		SubAccountCreationData[] memory accountsData
 	) external whenNotPaused nonReentrant returns (address[] memory) {
+		require(accountsData.length > 0, "AccountsHub: Empty array");
+
 		address[] memory createdAccounts = new address[](accountsData.length);
 
 		for (uint256 i = 0; i < accountsData.length; i++) {
 			createdAccounts[i] = createSubAccount(affiliate, accountsData[i].name, accountsData[i].metadata);
 
 			if (accountsData[i].initialDeposit > 0) {
-				depositForAccount(createdAccounts[i], accountsData[i].initialDeposit);
+				_depositForAccount(createdAccounts[i], accountsData[i].initialDeposit);
 			}
 		}
 
@@ -257,14 +295,18 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	function createVirtualAccount(
 		address parentAccount,
 		IsolationType isolationType,
-		uint256 marketId
-	) public whenNotPaused nonReentrant returns (address virtualAccount) {
+		uint256 marketId,
+		bytes memory metadata
+	) private whenNotPaused nonReentrant returns (address virtualAccount) {
 		SubAccountData storage parent = subAccounts[parentAccount];
 		require(parent.exists, "AccountsHub: Invalid parent");
 		require(_isOwnerOf(parentAccount, msg.sender), "AccountsHub: Not owner");
 
 		if (marketId > 0) {
-			require(isolationType == IsolationType.MARKET, "AccountsHub: Expected MARKET isolation");
+			require(
+				isolationType == IsolationType.MARKET_LONG || isolationType == IsolationType.MARKET_SHORT,
+				"AccountsHub: Expected MARKET_LONG or MARKET_SHORT isolation"
+			);
 		} else {
 			require(isolationType == IsolationType.POSITION, "AccountsHub: Expected POSITION isolation");
 		}
@@ -277,10 +319,13 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			isDeleted: false,
 			isolationType: isolationType,
 			marketId: marketId,
-			createdAt: block.timestamp
+			createdAt: block.timestamp,
+			openPositionCount: 0,
+			metadata: metadata
 		});
 
 		parent.virtualAccountCount++;
+		subAccountToVirtualAccounts[parentAccount].push(virtualAccount);
 		legacyOwners[virtualAccount] = parentAccount;
 
 		_callHook(parent.affiliate, IHooks.onVirtualAccountCreation.selector, abi.encode(virtualAccount, parentAccount));
@@ -292,36 +337,34 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	function createVirtualAndSendQuote(
 		address parentAccount,
-		IsolationType isolationType,
-		uint256 marketId,
+		VirtualAccountCreationData memory creationData,
 		bytes calldata quoteData
 	) external whenNotPaused nonReentrant returns (address virtualAccount) {
-		virtualAccount = createVirtualAccount(parentAccount, isolationType, marketId);
+		ISymmio.Quote memory quote = abi.decode(quoteData, (ISymmio.Quote));
+
+		if (creationData.isolationType != IsolationType.POSITION) {
+			require(quote.symbolId == creationData.marketId, "AccountsHub: Invalid marketId");
+
+			// Match isolation type to position type
+			IsolationType expectedType = quote.positionType == ISymmio.PositionType.LONG ? IsolationType.MARKET_LONG : IsolationType.MARKET_SHORT;
+
+			require(creationData.isolationType == expectedType, "AccountsHub: Invalid isolation type");
+		}
+
+		virtualAccount = createVirtualAccount(parentAccount, creationData.isolationType, creationData.marketId, creationData.metadata);
+		_depositAndAllocateForAccount(virtualAccount, creationData.initialDeposit);
 
 		// Execute sendQuote through the virtual account
 		_executeWithSigner(virtualAccount, quoteData);
 
-		// TODO ::: we should hold state about the quote and markets of the sendQuotes to be able delete a virtual account when settled
+		virtualAccounts[virtualAccount].openPositionCount += 1;
 
 		return virtualAccount;
 	}
 
-	// function checkAndDeleteVirtualAccounts(address[] calldata accounts) external {
-	// 	for (uint256 i = 0; i < accounts.length; i++) {
-	// 		address account = accounts[i];
-	// 		VirtualAccountData storage vData = virtualAccounts[account];
-
-	// 		if (vData.parentAccount != address(0) && !vData.isDeleted) {
-	// 			// Check if account should be deleted based on isolation type
-	// 			if (_shouldDeleteVirtualAccount(account)) {
-	// 				_deleteVirtualAccount(account);
-	// 			}
-	// 		}
-	// 	}
-	// }
-
 	function editAccountName(address account, string memory name) external whenNotPaused {
 		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		require(bytes(name).length > 0, "AccountsHub: Empty name");
 
 		if (subAccounts[account].exists) {
 			subAccounts[account].name = name;
@@ -336,54 +379,67 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		emit EditAccountName(msg.sender, account, name);
 	}
 
-	function depositForAccount(address account, uint256 amount) public whenNotPaused nonReentrant {
+	function depositForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
 		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		require(amount > 0, "AccountsHub: Zero amount");
+		_depositForAccount(account, amount);
+	}
 
+	function depositAndAllocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
+		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		require(amount > 0, "AccountsHub: Zero amount");
+		_depositAndAllocateForAccount(account, amount);
+	}
+
+	function withdrawFromAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
+		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		require(amount > 0, "AccountsHub: Zero amount");
+		_withdrawFromAccount(account, amount);
+	}
+
+	function _depositForAccount(address account, uint256 amount) private {
 		address collateral = ISymmio(symmioAddress).getCollateral();
 		IERC20Upgradeable(collateral).safeTransferFrom(msg.sender, address(this), amount);
-		IERC20Upgradeable(collateral).safeApprove(symmioAddress, amount);
+		IERC20Upgradeable(collateral).safeIncreaseAllowance(symmioAddress, amount);
 
 		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.depositFor.selector, account, amount));
 
-		// Call hook if set
+		// Hook (if any)
 		address affiliate = _getAffiliateForAccount(account);
 		_callHook(affiliate, IHooks.onDeposit.selector, abi.encode(account, amount));
 
 		emit DepositForAccount(msg.sender, account, amount);
 	}
 
-	function depositAndAllocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+	function _depositAndAllocateForAccount(address account, uint256 amount) private {
+		_depositForAccount(account, amount);
 
-		// Deposit
-		depositForAccount(account, amount);
-
-		// Allocate
 		address collateral = ISymmio(symmioAddress).getCollateral();
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(collateral).decimals());
+		uint8 decimals = IERC20Metadata(collateral).decimals();
+		require(decimals <= 18, "AccountsHub: Invalid token decimals");
+		
+		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** decimals);
 
-		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.allocate.selector, amountWith18Decimals)); // TODO ::: use the "depositAndAllocateFor" instead of "ISymmio.allocate.selector"
+		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.allocate.selector, amountWith18Decimals));
 
 		emit AllocateForAccount(msg.sender, account, amountWith18Decimals);
 	}
 
-	function withdrawFromAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
-
+	function _withdrawFromAccount(address account, uint256 amount) private {
 		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.withdrawTo.selector, msg.sender, amount));
 
-		// Call hook if set
 		address affiliate = _getAffiliateForAccount(account);
 		_callHook(affiliate, IHooks.onWithdraw.selector, abi.encode(account, amount));
 
 		emit WithdrawFromAccount(msg.sender, account, amount);
 	}
 
-	function _call(address account, bytes[] memory _callDatas) external whenNotPaused nonReentrant {
+	function _call(address account, bytes[] memory callDatas) external whenNotPaused nonReentrant {
 		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		require(callDatas.length > 0, "AccountsHub: Empty array");
 
-		for (uint256 i = 0; i < _callDatas.length; i++) {
-			_executeWithSigner(account, _callDatas[i]);
+		for (uint256 i = 0; i < callDatas.length; i++) {
+			_executeWithSigner(account, callDatas[i]);
 		}
 	}
 
@@ -402,15 +458,12 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		emit HookRemoved(msg.sender, selector);
 	}
 
-	function _deployAccountManager(address affiliate) internal returns (address) {
-		// Deploy minimal proxy
-		bytes memory bytecode = abi.encodePacked(
-			hex"3d602d80600a3d3981f3363d3d373d3d3d363d73",
-			accountManagerImplementation,
-			hex"5af43d82803e903d91602b57fd5bf3"
-		);
 
+
+	function _deployAccountManager(address affiliate) internal returns (address) {
 		bytes32 salt = keccak256(abi.encodePacked("AccountManager", affiliate));
+		bytes memory bytecode = abi.encodePacked(accountManagerImplementation);
+
 		address accountManager;
 
 		assembly {
@@ -433,7 +486,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 						keccak256(
 							abi.encodePacked(
 								bytes1(0xff),
-								affiliate, // Use affiliate as deployer for uniqueness
+								affiliate,
 								keccak256(abi.encodePacked(user, nonce)),
 								ACCOUNT_INIT_CODE_HASH
 							)
@@ -472,28 +525,27 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			}
 		}
 
-		ISymmio(symmioAddress).setSigner(address(0));
 		emit Call(msg.sender, account, callData, true, result);
 	}
 
 	function _isOwnerOf(address account, address user) internal view returns (bool) {
-		// 1. Check direct ownership
-		if (legacyOwners[account] == user) {
-			return true;
-		}
-
-		// 2. Check if it's a sub-account
+		// Check sub-account first (most common case)
 		if (subAccounts[account].owner == user) {
 			return true;
 		}
 
-		// 3. Check if it's a virtual account (recursive check)
+		// Check direct legacy ownership
+		if (legacyOwners[account] == user) {
+			return true;
+		}
+
+		// Check if it's a virtual account (recursive check)
 		address parent = virtualAccounts[account].parentAccount;
 		if (parent != address(0)) {
 			return _isOwnerOf(parent, user);
 		}
 
-		// 4. Check legacy multi-account ownerships
+		// Check legacy multi-account ownerships (most expensive)
 		uint256 len = legacyMultiAccounts.length;
 		for (uint256 i = 0; i < len; i++) {
 			(bool success, bytes memory data) = legacyMultiAccounts[i].staticcall(abi.encodeWithSignature("owners(address)", account));
@@ -506,7 +558,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			}
 		}
 
-		// 5. Default: not an owner
 		return false;
 	}
 
@@ -522,42 +573,27 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		return address(0);
 	}
 
-	function _shouldCreateVirtual(bytes memory callData) internal pure returns (bool) {
-		if (callData.length < 4) return false;
-
-		bytes4 selector;
-		assembly {
-			selector := mload(add(callData, 32))
-		}
-
-		// Check if it's sendQuote or similar function that might need isolation
-		return
-			selector ==
-			bytes4(
-				keccak256(
-					"sendQuote(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,(uint256,uint256,uint256,bytes,bytes))"
-				)
-			);
-	}
-
-	function _shouldDeleteVirtualAccount(address account) internal view returns (bool) {
-		// This would call Symmio to check open positions
-		// Simplified for now - actual implementation would check position count
-		return false; // Placeholder
-	}
-
 	function _deleteVirtualAccount(address account) internal {
 		VirtualAccountData storage vData = virtualAccounts[account];
 		require(!vData.isDeleted, "AccountsHub: Already deleted");
+		require(vData.openPositionCount == 0, "AccountsHub: Open positions exist");
 
 		address parentAccount = vData.parentAccount;
+		address collateral = ISymmio(symmioAddress).getCollateral();
+		uint8 decimals = IERC20Metadata(collateral).decimals();
+		require(decimals <= 18, "AccountsHub: Invalid token decimals");
+
+		// Deallocate all funds before deletion
+		uint256 allocatedBalance = ISymmio(symmioAddress).allocatedBalanceOfPartyA(account);
+		if (allocatedBalance > 0) {
+			// Use the 18-decimal balance directly for deallocation
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.deallocate.selector, allocatedBalance));
+		}
 
 		// Transfer remaining balance to parent
 		uint256 balance = ISymmio(symmioAddress).balanceOf(account);
 		if (balance > 0) {
-			address collateral = ISymmio(symmioAddress).getCollateral();
-			uint256 adjustedBalance = balance / (10 ** (18 - IERC20Metadata(collateral).decimals()));
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.withdrawTo.selector, parentAccount, adjustedBalance));
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parentAccount, balance));
 		}
 
 		// Mark as deleted (keep data for trackers)
@@ -592,8 +628,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		symmioAddress = _symmioAddress;
 	}
 
-	function setAccountManagerImplementation(address implementation) external onlyRole(SETTER_ROLE) {
-		require(implementation != address(0), "AccountsHub: Zero address");
+	function setAccountManagerImplementation(bytes memory implementation) external onlyRole(SETTER_ROLE) {
+		require(implementation.length > 0, "AccountsHub: Zero address");
 		accountManagerImplementation = implementation;
 	}
 
