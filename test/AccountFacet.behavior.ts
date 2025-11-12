@@ -1,5 +1,5 @@
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
-import { expect, use } from "chai";
+import { expect, use } from "chai"
 
 import { initializeFixture, initializeExternalTransferRelayerFixture } from "./Initialize.fixture"
 import { RunContext } from "./models/RunContext"
@@ -9,7 +9,7 @@ import { Hedger } from "./models/Hedger"
 import { decimal, unDecimal } from "./utils/Common"
 import { ethers } from "hardhat"
 import { ZeroAddress } from "ethers"
-import { toUtf8Bytes } from "ethers";
+import { toUtf8Bytes } from "ethers"
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer } from "../src/types"
 
 export function shouldBehaveLikeAccountFacet(): void {
@@ -55,43 +55,32 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail to virtual deposit when accounting is paused", async function () {
-			await context.controlFacet.connect(context.signers.admin).grantRole(
-				context.signers.admin,
-				ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE"))
-			)
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE")))
 
 			await context.controlFacet.pauseAccounting()
-			await expect(context.accountFacet.connect(context.signers.admin).virtualDepositFor(
-				await user.getAddress(),
-				decimal(1n)
-			)).to.be.revertedWith("Pausable: Accounting paused")
+			await expect(context.accountFacet.connect(context.signers.admin).virtualDepositFor(await user.getAddress(), decimal(1n))).to.be.revertedWith(
+				"Pausable: Accounting paused",
+			)
 		})
 
 		it("Should fail to virtual deposit when calling without role", async function () {
-			await expect(context.accountFacet.connect(context.signers.user).virtualDepositFor(
-				await user.getAddress(),
-				decimal(1n)
-			)).to.be.revertedWith("Accessibility: Must has role")
+			await expect(context.accountFacet.connect(context.signers.user).virtualDepositFor(await user.getAddress(), decimal(1n))).to.be.revertedWith(
+				"Accessibility: Must has role",
+			)
 		})
-
 
 		it("Should virtual deposit for user", async function () {
-			await context.controlFacet.connect(context.signers.admin).grantRole(
-				context.signers.admin,
-				ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE"))
-			)
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE")))
 			const userAddress = await user.getAddress()
 			const beforeBalance = await context.viewFacet.balanceOf(userAddress)
-			expect(await context.accountFacet.connect(context.signers.admin).virtualDepositFor(
-				userAddress,
-				decimal(1n)
-			)).not.reverted
+			expect(await context.accountFacet.connect(context.signers.admin).virtualDepositFor(userAddress, decimal(1n))).not.reverted
 			const afterBalance = await context.viewFacet.balanceOf(userAddress)
 			expect(afterBalance - beforeBalance).to.equal(decimal(1n))
-
 		})
-
-
 	})
 
 	describe("Withdraw", async function () {
@@ -167,7 +156,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should deposit and allocate collateral for user", async function () {
 			const userAddress = context.signers.user.getAddress()
 
-			await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(userAddress,"200")
+			await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(userAddress, "200")
 			expect(await context.viewFacet.balanceOf(userAddress)).to.equal("300")
 			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal("200")
 			expect(await context.collateral.balanceOf(userAddress)).to.equal("0")
@@ -285,6 +274,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 	})
 
 	describe("InternalTransfer", async function () {
+		const depositAmount = "300"
+		const transferAmount = "250"
+
 		beforeEach(async () => {
 			user2 = new User(context, context.signers.user2)
 			await user2.setup()
@@ -294,44 +286,49 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await hedger.setup()
 			await hedger.setBalances("500")
 
-			await context.accountFacet.connect(context.signers.user).deposit("300")
+			await context.accountFacet.connect(context.signers.user).deposit(depositAmount)
 		})
 
 		it("should internal transfer successfully", async () => {
-			await context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), "250")
+			await context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), transferAmount)
 			expect(await context.viewFacet.balanceOf(await user2.getAddress())).to.be.equal("0")
-			expect(await context.viewFacet.allocatedBalanceOfPartyA(await user2.getAddress())).to.be.equal("250")
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(await user2.getAddress())).to.be.equal(transferAmount)
 
-			expect(await context.viewFacet.balanceOf(await user.getAddress())).to.be.equal("50")
+			const expectedRemainingBalance = (BigInt(depositAmount) - BigInt(transferAmount)).toString()
+			expect(await context.viewFacet.balanceOf(await user.getAddress())).to.be.equal(expectedRemainingBalance)
 		})
 
 		it("Should fail when internal transfers are paused", async function () {
 			await context.controlFacet.connect(context.signers.admin).pauseInternalTransfer()
 
-			await expect(
-				context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), "250"),
-			).to.be.revertedWith("Pausable: Internal transfer paused")
+			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), transferAmount)).to.be.revertedWith(
+				"Pausable: Internal transfer paused",
+			)
 		})
 
 		it("Should fail when accounting is paused", async function () {
 			await context.controlFacet.connect(context.signers.admin).pauseAccounting()
 
-			await expect(
-				context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), "250"),
-			).to.be.revertedWith("Pausable: Accounting paused")
+			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), transferAmount)).to.be.revertedWith(
+				"Pausable: Accounting paused",
+			)
 		})
 
 		it("Should fail when global pause is active", async function () {
 			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
 
-			await expect(
-				context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), "250"),
-			).to.be.revertedWith("Pausable: Global paused")
+			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), transferAmount)).to.be.revertedWith(
+				"Pausable: Global paused",
+			)
 		})
 	})
 
 	describe("ExternalTransfer", async function () {
 		let mockTarget: any
+		const depositAmount = "300"
+		const transferAmount = "100"
+		const zeroExternalTransferAmount = "0"
+
 		beforeEach(async function () {
 			const MockExternalTransferRelayer = await ethers.getContractFactory("contracts/test/MockExternalTransferTarget.sol:ExternalTransferRelayer")
 			mockTarget = await MockExternalTransferRelayer.deploy()
@@ -342,27 +339,26 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await mockTarget2.waitForDeployment()
 			targetAddress2 = await mockTarget2.getAddress()
 
-			await context.accountFacet.connect(context.signers.user).deposit("300")
+			await context.accountFacet.connect(context.signers.user).deposit(depositAmount)
 
 			await context.controlFacet.connect(context.signers.admin).addRelayerForExternalTransferTarget(targetAddress, targetAddress)
 		})
 
 		it("Should allow authorized users to call externalTransfer", async function () {
-			await expect(context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress)).to.not.be
-				.reverted
+			await expect(context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress))
+				.to.not.be.reverted
 		})
 
 		it("Should fail when sender is suspended", async function () {
 			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress),
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
 		})
 
 		it("Should correctly update sender balance", async function () {
 			const initialBalance = await context.viewFacet.balanceOf(context.signers.user.address)
-			const transferAmount = "100"
 
 			await context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress)
 
@@ -372,7 +368,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail with insufficient balance", async function () {
 			const userBalance = await context.viewFacet.balanceOf(context.signers.user.address)
-			const excessiveAmount = userBalance + BigInt("100")
+			const excessiveAmount = userBalance + BigInt(transferAmount)
 
 			await expect(
 				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, excessiveAmount.toString(), targetAddress),
@@ -381,7 +377,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should transfer collateral to relayer", async function () {
 			const initialRelayerBalance = await context.collateral.balanceOf(targetAddress)
-			const transferAmount = "100"
 
 			await context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress)
 
@@ -390,7 +385,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should call onTransfer on relayer with correct parameters", async function () {
-			const transferAmount = "100"
 			const receiverAddress = context.signers.user2.address
 			const senderAddress = context.signers.user.address
 
@@ -406,30 +400,30 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail with zero amount transfers", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "0", targetAddress),
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, zeroExternalTransferAmount, targetAddress),
 			).to.be.revertedWith("AccountFacet: Amount is zero")
 		})
 
 		it("Should fail with zero receiver address", async function () {
-			await expect(context.accountFacet.connect(context.signers.user).externalTransfer(ethers.ZeroAddress, "100", targetAddress)).to.be.revertedWith(
-				"AccountFacet: Zero receiver or target",
-			) 
+			await expect(
+				context.accountFacet.connect(context.signers.user).externalTransfer(ethers.ZeroAddress, transferAmount, targetAddress),
+			).to.be.revertedWith("AccountFacet: Zero receiver or target")
 		})
 
 		it("Should fail with zero target address", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", ethers.ZeroAddress),
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, ethers.ZeroAddress),
 			).to.be.revertedWith("AccountFacet: Zero receiver or target")
 		})
 
 		it("Should handle self-transfers", async function () {
-			await expect(context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user.address, "100", targetAddress)).to.not.be
-				.reverted
+			await expect(context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user.address, transferAmount, targetAddress))
+				.to.not.be.reverted
 		})
 
 		it("Should fail when target is not whitelisted", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress2),
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress2),
 			).to.be.revertedWith("AccountFacet: Target not whitelisted")
 		})
 
@@ -437,7 +431,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).removeRelayerForExternalTransferTarget(targetAddress)
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress),
 			).to.be.revertedWith("AccountFacet: Target not whitelisted")
 		})
 
@@ -445,7 +439,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await mockTarget.setShouldRevert(true, "Relayer error")
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress),
 			).to.be.revertedWith("Relayer error")
 		})
 
@@ -453,7 +447,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).pauseExternalTransfer()
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress),
 			).to.be.revertedWith("Pausable: External transfer paused")
 		})
 
@@ -461,7 +455,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).pauseAccounting()
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress),
 			).to.be.revertedWith("Pausable: Accounting paused")
 		})
 
@@ -469,7 +463,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, "100", targetAddress),
+				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, transferAmount, targetAddress),
 			).to.be.revertedWith("Pausable: Global paused")
 		})
 	})
@@ -479,6 +473,10 @@ export function shouldBehaveLikeAccountFacet(): void {
 		let targetContext: RunContext
 		let relayer: SymmioExternalTransferRelayer
 		let sourceUser: User
+		const sourceUserInitialBalance = "1000"
+		const relayerDepositAmount = "500"
+		const firstExternalTransferAmount = "200"
+		const secondExternalTransferAmount = "111"
 
 		beforeEach(async function () {
 			const { source, target, relayer: deployedRelayer } = await loadFixture(initializeExternalTransferRelayerFixture)
@@ -488,30 +486,41 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			sourceUser = new User(sourceContext, sourceContext.signers.user)
 			await sourceUser.setup()
-			await sourceUser.setBalances("1000")
+			await sourceUser.setBalances(sourceUserInitialBalance)
 		})
 
 		it("Should transfer funds to another diamond via relayer", async function () {
 			const receiver = sourceContext.signers.user2.address
 
-			await sourceContext.accountFacet.connect(sourceContext.signers.user).deposit("500")
+			await sourceContext.accountFacet.connect(sourceContext.signers.user).deposit(relayerDepositAmount)
 			await sourceContext.controlFacet
 				.connect(sourceContext.signers.admin)
 				.addRelayerForExternalTransferTarget(targetContext.diamond, await relayer.getAddress())
 
 			// first external transfer
-			await sourceContext.accountFacet.connect(sourceContext.signers.user).externalTransfer(receiver, "200", targetContext.diamond)
-			
-			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal("300")
-			expect(await targetContext.viewFacet.balanceOf(receiver)).to.equal("200")
+			await sourceContext.accountFacet
+				.connect(sourceContext.signers.user)
+				.externalTransfer(receiver, firstExternalTransferAmount, targetContext.diamond)
+
+			const expectedSourceBalanceAfterFirstTransfer = (BigInt(relayerDepositAmount) - BigInt(firstExternalTransferAmount)).toString()
+			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal(expectedSourceBalanceAfterFirstTransfer)
+			expect(await targetContext.viewFacet.balanceOf(receiver)).to.equal(firstExternalTransferAmount)
 			expect(await sourceContext.collateral.balanceOf(await relayer.getAddress())).to.equal(0n)
 			expect(await sourceContext.collateral.allowance(await relayer.getAddress(), targetContext.diamond)).to.equal(0n)
 
 			// second external transfer
-			await sourceContext.accountFacet.connect(sourceContext.signers.user).externalTransfer(receiver, "111", targetContext.diamond)
+			await sourceContext.accountFacet
+				.connect(sourceContext.signers.user)
+				.externalTransfer(receiver, secondExternalTransferAmount, targetContext.diamond)
 
-			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal("189")
-			expect(await targetContext.viewFacet.balanceOf(receiver)).to.equal("311")
+			const expectedSourceBalanceAfterSecondTransfer = (
+				BigInt(relayerDepositAmount) -
+				BigInt(firstExternalTransferAmount) -
+				BigInt(secondExternalTransferAmount)
+			).toString()
+			const expectedReceiverBalanceAfterSecondTransfer = (BigInt(firstExternalTransferAmount) + BigInt(secondExternalTransferAmount)).toString()
+			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal(expectedSourceBalanceAfterSecondTransfer)
+			expect(await targetContext.viewFacet.balanceOf(receiver)).to.equal(expectedReceiverBalanceAfterSecondTransfer)
 			expect(await sourceContext.collateral.balanceOf(await relayer.getAddress())).to.equal(0n)
 			expect(await sourceContext.collateral.allowance(await relayer.getAddress(), targetContext.diamond)).to.equal(0n)
 		})
@@ -532,9 +541,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("should failed when partyB be zero address", async () => {
-			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(ZeroAddress)).to.be.revertedWith(
-				"AccountFacet: Zero address",
-			)
+			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(ZeroAddress)).to.be.revertedWith("AccountFacet: Zero address")
 		})
 
 		it("should failed when bound", async () => {
