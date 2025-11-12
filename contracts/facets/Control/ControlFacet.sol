@@ -822,4 +822,9 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	function checkZeroAddress(address target) private pure {
 		require(target != address(0), "ControlFacet: Zero address");
 	}
+
+	function setSigner(address signer) external onlyRole(LibAccessibility.ACCOUNT_HUB_SIGNER_SETTER_ROLE){
+		MAStorage.layout().signer = signer;
+		emit SignerSet(signer);
+	}
 }

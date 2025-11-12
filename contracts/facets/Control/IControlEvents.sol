@@ -98,4 +98,5 @@ interface IControlEvents {
 	event SetADLEnabled(address partyB, bool enabled);
 	event SetEntityMetadata(address entity, EntityMetadata metadata);
 	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
+	event SignerSet(address signer);
 }

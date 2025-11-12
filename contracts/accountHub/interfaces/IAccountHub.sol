@@ -68,8 +68,7 @@ interface IAccountHub {
 		bool isDeleted;
 		IsolationType isolationType;
 		uint256 marketId; // For market isolation (symbolId)
-		uint256 openPositionCount;
-		// uint256[] openPositionQuoteIds; 
+		// uint256 openPositionCount;
 		uint256 createdAt;
 		bytes metadata;
 	}

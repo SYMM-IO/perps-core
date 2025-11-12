@@ -185,4 +185,7 @@ interface IControlFacet is IControlEvents {
 	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external;
 
 	function setMaxPartyAConnectionLimit(uint256 maxLimit) external;
+
+	function setSigner(address signer) external;
+	
 }

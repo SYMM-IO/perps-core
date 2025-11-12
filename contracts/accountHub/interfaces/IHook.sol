@@ -9,5 +9,5 @@ interface IHooks {
     function onDeposit(address account, uint256 amount) external returns (bool);
     function onWithdraw(address account, uint256 amount) external returns (bool);
     function onVirtualAccountCreation(address virtualAccount, address parent) external returns (bool);
-    function onPositionClose(address account) external returns (bool);
+    function onVirtualAccountDeletion(address account) external;
 }

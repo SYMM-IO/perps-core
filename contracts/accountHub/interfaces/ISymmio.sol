@@ -5,6 +5,16 @@
 pragma solidity >=0.8.18;
 
 interface ISymmio {
+	enum PositionType {
+		LONG,
+		SHORT
+	}
+
+	enum OrderType {
+		LIMIT,
+		MARKET
+	}
+
 	struct SchnorrSign {
 		uint256 signature;
 		address owner;
@@ -19,24 +29,13 @@ interface ISymmio {
 		SchnorrSign sigs;
 	}
 
-	function depositFor(address user, uint256 amount) external;
-	function withdrawTo(address user, uint256 amount) external;
-	function allocate(uint256 amount) external;
-	function getCollateral() external view returns (address);
-	function balanceOf(address user) external view returns (uint256);
-	function setSigner(address signer) external;
-	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
-	function internalTransfer(address user, uint256 amount) external;
-	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) external;
-
-	enum PositionType {
-		LONG,
-		SHORT
-	}
-
-	enum OrderType {
-		LIMIT,
-		MARKET
+	struct SingleUpnlAndPriceSig {
+		bytes reqId;
+		uint256 timestamp;
+		int256 upnl;
+		uint256 price;
+		bytes gatewaySignature;
+		SchnorrSign sigs;
 	}
 
 	enum QuoteStatus {
@@ -97,4 +96,15 @@ interface ISymmio {
 		uint256 closeFee;
 		bytes data;
 	}
+
+	function depositFor(address user, uint256 amount) external;
+	function withdrawTo(address user, uint256 amount) external;
+	function allocate(uint256 amount) external;
+	function getCollateral() external view returns (address);
+	function balanceOf(address user) external view returns (uint256);
+	function setSigner(address signer) external;
+	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
+	function internalTransfer(address user, uint256 amount) external;
+	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) external;
+	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory);
 }

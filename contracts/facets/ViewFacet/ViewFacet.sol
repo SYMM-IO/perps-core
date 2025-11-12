@@ -1229,4 +1229,8 @@ contract ViewFacet is IViewFacet {
 	function isADLEnabled(address partyB) external view returns (bool) {
 		return MAStorage.layout().adlEnabled[partyB];
 	}
+
+	function getSigner() external view returns (address) {
+		return MAStorage.layout().signer == address(0) ? msg.sender : MAStorage.layout().signer;
+	}
 }

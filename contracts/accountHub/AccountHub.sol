@@ -16,18 +16,24 @@ import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountManager.sol";
 import "./interfaces/IHook.sol";
 
-// TODO ::: Fee distribution
-// TODO ::: accountManager logics(e.g. delegateAccesses, etc)?
-
 contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 
+	bytes4 constant SEND_QUOTE_SELECTOR =
+		bytes4(
+			keccak256(
+				"sendQuoteWithAffiliate(address[],uint256,PositionType,OrderType,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,SingleUpnlAndPriceSig)"
+			)
+		); // TODO ::: calc the keccak256 and replace it.
 	// ==================== Constants ====================
 	bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
-	
+	bytes32 public constant SIGNER_SETTER = keccak256("SIGNER_SETTER");
+
+	uint256 private constant MAX_POSITION_QUERY_LIMIT = 100;
+
 	// ==================== Storage ====================
 	address public symmioAddress;
 	address public symmioFeeReceiver;
@@ -57,6 +63,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACCOUNT_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VIRTUAL_ACCOUNT_V1");
 
+	address signer;
+
 	modifier isAffiliateAdmin(address affiliate, address admin) {
 		require(affiliates[affiliate].admin == admin, "AccountsHub: Not admin");
 		_;
@@ -64,6 +72,11 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	modifier isAffiliateActive(address affiliate) {
 		require(affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountsHub: Affiliate not active");
+		_;
+	}
+
+	modifier isSymmio() {
+		require(msg.sender == symmioAddress, "AccountsHub: Not Symmio");
 		_;
 	}
 
@@ -152,9 +165,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address affiliate,
 		string memory name,
 		string memory brandColor
-	) external isAffiliateAdmin(affiliate, msg.sender) {
-		require(affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountsHub: Not active");
-
+	) external isAffiliateAdmin(affiliate, msg.sender) isAffiliateActive(affiliate) {
+		require(bytes(name).length > 0 && bytes(name).length <= 100, "AccountsHub: Invalid name length");
 		affiliates[affiliate].name = name;
 		affiliates[affiliate].brandColor = brandColor;
 
@@ -165,8 +177,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address affiliate,
 		Stakeholder[] memory newStakeholders,
 		uint256 newSymmioShare
-	) external isAffiliateAdmin(affiliate, msg.sender) {
-		require(affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountsHub: Not active");
+	) external isAffiliateAdmin(affiliate, msg.sender) isAffiliateActive(affiliate) {
 		require(newSymmioShare <= 1e18, "AccountsHub: Invalid Symmio share");
 
 		// Validate shares
@@ -212,12 +223,11 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		emit StakeholdersUpdated(affiliate);
 	}
 
-	function pauseAffiliate(address affiliate) external {
+	function pauseAffiliate(address affiliate) external isAffiliateActive(affiliate) {
 		require(
-			hasRole(PAUSER_ROLE, msg.sender) || (affiliates[affiliate].admin == msg.sender && affiliates[affiliate].state == AffiliateState.ACTIVE),
+			hasRole(PAUSER_ROLE, msg.sender) || affiliates[affiliate].admin == msg.sender,
 			"AccountsHub: Unauthorized"
 		);
-		require(affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountsHub: Not active");
 
 		affiliates[affiliate].state = AffiliateState.PAUSED;
 
@@ -242,7 +252,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		bytes memory metadata
 	) public isAffiliateActive(affiliate) whenNotPaused nonReentrant returns (address account) {
 		require(bytes(name).length > 0, "AccountsHub: Empty name");
-		
+
 		// Generate deterministic address
 		uint256 nonce = userAccountNonce[msg.sender][affiliate]++;
 		account = _generateSubAccountAddress(affiliate, msg.sender, nonce);
@@ -320,7 +330,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			isolationType: isolationType,
 			marketId: marketId,
 			createdAt: block.timestamp,
-			openPositionCount: 0,
 			metadata: metadata
 		});
 
@@ -340,13 +349,34 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		VirtualAccountCreationData memory creationData,
 		bytes calldata quoteData
 	) external whenNotPaused nonReentrant returns (address virtualAccount) {
-		ISymmio.Quote memory quote = abi.decode(quoteData, (ISymmio.Quote));
+		bytes4 selector = bytes4(quoteData[:4]);
+		require(selector == SEND_QUOTE_SELECTOR, "AccountsHub: Invalid function selector");
+
+		(, uint256 symbolId, ISymmio.PositionType positionType, , , , , , , , , , , ) = abi.decode(
+			quoteData[4:],
+			(
+				address[],
+				uint256,
+				ISymmio.PositionType,
+				ISymmio.OrderType,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				address,
+				ISymmio.SingleUpnlAndPriceSig
+			)
+		);
 
 		if (creationData.isolationType != IsolationType.POSITION) {
-			require(quote.symbolId == creationData.marketId, "AccountsHub: Invalid marketId");
+			require(symbolId == creationData.marketId, "AccountsHub: Invalid marketId");
 
 			// Match isolation type to position type
-			IsolationType expectedType = quote.positionType == ISymmio.PositionType.LONG ? IsolationType.MARKET_LONG : IsolationType.MARKET_SHORT;
+			IsolationType expectedType = positionType == ISymmio.PositionType.LONG ? IsolationType.MARKET_LONG : IsolationType.MARKET_SHORT;
 
 			require(creationData.isolationType == expectedType, "AccountsHub: Invalid isolation type");
 		}
@@ -356,8 +386,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		// Execute sendQuote through the virtual account
 		_executeWithSigner(virtualAccount, quoteData);
-
-		virtualAccounts[virtualAccount].openPositionCount += 1;
 
 		return virtualAccount;
 	}
@@ -417,7 +445,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address collateral = ISymmio(symmioAddress).getCollateral();
 		uint8 decimals = IERC20Metadata(collateral).decimals();
 		require(decimals <= 18, "AccountsHub: Invalid token decimals");
-		
+
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** decimals);
 
 		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.allocate.selector, amountWith18Decimals));
@@ -458,8 +486,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		emit HookRemoved(msg.sender, selector);
 	}
 
-
-
 	function _deployAccountManager(address affiliate) internal returns (address) {
 		bytes32 salt = keccak256(abi.encodePacked("AccountManager", affiliate));
 		bytes memory bytecode = abi.encodePacked(accountManagerImplementation);
@@ -482,16 +508,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		return
 			address(
 				uint160(
-					uint256(
-						keccak256(
-							abi.encodePacked(
-								bytes1(0xff),
-								affiliate,
-								keccak256(abi.encodePacked(user, nonce)),
-								ACCOUNT_INIT_CODE_HASH
-							)
-						)
-					)
+					uint256(keccak256(abi.encodePacked(bytes1(0xff), affiliate, keccak256(abi.encodePacked(user, nonce)), ACCOUNT_INIT_CODE_HASH)))
 				)
 			);
 	}
@@ -545,7 +562,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			return _isOwnerOf(parent, user);
 		}
 
-		// Check legacy multi-account ownerships (most expensive)
+		// Check legacy multi-account ownerships
 		uint256 len = legacyMultiAccounts.length;
 		for (uint256 i = 0; i < len; i++) {
 			(bool success, bytes memory data) = legacyMultiAccounts[i].staticcall(abi.encodeWithSignature("owners(address)", account));
@@ -576,7 +593,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	function _deleteVirtualAccount(address account) internal {
 		VirtualAccountData storage vData = virtualAccounts[account];
 		require(!vData.isDeleted, "AccountsHub: Already deleted");
-		require(vData.openPositionCount == 0, "AccountsHub: Open positions exist");
+		require(getOpenPositionCount(account) == 0, "AccountsHub: Open positions exist");
 
 		address parentAccount = vData.parentAccount;
 		address collateral = ISymmio(symmioAddress).getCollateral();
@@ -600,7 +617,25 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		vData.isDeleted = true;
 		subAccounts[parentAccount].virtualAccountCount--;
 
+		address affiliate = _getAffiliateForAccount(account);
+		_callHook(affiliate, IHooks.onVirtualAccountDeletion.selector, abi.encode(account));
+
 		emit VirtualAccountDeleted(account, parentAccount);
+	}
+
+	function onClosePosition(
+		uint256 quoteId,
+		uint256 _filledAmount,
+		uint256 _closedPrice,
+		address partyA,
+		address _partyB
+	) external isSymmio nonReentrant whenNotPaused {
+		VirtualAccountData storage vData = virtualAccounts[partyA];
+		require(vData.parentAccount != address(0), "AccountsHub: Not a virtual account");
+		require(!vData.isDeleted, "AccountsHub: Account deleted");
+		if (getOpenPositionCount(partyA) == 0) {
+			_deleteVirtualAccount(partyA);
+		}
 	}
 
 	function _callHook(address affiliate, bytes4 selector, bytes memory data) internal {
@@ -641,6 +676,10 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		_unpause();
 	}
 
+	function setSigner(address _signer) external onlyRole(SIGNER_SETTER) {
+		signer = _signer;
+	}
+
 	// ==================== View Functions ====================
 
 	function getAffiliateDetails(
@@ -656,5 +695,13 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	function getAffiliateStakeholders(address affiliate) external view returns (Stakeholder[] memory) {
 		return affiliates[affiliate].stakeholders;
+	}
+
+	function getSigner() public view returns (address) {
+		return signer == address(0) ? msg.sender : signer;
+	}
+
+	function getOpenPositionCount(address account) internal view returns (uint256) {
+		return ISymmio(symmioAddress).getPartyAOpenPositions(account, 0, MAX_POSITION_QUERY_LIMIT).length; // TODO ::: replace it with symmio getOpenPositionCount
 	}
 }
