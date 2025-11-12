@@ -24,6 +24,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		LibDiamond.transferOwnership(owner);
 	}
 
+	/// @notice Cancels the pending ownership transfer.
+	/// @dev This function can only be called by the current owner of the contract.
+	function cancelOwnershipTransfer() external onlyOwner {
+		LibDiamond.cancelOwnershipTransfer();
+	}
+
 	/// @notice Accept ownership of the contract.
 	/// @dev This function can only be called by the pending owner of the contract.
 	function acceptOwnership() external {

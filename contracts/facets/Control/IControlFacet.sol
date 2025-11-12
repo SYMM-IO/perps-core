@@ -10,6 +10,8 @@ import "../../storages/SymbolStorage.sol";
 interface IControlFacet is IControlEvents {
 	function transferOwnership(address owner) external;
 
+	function cancelOwnershipTransfer() external;
+
 	function acceptOwnership() external;
 
 	function setAdmin(address user) external;
