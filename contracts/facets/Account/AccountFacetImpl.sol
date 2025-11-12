@@ -141,6 +141,10 @@ library AccountFacetImpl {
 	}
 
 	function activateMasterAccountMode() internal {
+		require(
+			GlobalAppStorage.layout().masterAccountActivationMode,
+			"AccountFacet: Master account activation disabled"
+		);
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(!accountLayout.masterAccountMode[msg.sender], "AccountFacet: Master account mode is active");
 		accountLayout.masterAccountMode[msg.sender] = true;

@@ -146,6 +146,8 @@ interface IControlFacet is IControlEvents {
 
 	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external;
 
+	function setMasterAccountActivationMode(bool enabled) external;
+
 	function addBridge(address bridge, bool isVirtual) external;
 
 	function removeBridge(address bridge) external;

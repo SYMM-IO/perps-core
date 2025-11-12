@@ -667,6 +667,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		}
 	}
 
+	/// @notice Enables or disables master account activation for Party B.
+	/// @param enabled New activation status.
+	function setMasterAccountActivationMode(bool enabled) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetMasterAccountActivationMode(appLayout.masterAccountActivationMode, enabled);
+		appLayout.masterAccountActivationMode = enabled;
+	}
+
 	/// @notice Adds a bridge.
 	/// @param bridge The address of the bridge to be added.
 	/// @param isVirtual Whether the bridge is virtual.

@@ -648,4 +648,26 @@ export function shouldBehaveLikeControlFacet(): void {
 			)
 		})
 	})
+
+	describe("setMasterAccountActivationMode", () => {
+		it("should allow admin to toggle master account activation", async function () {
+			expect(await context.viewFacet.getMasterAccountActivationMode()).to.equal(false)
+
+			// set true
+			await expect(context.controlFacet.connect(owner).setMasterAccountActivationMode(true))
+				.to.emit(context.controlFacet, "SetMasterAccountActivationMode")
+				.withArgs(false, true)
+			expect(await context.viewFacet.getMasterAccountActivationMode()).to.equal(true)
+
+			// set false
+			await expect(context.controlFacet.connect(owner).setMasterAccountActivationMode(false))
+				.to.emit(context.controlFacet, "SetMasterAccountActivationMode")
+				.withArgs(true, false)
+			expect(await context.viewFacet.getMasterAccountActivationMode()).to.equal(false)
+		})
+
+		it("should revert when caller dont have admin role for master account activation set", async function () {
+			await expect(context.controlFacet.connect(user2).setMasterAccountActivationMode(true)).to.be.revertedWith("Accessibility: Must has role")
+		})
+	})
 }
