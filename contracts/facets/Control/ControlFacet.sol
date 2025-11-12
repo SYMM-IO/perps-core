@@ -18,9 +18,16 @@ import "../../storages/BridgeStorage.sol";
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Transfers ownership of the contract to a new address.
 	/// @dev This function can only be called by the current owner of the contract.
-	/// @param owner The address of the new owner, or address(0) to clear the pending owner.
+	/// @param owner The address of the new owner.
 	function transferOwnership(address owner) external onlyOwner {
+		checkZeroAddress(owner);
 		LibDiamond.transferOwnership(owner);
+	}
+
+	/// @notice Cancels the pending ownership transfer.
+	/// @dev This function can only be called by the current owner of the contract.
+	function cancelOwnershipTransfer() external onlyOwner {
+		LibDiamond.cancelOwnershipTransfer();
 	}
 
 	/// @notice Accept ownership of the contract.

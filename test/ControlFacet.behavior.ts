@@ -49,19 +49,43 @@ export function shouldBehaveLikeControlFacet(): void {
 			expect(await context.viewFacet.pendingOwner()).to.equal(await user2.getAddress())
 		})
 
-		it("Should allow owner to reset the pending owner by passing zero address", async function () {
-			// transfer to some user
+		it("Should revert when passing zero address", async function () {
+			await expect(context.controlFacet.connect(owner).transferOwnership(ZeroAddress)).to.be.revertedWith("ControlFacet: Zero address")
+		})
+
+		it("Should revert when caller is not current owner", async function () {
+			await expect(context.controlFacet.connect(user2).transferOwnership(await user2.getAddress())).to.be.revertedWith(
+				"LibDiamond: Must be contract owner",
+			)
+		})
+	})
+
+	describe("cancelOwnershipTransfer", () => {
+		it("Should allow owner to cancel the pending owner", async function () {
 			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
-			// transfer to zero address to reset
-			await expect(context.controlFacet.connect(owner).transferOwnership(ZeroAddress)).to.not.reverted
+			expect(await context.viewFacet.pendingOwner()).to.equal(await user2.getAddress())
+			await expect(context.controlFacet.connect(owner).cancelOwnershipTransfer()).to.not.reverted
 			expect(await context.viewFacet.pendingOwner()).to.equal(ZeroAddress)
+		})
+
+		it("Should revert when there is no pending owner", async function () {
+			// cancel current pending owner because we have transfered owner in 'before'
+			await context.controlFacet.connect(owner).cancelOwnershipTransfer()
+			// cancel pending owner which is zero address
+			await expect(context.controlFacet.connect(owner).cancelOwnershipTransfer()).to.be.revertedWith("LibDiamond: Pending owner is zero")
+			expect(await context.viewFacet.pendingOwner()).to.equal(ZeroAddress)
+		})
+
+		it("Should revert when caller is not current owner", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await expect(context.controlFacet.connect(user2).cancelOwnershipTransfer()).to.be.revertedWith("LibDiamond: Must be contract owner")
 		})
 	})
 
 	describe("acceptOwnership", () => {
 		it("Should revert when no pending owner is set", async function () {
-			await expect(context.controlFacet.connect(owner).transferOwnership(ZeroAddress)).to.not.reverted
-			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.be.revertedWith("LibDiamond: Pending owner is zero")
+			await context.controlFacet.connect(owner).cancelOwnershipTransfer()
+			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.be.revertedWith("LibDiamond: Sender should be the pendingOwner")
 		})
 
 		it("Should revert when caller is not the pending owner", async function () {
@@ -78,8 +102,18 @@ export function shouldBehaveLikeControlFacet(): void {
 
 		it("Should not allow previous pending owner to accept after reset", async function () {
 			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
-			await context.controlFacet.connect(owner).transferOwnership(ZeroAddress)
-			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.be.revertedWith("LibDiamond: Pending owner is zero")
+			await context.controlFacet.connect(owner).cancelOwnershipTransfer()
+			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.be.revertedWith("LibDiamond: Sender should be the pendingOwner")
+		})
+
+		it("Should update contract owner after acceptance", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await context.controlFacet.connect(user2).acceptOwnership()
+			await expect(context.controlFacet.connect(owner).transferOwnership(await hedger.getAddress())).to.be.revertedWith(
+				"LibDiamond: Must be contract owner",
+			)
+			await expect(context.controlFacet.connect(user2).transferOwnership(await hedger.getAddress())).to.not.reverted
+			expect(await context.viewFacet.pendingOwner()).to.equal(await hedger.getAddress())
 		})
 	})
 
