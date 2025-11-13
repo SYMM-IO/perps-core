@@ -489,10 +489,18 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await sourceUser.setBalances(sourceUserInitialBalance)
 		})
 
+		/**
+		 * Scenario:
+		 * 1. Source user deposits collateral into the first symmio diamond
+		 * 2. The admin whitelists a new symmio diamond with its relayer address.
+		 * 2. The user performs external transfers from first symmio to second through the relayer.
+		 */
 		it("Should transfer funds to another diamond via relayer", async function () {
-			const receiver = sourceContext.signers.user2.address
+			const receiver = targetContext.signers.user2.address
 
+			// user deposit into first symmio
 			await sourceContext.accountFacet.connect(sourceContext.signers.user).deposit(relayerDepositAmount)
+			// whitelist seconds symmio and its relayer for first symmio
 			await sourceContext.controlFacet
 				.connect(sourceContext.signers.admin)
 				.addRelayerForExternalTransferTarget(targetContext.diamond, await relayer.getAddress())
@@ -502,9 +510,13 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.connect(sourceContext.signers.user)
 				.externalTransfer(receiver, firstExternalTransferAmount, targetContext.diamond)
 
-			const expectedSourceBalanceAfterFirstTransfer = (BigInt(relayerDepositAmount) - BigInt(firstExternalTransferAmount)).toString()
-			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal(expectedSourceBalanceAfterFirstTransfer)
+			// check balances
+			const expectedSourceBalanceAfterFirstTransfer = BigInt(relayerDepositAmount) - BigInt(firstExternalTransferAmount)
+			const expectedTargetBalanceAfterFirstTransfer = BigInt(firstExternalTransferAmount)
+			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal(expectedSourceBalanceAfterFirstTransfer.toString())
+			expect(await sourceContext.collateral.balanceOf(sourceContext.diamond)).to.equal(expectedSourceBalanceAfterFirstTransfer)
 			expect(await targetContext.viewFacet.balanceOf(receiver)).to.equal(firstExternalTransferAmount)
+			expect(await targetContext.collateral.balanceOf(targetContext.diamond)).to.equal(expectedTargetBalanceAfterFirstTransfer)
 			expect(await sourceContext.collateral.balanceOf(await relayer.getAddress())).to.equal(0n)
 			expect(await sourceContext.collateral.allowance(await relayer.getAddress(), targetContext.diamond)).to.equal(0n)
 
@@ -513,14 +525,16 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.connect(sourceContext.signers.user)
 				.externalTransfer(receiver, secondExternalTransferAmount, targetContext.diamond)
 
-			const expectedSourceBalanceAfterSecondTransfer = (
-				BigInt(relayerDepositAmount) -
-				BigInt(firstExternalTransferAmount) -
-				BigInt(secondExternalTransferAmount)
-			).toString()
+			// check balances
+			const expectedSourceBalanceAfterSecondTransfer =
+				BigInt(relayerDepositAmount) - BigInt(firstExternalTransferAmount) - BigInt(secondExternalTransferAmount)
 			const expectedReceiverBalanceAfterSecondTransfer = (BigInt(firstExternalTransferAmount) + BigInt(secondExternalTransferAmount)).toString()
-			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal(expectedSourceBalanceAfterSecondTransfer)
+			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal(
+				expectedSourceBalanceAfterSecondTransfer.toString(),
+			)
+			expect(await sourceContext.collateral.balanceOf(sourceContext.diamond)).to.equal(expectedSourceBalanceAfterSecondTransfer)
 			expect(await targetContext.viewFacet.balanceOf(receiver)).to.equal(expectedReceiverBalanceAfterSecondTransfer)
+			expect(await targetContext.collateral.balanceOf(targetContext.diamond)).to.equal(BigInt(expectedReceiverBalanceAfterSecondTransfer))
 			expect(await sourceContext.collateral.balanceOf(await relayer.getAddress())).to.equal(0n)
 			expect(await sourceContext.collateral.allowance(await relayer.getAddress(), targetContext.diamond)).to.equal(0n)
 		})
