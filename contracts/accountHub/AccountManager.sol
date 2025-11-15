@@ -4,52 +4,69 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./interfaces/IAccountManager.sol";
 import "./interfaces/IAccountHub.sol";
+import "./interfaces/ISymmio.sol";
 
-contract AccountManager is IAccountManager{
-    address public hub;
-    address public affiliate;
+contract AccountManager is IAccountManager, Initializable {
+	using SafeERC20Upgradeable for IERC20Upgradeable;
 
-    modifier onlyHub() {
-        require(msg.sender == hub, "AccountManager: Only hub");
-        _;
-    }
+	address public hub;
+	address public affiliate;
+	address public symmio;
 
-    function initialize(address _hub, address _affiliate) external{
-        hub = _hub;
-        affiliate = _affiliate;
-    }
-    // Backward compatible functions
-    function addAccount(string memory name) external returns (address) {
-        return IAccountHub(hub).createSubAccount(affiliate, name, "");
-    }
+	modifier onlyHub() {
+		require(msg.sender == hub, "AccountManager: Only hub");
+		_;
+	}
 
-    function depositForAccount(address account, uint256 amount) external {
-        IAccountHub(hub).depositForAccount(account, amount);
-    }
+	modifier withSigner(address signer) {
+		IAccountHub(hub).setSigner(signer);
+		_;
+		IAccountHub(hub).setSigner(address(0));
+	}
 
-    function withdrawFromAccount(address account, uint256 amount) external {
-        IAccountHub(hub).withdrawFromAccount(account, amount);
-    }
+	function initialize(address _hub, address _affiliate, address _symmio) external  initializer {
+		hub = _hub;
+		affiliate = _affiliate;
+		symmio = _symmio;
+	}
 
-    function _call(address account, bytes[] memory callDatas) external {
-        IAccountHub(hub)._call(account, callDatas);
-    }
+	function addAccount(string memory name) external withSigner(msg.sender) returns (address) {
+		return IAccountHub(hub).createSubAccount(affiliate, name, "");
+	}
 
-    // function getAccountsLength(address user) external view returns (uint256) {
-    //     return IAccountHub(hub).getAccountsLength(user);
-    // }
+	function depositForAccount(address account, uint256 amount) external withSigner(msg.sender) {
+		address collateral = ISymmio(symmio).getCollateral();
+		IERC20Upgradeable(collateral).safeTransferFrom(msg.sender, address(this), amount);
+		IERC20Upgradeable(collateral).safeIncreaseAllowance(hub, amount);
 
-    // function getAccounts(address user, uint256 start, uint256 size) external view returns (IAccountHub.Account[] memory) {
-    //     return IAccountHub(hub).getAccounts(user, start, size);
-    // }
+		IAccountHub(hub).depositForAccount(account, amount);
+	}
 
-    function getHub() external view returns (address) {
-        return hub;
-    }
+	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner(msg.sender) {
+		address collateral = ISymmio(symmio).getCollateral();
+		IERC20Upgradeable(collateral).safeTransferFrom(msg.sender, address(this), amount);
+		IERC20Upgradeable(collateral).safeIncreaseAllowance(hub, amount);
 
-    function getAffiliate() external view returns (address) {
-        return affiliate;
-    }
+		IAccountHub(hub).depositAndAllocateForAccount(account, amount);
+	}
+
+	function withdrawFromAccount(address account, uint256 amount) external withSigner(msg.sender) {
+		IAccountHub(hub).withdrawFromAccount(account, amount);
+	}
+
+	function _call(address account, bytes[] memory callDatas) external withSigner(msg.sender) {
+		IAccountHub(hub)._call(account, callDatas);
+	}
+
+	function getHub() external view returns (address) {
+		return hub;
+	}
+
+	function getAffiliate() external view returns (address) {
+		return affiliate;
+	}
 }

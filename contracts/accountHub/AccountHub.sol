@@ -149,6 +149,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		// Deploy Account Manager for this affiliate
 		address accountManager = _deployAccountManager(affiliate);
+		grantRole(SIGNER_SETTER, accountManager);
 
 		affiliates[affiliate].state = AffiliateState.ACTIVE;
 		affiliates[affiliate].accountManager = accountManager;
@@ -202,6 +203,49 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		emit StakeholdersUpdateRequested(affiliate);
 	}
 
+	function getClaimable(address affiliate) internal view returns (uint256) {
+		address collateral = ISymmioCore(symmioAddress).getCollateral();
+		uint8 decimals = IERC20Metadata(collateral).decimals();
+		uint256 balance = ISymmioCore(symmioAddress).balanceOf(affiliate);
+		return balance / (10 ** (18 - decimals));
+	}
+
+	function claimAllFee(address affiliate) external onlyRole(COLLECTOR_ROLE) whenNotPaused {
+		// TODO ::: set signer(should act on behalf of affiliate)
+		claimFee(getClaimable(affiliate));
+	}
+
+	function claimFee(address affiliate, uint256 amount) public onlyRole(COLLECTOR_ROLE) whenNotPaused {
+		address collateral = ISymmioCore(symmioAddress).getCollateral();
+		ISymmioCore(symmioAddress).withdraw(amount);
+
+		Stakeholder[] stakeholders = affiliates[affiliate].stakeholders;
+
+		uint256 len = stakeholders.length;
+		for (uint256 i = 0; i < len; i++) {
+			uint256 share = (stakeholders[i].share * amount) / 1e18;
+			IERC20Upgradeable(collateral).safeTransfer(stakeholders[i].receiver, share);
+			emit FeeDistributed(stakeholders[i].receiver, share);
+		}
+		emit FeesClaimed(amount);
+	}
+
+	function dryClaimAllFee(address affiliate) public view returns (address[] memory holders, uint256[] memory shares) {
+		uint256 totalClaimable = getClaimable(affiliate);
+		Stakeholder[] stakeholders = affiliates[affiliate].stakeholders;
+		uint256 len = stakeholders.length;
+
+		holders = new address[](len);
+		shares = new uint256[](len);
+
+		for (uint256 i = 0; i < len; i++) {
+			holders[i] = stakeholders[i].receiver;
+			shares[i] = (stakeholders[i].share * totalClaimable) / 1e18;
+		}
+
+		return (holders, shares);
+	}
+
 	function cancelFeeUpdate(address affiliate) external isAffiliateAdmin(affiliate, msg.sender) {
 		require(pendingFeeUpdates[affiliate].exists, "AccountsHub: No pending update");
 		delete pendingFeeUpdates[affiliate];
@@ -224,10 +268,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	function pauseAffiliate(address affiliate) external isAffiliateActive(affiliate) {
-		require(
-			hasRole(PAUSER_ROLE, msg.sender) || affiliates[affiliate].admin == msg.sender,
-			"AccountsHub: Unauthorized"
-		);
+		require(hasRole(PAUSER_ROLE, msg.sender) || affiliates[affiliate].admin == msg.sender, "AccountsHub: Unauthorized");
 
 		affiliates[affiliate].state = AffiliateState.PAUSED;
 
@@ -252,14 +293,14 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		bytes memory metadata
 	) public isAffiliateActive(affiliate) whenNotPaused nonReentrant returns (address account) {
 		require(bytes(name).length > 0, "AccountsHub: Empty name");
-
+		address signer = getSigner();
 		// Generate deterministic address
-		uint256 nonce = userAccountNonce[msg.sender][affiliate]++;
-		account = _generateSubAccountAddress(affiliate, msg.sender, nonce);
+		uint256 nonce = userAccountNonce[signer][affiliate]++;
+		account = _generateSubAccountAddress(affiliate, signer, nonce);
 
 		// Store account data
 		subAccounts[account] = SubAccountData({
-			owner: msg.sender,
+			owner: signer,
 			affiliate: affiliate,
 			name: name,
 			metadata: metadata,
@@ -267,18 +308,18 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			virtualAccountCount: 0,
 			nonce: 0
 		});
-		accountToSubAccounts[msg.sender].push(account);
+		accountToSubAccounts[signer].push(account);
 
 		// Update backward compatibility mappings
-		legacyOwners[account] = msg.sender;
-		legacyIndexOfAccount[account] = legacyAccounts[msg.sender].length;
-		legacyAccounts[msg.sender].push(Account(account, name));
+		legacyOwners[account] = signer;
+		legacyIndexOfAccount[account] = legacyAccounts[signer].length;
+		legacyAccounts[signer].push(Account(account, name));
 
 		// Call hook if set
 		_callHook(affiliate, IHooks.onAccountCreation.selector, abi.encode(account, metadata));
 
-		emit SubAccountCreated(account, msg.sender, affiliate, name);
-		emit AddAccount(msg.sender, account, name);
+		emit SubAccountCreated(account, signer, affiliate, name);
+		emit AddAccount(signer, account, name);
 
 		return account;
 	}
@@ -310,7 +351,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	) private whenNotPaused nonReentrant returns (address virtualAccount) {
 		SubAccountData storage parent = subAccounts[parentAccount];
 		require(parent.exists, "AccountsHub: Invalid parent");
-		require(_isOwnerOf(parentAccount, msg.sender), "AccountsHub: Not owner");
+		address signer = getSigner();
+		require(_isOwnerOf(parentAccount, signer), "AccountsHub: Not owner");
 
 		if (marketId > 0) {
 			require(
@@ -391,7 +433,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	function editAccountName(address account, string memory name) external whenNotPaused {
-		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		address signer = getSigner();
+		require(_isOwnerOf(account, signer), "AccountsHub: Not owner");
 		require(bytes(name).length > 0, "AccountsHub: Empty name");
 
 		if (subAccounts[account].exists) {
@@ -400,32 +443,36 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		// Update in legacy array too
 		uint256 index = legacyIndexOfAccount[account];
-		if (index < legacyAccounts[msg.sender].length) {
-			legacyAccounts[msg.sender][index].name = name;
+		if (index < legacyAccounts[signer].length) {
+			legacyAccounts[signer][index].name = name;
 		}
 
-		emit EditAccountName(msg.sender, account, name);
+		emit EditAccountName(signer, account, name);
 	}
 
 	function depositForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		address signer = getSigner();
+		require(_isOwnerOf(account, signer), "AccountsHub: Not owner"); // TODO ::: needed? anyone can deposit for any other oen.
 		require(amount > 0, "AccountsHub: Zero amount");
 		_depositForAccount(account, amount);
 	}
 
 	function depositAndAllocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		address signer = getSigner();
+		require(_isOwnerOf(account, signer), "AccountsHub: Not owner");
 		require(amount > 0, "AccountsHub: Zero amount");
 		_depositAndAllocateForAccount(account, amount);
 	}
 
 	function withdrawFromAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		address signer = getSigner();
+		require(_isOwnerOf(account, signer), "AccountsHub: Not owner");
 		require(amount > 0, "AccountsHub: Zero amount");
 		_withdrawFromAccount(account, amount);
 	}
 
 	function _depositForAccount(address account, uint256 amount) private {
+		address signer = getSigner();
 		address collateral = ISymmio(symmioAddress).getCollateral();
 		IERC20Upgradeable(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20Upgradeable(collateral).safeIncreaseAllowance(symmioAddress, amount);
@@ -436,10 +483,11 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address affiliate = _getAffiliateForAccount(account);
 		_callHook(affiliate, IHooks.onDeposit.selector, abi.encode(account, amount));
 
-		emit DepositForAccount(msg.sender, account, amount);
+		emit DepositForAccount(signer, account, amount);
 	}
 
 	function _depositAndAllocateForAccount(address account, uint256 amount) private {
+		address signer = getSigner();
 		_depositForAccount(account, amount);
 
 		address collateral = ISymmio(symmioAddress).getCollateral();
@@ -450,20 +498,22 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.allocate.selector, amountWith18Decimals));
 
-		emit AllocateForAccount(msg.sender, account, amountWith18Decimals);
+		emit AllocateForAccount(signer, account, amountWith18Decimals);
 	}
 
 	function _withdrawFromAccount(address account, uint256 amount) private {
-		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.withdrawTo.selector, msg.sender, amount));
+		address signer = getSigner();
+		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.withdrawTo.selector, signer, amount));
 
 		address affiliate = _getAffiliateForAccount(account);
 		_callHook(affiliate, IHooks.onWithdraw.selector, abi.encode(account, amount));
 
-		emit WithdrawFromAccount(msg.sender, account, amount);
+		emit WithdrawFromAccount(signer, account, amount);
 	}
 
 	function _call(address account, bytes[] memory callDatas) external whenNotPaused nonReentrant {
-		require(_isOwnerOf(account, msg.sender), "AccountsHub: Not owner");
+		address signer = getSigner();
+		require(_isOwnerOf(account, signer), "AccountsHub: Not owner");
 		require(callDatas.length > 0, "AccountsHub: Empty array");
 
 		for (uint256 i = 0; i < callDatas.length; i++) {
@@ -532,6 +582,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	function _executeWithSigner(address account, bytes memory callData) internal {
+		address signer = getSigner();
 		ISymmio(symmioAddress).setSigner(account);
 		(bool success, bytes memory result) = symmioAddress.call(callData);
 		ISymmio(symmioAddress).setSigner(address(0)); // Always reset
@@ -542,7 +593,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			}
 		}
 
-		emit Call(msg.sender, account, callData, true, result);
+		emit Call(signer, account, callData, true, result);
 	}
 
 	function _isOwnerOf(address account, address user) internal view returns (bool) {
