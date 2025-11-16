@@ -15,16 +15,11 @@ import "./interfaces/IAccountHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountManager.sol";
 import "./interfaces/IHook.sol";
+import "./interfaces/IMultiAccount.sol";
 
 contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 
-	bytes4 constant SEND_QUOTE_SELECTOR =
-		bytes4(
-			keccak256(
-				"sendQuoteWithAffiliate(address[],uint256,PositionType,OrderType,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,SingleUpnlAndPriceSig)"
-			)
-		); // TODO ::: calc the keccak256 and replace it.
 	// ==================== Constants ====================
 	bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
@@ -32,13 +27,16 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant SIGNER_SETTER = keccak256("SIGNER_SETTER");
 	bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
+	bytes4 constant SEND_QUOTE_SELECTOR = 0x40f1310c;
 
-	uint256 private constant MAX_POSITION_QUERY_LIMIT = 100;
+	uint256 private constant MAX_POSITION_QUERY_LIMIT = 50;
 
 	// ==================== Storage ====================
 	address public symmioAddress;
 	address public symmioFeeReceiver;
 	bytes public accountManagerImplementation;
+
+	mapping(address => bool) availableCores;
 
 	mapping(address => AffiliateData) public affiliates;
 	mapping(address => PendingFeeUpdate) public pendingFeeUpdates;
@@ -103,10 +101,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		__ReentrancyGuard_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
-		_grantRole(APPROVER_ROLE, _admin);
-		_grantRole(SETTER_ROLE, _admin);
-		_grantRole(PAUSER_ROLE, _admin);
-		_grantRole(UNPAUSER_ROLE, _admin);
 
 		symmioAddress = _symmioAddress;
 		symmioFeeReceiver = _symmioFeeReceiver;
@@ -224,14 +218,14 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address collateral = ISymmio(symmioAddress).getCollateral();
 
 		AffiliateData memory affiliateData = affiliates[affiliate];
-		
+
 		Stakeholder[] memory stakeholders = affiliateData.stakeholders;
-		stakeholders.push(Stakeholder{receiver: symmioFeeReceiver, share: affiliateData.symmioShare});
+		stakeholders.push(Stakeholder{ receiver: symmioFeeReceiver, share: affiliateData.symmioShare });
 		uint256 len = stakeholders.length;
 
 		bool auth = false;
 		for (uint256 i = 0; i < len; i++) {
-			if(getSigner() == stakeholders[i]){
+			if (getSigner() == stakeholders[i]) {
 				auth = true;
 				break;
 			}
@@ -251,7 +245,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			emit FeesDistributed(stakeholders[i].receiver, share);
 		}
 
-		require(checkAmount <= amount , "AccountHub: wrong amount distributed");
+		require(checkAmount <= amount, "AccountHub: wrong amount distributed");
 		emit FeesClaimed(amount);
 	}
 
@@ -259,9 +253,9 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		uint256 totalClaimable = getClaimable(affiliate);
 
 		AffiliateData memory affiliateData = affiliates[affiliate];
-		
+
 		Stakeholder[] memory stakeholders = affiliateData.stakeholders;
-		stakeholders.push(Stakeholder{receiver: symmioFeeReceiver, share: affiliateData.symmioShare});
+		stakeholders.push(Stakeholder{ receiver: symmioFeeReceiver, share: affiliateData.symmioShare });
 
 		uint256 len = stakeholders.length;
 
@@ -320,10 +314,13 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	function createSubAccount(
 		address affiliate,
 		string memory name,
+		address relatedCore,
 		bytes memory metadata
 	) public isAffiliateActive(affiliate) whenNotPaused nonReentrant returns (address account) {
 		require(bytes(name).length > 0, "AccountsHub: Empty name");
+		require(availableCores[relatedCore], "AccountHub: wrong core");
 		address signer = getSigner();
+
 		// Generate deterministic address
 		uint256 nonce = userAccountNonce[signer][affiliate]++;
 		account = _generateSubAccountAddress(affiliate, signer, nonce);
@@ -336,6 +333,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			metadata: metadata,
 			exists: true,
 			virtualAccountCount: 0,
+			relatedCore: relatedCore,
 			nonce: 0
 		});
 		accountToSubAccounts[signer].push(account);
@@ -402,6 +400,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			isolationType: isolationType,
 			marketId: marketId,
 			createdAt: block.timestamp,
+			relatedCore: parent.relatedCore,
 			metadata: metadata
 		});
 
@@ -597,7 +596,9 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		return
 			address(
 				uint160(
-					uint256(keccak256(abi.encodePacked(bytes1(0xff), affiliate, keccak256(abi.encodePacked(nonce)), VIRTUAL_FEE_DISTRIBUTOR_CODE_HASH)))
+					uint256(
+						keccak256(abi.encodePacked(bytes1(0xff), affiliate, keccak256(abi.encodePacked(nonce)), VIRTUAL_FEE_DISTRIBUTOR_CODE_HASH))
+					)
 				)
 			);
 	}
@@ -620,10 +621,10 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			);
 	}
 
-	function _executeWithSigner(address account, bytes memory callData) internal {
+	function _executeWithSigner(address account, address core, bytes memory callData) internal {
 		address signer = getSigner();
-		ISymmio(symmioAddress).setSigner(account);
-		(bool success, bytes memory result) = symmioAddress.call(callData);
+		address core = getRelatedCore(account);
+		(bool success, bytes memory result) = core.call(callData);
 		ISymmio(symmioAddress).setSigner(address(0)); // Always reset
 
 		if (!success) {
@@ -633,6 +634,29 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		}
 
 		emit Call(signer, account, callData, true, result);
+	}
+
+	function getRelatedCore(address account) returns (address) {
+		if (subAccounts[account].exist) {
+			return subAccounts[account].relatedCore;
+		}
+
+		address parent = virtualAccounts[account].parentAccount;
+		if (parent != address(0)) {
+			if (subAccounts[account].exist) {
+				return subAccounts[account].relatedCore;
+			}
+		}
+
+		uint256 len = legacyMultiAccounts.length;
+		for (uint256 i = 0; i < len; i++) {
+			address owner = IMultiAccount(legacyMultiAccounts[i]).owners(account);
+			if (owner != address(0)) {
+				return IMultiAccount(legacyMultiAccounts[i]).symmioAddress();
+			}
+		}
+
+		revert("AccountHub: unable to retrieve related core address");
 	}
 
 	function _isOwnerOf(address account, address user) internal view returns (bool) {
@@ -655,13 +679,9 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		// Check legacy multi-account ownerships
 		uint256 len = legacyMultiAccounts.length;
 		for (uint256 i = 0; i < len; i++) {
-			(bool success, bytes memory data) = legacyMultiAccounts[i].staticcall(abi.encodeWithSignature("owners(address)", account));
-
-			if (success && data.length >= 32) {
-				address owner = abi.decode(data, (address));
-				if (owner == user) {
-					return true;
-				}
+			address owner = IMultiAccount(legacyMultiAccounts[i]).owners(account);
+			if (owner == user) {
+				return true;
 			}
 		}
 
@@ -769,6 +789,11 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	function setSigner(address _signer) external onlyRole(SIGNER_SETTER) {
 		signer = _signer;
+	}
+
+	function setAvailableCore(address core, bool status) external onlyRole(SETTER_ROLE) {
+		availableCores[core] = status;
+		emit AvailableCoreSet(core, status);
 	}
 
 	// ==================== View Functions ====================

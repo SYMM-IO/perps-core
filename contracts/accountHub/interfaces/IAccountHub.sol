@@ -61,6 +61,7 @@ interface IAccountHub {
 		bytes metadata;
 		bool exists;
 		uint256 virtualAccountCount;
+		address relatedCore;
 		uint256 nonce; // for generating virtual accounts
 	}
 
@@ -69,8 +70,8 @@ interface IAccountHub {
 		bool isDeleted;
 		IsolationType isolationType;
 		uint256 marketId; // For market isolation (symbolId)
-		// uint256 openPositionCount;
 		uint256 createdAt;
+		address relatedCore;
 		bytes metadata;
 	}
 
@@ -126,6 +127,8 @@ interface IAccountHub {
 	event HookRemoved(address indexed Affiliate, bytes4 indexed selector);
 
 	event SymmioAddressSet(address indexed symmioAddress);
+
+	event AvailableCoreSet(address indexed core, bool status);
 
 	function createSubAccount(address affiliate, string memory name, bytes memory metadata) external returns (address account);
 	function depositForAccount(address account, uint256 amount) external;
