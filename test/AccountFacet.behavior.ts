@@ -492,8 +492,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 		/**
 		 * Scenario:
 		 * 1. Source user deposits collateral into the first symmio diamond
-		 * 2. The admin whitelists a new symmio diamond with its relayer address.
-		 * 2. The user performs external transfers from first symmio to second through the relayer.
+		 * 2. The admin whitelists a new symmio diamond with its relayer contract.
+		 * 3. The user performs external transfers from first symmio to second through the relayer.
 		 */
 		it("Should transfer funds to another diamond via relayer", async function () {
 			const receiver = targetContext.signers.user2.address
