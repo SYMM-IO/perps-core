@@ -4,14 +4,15 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./interfaces/IAccountManager.sol";
 import "./interfaces/IAccountHub.sol";
 import "./interfaces/ISymmio.sol";
 
 contract AccountManager is IAccountManager, Initializable {
-	using SafeERC20Upgradeable for IERC20Upgradeable;
+    using SafeERC20 for IERC20;
 
 	address public hub;
 	address public affiliate;
@@ -34,31 +35,31 @@ contract AccountManager is IAccountManager, Initializable {
 		symmio = _symmio;
 	}
 
-	function addAccount(string memory name) external withSigner(msg.sender) returns (address) {
+	function addAccount(string memory name) external nonReentrant withSigner(msg.sender) returns (address) {
 		return IAccountHub(hub).createSubAccount(affiliate, name, "");
 	}
 
-	function depositForAccount(address account, uint256 amount) external withSigner(msg.sender) {
+	function depositForAccount(address account, uint256 amount) external nonReentrant withSigner(msg.sender)  {
 		address collateral = ISymmio(symmio).getCollateral();
-		IERC20Upgradeable(collateral).safeTransferFrom(msg.sender, address(this), amount);
-		IERC20Upgradeable(collateral).safeIncreaseAllowance(hub, amount);
+		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+		IERC20(collateral).safeIncreaseAllowance(hub, amount);
 
 		IAccountHub(hub).depositForAccount(account, amount);
 	}
 
-	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner(msg.sender) {
+	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner(msg.sender) nonReentrant {
 		address collateral = ISymmio(symmio).getCollateral();
-		IERC20Upgradeable(collateral).safeTransferFrom(msg.sender, address(this), amount);
-		IERC20Upgradeable(collateral).safeIncreaseAllowance(hub, amount);
+		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+		IERC20(collateral).safeIncreaseAllowance(hub, amount);
 
 		IAccountHub(hub).depositAndAllocateForAccount(account, amount);
 	}
 
-	function withdrawFromAccount(address account, uint256 amount) external withSigner(msg.sender) {
+	function withdrawFromAccount(address account, uint256 amount) external withSigner(msg.sender) nonReentrant {
 		IAccountHub(hub).withdrawFromAccount(account, amount);
 	}
 
-	function _call(address account, bytes[] memory callDatas) external withSigner(msg.sender) {
+	function _call(address account, bytes[] memory callDatas) external withSigner(msg.sender) nonReentrant {
 		IAccountHub(hub)._call(account, callDatas);
 	}
 

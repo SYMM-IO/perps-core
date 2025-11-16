@@ -34,6 +34,7 @@ interface IAccountHub {
 		Stakeholder[] stakeholders;
 		bytes metadata;
 		address[] legacyMultiAccounts;
+		address feeDistributor;
 	}
 
 	struct AffiliateRegistration {
@@ -116,12 +117,15 @@ interface IAccountHub {
 
 	// Fee events
 	event FeesDistributed(address indexed Affiliate, uint256 total, address[] recipients, uint256[] amounts);
+	event FeesClaimed(uint256 amount);
 	event FeeUpdateCancelled(address indexed Affiliate);
 	event SymmioFeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
 
 	// Hook events
 	event HookSet(address indexed Affiliate, bytes4 indexed selector, address hook);
 	event HookRemoved(address indexed Affiliate, bytes4 indexed selector);
+
+	event SymmioAddressSet(address indexed symmioAddress);
 
 	function createSubAccount(address affiliate, string memory name, bytes memory metadata) external returns (address account);
 	function depositForAccount(address account, uint256 amount) external;

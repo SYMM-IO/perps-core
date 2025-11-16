@@ -99,9 +99,9 @@ interface IControlFacet is IControlEvents {
 
 	function setUnbindCooldown(uint256 unbindCooldown) external;
 
-	// Pause State
 	function setFeeCollector(address affiliate, address feeCollector) external;
 
+	// Pause State
 	function pauseGlobal() external;
 
 	function pauseLiquidation() external;

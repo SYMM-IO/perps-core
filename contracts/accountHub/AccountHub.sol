@@ -31,6 +31,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant SIGNER_SETTER = keccak256("SIGNER_SETTER");
+	bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
 
 	uint256 private constant MAX_POSITION_QUERY_LIMIT = 100;
 
@@ -62,6 +63,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACCOUNT_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VIRTUAL_ACCOUNT_V1");
+	bytes32 private constant VIRTUAL_FEE_DISTRIBUTOR_CODE_HASH = keccak256("VIRTUAL_FEE_DISTRIBUTOR_CODE_HASH_V1");
 
 	address signer;
 
@@ -144,15 +146,18 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		emit RegistrationCancelled(affiliate);
 	}
 
-	function approveAffiliate(address affiliate) external onlyRole(APPROVER_ROLE) {
+	function approveAffiliate(address affiliate) external onlyRole(APPROVER_ROLE) whenNotPaused {
 		require(affiliates[affiliate].state == AffiliateState.PENDING, "AccountsHub: Not pending");
 
 		// Deploy Account Manager for this affiliate
 		address accountManager = _deployAccountManager(affiliate);
+		address feeDistributor = _generateFeeDistributorAddress(affiliate);
 		grantRole(SIGNER_SETTER, accountManager);
+		ISymmio(symmioAddress).setFeeCollector(affiliate, feeDistributor);
 
 		affiliates[affiliate].state = AffiliateState.ACTIVE;
 		affiliates[affiliate].accountManager = accountManager;
+		affiliates[affiliate].feeDistributor = feeDistributor;
 
 		address[] memory legacyAccounts = affiliates[affiliate].legacyMultiAccounts;
 		for (uint256 i = 0; i < legacyAccounts.length; i++) {
@@ -204,35 +209,60 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	function getClaimable(address affiliate) internal view returns (uint256) {
-		address collateral = ISymmioCore(symmioAddress).getCollateral();
+		address collateral = ISymmio(symmioAddress).getCollateral();
 		uint8 decimals = IERC20Metadata(collateral).decimals();
-		uint256 balance = ISymmioCore(symmioAddress).balanceOf(affiliate);
+		AffiliateData memory affiliateData = affiliates[affiliate];
+		uint256 balance = ISymmio(symmioAddress).balanceOf(affiliateData.feeDistributor);
 		return balance / (10 ** (18 - decimals));
 	}
 
-	function claimAllFee(address affiliate) external onlyRole(COLLECTOR_ROLE) whenNotPaused {
-		// TODO ::: set signer(should act on behalf of affiliate)
-		claimFee(getClaimable(affiliate));
+	function claimAllFees(address affiliate) external whenNotPaused nonReentrant {
+		claimFees(affiliate, getClaimable(affiliate));
 	}
 
-	function claimFee(address affiliate, uint256 amount) public onlyRole(COLLECTOR_ROLE) whenNotPaused {
-		address collateral = ISymmioCore(symmioAddress).getCollateral();
-		ISymmioCore(symmioAddress).withdraw(amount);
+	function claimFees(address affiliate, uint256 amount) public whenNotPaused nonReentrant {
+		address collateral = ISymmio(symmioAddress).getCollateral();
 
-		Stakeholder[] stakeholders = affiliates[affiliate].stakeholders;
-
+		AffiliateData memory affiliateData = affiliates[affiliate];
+		
+		Stakeholder[] memory stakeholders = affiliateData.stakeholders;
+		stakeholders.push(Stakeholder{receiver: symmioFeeReceiver, share: affiliateData.symmioShare});
 		uint256 len = stakeholders.length;
+
+		bool auth = false;
+		for (uint256 i = 0; i < len; i++) {
+			if(getSigner() == stakeholders[i]){
+				auth = true;
+				break;
+			}
+		}
+
+		require(auth || hasRole(getSigner(), DISTRIBUTOR_ROLE), "AccountHub: unAuth to execute this method");
+
+		ISymmio(symmioAddress).setSigner(affiliateData.feeDistributor);
+		ISymmio(symmioAddress).withdrawTo(address(this), amount);
+		ISymmio(symmioAddress).setSigner(address(0));
+
+		uint256 checkAmount = 0;
 		for (uint256 i = 0; i < len; i++) {
 			uint256 share = (stakeholders[i].share * amount) / 1e18;
 			IERC20Upgradeable(collateral).safeTransfer(stakeholders[i].receiver, share);
-			emit FeeDistributed(stakeholders[i].receiver, share);
+			checkAmount += share;
+			emit FeesDistributed(stakeholders[i].receiver, share);
 		}
+
+		require(checkAmount <= amount , "AccountHub: wrong amount distributed");
 		emit FeesClaimed(amount);
 	}
 
-	function dryClaimAllFee(address affiliate) public view returns (address[] memory holders, uint256[] memory shares) {
+	function dryClaimAllFees(address affiliate) public view returns (address[] memory holders, uint256[] memory shares) {
 		uint256 totalClaimable = getClaimable(affiliate);
-		Stakeholder[] stakeholders = affiliates[affiliate].stakeholders;
+
+		AffiliateData memory affiliateData = affiliates[affiliate];
+		
+		Stakeholder[] memory stakeholders = affiliateData.stakeholders;
+		stakeholders.push(Stakeholder{receiver: symmioFeeReceiver, share: affiliateData.symmioShare});
+
 		uint256 len = stakeholders.length;
 
 		holders = new address[](len);
@@ -252,7 +282,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		emit FeeUpdateCancelled(affiliate);
 	}
 
-	function approveFeeUpdate(address affiliate) external onlyRole(APPROVER_ROLE) {
+	function approveFeeUpdate(address affiliate) external onlyRole(APPROVER_ROLE) whenNotPaused {
 		require(pendingFeeUpdates[affiliate].exists, "AccountsHub: No pending update");
 
 		// Apply the update
@@ -549,7 +579,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		require(accountManager != address(0), "AccountsHub: Deployment failed");
 
 		// Initialize the account manager
-		IAccountManager(accountManager).initialize(address(this), affiliate);
+		IAccountManager(accountManager).initialize(address(this), affiliate, symmioAddress);
 
 		return accountManager;
 	}
@@ -559,6 +589,15 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			address(
 				uint160(
 					uint256(keccak256(abi.encodePacked(bytes1(0xff), affiliate, keccak256(abi.encodePacked(user, nonce)), ACCOUNT_INIT_CODE_HASH)))
+				)
+			);
+	}
+
+	function _generateFeeDistributorAddress(address affiliate, uint256 nonce) internal pure returns (address) {
+		return
+			address(
+				uint160(
+					uint256(keccak256(abi.encodePacked(bytes1(0xff), affiliate, keccak256(abi.encodePacked(nonce)), VIRTUAL_FEE_DISTRIBUTOR_CODE_HASH)))
 				)
 			);
 	}
@@ -712,6 +751,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	function setSymmioAddress(address _symmioAddress) external onlyRole(SETTER_ROLE) {
 		require(_symmioAddress != address(0), "AccountsHub: Zero address");
 		symmioAddress = _symmioAddress;
+		emit SymmioAddressSet(_symmioAddress);
 	}
 
 	function setAccountManagerImplementation(bytes memory implementation) external onlyRole(SETTER_ROLE) {
@@ -753,6 +793,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	function getOpenPositionCount(address account) internal view returns (uint256) {
-		return ISymmio(symmioAddress).getPartyAOpenPositions(account, 0, MAX_POSITION_QUERY_LIMIT).length; // TODO ::: replace it with symmio getOpenPositionCount
+		return ISymmio(symmioAddress).getPartyAOpenPositions(account, 0, MAX_POSITION_QUERY_LIMIT).length;
 	}
 }

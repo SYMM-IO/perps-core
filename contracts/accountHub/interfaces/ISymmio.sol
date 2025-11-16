@@ -107,4 +107,5 @@ interface ISymmio {
 	function internalTransfer(address user, uint256 amount) external;
 	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) external;
 	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory);
+	function setFeeCollector(address affiliate, address feeCollector) external;
 }
