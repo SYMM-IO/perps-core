@@ -786,7 +786,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
 		// })
 
-		it.only("should Fail Signature verification with Invalid Nonce", async function () {
+		it("should Fail Signature verification with Invalid Nonce", async function () {
 			const op1: InstantLayer.SignedOperationStruct = {
 				...opSendQuoteA1,
 				replayAttackHeader: {
@@ -1084,7 +1084,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 		})
 
-		it.only("reverts in MissingSourceResult when source result is empty (non-32 bytes)", async () => {
+		it("reverts in MissingSourceResult when source result is empty (non-32 bytes)", async () => {
 			await context.instantLayer.addTemplate("injectFromEmpty", [
 				{ insertionPoints: [0], sourceIndices: [0] },
 				{ insertionPoints: [0], sourceIndices: [0] },
