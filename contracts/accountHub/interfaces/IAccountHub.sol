@@ -71,13 +71,13 @@ interface IAccountHub {
 		IsolationType isolationType;
 		uint256 marketId; // For market isolation (symbolId)
 		uint256 createdAt;
-		address relatedCore;
 		bytes metadata;
 	}
 
 	struct SubAccountCreationData {
 		string name;
 		bytes metadata;
+		address relatedCore;
 		uint256 initialDeposit;
 	}
 
