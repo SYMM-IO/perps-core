@@ -32,7 +32,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	uint256 private constant MAX_POSITION_QUERY_LIMIT = 50;
 
 	// ==================== Storage ====================
-	address public symmioAddress;
 	address public symmioFeeReceiver;
 	bytes public accountManagerImplementation;
 
@@ -76,7 +75,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	modifier isSymmio() {
-		require(msg.sender == symmioAddress, "AccountsHub: Not Symmio");
+		require(availableCores[msg.sender], "AccountsHub: Not Symmio core");
 		_;
 	}
 
@@ -87,12 +86,10 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	function initialize(
 		address _admin,
-		address _symmioAddress,
 		address _symmioFeeReceiver,
 		bytes memory _accountManagerImplementation
 	) public initializer {
 		require(_admin != address(0), "AccountsHub: Zero admin");
-		require(_symmioAddress != address(0), "AccountsHub: Zero symmio");
 		require(_symmioFeeReceiver != address(0), "AccountsHub: Zero fee receiver");
 		require(_accountManagerImplementation.length > 0, "AccountsHub: Zero implementation");
 
@@ -102,7 +99,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
-		symmioAddress = _symmioAddress;
 		symmioFeeReceiver = _symmioFeeReceiver;
 		accountManagerImplementation = _accountManagerImplementation;
 	}
@@ -147,7 +143,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address accountManager = _deployAccountManager(affiliate);
 		address feeDistributor = _generateFeeDistributorAddress(affiliate, 0); // TODO ::: incremental or random nonce
 		grantRole(SIGNER_SETTER, accountManager);
-		ISymmio(symmioAddress).setFeeCollector(affiliate, feeDistributor); // TODO ::: better to remove it, set fee collector manually cause of different interfaces in cores
+		// ISymmio(symmioAddress).setFeeCollector(affiliate, feeDistributor); // TODO ::: better to remove it, set fee collector manually cause of different interfaces in cores
 
 		affiliates[affiliate].state = AffiliateState.ACTIVE;
 		affiliates[affiliate].accountManager = accountManager;
@@ -254,7 +250,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			emit FeesDistributed(stakeholders[i].receiver, share);
 		}
 
-		require(checkAmount <= amount, "AccountHub: wrong amount distributed");
+		require(checkAmount == amount, "AccountHub: wrong amount distributed");
 		emit FeesClaimed(amount);
 	}
 
