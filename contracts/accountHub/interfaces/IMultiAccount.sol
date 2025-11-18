@@ -5,6 +5,6 @@
 pragma solidity >=0.8.18;
 
 interface IMultiAccount {
-    function owners(address account) external returns (address);
-    function symmioAddress() external returns (address);
+    function owners(address account) external view returns (address);
+    function symmioAddress() external view returns (address);
 }

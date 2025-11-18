@@ -5,5 +5,5 @@
 pragma solidity >=0.8.18;
 
 interface IAccountManager {
-    function initialize(address hub, address Affiliate) external;
+    function initialize(address hub) external;
 }

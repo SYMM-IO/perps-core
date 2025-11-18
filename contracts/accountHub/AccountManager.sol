@@ -15,8 +15,6 @@ contract AccountManager is IAccountManager, Initializable {
     using SafeERC20 for IERC20;
 
 	address public hub;
-	address public affiliate;
-	address public symmio;
 
 	modifier onlyHub() {
 		require(msg.sender == hub, "AccountManager: Only hub");
@@ -29,17 +27,15 @@ contract AccountManager is IAccountManager, Initializable {
 		IAccountHub(hub).setSigner(address(0));
 	}
 
-	function initialize(address _hub, address _affiliate, address _symmio) external  initializer {
+	function initialize(address _hub) external  initializer {
 		hub = _hub;
-		affiliate = _affiliate;
-		symmio = _symmio;
 	}
 
-	function addAccount(string memory name) external nonReentrant withSigner(msg.sender) returns (address) {
+	function addAccount(string memory name) external withSigner(msg.sender) returns (address) {
 		return IAccountHub(hub).createSubAccount(affiliate, name, "");
 	}
 
-	function depositForAccount(address account, uint256 amount) external nonReentrant withSigner(msg.sender)  {
+	function depositForAccount(address account, uint256 amount) external withSigner(msg.sender)  {
 		address collateral = ISymmio(symmio).getCollateral();
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20(collateral).safeIncreaseAllowance(hub, amount);
@@ -47,7 +43,7 @@ contract AccountManager is IAccountManager, Initializable {
 		IAccountHub(hub).depositForAccount(account, amount);
 	}
 
-	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner(msg.sender) nonReentrant {
+	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner(msg.sender) {
 		address collateral = ISymmio(symmio).getCollateral();
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20(collateral).safeIncreaseAllowance(hub, amount);
@@ -55,11 +51,11 @@ contract AccountManager is IAccountManager, Initializable {
 		IAccountHub(hub).depositAndAllocateForAccount(account, amount);
 	}
 
-	function withdrawFromAccount(address account, uint256 amount) external withSigner(msg.sender) nonReentrant {
+	function withdrawFromAccount(address account, uint256 amount) external withSigner(msg.sender) {
 		IAccountHub(hub).withdrawFromAccount(account, amount);
 	}
 
-	function _call(address account, bytes[] memory callDatas) external withSigner(msg.sender) nonReentrant {
+	function _call(address account, bytes[] memory callDatas) external withSigner(msg.sender) {
 		IAccountHub(hub)._call(account, callDatas);
 	}
 

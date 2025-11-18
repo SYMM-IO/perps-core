@@ -24,17 +24,24 @@ interface IAccountHub {
 		uint256 share; // in 18 decimals, must sum to 100% - symmioShare
 	}
 
+	struct FeeDetails {
+		uint256 symmioShare;
+		Stakeholder[] stakeholders;
+	}
+
 	struct AffiliateData {
 		string name;
 		string brandColor;
 		address admin;
-		address accountManager;
+		address pendingAdmin;
 		AffiliateState state;
-		uint256 symmioShare; // Symmio's percentage (e.g., 30% = 0.3e18)
-		Stakeholder[] stakeholders;
+		FeeDetails feeDetails;
 		bytes metadata;
-		address[] legacyMultiAccounts;
+		address accountManager;
 		address feeDistributor;
+		address[] legacyMultiAccounts;
+		address[] symmioCores;
+		mapping(bytes4 => address) hooks;
 	}
 
 	struct AffiliateRegistration {
@@ -45,6 +52,7 @@ interface IAccountHub {
 		uint256 symmioShare;
 		bytes metadata;
 		address[] legacyMultiAccounts;
+		address[] symmioCores;
 	}
 
 	struct PendingFeeUpdate {
@@ -70,6 +78,7 @@ interface IAccountHub {
 		bool isDeleted;
 		IsolationType isolationType;
 		uint256 marketId; // For market isolation (symbolId)
+		uint256 quoteId;
 		uint256 createdAt;
 		bytes metadata;
 	}
@@ -117,7 +126,7 @@ interface IAccountHub {
 	event Call(address indexed sender, address indexed account, bytes callData, bool success, bytes resultData);
 
 	// Fee events
-	event FeesDistributed(address indexed Affiliate, uint256 total, address[] recipients, uint256[] amounts);
+	event FeesDistributed(address indexed recipient, uint256 amount);
 	event FeesClaimed(uint256 amount);
 	event FeeUpdateCancelled(address indexed Affiliate);
 	event SymmioFeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
@@ -130,8 +139,38 @@ interface IAccountHub {
 
 	event AvailableCoreSet(address indexed core, bool status);
 
-	function createSubAccount(address affiliate, string memory name, bytes memory metadata) external returns (address account);
+	event AdminTransferProposed(address indexed affiliate, address indexed newAdmin);
+	event AdminTransferCompleted(address indexed affiliate, address indexed oldAdmin, address indexed newAdmin);
+	event AdminTransferCancelled(address indexed affiliate);
+
+	function createSubAccount(address affiliate, string memory name, address relatedCore, bytes memory metadata) external returns (address account);
 	function depositForAccount(address account, uint256 amount) external;
 	function withdrawFromAccount(address account, uint256 amount) external;
 	function _call(address account, bytes[] memory _callDatas) external;
+
+	error ZeroAddress();
+	error InvalidNameLength();
+	error InvalidShare();
+	error SharesMustSumTo100();
+	error AlreadyRegistered();
+	error NotAdmin();
+	error NotPending();
+	error AffiliateNotActive();
+	error NotSymmioCore();
+	error EmptyArray();
+	error InvalidCore();
+	error NotOwner();
+	error ZeroAmount();
+	error AlreadyDeleted();
+	error OpenPositionsExist();
+	error InvalidTokenDecimals();
+	error InvalidFunctionSelector();
+	error InvalidMarketId();
+	error InvalidIsolationType();
+	error NotVirtualAccount();
+	error AccountDeleted();
+	error NoPendingUpdate();
+	error Unauthorized();
+	error NotPaused();
+	error DeploymentFailed();
 }

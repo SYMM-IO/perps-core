@@ -10,4 +10,5 @@ interface IHooks {
     function onWithdraw(address account, uint256 amount) external returns (bool);
     function onVirtualAccountCreation(address virtualAccount, address parent) external returns (bool);
     function onVirtualAccountDeletion(address account) external;
+    function onCall(address account, bytes[] memory callDatas) external;
 }
