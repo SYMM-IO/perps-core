@@ -585,6 +585,28 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Internal: Returns an array of open positions associated with a party A address.
+	 * @param partyA The address of party A.
+	 * @param start The starting index.
+	 * @param size The size of the array.
+	 * @return An array of open positions.
+	 */
+	function getPartyAOpenPositionsImp(address partyA, uint256 start, uint256 size) internal view returns (Quote[] memory) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] memory partyAOpenPositions = quoteLayout.partyAOpenPositions[partyA];
+		Quote[] memory quotes = new Quote[](size);
+
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
+			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
+			unchecked {
+				++i;
+			}
+		}
+		return quotes;
+	}
+
+	/**
 	 * @notice Returns an array of open positions associated with a party A address.
 	 * @param partyA The address of party A.
 	 * @param start The starting index.
@@ -592,16 +614,27 @@ contract ViewFacet is IViewFacet {
 	 * @return An array of open positions.
 	 */
 	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] memory partyAOpenPositions = quoteLayout.partyAOpenPositions[partyA];
+		return getPartyAOpenPositionsImp(partyA, start, size);
+	}
 
-		if (partyAOpenPositions.length < start + size) {
-			size = partyAOpenPositions.length - start;
+	/**
+	 * @notice Internal:rReturns an array of open positions associated with a party B address and a specific party A address.
+	 * @param partyB The address of party B.
+	 * @param partyA The address of party A.
+	 * @param start The starting index.
+	 * @param size The size of the array.
+	 * @return An array of open positions.
+	 */
+	function getPartyBOpenPositionsImp(address partyB, address partyA, uint256 start, uint256 size) internal view returns (Quote[] memory) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
+		if (partyBOpenPositions.length < start + size) {
+			size = partyBOpenPositions.length - start;
 		}
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
-			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
+			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
 			unchecked {
 				++i;
 			}
@@ -618,20 +651,7 @@ contract ViewFacet is IViewFacet {
 	 * @return An array of open positions.
 	 */
 	function getPartyBOpenPositions(address partyB, address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
-		if (partyBOpenPositions.length < start + size) {
-			size = partyBOpenPositions.length - start;
-		}
-		Quote[] memory quotes = new Quote[](size);
-		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
-			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
-			unchecked {
-				++i;
-			}
-		}
-		return quotes;
+		return getPartyBOpenPositionsImp(partyB, partyA, start, size);
 	}
 
 	/**
@@ -999,6 +1019,141 @@ contract ViewFacet is IViewFacet {
 	function getMuonConfig() external view returns (uint256 upnlValidTime, uint256 priceValidTime) {
 		upnlValidTime = MuonStorage.layout().upnlValidTime;
 		priceValidTime = MuonStorage.layout().priceValidTime;
+	}
+
+	/**
+	 * @notice Returns the Parameters needed to Calculate UPNLc offchain.
+	 * @param partyA Address of partyA
+	 * @param partyB Address of partyB
+	 * @param quoteStart Quote start ID
+	 * @param quoteEnd Quote end ID
+	 * @return blockNumber The last network block number.
+	 * @return partyANonce The last party A nonce.
+	 * @return partyBNonce The last party B nonce.
+	 * @return partyAAllocated  Party A Allocated Balance.
+	 * @return partyBAllocated  Party B Allocated Balance.
+	 * @return availableAmount  Quotes available amounts.
+	 * @return openPrices  Quotes open positions.
+	 * @return symbolNames  Quotes Symbols names.
+	 */
+	function getPartyAUPNLParamsImp(
+		address partyA,
+		address partyB,
+		uint256 quoteStart,
+		uint256 quoteEnd,
+		bool symbolIdsNeeded
+	)
+		internal
+		view
+		returns (
+			uint256 blockNumber,
+			uint256 partyANonce,
+			uint256 partyBNonce,
+			uint256 partyAAllocated,
+			uint256 partyBAllocated,
+			uint256[] memory availableAmount,
+			uint256[] memory openPrices,
+			string[] memory symbolNames,
+			uint256[] memory symbolIds
+		)
+	{
+		blockNumber = block.number; // needs attention
+		partyANonce = AccountStorage.layout().partyANonces[partyA];
+		partyBNonce = AccountStorage.layout().partyANonces[partyB];
+		partyBAllocated = AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
+		partyAAllocated = AccountStorage.layout().allocatedBalances[partyA];
+		Quote[] memory quotes = getPartyAOpenPositionsImp(partyA, quoteStart, quoteEnd);
+		for (uint i = 0; i < (quoteEnd - quoteStart); i++)
+			if (
+				quotes[i].quoteStatus == QuoteStatus.OPENED ||
+				quotes[i].quoteStatus == QuoteStatus.CLOSE_PENDING ||
+				quotes[i].quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING
+			) {
+				if (quotes[i].partyB == partyB) {
+					availableAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
+					openPrices[i] = quotes[i].requestedOpenPrice;
+					symbolNames[i] = SymbolStorage.layout().symbols[quotes[i].symbolId].name;
+					if (symbolIdsNeeded) symbolIds[i] = quotes[i].symbolId;
+				}
+			}
+	}
+
+	/**
+	 * @notice Returns the Parameters needed to Calculate UPNLc offchain.
+	 * @param partyA Address of partyA
+	 * @param partyB Address of partyB
+	 * @param quoteStart Quote start ID
+	 * @param quoteEnd Quote end ID
+	 * @return blockNumber The last network block number.
+	 * @return partyANonce The last party A nonce.
+	 * @return partyBNonce The last party B nonce.
+	 * @return partyAAllocated  Party A Allocated Balance.
+	 * @return partyBAllocated  Party B Allocated Balance.
+	 * @return availableAmount  Quotes available amounts.
+	 * @return openPrices  Quotes open positions.
+	 * @return symbolNames  Quotes Symbols names.
+	 * @return symbolIds  Quotes Symbols names.
+	 */
+	function getPartyAUPNLParams(
+		address partyA,
+		address partyB,
+		uint256 quoteStart,
+		uint256 quoteEnd
+	)
+		external
+		view
+		returns (
+			uint256 blockNumber,
+			uint256 partyANonce,
+			uint256 partyBNonce,
+			uint256 partyAAllocated,
+			uint256 partyBAllocated,
+			uint256[] memory availableAmount,
+			uint256[] memory openPrices,
+			string[] memory symbolNames,
+			uint256[] memory symbolIds
+		)
+	{
+		return getPartyAUPNLParamsImp(partyA, partyB, quoteStart, quoteEnd, false);
+	}
+
+	/**
+	 * @notice Returns the Parameters needed to Calculate UPNLc offchain.
+	 * @param partyA Address of partyA
+	 * @param partyB Address of partyB
+	 * @param quoteStart Quote start ID
+	 * @param quoteEnd Quote end ID
+	 * @return blockNumber The last network block number.
+	 * @return partyANonce The last party A nonce.
+	 * @return partyBNonce The last party B nonce.
+	 * @return partyAAllocated  Party A Allocated Balance.
+	 * @return partyBAllocated  Party B Allocated Balance.
+	 * @return availableAmount  An array of quotes available amounts.
+	 * @return openPrices  An array of quotes open prices.
+	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return symbolIds  An array of quotes Symbols IDs.
+	 */
+	function getPartyAUPNLParamswithIds(
+		address partyA,
+		address partyB,
+		uint256 quoteStart,
+		uint256 quoteEnd
+	)
+		external
+		view
+		returns (
+			uint256 blockNumber,
+			uint256 partyANonce,
+			uint256 partyBNonce,
+			uint256 partyAAllocated,
+			uint256 partyBAllocated,
+			uint256[] memory availableAmount,
+			uint256[] memory openPrices,
+			string[] memory symbolNames,
+			uint256[] memory symbolIds
+		)
+	{
+		return getPartyAUPNLParamsImp(partyA, partyB, quoteStart, quoteEnd, true);
 	}
 
 	/**
