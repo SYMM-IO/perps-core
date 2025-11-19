@@ -21,49 +21,50 @@ contract AccountManager is IAccountManager, Initializable {
 		_;
 	}
 
-	modifier withSigner(address signer) {
-		IAccountHub(hub).setSigner(signer);
-		_;
-		IAccountHub(hub).setSigner(address(0));
-	}
+	// modifier withSigner(address signer) {
+	// 	IAccountHub(hub).setSigner(signer);
+	// 	_;
+	// 	IAccountHub(hub).setSigner(address(0));
+	// }
 
 	function initialize(address _hub) external  initializer {
 		hub = _hub;
 	}
 
-	function addAccount(string memory name) external withSigner(msg.sender) returns (address) {
-		return IAccountHub(hub).createSubAccount(affiliate, name, "");
-	}
+	// function addAccount(string memory name) external withSigner(msg.sender) returns (address) {
+	// 	return IAccountHub(hub).createSubAccount(affiliate, name, "");
+	// }
 
-	function depositForAccount(address account, uint256 amount) external withSigner(msg.sender)  {
-		address collateral = ISymmio(symmio).getCollateral();
-		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
-		IERC20(collateral).safeIncreaseAllowance(hub, amount);
+	// function depositForAccount(address account, uint256 amount) external withSigner(msg.sender)  {
+	// 	// getrealtedCore account
+	// 	address collateral = ISymmio(symmio).getCollateral();
+	// 	IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+	// 	IERC20(collateral).safeIncreaseAllowance(hub, amount);
 
-		IAccountHub(hub).depositForAccount(account, amount);
-	}
+	// 	IAccountHub(hub).depositForAccount(account, amount);
+	// }
 
-	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner(msg.sender) {
-		address collateral = ISymmio(symmio).getCollateral();
-		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
-		IERC20(collateral).safeIncreaseAllowance(hub, amount);
+	// function depositAndAllocateForAccount(address account, uint256 amount) external withSigner(msg.sender) {
+	// 	address collateral = ISymmio(symmio).getCollateral();
+	// 	IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+	// 	IERC20(collateral).safeIncreaseAllowance(hub, amount);
 
-		IAccountHub(hub).depositAndAllocateForAccount(account, amount);
-	}
+	// 	IAccountHub(hub).depositAndAllocateForAccount(account, amount);
+	// }
 
-	function withdrawFromAccount(address account, uint256 amount) external withSigner(msg.sender) {
-		IAccountHub(hub).withdrawFromAccount(account, amount);
-	}
+	// function withdrawFromAccount(address account, uint256 amount) external withSigner(msg.sender) {
+	// 	IAccountHub(hub).withdrawFromAccount(account, amount);
+	// }
 
-	function _call(address account, bytes[] memory callDatas) external withSigner(msg.sender) {
-		IAccountHub(hub)._call(account, callDatas);
-	}
+	// function _call(address account, bytes[] memory callDatas) external withSigner(msg.sender) {
+	// 	IAccountHub(hub)._call(account, callDatas);
+	// }
 
-	function getHub() external view returns (address) {
-		return hub;
-	}
+	// function getHub() external view returns (address) {
+	// 	return hub;
+	// }
 
-	function getAffiliate() external view returns (address) {
-		return affiliate;
-	}
+	// function getAffiliate() external view returns (address) {
+	// 	return affiliate;
+	// }
 }

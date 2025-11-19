@@ -70,7 +70,6 @@ interface IAccountHub {
 		bool exists;
 		uint256 virtualAccountCount;
 		address relatedCore;
-		uint256 nonce; // for generating virtual accounts
 	}
 
 	struct VirtualAccountData {
@@ -143,11 +142,12 @@ interface IAccountHub {
 	event AdminTransferCompleted(address indexed affiliate, address indexed oldAdmin, address indexed newAdmin);
 	event AdminTransferCancelled(address indexed affiliate);
 
-	function createSubAccount(address affiliate, string memory name, address relatedCore, bytes memory metadata) external returns (address account);
+	function batchCreateSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
 	function depositForAccount(address account, uint256 amount) external;
 	function withdrawFromAccount(address account, uint256 amount) external;
 	function _call(address account, bytes[] memory _callDatas) external;
 
+	// ==================== Custom Errors ====================
 	error ZeroAddress();
 	error InvalidNameLength();
 	error InvalidShare();
@@ -173,4 +173,8 @@ interface IAccountHub {
 	error Unauthorized();
 	error NotPaused();
 	error DeploymentFailed();
+	error InvalidAmount();
+	error InvalidParent();
+	error AccountDoesNotExist();
+	error UnableToRetrieveCore();
 }
