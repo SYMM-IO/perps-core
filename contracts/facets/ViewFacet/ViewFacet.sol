@@ -1022,19 +1022,21 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Returns the Parameters needed to Calculate UPNLc offchain.
+	 * @notice Returns the parameters needed to calculate UPNL offchain.
 	 * @param partyA Address of partyA
 	 * @param partyB Address of partyB
 	 * @param quoteStart Quote start ID
 	 * @param quoteEnd Quote end ID
+	 * @param symbolIdsNeeded Whether to populate the symbols IDs list
 	 * @return blockNumber The last network block number.
 	 * @return partyANonce The last party A nonce.
 	 * @return partyBNonce The last party B nonce.
 	 * @return partyAAllocated  Party A Allocated Balance.
 	 * @return partyBAllocated  Party B Allocated Balance.
-	 * @return availableAmount  Quotes available amounts.
-	 * @return openPrices  Quotes open positions.
-	 * @return symbolNames  Quotes Symbols names.
+	 * @return availableAmount  An array of quotes available amounts.
+	 * @return openPrices  An array of quotes open prices.
+	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return symbolIds  An array of quotes Symbols IDs.
 	 */
 	function getPartyAUPNLParamsImp(
 		address partyA,
@@ -1079,7 +1081,7 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Returns the Parameters needed to Calculate UPNLc offchain.
+	 * @notice Returns the parameters needed to calculate UPNL offchain.
 	 * @param partyA Address of partyA
 	 * @param partyB Address of partyB
 	 * @param quoteStart Quote start ID
@@ -1089,10 +1091,10 @@ contract ViewFacet is IViewFacet {
 	 * @return partyBNonce The last party B nonce.
 	 * @return partyAAllocated  Party A Allocated Balance.
 	 * @return partyBAllocated  Party B Allocated Balance.
-	 * @return availableAmount  Quotes available amounts.
-	 * @return openPrices  Quotes open positions.
-	 * @return symbolNames  Quotes Symbols names.
-	 * @return symbolIds  Quotes Symbols names.
+	 * @return availableAmount  An array of quotes available amounts.
+	 * @return openPrices  An array of quotes open prices.
+	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return symbolIds  An array of quotes Symbols IDs.
 	 */
 	function getPartyAUPNLParams(
 		address partyA,
@@ -1118,7 +1120,7 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Returns the Parameters needed to Calculate UPNLc offchain.
+	 * @notice Returns the parameters needed to calculate UPNL offchain.
 	 * @param partyA Address of partyA
 	 * @param partyB Address of partyB
 	 * @param quoteStart Quote start ID
