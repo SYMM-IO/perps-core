@@ -579,19 +579,19 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		_callHook(affiliate, IHooks.onCall.selector, abi.encode(account, callDatas));
 	}
 
-	function setHook(bytes4 selector, address hook) external {
-		if (affiliates[msg.sender].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
-		if (affiliates[msg.sender].admin != msg.sender) revert NotAdmin();
+	function setHook(address affiliate, bytes4 selector, address hook) external {
+		if (affiliates[affiliate].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
+		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
 
-		affiliates[msg.sender].hooks[selector] = hook;
-		emit HookSet(msg.sender, selector, hook);
+		affiliates[affiliate].hooks[selector] = hook;
+		emit HookSet(affiliate, selector, hook);
 	}
 
-	function removeHook(bytes4 selector) external {
-		if (affiliates[msg.sender].admin != msg.sender) revert NotAdmin();
+	function removeHook(address affiliate, bytes4 selector) external {
+		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
 
-		delete affiliates[msg.sender].hooks[selector];
-		emit HookRemoved(msg.sender, selector);
+		delete affiliates[affiliate].hooks[selector];
+		emit HookRemoved(affiliate, selector);
 	}
 
 	function _deployAccountManager(address affiliate) internal returns (address) {
