@@ -41,7 +41,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	mapping(address => bool) availableCores;
 
-	mapping(address => AffiliateData) public affiliates;
+	mapping(address => AffiliateData) affiliates;
 	EnumerableSet.AddressSet private affiliateAddresses;
 	mapping(address => PendingFeeUpdate) public pendingFeeUpdates;
 
@@ -471,9 +471,9 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		);
 
 		if (creationData.isolationType != IsolationType.POSITION) {
-			if (symbolId != creationData.symbolId) revert InvalidsymbolId();
+			if (symbolId != creationData.symbolId) revert InvalidSymbolId();
 			IsolationType expectedType = positionType == ISymmio.PositionType.LONG ? IsolationType.MARKET_LONG : IsolationType.MARKET_SHORT;
-			if (creationData.isolationType != expectedType | IsolationType.MARKET) revert InvalidIsolationType();
+			if (creationData.isolationType != expectedType || creationData.isolationType !=  IsolationType.MARKET) revert InvalidIsolationType();
 		}
 
 		virtualAccount = createVirtualAccount(parentAccount, creationData.isolationType, creationData.symbolId, creationData.metadata);
@@ -508,6 +508,13 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		_depositForAccount(account, amount);
 	}
 
+	function allocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
+		address signer = getSigner();
+		if (!_isOwnerOf(account, signer)) revert NotOwner();
+		if (amount == 0) revert ZeroAmount();
+		_allocateForAccount(account, amount);
+	}
+
 	function depositAndAllocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
 		address signer = getSigner();
 		if (!_isOwnerOf(account, signer)) revert NotOwner();
@@ -530,26 +537,33 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.depositFor.selector, account, amount));
 
-		// Hook (if any)
 		address affiliate = _getAffiliateForAccount(account);
 		_callHook(affiliate, IHooks.onDeposit.selector, abi.encode(account, amount));
 
 		emit DepositForAccount(signer, account, amount);
 	}
 
-	function _depositAndAllocateForAccount(address account, uint256 amount) private {
+	function _allocateForAccount(address account, uint256 amount) private {
 		address signer = getSigner();
-		_depositForAccount(account, amount);
+		address core = getRelatedCore(account);
 
-		address collateral = ISymmio(getRelatedCore(account)).getCollateral();
+		address collateral = ISymmio(core).getCollateral();
 		uint8 decimals = IERC20Metadata(collateral).decimals();
 		if (decimals > 18) revert InvalidTokenDecimals();
 
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** decimals);
 
-		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.allocate.selector, amountWith18Decimals));
+		ISymmio(core).setSigner(account);
+		ISymmio(core).allocate(amount);
+		ISymmio(core).setSigner(address(0));
 
 		emit AllocateForAccount(signer, account, amountWith18Decimals);
+	}
+
+	function _depositAndAllocateForAccount(address account, uint256 amount) private {
+		address signer = getSigner();
+		_depositForAccount(account, amount);
+		_allocateForAccount(account, amount);
 	}
 
 	function _withdrawFromAccount(address account, uint256 amount) private {
@@ -574,7 +588,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address affiliate = _getAffiliateForAccount(account);
 		_callHook(affiliate, IHooks.onCall.selector, abi.encode(account, callDatas));
 	}
-	
+
 	function setHook(address affiliate, bytes4 selector, address hook) external {
 		if (affiliates[affiliate].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
 		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
@@ -592,7 +606,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	function _deployAccountManager(address affiliate) internal returns (address) {
 		bytes32 salt = keccak256(abi.encodePacked("AccountManager", affiliate));
-		bytes memory bytecode = abi.encodePacked(accountManagerImplementation);
+		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
 
 		address accountManager;
 
@@ -601,9 +615,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		}
 
 		if (accountManager == address(0)) revert DeploymentFailed();
-
-		// Initialize the account manager
-		IAccountManager(accountManager).initialize(address(this));
 
 		return accountManager;
 	}
@@ -822,20 +833,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	// ==================== View Functions ====================
-
-	function getAffiliateDetails(
-		address affiliate
-	)
-		external
-		view
-		returns (string memory name, string memory brandColor, address admin, address accountManager, AffiliateState state, uint256 symmioShare)
-	{
-		AffiliateData storage f = affiliates[affiliate];
-		return (f.name, f.brandColor, f.admin, f.accountManager, f.state, f.feeDetails.symmioShare);
-	}
-
-	function getAffiliateStakeholders(address affiliate) external view returns (Stakeholder[] memory) {
-		return affiliates[affiliate].feeDetails.stakeholders;
+	function affiliateSymmioCores(address aff) external view returns (address[] memory) {
+		return affiliates[aff].symmioCores;
 	}
 
 	function getOpenPositionCount(address account) internal view returns (uint256) {

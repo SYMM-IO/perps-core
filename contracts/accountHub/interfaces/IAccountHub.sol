@@ -17,7 +17,7 @@ interface IAccountHub {
 		POSITION,
 		MARKET,
 		MARKET_LONG,
-		MARKET_SHORT,
+		MARKET_SHORT
 	}
 
 	struct Stakeholder {
@@ -94,7 +94,7 @@ interface IAccountHub {
 	struct VirtualAccountCreationData {
 		bytes metadata;
 		IsolationType isolationType;
-		uint256 marketId; // For market isolation (symbolId)
+		uint256 symbolId; // For market isolation (symbolId)
 		uint256 initialDeposit;
 	}
 
@@ -103,7 +103,7 @@ interface IAccountHub {
 		string name;
 	}
 
-	struct CallMetadata{
+	struct CallMetadata {
 		IsolationType isolationType;
 	}
 
@@ -150,8 +150,13 @@ interface IAccountHub {
 
 	function batchCreateSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
 	function depositForAccount(address account, uint256 amount) external;
+	function allocateForAccount(address account, uint256 amount) external;
 	function withdrawFromAccount(address account, uint256 amount) external;
 	function _call(address account, bytes[] memory _callDatas) external;
+	function getRelatedCore(address account) external view returns (address);
+	function affiliateSymmioCores(address aff) external view returns (address[] memory);
+	function setSigner(address _signer) external;
+	function depositAndAllocateForAccount(address account, uint256 amount) external;
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();
@@ -183,4 +188,5 @@ interface IAccountHub {
 	error InvalidParent();
 	error AccountDoesNotExist();
 	error UnableToRetrieveCore();
+	error InvalidSymbolId();
 }

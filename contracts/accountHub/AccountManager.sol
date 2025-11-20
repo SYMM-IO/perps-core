@@ -10,8 +10,8 @@ import "./interfaces/IAccountManager.sol";
 import "./interfaces/IAccountHub.sol";
 import "./interfaces/ISymmio.sol";
 
-contract AccountManager is IAccountManager, Initializable {
-    using SafeERC20 for IERC20;
+contract AccountManager is IAccountManager {
+	using SafeERC20 for IERC20;
 
 	address public hub;
 
@@ -26,16 +26,29 @@ contract AccountManager is IAccountManager, Initializable {
 		IAccountHub(hub).setSigner(address(0));
 	}
 
-	constructor(address _hub) external {
+	constructor(address _hub) {
 		hub = _hub;
 	}
 
-	function addAccount(string memory name) external withSigner(msg.sender) returns (address) {
-		return IAccountHub(hub).createSubAccount(affiliate, name, "");
+	function addAccount(string memory name) external withSigner(msg.sender) returns (address[] memory) {
+		address[] memory cores = IAccountHub(hub).affiliateSymmioCores(address(this));
+
+		IAccountHub.SubAccountCreationData memory acc = IAccountHub.SubAccountCreationData({
+			name: name,
+			metadata: hex"",
+			relatedCore: cores[0],
+			initialDeposit: 0
+		});
+
+		IAccountHub.SubAccountCreationData[] memory arr;
+
+		arr[0] = acc;
+
+		return IAccountHub(hub).batchCreateSubAccounts(address(this), arr);
 	}
 
-	function depositForAccount(address account, uint256 amount) external withSigner(msg.sender)  {
-		address core = IAccountHub(hub).getRelatedCore()
+	function depositForAccount(address account, uint256 amount) external withSigner(msg.sender) {
+		address core = IAccountHub(hub).getRelatedCore(account);
 		address collateral = ISymmio(core).getCollateral();
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20(collateral).safeIncreaseAllowance(hub, amount);
@@ -43,8 +56,15 @@ contract AccountManager is IAccountManager, Initializable {
 		IAccountHub(hub).depositForAccount(account, amount);
 	}
 
+	function allocateForAccount(address account, uint256 amount) external withSigner(msg.sender) {
+		address core = IAccountHub(hub).getRelatedCore(account);
+		IAccountHub(hub).allocateForAccount(account, amount);
+	}
+
 	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner(msg.sender) {
-		address collateral = ISymmio(symmio).getCollateral();
+		address core = IAccountHub(hub).getRelatedCore(account);
+
+		address collateral = ISymmio(core).getCollateral();
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20(collateral).safeIncreaseAllowance(hub, amount);
 
@@ -61,9 +81,5 @@ contract AccountManager is IAccountManager, Initializable {
 
 	function getHub() external view returns (address) {
 		return hub;
-	}
-
-	function getAffiliate() external view returns (address) {
-		return affiliate;
 	}
 }
