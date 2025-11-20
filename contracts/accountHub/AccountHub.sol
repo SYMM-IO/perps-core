@@ -50,8 +50,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	mapping(address => VirtualAccountData) public virtualAccounts;
 	mapping(address => EnumerableSet.AddressSet) private userToSubAccounts;
 	mapping(address => EnumerableSet.AddressSet) private subAccountToVirtualAccounts;
-	uint256 public globalNonce;
 	address internal globalSigner;
+	uint256 public globalNonce;
 
 	EnumerableSet.AddressSet private legacyMultiAccounts;
 
@@ -403,7 +403,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	function createVirtualAccount(
 		address parentAccount,
 		IsolationType isolationType,
-		uint256 marketId,
+		uint256 symbolId,
 		bytes memory metadata
 	) private whenNotPaused nonReentrant returns (address virtualAccount) {
 		SubAccountData storage parent = subAccounts[parentAccount];
@@ -411,7 +411,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address signer = getSigner();
 		if (!_isOwnerOf(parentAccount, signer)) revert NotOwner();
 
-		if (marketId > 0) {
+		if (symbolId > 0) {
 			if (isolationType != IsolationType.MARKET_LONG && isolationType != IsolationType.MARKET_SHORT) {
 				revert InvalidIsolationType();
 			}
@@ -426,7 +426,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			parentAccount: parentAccount,
 			isDeleted: false,
 			isolationType: isolationType,
-			marketId: marketId,
+			symbolId: symbolId,
+			quotesCount: 0,
 			quoteId: 0,
 			createdAt: block.timestamp,
 			metadata: metadata
@@ -470,15 +471,12 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		);
 
 		if (creationData.isolationType != IsolationType.POSITION) {
-			if (symbolId != creationData.marketId) revert InvalidMarketId();
-
-			// Match isolation type to position type
+			if (symbolId != creationData.symbolId) revert InvalidsymbolId();
 			IsolationType expectedType = positionType == ISymmio.PositionType.LONG ? IsolationType.MARKET_LONG : IsolationType.MARKET_SHORT;
-
-			if (creationData.isolationType != expectedType) revert InvalidIsolationType();
+			if (creationData.isolationType != expectedType | IsolationType.MARKET) revert InvalidIsolationType();
 		}
 
-		virtualAccount = createVirtualAccount(parentAccount, creationData.isolationType, creationData.marketId, creationData.metadata);
+		virtualAccount = createVirtualAccount(parentAccount, creationData.isolationType, creationData.symbolId, creationData.metadata);
 		_depositAndAllocateForAccount(virtualAccount, creationData.initialDeposit);
 
 		// Execute sendQuote through the virtual account
@@ -569,8 +567,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		if (!_isOwnerOf(account, signer)) revert NotOwner();
 		if (callDatas.length == 0) revert EmptyArray();
 
-		// TODO ::: Limit virtual accounts with position isolation type to just able to have one position
-
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			_executeWithSigner(account, callDatas[i]);
 		}
@@ -578,7 +574,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address affiliate = _getAffiliateForAccount(account);
 		_callHook(affiliate, IHooks.onCall.selector, abi.encode(account, callDatas));
 	}
-
+	
 	function setHook(address affiliate, bytes4 selector, address hook) external {
 		if (affiliates[affiliate].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
 		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();

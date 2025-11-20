@@ -15,8 +15,9 @@ interface IAccountHub {
 	enum IsolationType {
 		NONE,
 		POSITION,
+		MARKET,
 		MARKET_LONG,
-		MARKET_SHORT
+		MARKET_SHORT,
 	}
 
 	struct Stakeholder {
@@ -76,8 +77,9 @@ interface IAccountHub {
 		address parentAccount;
 		bool isDeleted;
 		IsolationType isolationType;
-		uint256 marketId; // For market isolation (symbolId)
-		uint256 quoteId;
+		uint256 symbolId; // For market isolation (symbolId)
+		uint256 quotesCount;
+		uint256 quoteId; // for position isolation
 		uint256 createdAt;
 		bytes metadata;
 	}
@@ -99,6 +101,10 @@ interface IAccountHub {
 	struct Account {
 		address accountAddress;
 		string name;
+	}
+
+	struct CallMetadata{
+		IsolationType isolationType;
 	}
 
 	// Affiliate events
