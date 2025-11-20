@@ -1033,9 +1033,11 @@ contract ViewFacet is IViewFacet {
 	 * @return partyBNonce The last party B nonce.
 	 * @return partyAAllocated  Party A Allocated Balance.
 	 * @return partyBAllocated  Party B Allocated Balance.
+	 * @return quoteIds  An array of quotes IDs.
 	 * @return availableAmount  An array of quotes available amounts.
 	 * @return openPrices  An array of quotes open prices.
 	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return positionType  An array of quotes positions Type.
 	 * @return symbolIds  An array of quotes Symbols IDs.
 	 */
 	function getPartyAUPNLParamsImp(
@@ -1053,9 +1055,11 @@ contract ViewFacet is IViewFacet {
 			uint256 partyBNonce,
 			uint256 partyAAllocated,
 			uint256 partyBAllocated,
+			uint256[] memory quoteIds,
 			uint256[] memory availableAmount,
 			uint256[] memory openPrices,
 			string[] memory symbolNames,
+			uint256[] memory positionType,
 			uint256[] memory symbolIds
 		)
 	{
@@ -1072,9 +1076,12 @@ contract ViewFacet is IViewFacet {
 				quotes[i].quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING
 			) {
 				if (quotes[i].partyB == partyB) {
+					quoteIds[i] = quotes[i].id;
 					availableAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
 					openPrices[i] = quotes[i].requestedOpenPrice;
 					symbolNames[i] = SymbolStorage.layout().symbols[quotes[i].symbolId].name;
+					positionType[i] = uint256(quotes[i].positionType);
+
 					if (symbolIdsNeeded) symbolIds[i] = quotes[i].symbolId;
 				}
 			}
@@ -1091,9 +1098,11 @@ contract ViewFacet is IViewFacet {
 	 * @return partyBNonce The last party B nonce.
 	 * @return partyAAllocated  Party A Allocated Balance.
 	 * @return partyBAllocated  Party B Allocated Balance.
+	 * @return quoteIds  An array of quotes IDs.
 	 * @return availableAmount  An array of quotes available amounts.
 	 * @return openPrices  An array of quotes open prices.
 	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return positionType  An array of quotes positions Type.
 	 * @return symbolIds  An array of quotes Symbols IDs.
 	 */
 	function getPartyAUPNLParams(
@@ -1110,9 +1119,11 @@ contract ViewFacet is IViewFacet {
 			uint256 partyBNonce,
 			uint256 partyAAllocated,
 			uint256 partyBAllocated,
+			uint256[] memory quoteIds,
 			uint256[] memory availableAmount,
 			uint256[] memory openPrices,
 			string[] memory symbolNames,
+			uint256[] memory positionType,
 			uint256[] memory symbolIds
 		)
 	{
@@ -1130,12 +1141,14 @@ contract ViewFacet is IViewFacet {
 	 * @return partyBNonce The last party B nonce.
 	 * @return partyAAllocated  Party A Allocated Balance.
 	 * @return partyBAllocated  Party B Allocated Balance.
+	 * @return quoteIds  An array of quotes IDs.
 	 * @return availableAmount  An array of quotes available amounts.
 	 * @return openPrices  An array of quotes open prices.
 	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return positionType  An array of quotes positions Type.
 	 * @return symbolIds  An array of quotes Symbols IDs.
 	 */
-	function getPartyAUPNLParamswithIds(
+	function getPartyAUPNLParamsWithIds(
 		address partyA,
 		address partyB,
 		uint256 quoteStart,
@@ -1149,9 +1162,11 @@ contract ViewFacet is IViewFacet {
 			uint256 partyBNonce,
 			uint256 partyAAllocated,
 			uint256 partyBAllocated,
+			uint256[] memory quoteIds,
 			uint256[] memory availableAmount,
 			uint256[] memory openPrices,
 			string[] memory symbolNames,
+			uint256[] memory positionType,
 			uint256[] memory symbolIds
 		)
 	{
