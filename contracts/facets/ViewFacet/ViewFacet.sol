@@ -1022,90 +1022,72 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Returns the parameters needed to calculate UPNL offchain.
+	 * @notice Internal:Returns the parameters needed to calculate UPNL offchain.
 	 * @param partyA Address of partyA
-	 * @param partyB Address of partyB
 	 * @param quoteStart Quote start ID
 	 * @param quoteEnd Quote end ID
-	 * @param symbolIdsNeeded Whether to populate the symbols IDs list
-	 * @return blockNumber The last network block number.
-	 * @return partyANonce The last party A nonce.
-	 * @return partyBNonce The last party B nonce.
-	 * @return partyAAllocated  Party A Allocated Balance.
-	 * @return partyBAllocated  Party B Allocated Balance.
+	 * @return partyBsAllocated  An array of party B Allocated Balance.
+	 * @return partyBs  An array of quotes partyBs.
 	 * @return quoteIds  An array of quotes IDs.
-	 * @return availableAmount  An array of quotes available amounts.
-	 * @return openPrices  An array of quotes open prices.
-	 * @return symbolNames  An array of quotes Symbols names.
-	 * @return positionType  An array of quotes positions Type.
 	 * @return symbolIds  An array of quotes Symbols IDs.
+	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return openPrices  An array of quotes open prices.
+	 * @return availableAmount  An array of quotes available amounts.
+	 * @return positionType  An array of quotes positions Type.
 	 */
-	function getPartyAUPNLParamsImp(
+	function getPartyAUPNLParams(
 		address partyA,
-		address partyB,
 		uint256 quoteStart,
-		uint256 quoteEnd,
-		bool symbolIdsNeeded
+		uint256 quoteEnd
 	)
-		internal
+		external
 		view
 		returns (
-			uint256 blockNumber,
-			uint256 partyANonce,
-			uint256 partyBNonce,
-			uint256 partyAAllocated,
-			uint256 partyBAllocated,
+			// uint256 positionsCount,
+			uint256[] memory partyBsAllocated,
+			address[] memory partyBs,
 			uint256[] memory quoteIds,
-			uint256[] memory availableAmount,
-			uint256[] memory openPrices,
+			uint256[] memory symbolIds,
 			string[] memory symbolNames,
-			uint256[] memory positionType,
-			uint256[] memory symbolIds
+			uint256[] memory openPrices,
+			uint256[] memory availableAmount,
+			uint256[] memory positionType
 		)
 	{
-		blockNumber = block.number; // needs attention
-		partyANonce = AccountStorage.layout().partyANonces[partyA];
-		partyBNonce = AccountStorage.layout().partyANonces[partyB];
-		partyBAllocated = AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
-		partyAAllocated = AccountStorage.layout().allocatedBalances[partyA];
 		Quote[] memory quotes = getPartyAOpenPositionsImp(partyA, quoteStart, quoteEnd);
-		for (uint i = 0; i < (quoteEnd - quoteStart); i++)
+		for (uint i = 0; i < (quoteEnd - quoteStart); i++) {
 			if (
 				quotes[i].quoteStatus == QuoteStatus.OPENED ||
 				quotes[i].quoteStatus == QuoteStatus.CLOSE_PENDING ||
 				quotes[i].quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING
 			) {
-				if (quotes[i].partyB == partyB) {
-					quoteIds[i] = quotes[i].id;
-					availableAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
-					openPrices[i] = quotes[i].requestedOpenPrice;
-					symbolNames[i] = SymbolStorage.layout().symbols[quotes[i].symbolId].name;
-					positionType[i] = uint256(quotes[i].positionType);
-
-					if (symbolIdsNeeded) symbolIds[i] = quotes[i].symbolId;
-				}
+				partyBs[i] = quotes[i].partyB;
+				partyBsAllocated[i] = AccountStorage.layout().partyBAllocatedBalances[partyBs[i]][partyA];
+				quoteIds[i] = quotes[i].id;
+				availableAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
+				openPrices[i] = quotes[i].requestedOpenPrice;
+				symbolNames[i] = SymbolStorage.layout().symbols[quotes[i].symbolId].name;
+				positionType[i] = uint256(quotes[i].positionType);
+				symbolIds[i] = quotes[i].symbolId;
 			}
+		}
 	}
 
 	/**
-	 * @notice Returns the parameters needed to calculate UPNL offchain.
+	 * @notice Internal:Returns the parameters needed to calculate UPNL offchain.
 	 * @param partyA Address of partyA
 	 * @param partyB Address of partyB
 	 * @param quoteStart Quote start ID
 	 * @param quoteEnd Quote end ID
-	 * @return blockNumber The last network block number.
-	 * @return partyANonce The last party A nonce.
-	 * @return partyBNonce The last party B nonce.
-	 * @return partyAAllocated  Party A Allocated Balance.
-	 * @return partyBAllocated  Party B Allocated Balance.
+	 * @return partyBsAllocated  party B Allocated Balance.
 	 * @return quoteIds  An array of quotes IDs.
-	 * @return availableAmount  An array of quotes available amounts.
-	 * @return openPrices  An array of quotes open prices.
-	 * @return symbolNames  An array of quotes Symbols names.
-	 * @return positionType  An array of quotes positions Type.
 	 * @return symbolIds  An array of quotes Symbols IDs.
+	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return openPrices  An array of quotes open prices.
+	 * @return availableAmount  An array of quotes available amounts.
+	 * @return positionType  An array of quotes positions Type.
 	 */
-	function getPartyAUPNLParams(
+	function getPartyBUPNLParams(
 		address partyA,
 		address partyB,
 		uint256 quoteStart,
@@ -1114,63 +1096,32 @@ contract ViewFacet is IViewFacet {
 		external
 		view
 		returns (
-			uint256 blockNumber,
-			uint256 partyANonce,
-			uint256 partyBNonce,
-			uint256 partyAAllocated,
-			uint256 partyBAllocated,
+			// uint256 positionsCount,
+			uint256[] memory partyBsAllocated,
 			uint256[] memory quoteIds,
-			uint256[] memory availableAmount,
-			uint256[] memory openPrices,
+			uint256[] memory symbolIds,
 			string[] memory symbolNames,
-			uint256[] memory positionType,
-			uint256[] memory symbolIds
+			uint256[] memory openPrices,
+			uint256[] memory availableAmount,
+			uint256[] memory positionType
 		)
 	{
-		return getPartyAUPNLParamsImp(partyA, partyB, quoteStart, quoteEnd, false);
-	}
-
-	/**
-	 * @notice Returns the parameters needed to calculate UPNL offchain.
-	 * @param partyA Address of partyA
-	 * @param partyB Address of partyB
-	 * @param quoteStart Quote start ID
-	 * @param quoteEnd Quote end ID
-	 * @return blockNumber The last network block number.
-	 * @return partyANonce The last party A nonce.
-	 * @return partyBNonce The last party B nonce.
-	 * @return partyAAllocated  Party A Allocated Balance.
-	 * @return partyBAllocated  Party B Allocated Balance.
-	 * @return quoteIds  An array of quotes IDs.
-	 * @return availableAmount  An array of quotes available amounts.
-	 * @return openPrices  An array of quotes open prices.
-	 * @return symbolNames  An array of quotes Symbols names.
-	 * @return positionType  An array of quotes positions Type.
-	 * @return symbolIds  An array of quotes Symbols IDs.
-	 */
-	function getPartyAUPNLParamsWithIds(
-		address partyA,
-		address partyB,
-		uint256 quoteStart,
-		uint256 quoteEnd
-	)
-		external
-		view
-		returns (
-			uint256 blockNumber,
-			uint256 partyANonce,
-			uint256 partyBNonce,
-			uint256 partyAAllocated,
-			uint256 partyBAllocated,
-			uint256[] memory quoteIds,
-			uint256[] memory availableAmount,
-			uint256[] memory openPrices,
-			string[] memory symbolNames,
-			uint256[] memory positionType,
-			uint256[] memory symbolIds
-		)
-	{
-		return getPartyAUPNLParamsImp(partyA, partyB, quoteStart, quoteEnd, true);
+		Quote[] memory quotes = getPartyBOpenPositionsImp(partyB, partyA, quoteStart, quoteEnd);
+		for (uint i = 0; i < (quoteEnd - quoteStart); i++) {
+			if (
+				quotes[i].quoteStatus == QuoteStatus.OPENED ||
+				quotes[i].quoteStatus == QuoteStatus.CLOSE_PENDING ||
+				quotes[i].quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING
+			) {
+				partyBsAllocated[i] = AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
+				quoteIds[i] = quotes[i].id;
+				availableAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
+				openPrices[i] = quotes[i].requestedOpenPrice;
+				symbolNames[i] = SymbolStorage.layout().symbols[quotes[i].symbolId].name;
+				positionType[i] = uint256(quotes[i].positionType);
+				symbolIds[i] = quotes[i].symbolId;
+			}
+		}
 	}
 
 	/**
