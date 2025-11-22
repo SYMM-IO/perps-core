@@ -4,6 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "./ISymmio.sol";
+
 interface IAccountHub {
 	enum AffiliateState {
 		NONE,
@@ -12,12 +15,22 @@ interface IAccountHub {
 		PAUSED,
 		DEACTIVATED
 	}
-	enum IsolationType {
-		NONE,
-		POSITION,
-		MARKET,
-		MARKET_LONG,
-		MARKET_SHORT
+
+	enum VirtualAccountIsolationType {
+		CROSS,//*
+		POSITION, //*
+		MARKET, //*
+		MARKET_LONG, //*
+		MARKET_SHORT, //*
+		CUSTOM
+	}
+
+	enum SubAccountIsolationType {
+		CROSS, //*
+		POSITION, //*
+		MARKET, //*
+		MARKET_DIRECTION, //*
+		CUSTOM
 	}
 
 	struct Stakeholder {
@@ -57,31 +70,30 @@ interface IAccountHub {
 	}
 
 	struct PendingFeeUpdate {
-		Stakeholder[] stakeholders;
-		uint256 symmioShare;
-		uint256 timestamp;
 		bool exists;
+		uint256 timestamp;
+		uint256 symmioShare;
+		Stakeholder[] stakeholders;
 	}
 
 	struct SubAccountData {
-		address owner;
-		address affiliate;
 		string name;
+		address owner;
+		bool isExists;
 		bytes metadata;
-		bool exists;
-		uint256 virtualAccountCount;
+		address affiliate;
 		address relatedCore;
+		EnumerableSet.UintSet quoteIds;
+		SubAccountIsolationType isolationType;
 	}
 
 	struct VirtualAccountData {
-		address parentAccount;
-		bool isDeleted;
-		IsolationType isolationType;
-		uint256 symbolId; // For market isolation (symbolId)
-		uint256 quotesCount;
-		uint256 quoteId; // for position isolation
-		uint256 createdAt;
+		bool isExists;
 		bytes metadata;
+		address parentAccount;
+		uint256 symbolId; // For market isolation (symbolId), For position and cross isolation should be 0
+		VirtualAccountIsolationType isolationType;
+		EnumerableSet.UintSet quoteIds;
 	}
 
 	struct SubAccountCreationData {
@@ -89,12 +101,12 @@ interface IAccountHub {
 		bytes metadata;
 		address relatedCore;
 		uint256 initialDeposit;
+		SubAccountIsolationType isolationType;
 	}
 
 	struct VirtualAccountCreationData {
 		bytes metadata;
-		IsolationType isolationType;
-		uint256 symbolId; // For market isolation (symbolId)
+		uint256 symbolId; // For market isolation (symbolId), For position and cross isolation should be 0
 		uint256 initialDeposit;
 	}
 
@@ -103,8 +115,12 @@ interface IAccountHub {
 		string name;
 	}
 
-	struct CallMetadata {
-		IsolationType isolationType;
+	struct QuoteParams {
+		uint256 symbolId;
+		ISymmio.PositionType positionType;
+		uint256 cva;
+		uint256 lf;
+		uint256 partyAmm;
 	}
 
 	// Affiliate events
@@ -119,7 +135,7 @@ interface IAccountHub {
 
 	// Account events
 	event SubAccountCreated(address indexed account, address indexed owner, address indexed Affiliate, string name);
-	event VirtualAccountCreated(address indexed account, address indexed parent, IsolationType isolationType);
+	event VirtualAccountCreated(address indexed account, address indexed parent);
 	event VirtualAccountDeleted(address indexed account, address indexed parent);
 
 	// Legacy compatibility events
