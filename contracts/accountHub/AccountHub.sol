@@ -47,7 +47,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	mapping(address => PendingFeeUpdate) public pendingFeeUpdates;
 
 	// Account related storage
-	mapping(address => SubAccountData) public subAccounts;
+	mapping(address => SubAccountData) subAccounts;
 	mapping(address => VirtualAccountData) virtualAccounts;
 	mapping(address => EnumerableSet.AddressSet) private userToSubAccounts;
 	mapping(address => EnumerableSet.AddressSet) private subAccountToVirtualAccounts;
@@ -374,16 +374,16 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			address subAccountAddress = _generateSubAccountAddress(affiliate, signer, nonce);
 
 			// Store account data
-			subAccounts[subAccountAddress] = SubAccountData({
-				owner: signer,
-				isExists: true,
-				name: data.name,
-				affiliate: affiliate,
-				metadata: data.metadata,
-				symbolId: data.symbolId,
-				relatedCore: data.relatedCore,
-				isolationType: data.isolationType
-			});
+			SubAccountData storage s = subAccounts[subAccountAddress];
+
+			s.owner = signer;
+			s.isExists = true;
+			s.name = data.name;
+			s.affiliate = affiliate;
+			s.metadata = data.metadata;
+			s.relatedCore = data.relatedCore;
+			s.isolationType = data.isolationType;
+
 			userToSubAccounts[signer].add(subAccountAddress);
 
 			// Call hook if set
@@ -402,7 +402,12 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		return createdAccounts;
 	}
 
-	function _createVirtualAccount(address parentAccount, bytes memory metadata) private whenNotPaused nonReentrant returns (address virtualAccount) {
+	function _createVirtualAccount(
+		address parentAccount,
+		bytes memory metadata,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) private whenNotPaused nonReentrant returns (address virtualAccount) {
 		SubAccountData storage parent = subAccounts[parentAccount];
 		if (!parent.isExists) revert InvalidParent();
 		address signer = getSigner();
@@ -413,9 +418,12 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		VirtualAccountData storage v = virtualAccounts[virtualAccount];
 
-		v.isExists = false;
+		v.isExists = true;
 		v.metadata = metadata;
 		v.parentAccount = parentAccount;
+		v.isolationType = isolationType;
+		v.symbolId = symbolId;
+
 		subAccountToVirtualAccounts[parentAccount].add(virtualAccount);
 
 		_callHook(parent.affiliate, IHooks.onVirtualAccountCreation.selector, abi.encode(virtualAccount, parentAccount));
@@ -532,39 +540,75 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
 	}
 
-	function _validateIsolation(SubAccountData storage parent, uint256 symbolId, ISymmio.PositionType positionType) internal view {
-		if (parent.isolationType == IsolationType.MARKET_LONG && positionType != ISymmio.PositionType.LONG) revert();
-
-		if (parent.isolationType == IsolationType.MARKET_SHORT && positionType != ISymmio.PositionType.SHORT) revert();
-
-		// Market-level symbol restriction
-		if (
-			parent.isolationType == IsolationType.MARKET ||
-			parent.isolationType == IsolationType.MARKET_LONG ||
-			parent.isolationType == IsolationType.MARKET_SHORT
-		) {
-			if (parent.symbolId > 0 && symbolId != parent.symbolId) revert();
-		}
-	}
-
 	function _handleVirtualAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) internal {
-		SubAccountData storage parent = subAccounts[virtualAccounts[account].parentAccount];
+		VirtualAccountData storage vData = virtualAccounts[account];
 
-		if (parent.isolationType == IsolationType.POSITION) revert();
-		_validateIsolation(parent, p.symbolId, p.positionType);
+		if (vData.isolationType == VirtualAccountIsolationType.CUSTOM) {
+			_executeWithSigner(account, cd);
+
+			address core = getRelatedCore(account);
+			uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
+			vData.quoteIds.add(quoteId);
+
+			return;
+		}
+
+		if (vData.isolationType == VirtualAccountIsolationType.POSITION) revert();
+
+		if (vData.isolationType == VirtualAccountIsolationType.MARKET_LONG && p.positionType != ISymmio.PositionType.LONG) revert();
+
+		if (vData.isolationType == VirtualAccountIsolationType.MARKET_SHORT && p.positionType != ISymmio.PositionType.SHORT) revert();
+
+		if (
+			vData.isolationType == VirtualAccountIsolationType.MARKET ||
+			vData.isolationType == VirtualAccountIsolationType.MARKET_LONG ||
+			vData.isolationType == VirtualAccountIsolationType.MARKET_SHORT
+		) {
+			if (vData.symbolId > 0 && p.symbolId != vData.symbolId) revert();
+		}
 
 		_executeWithSigner(account, cd);
 
 		address core = getRelatedCore(account);
 		uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
-		virtualAccounts[account].quoteIds.add(quoteId);
+		vData.quoteIds.add(quoteId);
 	}
 
 	function _handleSubAccountSendQuote(address parentAccount, address signer, bytes memory cd, QuoteParams memory p) internal {
-		address virtualAccount = _createVirtualAccount(parentAccount, hex"");
-
 		SubAccountData storage parent = subAccounts[parentAccount];
-		_validateIsolation(parent, p.symbolId, p.positionType);
+
+		if (parent.isolationType == SubAccountIsolationType.CROSS) {
+			_executeWithSigner(parentAccount, cd);
+
+			address core = getRelatedCore(parentAccount);
+			uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
+			parent.quoteIds.add(quoteId);
+
+			return;
+		}
+
+		address virtualAccount;
+		if (parent.isolationType == SubAccountIsolationType.POSITION) {
+			virtualAccount = _createVirtualAccount(parentAccount, hex"", VirtualAccountIsolationType.POSITION, p.symbolId);
+		}
+
+		if (parent.isolationType == SubAccountIsolationType.MARKET) {
+			virtualAccount = _createVirtualAccount(parentAccount, hex"", VirtualAccountIsolationType.MARKET, p.symbolId);
+		}
+
+		if (parent.isolationType == SubAccountIsolationType.MARKET_DIRECTION) {
+			if (p.positionType == ISymmio.PositionType.LONG) {
+				virtualAccount = _createVirtualAccount(parentAccount, hex"", VirtualAccountIsolationType.MARKET_LONG, p.symbolId);
+			}
+
+			if (p.positionType == ISymmio.PositionType.SHORT) {
+				virtualAccount = _createVirtualAccount(parentAccount, hex"", VirtualAccountIsolationType.MARKET_SHORT, p.symbolId);
+			}
+		}
+
+		if (parent.isolationType == SubAccountIsolationType.MARKET || parent.isolationType == SubAccountIsolationType.MARKET_DIRECTION) {
+			if (virtualAccounts[virtualAccount].symbolId > 0 && p.symbolId != virtualAccounts[virtualAccount].symbolId) revert();
+		}
 
 		address core = getRelatedCore(virtualAccount);
 
@@ -792,10 +836,18 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address _partyB
 	) external onlySymmio nonReentrant whenNotPaused {
 		VirtualAccountData storage vData = virtualAccounts[partyA];
-		if (vData.parentAccount == address(0)) revert NotVirtualAccount();
-		if (vData.isExists) revert AccountDeleted();
-		if (vData.quoteIds.length() == 0) {
-			_deleteVirtualAccount(partyA);
+		SubAccountData storage sData = subAccounts[partyA];
+
+		if (vData.isExists) {
+			if (vData.quoteIds.length() == 0) {
+				_deleteVirtualAccount(partyA);
+			} else {
+				vData.quoteIds.remove(quoteId);
+			}
+		}
+
+		if (sData.isExists) {
+			sData.quoteIds.remove(quoteId);
 		}
 	}
 

@@ -38,8 +38,7 @@ contract AccountManager is IAccountManager {
 			metadata: hex"",
 			relatedCore: cores[0],
 			initialDeposit: 0,
-			symbolId: 0,
-			isolationType: IAccountHub.IsolationType.CROSS
+			isolationType: IAccountHub.SubAccountIsolationType.CROSS
 		});
 
 		IAccountHub.SubAccountCreationData[] memory arr;

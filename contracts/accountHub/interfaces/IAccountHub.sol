@@ -15,12 +15,21 @@ interface IAccountHub {
 		PAUSED,
 		DEACTIVATED
 	}
-	enum IsolationType {
-		CROSS,
-		POSITION,
-		MARKET,
-		MARKET_LONG,
-		MARKET_SHORT,
+
+	enum VirtualAccountIsolationType {
+		CROSS,//*
+		POSITION, //*
+		MARKET, //*
+		MARKET_LONG, //*
+		MARKET_SHORT, //*
+		CUSTOM
+	}
+
+	enum SubAccountIsolationType {
+		CROSS, //*
+		POSITION, //*
+		MARKET, //*
+		MARKET_DIRECTION, //*
 		CUSTOM
 	}
 
@@ -72,40 +81,38 @@ interface IAccountHub {
 		address owner;
 		bool isExists;
 		bytes metadata;
-		uint256 symbolId; // For market isolation (symbolId), For position and cross isolation should be 0
 		address affiliate;
 		address relatedCore;
-		IsolationType isolationType;
+		EnumerableSet.UintSet quoteIds;
+		SubAccountIsolationType isolationType;
 	}
 
 	struct VirtualAccountData {
 		bool isExists;
 		bytes metadata;
 		address parentAccount;
+		uint256 symbolId; // For market isolation (symbolId), For position and cross isolation should be 0
+		VirtualAccountIsolationType isolationType;
 		EnumerableSet.UintSet quoteIds;
 	}
 
 	struct SubAccountCreationData {
 		string name;
 		bytes metadata;
-		uint256 symbolId; // For market isolation (symbolId), For position and cross isolation should be 0
 		address relatedCore;
 		uint256 initialDeposit;
-		IsolationType isolationType;
+		SubAccountIsolationType isolationType;
 	}
 
 	struct VirtualAccountCreationData {
 		bytes metadata;
+		uint256 symbolId; // For market isolation (symbolId), For position and cross isolation should be 0
 		uint256 initialDeposit;
 	}
 
 	struct Account {
 		address accountAddress;
 		string name;
-	}
-
-	struct CallMetadata {
-		IsolationType isolationType;
 	}
 
 	struct QuoteParams {
