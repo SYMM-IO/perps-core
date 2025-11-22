@@ -13,11 +13,32 @@ enum LiquidationType {
 	OVERDUE
 }
 
+enum ForceCloseState {
+	NONE,
+	NORMAL,
+	REALIZED,
+	REALIZED_MASTER_ACCOUNT,
+	DEALLOCATED_MASTER_ACCOUNT
+}
+
+enum PartyBForceCloseState {
+	NONE,
+	SOLVED,
+	INSOLVENT
+}
+
 struct SettlementState {
 	int256 actualAmount;
 	int256 expectedAmount;
 	uint256 cva;
 	bool pending;
+}
+
+struct ForceCloseDetail {
+	uint256 quoteId;
+	uint256 timestamp;
+	ForceCloseState forceCloseState;
+	PartyBForceCloseState partyBState;
 }
 
 struct LiquidationDetail {
@@ -115,6 +136,7 @@ library AccountStorage {
 		mapping(address => mapping(uint256 => bool)) partyBBlacklistedSymbols; // PartyB => symbolId   => isBlackListed
 		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
 		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
+		mapping(address => ForceCloseDetail) forceCloseDetails; // PartyB => Force close status
 	}
 
 	function layout() internal pure returns (Layout storage l) {

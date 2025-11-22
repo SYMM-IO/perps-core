@@ -6,10 +6,13 @@ pragma solidity >=0.8.18;
 
 import "../../libraries/muon/LibMuonForceActions.sol";
 import "../../libraries/muon/LibMuonSettlement.sol";
+import "../../libraries/muon/LibMuonCrossSettlement.sol";
 import "../../libraries/LibSettlement.sol";
 import "../../libraries/LibLiquidation.sol";
+import "../../libraries/LibForceSolve.sol";
 import "../../libraries/LibSolvency.sol";
 import "../../storages/QuoteStorage.sol";
+import "../../storages/AccountStorage.sol";
 
 library ForceActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -130,9 +133,6 @@ library ForceActionsFacetImpl {
 
 			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += available;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			if (updatedPrices.length > 0) {
-				LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
-			}
 			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
 		} else {
 			if (accountLayout.masterAccountMode[quote.partyB]) {
@@ -152,4 +152,73 @@ library ForceActionsFacetImpl {
 		}
 		partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
 	}
+
+	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice, bool isSolvent) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		(closePrice, isSolvent) = LibForceSolve.forceCloseUsingAllocatedBalances(quoteId, sig);
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+		detail.forceCloseState = ForceCloseState.NORMAL;
+		detail.timestamp = block.timestamp;
+		if (isSolvent) {
+			detail.partyBState = PartyBForceCloseState.SOLVED;
+		} else {
+			detail.partyBState = PartyBForceCloseState.INSOLVENT;
+		}
+	}
+
+	function forceRealizeClose(
+		uint256 quoteId,
+		HighLowPriceSig memory sig,
+		SettlementSig memory settlementSig,
+		uint256[] memory updatedPrices
+	) internal returns (uint256 closePrice, bool isSolvent) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		if (updatedPrices.length > 0) {
+			LibMuonSettlement.verifySettlement(settlementSig, quote.partyA);
+			LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
+		}
+		(closePrice, isSolvent) = LibForceSolve.forceCloseUsingAllocatedBalances(quoteId, sig);
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+		if (updatedPrices.length > 0) detail.forceCloseState = ForceCloseState.REALIZED;
+		detail.timestamp = block.timestamp;
+		if (isSolvent) {
+			detail.partyBState = PartyBForceCloseState.SOLVED;
+		} else {
+			detail.partyBState = PartyBForceCloseState.INSOLVENT;
+		}
+	}
+
+	function forceRealizeMasterAccount(
+		uint256 quoteId,
+		HighLowPriceSig memory sig,
+		CrossSettlementSig memory settlementSig,
+		uint256[] memory updatedPrices
+	)
+		internal
+		returns (
+			uint256 closePrice,
+			bool isSolvent,
+			uint256[] memory newPartyBsAllocatedBalances,
+			uint256[] memory newPartyAsAllocatedBalances,
+			address[] memory partyAs
+		)
+	{
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+		if (updatedPrices.length > 0) {
+			LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
+			(newPartyBsAllocatedBalances, newPartyAsAllocatedBalances, partyAs) = LibSettlement.crossSettleUpnl(settlementSig, updatedPrices, true);
+			detail.forceCloseState = ForceCloseState.REALIZED_MASTER_ACCOUNT;
+		}
+		(closePrice, isSolvent) = LibForceSolve.forceCloseUsingAllocatedBalances(quoteId, sig);
+		detail.timestamp = block.timestamp;
+		if (isSolvent) {
+			detail.partyBState = PartyBForceCloseState.SOLVED;
+		} else {
+			detail.partyBState = PartyBForceCloseState.INSOLVENT;
+		}
+	}
+
+
+	function forceFetchAllocatedMasterAccount() internal {}
 }

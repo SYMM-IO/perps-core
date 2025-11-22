@@ -37,20 +37,17 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	 */
 	function forceClosePosition(uint256 quoteId, HighLowPriceSig memory sig) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote storage quote = quoteLayout.quotes[quoteId];
-		uint256 filledAmount = quote.quantityToClose;
-		SettlementSig memory settleSig;
-		(uint256 closePrice, bool isPartyBLiquidated, int256 upnlPartyB, uint256 partyBAllocatedBalance) = ForceActionsFacetImpl.forceClosePosition(
+		Quote memory quote = quoteLayout.quotes[quoteId];
+		(uint256 closePrice, ) = ForceActionsFacetImpl.forceClose(quoteId, sig);
+		emit ForceClosePosition(
 			quoteId,
-			sig,
-			settleSig,
-			new uint256[](0)
+			quote.partyA,
+			quote.partyB,
+			quote.quantityToClose,
+			closePrice,
+			quote.quoteStatus,
+			quoteLayout.closeIds[quoteId]
 		);
-		if (isPartyBLiquidated) {
-			emit LiquidatePartyB(msg.sender, quote.partyB, quote.partyA, partyBAllocatedBalance, upnlPartyB);
-		} else {
-			emit ForceClosePosition(quoteId, quote.partyA, quote.partyB, filledAmount, closePrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
-		}
 	}
 
 	/**
@@ -67,27 +64,63 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		uint256[] memory updatedPrices
 	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote storage quote = quoteLayout.quotes[quoteId];
-		uint256 filledAmount = quote.quantityToClose;
-		(uint256 closePrice, bool isPartyBLiquidated, int256 upnlPartyB, uint256 partyBAllocatedBalance) = ForceActionsFacetImpl.forceClosePosition(
-			quoteId,
-			highLowPriceSig,
-			settleSig,
-			updatedPrices
-		);
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		Quote memory quote = quoteLayout.quotes[quoteId];
 		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
+		uint256 partyBAllocatedBalance;
+
+		(uint256 closePrice, ) = ForceActionsFacetImpl.forceRealizeClose(quoteId, highLowPriceSig, settleSig, updatedPrices);
+		partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
 		newPartyBsAllocatedBalances[0] = partyBAllocatedBalance;
-		if (isPartyBLiquidated) {
-			emit LiquidatePartyB(msg.sender, quote.partyB, quote.partyA, partyBAllocatedBalance, upnlPartyB);
-		} else {
-			emit SettleUpnl(
-				settleSig.quotesSettlementsData,
-				updatedPrices,
-				msg.sender,
-				AccountStorage.layout().allocatedBalances[msg.sender],
-				newPartyBsAllocatedBalances
-			);
-			emit ForceClosePosition(quoteId, quote.partyA, quote.partyB, filledAmount, closePrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
-		}
+		emit SettleUpnl(
+			settleSig.quotesSettlementsData,
+			updatedPrices,
+			msg.sender,
+			AccountStorage.layout().allocatedBalances[msg.sender],
+			newPartyBsAllocatedBalances
+		);
+		emit ForceClosePosition(
+			quoteId,
+			quote.partyA,
+			quote.partyB,
+			quote.quantityToClose,
+			closePrice,
+			quote.quoteStatus,
+			quoteLayout.closeIds[quoteId]
+		);
+	}
+
+	function forceRealizeMasterAccount(
+		uint256 quoteId,
+		HighLowPriceSig memory sig,
+		CrossSettlementSig memory settlementSig,
+		uint256[] memory updatedPrices
+	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		Quote memory quote = quoteLayout.quotes[quoteId];
+		(
+			uint256 closePrice,
+			,
+			uint256[] memory newPartyBsAllocatedBalances,
+			uint256[] memory newPartyAsAllocatedBalances,
+			address[] memory partyAs
+		) = ForceActionsFacetImpl.forceRealizeMasterAccount(quoteId, sig, settlementSig, updatedPrices);
+		emit CrossSettleUpnl(
+			settlementSig.quotesSettlementsData,
+			updatedPrices,
+			quote.partyB,
+			partyAs,
+			newPartyAsAllocatedBalances,
+			newPartyBsAllocatedBalances
+		);
+		emit ForceClosePosition(
+			quoteId,
+			quote.partyA,
+			quote.partyB,
+			quote.quantityToClose,
+			closePrice,
+			quote.quoteStatus,
+			quoteLayout.closeIds[quoteId]
+		);
 	}
 }
