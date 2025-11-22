@@ -14,4 +14,13 @@ interface SettlementFacetEvents is IPartiesEvents {
 		uint256 newPartyAAllocatedBalance,
 		uint256[] newPartyBsAllocatedBalances
 	);
+
+	event CrossSettleUpnl(
+		CrossQuoteSettlementData[] settlementData,
+		uint256[] updatedPrices,
+		address partyB,
+		address[] partyAs,
+		uint256[] newPartyAsAllocatedBalances,
+		uint256[] newPartyBsAllocatedBalances
+	);
 }

@@ -122,6 +122,21 @@ struct SettlementSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+struct CrossQuoteSettlementData {
+	uint256 quoteId;
+	uint256 currentPrice;
+}
+
+struct CrossSettlementSig {
+	bytes reqId;
+	uint256 timestamp;
+	CrossQuoteSettlementData[] quotesSettlementsData;
+	int256[] upnlPartyBs; //Party B UPNLs for each party A
+	int256[] upnlPartyAs; //Party As UPNLs for the party B
+	bytes gatewaySignature;
+	IMuonSignatureVerifier.SchnorrSign sigs;
+}
+
 struct CrossLiquidationSig {
 	bytes reqId; // Unique identifier for the liquidation request
 	bytes liquidationId; // Unique identifier for the liquidation event
