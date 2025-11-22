@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 interface IAccountEvents {
 	event Deposit(address sender, address user, uint256 amount);
 	event Withdraw(address sender, address user, uint256 amount);
+	event WithdrawSuspendedUser(address admin, address user, address recipient, uint256 amount);
 	event AllocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance);
 	event DeallocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance);
 	event InternalTransfer(address sender, address user, uint256 userNewAllocatedBalance, uint256 amount);

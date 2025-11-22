@@ -64,6 +64,21 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(msg.sender, user, amount);
 	}
 
+	/// @notice Allows the system admin to withdraw the balance of a suspended user to a target address.
+	/// @param user The suspended user whose funds will be moved.
+	/// @param recipient The destination address that will receive the funds.
+	/// @param amount The amount to withdraw, specified in collateral decimals.
+	function withdrawSuspendedUserFunds(
+		address user,
+		address recipient,
+		uint256 amount
+	) external whenNotAccountingPaused onlyRole(LibAccessibility.SUSPENDED_FUNDS_WITHDRAWER_ROLE) {
+		require(AccountStorage.layout().suspendedAddresses[user], "AccountFacet: User is not suspended");
+		AccountFacetImpl.withdrawSuspendedUser(user, recipient, amount);
+		emit Withdraw(user, recipient, amount);
+		emit WithdrawSuspendedUser(msg.sender, user, recipient, amount);
+	}
+
 	/// @notice Allows Party A to allocate a specified amount of collateral. Allocated amounts are which user can actually trade on.
 	/// @param amount The precise amount of collateral to be allocated, specified in 18 decimals.
 	function allocate(uint256 amount) external whenNotAccountingPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {

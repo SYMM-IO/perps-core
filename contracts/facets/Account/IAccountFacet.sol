@@ -19,6 +19,8 @@ interface IAccountFacet is IAccountEvents {
 
 	function withdrawTo(address user, uint256 amount) external;
 
+	function withdrawSuspendedUserFunds(address user, address recipient, uint256 amount) external;
+
 	function allocate(uint256 amount) external;
 
 	function depositAndAllocate(uint256 amount) external;
