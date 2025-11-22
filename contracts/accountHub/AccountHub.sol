@@ -2,7 +2,7 @@
 // This contract is licensed under the SYMM Core Business Source License 1.1
 // Copyright (c) 2023 Symmetry Labs AG
 // For more information, see https://docs.symm.io/legal-disclaimer/license
-pragma solidity >=0.8.18;
+pragma solidity >=0.8.21;
 
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
@@ -15,13 +15,13 @@ import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
 import "./interfaces/IAccountHub.sol";
 import "./interfaces/ISymmio.sol";
-import "./interfaces/IAccountManager.sol";
 import "./interfaces/IHook.sol";
 import "./interfaces/IMultiAccount.sol";
 
 contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 	using EnumerableSet for EnumerableSet.AddressSet;
+	using EnumerableSet for EnumerableSet.UintSet;
 	using EnumerableMap for EnumerableMap.AddressToUintMap;
 
 	// ==================== Constants ====================
@@ -31,7 +31,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant SIGNER_SETTER = keccak256("SIGNER_SETTER");
 	bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
-	bytes4 constant SEND_QUOTE_SELECTOR = 0x40f1310c;
+	bytes4 constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
+	bytes4 constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
 
 	uint256 private constant MAX_POSITION_QUERY_LIMIT = 50;
 
@@ -47,7 +48,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	// Account related storage
 	mapping(address => SubAccountData) public subAccounts;
-	mapping(address => VirtualAccountData) public virtualAccounts;
+	mapping(address => VirtualAccountData) virtualAccounts;
 	mapping(address => EnumerableSet.AddressSet) private userToSubAccounts;
 	mapping(address => EnumerableSet.AddressSet) private subAccountToVirtualAccounts;
 	address internal globalSigner;
@@ -375,12 +376,13 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			// Store account data
 			subAccounts[subAccountAddress] = SubAccountData({
 				owner: signer,
-				affiliate: affiliate,
+				isExists: true,
 				name: data.name,
+				affiliate: affiliate,
 				metadata: data.metadata,
-				exists: true,
-				virtualAccountCount: 0,
-				relatedCore: data.relatedCore
+				symbolId: data.symbolId,
+				relatedCore: data.relatedCore,
+				isolationType: data.isolationType
 			});
 			userToSubAccounts[signer].add(subAccountAddress);
 
@@ -400,93 +402,24 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		return createdAccounts;
 	}
 
-	function createVirtualAccount(
-		address parentAccount,
-		IsolationType isolationType,
-		uint256 symbolId,
-		bytes memory metadata
-	) private whenNotPaused nonReentrant returns (address virtualAccount) {
+	function _createVirtualAccount(address parentAccount, bytes memory metadata) private whenNotPaused nonReentrant returns (address virtualAccount) {
 		SubAccountData storage parent = subAccounts[parentAccount];
-		if (!parent.exists) revert InvalidParent();
+		if (!parent.isExists) revert InvalidParent();
 		address signer = getSigner();
 		if (!_isOwnerOf(parentAccount, signer)) revert NotOwner();
-
-		if (symbolId > 0) {
-			if (isolationType != IsolationType.MARKET_LONG && isolationType != IsolationType.MARKET_SHORT) {
-				revert InvalidIsolationType();
-			}
-		} else {
-			if (isolationType != IsolationType.POSITION) revert InvalidIsolationType();
-		}
 
 		uint256 nonce = globalNonce++;
 		virtualAccount = _generateVirtualAccountAddress(parentAccount, nonce);
 
-		virtualAccounts[virtualAccount] = VirtualAccountData({
-			parentAccount: parentAccount,
-			isDeleted: false,
-			isolationType: isolationType,
-			symbolId: symbolId,
-			quotesCount: 0,
-			quoteId: 0,
-			createdAt: block.timestamp,
-			metadata: metadata
-		});
-		parent.virtualAccountCount++;
+		VirtualAccountData storage v = virtualAccounts[virtualAccount];
+
+		v.isExists = false;
+		v.metadata = metadata;
+		v.parentAccount = parentAccount;
 		subAccountToVirtualAccounts[parentAccount].add(virtualAccount);
 
 		_callHook(parent.affiliate, IHooks.onVirtualAccountCreation.selector, abi.encode(virtualAccount, parentAccount));
-
-		emit VirtualAccountCreated(virtualAccount, parentAccount, isolationType);
-
-		return virtualAccount;
-	}
-
-	function createVirtualAndSendQuote(
-		address parentAccount,
-		VirtualAccountCreationData memory creationData,
-		bytes calldata quoteData
-	) external whenNotPaused nonReentrant returns (address virtualAccount) {
-		bytes4 selector = bytes4(quoteData[:4]);
-		if (selector != SEND_QUOTE_SELECTOR) revert InvalidFunctionSelector();
-
-		(, uint256 symbolId, ISymmio.PositionType positionType, , , , , , , , , , , ) = abi.decode(
-			quoteData[4:],
-			(
-				address[],
-				uint256,
-				ISymmio.PositionType,
-				ISymmio.OrderType,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				address,
-				ISymmio.SingleUpnlAndPriceSig
-			)
-		);
-
-		if (creationData.isolationType != IsolationType.POSITION) {
-			if (symbolId != creationData.symbolId) revert InvalidSymbolId();
-			IsolationType expectedType = positionType == ISymmio.PositionType.LONG ? IsolationType.MARKET_LONG : IsolationType.MARKET_SHORT;
-			if (creationData.isolationType != expectedType || creationData.isolationType !=  IsolationType.MARKET) revert InvalidIsolationType();
-		}
-
-		virtualAccount = createVirtualAccount(parentAccount, creationData.isolationType, creationData.symbolId, creationData.metadata);
-		_depositAndAllocateForAccount(virtualAccount, creationData.initialDeposit);
-
-		// Execute sendQuote through the virtual account
-		_executeWithSigner(virtualAccount, quoteData);
-
-		if (creationData.isolationType == IsolationType.POSITION) {
-			address core = getRelatedCore(virtualAccount);
-			uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
-			virtualAccounts[virtualAccount].quoteId = quoteId;
-		}
+		emit VirtualAccountCreated(virtualAccount, parentAccount);
 
 		return virtualAccount;
 	}
@@ -495,7 +428,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		address signer = getSigner();
 		if (!_isOwnerOf(account, signer)) revert NotOwner();
 		if (bytes(name).length == 0) revert InvalidNameLength();
-		if (!subAccounts[account].exists) revert AccountDoesNotExist();
+		if (!subAccounts[account].isExists) revert AccountDoesNotExist();
 
 		subAccounts[account].name = name;
 		emit EditAccountName(signer, account, name);
@@ -561,7 +494,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	function _depositAndAllocateForAccount(address account, uint256 amount) private {
-		address signer = getSigner();
 		_depositForAccount(account, amount);
 		_allocateForAccount(account, amount);
 	}
@@ -576,17 +508,103 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		emit WithdrawFromAccount(signer, account, amount);
 	}
 
-	function _call(address account, bytes[] memory callDatas) external whenNotPaused nonReentrant {
+	function _decodeQuoteParams(bytes calldata cd) internal pure returns (QuoteParams memory) {
+		(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , , ) = abi.decode(
+			cd[4:],
+			(
+				address[],
+				uint256,
+				ISymmio.PositionType,
+				ISymmio.OrderType,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				uint256,
+				address,
+				ISymmio.SingleUpnlAndPriceSig
+			)
+		);
+
+		return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
+	}
+
+	function _validateIsolation(SubAccountData storage parent, uint256 symbolId, ISymmio.PositionType positionType) internal view {
+		if (parent.isolationType == IsolationType.MARKET_LONG && positionType != ISymmio.PositionType.LONG) revert();
+
+		if (parent.isolationType == IsolationType.MARKET_SHORT && positionType != ISymmio.PositionType.SHORT) revert();
+
+		// Market-level symbol restriction
+		if (
+			parent.isolationType == IsolationType.MARKET ||
+			parent.isolationType == IsolationType.MARKET_LONG ||
+			parent.isolationType == IsolationType.MARKET_SHORT
+		) {
+			if (parent.symbolId > 0 && symbolId != parent.symbolId) revert();
+		}
+	}
+
+	function _handleVirtualAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) internal {
+		SubAccountData storage parent = subAccounts[virtualAccounts[account].parentAccount];
+
+		if (parent.isolationType == IsolationType.POSITION) revert();
+		_validateIsolation(parent, p.symbolId, p.positionType);
+
+		_executeWithSigner(account, cd);
+
+		address core = getRelatedCore(account);
+		uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
+		virtualAccounts[account].quoteIds.add(quoteId);
+	}
+
+	function _handleSubAccountSendQuote(address parentAccount, address signer, bytes memory cd, QuoteParams memory p) internal {
+		address virtualAccount = _createVirtualAccount(parentAccount, hex"");
+
+		SubAccountData storage parent = subAccounts[parentAccount];
+		_validateIsolation(parent, p.symbolId, p.positionType);
+
+		address core = getRelatedCore(virtualAccount);
+
+		ISymmio(core).setSigner(signer);
+		ISymmio(core).internalTransfer(virtualAccount, p.cva + p.lf + p.partyAmm);
+		ISymmio(core).setSigner(address(0));
+
+		_executeWithSigner(virtualAccount, cd);
+
+		uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
+		virtualAccounts[virtualAccount].quoteIds.add(quoteId);
+	}
+
+	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant {
 		address signer = getSigner();
 		if (!_isOwnerOf(account, signer)) revert NotOwner();
 		if (callDatas.length == 0) revert EmptyArray();
 
 		for (uint256 i = 0; i < callDatas.length; i++) {
-			_executeWithSigner(account, callDatas[i]);
-		}
+			bytes calldata cd = callDatas[i];
+			bytes4 selector = bytes4(cd[:4]);
 
-		address affiliate = _getAffiliateForAccount(account);
-		_callHook(affiliate, IHooks.onCall.selector, abi.encode(account, callDatas));
+			bool isSendQuote = (selector == SEND_QUOTE_SELECTOR || selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR);
+
+			if (isSendQuote) {
+				QuoteParams memory p = _decodeQuoteParams(cd);
+
+				if (virtualAccounts[account].isExists) {
+					_handleVirtualAccountSendQuote(account, cd, p);
+					continue;
+				}
+
+				if (subAccounts[account].isExists) {
+					_handleSubAccountSendQuote(account, signer, cd, p);
+					continue;
+				}
+			}
+
+			_executeWithSigner(account, cd);
+		}
 	}
 
 	function setHook(address affiliate, bytes4 selector, address hook) external {
@@ -681,7 +699,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	function getRelatedCore(address account) public view returns (address) {
-		if (subAccounts[account].exists) {
+		if (subAccounts[account].isExists) {
 			return subAccounts[account].relatedCore;
 		}
 
@@ -726,7 +744,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	function _getAffiliateForAccount(address account) internal view returns (address) {
-		if (subAccounts[account].exists) {
+		if (subAccounts[account].isExists) {
 			return subAccounts[account].affiliate;
 		}
 
@@ -739,8 +757,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 	function _deleteVirtualAccount(address account) internal {
 		VirtualAccountData storage vData = virtualAccounts[account];
-		if (vData.isDeleted) revert AlreadyDeleted();
-		if (getOpenPositionCount(account) != 0) revert OpenPositionsExist();
+		if (vData.isExists) revert AlreadyDeleted();
+		if (vData.quoteIds.length() != 0) revert OpenPositionsExist();
 
 		address parentAccount = vData.parentAccount;
 		address core = getRelatedCore(parentAccount);
@@ -748,22 +766,17 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		uint8 decimals = IERC20Metadata(collateral).decimals();
 		if (decimals > 18) revert InvalidTokenDecimals();
 
-		// Deallocate all funds before deletion
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
 		if (allocatedBalance > 0) {
-			// Use the 18-decimal balance directly for deallocation
 			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.deallocate.selector, allocatedBalance));
 		}
 
-		// Transfer remaining balance to parent
 		uint256 balance = ISymmio(core).balanceOf(account);
 		if (balance > 0) {
 			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parentAccount, balance));
 		}
 
-		// Mark as deleted (keep data for trackers)
-		vData.isDeleted = true;
-		subAccounts[parentAccount].virtualAccountCount--;
+		vData.isExists = false;
 
 		address affiliate = _getAffiliateForAccount(account);
 		_callHook(affiliate, IHooks.onVirtualAccountDeletion.selector, abi.encode(account));
@@ -780,8 +793,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	) external onlySymmio nonReentrant whenNotPaused {
 		VirtualAccountData storage vData = virtualAccounts[partyA];
 		if (vData.parentAccount == address(0)) revert NotVirtualAccount();
-		if (vData.isDeleted) revert AccountDeleted();
-		if (getOpenPositionCount(partyA) == 0) {
+		if (vData.isExists) revert AccountDeleted();
+		if (vData.quoteIds.length() == 0) {
 			_deleteVirtualAccount(partyA);
 		}
 	}
@@ -835,10 +848,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	// ==================== View Functions ====================
 	function affiliateSymmioCores(address aff) external view returns (address[] memory) {
 		return affiliates[aff].symmioCores;
-	}
-
-	function getOpenPositionCount(address account) internal view returns (uint256) {
-		return ISymmio(getRelatedCore(account)).getPartyAOpenPositions(account, 0, MAX_POSITION_QUERY_LIMIT).length;
 	}
 
 	function getSubAccounts(address owner) external view returns (address[] memory) {

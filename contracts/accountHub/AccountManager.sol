@@ -20,8 +20,8 @@ contract AccountManager is IAccountManager {
 		_;
 	}
 
-	modifier withSigner(address signer) {
-		IAccountHub(hub).setSigner(signer);
+	modifier withSigner() {
+		IAccountHub(hub).setSigner(msg.sender);
 		_;
 		IAccountHub(hub).setSigner(address(0));
 	}
@@ -30,14 +30,16 @@ contract AccountManager is IAccountManager {
 		hub = _hub;
 	}
 
-	function addAccount(string memory name) external withSigner(msg.sender) returns (address[] memory) {
+	function addAccount(string memory name) external withSigner returns (address[] memory) {
 		address[] memory cores = IAccountHub(hub).affiliateSymmioCores(address(this));
 
 		IAccountHub.SubAccountCreationData memory acc = IAccountHub.SubAccountCreationData({
 			name: name,
 			metadata: hex"",
 			relatedCore: cores[0],
-			initialDeposit: 0
+			initialDeposit: 0,
+			symbolId: 0,
+			isolationType: IAccountHub.IsolationType.CROSS
 		});
 
 		IAccountHub.SubAccountCreationData[] memory arr;
@@ -47,7 +49,7 @@ contract AccountManager is IAccountManager {
 		return IAccountHub(hub).batchCreateSubAccounts(address(this), arr);
 	}
 
-	function depositForAccount(address account, uint256 amount) external withSigner(msg.sender) {
+	function depositForAccount(address account, uint256 amount) external withSigner {
 		address core = IAccountHub(hub).getRelatedCore(account);
 		address collateral = ISymmio(core).getCollateral();
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
@@ -56,12 +58,11 @@ contract AccountManager is IAccountManager {
 		IAccountHub(hub).depositForAccount(account, amount);
 	}
 
-	function allocateForAccount(address account, uint256 amount) external withSigner(msg.sender) {
-		address core = IAccountHub(hub).getRelatedCore(account);
+	function allocateForAccount(address account, uint256 amount) external withSigner {
 		IAccountHub(hub).allocateForAccount(account, amount);
 	}
 
-	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner(msg.sender) {
+	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner {
 		address core = IAccountHub(hub).getRelatedCore(account);
 
 		address collateral = ISymmio(core).getCollateral();
@@ -71,11 +72,11 @@ contract AccountManager is IAccountManager {
 		IAccountHub(hub).depositAndAllocateForAccount(account, amount);
 	}
 
-	function withdrawFromAccount(address account, uint256 amount) external withSigner(msg.sender) {
+	function withdrawFromAccount(address account, uint256 amount) external withSigner {
 		IAccountHub(hub).withdrawFromAccount(account, amount);
 	}
 
-	function _call(address account, bytes[] memory callDatas) external withSigner(msg.sender) {
+	function _call(address account, bytes[] memory callDatas) external withSigner {
 		IAccountHub(hub)._call(account, callDatas);
 	}
 
