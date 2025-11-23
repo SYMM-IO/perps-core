@@ -218,11 +218,6 @@ library LibSettlement {
 			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][partyA];
 			newPartyAsAllocatedBalances[i] = accountLayout.allocatedBalances[partyA];
 			partyAs[i] = partyA;
-
-			require(
-				LibAccount.partyAAvailableBalanceForLiquidation(settleSig.upnlPartyAs[i], accountLayout.allocatedBalances[partyA], partyA) >= 0,
-				"LibSettlement: PartyA is insolvent"
-			);
 		}
 	}
 }
