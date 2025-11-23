@@ -131,6 +131,7 @@ struct CrossSettlementSig {
 	bytes reqId;
 	uint256 timestamp;
 	CrossQuoteSettlementData[] quotesSettlementsData;
+	address partyB;
 	int256[] upnlPartyBs; //Party B UPNLs for each party A
 	int256[] upnlPartyAs;
 	bytes gatewaySignature;

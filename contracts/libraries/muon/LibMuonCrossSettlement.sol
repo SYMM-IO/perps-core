@@ -38,6 +38,7 @@ library LibMuonCrossSettlement {
 				partyBNonces,
 				partyANonces,
 				encodedData,
+				settleSig.partyB,
 				settleSig.upnlPartyBs,
 				settleSig.upnlPartyAs,
 				settleSig.timestamp,
