@@ -564,7 +564,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			vData.isolationType == VirtualAccountIsolationType.MARKET_LONG ||
 			vData.isolationType == VirtualAccountIsolationType.MARKET_SHORT
 		) {
-			if (vData.symbolId > 0 && p.symbolId != vData.symbolId) revert();
+			if (p.symbolId != vData.symbolId) revert();
 		}
 
 		_executeWithSigner(account, cd);
@@ -577,7 +577,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	function _handleSubAccountSendQuote(address parentAccount, address signer, bytes memory cd, QuoteParams memory p) internal {
 		SubAccountData storage parent = subAccounts[parentAccount];
 
-		if (parent.isolationType == SubAccountIsolationType.CROSS) {
+		if (parent.isolationType == SubAccountIsolationType.CUSTOM) {
 			_executeWithSigner(parentAccount, cd);
 
 			address core = getRelatedCore(parentAccount);
@@ -604,10 +604,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			if (p.positionType == ISymmio.PositionType.SHORT) {
 				virtualAccount = _createVirtualAccount(parentAccount, hex"", VirtualAccountIsolationType.MARKET_SHORT, p.symbolId);
 			}
-		}
-
-		if (parent.isolationType == SubAccountIsolationType.MARKET || parent.isolationType == SubAccountIsolationType.MARKET_DIRECTION) {
-			if (virtualAccounts[virtualAccount].symbolId > 0 && p.symbolId != virtualAccounts[virtualAccount].symbolId) revert();
 		}
 
 		address core = getRelatedCore(virtualAccount);

@@ -17,19 +17,17 @@ interface IAccountHub {
 	}
 
 	enum VirtualAccountIsolationType {
-		CROSS,//*
-		POSITION, //*
-		MARKET, //*
-		MARKET_LONG, //*
-		MARKET_SHORT, //*
+		POSITION,
+		MARKET,
+		MARKET_LONG,
+		MARKET_SHORT,
 		CUSTOM
 	}
 
 	enum SubAccountIsolationType {
-		CROSS, //*
-		POSITION, //*
-		MARKET, //*
-		MARKET_DIRECTION, //*
+		POSITION,
+		MARKET,
+		MARKET_DIRECTION,
 		CUSTOM
 	}
 
