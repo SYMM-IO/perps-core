@@ -38,14 +38,16 @@ contract AccountManager is IAccountManager {
 			metadata: hex"",
 			relatedCore: cores[0],
 			initialDeposit: 0,
-			isolationType: IAccountHub.SubAccountIsolationType.CROSS
+			isolationType: IAccountHub.SubAccountIsolationType.CUSTOM
 		});
 
 		IAccountHub.SubAccountCreationData[] memory arr;
 
 		arr[0] = acc;
 
-		return IAccountHub(hub).batchCreateSubAccounts(address(this), arr);
+
+		address[] memory subAccountAddress = IAccountHub(hub).batchCreateSubAccounts(address(this), arr);
+		emit AddAccount(msg.sender, subAccountAddress[0], name);
 	}
 
 	function depositForAccount(address account, uint256 amount) external withSigner {

@@ -5,4 +5,5 @@
 pragma solidity >=0.8.18;
 
 interface IAccountManager {
+	event AddAccount(address indexed user, address indexed account, string name);
 }

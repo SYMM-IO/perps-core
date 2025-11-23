@@ -52,7 +52,7 @@ interface IAccountHub {
 		address accountManager;
 		address feeDistributor;
 		address[] legacyMultiAccounts;
-		address[] symmioCores;
+		EnumerableSet.AddressSet symmioCores;
 		mapping(bytes4 => address) hooks;
 	}
 
@@ -137,7 +137,6 @@ interface IAccountHub {
 	event VirtualAccountDeleted(address indexed account, address indexed parent);
 
 	// Legacy compatibility events
-	event AddAccount(address indexed user, address indexed account, string name);
 	event EditAccountName(address indexed user, address indexed account, string name);
 	event DepositForAccount(address indexed sender, address indexed account, uint256 amount);
 	event AllocateForAccount(address indexed sender, address indexed account, uint256 amount);
