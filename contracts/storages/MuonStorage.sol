@@ -132,6 +132,7 @@ struct CrossSettlementSig {
 	uint256 timestamp;
 	CrossQuoteSettlementData[] quotesSettlementsData;
 	int256[] upnlPartyBs; //Party B UPNLs for each party A
+	int256[] upnlPartyAs;
 	bytes gatewaySignature;
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
