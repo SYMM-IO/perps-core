@@ -14,6 +14,7 @@ import "../../storages/SymbolStorage.sol";
 import "./IControlFacet.sol";
 import "../../libraries/LibDiamond.sol";
 import "../../storages/BridgeStorage.sol";
+import "../../storages/WithdrawStorage.sol";
 
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Transfers ownership of the contract to a new address.
@@ -821,5 +822,17 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	function checkZeroAddress(address target) private pure {
 		require(target != address(0), "ControlFacet: Zero address");
+	}
+
+	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		withdrawLayout.maxWithdrawParts = _maxWithdrawParts;
+		emit SetMaxWithdrawParts(_maxWithdrawParts);
+	}
+
+	function setWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;
+		emit SetWithdrawCooldownPeriod(_withdrawCooldownPeriod);
 	}
 }
