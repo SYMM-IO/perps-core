@@ -34,6 +34,7 @@ library SharedEvents {
 	event BalanceChangePartyA(address indexed partyA, uint256 amount, BalanceChangeType _type);
 
 	event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, BalanceChangeType _type);
+	event MasterBalanceChangePartyB(address indexed partyB, uint256 amount, BalanceChangeType _type);
 
 	event TradeVolumeRecorded(
 		uint256 quoteId,
