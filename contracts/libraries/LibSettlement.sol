@@ -187,6 +187,7 @@ library LibSettlement {
 			);
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
 			require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
+			require(settleSig.partyB == partyB, "ForceActionsFacet, Invalid quote");
 
 			if (!isForceClose && msg.sender != partyB) {
 				require(
