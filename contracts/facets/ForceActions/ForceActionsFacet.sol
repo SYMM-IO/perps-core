@@ -123,4 +123,15 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 			quoteLayout.closeIds[quoteId]
 		);
 	}
+
+	function forceFetchAllocatedMasterAccount(
+		CrossSettlementSig memory settlementSig
+	)
+		external
+		whenNotPartyBActionsPaused
+		onlyPartyB
+		returns (uint256[] memory fetchedAmounts, uint256[] memory newAllocatedBalances, address[] memory partyAs)
+	{
+		(fetchedAmounts, newAllocatedBalances, partyAs) = ForceActionsFacetImpl.forceFetchAllocatedMasterAccount(settlementSig);
+	}
 }

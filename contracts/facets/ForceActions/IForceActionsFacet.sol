@@ -19,4 +19,8 @@ interface IForceActionsFacet is ForceActionsFacetEvents {
 		SettlementSig memory settleSig,
 		uint256[] memory updatedPrices
 	) external;
+
+	function forceFetchAllocatedMasterAccount(
+		CrossSettlementSig memory settlementSig
+	) external returns (uint256[] memory fetchedAmounts, uint256[] memory newAllocatedBalances, address[] memory partyAs);
 }

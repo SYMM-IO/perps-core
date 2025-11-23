@@ -18,4 +18,10 @@ interface ForceActionsFacetEvents {
 		QuoteStatus quoteStatus,
 		uint256 closeId
 	);
+	event ForceFetchAllocated(		
+		address partyB,
+		address[] partyAs,
+		uint256[] FetchedAmount,
+		uint256[] newPartyBsAllocatedBalances
+	);
 }
