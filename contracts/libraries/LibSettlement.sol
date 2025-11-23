@@ -199,23 +199,27 @@ library LibSettlement {
 			accountLayout.partyBNonces[partyB][partyA] += 1;
 			accountLayout.partyANonces[partyA] += 1;
 
-			if (settleAmounts[i] >= 0) {
-				accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(settleAmounts[i]);
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-				accountLayout.allocatedBalances[partyA] += uint256(settleAmounts[i]);
-				emit SharedEvents.BalanceChangePartyA(partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			int256 settlementAmount = settleAmounts[i];
+			bool masterAccountMode = accountLayout.masterAccountMode[partyB];
+			if (settlementAmount >= 0) {
+				accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(settlementAmount);
+				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				accountLayout.allocatedBalances[partyA] += uint256(settlementAmount);
+				emit SharedEvents.BalanceChangePartyA(partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			} else {
-				if (AccountStorage.layout().masterAccountMode[partyB]) {
-					accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(-settleAmounts[i]);
-					emit SharedEvents.MasterBalanceChangePartyB(partyB, uint256(-settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				if (masterAccountMode) {
+					accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(-settlementAmount);
+					emit SharedEvents.MasterBalanceChangePartyB(partyB, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 				} else {
-					accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-settleAmounts[i]);
-					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+					accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-settlementAmount);
+					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 				}
-				accountLayout.allocatedBalances[partyA] -= uint256(-settleAmounts[i]);
-				emit SharedEvents.BalanceChangePartyA(partyA, uint256(-settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				accountLayout.allocatedBalances[partyA] -= uint256(-settlementAmount);
+				emit SharedEvents.BalanceChangePartyA(partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
-			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][partyA];
+			newPartyBsAllocatedBalances[i] = masterAccountMode && settlementAmount < 0
+				? accountLayout.partyBAllocatedBalances[partyB][address(0)]
+				: accountLayout.partyBAllocatedBalances[partyB][partyA];
 			newPartyAsAllocatedBalances[i] = accountLayout.allocatedBalances[partyA];
 			partyAs[i] = partyA;
 		}
