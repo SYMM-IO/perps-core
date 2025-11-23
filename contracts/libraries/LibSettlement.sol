@@ -133,7 +133,7 @@ library LibSettlement {
 			"LibSettlement: Invalid length"
 		);
 
-		int256 realizedAmounts;
+		int256[] memory settleAmounts = new int256[](settleSig.upnlPartyBs.length);
 		newPartyBsAllocatedBalances = new uint256[](settleSig.upnlPartyBs.length);
 		newPartyAsAllocatedBalances = new uint256[](settleSig.upnlPartyBs.length);
 		partyAs = new address[](settleSig.upnlPartyBs.length);
@@ -164,9 +164,9 @@ library LibSettlement {
 				);
 			}
 			if (quote.positionType == PositionType.LONG) {
-				realizedAmounts += ((int256(updatedPrices[i]) - int256(quote.openedPrice)) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
+				settleAmounts[i] = ((int256(updatedPrices[i]) - int256(quote.openedPrice)) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
 			} else {
-				realizedAmounts += ((int256(quote.openedPrice) - int256(updatedPrices[i])) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
+				settleAmounts[i] = ((int256(quote.openedPrice) - int256(updatedPrices[i])) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
 			}
 			quote.openedPrice = updatedPrices[i];
 		}
@@ -180,6 +180,10 @@ library LibSettlement {
 			require(
 				LibAccount.partyBAvailableBalanceForLiquidation(settleSig.upnlPartyBs[i], partyB, partyA) >= 0,
 				"LibSettlement: PartyB should be solvent"
+			);
+			require(
+				LibAccount.partyAAvailableBalanceForLiquidation(settleSig.upnlPartyAs[i], accountLayout.allocatedBalances[partyA], partyA) >= 0,
+				"LibSettlement: PartyA is insolvent"
 			);
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
 			require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
@@ -195,25 +199,30 @@ library LibSettlement {
 			accountLayout.partyBNonces[partyB][partyA] += 1;
 			accountLayout.partyANonces[partyA] += 1;
 
-			if (realizedAmounts >= 0) {
-				accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(realizedAmounts);
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(realizedAmounts), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-				accountLayout.allocatedBalances[partyA] += uint256(realizedAmounts);
-				emit SharedEvents.BalanceChangePartyA(partyA, uint256(realizedAmounts), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			if (settleAmounts[i] >= 0) {
+				accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(settleAmounts[i]);
+				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				accountLayout.allocatedBalances[partyA] += uint256(settleAmounts[i]);
+				emit SharedEvents.BalanceChangePartyA(partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			} else {
 				if (AccountStorage.layout().masterAccountMode[partyB]) {
-					accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(-realizedAmounts);
-					emit SharedEvents.MasterBalanceChangePartyB(partyB, uint256(-realizedAmounts), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+					accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(-settleAmounts[i]);
+					emit SharedEvents.MasterBalanceChangePartyB(partyB, uint256(-settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 				} else {
-					accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-realizedAmounts);
-					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-realizedAmounts), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+					accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-settleAmounts[i]);
+					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 				}
-				accountLayout.allocatedBalances[partyA] -= uint256(-realizedAmounts);
-				emit SharedEvents.BalanceChangePartyA(partyA, uint256(-realizedAmounts), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				accountLayout.allocatedBalances[partyA] -= uint256(-settleAmounts[i]);
+				emit SharedEvents.BalanceChangePartyA(partyA, uint256(-settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
 			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][partyA];
 			newPartyAsAllocatedBalances[i] = accountLayout.allocatedBalances[partyA];
 			partyAs[i] = partyA;
+
+			require(
+				LibAccount.partyAAvailableBalanceForLiquidation(settleSig.upnlPartyAs[i], accountLayout.allocatedBalances[partyA], partyA) >= 0,
+				"LibSettlement: PartyA is insolvent"
+			);
 		}
 	}
 }

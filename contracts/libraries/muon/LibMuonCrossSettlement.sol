@@ -39,6 +39,7 @@ library LibMuonCrossSettlement {
 				partyANonces,
 				encodedData,
 				settleSig.upnlPartyBs,
+				settleSig.upnlPartyAs,
 				settleSig.timestamp,
 				LibMuon.getChainId()
 			)
