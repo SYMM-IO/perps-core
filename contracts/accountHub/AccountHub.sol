@@ -50,12 +50,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
 
 	// ==================== State Variables ====================
-	address public symmioFeeReceiver;
-	bytes public accountManagerImplementation;
-	address internal globalSigner;
-	uint256 public globalNonce;
 
-	mapping(address => bool) private availableCores;
+	mapping(address => bool) private whitelistedSymmioCores;
 	mapping(address => AffiliateData) private affiliates;
 	mapping(address => PendingFeeUpdate) public pendingFeeUpdates;
 	mapping(address => SubAccountData) private subAccounts;
@@ -63,9 +59,12 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	mapping(address => EnumerableSet.AddressSet) private userToSubAccounts;
 	mapping(address => EnumerableSet.AddressSet) private subAccountToVirtualAccounts;
 
-	EnumerableSet.AddressSet private affiliateAddresses;
 	EnumerableSet.AddressSet private legacyMultiAccounts;
 
+	address public symmioFeeReceiver;
+	address internal globalSigner;
+	uint256 public globalNonce;
+	bytes public accountManagerImplementation;
 	bytes32 internal initAccountManagerCodeHash;
 
 	// ==================== Modifiers ====================
@@ -92,7 +91,15 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @dev Ensures the caller is a registered Symmio core
 	 */
 	modifier onlySymmio() {
-		if (!availableCores[msg.sender]) revert NotSymmioCore();
+		if (!whitelistedSymmioCores[msg.sender]) revert NotSymmioCore();
+		_;
+	}
+
+	/**
+	 * @dev Ensures the caller is the owner of the account
+	 */
+	modifier onlyAccountOwner(address account) {
+		if (!_isOwnerOf(account, msg.sender)) revert NotOwner();
 		_;
 	}
 
@@ -135,20 +142,24 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
 		affiliateAddress = _generateAccountManagerAddress(reg.name);
 
-		_validateAffiliateRegistration(affiliateAddress, reg);
+		if (affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
+		if (reg.admin == address(0)) revert ZeroAddress();
+
+		_validateName(reg.name);
+		_validateFeeShares(reg.stakeholders, reg.symmioShare);
 
 		AffiliateData storage affiliate = affiliates[affiliateAddress];
 		affiliate.name = reg.name;
 		affiliate.brandColor = reg.brandColor;
 		affiliate.admin = reg.admin;
 		affiliate.state = AffiliateState.PENDING;
-		affiliate.feeDetails.symmioShare = reg.symmioShare;
 		affiliate.metadata = reg.metadata;
+		affiliate.feeDetails.symmioShare = reg.symmioShare;
 		affiliate.feeDetails.stakeholders = reg.stakeholders;
 		affiliate.legacyMultiAccounts = reg.legacyMultiAccounts;
 
 		for (uint256 i = 0; i < reg.symmioCores.length; i++) {
-			if (!availableCores[reg.symmioCores[i]]) revert InvalidCore();
+			if (!whitelistedSymmioCores[reg.symmioCores[i]]) revert NoWhitelistedSymmioCore();
 			affiliate.symmioCores.add(reg.symmioCores[i]);
 		}
 
@@ -160,9 +171,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param affiliate The affiliate address
 	 */
 	function cancelRegistration(address affiliate) external onlyAffiliateAdmin(affiliate) {
-		if (affiliates[affiliate].state != AffiliateState.PENDING) {
-			revert NotPending();
-		}
+		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
+
 		delete affiliates[affiliate];
 		emit RegistrationCancelled(affiliate);
 	}
@@ -172,23 +182,18 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param affiliate The affiliate address to approve
 	 */
 	function approveAffiliate(address affiliate) external onlyRole(APPROVER_ROLE) whenNotPaused {
-		if (affiliates[affiliate].state != AffiliateState.PENDING) {
-			revert NotPending();
-		}
+		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
 		address accountManager = _deployAccountManager(affiliates[affiliate].name);
-		if (affiliate != accountManager) revert(); // TODO ::: define a custom error
+		if (affiliate != accountManager) revert DeploymentFailed();
 		address feeDistributor = _generateFeeDistributorAddress(affiliate, ++globalNonce);
 
 		grantRole(SIGNER_SETTER, accountManager);
 
-		_configureSymmioCores(affiliate, feeDistributor);
-
 		affiliates[affiliate].state = AffiliateState.ACTIVE;
-		affiliates[affiliate].accountManager = accountManager;
-		affiliates[affiliate].feeDistributor = feeDistributor;
+		affiliates[affiliate].feeDetails.feeDistributor = feeDistributor;
 
-		affiliateAddresses.add(accountManager);
+		_setupAffiliateOnSymmioCore(affiliate);
 
 		address[] memory legacyAccounts = affiliates[affiliate].legacyMultiAccounts;
 		for (uint256 i = 0; i < legacyAccounts.length; i++) {
@@ -199,7 +204,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			}
 		}
 
-		emit AffiliateApproved(affiliate, accountManager);
+		emit AffiliateApproved(affiliate, feeDistributor);
 	}
 
 	/**
@@ -219,9 +224,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param affiliate The affiliate address
 	 */
 	function acceptAdminTransfer(address affiliate) external {
-		if (affiliates[affiliate].pendingAdmin != msg.sender) {
-			revert Unauthorized();
-		}
+		if (affiliates[affiliate].pendingAdmin != msg.sender) revert Unauthorized();
 
 		address oldAdmin = affiliates[affiliate].admin;
 		affiliates[affiliate].admin = msg.sender;
@@ -268,7 +271,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		}
 
 		affiliates[affiliate].state = AffiliateState.PAUSED;
-		emit AffiliatePaused(affiliate, true);
+		emit AffiliatePaused(affiliate);
 	}
 
 	/**
@@ -276,12 +279,10 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param affiliate The affiliate address
 	 */
 	function unpauseAffiliate(address affiliate) external onlyRole(UNPAUSER_ROLE) {
-		if (affiliates[affiliate].state != AffiliateState.PAUSED) {
-			revert NotPaused();
-		}
+		if (affiliates[affiliate].state != AffiliateState.PAUSED) revert InvalidState();
 
 		affiliates[affiliate].state = AffiliateState.ACTIVE;
-		emit AffiliatePaused(affiliate, false);
+		emit AffiliateUnpaused(affiliate);
 	}
 
 	// ==================== Fee Management ====================
@@ -340,8 +341,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param symmio The Symmio core address
 	 */
 	function claimAllFees(address affiliate, address symmio) external whenNotPaused nonReentrant {
-		uint256 claimable = _getClaimableFee(affiliate, symmio);
-		claimFees(affiliate, symmio, claimable);
+		claimFees(affiliate, symmio, _getClaimableFee(affiliate, symmio));
 	}
 
 	/**
@@ -352,23 +352,35 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 */
 	function claimFees(address affiliate, address symmio, uint256 amount) public whenNotPaused nonReentrant {
 		address collateral = ISymmio(symmio).getCollateral();
-		AffiliateData storage affiliateData = affiliates[affiliate];
+		FeeDetails storage feeDetails = affiliates[affiliate].feeDetails;
+		Stakeholder[] memory stakeholders = feeDetails.stakeholders;
 
-		Stakeholder[] memory stakeHolders = new Stakeholder[](affiliateData.feeDetails.stakeholders.length + 1);
+		// authorize fee claim
+		address signer = getSigner();
+		bool auth = false;
 
-		// copy existing
-		for (uint256 i = 0; i < affiliateData.feeDetails.stakeholders.length; i++) {
-			stakeHolders[i] = affiliateData.feeDetails.stakeholders[i];
+		for (uint256 i = 0; i < stakeholders.length; i++) {
+			if (signer == stakeholders[i].receiver) {
+				auth = true;
+				break;
+			}
 		}
 
-		// append new one
-		stakeHolders[stakeHolders.length - 1] = Stakeholder({ receiver: symmioFeeReceiver, share: affiliateData.feeDetails.symmioShare });
-		_authorizeFeeClaim(stakeHolders);
+		if (!auth && !hasRole(DISTRIBUTOR_ROLE, signer)) revert Unauthorized();
 
-		_withdrawFeesFromSymmio(symmio, affiliateData.feeDistributor, amount);
-		_distributeFees(collateral, stakeHolders, amount);
+		// withdraw fees from Symmio
+		ISymmio(symmio).setSigner(feeDetails.feeDistributor);
+		ISymmio(symmio).withdrawTo(address(this), amount);
+		ISymmio(symmio).setSigner(address(0));
 
-		emit FeesClaimed(amount);
+		// distribute fees to stakeholders
+		for (uint256 i = 0; i < stakeholders.length; i++) {
+			uint256 share = (stakeholders[i].share * amount) / SHARE_PRECISION;
+			IERC20Upgradeable(collateral).safeTransfer(stakeholders[i].receiver, share);
+			emit FeesDistributed(stakeholders[i].receiver, share);
+		}
+
+		emit FeesClaimed(affiliate, symmio, amount);
 	}
 
 	/**
@@ -380,26 +392,15 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 */
 	function dryClaimAllFees(address affiliate, address symmio) public view returns (address[] memory holders, uint256[] memory shares) {
 		uint256 totalClaimable = _getClaimableFee(affiliate, symmio);
-		AffiliateData storage affiliateData = affiliates[affiliate];
+		Stakeholder[] memory stakeholders = affiliates[affiliate].feeDetails.stakeholders;
 
-		Stakeholder[] storage stored = affiliateData.feeDetails.stakeholders;
-		uint256 storedLen = stored.length;
-
-		Stakeholder[] memory stakeHolders = new Stakeholder[](storedLen + 1);
-
-		for (uint256 i = 0; i < storedLen; i++) {
-			stakeHolders[i] = stored[i];
-		}
-
-		stakeHolders[storedLen] = Stakeholder({ receiver: symmioFeeReceiver, share: affiliateData.feeDetails.symmioShare });
-
-		uint256 len = stakeHolders.length;
+		uint256 len = stakeholders.length;
 		holders = new address[](len);
 		shares = new uint256[](len);
 
 		for (uint256 i = 0; i < len; i++) {
-			holders[i] = stakeHolders[i].receiver;
-			shares[i] = (stakeHolders[i].share * totalClaimable) / SHARE_PRECISION;
+			holders[i] = stakeholders[i].receiver;
+			shares[i] = (stakeholders[i].share * totalClaimable) / SHARE_PRECISION;
 		}
 
 		return (holders, shares);
@@ -413,7 +414,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param accountsData Array of account creation data
 	 * @return Array of created account addresses
 	 */
-	function batchCreateSubAccounts(
+	function createSubAccounts(
 		address affiliate,
 		SubAccountCreationData[] memory accountsData
 	) external whenNotPaused nonReentrant returns (address[] memory) {
@@ -424,10 +425,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		for (uint256 i = 0; i < accountsData.length; i++) {
 			createdAccounts[i] = _createSubAccount(affiliate, signer, accountsData[i]);
-
-			if (accountsData[i].initialDeposit > 0) {
-				_depositForAccount(createdAccounts[i], accountsData[i].initialDeposit);
-			}
 		}
 
 		return createdAccounts;
@@ -438,16 +435,13 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param account The account address
 	 * @param name The new name
 	 */
-	function editAccountName(address account, string memory name) external whenNotPaused {
-		address signer = getSigner();
-		if (!_isOwnerOf(account, signer)) revert NotOwner();
-
+	function editAccountName(address account, string memory name) external whenNotPaused onlyAccountOwner(account) {
 		_validateName(name);
 
 		if (!subAccounts[account].isExists) revert AccountDoesNotExist();
 
 		subAccounts[account].name = name;
-		emit EditAccountName(signer, account, name);
+		emit EditAccountName(account, name);
 	}
 
 	/**
@@ -456,7 +450,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param amount The amount to deposit
 	 */
 	function depositForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_validateAccountOwnership(account, amount);
 		_depositForAccount(account, amount);
 	}
 
@@ -466,7 +459,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param amount The amount to allocate
 	 */
 	function allocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_validateAccountOwnership(account, amount);
 		_allocateForAccount(account, amount);
 	}
 
@@ -476,7 +468,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param amount The amount to deposit and allocate
 	 */
 	function depositAndAllocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_validateAccountOwnership(account, amount);
 		_depositAndAllocateForAccount(account, amount);
 	}
 
@@ -485,8 +476,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param account The account address
 	 * @param amount The amount to withdraw
 	 */
-	function withdrawFromAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_validateAccountOwnership(account, amount);
+	function withdrawFromAccount(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
 		_withdrawFromAccount(account, amount);
 	}
 
@@ -495,13 +485,29 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @param account The account address
 	 * @param callDatas Array of encoded function calls
 	 */
-	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant {
-		address signer = getSigner();
-		if (!_isOwnerOf(account, signer)) revert NotOwner();
+	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant onlyAccountOwner(account) {
 		if (callDatas.length == 0) revert EmptyArray();
 
 		for (uint256 i = 0; i < callDatas.length; i++) {
-			_processCall(account, callDatas[i]);
+			bytes calldata cd = callDatas[i];
+			bytes4 selector = bytes4(cd[:4]);
+
+			if (selector == SEND_QUOTE_SELECTOR || selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
+				// TODO ::: check decode for both selector
+				QuoteParams memory p = _decodeQuoteParams(cd);
+
+				if (virtualAccounts[account].isExists) {
+					_handleVirtualAccountSendQuote(account, cd, p);
+					return;
+				}
+
+				if (subAccounts[account].isExists) {
+					_handleSubAccountSendQuote(account, cd, p);
+					return;
+				}
+			}
+
+			_executeWithSigner(account, cd);
 		}
 	}
 
@@ -593,13 +599,13 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	/**
-	 * @notice Sets or unsets a core as available
+	 * @notice Sets or unsets a core as whitelisted
 	 * @param core The core address
 	 * @param status The availability status
 	 */
-	function setAvailableCore(address core, bool status) external onlyRole(SETTER_ROLE) {
-		availableCores[core] = status;
-		emit AvailableCoreSet(core, status);
+	function setWhitelistedSymmioCore(address core, bool status) external onlyRole(SETTER_ROLE) {
+		whitelistedSymmioCores[core] = status;
+		emit WhitelistedSymmioCoreSet(core, status);
 	}
 
 	/**
@@ -641,7 +647,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 */
 	function getRelatedCore(address account) public view returns (address) {
 		if (subAccounts[account].isExists) {
-			return subAccounts[account].relatedCore;
+			return subAccounts[account].symmioCore;
 		}
 
 		address parent = virtualAccounts[account].parentAccount;
@@ -688,36 +694,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		return subAccountToVirtualAccounts[subAccount].values();
 	}
 
-	/**
-	 * @notice Gets all registered affiliates
-	 * @return Array of affiliate addresses
-	 */
-	function getAllAffiliates() external view returns (address[] memory) {
-		return affiliateAddresses.values();
-	}
-
-	/**
-	 * @notice Gets the total number of affiliates
-	 * @return The affiliate count
-	 */
-	function getAffiliateCount() external view returns (uint256) {
-		return affiliateAddresses.length();
-	}
-
 	// ==================== Internal Functions ====================
-
-	/**
-	 * @dev Validates affiliate registration data
-	 */
-	function _validateAffiliateRegistration(address affiliateAddress, AffiliateRegistration memory reg) private view {
-		if (affiliates[affiliateAddress].state != AffiliateState.NONE) {
-			revert AlreadyRegistered();
-		}
-		if (reg.admin == address(0)) revert ZeroAddress();
-
-		_validateName(reg.name);
-		_validateFeeShares(reg.stakeholders, reg.symmioShare);
-	}
 
 	/**
 	 * @dev Validates name length
@@ -746,12 +723,13 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	/**
 	 * @dev Configures Symmio cores for an affiliate
 	 */
-	function _configureSymmioCores(address affiliate, address feeDistributor) private {
+	function _setupAffiliateOnSymmioCore(address affiliate) private {
 		EnumerableSet.AddressSet storage cores = affiliates[affiliate].symmioCores;
+		address feeDistributor = affiliates[affiliate].feeDetails.feeDistributor;
 
 		for (uint256 i = 0; i < cores.length(); i++) {
-			// TODO ::: set fee collector in try-catch to not revert if a specific core setFeeCollector method paused
 			ISymmio(cores.at(i)).setFeeCollector(affiliate, feeDistributor);
+			ISymmio(cores.at(i)).registerAffiliate(affiliate);
 		}
 	}
 
@@ -760,7 +738,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 */
 	function _createSubAccount(address affiliate, address signer, SubAccountCreationData memory data) private returns (address subAccountAddress) {
 		_validateName(data.name);
-		if (!availableCores[data.relatedCore]) revert InvalidCore();
+		if (!whitelistedSymmioCores[data.symmioCore]) revert NoWhitelistedSymmioCore();
 
 		uint256 nonce = ++globalNonce;
 		subAccountAddress = _generateSubAccountAddress(affiliate, signer, nonce);
@@ -771,7 +749,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		s.name = data.name;
 		s.affiliate = affiliate;
 		s.metadata = data.metadata;
-		s.relatedCore = data.relatedCore;
+		s.symmioCore = data.symmioCore;
 		s.isolationType = data.isolationType;
 
 		userToSubAccounts[signer].add(subAccountAddress);
@@ -834,11 +812,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	/**
 	 * @dev Validates account ownership and amount
 	 */
-	function _validateAccountOwnership(address account, uint256 amount) private view {
-		address signer = getSigner();
-		if (!_isOwnerOf(account, signer)) revert NotOwner();
-		if (amount == 0) revert ZeroAmount();
-	}
+	function _validateAccountOwnership(address account) private view {}
 
 	/**
 	 * @dev Deposits collateral for an account
@@ -901,31 +875,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	/**
-	 * @dev Processes a call to an account
-	 */
-	function _processCall(address account, bytes calldata cd) private {
-		bytes4 selector = bytes4(cd[:4]);
-		bool isSendQuote = (selector == SEND_QUOTE_SELECTOR || selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR);
-
-		if (isSendQuote) {
-			// TODO ::: check decode for both selector
-			QuoteParams memory p = _decodeQuoteParams(cd);
-
-			if (virtualAccounts[account].isExists) {
-				_handleVirtualAccountSendQuote(account, cd, p);
-				return;
-			}
-
-			if (subAccounts[account].isExists) {
-				_handleSubAccountSendQuote(account, cd, p);
-				return;
-			}
-		}
-
-		_executeWithSigner(account, cd);
-	}
-
-	/**
 	 * @dev Decodes quote parameters from calldata
 	 */
 	function _decodeQuoteParams(bytes calldata cd) private pure returns (QuoteParams memory) {
@@ -956,117 +905,72 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @dev Handles sendQuote for virtual accounts
 	 */
 	function _handleVirtualAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private {
-		VirtualAccountData storage vData = virtualAccounts[account];
+		VirtualAccountData storage accountData = virtualAccounts[account];
+		VirtualAccountIsolationType isolationType = accountData.isolationType;
 
-		if (vData.isolationType == VirtualAccountIsolationType.CUSTOM) {
-			_executeWithSigner(account, cd);
-			address core = getRelatedCore(account);
-			uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
-			vData.quoteIds.add(quoteId);
-			return;
-		}
-
-		_validateVirtualAccountQuote(vData, p);
-
-		_executeWithSigner(account, cd);
-
-		address core = getRelatedCore(account);
-		uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
-		vData.quoteIds.add(quoteId);
-	}
-
-	/**
-	 * @dev Validates virtual account quote parameters
-	 */
-	function _validateVirtualAccountQuote(VirtualAccountData storage vData, QuoteParams memory p) private view {
-		if (vData.isolationType == VirtualAccountIsolationType.POSITION) {
-			revert();
-		}
-
-		if (vData.isolationType == VirtualAccountIsolationType.MARKET_LONG && p.positionType != ISymmio.PositionType.LONG) {
-			revert();
-		}
-
-		if (vData.isolationType == VirtualAccountIsolationType.MARKET_SHORT && p.positionType != ISymmio.PositionType.SHORT) {
-			revert();
+		if (
+			isolationType == VirtualAccountIsolationType.POSITION ||
+			(isolationType == VirtualAccountIsolationType.MARKET_LONG && p.positionType != ISymmio.PositionType.LONG) ||
+			(isolationType == VirtualAccountIsolationType.MARKET_SHORT && p.positionType != ISymmio.PositionType.SHORT)
+		) {
+			revert PositionTypeNotAllowedForThisAccount();
 		}
 
 		if (
-			vData.isolationType == VirtualAccountIsolationType.MARKET ||
-			vData.isolationType == VirtualAccountIsolationType.MARKET_LONG ||
-			vData.isolationType == VirtualAccountIsolationType.MARKET_SHORT
+			(isolationType == VirtualAccountIsolationType.MARKET ||
+				isolationType == VirtualAccountIsolationType.MARKET_LONG ||
+				isolationType == VirtualAccountIsolationType.MARKET_SHORT) && p.symbolId != accountData.symbolId
 		) {
-			if (p.symbolId != vData.symbolId) revert();
+			revert SymbolNotAllowedForThisAccount();
 		}
+
+		_executeWithSigner(account, cd);
+		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId() - 1);
 	}
 
 	/**
 	 * @dev Handles sendQuote for sub-accounts
 	 */
-	function _handleSubAccountSendQuote(address parentAccount, bytes memory cd, QuoteParams memory p) private {
-		SubAccountData storage parent = subAccounts[parentAccount];
+	function _handleSubAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private {
+		SubAccountData storage accountData = subAccounts[account];
 
-		if (parent.isolationType == SubAccountIsolationType.CUSTOM) {
-			_executeWithSigner(parentAccount, cd);
-			address core = getRelatedCore(parentAccount);
-			uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
-			parent.quoteIds.add(quoteId);
+		if (accountData.isolationType == SubAccountIsolationType.CUSTOM) {
+			_executeWithSigner(account, cd);
+			accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId() - 1);
 			return;
 		}
 
-		address virtualAccount = _createVirtualAccountForSubAccount(parentAccount, p, parent.isolationType);
+		// create virtual account based on sub-account isolation type
+		address virtualAccount;
+		if (accountData.isolationType == SubAccountIsolationType.POSITION)
+			virtualAccount = _createVirtualAccount(account, hex"", VirtualAccountIsolationType.POSITION, p.symbolId);
 
-		_transferToVirtualAccount(virtualAccount, parentAccount, p);
+		if (accountData.isolationType == SubAccountIsolationType.MARKET)
+			virtualAccount = _createVirtualAccount(account, hex"", VirtualAccountIsolationType.MARKET, p.symbolId);
 
-		_executeWithSigner(virtualAccount, cd);
-
-		address core = getRelatedCore(virtualAccount);
-		uint256 quoteId = ISymmio(core).getNextQuoteId() - 1;
-		virtualAccounts[virtualAccount].quoteIds.add(quoteId);
-	}
-
-	/**
-	 * @dev Creates virtual account based on sub-account isolation type
-	 */
-	function _createVirtualAccountForSubAccount(
-		address parentAccount,
-		QuoteParams memory p,
-		SubAccountIsolationType isolationType
-	) private returns (address) {
-		if (isolationType == SubAccountIsolationType.POSITION) {
-			return _createVirtualAccount(parentAccount, hex"", VirtualAccountIsolationType.POSITION, p.symbolId);
-		}
-
-		if (isolationType == SubAccountIsolationType.MARKET) {
-			return _createVirtualAccount(parentAccount, hex"", VirtualAccountIsolationType.MARKET, p.symbolId);
-		}
-
-		if (isolationType == SubAccountIsolationType.MARKET_DIRECTION) {
+		if (accountData.isolationType == SubAccountIsolationType.MARKET_DIRECTION) {
 			VirtualAccountIsolationType vType = p.positionType == ISymmio.PositionType.LONG
 				? VirtualAccountIsolationType.MARKET_LONG
 				: VirtualAccountIsolationType.MARKET_SHORT;
 
-			return _createVirtualAccount(parentAccount, hex"", vType, p.symbolId);
+			virtualAccount = _createVirtualAccount(account, hex"", vType, p.symbolId);
 		}
-	}
 
-	/**
-	 * @dev Transfers funds to virtual account
-	 */
-	function _transferToVirtualAccount(address virtualAccount, address signer, QuoteParams memory p) private {
+		// transfer funds to virtual account
 		address core = getRelatedCore(virtualAccount);
-		ISymmio(core).setSigner(signer);
+		ISymmio(core).setSigner(account);
 		ISymmio(core).internalTransfer(virtualAccount, p.cva + p.lf + p.partyAmm);
 		ISymmio(core).setSigner(address(0));
+
+		// send quote from virtual account
+		_executeWithSigner(virtualAccount, cd);
+		virtualAccounts[virtualAccount].quoteIds.add(ISymmio(getRelatedCore(virtualAccount)).getNextQuoteId() - 1);
 	}
 
 	/**
 	 * @dev Deallocates and transfers balance from virtual account
 	 */
 	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
-		address collateral = ISymmio(core).getCollateral();
-		uint8 decimals = IERC20Metadata(collateral).decimals();
-
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
 		if (allocatedBalance > 0) {
 			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.deallocate.selector, allocatedBalance)); // TODO ::: change it to use deallocateForZeroUpnl
@@ -1102,55 +1006,9 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @dev Gets claimable fees
 	 */
 	function _getClaimableFee(address affiliate, address symmio) private view returns (uint256) {
-		address collateral = ISymmio(symmio).getCollateral();
-		uint8 decimals = IERC20Metadata(collateral).decimals();
-		AffiliateData storage affiliateData = affiliates[affiliate];
-		uint256 balance = ISymmio(symmio).balanceOf(affiliateData.feeDistributor);
+		uint8 decimals = IERC20Metadata(ISymmio(symmio).getCollateral()).decimals();
+		uint256 balance = ISymmio(symmio).balanceOf(affiliates[affiliate].feeDetails.feeDistributor);
 		return balance / (10 ** (18 - decimals));
-	}
-
-	/**
-	 * @dev Authorizes fee claim
-	 */
-	function _authorizeFeeClaim(Stakeholder[] memory stakeholders) private view {
-		address signer = getSigner();
-		bool auth = false;
-
-		for (uint256 i = 0; i < stakeholders.length; i++) {
-			if (signer == stakeholders[i].receiver) {
-				auth = true;
-				break;
-			}
-		}
-
-		if (!auth && !hasRole(DISTRIBUTOR_ROLE, signer)) {
-			revert Unauthorized();
-		}
-	}
-
-	/**
-	 * @dev Withdraws fees from Symmio
-	 */
-	function _withdrawFeesFromSymmio(address symmio, address feeDistributor, uint256 amount) private {
-		ISymmio(symmio).setSigner(feeDistributor);
-		ISymmio(symmio).withdrawTo(address(this), amount);
-		ISymmio(symmio).setSigner(address(0));
-	}
-
-	/**
-	 * @dev Distributes fees to stakeholders
-	 */
-	function _distributeFees(address collateral, Stakeholder[] memory stakeholders, uint256 amount) private {
-		uint256 checkAmount = 0;
-
-		for (uint256 i = 0; i < stakeholders.length; i++) {
-			uint256 share = (stakeholders[i].share * amount) / SHARE_PRECISION;
-			IERC20Upgradeable(collateral).safeTransfer(stakeholders[i].receiver, share);
-			checkAmount += share;
-			emit FeesDistributed(stakeholders[i].receiver, share);
-		}
-
-		if (checkAmount != amount) revert InvalidAmount();
 	}
 
 	/**
@@ -1248,11 +1106,8 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 */
 	function _generateAccountManagerAddress(string memory name) private view returns (address) {
 		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, name));
-
 		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
-
 		bytes32 initCodeHash = keccak256(bytecode);
-
 		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
 	}
 

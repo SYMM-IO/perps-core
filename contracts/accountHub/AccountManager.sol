@@ -36,8 +36,7 @@ contract AccountManager is IAccountManager {
 		IAccountHub.SubAccountCreationData memory acc = IAccountHub.SubAccountCreationData({
 			name: name,
 			metadata: hex"",
-			relatedCore: cores[0],
-			initialDeposit: 0,
+			symmioCore: cores[0],
 			isolationType: IAccountHub.SubAccountIsolationType.CUSTOM
 		});
 
@@ -45,8 +44,7 @@ contract AccountManager is IAccountManager {
 
 		arr[0] = acc;
 
-
-		address[] memory subAccountAddress = IAccountHub(hub).batchCreateSubAccounts(address(this), arr);
+		address[] memory subAccountAddress = IAccountHub(hub).createSubAccounts(address(this), arr);
 		emit AddAccount(msg.sender, subAccountAddress[0], name);
 	}
 

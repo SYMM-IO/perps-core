@@ -20,8 +20,7 @@ interface IAccountHub {
 		POSITION,
 		MARKET,
 		MARKET_LONG,
-		MARKET_SHORT,
-		CUSTOM
+		MARKET_SHORT
 	}
 
 	enum SubAccountIsolationType {
@@ -39,6 +38,7 @@ interface IAccountHub {
 	struct FeeDetails {
 		uint256 symmioShare;
 		Stakeholder[] stakeholders;
+		address feeDistributor;
 	}
 
 	struct AffiliateData {
@@ -49,8 +49,6 @@ interface IAccountHub {
 		AffiliateState state;
 		FeeDetails feeDetails;
 		bytes metadata;
-		address accountManager;
-		address feeDistributor;
 		address[] legacyMultiAccounts;
 		EnumerableSet.AddressSet symmioCores;
 		mapping(bytes4 => address) hooks;
@@ -80,7 +78,7 @@ interface IAccountHub {
 		bool isExists;
 		bytes metadata;
 		address affiliate;
-		address relatedCore;
+		address symmioCore;
 		EnumerableSet.UintSet quoteIds;
 		SubAccountIsolationType isolationType;
 	}
@@ -97,8 +95,7 @@ interface IAccountHub {
 	struct SubAccountCreationData {
 		string name;
 		bytes metadata;
-		address relatedCore;
-		uint256 initialDeposit;
+		address symmioCore;
 		SubAccountIsolationType isolationType;
 	}
 
@@ -123,9 +120,10 @@ interface IAccountHub {
 
 	// Affiliate events
 	event AffiliateRegistered(address indexed Affiliate, string name);
-	event AffiliateApproved(address indexed Affiliate, address accountManager);
+	event AffiliateApproved(address indexed Affiliate, address indexed feeDistributor);
 	event AffiliateUpdated(address indexed Affiliate, string name, string brandColor);
-	event AffiliatePaused(address indexed Affiliate, bool paused);
+	event AffiliatePaused(address indexed Affiliate);
+	event AffiliateUnpaused(address indexed Affiliate);
 	event AffiliateDeactivated(address indexed Affiliate);
 	event StakeholdersUpdateRequested(address indexed Affiliate);
 	event StakeholdersUpdated(address indexed Affiliate);
@@ -137,7 +135,7 @@ interface IAccountHub {
 	event VirtualAccountDeleted(address indexed account, address indexed parent);
 
 	// Legacy compatibility events
-	event EditAccountName(address indexed user, address indexed account, string name);
+	event EditAccountName(address indexed account, string name);
 	event DepositForAccount(address indexed sender, address indexed account, uint256 amount);
 	event AllocateForAccount(address indexed sender, address indexed account, uint256 amount);
 	event WithdrawFromAccount(address indexed sender, address indexed account, uint256 amount);
@@ -145,7 +143,7 @@ interface IAccountHub {
 
 	// Fee events
 	event FeesDistributed(address indexed recipient, uint256 amount);
-	event FeesClaimed(uint256 amount);
+	event FeesClaimed(address indexed affiliate, address indexed symmio, uint256 amount);
 	event FeeUpdateCancelled(address indexed Affiliate);
 	event SymmioFeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
 
@@ -154,26 +152,32 @@ interface IAccountHub {
 	event HookRemoved(address indexed Affiliate, bytes4 indexed selector);
 
 	event SymmioAddressSet(address indexed symmioAddress);
-
-	event AvailableCoreSet(address indexed core, bool status);
+	event WhitelistedSymmioCoreSet(address indexed core, bool status);
 
 	event AdminTransferProposed(address indexed affiliate, address indexed newAdmin);
 	event AdminTransferCompleted(address indexed affiliate, address indexed oldAdmin, address indexed newAdmin);
 	event AdminTransferCancelled(address indexed affiliate);
 
-	function batchCreateSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
+	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
+
 	function depositForAccount(address account, uint256 amount) external;
+
 	function allocateForAccount(address account, uint256 amount) external;
+
 	function withdrawFromAccount(address account, uint256 amount) external;
+
 	function _call(address account, bytes[] memory _callDatas) external;
+
 	function getRelatedCore(address account) external view returns (address);
+
 	function affiliateSymmioCores(address aff) external view returns (address[] memory);
+
 	function setSigner(address _signer) external;
+
 	function depositAndAllocateForAccount(address account, uint256 amount) external;
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();
-	error InvalidNameLength();
 	error InvalidShare();
 	error SharesMustSumTo100();
 	error AlreadyRegistered();
@@ -182,7 +186,8 @@ interface IAccountHub {
 	error AffiliateNotActive();
 	error NotSymmioCore();
 	error EmptyArray();
-	error InvalidCore();
+	error NoWhitelistedSymmioCore();
+	error DeploymentFailed();
 	error NotOwner();
 	error ZeroAmount();
 	error AlreadyDeleted();
@@ -195,11 +200,12 @@ interface IAccountHub {
 	error AccountDeleted();
 	error NoPendingUpdate();
 	error Unauthorized();
-	error NotPaused();
-	error DeploymentFailed();
-	error InvalidAmount();
+	error InvalidState();
 	error InvalidParent();
 	error AccountDoesNotExist();
 	error UnableToRetrieveCore();
 	error InvalidSymbolId();
+	error InvalidNameLength();
+	error PositionTypeNotAllowedForThisAccount();
+	error SymbolNotAllowedForThisAccount();
 }
