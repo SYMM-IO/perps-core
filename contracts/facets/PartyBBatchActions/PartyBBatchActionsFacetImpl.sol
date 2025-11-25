@@ -12,6 +12,8 @@ import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../libraries/LibConnections.sol";
 
+import "../../interfaces/IPartiesEvents.sol";
+
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
 
@@ -20,7 +22,7 @@ library PartyBBatchActionsFacetImpl {
 		uint256[] memory filledAmounts,
 		uint256[] memory openedPrices,
 		PairUpnlAndPricesSig memory upnlSig
-	) internal returns (uint256[] memory currentIds) {
+	) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -61,15 +63,42 @@ library PartyBBatchActionsFacetImpl {
 		accountLayout.partyANonces[firstQuote.partyA] += 1;
 		accountLayout.partyBNonces[firstQuote.partyB][firstQuote.partyA] += 1;
 
-		currentIds = new uint256[](quoteIds.length);
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			uint256 quoteId = quoteIds[i];
 			Quote storage quote = quoteLayout.quotes[quoteId];
 			require(quote.partyB == msg.sender, "PartyBFacet: Sender should be the partyB");
 			require(firstQuote.partyA == quote.partyA, "PartyBFacet: All positions should belong to one partyA");
-			currentIds[i] = LibPartyBPositionsActions.openPosition(quoteId, filledAmounts[i], openedPrices[i]);
+			uint256 currentId = LibPartyBPositionsActions.openPosition(quoteId, filledAmounts[i], openedPrices[i]);
 			if (quote.quoteStatus == QuoteStatus.OPENED) {
 				LibConnections.addConnection(quote.partyA, quote.partyB);
+			}
+
+			// emit event for the opened position
+			// This pattern is not standard in our codebase, but it's a workaround to fix the build problem in this version (stack too deep error)
+			emit IPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
+			if (currentId != 0) {
+				Quote storage newQuote = quoteLayout.quotes[currentId];
+				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
+					emit IPartiesEvents.SendQuote(
+						newQuote.partyA,
+						newQuote.id,
+						newQuote.partyBsWhiteList,
+						newQuote.symbolId,
+						newQuote.positionType,
+						newQuote.orderType,
+						newQuote.requestedOpenPrice,
+						newQuote.marketPrice,
+						newQuote.quantity,
+						newQuote.lockedValues.cva,
+						newQuote.lockedValues.lf,
+						newQuote.lockedValues.partyAmm,
+						newQuote.lockedValues.partyBmm,
+						newQuote.tradingFee,
+						newQuote.deadline
+					);
+				} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
+					emit IPartiesEvents.AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
+				}
 			}
 		}
 		LibSolvency.isSolventAfterOpenPosition(
