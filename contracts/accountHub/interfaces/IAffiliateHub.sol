@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-interface IAffiliatesHub {
+interface IAffiliateHub {
 	enum AffiliateState {
 		NONE,
 		PENDING,

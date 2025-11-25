@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import "./interfaces/IAccountHub.sol";
-import "./interfaces/IAffiliatesHub.sol";
+import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
@@ -47,7 +47,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	mapping(address => EnumerableSet.AddressSet) private userToSubAccounts;
 	mapping(address => EnumerableSet.AddressSet) private subAccountToVirtualAccounts;
 
-	address public affiliatesHub;
+	address public affiliateHub;
 	address internal globalSigner;
 	uint256 public globalNonce;
 
@@ -57,7 +57,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @dev Ensures the caller is a registered Symmio core
 	 */
 	modifier onlySymmio() {
-		if (!IAffiliatesHub(affiliatesHub).isWhitelistedSymmioCore(msg.sender)) revert NotSymmioCore();
+		if (!IAffiliateHub(affiliateHub).isWhitelistedSymmioCore(msg.sender)) revert NotSymmioCore();
 		_;
 	}
 
@@ -79,11 +79,11 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	/**
 	 * @notice Initializes the AccountHub contract
 	 * @param _admin The default admin address
-	 * @param _affiliatesHub The AffiliatesHub contract address
+	 * @param _affiliateHub The AffiliateHub contract address
 	 */
-	function initialize(address _admin, address _affiliatesHub) public initializer {
+	function initialize(address _admin, address _affiliateHub) public initializer {
 		if (_admin == address(0)) revert ZeroAddress();
-		if (_affiliatesHub == address(0)) revert ZeroAddress();
+		if (_affiliateHub == address(0)) revert ZeroAddress();
 
 		__Pausable_init();
 		__AccessControl_init();
@@ -91,7 +91,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
-		affiliatesHub = _affiliatesHub;
+		affiliateHub = _affiliateHub;
 	}
 
 	// ==================== Account Management ====================
@@ -230,12 +230,12 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	// ==================== Admin Functions ====================
 
 	/**
-	 * @notice Sets the AffiliatesHub contract address (only for emergency updates)
-	 * @param _affiliatesHub The new AffiliatesHub address
+	 * @notice Sets the AffiliateHub contract address (only for emergency updates)
+	 * @param _affiliateHub The new AffiliateHub address
 	 */
-	function setAffiliatesHub(address _affiliatesHub) external onlyRole(SETTER_ROLE) {
-		if (_affiliatesHub == address(0)) revert ZeroAddress();
-		affiliatesHub = _affiliatesHub;
+	function setAffiliateHub(address _affiliateHub) external onlyRole(SETTER_ROLE) {
+		if (_affiliateHub == address(0)) revert ZeroAddress();
+		affiliateHub = _affiliateHub;
 	}
 
 	/**
@@ -323,8 +323,8 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 */
 	function _createSubAccount(address affiliate, address sender, SubAccountCreationData memory data) private returns (address subAccountAddress) {
 		_validateName(data.name);
-		if (!IAffiliatesHub(affiliatesHub).isWhitelistedSymmioCore(data.symmioCore)) revert NotSymmioCore();
-		if (IAffiliatesHub(affiliatesHub).getAffiliateState(affiliate) != IAffiliatesHub.AffiliateState.ACTIVE) revert AffiliateNotActive();
+		if (!IAffiliateHub(affiliateHub).isWhitelistedSymmioCore(data.symmioCore)) revert NotSymmioCore();
+		if (IAffiliateHub(affiliateHub).getAffiliateState(affiliate) != IAffiliateHub.AffiliateState.ACTIVE) revert AffiliateNotActive();
 
 		uint256 nonce = ++globalNonce;
 		subAccountAddress = _generateSubAccountAddress(affiliate, sender, nonce);
@@ -603,7 +603,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @dev Checks legacy multi-account ownership
 	 */
 	function _checkLegacyOwnership(address account, address user) private view returns (bool) {
-		address[] memory legacyAccounts = IAffiliatesHub(affiliatesHub).getLegacyMultiAccounts();
+		address[] memory legacyAccounts = IAffiliateHub(affiliateHub).getLegacyMultiAccounts();
 		for (uint256 i = 0; i < legacyAccounts.length; i++) {
 			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
 			if (owner == user) {
@@ -617,7 +617,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @dev Gets legacy core address
 	 */
 	function _getLegacyCore(address account) private view returns (address) {
-		address[] memory legacyAccounts = IAffiliatesHub(affiliatesHub).getLegacyMultiAccounts();
+		address[] memory legacyAccounts = IAffiliateHub(affiliateHub).getLegacyMultiAccounts();
 		for (uint256 i = 0; i < legacyAccounts.length; i++) {
 			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
 			if (owner != address(0)) {
@@ -646,7 +646,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @dev Calls a hook if configured
 	 */
 	function _callHook(address affiliate, bytes4 selector, bytes memory data) private {
-		address hook = IAffiliatesHub(affiliatesHub).getHook(affiliate, selector);
+		address hook = IAffiliateHub(affiliateHub).getHook(affiliate, selector);
 		if (hook != address(0)) {
 			(bool success, bytes memory result) = hook.call(abi.encodeWithSelector(selector, data));
 

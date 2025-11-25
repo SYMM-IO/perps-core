@@ -7,17 +7,17 @@ pragma solidity >=0.8.18;
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./interfaces/IAccountManager.sol";
 import "./interfaces/IAccountHub.sol";
-import "./interfaces/IAffiliatesHub.sol";
+import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 
 contract AccountManager is IAccountManager {
 	using SafeERC20 for IERC20;
 
-	address public affiliatesHub;
+	address public affiliateHub;
 	address public accountHub;
 
 	modifier onlyHub() {
-		require(msg.sender == affiliatesHub, "AccountManager: Only affiliates hub");
+		require(msg.sender == affiliateHub, "AccountManager: Only affiliates hub");
 		_;
 	}
 
@@ -27,8 +27,8 @@ contract AccountManager is IAccountManager {
 		IAccountHub(accountHub).setSigner(address(0));
 	}
 
-	constructor(address _affiliatesHub) {
-		affiliatesHub = _affiliatesHub;
+	constructor(address _affiliateHub) {
+		affiliateHub = _affiliateHub;
 	}
 
 	function setAccountHub(address _accountHub) external onlyHub {
@@ -37,7 +37,7 @@ contract AccountManager is IAccountManager {
 	}
 
 	function addAccount(string memory name) external withSigner returns (address[] memory subAccountAddress) {
-		address[] memory cores = IAffiliatesHub(affiliatesHub).getAffiliateSymmioCores(address(this));
+		address[] memory cores = IAffiliateHub(affiliateHub).getAffiliateSymmioCores(address(this));
 
 		IAccountHub.SubAccountCreationData memory acc = IAccountHub.SubAccountCreationData({
 			name: name,
@@ -84,8 +84,8 @@ contract AccountManager is IAccountManager {
 		IAccountHub(accountHub)._call(account, callDatas);
 	}
 
-	function getAffiliatesHub() external view returns (address) {
-		return affiliatesHub;
+	function getAffiliateHub() external view returns (address) {
+		return affiliateHub;
 	}
 
 	function getAccountHub() external view returns (address) {

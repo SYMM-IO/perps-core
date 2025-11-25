@@ -12,16 +12,16 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-import "./interfaces/IAffiliatesHub.sol";
+import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/IAccountManager.sol";
 import "./interfaces/ISymmio.sol";
 
 /**
- * @title AffiliatesHub
+ * @title AffiliateHub
  * @notice Manages affiliate registrations, fee distribution, and hooks for the Symmio protocol
  * @dev Implements role-based access control, pausability, and reentrancy protection
  */
-contract AffiliatesHub is IAffiliatesHub, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
+contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 	using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -80,7 +80,7 @@ contract AffiliatesHub is IAffiliatesHub, Initializable, PausableUpgradeable, Ac
 	}
 
 	/**
-	 * @notice Initializes the AffiliatesHub contract
+	 * @notice Initializes the AffiliateHub contract
 	 * @param _admin The default admin address
 	 * @param _symmioFeeReceiver The address to receive Symmio fees
 	 * @param _accountManagerImplementation The bytecode for account manager deployment
@@ -634,4 +634,3 @@ contract AffiliatesHub is IAffiliatesHub, Initializable, PausableUpgradeable, Ac
 			);
 	}
 }
-
