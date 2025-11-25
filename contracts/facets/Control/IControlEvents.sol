@@ -100,4 +100,8 @@ interface IControlEvents {
 	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
 	event SetMaxWithdrawParts(uint256 maxWithdrawParts);
 	event SetWithdrawCooldownPeriod(uint256 withdrawCooldownPeriod);
+	event RegisterVirtualProvider(address provider);
+	event UnregisterVirtualProvider(address provider);
+	event RegisterExpressProvider(address provider);
+	event UnregisterExpressProvider(address provider);
 }

@@ -39,8 +39,7 @@ library LibLiquidation {
 			liquidatorShare = (remainingLf * maLayout.liquidatorShare) / 1e18;
 
 			maLayout.partyBPositionLiquidatorsShare[partyB][partyA] =
-				(remainingLf - liquidatorShare) /
-				quoteLayout.partyBPositionsCount[partyB][partyA];
+				(remainingLf - liquidatorShare) / quoteLayout.partyBPositionsCount[partyB][partyA];
 		} else {
 			maLayout.partyBPositionLiquidatorsShare[partyB][partyA] = 0;
 		}

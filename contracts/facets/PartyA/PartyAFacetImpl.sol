@@ -130,7 +130,6 @@ library PartyAFacetImpl {
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
 		accountLayout.allocatedBalances[msg.sender] -= feeAmount;
 		emit SharedEvents.BalanceChangePartyA(msg.sender, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
-
 	}
 
 	function requestToCancelQuote(uint256 quoteId) internal returns (QuoteStatus result) {

@@ -5,49 +5,48 @@
 pragma solidity >=0.8.18;
 
 struct WithdrawReceiverPart {
-    uint256 id;
-    uint256 amount;
-    int256 chainId;
-    bytes receiver;
-    address virtualProvider;
-    address expressProvider;
+	uint256 id;
+	uint256 amount;
+	int256 chainId;
+	bytes receiver;
+	address virtualProvider;
+	address expressProvider;
 }
 
 struct WithdrawRequest {
-    uint256 id;
-    address user;
-    WithdrawReceiverPart[] parts;
-    uint256 timestamp;
-    uint256 cooldownEndTime;
-    WithdrawStatus status;
-    bytes providerData;
+	uint256 id;
+	address user;
+	WithdrawReceiverPart[] parts;
+	uint256 timestamp;
+	uint256 cooldownEndTime;
+	WithdrawStatus status;
+	bytes providerData;
 }
 
 enum WithdrawStatus {
-    PENDING,
-    PROVIDER_ACCEPTED,
-    PROVIDER_REJECTED,
-    COMPLETED,
-    CANCEL_REQUESTED,
-    CANCELLED,
-    SUSPENDED
+	PENDING,
+	PROVIDER_ACCEPTED,
+	PROVIDER_REJECTED,
+	COMPLETED,
+	CANCEL_REQUESTED,
+	CANCELLED,
+	SUSPENDED
 }
 
-
 library WithdrawStorage {
-    bytes32 internal constant WITHDRAW_STORAGE_SLOT = keccak256("diamond.standard.storage.withdraw");
+	bytes32 internal constant WITHDRAW_STORAGE_SLOT = keccak256("diamond.standard.storage.withdraw");
 
-    struct Layout {
-        uint256 maxWithdrawParts;
-        uint256 withdrawCooldownPeriod;
-        mapping(address => uint256) lastWithdrawRequestId;
-        mapping(address => mapping(uint256 => WithdrawRequest)) withdrawRequests;
-    }
+	struct Layout {
+		uint256 maxWithdrawParts;
+		uint256 withdrawCooldownPeriod;
+		mapping(address => uint256) lastWithdrawRequestId;
+		mapping(address => mapping(uint256 => WithdrawRequest)) withdrawRequests;
+	}
 
-    function layout() internal pure returns (Layout storage l) {
-        bytes32 slot = WITHDRAW_STORAGE_SLOT;
-        assembly {
-            l.slot := slot
-        }
-    }
+	function layout() internal pure returns (Layout storage l) {
+		bytes32 slot = WITHDRAW_STORAGE_SLOT;
+		assembly {
+			l.slot := slot
+		}
+	}
 }

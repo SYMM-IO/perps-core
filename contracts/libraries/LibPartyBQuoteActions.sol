@@ -21,10 +21,7 @@ library LibPartyBQuoteActions {
 		require(quote.quoteStatus == QuoteStatus.PENDING, "PartyBFacet: Invalid state");
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 		require(quoteId <= quoteLayout.lastId, "PartyBFacet: Invalid quoteId");
-		require(
-			LibConnections.isSymbolAllowedForPartyB(msg.sender, quote.symbolId),
-			"PartyBFacet: symbol is not whitelisted"
-		);
+		require(LibConnections.isSymbolAllowedForPartyB(msg.sender, quote.symbolId), "PartyBFacet: symbol is not whitelisted");
 		require(
 			LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
 			"PartyBFacet: Symbol not allowed due to connection restrictions"

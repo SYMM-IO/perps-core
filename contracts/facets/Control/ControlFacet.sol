@@ -835,4 +835,24 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;
 		emit SetWithdrawCooldownPeriod(_withdrawCooldownPeriod);
 	}
+
+	function registerVirtualProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		GlobalAppStorage.layout().virtualProviders[provider] = true;
+		emit RegisterVirtualProvider(provider);
+	}
+
+	function unregisterVirtualProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		GlobalAppStorage.layout().virtualProviders[provider] = false;
+		emit UnregisterVirtualProvider(provider);
+	}
+
+	function registerExpressProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		GlobalAppStorage.layout().expressProviders[provider] = true;
+		emit RegisterExpressProvider(provider);
+	}
+
+	function unregisterExpressProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		GlobalAppStorage.layout().expressProviders[provider] = false;
+		emit UnregisterExpressProvider(provider);
+	}
 }

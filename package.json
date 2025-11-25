@@ -37,6 +37,8 @@
     "hardhat-gas-reporter": "^1.0.8",
     "js-sha3": "^0.9.3",
     "mocha": "^10.7.0",
+    "prettier": "^3.6.2",
+    "prettier-plugin-solidity": "^2.2.0",
     "random-ext": "^2.8.0",
     "rxjs": "^7.8.1",
     "shx": "^0.3.4",
@@ -74,6 +76,6 @@
     "test:uncheck-muon": "./utils/runTests.sh"
   },
   "dependencies": {
-    "prettier-plugin-solidity": "^2.1.0"
+    "solhint": "^6.0.1"
   }
 }

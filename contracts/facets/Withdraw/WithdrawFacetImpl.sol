@@ -11,343 +11,393 @@ import "../../storages/AccountStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/WithdrawStorage.sol";
-import {IVirtualProvider} from "../../interfaces/IVirtualProvider.sol";
-import {IExpressProvider} from "../../interfaces/IExpressProvider.sol";
-
-
+import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
+import { IExpressProvider } from "../../interfaces/IExpressProvider.sol";
 
 library WithdrawFacetImpl {
-    using SafeERC20 for IERC20;
-    event Withdraw(address sender, address user, uint256 amount);
+	using SafeERC20 for IERC20;
+	event Withdraw(address sender, address user, uint256 amount);
 
-    function initiateWithdraw(
-        WithdrawReceiverPart[] memory parts,
-        bytes memory data
-    ) internal returns (uint256) {
-        AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-        WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-        GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-        address collateral = appLayout.collateral;
-        uint256 collateralDecimals = IERC20Metadata(collateral).decimals();
+	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bytes memory data) internal returns (uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		address collateral = appLayout.collateral;
+		uint256 collateralDecimals = IERC20Metadata(collateral).decimals();
 
-        require(parts.length <= withdrawLayout.maxWithdrawParts, "Too many withdraw parts");
-        require(parts.length > 0, "No withdraw parts");
+		require(parts.length <= withdrawLayout.maxWithdrawParts, "Too many withdraw parts");
+		require(parts.length > 0, "No withdraw parts");
 
-        uint256 totalAmount;
-        address expressProvider;
-        address pureVirtualProvider;
+		uint256 totalAmount;
+		address expressProvider;
+		address pureVirtualProvider;
 
-        for (uint256 i = 0; i < parts.length; i++) {
-            WithdrawReceiverPart memory part = parts[i];
+		for (uint256 i = 0; i < parts.length; i++) {
+			WithdrawReceiverPart memory part = parts[i];
 
-            bool isExpress = part.expressProvider != address(0);
-            bool isVirtual = part.virtualProvider != address(0);
+			bool isExpress = part.expressProvider != address(0);
+			bool isVirtual = part.virtualProvider != address(0);
 
-            if (isExpress) {
-                if (expressProvider == address(0)) {
-                    expressProvider = part.expressProvider;
-                } else {
-                    require(
-                        expressProvider == part.expressProvider,
-                        "Multiple express providers not allowed"
-                    );
-                }
-            }
+			if (isExpress) {
+				if (expressProvider == address(0)) {
+					expressProvider = part.expressProvider;
+				} else {
+					require(expressProvider == part.expressProvider, "Multiple express providers not allowed");
+				}
+			}
 
-            if (!isExpress && isVirtual) {
-                if (pureVirtualProvider == address(0)) {
-                    pureVirtualProvider = part.virtualProvider;
-                } else {
-                    require(
-                        pureVirtualProvider == part.virtualProvider,
-                        "Multiple virtual providers not allowed"
-                    );
-                }
-            }
+			if (!isExpress && isVirtual) {
+				if (pureVirtualProvider == address(0)) {
+					pureVirtualProvider = part.virtualProvider;
+				} else {
+					require(pureVirtualProvider == part.virtualProvider, "Multiple virtual providers not allowed");
+				}
+			}
 
-            totalAmount += part.amount;
-        }
+			totalAmount += part.amount;
+		}
 
-        require(totalAmount > 0, "Total withdraw amount must be greater than zero");
+		require(totalAmount > 0, "Total withdraw amount must be greater than zero");
 
-        uint256 totalAmountWith18Decimals =
-            (totalAmount * 1e18) / (10 ** collateralDecimals);
-        require(
-            accountLayout.balances[msg.sender] >= totalAmountWith18Decimals,
-            "AccountFacet: Insufficient balance"
-        );
+		uint256 totalAmountWith18Decimals = (totalAmount * 1e18) / (10 ** collateralDecimals);
+		require(accountLayout.balances[msg.sender] >= totalAmountWith18Decimals, "AccountFacet: Insufficient balance");
 
-        accountLayout.balances[msg.sender] -= totalAmountWith18Decimals;
+		accountLayout.balances[msg.sender] -= totalAmountWith18Decimals;
 
-        uint256 currentId = ++withdrawLayout.lastWithdrawRequestId[msg.sender];
+		uint256 currentId = ++withdrawLayout.lastWithdrawRequestId[msg.sender];
 
-        WithdrawRequest memory withdrawRequest = WithdrawRequest({
-            id: currentId,
-            user: msg.sender,
-            parts: parts,
-            timestamp: block.timestamp,
-            cooldownEndTime: block.timestamp + withdrawLayout.withdrawCooldownPeriod,
-            status: WithdrawStatus.PENDING,
-            providerData: data
-        });
+		WithdrawRequest memory withdrawRequest = WithdrawRequest({
+			id: currentId,
+			user: msg.sender,
+			parts: parts,
+			timestamp: block.timestamp,
+			cooldownEndTime: block.timestamp + withdrawLayout.withdrawCooldownPeriod,
+			status: WithdrawStatus.PENDING,
+			providerData: data
+		});
 
-        withdrawLayout.withdrawRequests[msg.sender][currentId] = withdrawRequest;
+		withdrawLayout.withdrawRequests[msg.sender][currentId] = withdrawRequest;
 
-        // If there is any express usage , notify the unique express provider.
-        if (expressProvider != address(0)) {
-            IExpressProvider(expressProvider).onWithdrawRequest(withdrawRequest);
-        }
+		// If there is any express usage , notify the unique express provider.
+		if (expressProvider != address(0)) {
+			IExpressProvider(expressProvider).onWithdrawRequest(withdrawRequest, collateral);
+		}
 
-        // If there is NO express provider at all, but there are virtual-only parts,
-        // notify the unique virtual provider.
-        // (virtual providers used only in express+virtual parts are not "pure" virtual-only)
-        if (expressProvider == address(0) && pureVirtualProvider != address(0)) {
-            IVirtualProvider(pureVirtualProvider).onWithdrawRequest(withdrawRequest);
-        }
+		// If there is NO express provider at all, but there are virtual-only parts,
+		// notify the unique virtual provider.
+		// (virtual providers used only in express+virtual parts are not "pure" virtual-only)
+		if (expressProvider == address(0) && pureVirtualProvider != address(0)) {
+			IVirtualProvider(pureVirtualProvider).onWithdrawRequest(withdrawRequest);
+		}
 
-        return currentId;
-    }
+		return currentId;
+	}
 
-    function finalizeWithdrawRequest(uint256 requestId) internal {
-        WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-        GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-        address collateral = appLayout.collateral;
+	function finalizeWithdrawRequest(uint256 requestId) internal {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		address collateral = appLayout.collateral;
 
-        require(
-            requestId <= withdrawLayout.lastWithdrawRequestId[msg.sender],
-            "Invalid withdraw request ID"
-        );
+		require(requestId <= withdrawLayout.lastWithdrawRequestId[msg.sender], "Invalid withdraw request ID");
 
-        WithdrawRequest storage withdrawRequest =
-                                withdrawLayout.withdrawRequests[msg.sender][requestId];
+		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[msg.sender][requestId];
 
-        require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
-        require(
-            block.timestamp >= withdrawRequest.cooldownEndTime,
-            "Withdraw cooldown not over"
-        );
-        require(
-            uint8(withdrawRequest.status) == uint8(WithdrawStatus.PENDING) ||
-            uint8(withdrawRequest.status) == uint8(WithdrawStatus.PROVIDER_ACCEPTED),
-            "Invalid withdraw request status"
-        );
+		require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
+		require(block.timestamp >= withdrawRequest.cooldownEndTime, "Withdraw cooldown not over");
+		require(
+			uint8(withdrawRequest.status) == uint8(WithdrawStatus.PENDING) ||
+				uint8(withdrawRequest.status) == uint8(WithdrawStatus.PROVIDER_ACCEPTED),
+			"Invalid withdraw request status"
+		);
 
-        address expressProvider;
-        address pureVirtualProvider;
-        uint256 totalExpressAmount;
-        uint256 totalAmount;
+		address expressProvider;
+		address pureVirtualProvider;
+		uint256 totalExpressAmount;
+		uint256 totalAmount;
 
-        for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
-            WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
+		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
+			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
 
-            bool isExpress = withdrawal.expressProvider != address(0);
-            bool isVirtual = withdrawal.virtualProvider != address(0);
+			bool isExpress = withdrawal.expressProvider != address(0);
+			bool isVirtual = withdrawal.virtualProvider != address(0);
 
-            totalAmount += withdrawal.amount;
+			totalAmount += withdrawal.amount;
 
-            if (!isExpress && !isVirtual) {
-                IERC20(collateral).safeTransfer(
-                    _bytesToAddress(withdrawal.receiver),
-                    withdrawal.amount
-                );
-                continue;
-            }
+			if (!isExpress && !isVirtual) {
+				IERC20(collateral).safeTransfer(_bytesToAddress(withdrawal.receiver), withdrawal.amount);
+				continue;
+			}
 
-            if (isExpress) {
-                if (expressProvider == address(0)) {
-                    expressProvider = withdrawal.expressProvider;
-                } else {
-                    require(
-                        expressProvider == withdrawal.expressProvider,
-                        "Multiple express providers not allowed"
-                    );
-                }
-                totalExpressAmount += withdrawal.amount;
-            }
+			if (isExpress) {
+				if (expressProvider == address(0)) {
+					expressProvider = withdrawal.expressProvider;
+				} else {
+					require(expressProvider == withdrawal.expressProvider, "Multiple express providers not allowed");
+				}
+				totalExpressAmount += withdrawal.amount;
+			}
 
-            if (!isExpress && isVirtual) {
-                if (pureVirtualProvider == address(0)) {
-                    pureVirtualProvider = withdrawal.virtualProvider;
-                } else {
-                    require(
-                        pureVirtualProvider == withdrawal.virtualProvider,
-                        "Multiple virtual providers not allowed"
-                    );
-                }
-            }
-        }
+			if (!isExpress && isVirtual) {
+				if (pureVirtualProvider == address(0)) {
+					pureVirtualProvider = withdrawal.virtualProvider;
+				} else {
+					require(pureVirtualProvider == withdrawal.virtualProvider, "Multiple virtual providers not allowed");
+				}
+			}
+		}
 
-        if (expressProvider != address(0)) {
-            require(
-                uint8(withdrawRequest.status) ==
-                uint8(WithdrawStatus.PROVIDER_ACCEPTED),
-                "Invalid withdraw request status"
-            );
-            IERC20(collateral).safeTransfer(expressProvider, totalExpressAmount);
-            IExpressProvider(expressProvider).onWithdrawComplete(withdrawRequest);
-        } else if (pureVirtualProvider != address(0)) {
-            require(
-                uint8(withdrawRequest.status) ==
-                uint8(WithdrawStatus.PROVIDER_ACCEPTED),
-                "Invalid withdraw request status"
-            );
-            IVirtualProvider(pureVirtualProvider).onWithdrawComplete(withdrawRequest);
-        }
+		if (expressProvider != address(0)) {
+			require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.PROVIDER_ACCEPTED), "Invalid withdraw request status");
+			IERC20(collateral).safeTransfer(expressProvider, totalExpressAmount);
+			IExpressProvider(expressProvider).onWithdrawComplete(withdrawRequest);
+		} else if (pureVirtualProvider != address(0)) {
+			require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.PROVIDER_ACCEPTED), "Invalid withdraw request status");
+			IVirtualProvider(pureVirtualProvider).onWithdrawComplete(withdrawRequest);
+		}
 
-        withdrawRequest.status = WithdrawStatus.COMPLETED;
+		withdrawRequest.status = WithdrawStatus.COMPLETED;
 
-        // Event wise old events should still be emitted here
-        emit Withdraw(msg.sender, withdrawRequest.user, totalAmount);
-    }
+		// Event wise old events should still be emitted here
+		emit Withdraw(msg.sender, withdrawRequest.user, totalAmount);
+	}
 
+	function acceptWithdrawRequest(address user, uint256 requestId) internal {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
-    function requestCancelWithdraw(uint256 requestId) internal {
-        AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-        WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-        GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-        uint256 collateralDecimals = IERC20Metadata(appLayout.collateral).decimals();
+		require(requestId <= withdrawLayout.lastWithdrawRequestId[user], "Invalid withdraw request ID");
 
-        require(
-            requestId <= withdrawLayout.lastWithdrawRequestId[msg.sender],
-            "Invalid withdraw request ID"
-        );
+		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[user][requestId];
 
-        WithdrawRequest storage withdrawRequest =
-                                withdrawLayout.withdrawRequests[msg.sender][requestId];
+		require(withdrawRequest.user == user, "Invalid withdraw user");
+		require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.PENDING), "Invalid withdraw request status");
 
-        require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
-        require(
-            uint8(withdrawRequest.status) == uint8(WithdrawStatus.PENDING),
-            "Invalid withdraw request status"
-        );
+		address expressProvider;
+		address pureVirtualProvider;
+		bool hasProviderParts;
 
-        uint256 totalCancelAmount;
-        bool hasAnyProvider;
-        address expressProvider;
-        address pureVirtualProvider;
+		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
+			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
 
-        for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
-            WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
+			bool isExpress = withdrawal.expressProvider != address(0);
+			bool isVirtual = withdrawal.virtualProvider != address(0);
 
-            bool isExpress = withdrawal.expressProvider != address(0);
-            bool isVirtual = withdrawal.virtualProvider != address(0);
+			if (!isExpress && !isVirtual) {
+				continue;
+			}
 
-            if (!isExpress && !isVirtual) {
-                totalCancelAmount += withdrawal.amount;
-                continue;
-            }
+			hasProviderParts = true;
 
-            hasAnyProvider = true;
+			// Any part with express → belongs under express master
+			if (isExpress) {
+				if (expressProvider == address(0)) {
+					expressProvider = withdrawal.expressProvider;
+				} else {
+					require(expressProvider == withdrawal.expressProvider, "Multiple express providers not allowed");
+				}
+			}
 
-            if (isExpress) {
-                if (expressProvider == address(0)) {
-                    expressProvider = withdrawal.expressProvider;
-                } else {
-                    require(
-                        expressProvider == withdrawal.expressProvider,
-                        "Multiple express providers not allowed"
-                    );
-                }
-            }
+			// Virtual-only part (no express, yes virtual)
+			else if (isVirtual) {
+				if (pureVirtualProvider == address(0)) {
+					pureVirtualProvider = withdrawal.virtualProvider;
+				} else {
+					require(pureVirtualProvider == withdrawal.virtualProvider, "Multiple virtual providers not allowed");
+				}
+			}
+		}
 
-            if (!isExpress && isVirtual) {
-                if (pureVirtualProvider == address(0)) {
-                    pureVirtualProvider = withdrawal.virtualProvider;
-                } else {
-                    require(
-                        pureVirtualProvider == withdrawal.virtualProvider,
-                        "Multiple virtual providers not allowed"
-                    );
-                }
-            }
-        }
+		require(hasProviderParts, "No provider parts");
 
-        if (!hasAnyProvider) {
-            withdrawRequest.status = WithdrawStatus.CANCELLED;
-        } else {
-            withdrawRequest.status = WithdrawStatus.CANCEL_REQUESTED;
-        }
+		if (expressProvider != address(0)) {
+			require(msg.sender == expressProvider, "Only express provider can accept");
+			require(appLayout.expressProviders[expressProvider], "Not registered express provider");
+		} else {
+			require(msg.sender == pureVirtualProvider, "Only virtual provider can accept");
+			require(appLayout.virtualProviders[pureVirtualProvider], "Not registered virtual provider");
+		}
 
-        if (totalCancelAmount > 0) {
-            uint256 totalAmountWith18Decimals =
-                (totalCancelAmount * 1e18) / (10 ** collateralDecimals);
-            accountLayout.balances[withdrawRequest.user] += totalAmountWith18Decimals;
-        }
+		withdrawRequest.status = WithdrawStatus.PROVIDER_ACCEPTED;
+	}
 
-        // Provider notifications:
-        // If there is any express usage, we consider expressProvider the master.
-        if (expressProvider != address(0)) {
-            IExpressProvider(expressProvider).onWithdrawCancelRequest(withdrawRequest);
-        } else if (pureVirtualProvider != address(0)) {
-            IVirtualProvider(pureVirtualProvider).onWithdrawCancelRequest(withdrawRequest);
-        }
-    }
+	function requestCancelWithdraw(uint256 requestId) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		uint256 collateralDecimals = IERC20Metadata(appLayout.collateral).decimals();
 
-    function forceCancelWithdraw(uint256 requestId) internal {
-        // it is for virtual withdrawal users to force cancel after cooldown
-        AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-        WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-        GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-        uint256 collateralDecimals = IERC20Metadata(appLayout.collateral).decimals();
+		require(requestId <= withdrawLayout.lastWithdrawRequestId[msg.sender], "Invalid withdraw request ID");
 
-        require(
-            requestId <= withdrawLayout.lastWithdrawRequestId[msg.sender],
-            "Invalid withdraw request ID"
-        );
+		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[msg.sender][requestId];
 
-        WithdrawRequest storage withdrawRequest =
-                                withdrawLayout.withdrawRequests[msg.sender][requestId];
+		require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
+		require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.PENDING), "Invalid withdraw request status");
 
-        require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
-        require(
-            uint8(withdrawRequest.status) == uint8(WithdrawStatus.CANCEL_REQUESTED),
-            "Invalid withdraw request status"
-        );
-        require(
-            block.timestamp >= withdrawRequest.cooldownEndTime,
-            "Withdraw cooldown not over"
-        );
+		uint256 totalCancelAmount;
+		bool hasAnyProvider;
+		address expressProvider;
+		address pureVirtualProvider;
 
-        uint256 totalAmount;
-        address pureVirtualProvider;
+		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
+			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
 
-        for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
-            WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
+			bool isExpress = withdrawal.expressProvider != address(0);
+			bool isVirtual = withdrawal.virtualProvider != address(0);
 
-            require(
-                withdrawal.expressProvider == address(0),
-                "Not allowed for express withdrawals"
-            );
+			if (!isExpress && !isVirtual) {
+				totalCancelAmount += withdrawal.amount;
+				continue;
+			}
 
-            if (withdrawal.virtualProvider != address(0)) {
-                if (pureVirtualProvider == address(0)) {
-                    pureVirtualProvider = withdrawal.virtualProvider;
-                } else {
-                    require(
-                        pureVirtualProvider == withdrawal.virtualProvider,
-                        "Multiple virtual providers not allowed"
-                    );
-                }
-                totalAmount += withdrawal.amount;
-            }
-        }
+			hasAnyProvider = true;
 
-        require(pureVirtualProvider != address(0), "No virtual withdrawal part found");
+			if (isExpress) {
+				if (expressProvider == address(0)) {
+					expressProvider = withdrawal.expressProvider;
+				} else {
+					require(expressProvider == withdrawal.expressProvider, "Multiple express providers not allowed");
+				}
+			}
 
-        withdrawRequest.status = WithdrawStatus.CANCELLED;
+			if (!isExpress && isVirtual) {
+				if (pureVirtualProvider == address(0)) {
+					pureVirtualProvider = withdrawal.virtualProvider;
+				} else {
+					require(pureVirtualProvider == withdrawal.virtualProvider, "Multiple virtual providers not allowed");
+				}
+			}
+		}
 
-        uint256 totalAmountWith18Decimals =
-            (totalAmount * 1e18) / (10 ** collateralDecimals);
-        accountLayout.balances[withdrawRequest.user] += totalAmountWith18Decimals;
+		if (!hasAnyProvider) {
+			withdrawRequest.status = WithdrawStatus.CANCELLED;
+		} else {
+			withdrawRequest.status = WithdrawStatus.CANCEL_REQUESTED;
+		}
 
-        IVirtualProvider(pureVirtualProvider).onForceWithdrawCancel(withdrawRequest);
-    }
+		if (totalCancelAmount > 0) {
+			uint256 totalAmountWith18Decimals = (totalCancelAmount * 1e18) / (10 ** collateralDecimals);
+			accountLayout.balances[withdrawRequest.user] += totalAmountWith18Decimals;
+		}
 
+		// Provider notifications:
+		// If there is any express usage, we consider expressProvider the master.
+		if (expressProvider != address(0)) {
+			IExpressProvider(expressProvider).onWithdrawCancelRequest(withdrawRequest);
+		} else if (pureVirtualProvider != address(0)) {
+			IVirtualProvider(pureVirtualProvider).onWithdrawCancelRequest(withdrawRequest);
+		}
+	}
 
-    function _bytesToAddress(bytes memory data) internal pure returns (address addr) {
-        require(data.length == 20, "Invalid address bytes length");
-        assembly {
-            addr := shr(96, mload(add(data, 32)))
-        }
-    }
+	function forceCancelWithdraw(uint256 requestId) internal {
+		// it is for virtual withdrawal users to force cancel after cooldown
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		uint256 collateralDecimals = IERC20Metadata(appLayout.collateral).decimals();
+
+		require(requestId <= withdrawLayout.lastWithdrawRequestId[msg.sender], "Invalid withdraw request ID");
+
+		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[msg.sender][requestId];
+
+		require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
+		require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.CANCEL_REQUESTED), "Invalid withdraw request status");
+		require(block.timestamp >= withdrawRequest.cooldownEndTime, "Withdraw cooldown not over");
+
+		uint256 totalAmount;
+		address pureVirtualProvider;
+
+		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
+			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
+
+			require(withdrawal.expressProvider == address(0), "Not allowed for express withdrawals");
+
+			if (withdrawal.virtualProvider != address(0)) {
+				if (pureVirtualProvider == address(0)) {
+					pureVirtualProvider = withdrawal.virtualProvider;
+				} else {
+					require(pureVirtualProvider == withdrawal.virtualProvider, "Multiple virtual providers not allowed");
+				}
+				totalAmount += withdrawal.amount;
+			}
+		}
+
+		require(pureVirtualProvider != address(0), "No virtual withdrawal part found");
+
+		withdrawRequest.status = WithdrawStatus.CANCELLED;
+
+		uint256 totalAmountWith18Decimals = (totalAmount * 1e18) / (10 ** collateralDecimals);
+		accountLayout.balances[withdrawRequest.user] += totalAmountWith18Decimals;
+
+		IVirtualProvider(pureVirtualProvider).onForceWithdrawCancel(withdrawRequest);
+	}
+
+	function acceptWithdrawCancelRequest(address user, uint256 requestId) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		uint256 collateralDecimals = IERC20Metadata(appLayout.collateral).decimals();
+
+		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[user][requestId];
+
+		require(requestId <= withdrawLayout.lastWithdrawRequestId[user], "Invalid withdraw request ID");
+
+		require(withdrawRequest.user == user, "Invalid withdraw user");
+		require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.CANCEL_REQUESTED), "Invalid withdraw request status");
+
+		address expressProvider;
+		address pureVirtualProvider;
+		uint256 providerAmount;
+
+		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
+			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
+
+			bool isExpress = withdrawal.expressProvider != address(0);
+			bool isVirtual = withdrawal.virtualProvider != address(0);
+
+			if (!isExpress && !isVirtual) {
+				continue;
+			}
+
+			// Any part with express → belongs under express master
+			if (isExpress) {
+				if (expressProvider == address(0)) {
+					expressProvider = withdrawal.expressProvider;
+				} else {
+					require(expressProvider == withdrawal.expressProvider, "Multiple express providers not allowed");
+				}
+				providerAmount += withdrawal.amount;
+			} else if (isVirtual) {
+				if (pureVirtualProvider == address(0)) {
+					pureVirtualProvider = withdrawal.virtualProvider;
+				} else {
+					require(pureVirtualProvider == withdrawal.virtualProvider, "Multiple virtual providers not allowed");
+				}
+				providerAmount += withdrawal.amount;
+			}
+		}
+
+		require(expressProvider != address(0) || pureVirtualProvider != address(0), "No provider parts");
+
+		if (expressProvider != address(0)) {
+			require(msg.sender == expressProvider, "Only express provider can accept");
+			require(appLayout.expressProviders[expressProvider], "Not registered express provider");
+		} else {
+			require(msg.sender == pureVirtualProvider, "Only virtual provider can accept");
+			require(appLayout.virtualProviders[pureVirtualProvider], "Not registered virtual provider");
+		}
+
+		if (providerAmount > 0) {
+			uint256 amountWith18 = (providerAmount * 1e18) / (10 ** collateralDecimals);
+			accountLayout.balances[withdrawRequest.user] += amountWith18;
+		}
+
+		withdrawRequest.status = WithdrawStatus.CANCELLED;
+	}
+
+	function _bytesToAddress(bytes memory data) internal pure returns (address addr) {
+		require(data.length == 20, "Invalid address bytes length");
+		assembly {
+			addr := shr(96, mload(add(data, 32)))
+		}
+	}
 }

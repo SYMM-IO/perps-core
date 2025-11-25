@@ -7,8 +7,7 @@ pragma solidity >=0.8.18;
 import "../storages/WithdrawStorage.sol";
 
 interface IExpressProvider {
-
-    function onWithdrawRequest(WithdrawRequest memory withdrawRequest) external;
-    function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external;
-    function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
+	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address collateral) external;
+	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external;
+	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
 }

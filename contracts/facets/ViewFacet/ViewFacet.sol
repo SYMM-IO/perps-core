@@ -1231,13 +1231,12 @@ contract ViewFacet is IViewFacet {
 		return MAStorage.layout().adlEnabled[partyB];
 	}
 
-
 	/**
 	 * @notice Retrieves All withdraw requests of a user.
 	 * @param user The address of the user.
 	 * @return list of withdraw requests.
 	 */
-	function getWithdrawRequests(address user , uint256 requestId) external view returns (WithdrawRequest memory) {
+	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory) {
 		return WithdrawStorage.layout().withdrawRequests[user][requestId];
 	}
 }

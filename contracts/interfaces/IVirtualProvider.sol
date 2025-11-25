@@ -7,10 +7,8 @@ pragma solidity >=0.8.18;
 import "../storages/WithdrawStorage.sol";
 
 interface IVirtualProvider {
-
-    function onWithdrawRequest(WithdrawRequest memory withdrawRequest) external;
-    function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external;
-    function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
-    function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external;
-
+	function onWithdrawRequest(WithdrawRequest memory withdrawRequest) external;
+	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external;
+	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
+	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external;
 }
