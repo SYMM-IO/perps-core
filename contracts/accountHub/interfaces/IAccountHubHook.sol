@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-interface IHooks {
+interface IAccountHubHook {
     function onAccountCreation(address account, bytes calldata data) external returns (bool);
     function onDeposit(address account, uint256 amount) external returns (bool);
     function onWithdraw(address account, uint256 amount) external returns (bool);

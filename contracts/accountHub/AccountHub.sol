@@ -11,87 +11,53 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
 import "./interfaces/IAccountHub.sol";
+import "./interfaces/IAffiliatesHub.sol";
 import "./interfaces/ISymmio.sol";
-import "./interfaces/IHook.sol";
+import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
 
 /**
- * @title AccountsHub
- * @notice Manages affiliate accounts, sub-accounts, and virtual accounts for the Symmio protocol
+ * @title AccountHub
+ * @notice Manages sub-accounts and virtual accounts for the Symmio protocol
  * @dev Implements role-based access control, pausability, and reentrancy protection
  */
-contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
+contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
-	using EnumerableMap for EnumerableMap.AddressToUintMap;
 
 	// ==================== Constants ====================
-	bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant SIGNER_SETTER = keccak256("SIGNER_SETTER");
-	bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
 
 	bytes4 private constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
 	bytes4 private constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
-	// TODO ::: add SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR
-
-	uint256 private constant SHARE_PRECISION = 1e18;
-	uint256 private constant MAX_NAME_LENGTH = 100;
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
-	bytes32 private constant VIRTUAL_FEE_DISTRIBUTOR_CODE_HASH = keccak256("VFD_V1");
-	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
 
 	// ==================== State Variables ====================
 
-	mapping(address => bool) private whitelistedSymmioCores;
-	mapping(address => AffiliateData) private affiliates;
-	mapping(address => PendingFeeUpdate) public pendingFeeUpdates;
 	mapping(address => SubAccountData) private subAccounts;
 	mapping(address => VirtualAccountData) private virtualAccounts;
 	mapping(address => EnumerableSet.AddressSet) private userToSubAccounts;
 	mapping(address => EnumerableSet.AddressSet) private subAccountToVirtualAccounts;
 
-	EnumerableSet.AddressSet private legacyMultiAccounts;
-
-	address public symmioFeeReceiver;
+	address public affiliatesHub;
 	address internal globalSigner;
 	uint256 public globalNonce;
-	bytes public accountManagerImplementation;
-	bytes32 internal initAccountManagerCodeHash;
 
 	// ==================== Modifiers ====================
-
-	/**
-	 * @dev Ensures the caller is the affiliate admin
-	 */
-	modifier onlyAffiliateAdmin(address affiliate) {
-		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
-		_;
-	}
-
-	/**
-	 * @dev Ensures the affiliate is in active state
-	 */
-	modifier onlyIfAffiliateIsActive(address affiliate) {
-		if (affiliates[affiliate].state != AffiliateState.ACTIVE) {
-			revert AffiliateNotActive();
-		}
-		_;
-	}
 
 	/**
 	 * @dev Ensures the caller is a registered Symmio core
 	 */
 	modifier onlySymmio() {
-		if (!whitelistedSymmioCores[msg.sender]) revert NotSymmioCore();
+		if (!IAffiliatesHub(affiliatesHub).isWhitelistedSymmioCore(msg.sender)) revert NotSymmioCore();
 		_;
 	}
 
@@ -111,15 +77,13 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	/**
-	 * @notice Initializes the AccountsHub contract
+	 * @notice Initializes the AccountHub contract
 	 * @param _admin The default admin address
-	 * @param _symmioFeeReceiver The address to receive Symmio fees
-	 * @param _accountManagerImplementation The bytecode for account manager deployment
+	 * @param _affiliatesHub The AffiliatesHub contract address
 	 */
-	function initialize(address _admin, address _symmioFeeReceiver, bytes memory _accountManagerImplementation) public initializer {
+	function initialize(address _admin, address _affiliatesHub) public initializer {
 		if (_admin == address(0)) revert ZeroAddress();
-		if (_symmioFeeReceiver == address(0)) revert ZeroAddress();
-		if (_accountManagerImplementation.length == 0) revert EmptyArray();
+		if (_affiliatesHub == address(0)) revert ZeroAddress();
 
 		__Pausable_init();
 		__AccessControl_init();
@@ -127,283 +91,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
-		symmioFeeReceiver = _symmioFeeReceiver;
-		accountManagerImplementation = _accountManagerImplementation;
-		initAccountManagerCodeHash = keccak256(abi.encodePacked(accountManagerImplementation));
-	}
-
-	// ==================== Affiliate Management ====================
-
-	/**
-	 * @notice Requests to register a new affiliate
-	 * @param reg The affiliate registration data
-	 * @return affiliateAddress The generated affiliate address
-	 */
-	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
-		affiliateAddress = _generateAccountManagerAddress(reg.name);
-
-		if (affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
-		if (reg.admin == address(0)) revert ZeroAddress();
-
-		_validateName(reg.name);
-		_validateFeeShares(reg.stakeholders, reg.symmioShare);
-
-		AffiliateData storage affiliate = affiliates[affiliateAddress];
-		affiliate.name = reg.name;
-		affiliate.brandColor = reg.brandColor;
-		affiliate.admin = reg.admin;
-		affiliate.state = AffiliateState.PENDING;
-		affiliate.metadata = reg.metadata;
-		affiliate.feeDetails.symmioShare = reg.symmioShare;
-		affiliate.feeDetails.stakeholders = reg.stakeholders;
-		affiliate.legacyMultiAccounts = reg.legacyMultiAccounts;
-
-		for (uint256 i = 0; i < reg.symmioCores.length; i++) {
-			if (!whitelistedSymmioCores[reg.symmioCores[i]]) revert NoWhitelistedSymmioCore();
-			affiliate.symmioCores.add(reg.symmioCores[i]);
-		}
-
-		emit AffiliateRegistered(affiliateAddress, reg.name);
-	}
-
-	/**
-	 * @notice Cancels a pending affiliate registration
-	 * @param affiliate The affiliate address
-	 */
-	function cancelRegistration(address affiliate) external onlyAffiliateAdmin(affiliate) {
-		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
-
-		delete affiliates[affiliate];
-		emit RegistrationCancelled(affiliate);
-	}
-
-	/**
-	 * @notice Approves a pending affiliate registration
-	 * @param affiliate The affiliate address to approve
-	 */
-	function approveAffiliate(address affiliate) external onlyRole(APPROVER_ROLE) whenNotPaused {
-		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
-
-		address accountManager = _deployAccountManager(affiliates[affiliate].name);
-		if (affiliate != accountManager) revert DeploymentFailed();
-		address feeDistributor = _generateFeeDistributorAddress(affiliate, ++globalNonce);
-
-		grantRole(SIGNER_SETTER, accountManager);
-
-		affiliates[affiliate].state = AffiliateState.ACTIVE;
-		affiliates[affiliate].feeDetails.feeDistributor = feeDistributor;
-
-		_setupAffiliateOnSymmioCore(affiliate);
-
-		address[] memory legacyAccounts = affiliates[affiliate].legacyMultiAccounts;
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			legacyMultiAccounts.add(legacyAccounts[i]);
-			address symm = IMultiAccount(legacyAccounts[i]).symmioAddress();
-			if (!affiliates[affiliate].symmioCores.contains(symm)) {
-				ISymmio(symm).setFeeCollector(legacyAccounts[i], feeDistributor);
-			}
-		}
-
-		emit AffiliateApproved(affiliate, feeDistributor);
-	}
-
-	/**
-	 * @notice Proposes a transfer of affiliate admin role
-	 * @param affiliate The affiliate address
-	 * @param newAdmin The proposed new admin address
-	 */
-	function proposeAdminTransfer(address affiliate, address newAdmin) external onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
-		if (newAdmin == address(0)) revert ZeroAddress();
-
-		affiliates[affiliate].pendingAdmin = newAdmin;
-		emit AdminTransferProposed(affiliate, newAdmin);
-	}
-
-	/**
-	 * @notice Accepts the pending admin transfer
-	 * @param affiliate The affiliate address
-	 */
-	function acceptAdminTransfer(address affiliate) external {
-		if (affiliates[affiliate].pendingAdmin != msg.sender) revert Unauthorized();
-
-		address oldAdmin = affiliates[affiliate].admin;
-		affiliates[affiliate].admin = msg.sender;
-		affiliates[affiliate].pendingAdmin = address(0);
-
-		emit AdminTransferCompleted(affiliate, oldAdmin, msg.sender);
-	}
-
-	/**
-	 * @notice Cancels the pending admin transfer
-	 * @param affiliate The affiliate address
-	 */
-	function cancelAdminTransfer(address affiliate) external onlyAffiliateAdmin(affiliate) {
-		affiliates[affiliate].pendingAdmin = address(0);
-		emit AdminTransferCancelled(affiliate);
-	}
-
-	/**
-	 * @notice Updates affiliate display details
-	 * @param affiliate The affiliate address
-	 * @param name The new name
-	 * @param brandColor The new brand color
-	 */
-	function updateAffiliateDetails(
-		address affiliate,
-		string memory name,
-		string memory brandColor
-	) external onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
-		_validateName(name);
-
-		affiliates[affiliate].name = name;
-		affiliates[affiliate].brandColor = brandColor;
-
-		emit AffiliateUpdated(affiliate, name, brandColor);
-	}
-
-	/**
-	 * @notice Pauses an active affiliate
-	 * @param affiliate The affiliate address
-	 */
-	function pauseAffiliate(address affiliate) external onlyIfAffiliateIsActive(affiliate) {
-		if (!hasRole(PAUSER_ROLE, msg.sender) && affiliates[affiliate].admin != msg.sender) {
-			revert Unauthorized();
-		}
-
-		affiliates[affiliate].state = AffiliateState.PAUSED;
-		emit AffiliatePaused(affiliate);
-	}
-
-	/**
-	 * @notice Unpauses a paused affiliate
-	 * @param affiliate The affiliate address
-	 */
-	function unpauseAffiliate(address affiliate) external onlyRole(UNPAUSER_ROLE) {
-		if (affiliates[affiliate].state != AffiliateState.PAUSED) revert InvalidState();
-
-		affiliates[affiliate].state = AffiliateState.ACTIVE;
-		emit AffiliateUnpaused(affiliate);
-	}
-
-	// ==================== Fee Management ====================
-
-	/**
-	 * @notice Requests an update to affiliate fee distribution
-	 * @param affiliate The affiliate address
-	 * @param newStakeholders The new stakeholder configuration
-	 * @param newSymmioShare The new Symmio share
-	 */
-	function requestFeeUpdate(
-		address affiliate,
-		Stakeholder[] memory newStakeholders,
-		uint256 newSymmioShare
-	) external onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
-		_validateFeeShares(newStakeholders, newSymmioShare);
-
-		PendingFeeUpdate storage pending = pendingFeeUpdates[affiliate];
-		pending.symmioShare = newSymmioShare;
-		pending.timestamp = block.timestamp;
-		pending.exists = true;
-		pending.stakeholders = newStakeholders;
-
-		emit StakeholdersUpdateRequested(affiliate);
-	}
-
-	/**
-	 * @notice Cancels a pending fee update
-	 * @param affiliate The affiliate address
-	 */
-	function cancelFeeUpdate(address affiliate) external onlyAffiliateAdmin(affiliate) {
-		if (!pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
-
-		delete pendingFeeUpdates[affiliate];
-		emit FeeUpdateCancelled(affiliate);
-	}
-
-	/**
-	 * @notice Approves a pending fee update
-	 * @param affiliate The affiliate address
-	 */
-	function approveFeeUpdate(address affiliate) external onlyRole(APPROVER_ROLE) whenNotPaused {
-		if (!pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
-
-		delete affiliates[affiliate].feeDetails.stakeholders;
-		affiliates[affiliate].feeDetails.symmioShare = pendingFeeUpdates[affiliate].symmioShare;
-		affiliates[affiliate].feeDetails.stakeholders = pendingFeeUpdates[affiliate].stakeholders;
-
-		delete pendingFeeUpdates[affiliate];
-		emit StakeholdersUpdated(affiliate);
-	}
-
-	/**
-	 * @notice Claims all available fees for an affiliate
-	 * @param affiliate The affiliate address
-	 * @param symmio The Symmio core address
-	 */
-	function claimAllFees(address affiliate, address symmio) external whenNotPaused nonReentrant {
-		claimFees(affiliate, symmio, _getClaimableFee(affiliate, symmio));
-	}
-
-	/**
-	 * @notice Claims a specific amount of fees for an affiliate
-	 * @param affiliate The affiliate address
-	 * @param symmio The Symmio core address
-	 * @param amount The amount to claim
-	 */
-	function claimFees(address affiliate, address symmio, uint256 amount) public whenNotPaused nonReentrant {
-		address collateral = ISymmio(symmio).getCollateral();
-		FeeDetails storage feeDetails = affiliates[affiliate].feeDetails;
-		Stakeholder[] memory stakeholders = feeDetails.stakeholders;
-
-		// authorize fee claim
-		address signer = getSigner();
-		bool auth = false;
-
-		for (uint256 i = 0; i < stakeholders.length; i++) {
-			if (signer == stakeholders[i].receiver) {
-				auth = true;
-				break;
-			}
-		}
-
-		if (!auth && !hasRole(DISTRIBUTOR_ROLE, signer)) revert Unauthorized();
-
-		// withdraw fees from Symmio
-		ISymmio(symmio).setSigner(feeDetails.feeDistributor);
-		ISymmio(symmio).withdrawTo(address(this), amount);
-		ISymmio(symmio).setSigner(address(0));
-
-		// distribute fees to stakeholders
-		for (uint256 i = 0; i < stakeholders.length; i++) {
-			uint256 share = (stakeholders[i].share * amount) / SHARE_PRECISION;
-			IERC20Upgradeable(collateral).safeTransfer(stakeholders[i].receiver, share);
-			emit FeesDistributed(stakeholders[i].receiver, share);
-		}
-
-		emit FeesClaimed(affiliate, symmio, amount);
-	}
-
-	/**
-	 * @notice Simulates fee claim to preview distribution
-	 * @param affiliate The affiliate address
-	 * @param symmio The Symmio core address
-	 * @return holders Array of recipient addresses
-	 * @return shares Array of corresponding share amounts
-	 */
-	function dryClaimAllFees(address affiliate, address symmio) public view returns (address[] memory holders, uint256[] memory shares) {
-		uint256 totalClaimable = _getClaimableFee(affiliate, symmio);
-		Stakeholder[] memory stakeholders = affiliates[affiliate].feeDetails.stakeholders;
-
-		uint256 len = stakeholders.length;
-		holders = new address[](len);
-		shares = new uint256[](len);
-
-		for (uint256 i = 0; i < len; i++) {
-			holders[i] = stakeholders[i].receiver;
-			shares[i] = (stakeholders[i].share * totalClaimable) / SHARE_PRECISION;
-		}
-
-		return (holders, shares);
+		affiliatesHub = _affiliatesHub;
 	}
 
 	// ==================== Account Management ====================
@@ -493,7 +181,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			bytes4 selector = bytes4(cd[:4]);
 
 			if (selector == SEND_QUOTE_SELECTOR || selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
-				// TODO ::: check decode for both selector
 				QuoteParams memory p = _decodeQuoteParams(cd);
 
 				if (virtualAccounts[account].isExists) {
@@ -511,52 +198,19 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		}
 	}
 
-	// ==================== Hook Management ====================
-
-	/**
-	 * @notice Sets a hook for specific function calls
-	 * @param affiliate The affiliate address
-	 * @param selector The function selector to hook
-	 * @param hook The hook contract address
-	 */
-	function setHook(address affiliate, bytes4 selector, address hook) external {
-		if (affiliates[affiliate].state != AffiliateState.ACTIVE) {
-			revert AffiliateNotActive();
-		}
-		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
-
-		affiliates[affiliate].hooks[selector] = hook;
-		emit HookSet(affiliate, selector, hook);
-	}
-
-	/**
-	 * @notice Removes a hook
-	 * @param affiliate The affiliate address
-	 * @param selector The function selector to unhook
-	 */
-	function removeHook(address affiliate, bytes4 selector) external {
-		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
-
-		delete affiliates[affiliate].hooks[selector];
-		emit HookRemoved(affiliate, selector);
-	}
-
 	// ==================== Symmio Callback ====================
 
 	/**
 	 * @notice Callback from Symmio when a position is closed
 	 * @param quoteId The quote ID
-	 * @param _filledAmount The filled amount
-	 * @param _closedPrice The closing price
 	 * @param partyA The party A address
-	 * @param _partyB The party B address
 	 */
 	function onClosePosition(
 		uint256 quoteId,
-		uint256 _filledAmount,
-		uint256 _closedPrice,
+		uint256 /* _filledAmount */,
+		uint256 /* _closedPrice */,
 		address partyA,
-		address _partyB
+		address /* _partyB */
 	) external onlySymmio nonReentrant whenNotPaused {
 		VirtualAccountData storage vData = virtualAccounts[partyA];
 		SubAccountData storage sData = subAccounts[partyA];
@@ -576,36 +230,12 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	// ==================== Admin Functions ====================
 
 	/**
-	 * @notice Sets the Symmio fee receiver address
-	 * @param receiver The new receiver address
+	 * @notice Sets the AffiliatesHub contract address (only for emergency updates)
+	 * @param _affiliatesHub The new AffiliatesHub address
 	 */
-	function setSymmioFeeReceiver(address receiver) external onlyRole(SETTER_ROLE) {
-		if (receiver == address(0)) revert ZeroAddress();
-
-		address oldReceiver = symmioFeeReceiver;
-		symmioFeeReceiver = receiver;
-
-		emit SymmioFeeReceiverUpdated(oldReceiver, receiver);
-	}
-
-	/**
-	 * @notice Updates the account manager implementation bytecode
-	 * @param implementation The new implementation bytecode
-	 */
-	function setAccountManagerImplementation(bytes memory implementation) external onlyRole(SETTER_ROLE) {
-		if (implementation.length == 0) revert EmptyArray();
-		accountManagerImplementation = implementation;
-		initAccountManagerCodeHash = keccak256(abi.encodePacked(accountManagerImplementation));
-	}
-
-	/**
-	 * @notice Sets or unsets a core as whitelisted
-	 * @param core The core address
-	 * @param status The availability status
-	 */
-	function setWhitelistedSymmioCore(address core, bool status) external onlyRole(SETTER_ROLE) {
-		whitelistedSymmioCores[core] = status;
-		emit WhitelistedSymmioCoreSet(core, status);
+	function setAffiliatesHub(address _affiliatesHub) external onlyRole(SETTER_ROLE) {
+		if (_affiliatesHub == address(0)) revert ZeroAddress();
+		affiliatesHub = _affiliatesHub;
 	}
 
 	/**
@@ -659,24 +289,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	/**
-	 * @notice Gets all Symmio cores for an affiliate
-	 * @param aff The affiliate address
-	 * @return Array of core addresses
-	 */
-	function affiliateSymmioCores(address aff) external view returns (address[] memory) {
-		EnumerableSet.AddressSet storage set = affiliates[aff].symmioCores;
-		uint256 len = set.length();
-
-		address[] memory cores = new address[](len);
-
-		for (uint256 i = 0; i < len; i++) {
-			cores[i] = set.at(i);
-		}
-
-		return cores;
-	}
-
-	/**
 	 * @notice Gets all sub-accounts for an owner
 	 * @param owner The owner address
 	 * @return Array of sub-account addresses
@@ -700,51 +312,25 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @dev Validates name length
 	 */
 	function _validateName(string memory name) private pure {
+		uint256 MAX_NAME_LENGTH = 100;
 		if (bytes(name).length == 0 || bytes(name).length > MAX_NAME_LENGTH) {
 			revert InvalidNameLength();
 		}
 	}
 
 	/**
-	 * @dev Validates fee shares sum to 100%
-	 */
-	function _validateFeeShares(Stakeholder[] memory stakeholders, uint256 symmioShare) private pure {
-		if (symmioShare > SHARE_PRECISION) revert InvalidShare();
-
-		uint256 totalShare = symmioShare;
-		for (uint256 i = 0; i < stakeholders.length; i++) {
-			if (stakeholders[i].receiver == address(0)) revert ZeroAddress();
-			totalShare += stakeholders[i].share;
-		}
-
-		if (totalShare != SHARE_PRECISION) revert SharesMustSumTo100();
-	}
-
-	/**
-	 * @dev Configures Symmio cores for an affiliate
-	 */
-	function _setupAffiliateOnSymmioCore(address affiliate) private {
-		EnumerableSet.AddressSet storage cores = affiliates[affiliate].symmioCores;
-		address feeDistributor = affiliates[affiliate].feeDetails.feeDistributor;
-
-		for (uint256 i = 0; i < cores.length(); i++) {
-			ISymmio(cores.at(i)).setFeeCollector(affiliate, feeDistributor);
-			ISymmio(cores.at(i)).registerAffiliate(affiliate);
-		}
-	}
-
-	/**
 	 * @dev Creates a single sub-account
 	 */
-	function _createSubAccount(address affiliate, address signer, SubAccountCreationData memory data) private returns (address subAccountAddress) {
+	function _createSubAccount(address affiliate, address sender, SubAccountCreationData memory data) private returns (address subAccountAddress) {
 		_validateName(data.name);
-		if (!whitelistedSymmioCores[data.symmioCore]) revert NoWhitelistedSymmioCore();
+		if (!IAffiliatesHub(affiliatesHub).isWhitelistedSymmioCore(data.symmioCore)) revert NotSymmioCore();
+		if (IAffiliatesHub(affiliatesHub).getAffiliateState(affiliate) != IAffiliatesHub.AffiliateState.ACTIVE) revert AffiliateNotActive();
 
 		uint256 nonce = ++globalNonce;
-		subAccountAddress = _generateSubAccountAddress(affiliate, signer, nonce);
+		subAccountAddress = _generateSubAccountAddress(affiliate, sender, nonce);
 
 		SubAccountData storage s = subAccounts[subAccountAddress];
-		s.owner = signer;
+		s.owner = sender;
 		s.isExists = true;
 		s.name = data.name;
 		s.affiliate = affiliate;
@@ -752,11 +338,11 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		s.symmioCore = data.symmioCore;
 		s.isolationType = data.isolationType;
 
-		userToSubAccounts[signer].add(subAccountAddress);
+		userToSubAccounts[sender].add(subAccountAddress);
 
-		_callHook(affiliate, IHooks.onAccountCreation.selector, abi.encode(subAccountAddress, data.metadata));
+		_callHook(affiliate, IAccountHubHook.onAccountCreation.selector, abi.encode(subAccountAddress, data.metadata));
 
-		emit SubAccountCreated(subAccountAddress, signer, affiliate, data.name);
+		emit SubAccountCreated(subAccountAddress, sender, affiliate, data.name);
 	}
 
 	/**
@@ -783,7 +369,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 
 		subAccountToVirtualAccounts[parentAccount].add(virtualAccount);
 
-		_callHook(parent.affiliate, IHooks.onVirtualAccountCreation.selector, abi.encode(virtualAccount, parentAccount));
+		_callHook(parent.affiliate, IAccountHubHook.onVirtualAccountCreation.selector, abi.encode(virtualAccount, parentAccount));
 
 		emit VirtualAccountCreated(virtualAccount, parentAccount);
 	}
@@ -804,15 +390,10 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		vData.isExists = false;
 
 		address affiliate = _getAffiliateForAccount(account);
-		_callHook(affiliate, IHooks.onVirtualAccountDeletion.selector, abi.encode(account));
+		_callHook(affiliate, IAccountHubHook.onVirtualAccountDeletion.selector, abi.encode(account));
 
 		emit VirtualAccountDeleted(account, parentAccount);
 	}
-
-	/**
-	 * @dev Validates account ownership and amount
-	 */
-	function _validateAccountOwnership(address account) private view {}
 
 	/**
 	 * @dev Deposits collateral for an account
@@ -828,7 +409,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.depositFor.selector, account, amount));
 
 		address affiliate = _getAffiliateForAccount(account);
-		_callHook(affiliate, IHooks.onDeposit.selector, abi.encode(account, amount));
+		_callHook(affiliate, IAccountHubHook.onDeposit.selector, abi.encode(account, amount));
 
 		emit DepositForAccount(signer, account, amount);
 	}
@@ -869,7 +450,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.withdrawTo.selector, signer, amount));
 
 		address affiliate = _getAffiliateForAccount(account);
-		_callHook(affiliate, IHooks.onWithdraw.selector, abi.encode(account, amount));
+		_callHook(affiliate, IAccountHubHook.onWithdraw.selector, abi.encode(account, amount));
 
 		emit WithdrawFromAccount(signer, account, amount);
 	}
@@ -973,7 +554,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
 		if (allocatedBalance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.deallocate.selector, allocatedBalance)); // TODO ::: change it to use deallocateForZeroUpnl
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.deallocate.selector, allocatedBalance));
 		}
 
 		uint256 balance = ISymmio(core).balanceOf(account);
@@ -1003,15 +584,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	/**
-	 * @dev Gets claimable fees
-	 */
-	function _getClaimableFee(address affiliate, address symmio) private view returns (uint256) {
-		uint8 decimals = IERC20Metadata(ISymmio(symmio).getCollateral()).decimals();
-		uint256 balance = ISymmio(symmio).balanceOf(affiliates[affiliate].feeDetails.feeDistributor);
-		return balance / (10 ** (18 - decimals));
-	}
-
-	/**
 	 * @dev Checks if user is owner of account
 	 */
 	function _isOwnerOf(address account, address user) private view returns (bool) {
@@ -1031,9 +603,9 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @dev Checks legacy multi-account ownership
 	 */
 	function _checkLegacyOwnership(address account, address user) private view returns (bool) {
-		uint256 len = legacyMultiAccounts.length();
-		for (uint256 i = 0; i < len; i++) {
-			address owner = IMultiAccount(legacyMultiAccounts.at(i)).owners(account);
+		address[] memory legacyAccounts = IAffiliatesHub(affiliatesHub).getLegacyMultiAccounts();
+		for (uint256 i = 0; i < legacyAccounts.length; i++) {
+			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
 			if (owner == user) {
 				return true;
 			}
@@ -1045,11 +617,11 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @dev Gets legacy core address
 	 */
 	function _getLegacyCore(address account) private view returns (address) {
-		uint256 len = legacyMultiAccounts.length();
-		for (uint256 i = 0; i < len; i++) {
-			address owner = IMultiAccount(legacyMultiAccounts.at(i)).owners(account);
+		address[] memory legacyAccounts = IAffiliatesHub(affiliatesHub).getLegacyMultiAccounts();
+		for (uint256 i = 0; i < legacyAccounts.length; i++) {
+			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
 			if (owner != address(0)) {
-				return IMultiAccount(legacyMultiAccounts.at(i)).symmioAddress();
+				return IMultiAccount(legacyAccounts[i]).symmioAddress();
 			}
 		}
 		revert UnableToRetrieveCore();
@@ -1074,7 +646,7 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	 * @dev Calls a hook if configured
 	 */
 	function _callHook(address affiliate, bytes4 selector, bytes memory data) private {
-		address hook = affiliates[affiliate].hooks[selector];
+		address hook = IAffiliatesHub(affiliatesHub).getHook(affiliate, selector);
 		if (hook != address(0)) {
 			(bool success, bytes memory result) = hook.call(abi.encodeWithSelector(selector, data));
 
@@ -1087,31 +659,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 	}
 
 	/**
-	 * @dev Deploys account manager contract
-	 */
-	function _deployAccountManager(string memory name) private returns (address accountManager) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, name));
-		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
-
-		accountManager;
-		assembly {
-			accountManager := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
-		}
-
-		if (accountManager == address(0)) revert DeploymentFailed();
-	}
-
-	/**
-	 * @dev Generates deterministic account manager address
-	 */
-	function _generateAccountManagerAddress(string memory name) private view returns (address) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, name));
-		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
-		bytes32 initCodeHash = keccak256(bytecode);
-		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
-	}
-
-	/**
 	 * @dev Generates deterministic sub-account address
 	 */
 	function _generateSubAccountAddress(address affiliate, address user, uint256 nonce) private pure returns (address) {
@@ -1119,20 +666,6 @@ contract AccountsHub is IAccountHub, Initializable, PausableUpgradeable, AccessC
 			address(
 				uint160(
 					uint256(keccak256(abi.encodePacked(bytes1(0xff), affiliate, keccak256(abi.encodePacked(user, nonce)), ACCOUNT_INIT_CODE_HASH)))
-				)
-			);
-	}
-
-	/**
-	 * @dev Generates deterministic fee distributor address
-	 */
-	function _generateFeeDistributorAddress(address affiliate, uint256 nonce) private pure returns (address) {
-		return
-			address(
-				uint160(
-					uint256(
-						keccak256(abi.encodePacked(bytes1(0xff), affiliate, keccak256(abi.encodePacked(nonce)), VIRTUAL_FEE_DISTRIBUTOR_CODE_HASH))
-					)
 				)
 			);
 	}
