@@ -1,0 +1,110 @@
+import { task, types } from "hardhat/config"
+import { readData, writeData } from "../utils/fs"
+import { DEPLOYMENT_LOG_FILE } from "./constants"
+
+// Contract configuration
+const CONTRACT_CONFIG = {
+	NAME: "AccountHub",
+	INITIALIZER: "initialize",
+} as const
+
+// Deployment entry types
+const ENTRY_TYPES = {
+	PROXY: "Proxy",
+	ADMIN: "Admin",
+	IMPLEMENTATION: "Implementation",
+} as const
+
+task("deploy:accountHub", "Deploys the AccountHub")
+	.addParam("admin", "The admin address")
+	.addParam("affiliateHubAddress", "The address of the affiliateHub contract")
+	.addOptionalParam("logData", "Write the deployed addresses to a data file", true, types.boolean)
+	.setAction(async ({ admin, affiliateHubAddress, logData }, { ethers, upgrades }) => {
+		console.log("Running deploy:accountHub")
+
+		const [deployer] = await ethers.getSigners()
+		console.log("Deploying contracts with the account:", deployer.address)
+
+		// Deploy AccountHub as upgradeable proxy
+		const contract = await deployAccountHub(admin, affiliateHubAddress, ethers, upgrades)
+
+		const addresses = {
+			proxy: await contract.getAddress(),
+			admin: await upgrades.erc1967.getAdminAddress(await contract.getAddress()),
+			implementation: await upgrades.erc1967.getImplementationAddress(await contract.getAddress()),
+		}
+		console.log("AccountHub deployed to", addresses)
+
+		// Log deployment data if requested
+		if (logData) {
+			await logDeploymentData(addresses, admin, affiliateHubAddress)
+		}
+
+		// Return contract instance
+		return contract
+	})
+
+/**
+ * Deploys the AccountHub upgradeable contract
+ */
+async function deployAccountHub(admin: string, affiliateHubAddress: string, ethers: any, upgrades: any) {
+	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, { admin, affiliateHubAddress })
+
+	const Factory = await ethers.getContractFactory(CONTRACT_CONFIG.NAME)
+	const contract = await upgrades.deployProxy(Factory, [admin, affiliateHubAddress], { initializer: CONTRACT_CONFIG.INITIALIZER })
+	await contract.waitForDeployment()
+
+	return contract
+}
+
+/**
+ * Logs deployment data to the deployment log file
+ */
+async function logDeploymentData(addresses: any, admin: string, affiliateHubAddress: string): Promise<void> {
+	try {
+		const deployedData = readExistingDeployments()
+		const newEntries = createDeploymentEntries(addresses, admin, affiliateHubAddress)
+		const updatedData = [...deployedData, ...newEntries]
+
+		writeData(DEPLOYMENT_LOG_FILE, updatedData)
+		console.log("Deployed addresses written to JSON file")
+	} catch (err) {
+		console.error(`Failed to log deployment data: ${err}`)
+		throw err
+	}
+}
+
+/**
+ * Reads existing deployment data from file
+ */
+function readExistingDeployments(): any[] {
+	try {
+		return readData(DEPLOYMENT_LOG_FILE)
+	} catch (err) {
+		console.warn(`Could not read existing JSON file: ${err}. Starting with empty data.`)
+		return []
+	}
+}
+
+/**
+ * Creates deployment log entries for all deployed contracts
+ */
+function createDeploymentEntries(addresses: any, admin: string, affiliateHubAddress: string): any[] {
+	return [
+		{
+			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.PROXY}`,
+			address: addresses.proxy,
+			constructorArguments: [admin, affiliateHubAddress],
+		},
+		{
+			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.ADMIN}`,
+			address: addresses.admin,
+			constructorArguments: [],
+		},
+		{
+			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.IMPLEMENTATION}`,
+			address: addresses.implementation,
+			constructorArguments: [],
+		},
+	]
+}

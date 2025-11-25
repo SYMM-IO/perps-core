@@ -61,12 +61,12 @@ export async function initialize(): Promise<RunContext> {
 		await addSymbolAsync(context.controlFacet, context.signers.admin, sym);
 
 	await runTx(context.controlFacet.connect(context.signers.admin).setPendingQuotesValidLength(100))
-	await runTx(context.controlFacet.connect(context.signers.admin).setLiquidatorShare(decimal(1, 17)))
+	await runTx(context.controlFacet.connect(context.signers.admin).setLiquidatorShare(decimal(1n, 17)))
 	await runTx(context.controlFacet.connect(context.signers.admin).setLiquidationTimeout(100))
 	await runTx(context.controlFacet.connect(context.signers.admin).setDeallocateCooldown(120))
-	await runTx(context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(decimal(100000)))
-	await runTx(context.controlFacet.connect(context.signers.admin).registerAffiliate(context.multiAccount))
-	await runTx(context.controlFacet.connect(context.signers.admin).setFeeCollector(context.multiAccount, context.signers.feeCollector.address))
+	await runTx(context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(decimal(100000n)))
+	await runTx(context.controlFacet.connect(context.signers.admin).registerAffiliate(context.accountManager))
+	await runTx(context.controlFacet.connect(context.signers.admin).setFeeCollector(context.accountManager, context.signers.feeCollector.address))
 
 	let output: Addresses = loadAddresses()
 	output.collateralAddress = collateral.address

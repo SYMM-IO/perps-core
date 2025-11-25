@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "../../storages/AccountStorage.sol";
+import "../../storages/QuoteStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
 import "../../storages/MAStorage.sol";
 import "../../libraries/muon/LibMuonAccount.sol";
@@ -65,6 +66,17 @@ library AccountFacetImpl {
 		accountLayout.allocatedBalances[msg.sender] -= amount;
 		accountLayout.balances[msg.sender] += amount;
 		accountLayout.withdrawCooldown[msg.sender] = block.timestamp;
+	}
+
+	function zeroUpnlDeallocate(uint256 amount, address partyA) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		require(accountLayout.allocatedBalances[msg.sender] >= amount, "AccountFacet: Insufficient allocated Balance");
+		require(quoteLayout.partyAPendingQuotes[partyA].length + quoteLayout.partyAOpenPositions[partyA].length == 0, "AccountFacet: PartyA has Open/Pending position");
+
+		accountLayout.allocatedBalances[msg.sender] -= amount;
+		accountLayout.balances[msg.sender] += amount;
 	}
 
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) internal {
