@@ -15,152 +15,152 @@ import "../../libraries/LibConnections.sol";
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
 
-	function openPositions(
-		uint256[] memory quoteIds,
-		uint256[] memory filledAmounts,
-		uint256[] memory openedPrices,
-		PairUpnlAndPricesSig memory upnlSig
-	) internal returns (uint256[] memory currentIds) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		MAStorage.Layout storage maLayout = MAStorage.layout();
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+	// function openPositions(
+	// 	uint256[] memory quoteIds,
+	// 	uint256[] memory filledAmounts,
+	// 	uint256[] memory openedPrices,
+	// 	PairUpnlAndPricesSig memory upnlSig
+	// ) internal returns (uint256[] memory currentIds) {
+	// 	AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+	// 	GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+	// 	MAStorage.Layout storage maLayout = MAStorage.layout();
+	// 	QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
-		require(
-			quoteIds.length == filledAmounts.length && quoteIds.length == openedPrices.length && quoteIds.length > 0,
-			"PartyBFacet: Invalid length"
-		);
+	// 	require(
+	// 		quoteIds.length == filledAmounts.length && quoteIds.length == openedPrices.length && quoteIds.length > 0,
+	// 		"PartyBFacet: Invalid length"
+	// 	);
 
-		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
+	// 	Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
 
-		// Check symbol restrictions for all quotes
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
-			require(
-				LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
-				"PartyBFacet: Symbol not allowed due to connection restrictions"
-			);
-		}
+	// 	// Check symbol restrictions for all quotes
+	// 	for (uint256 i = 0; i < quoteIds.length; i++) {
+	// 		Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+	// 		require(
+	// 			LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
+	// 			"PartyBFacet: Symbol not allowed due to connection restrictions"
+	// 		);
+	// 	}
 
-		// PartyA and PartyB are not suspended
-		require(!accountLayout.suspendedAddresses[firstQuote.partyA], "PartyBFacet: PartyA is Suspended");
-		require(!accountLayout.suspendedAddresses[firstQuote.partyB], "PartyBFacet: Sender is Suspended");
+	// 	// PartyA and PartyB are not suspended
+	// 	require(!accountLayout.suspendedAddresses[firstQuote.partyA], "PartyBFacet: PartyA is Suspended");
+	// 	require(!accountLayout.suspendedAddresses[firstQuote.partyB], "PartyBFacet: Sender is Suspended");
 
-		// PartyB is not in emergency mode
-		require(!appLayout.partyBEmergencyStatus[firstQuote.partyB], "PartyBFacet: PartyB is in emergency mode");
-		require(!appLayout.emergencyMode, "PartyBFacet: System is in emergency mode");
+	// 	// PartyB is not in emergency mode
+	// 	require(!appLayout.partyBEmergencyStatus[firstQuote.partyB], "PartyBFacet: PartyB is in emergency mode");
+	// 	require(!appLayout.emergencyMode, "PartyBFacet: System is in emergency mode");
 
-		// Solvency checks
-		require(!maLayout.liquidationStatus[firstQuote.partyA], "PartyBFacet: PartyA isn't solvent");
-		require(!maLayout.partyBLiquidationStatus[firstQuote.partyB][firstQuote.partyA], "PartyBFacet: PartyB isn't solvent");
-		require(!accountLayout.crossLiquidationDetails[firstQuote.partyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+	// 	// Solvency checks
+	// 	require(!maLayout.liquidationStatus[firstQuote.partyA], "PartyBFacet: PartyA isn't solvent");
+	// 	require(!maLayout.partyBLiquidationStatus[firstQuote.partyB][firstQuote.partyA], "PartyBFacet: PartyB isn't solvent");
+	// 	require(!accountLayout.crossLiquidationDetails[firstQuote.partyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 
-		// Verify the upnl and prices
-		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
+	// 	// Verify the upnl and prices
+	// 	LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
 
-		accountLayout.partyANonces[firstQuote.partyA] += 1;
-		accountLayout.partyBNonces[firstQuote.partyB][firstQuote.partyA] += 1;
+	// 	accountLayout.partyANonces[firstQuote.partyA] += 1;
+	// 	accountLayout.partyBNonces[firstQuote.partyB][firstQuote.partyA] += 1;
 
-		currentIds = new uint256[](quoteIds.length);
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			uint256 quoteId = quoteIds[i];
-			Quote storage quote = quoteLayout.quotes[quoteId];
-			require(quote.partyB == msg.sender, "PartyBFacet: Sender should be the partyB");
-			require(firstQuote.partyA == quote.partyA, "PartyBFacet: All positions should belong to one partyA");
-			currentIds[i] = LibPartyBPositionsActions.openPosition(quoteId, filledAmounts[i], openedPrices[i]);
-			if (quote.quoteStatus == QuoteStatus.OPENED) {
-				LibConnections.addConnection(quote.partyA, quote.partyB);
-			}
-		}
-		LibSolvency.isSolventAfterOpenPosition(
-			quoteIds,
-			filledAmounts,
-			upnlSig.prices,
-			upnlSig.upnlPartyB,
-			upnlSig.upnlPartyA,
-			firstQuote.partyB,
-			firstQuote.partyA
-		);
-	}
+	// 	currentIds = new uint256[](quoteIds.length);
+	// 	for (uint256 i = 0; i < quoteIds.length; i++) {
+	// 		uint256 quoteId = quoteIds[i];
+	// 		Quote storage quote = quoteLayout.quotes[quoteId];
+	// 		require(quote.partyB == msg.sender, "PartyBFacet: Sender should be the partyB");
+	// 		require(firstQuote.partyA == quote.partyA, "PartyBFacet: All positions should belong to one partyA");
+	// 		currentIds[i] = LibPartyBPositionsActions.openPosition(quoteId, filledAmounts[i], openedPrices[i]);
+	// 		if (quote.quoteStatus == QuoteStatus.OPENED) {
+	// 			LibConnections.addConnection(quote.partyA, quote.partyB);
+	// 		}
+	// 	}
+	// 	LibSolvency.isSolventAfterOpenPosition(
+	// 		quoteIds,
+	// 		filledAmounts,
+	// 		upnlSig.prices,
+	// 		upnlSig.upnlPartyB,
+	// 		upnlSig.upnlPartyA,
+	// 		firstQuote.partyB,
+	// 		firstQuote.partyA
+	// 	);
+	// }
 
-	function closePositions(
-		uint256[] memory quoteIds,
-		uint256[] memory filledAmounts,
-		uint256[] memory closedPrices,
-		PairUpnlAndPricesSig memory upnlSig,
-		bool isAdl
-	) internal returns (QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		MAStorage.Layout storage maLayout = MAStorage.layout();
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+	// function closePositions(
+	// 	uint256[] memory quoteIds,
+	// 	uint256[] memory filledAmounts,
+	// 	uint256[] memory closedPrices,
+	// 	PairUpnlAndPricesSig memory upnlSig,
+	// 	bool isAdl
+	// ) internal returns (QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) {
+	// 	AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+	// 	MAStorage.Layout storage maLayout = MAStorage.layout();
+	// 	QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+	// 	SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 
-		require(
-			quoteIds.length == filledAmounts.length && quoteIds.length == closedPrices.length && quoteIds.length > 0,
-			"PartyBFacet: Invalid length"
-		);
+	// 	require(
+	// 		quoteIds.length == filledAmounts.length && quoteIds.length == closedPrices.length && quoteIds.length > 0,
+	// 		"PartyBFacet: Invalid length"
+	// 	);
 
-		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
-		address firstQuotePartyA = firstQuote.partyA;
-		address firstQuotePartyB = firstQuote.partyB;
+	// 	Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
+	// 	address firstQuotePartyA = firstQuote.partyA;
+	// 	address firstQuotePartyB = firstQuote.partyB;
 
-		if (accountLayout.bindState[firstQuote.partyA].partyB != msg.sender) {
-			// Verify the upnl and prices
-			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
-		}
+	// 	if (accountLayout.bindState[firstQuote.partyA].partyB != msg.sender) {
+	// 		// Verify the upnl and prices
+	// 		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
+	// 	}
 
-		LibSolvency.isSolventAfterClosePosition(
-			quoteIds,
-			filledAmounts,
-			closedPrices,
-			upnlSig.prices,
-			upnlSig.upnlPartyB,
-			upnlSig.upnlPartyA,
-			firstQuotePartyB,
-			firstQuotePartyA
-		);
+	// 	LibSolvency.isSolventAfterClosePosition(
+	// 		quoteIds,
+	// 		filledAmounts,
+	// 		closedPrices,
+	// 		upnlSig.prices,
+	// 		upnlSig.upnlPartyB,
+	// 		upnlSig.upnlPartyA,
+	// 		firstQuotePartyB,
+	// 		firstQuotePartyA
+	// 	);
 
-		// Solvency checks
-		require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
-		require(!maLayout.partyBLiquidationStatus[firstQuotePartyB][firstQuotePartyA], "PartyBFacet: PartyB isn't solvent");
-		require(!accountLayout.crossLiquidationDetails[firstQuotePartyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+	// 	// Solvency checks
+	// 	require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
+	// 	require(!maLayout.partyBLiquidationStatus[firstQuotePartyB][firstQuotePartyA], "PartyBFacet: PartyB isn't solvent");
+	// 	require(!accountLayout.crossLiquidationDetails[firstQuotePartyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 
-		accountLayout.partyBNonces[firstQuotePartyB][firstQuotePartyA] += 1;
-		accountLayout.partyANonces[firstQuotePartyA] += 1;
+	// 	accountLayout.partyBNonces[firstQuotePartyB][firstQuotePartyA] += 1;
+	// 	accountLayout.partyANonces[firstQuotePartyA] += 1;
 
-		quoteStatuses = new QuoteStatus[](quoteIds.length);
-		closeIds = new uint256[](quoteIds.length);
+	// 	quoteStatuses = new QuoteStatus[](quoteIds.length);
+	// 	closeIds = new uint256[](quoteIds.length);
 
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			uint256 quoteId = quoteIds[i];
-			Quote storage quote = quoteLayout.quotes[quoteId];
+	// 	for (uint256 i = 0; i < quoteIds.length; i++) {
+	// 		uint256 quoteId = quoteIds[i];
+	// 		Quote storage quote = quoteLayout.quotes[quoteId];
 
-			require(quote.partyB == firstQuotePartyB, "PartyBBatchActionsFacet: All positions must have same partyB");
-			require(quote.partyA == firstQuotePartyA, "PartyBBatchActionsFacet: All positions must have same partyA");
+	// 		require(quote.partyB == firstQuotePartyB, "PartyBBatchActionsFacet: All positions must have same partyB");
+	// 		require(quote.partyA == firstQuotePartyA, "PartyBBatchActionsFacet: All positions must have same partyA");
 
-			if (isAdl) {
-				uint256 quantityToClose = filledAmounts[i];
-				uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-				require(quote.quoteStatus == QuoteStatus.OPENED, "PartyBBatchActionsFacet: Invalid position state");
-				require(openAmount >= quantityToClose && quantityToClose > 0, "PartyBBatchActionsFacet: Invalid filled amount");
-				if (openAmount > quantityToClose) {
-					require(
-						((openAmount - quantityToClose) * quote.lockedValues.totalForPartyA()) / openAmount >=
-							symbolLayout.symbols[quote.symbolId].minAcceptableQuoteValue,
-						"PartyBBatchActionsFacet: Remaining quote value is low"
-					);
-				}
-				quote.quantityToClose = quantityToClose;
-				LibQuote.closeQuote(quote, filledAmounts[i], closedPrices[i]);
-				quoteStatuses[i] = quote.quoteStatus;
-				closeIds[i] = 0; // not used in ADL
-			} else {
-				// Normal close request flow
-				require(quote.partyB == msg.sender, "PartyBFacet: Sender should be the partyB");
-				LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);
-				quoteStatuses[i] = quote.quoteStatus;
-				closeIds[i] = quoteLayout.closeIds[quoteId];
-			}
-		}
-	}
+	// 		if (isAdl) {
+	// 			uint256 quantityToClose = filledAmounts[i];
+	// 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+	// 			require(quote.quoteStatus == QuoteStatus.OPENED, "PartyBBatchActionsFacet: Invalid position state");
+	// 			require(openAmount >= quantityToClose && quantityToClose > 0, "PartyBBatchActionsFacet: Invalid filled amount");
+	// 			if (openAmount > quantityToClose) {
+	// 				require(
+	// 					((openAmount - quantityToClose) * quote.lockedValues.totalForPartyA()) / openAmount >=
+	// 						symbolLayout.symbols[quote.symbolId].minAcceptableQuoteValue,
+	// 					"PartyBBatchActionsFacet: Remaining quote value is low"
+	// 				);
+	// 			}
+	// 			quote.quantityToClose = quantityToClose;
+	// 			LibQuote.closeQuote(quote, filledAmounts[i], closedPrices[i]);
+	// 			quoteStatuses[i] = quote.quoteStatus;
+	// 			closeIds[i] = 0; // not used in ADL
+	// 		} else {
+	// 			// Normal close request flow
+	// 			require(quote.partyB == msg.sender, "PartyBFacet: Sender should be the partyB");
+	// 			LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);
+	// 			quoteStatuses[i] = quote.quoteStatus;
+	// 			closeIds[i] = quoteLayout.closeIds[quoteId];
+	// 		}
+	// 	}
+	// }
 }

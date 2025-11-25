@@ -67,7 +67,7 @@ export class User extends PartyEntity {
 				request.partyBmm,
 				request.maxFundingRate,
 				await request.deadline,
-				this.context.multiAccount,
+				this.context.accountManager,
 				await request.upnlSig,
 			)
 		const receipt = await tx.wait()
@@ -108,7 +108,7 @@ export class User extends PartyEntity {
 				request.partyBmm,
 				request.maxFundingRate,
 				await request.deadline,
-				this.context.multiAccount,
+				this.context.accountManager,
 				await request.upnlSig,
 				request.data
 			)
