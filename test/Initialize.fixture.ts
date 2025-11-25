@@ -90,8 +90,9 @@ export async function initializeFixture(): Promise<RunContext> {
 		.connect(context.signers.admin)
 		.addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
 	await context.controlFacet.connect(context.signers.admin).setSymbolTypes([1], [1])
-	await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(context.signers.hedger.address, 1, true)
-	await context.controlFacet.setPartyBWhitelistedSymbolTypeStatus(context.signers.hedger2.address, 1, true)
+	await context.controlFacet.whitelistSymbolType(context.signers.hedger.address, 1)
+	await context.controlFacet.whitelistSymbolType(context.signers.hedger2.address, 1)
+	await context.controlFacet.setMaxPartyAConnectionLimit(5)
 
 	await context.controlFacet.connect(context.signers.admin).setPendingQuotesValidLength(10)
 	await context.controlFacet.connect(context.signers.admin).setLiquidatorShare(decimal(1n, 17))

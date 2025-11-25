@@ -1,22 +1,16 @@
-import {loadFixture} from "@nomicfoundation/hardhat-network-helpers"
-import {expect} from "chai"
+import { loadFixture } from "@nomicfoundation/hardhat-network-helpers"
+import { expect } from "chai"
 
-import {initializeFixture} from "./Initialize.fixture"
-import {LiquidationType, PositionType, QuoteStatus} from "./models/Enums"
-import {Hedger} from "./models/Hedger"
-import {RunContext} from "./models/RunContext"
-import {BalanceInfo, User} from "./models/User"
-import {
-	decimal,
-	getPriceFetcher,
-	getTotalLockedValuesForQuoteIds,
-	getTradingFeeForQuotes,
-	unDecimal,
-} from "./utils/Common";
-import {getDummyLiquidationSig, getDummySingleUpnlSig} from "./utils/SignatureUtils"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
-import { ethers, toUtf8Bytes } from "ethers";
-import { partyA } from "../src/types/contracts/facets";
+import { initializeFixture } from "./Initialize.fixture"
+import { LiquidationType, PositionType, QuoteStatus } from "./models/Enums"
+import { Hedger } from "./models/Hedger"
+import { RunContext } from "./models/RunContext"
+import { BalanceInfo, User } from "./models/User"
+import { decimal, getPriceFetcher, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common"
+import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { ethers, toUtf8Bytes } from "ethers"
+import { partyA } from "../src/types/contracts/facets"
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
@@ -64,7 +58,13 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		await hedger.lockQuote(5)
 	})
 
-
+	const expectConnected = async (partyA: string, partyB: string, expected: boolean) => {
+		const isConn = await context.viewFacet.isConnectedPartyB(partyA, partyB)
+		expect(isConn).to.equal(expected)
+		const conns = await context.viewFacet.getConnectedPartyBs(partyA)
+		if (expected) expect(conns).to.include(partyB)
+		else expect(conns).to.not.include(partyB)
+	}
 
 	describe("Liquidate PartyA", async function () {
 		it("Should fail on partyA being solvent", async function () {
@@ -113,7 +113,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		})
 
 		it("Should deferred liquidate pending quotes", async function () {
-
 			await user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)])
 			await user.liquidatePendingPositions()
 
@@ -150,41 +149,40 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await expect(user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)])).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 		})
 
-		it("Should change the insurance vault correctly", async function() {
+		it("Should change the insurance vault correctly", async function () {
 			let admin = new User(context, context.signers.admin)
 			await admin.setup()
 
 			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address , decimal(1n))
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			const price = decimal(572n, 16)
 			await user.liquidateAndSetSymbolPrices([1n], [price])
 			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(decimal(1n))
 
 			// console.log((await context.viewFacet.getLiquidatedStateOfPartyA(context.signers.user.address))["liquidationFee"])
-
 		})
 
-		it("Should change the insurance vault correctly in deferred liquidation", async function() {
+		it("Should change the insurance vault correctly in deferred liquidation", async function () {
 			let admin = new User(context, context.signers.admin)
 			await admin.setup()
 
 			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address , decimal(1n))
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			const price = decimal(572n, 16)
 			await user.deferredLiquidateAndSetSymbolPrices([1n], [price])
 			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(decimal(1n))
+			await expectConnected(user.address, hedger.address, true)
 
 			// console.log((await context.viewFacet.getLiquidatedStateOfPartyA(context.signers.user.address))["liquidationFee"])
-
 		})
 
 		describe("Test normal branch", async function () {
 			const price = decimal(572n, 16)
 			beforeEach(async function () {
 				await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
-				await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address , decimal(100n))
+				await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(100n))
 				this.signature1 = await user.liquidateAndSetSymbolPrices([1n], [price])
 				const liquidationState = await user.getLiquidatedStateOfPartyA()
 				expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
@@ -209,6 +207,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				await user.liquidatePendingPositions()
 				await user.liquidatePositions([1])
 				expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
+				await expectConnected(user.address, hedger.address, false)
 			})
 
 			describe("Settle liquidation", async function () {
@@ -218,24 +217,23 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				})
 
 				it("Should settle liquidation", async function () {
-					let userAddress = context.signers.user.getAddress()
-					let hedgerAddress = context.signers.hedger.getAddress()
+					let userAddress = await context.signers.user.getAddress()
+					let hedgerAddress = await context.signers.hedger.getAddress()
 
 					const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
 					const userBalance = await user.getBalanceInfo()
 					const upnl = unDecimal((decimal(1n) - price) * decimal(100n))
 					const available = userBalance.allocatedBalances - userBalance.lockedCva - userBalance.lockedLf + upnl
-					const diff = userBalance.lockedLf - (-available)
+					const diff = userBalance.lockedLf - -available
 					const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
-
 					await user.settleLiquidation()
 					expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.be.equal(partyBAfter)
 					let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 					expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(diff)
+					await expectConnected(userAddress, hedgerAddress, false)
 				})
 			})
 		})
-
 
 		describe("Test late branches", async function () {
 			it("Late liquidation", async function () {
@@ -271,7 +269,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 				expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(decimal(0n))
 			})
-
 		})
 	})
 
@@ -279,7 +276,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		const price = decimal(572n, 16)
 		beforeEach(async function () {
 			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address , decimal(100n))
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(100n))
 			this.signature1 = await user.deferredLiquidateAndSetSymbolPrices([1n], [price])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
 			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
@@ -320,7 +317,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				const userBalance = await user.getBalanceInfo()
 				const upnl = unDecimal((decimal(1n) - price) * decimal(100n))
 				const available = userBalance.allocatedBalances - userBalance.lockedCva - userBalance.lockedLf + upnl
-				const diff = userBalance.lockedLf - (-available)
+				const diff = userBalance.lockedLf - -available
 				const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
 
 				await user.settleLiquidation()
@@ -331,7 +328,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			})
 		})
 	})
-
 
 	describe("Test late branches", async function () {
 		it("Late liquidation", async function () {
@@ -367,17 +363,14 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 			expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(decimal(0n))
 		})
-
 	})
 
 	describe("Liquidate PartyB", async function () {
 		it("Should fail on partyB being solvent", async function () {
 			await expect(
-				context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyB(
-					context.signers.hedger.getAddress(),
-					context.signers.user.getAddress(),
-					await getDummySingleUpnlSig(),
-				),
+				context.liquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(context.signers.hedger.getAddress(), context.signers.user.getAddress(), await getDummySingleUpnlSig()),
 			).to.be.revertedWith("LiquidationFacet: partyB is solvent")
 		})
 
@@ -385,7 +378,9 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			let userAddress = await context.signers.user.getAddress()
 			let hedgerAddress = await context.signers.hedger.getAddress()
 
-			await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyB(hedgerAddress, userAddress, await getDummySingleUpnlSig(decimal(-336n)))
+			await context.liquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePartyB(hedgerAddress, userAddress, await getDummySingleUpnlSig(decimal(-336n)))
 			let balanceInfo: BalanceInfo = await hedger.getBalanceInfo(userAddress)
 			expect(balanceInfo.allocatedBalances).to.be.equal("0")
 			expect(balanceInfo.lockedCva).to.be.equal("0")
@@ -401,17 +396,13 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		})
 
 		it("Should fail to liquidate a partyB twice", async function () {
-			await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyB(
-				context.signers.hedger.getAddress(),
-				context.signers.user.getAddress(),
-				await getDummySingleUpnlSig(decimal(-336n)),
-			)
+			await context.liquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePartyB(context.signers.hedger.getAddress(), context.signers.user.getAddress(), await getDummySingleUpnlSig(decimal(-336n)))
 			await expect(
-				context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyB(
-					context.signers.hedger.getAddress(),
-					context.signers.user.getAddress(),
-					await getDummySingleUpnlSig(decimal(-336n)),
-				),
+				context.liquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(context.signers.hedger.getAddress(), context.signers.user.getAddress(), await getDummySingleUpnlSig(decimal(-336n))),
 			).to.revertedWith("Accessibility: PartyB isn't solvent")
 		})
 	})

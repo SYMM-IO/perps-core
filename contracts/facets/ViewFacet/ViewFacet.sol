@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibLockedValues.sol";
 import "../../libraries/LibQuote.sol";
 import "../../libraries/LibDiamond.sol";
 import "../../libraries/muon/LibMuon.sol";
@@ -14,7 +13,6 @@ import "../../storages/QuoteStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
 import "../../storages/SymbolStorage.sol";
 import "../../storages/MuonStorage.sol";
-import "../../libraries/LibLockedValues.sol";
 import "../../storages/BridgeStorage.sol";
 import "./IViewFacet.sol";
 
@@ -273,14 +271,12 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Returns the details of a symbol along with its type.
-	 * @param symbolId The ID of the symbol to retrieve.
-	 * @return A SymbolWithType struct containing the symbol details and its type.
+	 * @notice Converts a symbol to a symbol with type.
+	 * @param symbol The symbol to convert.
+	 * @param symbolType The type of the symbol.
+	 * @return The symbol with type.
 	 */
-	function getSymbolWithType(uint256 symbolId) external view returns (SymbolWithType memory) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		Symbol memory symbol = symbolLayout.symbols[symbolId];
-
+	function _toSymbolWithType(Symbol memory symbol, uint256 symbolType) internal pure returns (SymbolWithType memory) {
 		return
 			SymbolWithType(
 				symbol.symbolId,
@@ -292,8 +288,20 @@ contract ViewFacet is IViewFacet {
 				symbol.maxLeverage,
 				symbol.fundingRateEpochDuration,
 				symbol.fundingRateWindowTime,
-				symbolLayout.symbolTypes[symbolId]
+				symbolType
 			);
+	}
+
+	/**
+	 * @notice Returns the details of a symbol along with its type.
+	 * @param symbolId The ID of the symbol to retrieve.
+	 * @return A SymbolWithType struct containing the symbol details and its type.
+	 */
+	function getSymbolWithType(uint256 symbolId) external view returns (SymbolWithType memory) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		Symbol memory symbol = symbolLayout.symbols[symbolId];
+
+		return _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbolId]);
 	}
 
 	/**
@@ -335,18 +343,7 @@ contract ViewFacet is IViewFacet {
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
-			symbols[i - start] = SymbolWithType(
-				symbol.symbolId,
-				symbol.name,
-				symbol.isValid,
-				symbol.minAcceptableQuoteValue,
-				symbol.minAcceptablePortionLF,
-				symbol.tradingFee,
-				symbol.maxLeverage,
-				symbol.fundingRateEpochDuration,
-				symbol.fundingRateWindowTime,
-				symbolLayout.symbolTypes[symbol.symbolId]
-			);
+			symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 			unchecked {
 				++i;
 			}
@@ -415,18 +412,7 @@ contract ViewFacet is IViewFacet {
 		for (uint256 i = start; i < end; ) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
-				symbols[i - start] = SymbolWithType(
-					symbol.symbolId,
-					symbol.name,
-					symbol.isValid,
-					symbol.minAcceptableQuoteValue,
-					symbol.minAcceptablePortionLF,
-					symbol.tradingFee,
-					symbol.maxLeverage,
-					symbol.fundingRateEpochDuration,
-					symbol.fundingRateWindowTime,
-					symbolLayout.symbolTypes[symbol.symbolId]
-				);
+				symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 			}
 			unchecked {
 				++i;
@@ -607,13 +593,15 @@ contract ViewFacet is IViewFacet {
 	 */
 	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		if (quoteLayout.partyAOpenPositions[partyA].length < start + size) {
-			size = quoteLayout.partyAOpenPositions[partyA].length - start;
+		uint256[] memory partyAOpenPositions = quoteLayout.partyAOpenPositions[partyA];
+
+		if (partyAOpenPositions.length < start + size) {
+			size = partyAOpenPositions.length - start;
 		}
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
-			quotes[i - start] = quoteLayout.quotes[quoteLayout.partyAOpenPositions[partyA][i]];
+			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
 			unchecked {
 				++i;
 			}
@@ -631,13 +619,14 @@ contract ViewFacet is IViewFacet {
 	 */
 	function getPartyBOpenPositions(address partyB, address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		if (quoteLayout.partyBOpenPositions[partyB][partyA].length < start + size) {
-			size = quoteLayout.partyBOpenPositions[partyB][partyA].length - start;
+		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
+		if (partyBOpenPositions.length < start + size) {
+			size = partyBOpenPositions.length - start;
 		}
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
-			quotes[i - start] = quoteLayout.quotes[quoteLayout.partyBOpenPositions[partyB][partyA][i]];
+			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
 			unchecked {
 				++i;
 			}
@@ -984,6 +973,14 @@ contract ViewFacet is IViewFacet {
 	 */
 	function lastUpnlSettlementTimestamp(address senderPartyB, address targetPartyB, address partyA) external view returns (uint256) {
 		return MAStorage.layout().lastUpnlSettlementTimestamp[senderPartyB][targetPartyB][partyA];
+	}
+
+	/**
+	 * @notice Returns the maxConnectedCounterParty.
+	 * @return maxConnectedCounterParty max Party A to Party B connection Count Limit.
+	 */
+	function maxConnectedCounterParty() external view returns (uint256) {
+		return MAStorage.layout().maxPartyAConnectionLimit;
 	}
 
 	/**

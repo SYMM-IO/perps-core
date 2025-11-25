@@ -260,7 +260,7 @@ library LiquidationFacetImpl {
 			if (!found) {
 				partyBsToCheck[uniquePartyBs++] = quote.partyB;
 			}
-			
+
 			emit SharedEvents.TradeVolumeRecorded(
 				quote.id,
 				(liquidatedAmounts[index] * liquidationPrice) / 1e18,

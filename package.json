@@ -20,6 +20,7 @@
     "@openzeppelin/contracts": "^4.9.6",
     "@openzeppelin/contracts-upgradeable": "^4.9.6",
     "@openzeppelin/hardhat-upgrades": "^3.0.1",
+    "@trivago/prettier-plugin-sort-imports": "^6.0.0",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
     "@types/chai": "^4.3.16",
@@ -37,9 +38,11 @@
     "hardhat-gas-reporter": "^1.0.8",
     "js-sha3": "^0.9.3",
     "mocha": "^10.7.0",
+    "prettier": "^3.6.2",
     "random-ext": "^2.8.0",
     "rxjs": "^7.8.1",
     "shx": "^0.3.4",
+    "solhint": "^6.0.1",
     "solidity-coverage": "^0.8.12",
     "solidity-docgen": "^0.6.0-beta.36",
     "ts-node": "^10.9.2",
@@ -71,7 +74,8 @@
     "lint:sol": "solhint --config ./.solhint.json --solcoverjs ./.solcover.js --max-warnings 0 \"contracts/**/*.sol\"",
     "test": "hardhat test",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
-    "test:uncheck-muon": "./utils/runTests.sh"
+    "test:uncheck-muon": "./utils/runTests.sh",
+    "solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol"
   },
   "dependencies": {
     "prettier-plugin-solidity": "^2.1.0"
