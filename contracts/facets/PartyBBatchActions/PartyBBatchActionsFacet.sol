@@ -26,35 +26,7 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 		uint256[] memory openedPrices,
 		PairUpnlAndPricesSig memory upnlSig
 	) external whenNotPartyBActionsPaused {
-		uint256[] memory newIds = PartyBBatchActionsFacetImpl.openPositions(quoteIds, filledAmounts, openedPrices, upnlSig);
-		Quote storage firstQuote = QuoteStorage.layout().quotes[quoteIds[0]];
-		for (uint256 i = 0; i < newIds.length; i++) {
-			emit OpenPosition(quoteIds[i], firstQuote.partyA, firstQuote.partyB, filledAmounts[i], openedPrices[i]);
-			if (newIds[i] != 0) {
-				Quote storage newQuote = QuoteStorage.layout().quotes[newIds[i]];
-				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-					emit SendQuote(
-						newQuote.partyA,
-						newQuote.id,
-						newQuote.partyBsWhiteList,
-						newQuote.symbolId,
-						newQuote.positionType,
-						newQuote.orderType,
-						newQuote.requestedOpenPrice,
-						newQuote.marketPrice,
-						newQuote.quantity,
-						newQuote.lockedValues.cva,
-						newQuote.lockedValues.lf,
-						newQuote.lockedValues.partyAmm,
-						newQuote.lockedValues.partyBmm,
-						newQuote.tradingFee,
-						newQuote.deadline
-					);
-				} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
-					emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
-				}
-			}
-		}
+		PartyBBatchActionsFacetImpl.openPositions(quoteIds, filledAmounts, openedPrices, upnlSig);
 	}
 
 	/**

@@ -98,15 +98,28 @@ interface ISymmio {
 	}
 
 	function depositFor(address user, uint256 amount) external;
+
 	function withdrawTo(address user, uint256 amount) external;
+
 	function allocate(uint256 amount) external;
+
 	function getCollateral() external view returns (address);
+
 	function balanceOf(address user) external view returns (uint256);
+
 	function setSigner(address signer) external;
+
 	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
+
 	function internalTransfer(address user, uint256 amount) external;
+
 	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) external;
+
 	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory);
+
 	function setFeeCollector(address affiliate, address feeCollector) external;
+
 	function getNextQuoteId() external returns (uint256);
+
+	function registerAffiliate(address affiliate) external;
 }
