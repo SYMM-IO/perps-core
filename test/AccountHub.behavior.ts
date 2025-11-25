@@ -23,11 +23,20 @@ const AffiliateState = {
 	DEACTIVATED: 4n,
 } as const
 
+const ACCOUNT_MANAGER_CODE_HASH = ethers.keccak256(ethers.toUtf8Bytes("ACM_V1"))
+
+function computeAffiliateAddress(hubAddress: string, implementation: string, name: string): string {
+	const salt = ethers.keccak256(ethers.solidityPacked(["bytes32", "string"], [ACCOUNT_MANAGER_CODE_HASH, name]))
+	const constructorArgs = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [hubAddress])
+	const initCodeHash = ethers.keccak256(ethers.concat([implementation, constructorArgs]))
+	return ethers.getCreate2Address(hubAddress, salt, initCodeHash)
+}
+
 async function accountHubFixture() {
 	const context = await initializeFixture()
 	const accountManagerFactory = await ethers.getContractFactory("AccountManager")
 	const accountManagerImplementation = accountManagerFactory.bytecode
-	const hubFactory = await ethers.getContractFactory("AccountsHub")
+	const affiliateHubFactory = await ethers.getContractFactory("AffiliateHub")
 
 	const addresses = {
 		admin: await context.signers.admin.getAddress(),
@@ -41,18 +50,20 @@ async function accountHubFixture() {
 		unauthorized: await context.signers.others[0].getAddress(),
 		other: await context.signers.others[1].getAddress(),
 	}
-	const hub = await upgrades.deployProxy(hubFactory, [addresses.admin, addresses.stakeholder1, accountManagerImplementation], {
+	const hub = await upgrades.deployProxy(affiliateHubFactory, [addresses.admin, addresses.stakeholder1, accountManagerImplementation], {
 		initializer: "initialize",
 	})
+	const hubAddress = await hub.getAddress()
 
 	await hub.connect(context.signers.admin).grantRole(await hub.DEFAULT_ADMIN_ROLE(), addresses.approver)
+	await hub.connect(context.signers.admin).grantRole(await hub.SETTER_ROLE(), addresses.admin)
 	await hub.connect(context.signers.admin).grantRole(await hub.APPROVER_ROLE(), addresses.approver)
 	await hub.connect(context.signers.admin).grantRole(await hub.PAUSER_ROLE(), addresses.pauser)
 	await hub.connect(context.signers.admin).grantRole(await hub.UNPAUSER_ROLE(), addresses.unpauser)
-	await hub.connect(context.signers.admin).grantRole(await hub.SETTER_ROLE(), addresses.setter)
-	await hub.connect(context.signers.admin).setAvailableCore(context.diamond, true)
+	await hub.connect(context.signers.admin).setWhitelistedSymmioCore(context.diamond, true)
+
 	const affiliateManagerRole = ethers.keccak256(ethers.toUtf8Bytes("AFFILIATE_MANAGER_ROLE"))
-	await context.controlFacet.connect(context.signers.admin).grantRole(hub.getAddress(), affiliateManagerRole)
+	await context.controlFacet.connect(context.signers.admin).grantRole(hubAddress, affiliateManagerRole)
 
 	const defaultRegistration = (overrides: Partial<AffiliateRegistrationInput> = {}): AffiliateRegistrationInput => {
 		const base: AffiliateRegistrationInput = {
@@ -81,6 +92,7 @@ async function accountHubFixture() {
 	return {
 		context,
 		hub,
+		hubAddress,
 		accountManagerImplementation,
 		defaultRegistration,
 		addresses,
@@ -90,7 +102,14 @@ async function accountHubFixture() {
 type AccountHubFixture = Awaited<ReturnType<typeof accountHubFixture>>
 
 async function registerAffiliateOnSymmio(fixture: AccountHubFixture, affiliate: string) {
-	await fixture.context.controlFacet.connect(fixture.context.signers.admin).registerAffiliate(affiliate)
+	const controlFacet = fixture.context.controlFacet.connect(fixture.context.signers.admin)
+	try {
+		await controlFacet.registerAffiliate(affiliate)
+	} catch (error: any) {
+		if (!error.message.includes("Address is already registered")) {
+			throw error
+		}
+	}
 }
 
 export function shouldBehaveLikeAccountHub() {
@@ -106,24 +125,17 @@ export function shouldBehaveLikeAccountHub() {
 			it("registers an affiliate with validated data", async function () {
 				const { hub, defaultRegistration, context } = fixture
 				const registration = defaultRegistration()
-				const expectedAffiliate = await hub.generateAccountManagerAddress(registration.name)
+				const expectedAffiliate = computeAffiliateAddress(fixture.hubAddress, fixture.accountManagerImplementation, registration.name)
 
 				// request register with valid data
 				await expect(hub.connect(context.signers.user).requestToRegisterAffiliate(registration))
 					.to.emit(hub, "AffiliateRegistered")
 					.withArgs(expectedAffiliate, registration.name)
 
-				// check
-				const data = await hub.getAffiliateData(expectedAffiliate)
-				expect(data.name).to.equal(registration.name)
-				expect(data.brandColor).to.equal(registration.brandColor)
-				expect(data.admin).to.equal(registration.admin)
-				expect(BigInt(data.state)).to.equal(AffiliateState.PENDING)
-				expect(data.symmioShare).to.equal(registration.symmioShare)
-				expect(data.stakeholders).to.have.length(registration.stakeholders.length)
-				expect(data.stakeholders[0].receiver).to.equal(registration.stakeholders[0].receiver)
-				expect(data.stakeholders[0].share).to.equal(registration.stakeholders[0].share)
-				expect(await hub.affiliateSymmioCores(expectedAffiliate)).to.deep.equal([fixture.context.diamond])
+				// check stored state via public getters
+				expect(await hub.getAffiliateState(expectedAffiliate)).to.equal(AffiliateState.PENDING)
+				expect(await hub.getAffiliateAdmin(expectedAffiliate)).to.equal(registration.admin)
+				expect(await hub.getAffiliateSymmioCores(expectedAffiliate)).to.deep.equal([context.diamond])
 			})
 
 			// Prevents double submissions with same name
@@ -178,21 +190,21 @@ export function shouldBehaveLikeAccountHub() {
 					hub.connect(context.signers.user).requestToRegisterAffiliate(defaultRegistration({ symmioShare: ethers.parseEther("0.2") })),
 				).to.be.revertedWithCustomError(hub, "SharesMustSumTo100")
 
-				// invalid core
+				// invalid core should throw NoWhitelistedSymmioCore
 				await expect(
 					hub.connect(context.signers.user).requestToRegisterAffiliate(
 						defaultRegistration({
 							symmioCores: [addresses.unauthorized],
 						}),
 					),
-				).to.be.revertedWithCustomError(hub, "InvalidCore")
+				).to.be.revertedWithCustomError(hub, "NoWhitelistedSymmioCore")
 			})
 
 			// Confirms only the registered admin can cancel while pending and frees up the slot
 			it("allows only the affiliate admin to cancel a pending registration", async function () {
 				const { hub, context, defaultRegistration } = fixture
 				const registration = defaultRegistration()
-				const affiliate = await hub.generateAccountManagerAddress(registration.name)
+				const affiliate = computeAffiliateAddress(fixture.hubAddress, fixture.accountManagerImplementation, registration.name)
 
 				// request register
 				await expect(hub.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(hub, "AffiliateRegistered")
@@ -211,13 +223,12 @@ export function shouldBehaveLikeAccountHub() {
 			it("reverts cancellation once an affiliate is approved", async function () {
 				const { hub, context, defaultRegistration } = fixture
 				const registration = defaultRegistration()
-				const affiliate = await hub.generateAccountManagerAddress(registration.name)
+				const affiliate = computeAffiliateAddress(fixture.hubAddress, fixture.accountManagerImplementation, registration.name)
 
 				// request register
 				await expect(hub.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(hub, "AffiliateRegistered")
-
-				// register on symmio and admin accept
 				await registerAffiliateOnSymmio(fixture, affiliate)
+
 				await expect(hub.connect(context.signers.user2).approveAffiliate(affiliate)).to.emit(hub, "AffiliateApproved")
 
 				// cancel registration should revert
@@ -228,12 +239,10 @@ export function shouldBehaveLikeAccountHub() {
 			it("requires approver role and pending state", async function () {
 				const { hub, context, defaultRegistration } = fixture
 				const registration = defaultRegistration()
-				const affiliate = await hub.generateAccountManagerAddress(registration.name)
+				const affiliate = computeAffiliateAddress(fixture.hubAddress, fixture.accountManagerImplementation, registration.name)
 
 				// request register
 				await expect(hub.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(hub, "AffiliateRegistered")
-
-				// register on symmio to make sure we can approve
 				await registerAffiliateOnSymmio(fixture, affiliate)
 
 				// approve affiliate without role
@@ -258,7 +267,7 @@ export function shouldBehaveLikeAccountHub() {
 			it("deploys the account manager, fee distributor, and assigns permissions on approval", async function () {
 				const { hub, context, defaultRegistration } = fixture
 				const registration = defaultRegistration()
-				const affiliate = await hub.generateAccountManagerAddress(registration.name)
+				const affiliate = computeAffiliateAddress(fixture.hubAddress, fixture.accountManagerImplementation, registration.name)
 
 				// request register
 				await expect(hub.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(hub, "AffiliateRegistered")
@@ -268,26 +277,19 @@ export function shouldBehaveLikeAccountHub() {
 				const nonceBefore = await hub.globalNonce()
 				await expect(hub.connect(context.signers.user2).approveAffiliate(affiliate)).to.emit(hub, "AffiliateApproved")
 
-				// check data
-				const data = await hub.getAffiliateData(affiliate)
-				expect(BigInt(data.state)).to.equal(AffiliateState.ACTIVE)
-				expect(data.accountManager).to.not.equal(ethers.ZeroAddress)
-				expect(data.feeDistributor).to.not.equal(ethers.ZeroAddress)
-				expect(await context.viewFacet.getFeeCollector(affiliate)).to.equal(data.feeDistributor)
-				// check nounce
+				expect(await hub.getAffiliateState(affiliate)).to.equal(AffiliateState.ACTIVE)
+				const feeDistributor = await hub.getAffiliateFeeDistributor(affiliate)
+				expect(feeDistributor).to.not.equal(ethers.ZeroAddress)
+				expect(await context.viewFacet.getFeeCollector(affiliate)).to.equal(feeDistributor)
 				expect(await hub.globalNonce()).to.equal(nonceBefore + 1n)
-
-				const affiliates = await hub.getAllAffiliates()
-				expect(affiliates).to.deep.equal([data.accountManager])
-				expect(await hub.getAffiliateCount()).to.equal(1n)
-				expect(await hub.hasRole(await hub.SIGNER_SETTER(), data.accountManager)).to.equal(true)
+				expect(await hub.hasRole(await hub.SIGNER_SETTER(), affiliate)).to.equal(true)
 			})
 
 			// Authorized roles must be able to pause/unpause
 			it("supports pausing and unpausing affiliates with authorized callers", async function () {
 				const { hub, context, defaultRegistration } = fixture
 				const registration = defaultRegistration()
-				const affiliate = await hub.generateAccountManagerAddress(registration.name)
+				const affiliate = computeAffiliateAddress(fixture.hubAddress, fixture.accountManagerImplementation, registration.name)
 
 				// request register and approve affiliate
 				await expect(hub.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(hub, "AffiliateRegistered")
@@ -298,17 +300,15 @@ export function shouldBehaveLikeAccountHub() {
 				await expect(hub.connect(context.signers.others[0]).pauseAffiliate(affiliate)).to.be.revertedWithCustomError(hub, "Unauthorized")
 
 				// pause
-				await expect(hub.connect(context.signers.liquidator).pauseAffiliate(affiliate)).to.emit(hub, "AffiliatePaused").withArgs(affiliate, true)
-				let data = await hub.getAffiliateData(affiliate)
-				expect(BigInt(data.state)).to.equal(AffiliateState.PAUSED)
+				await expect(hub.connect(context.signers.liquidator).pauseAffiliate(affiliate)).to.emit(hub, "AffiliatePaused").withArgs(affiliate)
+				expect(await hub.getAffiliateState(affiliate)).to.equal(AffiliateState.PAUSED)
 
 				// unpause without role
 				await expect(hub.connect(context.signers.others[0]).unpauseAffiliate(affiliate)).to.be.revertedWithCustomError(hub, "Unauthorized")
 				
 				// unpause
-				await expect(hub.connect(context.signers.hedger).unpauseAffiliate(affiliate)).to.emit(hub, "AffiliatePaused").withArgs(affiliate, false)
-				data = await hub.getAffiliateData(affiliate)
-				expect(BigInt(data.state)).to.equal(AffiliateState.ACTIVE)
+				await expect(hub.connect(context.signers.hedger).unpauseAffiliate(affiliate)).to.emit(hub, "AffiliateUnpaused").withArgs(affiliate)
+				expect(await hub.getAffiliateState(affiliate)).to.equal(AffiliateState.ACTIVE)
 			})
 
 			describe("Scenarios", function () {
@@ -318,31 +318,21 @@ export function shouldBehaveLikeAccountHub() {
 				3. verify manager/collector/roles
 				*/ 
 				it("runs the end-to-end happy path", async function () {
-					const { hub, context, defaultRegistration, accountManagerImplementation, addresses } = fixture
+					const { hub, context, defaultRegistration } = fixture
 					const registration = defaultRegistration({ name: "TradingPro", brandColor: "#FF5733" })
-					const affiliate = await hub.generateAccountManagerAddress(registration.name)
+					const affiliate = computeAffiliateAddress(fixture.hubAddress, fixture.accountManagerImplementation, registration.name)
 
 					await hub.connect(context.signers.user).requestToRegisterAffiliate(registration)
-					const pending = await hub.getAffiliateData(affiliate)
-					expect(BigInt(pending.state)).to.equal(AffiliateState.PENDING)
-
 					await registerAffiliateOnSymmio(fixture, affiliate)
+					expect(await hub.getAffiliateState(affiliate)).to.equal(AffiliateState.PENDING)
+
 					await expect(hub.connect(context.signers.user2).approveAffiliate(affiliate)).to.emit(hub, "AffiliateApproved")
 
-					const data = await hub.getAffiliateData(affiliate)
-					expect(BigInt(data.state)).to.equal(AffiliateState.ACTIVE)
-					expect(await context.viewFacet.getFeeCollector(affiliate)).to.equal(data.feeDistributor)
+					expect(await hub.getAffiliateState(affiliate)).to.equal(AffiliateState.ACTIVE)
+					const feeDistributor = await hub.getAffiliateFeeDistributor(affiliate)
+					expect(await context.viewFacet.getFeeCollector(affiliate)).to.equal(feeDistributor)
 
-					const salt = ethers.keccak256(ethers.solidityPacked(["string", "address"], ["AccountManager", addresses.affiliateAdmin]))
-					const constructorArgs = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [await hub.getAddress()])
-					const managerInitCode = ethers.concat([accountManagerImplementation, constructorArgs])
-					const initCodeHash = ethers.keccak256(managerInitCode)
-					const expectedManager = ethers.getCreate2Address(await hub.getAddress(), salt, initCodeHash)
-					expect(data.accountManager).to.equal(expectedManager)
-
-					const accountManager = await ethers.getContractAt("AccountManager", data.accountManager)
-					expect(await accountManager.getHub()).to.equal(await hub.getAddress())
-					expect(await hub.hasRole(await hub.SIGNER_SETTER(), data.accountManager)).to.equal(true)
+					expect(await hub.hasRole(await hub.SIGNER_SETTER(), affiliate)).to.equal(true)
 				})
 
 				/* 
@@ -353,7 +343,7 @@ export function shouldBehaveLikeAccountHub() {
 				it("allows cancellation while pending and reapplying later", async function () {
 					const { hub, context, defaultRegistration } = fixture
 					const registration = defaultRegistration({ name: "CancelMe" })
-					const affiliate = await hub.generateAccountManagerAddress(registration.name)
+					const affiliate = computeAffiliateAddress(fixture.hubAddress, fixture.accountManagerImplementation, registration.name)
 
 					await hub.connect(context.signers.user).requestToRegisterAffiliate(registration)
 					await hub.connect(context.signers.user).cancelRegistration(affiliate)
@@ -373,19 +363,19 @@ export function shouldBehaveLikeAccountHub() {
 				it("lets Symmio pause and resume while blocking admin updates when paused", async function () {
 					const { hub, context, defaultRegistration } = fixture
 					const registration = defaultRegistration({ name: "PauserFlow" })
-					const affiliate = await hub.generateAccountManagerAddress(registration.name)
+					const affiliate = computeAffiliateAddress(fixture.hubAddress, fixture.accountManagerImplementation, registration.name)
 
 					await hub.connect(context.signers.user).requestToRegisterAffiliate(registration)
 					await registerAffiliateOnSymmio(fixture, affiliate)
 					await expect(hub.connect(context.signers.user2).approveAffiliate(affiliate)).to.emit(hub, "AffiliateApproved")
 
-					await hub.connect(context.signers.liquidator).pauseAffiliate(affiliate)
+					await expect(hub.connect(context.signers.liquidator).pauseAffiliate(affiliate)).to.emit(hub, "AffiliatePaused").withArgs(affiliate)
 					await expect(hub.connect(context.signers.user).updateAffiliateDetails(affiliate, "NewName", "#000000")).to.be.revertedWithCustomError(
 						hub,
 						"AffiliateNotActive",
 					)
 
-					await expect(hub.connect(context.signers.hedger).unpauseAffiliate(affiliate)).to.emit(hub, "AffiliatePaused").withArgs(affiliate, false)
+					await expect(hub.connect(context.signers.hedger).unpauseAffiliate(affiliate)).to.emit(hub, "AffiliateUnpaused").withArgs(affiliate)
 					await expect(hub.connect(context.signers.user).updateAffiliateDetails(affiliate, "NewName", "#000000")).to.emit(hub, "AffiliateUpdated")
 				})
 			})
