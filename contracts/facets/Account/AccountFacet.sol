@@ -101,6 +101,12 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit SharedEvents.BalanceChangePartyA(msg.sender, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
+	function zeroUpnlDeallocate(uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(msg.sender) {
+		AccountFacetImpl.zeroUpnlDeallocate(amount, msg.sender);
+		emit DeallocatePartyA(msg.sender, amount, AccountStorage.layout().allocatedBalances[msg.sender]);
+		emit SharedEvents.BalanceChangePartyA(msg.sender, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
+	}
+
 	/// @notice Transfers the sender's deposited balance to the user allocated balance.
 	/// @dev The sender and the recipient user cannot be partyB.
 	/// @dev PartyA should not be in the liquidation process.

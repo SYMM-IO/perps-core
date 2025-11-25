@@ -165,6 +165,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		}
 
 		affiliates[affiliate].state = AffiliateState.ACTIVE;
+		affiliates[affiliate].accountManager = accountManager;
 		affiliates[affiliate].feeDetails.feeDistributor = feeDistributor;
 
 		_setupAffiliateOnSymmioCore(affiliate);
@@ -502,6 +503,10 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		return affiliates[affiliate].feeDetails.feeDistributor;
 	}
 
+	function getAffiliateAccountManager(address affiliate) external view returns (address) {
+		return affiliates[affiliate].accountManager;
+	}
+
 	/**
 	 * @notice Gets all Symmio cores for an affiliate
 	 * @param affiliate The affiliate address
@@ -580,8 +585,8 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		address feeDistributor = affiliates[affiliate].feeDetails.feeDistributor;
 
 		for (uint256 i = 0; i < cores.length(); i++) {
-			ISymmio(cores.at(i)).setFeeCollector(affiliate, feeDistributor);
 			ISymmio(cores.at(i)).registerAffiliate(affiliate);
+			ISymmio(cores.at(i)).setFeeCollector(affiliate, feeDistributor);
 		}
 	}
 
