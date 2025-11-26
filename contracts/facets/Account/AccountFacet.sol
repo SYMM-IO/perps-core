@@ -10,13 +10,15 @@ import "./IAccountFacet.sol";
 import "./AccountFacetImpl.sol";
 import "../../storages/GlobalAppStorage.sol";
 import "../../libraries/SharedEvents.sol";
+import "../../libraries/LibSigner.sol";
 
 contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows either PartyA or PartyB to deposit collateral.
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
 	function deposit(uint256 amount) external whenNotAccountingPaused {
-		AccountFacetImpl.deposit(msg.sender, amount);
-		emit Deposit(msg.sender, msg.sender, amount);
+		address signer = LibSigner.getSigner();
+		AccountFacetImpl.deposit(signer, amount);
+		emit Deposit(signer, signer, amount);
 	}
 
 	/// @notice Allows either Party A or Party B to deposit collateral on behalf of another user.
@@ -24,7 +26,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
 	function depositFor(address user, uint256 amount) external whenNotAccountingPaused {
 		AccountFacetImpl.deposit(user, amount);
-		emit Deposit(msg.sender, user, amount);
+		emit Deposit(LibSigner.getSigner(), user, amount);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
@@ -32,7 +34,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
 	function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
 		AccountFacetImpl.virtualDepositFor(user, amount);
-		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
+		emit Deposit(LibSigner.getSigner(), user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer and allocate them.
@@ -44,67 +46,79 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
 		AccountFacetImpl.virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
-		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
+		emit Deposit(LibSigner.getSigner(), user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
 		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows either PartyA or PartyB to withdraw a specified amount of collateral, provided that the withdrawal cooldown period has elapsed.
 	/// @param amount The precise amount of collateral to be withdrawn, specified in collateral decimals.
-	function withdraw(uint256 amount) external whenNotAccountingPaused notSuspended(msg.sender) {
-		AccountFacetImpl.withdraw(msg.sender, amount);
-		emit Withdraw(msg.sender, msg.sender, amount);
+	function withdraw(uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
+		address signer = LibSigner.getSigner();
+		AccountFacetImpl.withdraw(signer, amount);
+		emit Withdraw(signer, signer, amount);
 	}
 
 	/// @notice Allows either Party A or Party B to withdraw a specified amount of collateral and transfer it to another user, provided that the withdrawal cooldown period has elapsed.
 	/// @param user The recipient address for the withdrawal.
 	/// @param amount The precise amount of collateral to be withdrawn, specified in collateral decimals.
-	function withdrawTo(address user, uint256 amount) external whenNotAccountingPaused notSuspended(msg.sender) {
+	function withdrawTo(address user, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
 		AccountFacetImpl.withdraw(user, amount);
-		emit Withdraw(msg.sender, user, amount);
+		emit Withdraw(LibSigner.getSigner(), user, amount);
 	}
 
 	/// @notice Allows Party A to allocate a specified amount of collateral. Allocated amounts are which user can actually trade on.
 	/// @param amount The precise amount of collateral to be allocated, specified in 18 decimals.
-	function allocate(uint256 amount) external whenNotAccountingPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {
-		AccountFacetImpl.allocate(msg.sender, amount);
-		emit AllocatePartyA(msg.sender, amount, AccountStorage.layout().allocatedBalances[msg.sender]);
-		emit SharedEvents.BalanceChangePartyA(msg.sender, amount, SharedEvents.BalanceChangeType.ALLOCATE);
+	function allocate(
+		uint256 amount
+	) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) notLiquidatedPartyA(LibSigner.getSigner()) {
+		address signer = LibSigner.getSigner();
+		AccountFacetImpl.allocate(signer, amount);
+		emit AllocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
+		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows Party A to deposit a specified amount of collateral and immediately allocate it.
 	/// @param amount The precise amount of collateral to be deposited and allocated, specified in collateral decimals.
-	function depositAndAllocate(uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(msg.sender) notSuspended(msg.sender) {
-		AccountFacetImpl.deposit(msg.sender, amount);
+	function depositAndAllocate(
+		uint256 amount
+	) external whenNotAccountingPaused notLiquidatedPartyA(LibSigner.getSigner()) notSuspended(LibSigner.getSigner()) {
+		address signer = LibSigner.getSigner();
+
+		AccountFacetImpl.deposit(signer, amount);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
-		AccountFacetImpl.allocate(msg.sender, amountWith18Decimals);
-		emit Deposit(msg.sender, msg.sender, amount);
-		emit AllocatePartyA(msg.sender, amountWith18Decimals, AccountStorage.layout().allocatedBalances[msg.sender]);
-		emit SharedEvents.BalanceChangePartyA(msg.sender, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
+		AccountFacetImpl.allocate(signer, amountWith18Decimals);
+		emit Deposit(signer, signer, amount);
+		emit AllocatePartyA(signer, amountWith18Decimals, AccountStorage.layout().allocatedBalances[signer]);
+		emit SharedEvents.BalanceChangePartyA(signer, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	function depositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(user) notSuspended(user) {
 		AccountFacetImpl.deposit(user, amount);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
 		AccountFacetImpl.allocate(user, amountWith18Decimals);
-		emit Deposit(msg.sender, user, amount);
-		emit AllocatePartyA(user, amountWith18Decimals, AccountStorage.layout().allocatedBalances[msg.sender]);
+		emit Deposit(LibSigner.getSigner(), user, amount);
+		emit AllocatePartyA(user, amountWith18Decimals, AccountStorage.layout().allocatedBalances[LibSigner.getSigner()]);
 		emit SharedEvents.BalanceChangePartyA(user, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows Party A to deallocate a specified amount of collateral.
 	/// @param amount The precise amount of collateral to be deallocated, specified in 18 decimals.
 	/// @param upnlSig The Muon signature for SingleUpnlSig.
-	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) external whenNotAccountingPaused notLiquidatedPartyA(msg.sender) {
+	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) external whenNotAccountingPaused notLiquidatedPartyA(LibSigner.getSigner()) {
+		address signer = LibSigner.getSigner();
+
 		AccountFacetImpl.deallocate(amount, upnlSig);
-		emit DeallocatePartyA(msg.sender, amount, AccountStorage.layout().allocatedBalances[msg.sender]);
-		emit SharedEvents.BalanceChangePartyA(msg.sender, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
+		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
+		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
-	function zeroUpnlDeallocate(uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(msg.sender) {
-		AccountFacetImpl.zeroUpnlDeallocate(amount, msg.sender);
-		emit DeallocatePartyA(msg.sender, amount, AccountStorage.layout().allocatedBalances[msg.sender]);
-		emit SharedEvents.BalanceChangePartyA(msg.sender, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
+	function zeroUpnlDeallocate(uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(LibSigner.getSigner()) {
+		address signer = LibSigner.getSigner();
+
+		AccountFacetImpl.zeroUpnlDeallocate(amount, signer);
+		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
+		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Transfers the sender's deposited balance to the user allocated balance.
@@ -115,10 +129,12 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function internalTransfer(
 		address user,
 		uint256 amount
-	) external whenNotInternalTransferPaused userNotPartyB(user) notSuspended(msg.sender) notSuspended(user) notLiquidatedPartyA(user) {
+	) external whenNotInternalTransferPaused userNotPartyB(user) notSuspended(LibSigner.getSigner()) notSuspended(user) notLiquidatedPartyA(user) {
+		address signer = LibSigner.getSigner();
+
 		AccountFacetImpl.internalTransfer(user, amount);
-		emit InternalTransfer(msg.sender, user, AccountStorage.layout().allocatedBalances[user], amount);
-		emit Withdraw(msg.sender, user, ((amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / (10 ** 18)));
+		emit InternalTransfer(signer, user, AccountStorage.layout().allocatedBalances[user], amount);
+		emit Withdraw(signer, user, ((amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / (10 ** 18)));
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
 		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
@@ -127,10 +143,13 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @dev This function can only be called by Party B when Party B actions are not paused and Party B is not liquidated.
 	/// @param amount The precise amount of collateral to be allocated, specified in 18 decimals.
 	/// @param partyA The address of Party A
-	function allocateForPartyB(uint256 amount, address partyA) public whenNotPartyBActionsPaused notLiquidatedPartyB(msg.sender, partyA) onlyPartyB {
+	function allocateForPartyB(
+		uint256 amount,
+		address partyA
+	) public whenNotPartyBActionsPaused notLiquidatedPartyB(LibSigner.getSigner(), partyA) onlyPartyB {
 		AccountFacetImpl.allocateForPartyB(amount, partyA);
-		emit AllocateForPartyB(msg.sender, partyA, amount, AccountStorage.layout().partyBAllocatedBalances[msg.sender][partyA]);
-		emit SharedEvents.BalanceChangePartyB(msg.sender, partyA, amount, SharedEvents.BalanceChangeType.ALLOCATE);
+		emit AllocateForPartyB(LibSigner.getSigner(), partyA, amount, AccountStorage.layout().partyBAllocatedBalances[LibSigner.getSigner()][partyA]);
+		emit SharedEvents.BalanceChangePartyB(LibSigner.getSigner(), partyA, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows Party B to deallocate a specified amount of collateral
@@ -142,10 +161,22 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		uint256 amount,
 		address partyA,
 		SingleUpnlSig memory upnlSig
-	) external whenNotPartyBActionsPaused notLiquidatedPartyB(msg.sender, partyA) notSuspended(msg.sender) notLiquidatedPartyA(partyA) onlyPartyB {
+	)
+		external
+		whenNotPartyBActionsPaused
+		notLiquidatedPartyB(LibSigner.getSigner(), partyA)
+		notSuspended(LibSigner.getSigner())
+		notLiquidatedPartyA(partyA)
+		onlyPartyB
+	{
 		AccountFacetImpl.deallocateForPartyB(amount, partyA, upnlSig);
-		emit DeallocateForPartyB(msg.sender, partyA, amount, AccountStorage.layout().partyBAllocatedBalances[msg.sender][partyA]);
-		emit SharedEvents.BalanceChangePartyB(msg.sender, partyA, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
+		emit DeallocateForPartyB(
+			LibSigner.getSigner(),
+			partyA,
+			amount,
+			AccountStorage.layout().partyBAllocatedBalances[LibSigner.getSigner()][partyA]
+		);
+		emit SharedEvents.BalanceChangePartyB(LibSigner.getSigner(), partyA, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Allows transferring the allocation of partyB from one party A to another.
@@ -158,33 +189,36 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit TransferAllocation(
 			amount,
 			origin,
-			AccountStorage.layout().partyBAllocatedBalances[msg.sender][origin],
+			AccountStorage.layout().partyBAllocatedBalances[LibSigner.getSigner()][origin],
 			recipient,
-			AccountStorage.layout().partyBAllocatedBalances[msg.sender][recipient]
+			AccountStorage.layout().partyBAllocatedBalances[LibSigner.getSigner()][recipient]
 		);
-		emit SharedEvents.BalanceChangePartyB(msg.sender, origin, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
-		emit SharedEvents.BalanceChangePartyB(msg.sender, recipient, amount, SharedEvents.BalanceChangeType.ALLOCATE);
+		emit SharedEvents.BalanceChangePartyB(LibSigner.getSigner(), origin, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
+		emit SharedEvents.BalanceChangePartyB(LibSigner.getSigner(), recipient, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows transferring the balance of partyB to emergency reserve vault.
 	/// @param amount The precise amount of collateral to be transferred to emergency reserve vault, specified in 18 decimals.
-	function depositToReserveVault(uint256 amount, address partyB) external whenNotPartyBActionsPaused notSuspended(msg.sender) notSuspended(partyB) {
+	function depositToReserveVault(
+		uint256 amount,
+		address partyB
+	) external whenNotPartyBActionsPaused notSuspended(LibSigner.getSigner()) notSuspended(partyB) {
 		AccountFacetImpl.depositToReserveVault(amount, partyB);
-		emit DepositToReserveVault(msg.sender, partyB, amount);
+		emit DepositToReserveVault(LibSigner.getSigner(), partyB, amount);
 	}
 
 	/// @notice Allows transferring the balance of partyB in emergency reserve vault to balance.
 	/// @param amount The precise amount of collateral to be transferred from emergency reserve vault, specified in 18 decimals.
-	function withdrawFromReserveVault(uint256 amount) external whenNotPartyBActionsPaused notSuspended(msg.sender) {
+	function withdrawFromReserveVault(uint256 amount) external whenNotPartyBActionsPaused notSuspended(LibSigner.getSigner()) {
 		AccountFacetImpl.withdrawFromReserveVault(amount);
-		emit WithdrawFromReserveVault(msg.sender, amount);
+		emit WithdrawFromReserveVault(LibSigner.getSigner(), amount);
 	}
 
 	/// @notice Activates master account mode for Party B
 	/// @dev Can only be called by Party B when not paused and not suspended
-	function activateMasterAccountMode() external whenNotPartyBActionsPaused notSuspended(msg.sender) onlyPartyB {
+	function activateMasterAccountMode() external whenNotPartyBActionsPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
 		AccountFacetImpl.activateMasterAccountMode();
-		emit ActivateMasterAccountMode(msg.sender);
+		emit ActivateMasterAccountMode(LibSigner.getSigner());
 	}
 
 	/**
@@ -198,48 +232,53 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address receiver,
 		uint256 amount,
 		address target
-	) external whenNotExternalTransferPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {
-		AccountFacetImpl.externalTransfer(msg.sender, receiver, amount, target);
-		emit ExternalTransfer(msg.sender, receiver, amount, target);
+	) external whenNotExternalTransferPaused notSuspended(LibSigner.getSigner()) notLiquidatedPartyA(LibSigner.getSigner()) {
+		AccountFacetImpl.externalTransfer(LibSigner.getSigner(), receiver, amount, target);
+		emit ExternalTransfer(LibSigner.getSigner(), receiver, amount, target);
 	}
 
 	/// @notice Allows Party A to bind to Party B
 	/// @dev Can only be called by Party A when not suspended
 	/// @param partyB The address of Party B
-	function bindToPartyB(address partyB) external notSuspended(msg.sender) userNotPartyB(msg.sender) {
+	function bindToPartyB(address partyB) external notSuspended(LibSigner.getSigner()) userNotPartyB(LibSigner.getSigner()) {
 		AccountFacetImpl.bindToPartyB(partyB);
-		emit BindToPartyB(partyB, msg.sender);
+		emit BindToPartyB(partyB, LibSigner.getSigner());
 	}
 
 	/// @notice Allows Party A to request to unbind from Party B
 	/// @dev Can only be called by Party A when not suspended
-	function requestToUnbindFromPartyB() external notSuspended(msg.sender) userNotPartyB(msg.sender) {
+	function requestToUnbindFromPartyB() external notSuspended(LibSigner.getSigner()) userNotPartyB(LibSigner.getSigner()) {
 		AccountFacetImpl.requestToUnbindFromPartyB();
-		emit RequestToUnbindFromPartyB(msg.sender);
+		emit RequestToUnbindFromPartyB(LibSigner.getSigner());
 	}
 
 	/// @notice Allows Party A to cancel the unbind request from Party B
 	/// @dev Can only be called by Party A when not suspended
-	function cancelUnbindRequest() external notSuspended(msg.sender) userNotPartyB(msg.sender) {
+	function cancelUnbindRequest() external notSuspended(LibSigner.getSigner()) userNotPartyB(LibSigner.getSigner()) {
 		AccountFacetImpl.cancelUnbindRequest();
-		emit CancelUnbindRequest(msg.sender);
+		emit CancelUnbindRequest(LibSigner.getSigner());
 	}
 
 	/// @notice Allows Party B to complete the unbind request from Party A
 	/// @dev Can be called by PartyA after cooldown or partyB right away
 	/// @param partyA The address of Party A
-	function completeUnbindRequest(address partyA) external notSuspended(msg.sender) {
+	function completeUnbindRequest(address partyA) external notSuspended(LibSigner.getSigner()) {
 		AccountFacetImpl.completeUnbindRequest(partyA);
-		emit CompleteUnbindRequest(partyA, msg.sender);
+		emit CompleteUnbindRequest(partyA, LibSigner.getSigner());
 	}
 
 	/**
 	 * @notice Enables the instant action mode for a PartyA
 	 * @dev Only callable by PartyA accounts, not PartyB
 	 */
-	function activateInstantActionMode() external userNotPartyB(msg.sender) whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused {
+	function activateInstantActionMode()
+		external
+		userNotPartyB(LibSigner.getSigner())
+		whenInstantModeIsNotActive(LibSigner.getSigner())
+		whenNotPartyAActionsPaused
+	{
 		AccountFacetImpl.activateInstantActionMode();
-		emit ActivateInstantActionMode(msg.sender, block.timestamp);
+		emit ActivateInstantActionMode(LibSigner.getSigner(), block.timestamp);
 	}
 
 	/**
@@ -248,20 +287,20 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	 */
 	function proposeToDeactivateInstantActionMode()
 		external
-		userNotPartyB(msg.sender)
-		whenInstantModeIsActive(msg.sender)
+		userNotPartyB(LibSigner.getSigner())
+		whenInstantModeIsActive(LibSigner.getSigner())
 		whenNotPartyAActionsPaused
 	{
 		AccountFacetImpl.proposeToDeactivateInstantActionMode();
-		emit ProposeToDeactivateInstantActionMode(msg.sender, block.timestamp);
+		emit ProposeToDeactivateInstantActionMode(LibSigner.getSigner(), block.timestamp);
 	}
 
 	/**
 	 * @notice Completes the deactivation of instant action mode after proposal
 	 * @dev Only callable by PartyA accounts after the waiting period has passed
 	 */
-	function deactivateInstantActionMode() external userNotPartyB(msg.sender) whenNotPartyAActionsPaused {
+	function deactivateInstantActionMode() external userNotPartyB(LibSigner.getSigner()) whenNotPartyAActionsPaused {
 		AccountFacetImpl.deactivateInstantActionMode();
-		emit DeactivateInstantActionMode(msg.sender, block.timestamp);
+		emit DeactivateInstantActionMode(LibSigner.getSigner(), block.timestamp);
 	}
 }

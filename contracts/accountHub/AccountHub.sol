@@ -17,6 +17,7 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
+import "hardhat/console.sol";
 
 /**
  * @title AccountHub
@@ -147,14 +148,17 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			bytes4 selector = bytes4(cd[:4]);
 
 			if (selector == SEND_QUOTE_SELECTOR || selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
+				console.log("SELECTOR DETECTED");
 				QuoteParams memory p = _decodeQuoteParams(cd);
 
 				if (virtualAccounts[account].isExists) {
+					console.log("VIR is exist");
 					_handleVirtualAccountSendQuote(account, cd, p);
 					return;
 				}
 
 				if (subAccounts[account].isExists) {
+					console.log("VIR is not exist");
 					_handleSubAccountSendQuote(account, cd, p);
 					return;
 				}
@@ -402,28 +406,54 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	/**
 	 * @dev Decodes quote parameters from calldata
 	 */
+	/**
+	 * @dev Decodes quote parameters from calldata
+	 */
 	function _decodeQuoteParams(bytes calldata cd) private pure returns (QuoteParams memory) {
-		(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , , ) = abi.decode(
-			cd[4:],
-			(
-				address[],
-				uint256,
-				ISymmio.PositionType,
-				ISymmio.OrderType,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				address,
-				ISymmio.SingleUpnlAndPriceSig
-			)
-		);
+		bytes4 selector = bytes4(cd[:4]);
 
-		return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
+		if (selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
+			(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , , ) = abi.decode(
+				cd[4:],
+				(
+					address[],
+					uint256,
+					ISymmio.PositionType,
+					ISymmio.OrderType,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					address,
+					ISymmio.SingleUpnlAndPriceSig
+				)
+			);
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
+		} else {
+			(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , ) = abi.decode(
+				cd[4:],
+				(
+					address[],
+					uint256,
+					ISymmio.PositionType,
+					ISymmio.OrderType,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					ISymmio.SingleUpnlAndPriceSig
+				)
+			);
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
+		}
 	}
 
 	/**
@@ -438,6 +468,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			(isolationType == VirtualAccountIsolationType.MARKET_LONG && p.positionType != ISymmio.PositionType.LONG) ||
 			(isolationType == VirtualAccountIsolationType.MARKET_SHORT && p.positionType != ISymmio.PositionType.SHORT)
 		) {
+			console.log("VIR ::: 1");
 			revert PositionTypeNotAllowedForThisAccount();
 		}
 
@@ -446,11 +477,15 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				isolationType == VirtualAccountIsolationType.MARKET_LONG ||
 				isolationType == VirtualAccountIsolationType.MARKET_SHORT) && p.symbolId != accountData.symbolId
 		) {
+			console.log("VIR ::: 2");
 			revert SymbolNotAllowedForThisAccount();
 		}
 
+		console.log("VIR ::: 3");
 		_executeWithSigner(account, cd);
+		console.log("VIR ::: 4");
 		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId() - 1);
+		console.log("VIR ::: 5");
 	}
 
 	/**
@@ -467,8 +502,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		// create virtual account based on sub-account isolation type
 		address virtualAccount;
-		if (accountData.isolationType == SubAccountIsolationType.POSITION)
+		if (accountData.isolationType == SubAccountIsolationType.POSITION){
 			virtualAccount = _createVirtualAccount(account, hex"", VirtualAccountIsolationType.POSITION, p.symbolId);
+		}
 
 		if (accountData.isolationType == SubAccountIsolationType.MARKET)
 			virtualAccount = _createVirtualAccount(account, hex"", VirtualAccountIsolationType.MARKET, p.symbolId);

@@ -1,7 +1,7 @@
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 import { expect } from "chai"
 import { ethers } from "hardhat"
-import { toUtf8Bytes, ZeroHash } from "ethers"
+import { BytesLike, toUtf8Bytes, ZeroHash } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture"
 import { RunContext } from "./models/RunContext"
@@ -9,13 +9,16 @@ import { User } from "./models/User"
 import { Hedger } from "./models/Hedger"
 import { decimal } from "./utils/Common"
 import { IAccountHub } from "../src/types"
+import { before } from "node:test"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { OrderType, PositionType } from "./models/Enums"
 
 export function shouldBehaveLikeAccountHub(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger
 
 	// Test constants
 	const BALANCES = {
-		INITIAL_COLLATERAL: decimal(500n),
+		INITIAL_COLLATERAL: decimal(5000n),
 		DEPOSIT_AMOUNT: decimal(300n),
 		WITHDRAW_AMOUNT: decimal(200n),
 		ALLOCATE_AMOUNT: decimal(100n),
@@ -206,43 +209,9 @@ export function shouldBehaveLikeAccountHub(): void {
 			// })
 		})
 
-		describe("depositForAccount", async () => {
-			let subAccountAddress: string = ""
-			beforeEach(async () => {
-				const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
-					{
-						name: "EXAMPLE_NAME",
-						metadata: ethers.keccak256(toUtf8Bytes("EXAMPLE")),
-						symmioCore: context.diamond,
-						isolationType: 0,
-					},
-				]
+		describe("_call", async () => {
+			let subAccountAddress: string
 
-				await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
-				const accounts = await context.accountHub.getSubAccounts(context.signers.user)
-				subAccountAddress = accounts[0]
-			})
-
-			it("should deposit to subAccount successfully", async () => {
-				await context.collateral
-					.connect(context.signers.user)
-					.increaseAllowance(await context.accountHub.getAddress(), decimal(BALANCES.DEPOSIT_AMOUNT))
-
-				await expect(context.accountHub.connect(context.signers.user).depositForAccount(subAccountAddress, BALANCES.DEPOSIT_AMOUNT)).to.not.reverted
-
-				expect(await context.viewFacet.balanceOf(subAccountAddress)).to.equal(BALANCES.DEPOSIT_AMOUNT)
-			})
-
-			it("should failed when contract paused", async () => {
-				await context.accountHub.connect(context.signers.admin).pause()
-				await expect(context.accountHub.connect(context.signers.user).depositForAccount(subAccountAddress, BALANCES.DEPOSIT_AMOUNT)).to.revertedWith(
-					"Pausable: paused",
-				)
-			})
-		})
-
-		describe("allocateForAccount", async () => {
-			let subAccountAddress: string = ""
 			beforeEach(async () => {
 				const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
 					{
@@ -257,25 +226,248 @@ export function shouldBehaveLikeAccountHub(): void {
 				const accounts = await context.accountHub.getSubAccounts(context.signers.user)
 				subAccountAddress = accounts[0]
 
-				await context.collateral
-					.connect(context.signers.user)
-					.increaseAllowance(await context.accountHub.getAddress(), decimal(BALANCES.DEPOSIT_AMOUNT))
-
-				await context.accountHub.connect(context.signers.user).depositForAccount(subAccountAddress, BALANCES.DEPOSIT_AMOUNT)
+				// Deposit funds for all tests
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+				await context.accountFacet.connect(context.signers.user).depositFor(subAccountAddress, BALANCES.DEPOSIT_AMOUNT)
 			})
 
-			it("should allocate for subAccount successfully", async () => {
-				await context.accountHub.setSigner(subAccountAddress)
-				await expect(context.accountHub.connect(context.signers.user).allocateForAccount(subAccountAddress, BALANCES.ALLOCATE_AMOUNT)).to.not.reverted
-				expect(await context.viewFacet.balanceOf(subAccountAddress)).to.equal(BALANCES.DEPOSIT_AMOUNT - BALANCES.ALLOCATE_AMOUNT)
+			describe("General behavior", async () => {
+				it("should revert when callData is empty", async () => {
+					const callData: BytesLike[] = []
+					await expect(context.accountHub.connect(context.signers.user)._call(subAccountAddress, callData)).to.revertedWithCustomError(
+						context.accountHub,
+						"EmptyArray",
+					)
+				})
+
+				it("should execute non-sendQuote calls successfully", async () => {
+					const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
+
+					await expect(context.accountHub.connect(context.signers.user)._call(subAccountAddress, callData)).to.not.be.reverted
+
+					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
+					expect(allocatedBalance).to.equal(BALANCES.SMALL_AMOUNT)
+				})
+
+				// TODO: Need legacy MultiAccount for ownership tests
+				// it("should only be callable by owner of subAccount", async () => { ... })
 			})
 
-			it("should failed when contract paused", async () => {
-				await context.accountHub.connect(context.signers.admin).pause()
-				await expect(context.accountHub.connect(context.signers.user).depositForAccount(subAccountAddress, BALANCES.DEPOSIT_AMOUNT)).to.revertedWith(
-					"Pausable: paused",
-				)
+			describe("SendQuote with isolation types", async () => {
+				const createSendQuoteCallData = async (quoteRequest: any) => {
+					return context.partyAFacet.interface.encodeFunctionData("sendQuote", [
+						quoteRequest.partyBWhiteList,
+						quoteRequest.symbolId,
+						quoteRequest.positionType,
+						quoteRequest.orderType,
+						quoteRequest.price,
+						quoteRequest.quantity,
+						quoteRequest.cva,
+						quoteRequest.lf,
+						quoteRequest.partyAmm,
+						quoteRequest.partyBmm,
+						quoteRequest.maxFundingRate,
+						await quoteRequest.deadline,
+						await quoteRequest.upnlSig,
+					])
+				}
+
+				describe("POSITION isolation (0)", async () => {
+					let positionSubAccount: string
+
+					beforeEach(async () => {
+						const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+							{
+								name: "POSITION_ACCOUNT",
+								metadata: ethers.keccak256(toUtf8Bytes("POSITION")),
+								symmioCore: context.diamond,
+								isolationType: 0,
+							},
+						]
+
+						await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
+						const accounts = await context.accountHub.getSubAccounts(context.signers.user)
+						positionSubAccount = accounts[accounts.length - 1]
+
+						await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+						await context.accountFacet.connect(context.signers.user).depositFor(positionSubAccount, BALANCES.DEPOSIT_AMOUNT)
+					})
+
+					it("should create virtual account and send quote successfully", async () => {
+						const virtualAccountsBefore = await context.accountHub.getVirtualAccounts(positionSubAccount)
+						expect(virtualAccountsBefore.length).to.equal(0)
+
+						const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+						await expect(context.accountHub.connect(context.signers.user)._call(positionSubAccount, [sendQuoteCallData])).to.not.be.reverted
+
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccounts(positionSubAccount)
+						expect(virtualAccountsAfter.length).to.equal(1)
+					})
+
+					it("should revert when trying to send another quote on existing virtual account", async () => {
+						const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+						const sendQuoteCallData = await await createSendQuoteCallData(quoteRequest)
+
+						await context.accountHub.connect(context.signers.user)._call(positionSubAccount, [sendQuoteCallData])
+						const virtualAccounts = await context.accountHub.getVirtualAccounts(positionSubAccount)
+
+						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.revertedWithCustomError(
+							context.accountHub,
+							"PositionTypeNotAllowedForThisAccount",
+						)
+					})
+				})
+
+				describe("MARKET isolation (1)", async () => {
+					let marketSubAccount: string
+
+					beforeEach(async () => {
+						const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+							{
+								name: "MARKET_ACCOUNT",
+								metadata: ethers.keccak256(toUtf8Bytes("MARKET")),
+								symmioCore: context.diamond,
+								isolationType: 1,
+							},
+						]
+
+						await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
+						const accounts = await context.accountHub.getSubAccounts(context.signers.user)
+						marketSubAccount = accounts[accounts.length - 1]
+
+						await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+						await context.accountFacet.connect(context.signers.user).depositFor(marketSubAccount, BALANCES.DEPOSIT_AMOUNT)
+					})
+
+					it("should create virtual account and send quote successfully", async () => {
+						const virtualAccountsBefore = await context.accountHub.getVirtualAccounts(marketSubAccount)
+						expect(virtualAccountsBefore.length).to.equal(0)
+
+						const quoteRequest = limitQuoteRequestBuilder().build()
+						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+						await expect(context.accountHub.connect(context.signers.user)._call(marketSubAccount, [sendQuoteCallData])).to.not.be.reverted
+
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccounts(marketSubAccount)
+						expect(virtualAccountsAfter.length).to.equal(1)
+					})
+
+					it("should revert when trying to send quote with different symbol", async () => {
+						const quoteRequest1 = limitQuoteRequestBuilder().symbolId(1).build()
+						const sendQuoteCallData1 = await createSendQuoteCallData(quoteRequest1)
+
+						await context.accountHub.connect(context.signers.user)._call(marketSubAccount, [sendQuoteCallData1])
+						const virtualAccounts = await context.accountHub.getVirtualAccounts(marketSubAccount)
+
+						const quoteRequest2 = limitQuoteRequestBuilder().symbolId(2).build()
+						const sendQuoteCallData2 = await createSendQuoteCallData(quoteRequest2)
+
+						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData2])).to.revertedWithCustomError(
+							context.accountHub,
+							"SymbolNotAllowedForThisAccount",
+						)
+					})
+
+					it("should allow multiple quotes with same symbol", async () => {
+						const quoteRequest = limitQuoteRequestBuilder().build()
+						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+						await context.accountHub.connect(context.signers.user)._call(marketSubAccount, [sendQuoteCallData])
+						const virtualAccounts = await context.accountHub.getVirtualAccounts(marketSubAccount)
+
+						await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+						await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(virtualAccounts[0], BALANCES.DEPOSIT_AMOUNT)
+
+						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
+
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccounts(marketSubAccount)
+						expect(virtualAccountsAfter.length).to.equal(1)
+					})
+				})
+
+				describe("MARKET_DIRECTION isolation (2)", async () => {
+					let marketDirectionSubAccount: string
+
+					beforeEach(async () => {
+						const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+							{
+								name: "MARKET_DIRECTION_ACCOUNT",
+								metadata: ethers.keccak256(toUtf8Bytes("MARKET_DIRECTION")),
+								symmioCore: context.diamond,
+								isolationType: 2,
+							},
+						]
+
+						await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
+						const accounts = await context.accountHub.getSubAccounts(context.signers.user)
+						marketDirectionSubAccount = accounts[accounts.length - 1]
+
+						await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+						await context.accountFacet.connect(context.signers.user).depositFor(marketDirectionSubAccount, BALANCES.DEPOSIT_AMOUNT)
+					})
+
+					it("should create virtual account and send quote successfully", async () => {
+						const virtualAccountsBefore = await context.accountHub.getVirtualAccounts(marketDirectionSubAccount)
+						expect(virtualAccountsBefore.length).to.equal(0)
+
+						const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+						await expect(context.accountHub.connect(context.signers.user)._call(marketDirectionSubAccount, [sendQuoteCallData])).to.not.be.reverted
+
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccounts(marketDirectionSubAccount)
+						expect(virtualAccountsAfter.length).to.equal(1)
+					})
+
+					it("should revert when symbol or position type differs", async () => {
+						const quoteRequestLong = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+						const sendQuoteCallDataLong = await createSendQuoteCallData(quoteRequestLong)
+
+						await context.accountHub.connect(context.signers.user)._call(marketDirectionSubAccount, [sendQuoteCallDataLong])
+						const virtualAccounts = await context.accountHub.getVirtualAccounts(marketDirectionSubAccount)
+
+						// Different position type (SHORT instead of LONG)
+						const quoteRequestShort = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+						const sendQuoteCallDataShort = await createSendQuoteCallData(quoteRequestShort)
+
+						await expect(
+							context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallDataShort]),
+						).to.revertedWithCustomError(context.accountHub, "PositionTypeNotAllowedForThisAccount")
+
+						// Different symbol
+						const quoteRequestDiffSymbol = limitQuoteRequestBuilder().symbolId(2).positionType(PositionType.LONG).build()
+						const sendQuoteCallDataDiffSymbol = await createSendQuoteCallData(quoteRequestDiffSymbol)
+
+						await expect(
+							context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallDataDiffSymbol]),
+						).to.revertedWithCustomError(context.accountHub, "SymbolNotAllowedForThisAccount")
+					})
+
+					it("should allow multiple quotes with same symbol and position type", async () => {
+						const quoteRequest = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+						await context.accountHub.connect(context.signers.user)._call(marketDirectionSubAccount, [sendQuoteCallData])
+						const virtualAccounts = await context.accountHub.getVirtualAccounts(marketDirectionSubAccount)
+
+						await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+						await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(virtualAccounts[0], BALANCES.DEPOSIT_AMOUNT)
+
+						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
+						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
+						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
+
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccounts(marketDirectionSubAccount)
+						expect(virtualAccountsAfter.length).to.equal(1)
+					})
+				})
 			})
 		})
 	})
 }
+
+
+// TODO ::: legacy MultiAccount Test
+// TODO ::: onClosePosition
