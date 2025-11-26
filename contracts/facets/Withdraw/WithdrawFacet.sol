@@ -78,8 +78,8 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 *
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function finalizeWithdrawRequest(uint256 requestId) external nonReentrant {
-		WithdrawFacetImpl.finalizeWithdrawRequest(requestId);
+	function finalizeWithdrawRequest(address user, uint256 requestId) external nonReentrant {
+		WithdrawFacetImpl.finalizeWithdrawRequest(user,requestId);
 		emit WithdrawFinalized(requestId, msg.sender);
 	}
 

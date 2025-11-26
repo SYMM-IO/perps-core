@@ -21,6 +21,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		await context.controlFacet.setWithdrawCooldownPeriod(12)
 		await user.setup()
 		await user.setBalances(ethers.parseEther("500"))
+		await context.collateral.mint(context.signers.admin.address, ethers.parseEther("10000"))
 	})
 
 	describe("Normal Withdraw", async function () {
@@ -75,7 +76,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x");
 			await time.increase(1000);
 			const balanceBefore = await context.collateral.balanceOf(user.address);
-			await expect(context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(1)).not.to.reverted;
+			await expect(context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(user.address,1)).not.to.reverted;
 			const balanceAfter = await context.collateral.balanceOf(user.address);
 			expect(balanceAfter - balanceBefore).be.equal(ethers.parseUnits("70", 18))
 		})
@@ -177,7 +178,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
 			expect(withdrawRequest.status).to.be.equal(WithdrawStatus.PROVIDER_ACCEPTED)
 			await time.increase(1000)
-			await expect(context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(1)).not.to.reverted;
+			await expect(context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(user.address,1)).not.to.reverted;
 			expect(await virtualProvider.withdrawnAmount()).to.be.equal(ethers.parseUnits("70", 18))
 		})
 
@@ -214,9 +215,22 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 	})
 
 	describe("Express Withdraw", async function () {
+
+		beforeEach(async function() {
+			const MockExpressProvider = await ethers.getContractFactory("contracts/test/MockExpressProvider.sol:ExpressProvider")
+			expressProvider = await MockExpressProvider.deploy(context.diamond)
+			await expressProvider.waitForDeployment()
+			let expressProviderAddress = await expressProvider.getAddress()
+
+			await context.controlFacet.connect(context.signers.admin).registerExpressProvider(expressProviderAddress)
+			await context.collateral.transfer(expressProviderAddress, ethers.parseUnits("1000", 18));
+
+		})
+
 		it("Should initiate withdraw", async function () {
 			await context.accountFacet.connect(context.signers.user).deposit(ethers.parseEther("100"))
 			receiver1 = context.signers.user.address;
+			let expressProviderAddress = await expressProvider.getAddress()
 			let parts = [
 				{
 					id: 1,
@@ -224,7 +238,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 					chainId: 1,
 					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
 					virtualProvider: ethers.ZeroAddress,
-					expressProvider: ethers.ZeroAddress,
+					expressProvider: expressProviderAddress
 				},
 				{
 					id: 1,
@@ -232,52 +246,199 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 					chainId: 1,
 					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
 					virtualProvider: ethers.ZeroAddress,
-					expressProvider: ethers.ZeroAddress,
+					expressProvider: expressProviderAddress
 				}
 			]
+			const symmioBalanceBefore = await context.viewFacet.balanceOf(user.address);
+			const tokenBalanceBefore = await context.collateral.balanceOf(user.address);
 			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x")).not.to.reverted;
+			const symmioBalanceAfter = await context.viewFacet.balanceOf(user.address);
+			const tokenBalanceAfter = await context.collateral.balanceOf(user.address);
+			expect(symmioBalanceBefore - symmioBalanceAfter).to.be.equal(tokenBalanceAfter - tokenBalanceBefore)
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
+			expect(withdrawRequest.parts[0].amount + withdrawRequest.parts[1].amount).to.be.equal(ethers.parseUnits("70", 18))
 		})
 
 		it("Should finalize withdraw", async function () {
-
+			await context.accountFacet.connect(context.signers.user).deposit(ethers.parseEther("100"))
+			receiver1 = context.signers.user.address;
+			let expressProviderAddress = await expressProvider.getAddress()
+			let parts = [
+				{
+					id: 1,
+					amount: ethers.parseUnits("50", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressProviderAddress
+				},
+				{
+					id: 1,
+					amount: ethers.parseUnits("20", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressProviderAddress
+				}
+			]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x");
+			await expect(expressProvider.acceptWithdrawRequest(user.address, 1)).not.to.reverted;
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
+			expect(withdrawRequest.status).to.be.equal(WithdrawStatus.PROVIDER_ACCEPTED)
+			await time.increase(1000)
+			const expressBalanceBefore = await context.collateral.balanceOf(expressProviderAddress);
+			await expect(expressProvider.finalizeWithdrawRequest(user.address,1)).not.to.reverted;
+			const expressBalanceAfter = await context.collateral.balanceOf(expressProviderAddress);
+			expect(expressBalanceAfter - expressBalanceBefore).to.be.equal(ethers.parseUnits("70", 18))
 		})
 
 		it("Should request to cancel withdraw", async function () {
-
+			await context.accountFacet.connect(context.signers.user).deposit(ethers.parseEther("100"))
+			receiver1 = context.signers.user.address;
+			let expressProviderAddress = await expressProvider.getAddress()
+			let parts = [
+				{
+					id: 1,
+					amount: ethers.parseUnits("50", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressProviderAddress
+				},
+				{
+					id: 1,
+					amount: ethers.parseUnits("20", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: expressProviderAddress
+				}
+			]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x");
+			await expect(context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)).not.reverted;
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
+			expect(withdrawRequest.status).to.be.equal(WithdrawStatus.CANCEL_REQUESTED)
+			await expect(expressProvider.acceptWithdrawCancelRequest(user.address, 1)).not.to.reverted;
+			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
+			expect(updatedWithdrawRequest.status).to.be.equal(WithdrawStatus.CANCELLED)
 		})
 	})
 
+
 	describe("Virtual Express Withdraw", async function () {
+
+		beforeEach(async function() {
+			const MockExpressProvider = await ethers.getContractFactory("contracts/test/MockExpressProvider.sol:ExpressProvider")
+			expressProvider = await MockExpressProvider.deploy(context.diamond)
+			await expressProvider.waitForDeployment()
+			let expressProviderAddress = await expressProvider.getAddress()
+
+			const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+			virtualProvider = await MockVirtualProvider.deploy(context.diamond)
+			await virtualProvider.waitForDeployment()
+			let virtualProviderAddress = await virtualProvider.getAddress()
+
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(virtualProviderAddress)
+			await context.controlFacet.connect(context.signers.admin).registerExpressProvider(expressProviderAddress)
+			await context.collateral.transfer(expressProviderAddress, ethers.parseUnits("1000", 18));
+		})
+
 		it("Should initiate withdraw", async function () {
 			await context.accountFacet.connect(context.signers.user).deposit(ethers.parseEther("100"))
 			receiver1 = context.signers.user.address;
+			let expressProviderAddress = await expressProvider.getAddress()
+			let virtualProviderAddress = await virtualProvider.getAddress()
 			let parts = [
 				{
 					id: 1,
 					amount: ethers.parseUnits("50", 18),
 					chainId: 1,
 					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
-					virtualProvider: ethers.ZeroAddress,
-					expressProvider: ethers.ZeroAddress,
+					virtualProvider: virtualProviderAddress,
+					expressProvider: expressProviderAddress
 				},
 				{
 					id: 1,
 					amount: ethers.parseUnits("20", 18),
 					chainId: 1,
 					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
-					virtualProvider: ethers.ZeroAddress,
-					expressProvider: ethers.ZeroAddress,
+					virtualProvider: virtualProviderAddress,
+					expressProvider: expressProviderAddress
 				}
 			]
+			const balanceBefore = await context.viewFacet.balanceOf(user.address);
 			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x")).not.to.reverted;
+			const balanceAfter = await context.viewFacet.balanceOf(user.address);
+			expect(balanceBefore - balanceAfter).to.be.equal(ethers.parseUnits("70",18))
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
+			expect(withdrawRequest.status).to.be.equal(WithdrawStatus.PENDING)
+			expect(withdrawRequest.parts[0].amount + withdrawRequest.parts[1].amount).to.be.equal(ethers.parseUnits("70", 18))
 		})
 
 		it("Should finalize withdraw", async function () {
-
+			await context.accountFacet.connect(context.signers.user).deposit(ethers.parseEther("100"))
+			receiver1 = context.signers.user.address;
+			let expressProviderAddress = await expressProvider.getAddress()
+			let virtualProviderAddress = await virtualProvider.getAddress()
+			let parts = [
+				{
+					id: 1,
+					amount: ethers.parseUnits("50", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: virtualProviderAddress,
+					expressProvider: expressProviderAddress
+				},
+				{
+					id: 1,
+					amount: ethers.parseUnits("20", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: virtualProviderAddress,
+					expressProvider: expressProviderAddress
+				}
+			]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x");
+			await expect(expressProvider.acceptWithdrawRequest(user.address, 1)).not.to.reverted;
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
+			expect(withdrawRequest.status).to.be.equal(WithdrawStatus.PROVIDER_ACCEPTED)
+			await time.increase(1000)
+			const expressBalanceBefore = await context.collateral.balanceOf(expressProviderAddress);
+			await expect(expressProvider.finalizeWithdrawRequest(user.address,1)).not.to.reverted;
+			const expressBalanceAfter = await context.collateral.balanceOf(expressProviderAddress);
+			expect(expressBalanceAfter - expressBalanceBefore).to.be.equal(0)
 		})
 
 		it("Should request to cancel withdraw", async function () {
-
+			await context.accountFacet.connect(context.signers.user).deposit(ethers.parseEther("100"))
+			receiver1 = context.signers.user.address;
+			let expressProviderAddress = await expressProvider.getAddress()
+			let virtualProviderAddress = await virtualProvider.getAddress()
+			let parts = [
+				{
+					id: 1,
+					amount: ethers.parseUnits("50", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: virtualProviderAddress,
+					expressProvider: expressProviderAddress
+				},
+				{
+					id: 1,
+					amount: ethers.parseUnits("20", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: virtualProviderAddress,
+					expressProvider: expressProviderAddress
+				}
+			]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x");
+			await expect(context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)).not.reverted;
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
+			expect(withdrawRequest.status).to.be.equal(WithdrawStatus.CANCEL_REQUESTED)
+			await expect(expressProvider.acceptWithdrawCancelRequest(user.address, 1)).not.to.reverted;
+			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
+			expect(updatedWithdrawRequest.status).to.be.equal(WithdrawStatus.CANCELLED)
 		})
 	})
 

@@ -93,16 +93,15 @@ library WithdrawFacetImpl {
 		return currentId;
 	}
 
-	function finalizeWithdrawRequest(uint256 requestId) internal {
+	function finalizeWithdrawRequest(address user, uint256 requestId) internal {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		address collateral = appLayout.collateral;
 
-		require(requestId <= withdrawLayout.lastWithdrawRequestId[msg.sender], "Invalid withdraw request ID");
+		require(requestId <= withdrawLayout.lastWithdrawRequestId[user], "Invalid withdraw request ID");
 
-		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[msg.sender][requestId];
+		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[user][requestId];
 
-		require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
 		require(block.timestamp >= withdrawRequest.cooldownEndTime, "Withdraw cooldown not over");
 		require(
 			uint8(withdrawRequest.status) == uint8(WithdrawStatus.PENDING) ||
@@ -134,7 +133,8 @@ library WithdrawFacetImpl {
 				} else {
 					require(expressProvider == withdrawal.expressProvider, "Multiple express providers not allowed");
 				}
-				totalExpressAmount += withdrawal.amount;
+				if(!isVirtual)
+					totalExpressAmount += withdrawal.amount;
 			}
 
 			if (!isExpress && isVirtual) {
@@ -147,12 +147,16 @@ library WithdrawFacetImpl {
 		}
 
 		if (expressProvider != address(0)) {
+			require(expressProvider == msg.sender || withdrawRequest.user == msg.sender, "Not withdraw request owner");
 			require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.PROVIDER_ACCEPTED), "Invalid withdraw request status");
 			IERC20(collateral).safeTransfer(expressProvider, totalExpressAmount);
 			IExpressProvider(expressProvider).onWithdrawComplete(withdrawRequest);
-		} else if (pureVirtualProvider != address(0)) {
-			require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.PROVIDER_ACCEPTED), "Invalid withdraw request status");
-			IVirtualProvider(pureVirtualProvider).onWithdrawComplete(withdrawRequest);
+		} else {
+			require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
+			if (pureVirtualProvider != address(0)) {
+				require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.PROVIDER_ACCEPTED), "Invalid withdraw request status");
+				IVirtualProvider(pureVirtualProvider).onWithdrawComplete(withdrawRequest);
+			}
 		}
 
 		withdrawRequest.status = WithdrawStatus.COMPLETED;

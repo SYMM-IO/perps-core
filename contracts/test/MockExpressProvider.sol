@@ -10,7 +10,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
-	function acceptCancelWithdrawRequest(address user, uint256 requestId) external;
+	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
+	function finalizeWithdrawRequest(address user, uint256 requestId) external;
 }
 
 contract ExpressProvider is IExpressProvider {
@@ -20,12 +21,16 @@ contract ExpressProvider is IExpressProvider {
 		symmioAddress = _symmioAddress;
 	}
 
+	function finalizeWithdrawRequest(address user, uint256 requestId) external {
+		ISymmioCore(symmioAddress).finalizeWithdrawRequest(user, requestId);
+	}
+
 	function acceptWithdrawRequest(address user, uint256 requestId) external {
 		ISymmioCore(symmioAddress).acceptWithdrawRequest(user, requestId);
 	}
 
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external {
-		ISymmioCore(symmioAddress).acceptCancelWithdrawRequest(user, requestId);
+		ISymmioCore(symmioAddress).acceptWithdrawCancelRequest(user, requestId);
 	}
 
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address collateral) external {
@@ -33,7 +38,8 @@ contract ExpressProvider is IExpressProvider {
 		for (uint i = 0; i < withdrawRequest.parts.length; i++) {
 			WithdrawReceiverPart memory part = withdrawRequest.parts[i];
 			if (part.expressProvider == address(this)) {
-				IERC20(collateral).transfer(_bytesToAddress(part.receiver), part.amount);
+				if(part.virtualProvider == address(0))
+					IERC20(collateral).transfer(_bytesToAddress(part.receiver), part.amount);
 				isExpressProvider = true;
 			}
 		}
@@ -42,6 +48,7 @@ contract ExpressProvider is IExpressProvider {
 	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external {
 		require(withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "Withdraw not accepted");
 	}
+
 	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external {
 		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "Withdraw not cancel requested");
 	}
