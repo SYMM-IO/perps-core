@@ -38,6 +38,7 @@ interface IAffiliateHub {
 		EnumerableSet.AddressSet symmioCores;
 		mapping(bytes4 => address) hooks;
 		address accountManager;
+		address registrant;
 	}
 
 	struct AffiliateRegistration {

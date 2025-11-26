@@ -109,7 +109,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @return affiliateAddress The generated affiliate address
 	 */
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
-		affiliateAddress = _generateAccountManagerAddress(reg.name);
+		affiliateAddress = _generateAccountManagerAddress(msg.sender, reg.name);
 
 		if (affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
 		if (reg.admin == address(0)) revert ZeroAddress();
@@ -126,6 +126,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		affiliate.feeDetails.symmioShare = reg.symmioShare;
 		affiliate.feeDetails.stakeholders = reg.stakeholders;
 		affiliate.legacyMultiAccounts = reg.legacyMultiAccounts;
+		affiliate.registrant = msg.sender;
 
 		for (uint256 i = 0; i < reg.symmioCores.length; i++) {
 			if (!whitelistedSymmioCores[reg.symmioCores[i]]) revert NoWhitelistedSymmioCore();
@@ -153,7 +154,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	function approveAffiliate(address affiliate) external onlyRole(APPROVER_ROLE) whenNotPaused {
 		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
-		address accountManager = _deployAccountManager(affiliates[affiliate].name);
+		address accountManager = _deployAccountManager(affiliates[affiliate].registrant, affiliates[affiliate].name);
 		if (affiliate != accountManager) revert DeploymentFailed();
 		address feeDistributor = _generateFeeDistributorAddress(affiliate, ++globalNonce);
 
@@ -602,8 +603,8 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	/**
 	 * @dev Deploys account manager contract
 	 */
-	function _deployAccountManager(string memory name) private returns (address accountManager) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, name));
+	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
 		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
 
 		accountManager;
@@ -617,8 +618,8 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	/**
 	 * @dev Generates deterministic account manager address
 	 */
-	function _generateAccountManagerAddress(string memory name) private view returns (address) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, name));
+	function _generateAccountManagerAddress(address user, string memory name) private view returns (address) {
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
 		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
 		bytes32 initCodeHash = keccak256(bytecode);
 		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
