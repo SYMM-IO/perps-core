@@ -163,6 +163,9 @@ library AccountFacetImpl {
 	}
 
 	function bindToPartyB(address partyB) internal {
+		// FIXME: check to have no open or locked position with other partyB
+		// FIXME: enable party BINDING
+		// FIXME: Check if bind no muon verify
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(partyB != address(0), "AccountFacet: Zero address");
 

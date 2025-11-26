@@ -107,7 +107,7 @@ describe("UnitTests", function () {
 		describe("PartyBBatchActionsFacet", async function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
 		})
-		
+
 		describe("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
 		})

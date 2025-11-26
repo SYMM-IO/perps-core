@@ -37,8 +37,6 @@
     "hardhat-gas-reporter": "^1.0.8",
     "js-sha3": "^0.9.3",
     "mocha": "^10.7.0",
-    "prettier": "^3.6.2",
-    "prettier-plugin-solidity": "^2.2.0",
     "random-ext": "^2.8.0",
     "rxjs": "^7.8.1",
     "shx": "^0.3.4",
@@ -73,9 +71,10 @@
     "lint:sol": "solhint --config ./.solhint.json --solcoverjs ./.solcover.js --max-warnings 0 \"contracts/**/*.sol\"",
     "test": "hardhat test",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
-    "test:uncheck-muon": "./utils/runTests.sh"
+    "test:uncheck-muon": "./utils/runTests.sh",
+    "solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol"
   },
   "dependencies": {
-    "solhint": "^6.0.1"
+    "prettier-plugin-solidity": "^2.1.0"
   }
 }

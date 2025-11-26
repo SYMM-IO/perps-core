@@ -44,7 +44,7 @@ const config: HardhatUserConfig = {
 			// forking: {
 			//   url: "",
 			// },
-			allowUnlimitedContractSize: false,
+			allowUnlimitedContractSize: true, // FIXME: return to False after control facet and force close fixed
 		},
 		docker: {
 			url: hardhatDockerUrl,
