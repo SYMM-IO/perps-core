@@ -4,34 +4,36 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-struct WithdrawReceiverPart {
-	uint256 id;
-	uint256 amount;
-	int256 chainId;
-	bytes receiver;
-	address virtualProvider;
-	address expressProvider;
-}
+	struct WithdrawReceiverPart {
+		uint256 id;
+		uint256 amount;
+		int256 chainId;
+		bytes receiver;
+		address virtualProvider;
+		address expressProvider;
+	}
 
-struct WithdrawRequest {
-	uint256 id;
-	address user;
-	WithdrawReceiverPart[] parts;
-	uint256 timestamp;
-	uint256 cooldownEndTime;
-	WithdrawStatus status;
-	bytes providerData;
-}
+	struct WithdrawRequest {
+		uint256 id;
+		address user;
+		WithdrawReceiverPart[] parts;
+		uint256 timestamp;
+		uint256 cooldownEndTime;
+		WithdrawStatus status;
+		bytes providerData;
+		bool isPureVirtual;
+		address canApproveWithdrawal;
+	}
 
-enum WithdrawStatus {
-	PENDING,
-	PROVIDER_ACCEPTED,
-	PROVIDER_REJECTED,
-	COMPLETED,
-	CANCEL_REQUESTED,
-	CANCELLED,
-	SUSPENDED
-}
+	enum WithdrawStatus {
+		PENDING,
+		PROVIDER_ACCEPTED,
+		PROVIDER_REJECTED,
+		COMPLETED,
+		CANCEL_REQUESTED,
+		CANCELLED,
+		SUSPENDED
+	}
 
 library WithdrawStorage {
 	bytes32 internal constant WITHDRAW_STORAGE_SLOT = keccak256("diamond.standard.storage.withdraw");
