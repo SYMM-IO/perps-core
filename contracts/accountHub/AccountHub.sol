@@ -316,7 +316,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	/**
 	 * @dev Validates name length
 	 */
-	function _validateName(string memory name) private view {
+	function _validateName(string memory name) private pure {
 		if (bytes(name).length == 0 || bytes(name).length > MAX_NAME_LENGTH) {
 			revert InvalidNameLength();
 		}
