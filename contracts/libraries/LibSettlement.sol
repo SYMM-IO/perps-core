@@ -187,7 +187,7 @@ library LibSettlement {
 			);
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
 			require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
-			require(settleSig.partyB == partyB, "ForceActionsFacet, Invalid quote");
+			require(settleSig.partyB == partyB, "LibSettlement, Invalid quote");
 
 			if (!isForceClose && msg.sender != partyB) {
 				require(
@@ -222,6 +222,53 @@ library LibSettlement {
 				? accountLayout.partyBAllocatedBalances[partyB][address(0)]
 				: accountLayout.partyBAllocatedBalances[partyB][partyA];
 			newPartyAsAllocatedBalances[i] = accountLayout.allocatedBalances[partyA];
+			partyAs[i] = partyA;
+		}
+	}
+
+	function SettleAllocated(
+		CrossSettlementSig memory settlementSig
+	) internal returns (uint256[] memory fetchedAmounts, uint256[] memory newAllocatedBalances, address[] memory partyAs) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		address partyB = settlementSig.partyB;
+
+		uint256 len = settlementSig.quotesSettlementsData.length;
+		fetchedAmounts = new uint256[](len);
+		newAllocatedBalances = new uint256[](len);
+		partyAs = new address[](len);
+
+		for (uint256 i = 0; i < len; i++) {
+			CrossQuoteSettlementData memory data = settlementSig.quotesSettlementsData[i];
+			Quote storage quote = quoteLayout.quotes[data.quoteId];
+
+			require(quote.partyB == partyB, "LibSettlement: PartyB is invalid");
+			require(
+				quote.quoteStatus == QuoteStatus.OPENED ||
+					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
+					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
+				"LibSettlement: Invalid state"
+			);
+
+			address partyA = quote.partyA;
+			int256 available = LibAccount.partyBAvailableBalanceForLiquidation(settlementSig.upnlPartyBs[i], partyB, partyA);
+
+			if (available > 0) {
+				uint256 fetchable = uint256(available);
+				uint256 allocated = accountLayout.partyBAllocatedBalances[partyB][partyA];
+				if (fetchable > allocated) fetchable = allocated;
+				if (fetchable > 0) {
+					accountLayout.partyBAllocatedBalances[partyB][partyA] = allocated - fetchable;
+					accountLayout.partyBAllocatedBalances[partyB][address(0)] += fetchable;
+					emit SharedEvents.BalanceChangePartyB(partyB, partyA, fetchable, SharedEvents.BalanceChangeType.DEALLOCATE);
+					emit SharedEvents.MasterBalanceChangePartyB(partyB, fetchable, SharedEvents.BalanceChangeType.ALLOCATE);
+					fetchedAmounts[i] = fetchable;
+				}
+			}
+
+			accountLayout.partyBNonces[partyB][partyA] += 1;
+
+			newAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][partyA];
 			partyAs[i] = partyA;
 		}
 	}

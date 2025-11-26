@@ -10,6 +10,9 @@ import "./LibQuote.sol";
 import "./LibAccount.sol";
 import "./LibSolvency.sol";
 import "./muon/LibMuonForceActions.sol";
+import "./LibLiquidation.sol";
+
+import "../facets/ForceActions/IForceActionsFacet.sol";
 
 library LibForceSolve {
 	function GetClosePrice(
@@ -25,23 +28,23 @@ library LibForceSolve {
 		uint256 forceCloseMinSigPeriod
 	) internal pure returns (uint256 closePrice) {
 		if (positionType == PositionType.LONG) {
-			require(
-				sig_highest >= requestedClosePrice + (requestedClosePrice * forceCloseGapRatio) / 1e18,
-				"PartyAFacet: Requested close price not reached"
-			);
+			if (!(sig_highest >= requestedClosePrice + (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
+				revert PartyAFacetRequestedClosePriceNotReached();
+			}
 			closePrice = requestedClosePrice + (requestedClosePrice * forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sig_averagePrice ? closePrice : sig_averagePrice;
 		} else {
-			require(
-				sig_lowest <= requestedClosePrice - (requestedClosePrice * forceCloseGapRatio) / 1e18,
-				"PartyAFacet: Requested close price not reached"
-			);
+			if (!(sig_lowest <= requestedClosePrice - (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
+				revert PartyAFacetRequestedClosePriceNotReached();
+			}
 			closePrice = requestedClosePrice - (requestedClosePrice * forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sig_averagePrice ? sig_averagePrice : closePrice;
 		}
 
 		if (closePrice == sig_averagePrice) {
-			require(sig_endTime - sig_startTime >= forceCloseMinSigPeriod, "PartyAFacet: Invalid signature period");
+			if (!(sig_endTime - sig_startTime >= forceCloseMinSigPeriod)) {
+				revert PartyAFacetInvalidSignaturePeriod();
+			}
 		}
 
 		return closePrice;
@@ -53,12 +56,29 @@ library LibForceSolve {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
-		require(quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyAFacet: Invalid state");
-		require(sig.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline, "PartyBFacet: Close request is expired");
-		require(quote.orderType == OrderType.LIMIT, "PartyBFacet: Quote's order type should be LIMIT");
-		require(sig.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown, "PartyAFacet: Cooldown not reached");
-		require(sig.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown, "PartyAFacet: Cooldown not reached");
-		require(sig.averagePrice <= sig.highest && sig.averagePrice >= sig.lowest, "PartyAFacet: Invalid average price");
+		if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
+			revert PartyAFacetInvalidState();
+		}
+
+		if (!(sig.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline)) {
+			revert PartyBFacetCloseRequestExpired();
+		}
+
+		if (quote.orderType != OrderType.LIMIT) {
+			revert PartyBFacetInvalidOrderType();
+		}
+
+		if (!(sig.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown)) {
+			revert PartyAFacetCooldownNotReached();
+		}
+
+		if (!(sig.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown)) {
+			revert PartyAFacetCooldownNotReached();
+		}
+
+		if (!(sig.averagePrice <= sig.highest && sig.averagePrice >= sig.lowest)) {
+			revert PartyAFacetInvalidAveragePrice();
+		}
 
 		accountLayout.partyANonces[quote.partyA] += 1;
 		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
@@ -86,10 +106,41 @@ library LibForceSolve {
 			closePrice
 		);
 
-		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
+		if (!(partyAAvailableBalance >= 0)) {
+			revert PartyAFacetPartyAWillBeInsolvent();
+		}
 
-		// step 1 & 2 --> to solve using allocated balance or master account balance
-		isSolvent = solveUsingAllocatedBalances(quoteId, closePrice, partyBAvailableBalance);
+		uint256 reservedBalance;
+		bool isMasterAccount = accountLayout.masterAccountMode[quote.partyB];
+		if (isMasterAccount) {
+			reservedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][address(0)];
+		} else {
+			reservedBalance = accountLayout.reserveVault[quote.partyB];
+		}
+		isSolvent = solveUsingAllocatedBalances(quoteId, closePrice, partyBAvailableBalance, reservedBalance, isMasterAccount);
+	}
+
+	function liquidatePartyB(
+		uint256 quoteId,
+		uint256 closePrice,
+		uint256 reservedBalance,
+		int256 sig_upnlPartyB,
+		uint256 sig_currentPrice
+	) internal returns (int256 upnlPartyB) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		address partyA = quote.partyA;
+		address partyB = quote.partyB;
+
+		accountLayout.reserveVault[quote.partyB] = 0;
+		accountLayout.partyBAllocatedBalances[partyB][partyA] += reservedBalance;
+		emit SharedEvents.BalanceChangePartyB(partyB, partyA, reservedBalance, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+		int256 diff = (int256(quote.quantityToClose) * (int256(closePrice) - int256(sig_currentPrice))) / 1e18;
+		if (quote.positionType == PositionType.LONG) {
+			diff = diff * -1;
+		}
+		upnlPartyB = sig_upnlPartyB + diff;
+		LibLiquidation.liquidatePartyB(partyB, partyA, upnlPartyB, block.timestamp);
 	}
 
 	function getAvailableBalancesAfterClose(
@@ -123,17 +174,17 @@ library LibForceSolve {
 		);
 	}
 
-	function solveUsingAllocatedBalances(uint256 quoteId, uint256 closePrice, int256 partyBAvailableBalance) internal returns (bool solved) {
+	function solveUsingAllocatedBalances(
+		uint256 quoteId,
+		uint256 closePrice,
+		int256 partyBAvailableBalance,
+		uint256 reservedBalance,
+		bool isMasterAccount
+	) internal returns (bool solved) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-
-		uint256 reservedBalance;
-		solved = false;
-		if (accountLayout.masterAccountMode[quote.partyB]) {
-			reservedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][address(0)];
-		} else {
-			reservedBalance = accountLayout.reserveVault[quote.partyB];
-		}
+		address partyA = quote.partyA;
+		address partyB = quote.partyB;
 
 		if (partyBAvailableBalance >= 0) {
 			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
@@ -141,14 +192,14 @@ library LibForceSolve {
 		} else if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
 			uint256 available = uint256(-partyBAvailableBalance);
 
-			if (accountLayout.masterAccountMode[quote.partyB]) {
-				accountLayout.partyBAllocatedBalances[quote.partyB][address(0)] -= available;
+			if (isMasterAccount) {
+				accountLayout.partyBAllocatedBalances[partyB][address(0)] -= available;
 			} else {
-				accountLayout.reserveVault[quote.partyB] -= available;
+				accountLayout.reserveVault[partyB] -= available;
 			}
 
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += available;
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			accountLayout.partyBAllocatedBalances[partyB][partyA] += available;
+			emit SharedEvents.BalanceChangePartyB(partyB, partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
 			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
 			solved = true;

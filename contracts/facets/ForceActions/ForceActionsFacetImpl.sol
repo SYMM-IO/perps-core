@@ -15,6 +15,14 @@ import "../../libraries/LibAccount.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
 
+import "../Settlement/SettlementFacetEvents.sol";
+
+// Import the interface solely for custom error declarations. Having the errors
+// in a central interface allows multiple facets and libraries to share them
+// without coupling to the full implementation. See IForceActionsFacet.sol for
+// the error definitions.
+import "./IForceActionsFacet.sol";
+
 library ForceActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
 
@@ -23,8 +31,17 @@ library ForceActionsFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
-		require(quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyAFacet: Invalid state");
-		require(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCooldown, "PartyAFacet: Cooldown not reached");
+		// Enforce that the quote is in the expected cancel pending state. Revert with
+		// a custom error if not.
+		if (quote.quoteStatus != QuoteStatus.CANCEL_PENDING) {
+			revert PartyAFacetInvalidState();
+		}
+		// Enforce that the force cancel cooldown has elapsed. If the current
+		// timestamp has not yet surpassed the last modify timestamp plus the
+		// cooldown period, revert.
+		if (!(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCooldown)) {
+			revert PartyAFacetCooldownNotReached();
+		}
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.CANCELED;
 		accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
@@ -42,8 +59,14 @@ library ForceActionsFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
-		require(quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING, "PartyAFacet: Invalid state");
-		require(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCloseCooldown, "PartyAFacet: Cooldown not reached");
+		// Validate the quote is in the cancel close pending state.
+		if (quote.quoteStatus != QuoteStatus.CANCEL_CLOSE_PENDING) {
+			revert PartyAFacetInvalidState();
+		}
+		// Ensure the cancel close cooldown period has expired before proceeding.
+		if (!(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCloseCooldown)) {
+			revert PartyAFacetCooldownNotReached();
+		}
 
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.OPENED;
@@ -61,30 +84,57 @@ library ForceActionsFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		require(quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyAFacet: Invalid state");
-		require(sig.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline, "PartyBFacet: Close request is expired");
-		require(quote.orderType == OrderType.LIMIT, "PartyBFacet: Quote's order type should be LIMIT");
-		require(sig.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown, "PartyAFacet: Cooldown not reached");
-		require(sig.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown, "PartyAFacet: Cooldown not reached");
-		require(sig.averagePrice <= sig.highest && sig.averagePrice >= sig.lowest, "PartyAFacet: Invalid average price");
+		// Ensure the quote is in a close pending state.
+		if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
+			revert PartyAFacetInvalidState();
+		}
+		// The close request must not be expired relative to the deadline.
+		if (!(sig.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline)) {
+			revert PartyBFacetCloseRequestExpired();
+		}
+		// Only limit orders may be force closed.
+		if (quote.orderType != OrderType.LIMIT) {
+			revert PartyBFacetInvalidOrderType();
+		}
+		// Enforce first stage cooldown before starting force close.
+		if (!(sig.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown)) {
+			revert PartyAFacetCooldownNotReached();
+		}
+		// Enforce second stage cooldown before finalizing force close.
+		if (!(sig.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown)) {
+			revert PartyAFacetCooldownNotReached();
+		}
+		// The average price must lie within the high/low bounds.
+		if (!(sig.averagePrice <= sig.highest && sig.averagePrice >= sig.lowest)) {
+			revert PartyAFacetInvalidAveragePrice();
+		}
 		if (quote.positionType == PositionType.LONG) {
-			require(
-				sig.highest >= quote.requestedClosePrice + (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18,
-				"PartyAFacet: Requested close price not reached"
-			);
+			// For long positions the highest observed price must exceed the requested close
+			// price by at least the configured gap ratio. Otherwise the requested close
+			// price has not been reached and we revert.
+			if (!(sig.highest >= quote.requestedClosePrice + (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18)) {
+				revert PartyAFacetRequestedClosePriceNotReached();
+			}
 			closePrice = quote.requestedClosePrice + (quote.requestedClosePrice * maLayout.forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sig.averagePrice ? closePrice : sig.averagePrice; // max
 		} else {
-			require(
-				sig.lowest <= quote.requestedClosePrice - (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18,
-				"PartyAFacet: Requested close price not reached"
-			);
+			// For short positions the lowest observed price must fall below the requested close
+			// price by at least the configured gap ratio. Otherwise we revert.
+			if (!(sig.lowest <= quote.requestedClosePrice - (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18)) {
+				revert PartyAFacetRequestedClosePriceNotReached();
+			}
 			closePrice = quote.requestedClosePrice - (quote.requestedClosePrice * maLayout.forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sig.averagePrice ? sig.averagePrice : closePrice; // min
 		}
 
-		if (closePrice == sig.averagePrice)
-			require(sig.endTime - sig.startTime >= maLayout.forceCloseMinSigPeriod, "PartyAFacet: Invalid signature period");
+		// If the computed close price equals the signature's average price then the
+		// signature period must meet the minimum length requirement. Without this
+		// check the force close could be based on too narrow of a price window.
+		if (closePrice == sig.averagePrice) {
+			if (!(sig.endTime - sig.startTime >= maLayout.forceCloseMinSigPeriod)) {
+				revert PartyAFacetInvalidSignaturePeriod();
+			}
+		}
 
 		LibMuonForceActions.verifyHighLowPrice(sig, quote.partyB, quote.partyA, quote.symbolId);
 		if (updatedPrices.length > 0) {
@@ -118,7 +168,10 @@ library ForceActionsFacetImpl {
 			quote.partyB,
 			quote.partyA
 		);
-		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
+		// After computing the available balances ensure partyA will not become insolvent.
+		if (!(partyAAvailableBalance >= 0)) {
+			revert PartyAFacetPartyAWillBeInsolvent();
+		}
 		if (partyBAvailableBalance >= 0) {
 			if (updatedPrices.length > 0) {
 				LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
@@ -154,124 +207,74 @@ library ForceActionsFacetImpl {
 		partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
 	}
 
-	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice, bool isSolvent) {
+	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice,int256 upnlPartyB, bool isPartyBLiquidated) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		bool isSolvent;
+		
 		(closePrice, isSolvent) = LibForceSolve.forceCloseUsingAllocatedBalances(quoteId, sig);
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
 		detail.forceCloseState = ForceCloseState.NORMAL;
 		detail.timestamp = block.timestamp;
+
 		if (isSolvent) {
 			detail.partyBState = PartyBForceCloseState.SOLVED;
 		} else {
-			detail.partyBState = PartyBForceCloseState.INSOLVENT;
+			if (!AccountStorage.layout().masterAccountMode[quote.partyB]) {
+				uint256 reservedBalance;
+				reservedBalance = AccountStorage.layout().reserveVault[quote.partyB];
+
+				upnlPartyB  = LibForceSolve.liquidatePartyB(quoteId, closePrice, reservedBalance, sig.upnlPartyB, sig.currentPrice);
+				isPartyBLiquidated = true;
+				detail.partyBState = PartyBForceCloseState.LIQUIDATED;
+			}
 		}
 	}
 
-	function forceRealizeClose(
-		uint256 quoteId,
-		HighLowPriceSig memory sig,
-		SettlementSig memory settlementSig,
-		uint256[] memory updatedPrices
-	) internal returns (uint256 closePrice, bool isSolvent) {
+	function forceRealize(uint256 quoteId, SettlementSig memory settlementSig, uint256[] memory updatedPrices) internal {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
+		address partyA = quote.partyA;
+
 		if (updatedPrices.length > 0) {
-			LibMuonSettlement.verifySettlement(settlementSig, quote.partyA);
-			LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
-		}
-		(closePrice, isSolvent) = LibForceSolve.forceCloseUsingAllocatedBalances(quoteId, sig);
-		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
-		if (updatedPrices.length > 0) detail.forceCloseState = ForceCloseState.REALIZED;
-		detail.timestamp = block.timestamp;
-		if (isSolvent) {
-			detail.partyBState = PartyBForceCloseState.SOLVED;
-		} else {
-			detail.partyBState = PartyBForceCloseState.INSOLVENT;
+			LibMuonSettlement.verifySettlement(settlementSig, partyA);
+			newPartyBsAllocatedBalances = LibSettlement.settleUpnl(settlementSig, updatedPrices, partyA, true);
+			ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+			detail.timestamp = block.timestamp;
+			detail.forceCloseState = ForceCloseState.REALIZED;
 		}
 	}
 
 	function forceRealizeMasterAccount(
 		uint256 quoteId,
-		HighLowPriceSig memory sig,
 		CrossSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
-	)
-		internal
-		returns (
-			uint256 closePrice,
-			bool isSolvent,
-			uint256[] memory newPartyBsAllocatedBalances,
-			uint256[] memory newPartyAsAllocatedBalances,
-			address[] memory partyAs
-		)
-	{
+	) internal returns (uint256[] memory newPartyBsAllocatedBalances, uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+
 		if (updatedPrices.length > 0) {
 			LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
 			(newPartyBsAllocatedBalances, newPartyAsAllocatedBalances, partyAs) = LibSettlement.crossSettleUpnl(settlementSig, updatedPrices, true);
 			detail.forceCloseState = ForceCloseState.REALIZED_MASTER_ACCOUNT;
-		}
-		(closePrice, isSolvent) = LibForceSolve.forceCloseUsingAllocatedBalances(quoteId, sig);
-		detail.timestamp = block.timestamp;
-		if (isSolvent) {
-			detail.partyBState = PartyBForceCloseState.SOLVED;
-		} else {
-			detail.partyBState = PartyBForceCloseState.INSOLVENT;
+			detail.timestamp = block.timestamp;
 		}
 	}
 
 	function forceFetchAllocatedMasterAccount(
 		CrossSettlementSig memory settlementSig
-	) internal returns (uint256[] memory fetchedAmounts, uint256[] memory newAllocatedBalances, address[] memory partyAs) {
+	) internal returns (uint256[] memory gatheredAmounts, uint256[] memory newAllocatedBalances, address[] memory partyAs) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		address partyB = settlementSig.partyB;
 
-		require(accountLayout.masterAccountMode[partyB], "ForceActionsFacet: Master account mode is inactive");
-
+		if (!(accountLayout.masterAccountMode[partyB])) {
+			revert ForceActionsFacetMasterAccountModeInactive();
+		}
 		LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
 
-		uint256 len = settlementSig.quotesSettlementsData.length;
-		fetchedAmounts = new uint256[](len);
-		newAllocatedBalances = new uint256[](len);
-		partyAs = new address[](len);
-
-		for (uint256 i = 0; i < len; i++) {
-			CrossQuoteSettlementData memory data = settlementSig.quotesSettlementsData[i];
-			Quote storage quote = quoteLayout.quotes[data.quoteId];
-			require(quote.partyB == partyB, "ForceActionsFacet, Invalid quote");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"ForceActionsFacet: Invalid state"
-			);
-			address partyA = quote.partyA;
-
-			int256 available = LibAccount.partyBAvailableBalanceForLiquidation(settlementSig.upnlPartyBs[i], partyB, partyA);
-
-			if (available > 0) {
-				uint256 fetchable = uint256(available);
-				uint256 allocated = accountLayout.partyBAllocatedBalances[partyB][partyA];
-				if (fetchable > allocated) fetchable = allocated;
-				if (fetchable > 0) {
-					accountLayout.partyBAllocatedBalances[partyB][partyA] = allocated - fetchable;
-					accountLayout.partyBAllocatedBalances[partyB][address(0)] += fetchable;
-					emit SharedEvents.BalanceChangePartyB(partyB, partyA, fetchable, SharedEvents.BalanceChangeType.DEALLOCATE);
-					emit SharedEvents.MasterBalanceChangePartyB(partyB, fetchable, SharedEvents.BalanceChangeType.ALLOCATE);
-					fetchedAmounts[i] = fetchable;
-				}
-			}
-
-			accountLayout.partyANonces[partyA] += 1;
-			accountLayout.partyBNonces[partyB][partyA] += 1;
-
-			newAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][partyA];
-			partyAs[i] = partyA;
-		}
+		(gatheredAmounts, newAllocatedBalances, partyAs) = LibSettlement.SettleAllocated(settlementSig);
 
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
-		detail.forceCloseState = ForceCloseState.DEALLOCATED_MASTER_ACCOUNT;
+		detail.forceCloseState = ForceCloseState.GATHER_ALLOCATED_MASTER_ACCOUNT;
 		detail.timestamp = block.timestamp;
 	}
 }
