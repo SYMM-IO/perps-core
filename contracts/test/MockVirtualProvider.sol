@@ -10,11 +10,12 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
-	function acceptCancelWithdrawRequest(address user, uint256 requestId) external;
+	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
 }
 
 contract VirtualProvider is IVirtualProvider {
 	address public symmioAddress;
+	uint256 public withdrawnAmount;
 
 	event WithdrawCalled(address sender, WithdrawReceiverPart part, bytes providerData);
 
@@ -22,12 +23,12 @@ contract VirtualProvider is IVirtualProvider {
 		symmioAddress = _symmioAddress;
 	}
 
-	function acceptWithdrawRequest(address user, uint256 requestId) internal {
+	function acceptWithdrawRequest(address user, uint256 requestId) external {
 		ISymmioCore(symmioAddress).acceptWithdrawRequest(user, requestId);
 	}
 
-	function acceptWithdrawCancelRequest(address user, uint256 requestId) internal {
-		ISymmioCore(symmioAddress).acceptCancelWithdrawRequest(user, requestId);
+	function acceptWithdrawCancelRequest(address user, uint256 requestId) external {
+		ISymmioCore(symmioAddress).acceptWithdrawCancelRequest(user, requestId);
 	}
 
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest) external {
@@ -39,14 +40,20 @@ contract VirtualProvider is IVirtualProvider {
 				isVirtualProvider = true;
 			}
 		}
-		if (withdrawRequest.status == WithdrawStatus.PENDING && isVirtualProvider) acceptWithdrawRequest(withdrawRequest.user, withdrawRequest.id);
+		require(isVirtualProvider, "No parts for this virtual provider");
 	}
 	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external {
 		require(withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "Withdraw not accepted");
+		for (uint i = 0; i < withdrawRequest.parts.length; i++) {
+			WithdrawReceiverPart memory part = withdrawRequest.parts[i];
+			if (part.virtualProvider == address(this)) {
+				withdrawnAmount += part.amount;
+			}
+		}
 	}
+
 	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external {
 		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "Withdraw not cancel requested");
-		acceptWithdrawCancelRequest(withdrawRequest.user, withdrawRequest.id);
 	}
 
 	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external {

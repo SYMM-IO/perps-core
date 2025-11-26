@@ -231,7 +231,11 @@ library WithdrawFacetImpl {
 		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[msg.sender][requestId];
 
 		require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
-		require(uint8(withdrawRequest.status) == uint8(WithdrawStatus.PENDING), "Invalid withdraw request status");
+		require(
+			uint8(withdrawRequest.status) == uint8(WithdrawStatus.PENDING) ||
+				uint8(withdrawRequest.status) == uint8(WithdrawStatus.PROVIDER_ACCEPTED),
+			"Invalid withdraw request status"
+		);
 
 		uint256 totalCancelAmount;
 		bool hasAnyProvider;

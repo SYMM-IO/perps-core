@@ -20,11 +20,11 @@ contract ExpressProvider is IExpressProvider {
 		symmioAddress = _symmioAddress;
 	}
 
-	function acceptWithdrawRequest(address user, uint256 requestId) internal {
+	function acceptWithdrawRequest(address user, uint256 requestId) external {
 		ISymmioCore(symmioAddress).acceptWithdrawRequest(user, requestId);
 	}
 
-	function acceptWithdrawCancelRequest(address user, uint256 requestId) internal {
+	function acceptWithdrawCancelRequest(address user, uint256 requestId) external {
 		ISymmioCore(symmioAddress).acceptCancelWithdrawRequest(user, requestId);
 	}
 
@@ -37,14 +37,13 @@ contract ExpressProvider is IExpressProvider {
 				isExpressProvider = true;
 			}
 		}
-		if (withdrawRequest.status == WithdrawStatus.PENDING && isExpressProvider) acceptWithdrawRequest(withdrawRequest.user, withdrawRequest.id);
+		require(isExpressProvider, "No parts for this express provider");
 	}
 	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external {
 		require(withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "Withdraw not accepted");
 	}
 	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external {
 		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "Withdraw not cancel requested");
-		acceptWithdrawCancelRequest(withdrawRequest.user, withdrawRequest.id);
 	}
 
 	function _bytesToAddress(bytes memory data) internal pure returns (address addr) {

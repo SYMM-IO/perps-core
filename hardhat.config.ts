@@ -35,7 +35,7 @@ const config: HardhatUserConfig = {
 	defaultNetwork: "hardhat",
 	gasReporter: {
 		currency: "USD",
-		enabled: true,
+		enabled: false,
 		excludeContracts: [],
 		src: "./contracts",
 	},
@@ -44,7 +44,7 @@ const config: HardhatUserConfig = {
 			// forking: {
 			//   url: "",
 			// },
-			allowUnlimitedContractSize: true, // FIXME: return to False after control facet and force close fixed
+			allowUnlimitedContractSize: true,
 		},
 		docker: {
 			url: hardhatDockerUrl,
