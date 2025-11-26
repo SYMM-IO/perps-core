@@ -99,6 +99,8 @@ interface ISymmio {
 
 	function depositFor(address user, uint256 amount) external;
 
+	function depositAndAllocateFor(address user, uint256 amount) external;
+
 	function withdrawTo(address user, uint256 amount) external;
 
 	function allocate(uint256 amount) external;

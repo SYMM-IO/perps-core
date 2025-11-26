@@ -40,6 +40,8 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
 
+	uint256 public constant MAX_NAME_LENGTH = 100;
+
 	// ==================== State Variables ====================
 
 	mapping(address => SubAccountData) private subAccounts;
@@ -130,42 +132,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		subAccounts[account].name = name;
 		emit EditAccountName(account, name);
-	}
-
-	/**
-	 * @notice Deposits collateral for an account
-	 * @param account The account address
-	 * @param amount The amount to deposit
-	 */
-	function depositForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_depositForAccount(account, amount);
-	}
-
-	/**
-	 * @notice Allocates balance for trading in an account
-	 * @param account The account address
-	 * @param amount The amount to allocate
-	 */
-	function allocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_allocateForAccount(account, amount);
-	}
-
-	/**
-	 * @notice Deposits and allocates in a single transaction
-	 * @param account The account address
-	 * @param amount The amount to deposit and allocate
-	 */
-	function depositAndAllocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_depositAndAllocateForAccount(account, amount);
-	}
-
-	/**
-	 * @notice Withdraws collateral from an account
-	 * @param account The account address
-	 * @param amount The amount to withdraw
-	 */
-	function withdrawFromAccount(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
-		_withdrawFromAccount(account, amount);
 	}
 
 	/**
@@ -306,13 +272,51 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		return subAccountToVirtualAccounts[subAccount].values();
 	}
 
+	/**
+	 * @notice Gets sub-account data
+	 * @param account The account address
+	 * @return owner The owner address
+	 * @return isExists Whether the account exists
+	 * @return name The account name
+	 * @return affiliate The affiliate address
+	 * @return symmioCore The symmioCore address
+	 * @return metadata The metadata
+	 * @return isolationType The isolation type
+	 */
+	function getSubAccountData(
+		address account
+	)
+		external
+		view
+		returns (
+			address owner,
+			bool isExists,
+			string memory name,
+			address affiliate,
+			address symmioCore,
+			bytes memory metadata,
+			SubAccountIsolationType isolationType
+		)
+	{
+		SubAccountData storage s = subAccounts[account];
+		return (s.owner, s.isExists, s.name, s.affiliate, s.symmioCore, s.metadata, s.isolationType);
+	}
+
+	/**
+	 * @notice Gets quote IDs for a sub-account
+	 * @param account The account address
+	 * @return Array of quote IDs
+	 */
+	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory) {
+		return subAccounts[account].quoteIds.values();
+	}
+
 	// ==================== Internal Functions ====================
 
 	/**
 	 * @dev Validates name length
 	 */
-	function _validateName(string memory name) private pure {
-		uint256 MAX_NAME_LENGTH = 100;
+	function _validateName(string memory name) private view {
 		if (bytes(name).length == 0 || bytes(name).length > MAX_NAME_LENGTH) {
 			revert InvalidNameLength();
 		}
@@ -393,66 +397,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_callHook(affiliate, IAccountHubHook.onVirtualAccountDeletion.selector, abi.encode(account));
 
 		emit VirtualAccountDeleted(account, parentAccount);
-	}
-
-	/**
-	 * @dev Deposits collateral for an account
-	 */
-	function _depositForAccount(address account, uint256 amount) private {
-		address signer = getSigner();
-		address core = getRelatedCore(account);
-		address collateral = ISymmio(core).getCollateral();
-
-		IERC20Upgradeable(collateral).safeTransferFrom(signer, address(this), amount);
-		IERC20Upgradeable(collateral).safeIncreaseAllowance(core, amount);
-
-		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.depositFor.selector, account, amount));
-
-		address affiliate = _getAffiliateForAccount(account);
-		_callHook(affiliate, IAccountHubHook.onDeposit.selector, abi.encode(account, amount));
-
-		emit DepositForAccount(signer, account, amount);
-	}
-
-	/**
-	 * @dev Allocates balance for an account
-	 */
-	function _allocateForAccount(address account, uint256 amount) private {
-		address signer = getSigner();
-		address core = getRelatedCore(account);
-		address collateral = ISymmio(core).getCollateral();
-		uint8 decimals = IERC20Metadata(collateral).decimals();
-
-		if (decimals > 18) revert InvalidTokenDecimals();
-
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** decimals);
-
-		ISymmio(core).setSigner(account);
-		ISymmio(core).allocate(amount);
-		ISymmio(core).setSigner(address(0));
-
-		emit AllocateForAccount(signer, account, amountWith18Decimals);
-	}
-
-	/**
-	 * @dev Deposits and allocates in one call
-	 */
-	function _depositAndAllocateForAccount(address account, uint256 amount) private {
-		_depositForAccount(account, amount);
-		_allocateForAccount(account, amount);
-	}
-
-	/**
-	 * @dev Withdraws from an account
-	 */
-	function _withdrawFromAccount(address account, uint256 amount) private {
-		address signer = getSigner();
-		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.withdrawTo.selector, signer, amount));
-
-		address affiliate = _getAffiliateForAccount(account);
-		_callHook(affiliate, IAccountHubHook.onWithdraw.selector, abi.encode(account, amount));
-
-		emit WithdrawFromAccount(signer, account, amount);
 	}
 
 	/**
