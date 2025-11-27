@@ -20,9 +20,9 @@ pragma solidity >=0.8.18;
 		uint256 timestamp;
 		uint256 cooldownEndTime;
 		WithdrawStatus status;
-		bytes providerData;
+		address provider;
 		bool isPureVirtual;
-		address canApproveWithdrawal;
+		bytes providerData;
 	}
 
 	enum WithdrawStatus {

@@ -14,4 +14,5 @@ interface IWithdrawFacet is IWithdrawEvents {
 	function requestCancelWithdraw(uint256 requestId) external;
 	function forceCancelWithdraw(uint256 requestId) external;
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
+	function suspendWithdrawRequest(address user, uint256 requestId) external;
 }

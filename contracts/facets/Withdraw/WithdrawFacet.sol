@@ -37,7 +37,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param parts Array of withdrawal instructions. Each part may target a different chain/provider.
 	 * @param data Additional provider-specific metadata.
 	 */
-	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bytes memory data) external nonReentrant {
+	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bytes memory data) external notSuspended(msg.sender) nonReentrant {
 		uint256 requestId = WithdrawFacetImpl.initiateWithdraw(parts, data);
 		emit WithdrawInitiated(requestId, msg.sender, parts, data);
 	}
@@ -56,7 +56,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param user The owner of the withdrawal request.
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function acceptWithdrawRequest(address user, uint256 requestId) external nonReentrant {
+	function acceptWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
 		WithdrawFacetImpl.acceptWithdrawRequest(user, requestId);
 		emit WithdrawAccepted(requestId, user);
 	}
@@ -78,7 +78,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 *
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function finalizeWithdrawRequest(address user, uint256 requestId) external nonReentrant {
+	function finalizeWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
 		WithdrawFacetImpl.finalizeWithdrawRequest(user,requestId);
 		emit WithdrawFinalized(requestId, msg.sender);
 	}
@@ -96,7 +96,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 *
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function requestCancelWithdraw(uint256 requestId) external nonReentrant {
+	function requestCancelWithdraw(uint256 requestId) external notSuspended(msg.sender) nonReentrant {
 		WithdrawFacetImpl.requestCancelWithdraw(requestId);
 		emit WithdrawCancelRequested(requestId, msg.sender);
 	}
@@ -116,7 +116,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 *
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function forceCancelWithdraw(uint256 requestId) external nonReentrant {
+	function forceCancelWithdraw(uint256 requestId) external notSuspended(msg.sender) nonReentrant {
 		WithdrawFacetImpl.forceCancelWithdraw(requestId);
 		emit WithdrawCancelled(requestId, msg.sender);
 	}
@@ -134,8 +134,25 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param user The user who initiated the withdrawal.
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function acceptWithdrawCancelRequest(address user, uint256 requestId) external nonReentrant {
+	function acceptWithdrawCancelRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
 		WithdrawFacetImpl.acceptWithdrawCancelRequest(user, requestId);
 		emit WithdrawCancelled(requestId, user);
+	}
+
+	/**
+	 * @notice Operator suspends a problematic withdrawal request.
+	 * @dev
+	 * - Can only be called by an operator.
+	 * - Suspended requests cannot progress until manually resolved.
+	 *
+	 * Emits:
+	 * - `WithdrawSuspended`
+	 *
+	 * @param user The user who initiated the withdrawal.
+	 * @param requestId ID of the withdrawal request.
+	 */
+	function suspendWithdrawRequest(address user, uint256 requestId) external nonReentrant {
+		WithdrawFacetImpl.suspendWithdrawRequest(user, requestId);
+		emit WithdrawSuspended(requestId, user);
 	}
 }

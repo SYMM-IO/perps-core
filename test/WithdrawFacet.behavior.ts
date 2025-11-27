@@ -205,6 +205,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				}
 			]
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1);
 			await expect(context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)).not.reverted;
 			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
 			expect(withdrawRequest.status).to.be.equal(WithdrawStatus.CANCEL_REQUESTED)
@@ -315,6 +316,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				}
 			]
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x");
+			await expressProvider.acceptWithdrawRequest(user.address, 1);
 			await expect(context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)).not.reverted;
 			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
 			expect(withdrawRequest.status).to.be.equal(WithdrawStatus.CANCEL_REQUESTED)
@@ -433,6 +435,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				}
 			]
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,"0x");
+			await expressProvider.acceptWithdrawRequest(user.address, 1);
 			await expect(context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)).not.reverted;
 			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address,1)
 			expect(withdrawRequest.status).to.be.equal(WithdrawStatus.CANCEL_REQUESTED)

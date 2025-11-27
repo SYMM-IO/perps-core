@@ -75,6 +75,6 @@
     "solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol"
   },
   "dependencies": {
-    "prettier-plugin-solidity": "^2.1.0"
+    "prettier-plugin-solidity": "^2.2.0"
   }
 }
