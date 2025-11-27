@@ -114,12 +114,12 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 			newPartyBsAllocatedBalances
 		);
 
-		(uint256[] memory gatheredAmounts, uint256[] memory newAllocatedBalances, address[] memory partyAsInAllocation) = ForceActionsFacetImpl
+		(uint256[] memory gatheredAmounts, uint256[] memory newAllocatedBalances) = ForceActionsFacetImpl
 			.forceFetchAllocatedMasterAccount(settlementSig);
 		emit CrossSettleAllocated(
 			settlementSig.quotesSettlementsData,
 			settlementSig.partyB,
-			partyAsInAllocation,
+			settlementSig.partyAs,
 			newAllocatedBalances,
 			gatheredAmounts
 		);

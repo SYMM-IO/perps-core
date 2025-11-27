@@ -326,7 +326,7 @@ library ForceActionsFacetImpl {
 
 	function forceFetchAllocatedMasterAccount(
 		CrossSettlementSig memory settlementSig
-	) internal returns (uint256[] memory gatheredAmounts, uint256[] memory newAllocatedBalances, address[] memory partyAs) {
+	) internal returns (uint256[] memory gatheredAmounts, uint256[] memory newAllocatedBalances) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address partyB = settlementSig.partyB;
 
@@ -335,7 +335,7 @@ library ForceActionsFacetImpl {
 		}
 		LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
 
-		(gatheredAmounts, newAllocatedBalances, partyAs) = LibSettlement.SettleAllocated(settlementSig);
+		(gatheredAmounts, newAllocatedBalances) = LibSettlement.SettleAllocated(settlementSig);
 
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
 		detail.forceCloseState = ForceCloseState.GATHER_ALLOCATED_MASTER_ACCOUNT;
