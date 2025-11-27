@@ -324,7 +324,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param symmio The Symmio core address
 	 */
 	function claimAllFees(address affiliate, address symmio) external whenNotPaused nonReentrant {
-		claimFees(affiliate, symmio, _getClaimableFee(affiliate, symmio));
+		_claimFees(affiliate, symmio, _getClaimableFee(affiliate, symmio), msg.sender);
 	}
 
 	/**
@@ -334,6 +334,13 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param amount The amount to claim
 	 */
 	function claimFees(address affiliate, address symmio, uint256 amount) public whenNotPaused nonReentrant {
+		_claimFees(affiliate, symmio, amount, msg.sender);
+	}
+
+	/**
+	 * @dev fee claim logic
+	 */
+	function _claimFees(address affiliate, address symmio, uint256 amount, address caller) private {
 		address collateral = ISymmio(symmio).getCollateral();
 		FeeDetails storage feeDetails = affiliates[affiliate].feeDetails;
 		Stakeholder[] memory stakeholders = feeDetails.stakeholders;
@@ -342,13 +349,13 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		bool auth = false;
 
 		for (uint256 i = 0; i < stakeholders.length; i++) {
-			if (msg.sender == stakeholders[i].receiver) {
+			if (caller == stakeholders[i].receiver) {
 				auth = true;
 				break;
 			}
 		}
 
-		if (!auth && !hasRole(DISTRIBUTOR_ROLE, msg.sender)) revert Unauthorized();
+		if (!auth && !hasRole(DISTRIBUTOR_ROLE, caller)) revert Unauthorized();
 
 		// withdraw fees from Symmio
 		ISymmio(symmio).setSigner(feeDetails.feeDistributor);
@@ -360,6 +367,13 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 			uint256 share = (stakeholders[i].share * amount) / SHARE_PRECISION;
 			IERC20Upgradeable(collateral).safeTransfer(stakeholders[i].receiver, share);
 			emit FeesDistributed(stakeholders[i].receiver, share);
+		}
+
+		// transfer Symmio share to the protocol receiver
+		uint256 symmioAmount = (feeDetails.symmioShare * amount) / SHARE_PRECISION;
+		if (symmioAmount > 0) {
+			IERC20Upgradeable(collateral).safeTransfer(symmioFeeReceiver, symmioAmount);
+			emit FeesDistributed(symmioFeeReceiver, symmioAmount);
 		}
 
 		emit FeesClaimed(affiliate, symmio, amount);
