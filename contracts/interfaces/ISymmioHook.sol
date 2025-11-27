@@ -7,4 +7,5 @@ pragma solidity >=0.8.18;
 interface ISymmioHook {
 	function onOpenPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, address partyA, address partyB) external;
 	function onClosePosition(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, address partyA, address partyB) external;
+	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external;
 }

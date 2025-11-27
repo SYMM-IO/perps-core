@@ -126,4 +126,5 @@ interface IAccountHub {
 	error PositionTypeNotAllowedForThisAccount();
 	error SymbolNotAllowedForThisAccount();
 	error AffiliateNotActive();
+	error OnlyCustomIsolationCanCreateManually();
 }

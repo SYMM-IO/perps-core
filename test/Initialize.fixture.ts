@@ -142,6 +142,10 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.addSymbol("ETHUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
 	await context.controlFacet.connect(context.signers.admin).setSymbolTypes([1], [1])
 	await context.controlFacet.whitelistSymbolType(context.signers.hedger.address, 1)
 	await context.controlFacet.whitelistSymbolType(context.signers.hedger2.address, 1)
