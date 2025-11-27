@@ -85,6 +85,12 @@ export function shouldBehaveLikeAffiliateHub() {
             await mock.connect(context.signers.admin).depositFor(feeDistributor, amount)
         }
 
+        const pauseAffiliateHub = async () => {
+            const pauserRole = await affiliateHub.PAUSER_ROLE()
+            await affiliateHub.connect(context.signers.admin).grantRole(pauserRole, context.signers.admin.address)
+            await affiliateHub.connect(context.signers.admin).pause()
+        }
+
         beforeEach(async function () {
             context = await loadFixture(initializeFixture)
             affiliateHub = context.affiliateHub
@@ -194,6 +200,11 @@ export function shouldBehaveLikeAffiliateHub() {
                         "NotPending",
                     )
                 })
+
+                it("respects the global pause guard", async function () {
+                    await pauseAffiliateHub()
+                    await expect(affiliateHub.connect(context.signers.user).cancelRegistration(affiliate)).to.be.revertedWith("Pausable: paused")
+                })
             })
 
             describe("rejectRegistration", function () {
@@ -266,6 +277,11 @@ export function shouldBehaveLikeAffiliateHub() {
                     expect(manager).to.equal(affiliate)
                     expect(await affiliateHub.hasRole(await affiliateHub.SIGNER_SETTER(), manager)).to.equal(true)
                 })
+
+                it("cannot be called while the hub is paused", async function () {
+                    await pauseAffiliateHub()
+                    await expect(affiliateHub.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWith("Pausable: paused")
+                })
             })
         })
 
@@ -287,6 +303,20 @@ export function shouldBehaveLikeAffiliateHub() {
                     await expect(
                         affiliateHub.connect(context.signers.user2).proposeAdminTransfer(affiliate, context.signers.user.address),
                     ).to.be.revertedWithCustomError(affiliateHub, "NotAdmin")
+                })
+
+                it("reverts when the contract is paused", async function () {
+                    await pauseAffiliateHub()
+                    await expect(
+                        affiliateHub.connect(context.signers.user).proposeAdminTransfer(affiliate, context.signers.user2.address),
+                    ).to.be.revertedWith("Pausable: paused")
+                })
+
+                it("requires the affiliate to stay active", async function () {
+                    await affiliateHub.connect(context.signers.user).pauseAffiliate(affiliate)
+                    await expect(
+                        affiliateHub.connect(context.signers.user).proposeAdminTransfer(affiliate, context.signers.user2.address),
+                    ).to.be.revertedWithCustomError(affiliateHub, "AffiliateNotActive")
                 })
             })
 
@@ -312,6 +342,11 @@ export function shouldBehaveLikeAffiliateHub() {
                         "Unauthorized",
                     )
                 })
+
+                it("blocks acceptance while the contract is paused", async function () {
+                    await pauseAffiliateHub()
+                    await expect(affiliateHub.connect(context.signers.user2).acceptAdminTransfer(affiliate)).to.be.revertedWith("Pausable: paused")
+                })
             })
 
             describe("cancelAdminTransfer", function () {
@@ -332,6 +367,11 @@ export function shouldBehaveLikeAffiliateHub() {
                         "Unauthorized",
                     )
                 })
+
+                it("respects the global pause state", async function () {
+                    await pauseAffiliateHub()
+                    await expect(affiliateHub.connect(context.signers.user).cancelAdminTransfer(affiliate)).to.be.revertedWith("Pausable: paused")
+                })
             })
 
             describe("updateAffiliateDetails", function () {
@@ -346,6 +386,20 @@ export function shouldBehaveLikeAffiliateHub() {
                     await expect(
                         affiliateHub.connect(context.signers.user).updateAffiliateDetails(affiliate, newDetails.name, newDetails.brandColor),
                     ).to.emit(affiliateHub, "AffiliateUpdated")
+                })
+
+                it("reverts when affiliate is paused", async function () {
+                    await affiliateHub.connect(context.signers.user).pauseAffiliate(affiliate)
+                    await expect(
+                        affiliateHub.connect(context.signers.user).updateAffiliateDetails(affiliate, "x", "#fff"),
+                    ).to.be.revertedWithCustomError(affiliateHub, "AffiliateNotActive")
+                })
+
+                it("reverts when the hub is paused", async function () {
+                    await pauseAffiliateHub()
+                    await expect(
+                        affiliateHub.connect(context.signers.user).updateAffiliateDetails(affiliate, "x", "#fff"),
+                    ).to.be.revertedWith("Pausable: paused")
                 })
             })
         })
@@ -421,6 +475,15 @@ export function shouldBehaveLikeAffiliateHub() {
                         "AffiliateRegistered",
                     )
                 })
+
+                 it("enforces role checks on pause toggles", async function () {
+                    await expect(affiliateHub.connect(context.signers.user).pause()).to.be.revertedWith(
+                        `AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${await affiliateHub.PAUSER_ROLE()}`,
+                    )
+                    await expect(affiliateHub.connect(context.signers.user).unpause()).to.be.revertedWith(
+                        `AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${await affiliateHub.UNPAUSER_ROLE()}`,
+                    )
+                })
             })
         })
 
@@ -444,6 +507,29 @@ export function shouldBehaveLikeAffiliateHub() {
                         affiliateHub.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2")),
                     ).to.emit(affiliateHub, "StakeholdersUpdateRequested")
                 })
+
+                it("rejects calls from non-admin accounts", async function () {
+                    const newStakeholders = [{ receiver: context.signers.feeCollector.address, share: ethers.parseEther("0.8") }]
+                    await expect(
+                        affiliateHub.connect(context.signers.user2).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2")),
+                    ).to.be.revertedWithCustomError(affiliateHub, "NotAdmin")
+                })
+
+                it("requires an active affiliate and unpaused hub", async function () {
+                    const newStakeholders = [{ receiver: context.signers.feeCollector.address, share: ethers.parseEther("0.8") }]
+                    await affiliateHub.connect(context.signers.user).pauseAffiliate(affiliate)
+                    await expect(
+                        affiliateHub.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2")),
+                    ).to.be.revertedWithCustomError(affiliateHub, "AffiliateNotActive")
+
+                    // resume affiliate for next assertion
+                    await affiliateHub.connect(context.signers.admin).grantRole(await affiliateHub.UNPAUSER_ROLE(), context.signers.admin.address)
+                    await affiliateHub.connect(context.signers.admin).unpauseAffiliate(affiliate)
+                    await pauseAffiliateHub()
+                    await expect(
+                        affiliateHub.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2")),
+                    ).to.be.revertedWith("Pausable: paused")
+                })
             })
 
             describe("cancelFeeUpdate", function () {
@@ -456,6 +542,18 @@ export function shouldBehaveLikeAffiliateHub() {
                 it("allows the admin to cancel pending updates", async function () {
                     await expect(affiliateHub.connect(context.signers.user).cancelFeeUpdate(affiliate)).to.emit(affiliateHub, "FeeUpdateCancelled")
                 })
+
+                it("blocks non-admin users", async function () {
+                    await expect(affiliateHub.connect(context.signers.user2).cancelFeeUpdate(affiliate)).to.be.revertedWithCustomError(
+                        affiliateHub,
+                        "NotAdmin",
+                    )
+                })
+
+                it("reverts when the hub is paused", async function () {
+                    await pauseAffiliateHub()
+                    await expect(affiliateHub.connect(context.signers.user).cancelFeeUpdate(affiliate)).to.be.revertedWith("Pausable: paused")
+                })
             })
 
             describe("approveFeeUpdate", function () {
@@ -467,6 +565,18 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("applies the pending update and clears it", async function () {
                     await expect(affiliateHub.connect(context.signers.admin).approveFeeUpdate(affiliate)).to.emit(affiliateHub, "StakeholdersUpdated")
+                })
+
+                it("requires the approver role", async function () {
+                    const approverRole = await affiliateHub.APPROVER_ROLE()
+                    await expect(affiliateHub.connect(context.signers.user).approveFeeUpdate(affiliate)).to.be.revertedWith(
+                        `AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${approverRole}`,
+                    )
+                })
+
+                it("reverts while the contract is paused", async function () {
+                    await pauseAffiliateHub()
+                    await expect(affiliateHub.connect(context.signers.admin).approveFeeUpdate(affiliate)).to.be.revertedWith("Pausable: paused")
                 })
             })
 
@@ -497,6 +607,13 @@ export function shouldBehaveLikeAffiliateHub() {
                     await expect(affiliateHub.connect(context.signers.others[0]).claimFees(affiliate, coreAddress, 1n)).to.be.revertedWithCustomError(
                         affiliateHub,
                         "Unauthorized",
+                    )
+                })
+
+                it("reverts when the contract is paused", async function () {
+                    await pauseAffiliateHub()
+                    await expect(affiliateHub.connect(context.signers.feeCollector).claimFees(affiliate, coreAddress, feeAmount)).to.be.revertedWith(
+                        "Pausable: paused",
                     )
                 })
             })
@@ -533,6 +650,26 @@ export function shouldBehaveLikeAffiliateHub() {
                         "HookSet",
                     )
                 })
+
+                it("blocks non-admin callers and inactive affiliates", async function () {
+                    const mockHook = await (await ethers.getContractFactory("MockHook")).deploy()
+                    await expect(
+                        affiliateHub.connect(context.signers.user2).setHook(affiliate, "0x12345678", await mockHook.getAddress()),
+                    ).to.be.revertedWithCustomError(affiliateHub, "NotAdmin")
+
+                    await affiliateHub.connect(context.signers.user).pauseAffiliate(affiliate)
+                    await expect(
+                        affiliateHub.connect(context.signers.user).setHook(affiliate, "0x12345678", await mockHook.getAddress()),
+                    ).to.be.revertedWithCustomError(affiliateHub, "AffiliateNotActive")
+                })
+
+                it("cannot be called while the contract is paused", async function () {
+                    const mockHook = await (await ethers.getContractFactory("MockHook")).deploy()
+                    await pauseAffiliateHub()
+                    await expect(
+                        affiliateHub.connect(context.signers.user).setHook(affiliate, "0x12345678", await mockHook.getAddress()),
+                    ).to.be.revertedWith("Pausable: paused")
+                })
             })
 
             describe("removeHook", function () {
@@ -547,6 +684,15 @@ export function shouldBehaveLikeAffiliateHub() {
                         affiliateHub,
                         "HookRemoved",
                     )
+                })
+
+                it("requires admin privileges and unpaused hub", async function () {
+                    await expect(affiliateHub.connect(context.signers.user2).removeHook(affiliate, "0x12345678")).to.be.revertedWithCustomError(
+                        affiliateHub,
+                        "NotAdmin",
+                    )
+                    await pauseAffiliateHub()
+                    await expect(affiliateHub.connect(context.signers.user).removeHook(affiliate, "0x12345678")).to.be.revertedWith("Pausable: paused")
                 })
             })
         })
@@ -566,6 +712,13 @@ export function shouldBehaveLikeAffiliateHub() {
                     // confirm stored value
                     expect(await affiliateHub.accountHub()).to.equal(newHub)
                 })
+
+                it("reverts without the setter role", async function () {
+                    const newHub = await context.accountHub.getAddress()
+                    await expect(affiliateHub.connect(context.signers.user).setAccountHub(newHub)).to.be.revertedWith(
+                        `AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${await affiliateHub.SETTER_ROLE()}`,
+                    )
+                })
             })
 
             describe("setSymmioFeeReceiver", function () {
@@ -579,6 +732,12 @@ export function shouldBehaveLikeAffiliateHub() {
                     // ensure updated
                     expect(await affiliateHub.symmioFeeReceiver()).to.equal(newReceiver)
                 })
+
+                it("requires the setter role", async function () {
+                    await expect(
+                        affiliateHub.connect(context.signers.user).setSymmioFeeReceiver(context.signers.symmioFeeReceiver.address),
+                    ).to.be.revertedWith(`AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${await affiliateHub.SETTER_ROLE()}`)
+                })
             })
 
             describe("setAccountManagerImplementation", function () {
@@ -588,6 +747,13 @@ export function shouldBehaveLikeAffiliateHub() {
                     await affiliateHub.connect(context.signers.admin).setAccountManagerImplementation(newImplementation)
                     // verify storage
                     expect(await affiliateHub.accountManagerImplementation()).to.equal(ethers.hexlify(newImplementation))
+                })
+
+                it("requires setter permissions", async function () {
+                    const newImplementation = ethers.randomBytes(32)
+                    await expect(affiliateHub.connect(context.signers.user).setAccountManagerImplementation(newImplementation)).to.be.revertedWith(
+                        `AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${await affiliateHub.SETTER_ROLE()}`,
+                    )
                 })
             })
 
@@ -600,6 +766,12 @@ export function shouldBehaveLikeAffiliateHub() {
                         "WhitelistedSymmioCoreSet",
                     )
                     expect(await affiliateHub.isWhitelistedSymmioCore(newCore)).to.equal(true)
+                })
+
+                it("requires setter role", async function () {
+                    await expect(
+                        affiliateHub.connect(context.signers.user).setWhitelistedSymmioCore(context.signers.others[0].address, true),
+                    ).to.be.revertedWith(`AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${await affiliateHub.SETTER_ROLE()}`)
                 })
             })
         })
