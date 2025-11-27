@@ -133,10 +133,30 @@ library LibSettlement {
 			"LibSettlement: Invalid length"
 		);
 
-		int256[] memory settleAmounts = new int256[](settleSig.upnlPartyBs.length);
-		newPartyBsAllocatedBalances = new uint256[](settleSig.upnlPartyBs.length);
-		newPartyAsAllocatedBalances = new uint256[](settleSig.upnlPartyBs.length);
-		partyAs = new address[](settleSig.upnlPartyBs.length);
+		require(
+			settleSig.partyAs.length == settleSig.upnlPartyBs.length && settleSig.partyAs.length == settleSig.upnlPartyAs.length,
+			"LibSettlement: Invalid upnl length"
+		);
+
+		int256[] memory settleAmounts = new int256[](settleSig.quotesSettlementsData.length);
+		newPartyBsAllocatedBalances = new uint256[](settleSig.quotesSettlementsData.length);
+		newPartyAsAllocatedBalances = new uint256[](settleSig.quotesSettlementsData.length);
+		partyAs = new address[](settleSig.quotesSettlementsData.length);
+
+		// TODO: Limit PartyAs count
+		// Just check for solvency
+		for (uint256 i = 0; i < settleSig.partyAs.length; i++) {
+			address partyB = settleSig.partyB;
+			address partyA = settleSig.partyAs[i];
+			require(
+				LibAccount.partyBAvailableBalanceForLiquidation(settleSig.upnlPartyBs[i], partyB, partyA) >= 0,
+				"LibSettlement: PartyB should be solvent"
+			);
+			require(
+				LibAccount.partyAAvailableBalanceForLiquidation(settleSig.upnlPartyAs[i], accountLayout.allocatedBalances[partyA], partyA) >= 0,
+				"LibSettlement: PartyA is insolvent"
+			);
+		}
 
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			CrossQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
@@ -177,14 +197,6 @@ library LibSettlement {
 			address partyA = quote.partyA;
 			address partyB = quote.partyB;
 
-			require(
-				LibAccount.partyBAvailableBalanceForLiquidation(settleSig.upnlPartyBs[i], partyB, partyA) >= 0,
-				"LibSettlement: PartyB should be solvent"
-			);
-			require(
-				LibAccount.partyAAvailableBalanceForLiquidation(settleSig.upnlPartyAs[i], accountLayout.allocatedBalances[partyA], partyA) >= 0,
-				"LibSettlement: PartyA is insolvent"
-			);
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
 			require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
 			require(settleSig.partyB == partyB, "LibSettlement, Invalid quote");
@@ -205,6 +217,7 @@ library LibSettlement {
 			if (settlementAmount >= 0) {
 				accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(settlementAmount);
 				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+
 				accountLayout.allocatedBalances[partyA] += uint256(settlementAmount);
 				emit SharedEvents.BalanceChangePartyA(partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			} else {
@@ -218,6 +231,7 @@ library LibSettlement {
 				accountLayout.allocatedBalances[partyA] -= uint256(-settlementAmount);
 				emit SharedEvents.BalanceChangePartyA(partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
+			//These listed are updated per Quote
 			newPartyBsAllocatedBalances[i] = masterAccountMode && settlementAmount < 0
 				? accountLayout.partyBAllocatedBalances[partyB][address(0)]
 				: accountLayout.partyBAllocatedBalances[partyB][partyA];
@@ -228,31 +242,17 @@ library LibSettlement {
 
 	function SettleAllocated(
 		CrossSettlementSig memory settlementSig
-	) internal returns (uint256[] memory fetchedAmounts, uint256[] memory newAllocatedBalances, address[] memory partyAs) {
+	) internal returns (uint256[] memory fetchedAmounts, uint256[] memory newAllocatedBalances) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		address partyB = settlementSig.partyB;
 
-		uint256 len = settlementSig.quotesSettlementsData.length;
+		uint256 len = settlementSig.partyAs.length;
 		fetchedAmounts = new uint256[](len);
 		newAllocatedBalances = new uint256[](len);
-		partyAs = new address[](len);
 
 		for (uint256 i = 0; i < len; i++) {
-			CrossQuoteSettlementData memory data = settlementSig.quotesSettlementsData[i];
-			Quote storage quote = quoteLayout.quotes[data.quoteId];
-
-			require(quote.partyB == partyB, "LibSettlement: PartyB is invalid");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"LibSettlement: Invalid state"
-			);
-
-			address partyA = quote.partyA;
+			address partyA = settlementSig.partyAs[i];
 			int256 available = LibAccount.partyBAvailableBalanceForLiquidation(settlementSig.upnlPartyBs[i], partyB, partyA);
-
 			if (available > 0) {
 				uint256 fetchable = uint256(available);
 				uint256 allocated = accountLayout.partyBAllocatedBalances[partyB][partyA];
@@ -265,11 +265,8 @@ library LibSettlement {
 					fetchedAmounts[i] = fetchable;
 				}
 			}
-
 			accountLayout.partyBNonces[partyB][partyA] += 1;
-
 			newAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][partyA];
-			partyAs[i] = partyA;
 		}
 	}
 }
