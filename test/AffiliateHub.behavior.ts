@@ -196,6 +196,38 @@ export function shouldBehaveLikeAffiliateHub() {
                 })
             })
 
+            describe("rejectRegistration", function () {
+                let affiliate: string
+                let registration: AffiliateRegistrationInput
+
+                beforeEach(async function () {
+                    const pending = await requestAffiliate()
+                    affiliate = pending.affiliate
+                    registration = pending.registration
+                })
+
+                it("lets the protocol admin reject a pending registration", async function () {
+                    const adminRole = await affiliateHub.APPROVER_ROLE()
+                    expect(await affiliateHub.hasRole(adminRole, context.signers.admin.address)).to.equal(true)
+                    await expect(affiliateHub.connect(context.signers.admin).rejectRegistration(affiliate))
+                        .to.emit(affiliateHub, "RegistrationRejected")
+                        .withArgs(affiliate, context.signers.admin.address)
+                    await expect(affiliateHub.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(affiliateHub, "AffiliateRegistered")
+                })
+
+                it("reverts rejects from non-admin or non-pending entries", async function () {
+                    const adminRole = await affiliateHub.APPROVER_ROLE()
+                    await expect(affiliateHub.connect(context.signers.user).rejectRegistration(affiliate)).to.be.revertedWith(
+                        `AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${adminRole}`,
+                    )
+                    await affiliateHub.connect(context.signers.admin).rejectRegistration(affiliate)
+                    await expect(affiliateHub.connect(context.signers.admin).rejectRegistration(affiliate)).to.be.revertedWithCustomError(
+                        affiliateHub,
+                        "NotPending",
+                    )
+                })
+            })
+
             describe("approveAffiliate", function () {
                 let affiliate: string
 

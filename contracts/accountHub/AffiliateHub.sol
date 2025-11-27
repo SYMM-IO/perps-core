@@ -148,6 +148,17 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	}
 
 	/**
+	 * @notice Rejects a pending affiliate registration
+	 * @param affiliate The affiliate address to reject
+	 */
+	function rejectRegistration(address affiliate) external onlyRole(APPROVER_ROLE) {
+		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
+
+		delete affiliates[affiliate];
+		emit RegistrationRejected(affiliate, msg.sender);
+	}
+
+	/**
 	 * @notice Approves a pending affiliate registration
 	 * @param affiliate The affiliate address to approve
 	 */
