@@ -476,7 +476,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     )
                 })
 
-                 it("enforces role checks on pause toggles", async function () {
+                it("enforces role checks on pause toggles", async function () {
                     await expect(affiliateHub.connect(context.signers.user).pause()).to.be.revertedWith(
                         `AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${await affiliateHub.PAUSER_ROLE()}`,
                     )
@@ -529,6 +529,22 @@ export function shouldBehaveLikeAffiliateHub() {
                     await expect(
                         affiliateHub.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2")),
                     ).to.be.revertedWith("Pausable: paused")
+                })
+
+                it("validates stakeholder definitions and symmio share", async function () {
+                    // zero receiver
+                    await expect(
+                        affiliateHub
+                            .connect(context.signers.user)
+                            .requestFeeUpdate(affiliate, [{ receiver: ethers.ZeroAddress, share: ethers.parseEther("0.7") }], ethers.parseEther("0.3")),
+                    ).to.be.revertedWithCustomError(affiliateHub, "ZeroAddress")
+
+                    // totals must sum to one
+                    await expect(
+                        affiliateHub
+                            .connect(context.signers.user)
+                            .requestFeeUpdate(affiliate, [{ receiver: context.signers.user.address, share: ethers.parseEther("0.9") }], ethers.parseEther("0.2")),
+                    ).to.be.revertedWithCustomError(affiliateHub, "SharesMustSumTo100")
                 })
             })
 
@@ -600,6 +616,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     // confirm increase matches share
                     const after = await context.collateral.balanceOf(stakeholder.address)
                     expect(after - before).to.equal((feeAmount * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+                    expect(await context.collateral.balanceOf(await affiliateHub.getAddress())).to.equal(0)
                 })
 
                 it("blocks unauthorized callers", async function () {
@@ -616,6 +633,29 @@ export function shouldBehaveLikeAffiliateHub() {
                         "Pausable: paused",
                     )
                 })
+
+                it("transfers the protocol share to the Symmio fee receiver", async function () {
+                    const receiver = context.signers.symmioFeeReceiver
+                    const before = await context.collateral.balanceOf(receiver.address)
+
+                    await affiliateHub.connect(context.signers.feeCollector).claimFees(affiliate, coreAddress, feeAmount)
+
+                    const after = await context.collateral.balanceOf(receiver.address)
+                    expect(after - before).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
+                    expect(await context.collateral.balanceOf(await affiliateHub.getAddress())).to.equal(0)
+                })
+
+                it("allows accounts with the distributor role to claim", async function () {
+                    const distributorRole = await affiliateHub.DISTRIBUTOR_ROLE()
+                    const distributor = context.signers.others[1]
+                    await affiliateHub.connect(context.signers.admin).grantRole(distributorRole, distributor.address)
+
+                    await expect(affiliateHub.connect(distributor).claimFees(affiliate, coreAddress, feeAmount)).to.emit(
+                        affiliateHub,
+                        "FeesClaimed",
+                    )
+                    expect(await context.collateral.balanceOf(await affiliateHub.getAddress())).to.equal(0)
+                })
             })
 
             describe("dryClaimAllFees", function () {
@@ -627,7 +667,29 @@ export function shouldBehaveLikeAffiliateHub() {
                     const [holders, shares] = await affiliateHub.dryClaimAllFees(affiliate, coreAddress)
                     // balances stay the same but preview is correct
                     expect(holders).to.include(context.signers.feeCollector.address)
-                    expect(shares[0]).to.be.gte(0n)
+                    expect(shares[0]).to.equal((totalFees * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+                })
+            })
+
+            describe("claimAllFees", function () {
+                const feeAmount = ethers.parseEther("75")
+
+                beforeEach(async function () {
+                    await depositFeesForAffiliate(affiliate, feeAmount, coreAddress)
+                })
+
+                it("withdraws the full balance and routes shares accordingly", async function () {
+                    const stakeholder = context.signers.feeCollector
+                    const stakeholderBefore = await context.collateral.balanceOf(stakeholder.address)
+                    const symmioBefore = await context.collateral.balanceOf(context.signers.symmioFeeReceiver.address)
+
+                    await expect(affiliateHub.connect(stakeholder).claimAllFees(affiliate, coreAddress)).to.emit(affiliateHub, "FeesClaimed")
+
+                    const stakeholderAfter = await context.collateral.balanceOf(stakeholder.address)
+                    const symmioAfter = await context.collateral.balanceOf(context.signers.symmioFeeReceiver.address)
+
+                    expect(stakeholderAfter - stakeholderBefore).to.equal((feeAmount * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+                    expect(symmioAfter - symmioBefore).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
                 })
             })
         })
