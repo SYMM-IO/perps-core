@@ -140,7 +140,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Cancels a pending affiliate registration
 	 * @param affiliate The affiliate address
 	 */
-	function cancelRegistration(address affiliate) external onlyAffiliateAdmin(affiliate) {
+	function cancelRegistration(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
 		delete affiliates[affiliate];
@@ -195,7 +195,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param affiliate The affiliate address
 	 * @param newAdmin The proposed new admin address
 	 */
-	function proposeAdminTransfer(address affiliate, address newAdmin) external onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
+	function proposeAdminTransfer(address affiliate, address newAdmin) external whenNotPaused onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
 		if (newAdmin == address(0)) revert ZeroAddress();
 
 		affiliates[affiliate].pendingAdmin = newAdmin;
@@ -206,7 +206,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Accepts the pending admin transfer
 	 * @param affiliate The affiliate address
 	 */
-	function acceptAdminTransfer(address affiliate) external {
+	function acceptAdminTransfer(address affiliate) external whenNotPaused {
 		if (affiliates[affiliate].pendingAdmin != msg.sender) revert Unauthorized();
 
 		address oldAdmin = affiliates[affiliate].admin;
@@ -220,7 +220,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Cancels the pending admin transfer
 	 * @param affiliate The affiliate address
 	 */
-	function cancelAdminTransfer(address affiliate) external onlyAffiliateAdmin(affiliate) {
+	function cancelAdminTransfer(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		affiliates[affiliate].pendingAdmin = address(0);
 		emit AdminTransferCancelled(affiliate);
 	}
@@ -235,7 +235,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		address affiliate,
 		string memory name,
 		string memory brandColor
-	) external onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		_validateName(name);
 
 		affiliates[affiliate].name = name;
@@ -248,7 +248,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Pauses an active affiliate
 	 * @param affiliate The affiliate address
 	 */
-	function pauseAffiliate(address affiliate) external onlyIfAffiliateIsActive(affiliate) {
+	function pauseAffiliate(address affiliate) external whenNotPaused onlyIfAffiliateIsActive(affiliate) {
 		if (!hasRole(PAUSER_ROLE, msg.sender) && affiliates[affiliate].admin != msg.sender) {
 			revert Unauthorized();
 		}
@@ -280,7 +280,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		address affiliate,
 		Stakeholder[] memory newStakeholders,
 		uint256 newSymmioShare
-	) external onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		_validateFeeShares(newStakeholders, newSymmioShare);
 
 		PendingFeeUpdate storage pending = pendingFeeUpdates[affiliate];
@@ -296,7 +296,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Cancels a pending fee update
 	 * @param affiliate The affiliate address
 	 */
-	function cancelFeeUpdate(address affiliate) external onlyAffiliateAdmin(affiliate) {
+	function cancelFeeUpdate(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		if (!pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
 
 		delete pendingFeeUpdates[affiliate];
@@ -396,12 +396,12 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param selector The function selector to hook
 	 * @param hook The hook contract address
 	 */
-	function setHook(address affiliate, bytes4 selector, address hook) external {
-		if (affiliates[affiliate].state != AffiliateState.ACTIVE) {
-			revert AffiliateNotActive();
-		}
-		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
-
+	function setHook(address affiliate, bytes4 selector, address hook)
+		external
+		whenNotPaused
+		onlyAffiliateAdmin(affiliate)
+		onlyIfAffiliateIsActive(affiliate)
+	{
 		affiliates[affiliate].hooks[selector] = hook;
 		emit HookSet(affiliate, selector, hook);
 	}
@@ -411,9 +411,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param affiliate The affiliate address
 	 * @param selector The function selector to unhook
 	 */
-	function removeHook(address affiliate, bytes4 selector) external {
-		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
-
+	function removeHook(address affiliate, bytes4 selector) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		delete affiliates[affiliate].hooks[selector];
 		emit HookRemoved(affiliate, selector);
 	}
