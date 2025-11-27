@@ -59,11 +59,9 @@ contract AccountManager is IAccountManager {
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20(collateral).safeIncreaseAllowance(accountHub, amount);
 
-		IAccountHub(accountHub).depositForAccount(account, amount);
-	}
-
-	function allocateForAccount(address account, uint256 amount) external withSigner {
-		IAccountHub(accountHub).allocateForAccount(account, amount);
+		bytes[] memory callDatas = new bytes[](1);
+		callDatas[0] = abi.encodeWithSelector(ISymmio.depositFor.selector, account, amount);
+		IAccountHub(accountHub)._call(account, callDatas);
 	}
 
 	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner {
@@ -73,11 +71,15 @@ contract AccountManager is IAccountManager {
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20(collateral).safeIncreaseAllowance(accountHub, amount);
 
-		IAccountHub(accountHub).depositAndAllocateForAccount(account, amount);
+		bytes[] memory callDatas = new bytes[](1);
+		callDatas[0] = abi.encodeWithSelector(ISymmio.depositAndAllocateFor.selector, account, amount);
+		IAccountHub(accountHub)._call(account, callDatas);
 	}
 
 	function withdrawFromAccount(address account, uint256 amount) external withSigner {
-		IAccountHub(accountHub).withdrawFromAccount(account, amount);
+		bytes[] memory callDatas = new bytes[](1);
+		callDatas[0] = abi.encodeWithSelector(ISymmio.withdrawTo.selector, account, amount);
+		IAccountHub(accountHub)._call(account, callDatas);
 	}
 
 	function _call(address account, bytes[] memory callDatas) external withSigner {

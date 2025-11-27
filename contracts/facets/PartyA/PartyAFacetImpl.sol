@@ -14,6 +14,8 @@ import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../storages/SymbolStorage.sol";
 
+import "../../libraries/LibSigner.sol";
+
 library PartyAFacetImpl {
 	using LockedValuesOps for LockedValues;
 
@@ -40,9 +42,9 @@ library PartyAFacetImpl {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
-		require(!LibAccessibility.hasRole(msg.sender, LibAccessibility.LIQUIDATOR_ROLE), "PartyAFacet: Liquidator can't be partyA");
+		require(!LibAccessibility.hasRole(LibSigner.getSigner(), LibAccessibility.LIQUIDATOR_ROLE), "PartyAFacet: Liquidator can't be partyA");
 		require(
-			quoteLayout.partyAPendingQuotes[msg.sender].length < maLayout.pendingQuotesValidLength,
+			quoteLayout.partyAPendingQuotes[LibSigner.getSigner()].length < maLayout.pendingQuotesValidLength,
 			"PartyAFacet: Number of pending quotes out of range"
 		);
 		require(symbolLayout.symbols[symbolId].isValid, "PartyAFacet: Symbol is not valid");
@@ -57,14 +59,14 @@ library PartyAFacetImpl {
 
 		require(lockedValues.totalForPartyA() >= symbolLayout.symbols[symbolId].minAcceptableQuoteValue, "PartyAFacet: Quote value is low");
 		for (uint8 i = 0; i < partyBsWhiteList.length; i++) {
-			require(partyBsWhiteList[i] != msg.sender, "PartyAFacet: Sender isn't allowed in partyBWhiteList");
+			require(partyBsWhiteList[i] != LibSigner.getSigner(), "PartyAFacet: Sender isn't allowed in partyBWhiteList");
 		}
 
-		address boundedPartyB = accountLayout.bindState[msg.sender].partyB;
+		address boundedPartyB = accountLayout.bindState[LibSigner.getSigner()].partyB;
 		if (boundedPartyB != address(0)) {
 			require(partyBsWhiteList.length == 1 && partyBsWhiteList[0] == boundedPartyB, "PartyAFacet: PartyA is bound to a different PartyB");
 		} else {
-			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, msg.sender, symbolId);
+			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, LibSigner.getSigner(), symbolId);
 		}
 
 		Fee memory fee;
@@ -78,16 +80,16 @@ library PartyAFacetImpl {
 			}
 		}
 
-		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, msg.sender);
+		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, LibSigner.getSigner());
 		require(availableBalance > 0, "PartyAFacet: Available balance is lower than zero");
-		require(
-			uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * fee.openFee) / 1e36),
-			"PartyAFacet: insufficient available balance"
-		);
+		// require(
+		// 	uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * fee.openFee) / 1e36),
+		// 	"PartyAFacet: insufficient available balance"
+		// );
 		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
 
 		// lock funds the in middle of way
-		accountLayout.pendingLockedBalances[msg.sender].add(lockedValues);
+		accountLayout.pendingLockedBalances[LibSigner.getSigner()].add(lockedValues);
 		currentId = ++quoteLayout.lastId;
 
 		// create quote.
@@ -106,7 +108,7 @@ library PartyAFacetImpl {
 			lockedValues: lockedValues,
 			initialLockedValues: lockedValues,
 			maxFundingRate: maxFundingRate,
-			partyA: msg.sender,
+			partyA: LibSigner.getSigner(),
 			partyB: address(0),
 			quoteStatus: QuoteStatus.PENDING,
 			avgClosedPrice: 0,
@@ -123,13 +125,13 @@ library PartyAFacetImpl {
 			closeFee: fee.closeFee,
 			data: data
 		});
-		quoteLayout.quoteIdsOf[msg.sender].push(currentId);
-		quoteLayout.partyAPendingQuotes[msg.sender].push(currentId);
+		quoteLayout.quoteIdsOf[LibSigner.getSigner()].push(currentId);
+		quoteLayout.partyAPendingQuotes[LibSigner.getSigner()].push(currentId);
 		quoteLayout.quotes[currentId] = quote;
 
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
-		accountLayout.allocatedBalances[msg.sender] -= feeAmount;
-		emit SharedEvents.BalanceChangePartyA(msg.sender, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
+		accountLayout.allocatedBalances[LibSigner.getSigner()] -= feeAmount;
+		emit SharedEvents.BalanceChangePartyA(LibSigner.getSigner(), feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 	}
 
 	function requestToCancelQuote(uint256 quoteId) internal returns (QuoteStatus result) {

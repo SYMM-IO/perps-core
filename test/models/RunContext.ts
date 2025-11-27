@@ -20,10 +20,11 @@ import {
 	SymmioPartyB,
 	AccountManager,
 	AffiliateHub,
+	AccountHub,
+	FakeStablecoin,
 } from "../../src/types"
 import { TestManager } from "./TestManager"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { AccountHub } from "../../src/types/contracts/accountHub/AccountHub.sol"
 
 export class RunContext {
 	accountFacet!: AccountFacet
@@ -61,7 +62,7 @@ export class RunContext {
 	instantLayer!: InstantLayer
 	accountHub!: AccountHub
 	symmioPartyB!: SymmioPartyB
-	collateral: any
+	collateral!: FakeStablecoin
 	manager!: TestManager
 	affiliateHub!: AffiliateHub
 }

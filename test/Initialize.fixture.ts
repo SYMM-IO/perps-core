@@ -2,8 +2,7 @@ import { ethers, run } from "hardhat"
 import { createRunContext, RunContext } from "./models/RunContext"
 import { decimal } from "./utils/Common"
 import { toUtf8Bytes, ZeroAddress } from "ethers"
-import { AccountHub } from "../src/types/contracts/accountHub/AccountHub.sol"
-import { AffiliateHub } from "../src/types"
+import { AccountHub, AffiliateHub } from "../src/types"
 
 export async function initializeFixture(): Promise<RunContext> {
 	const collateral = await run("deploy:stablecoin")
@@ -14,7 +13,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	})
 
 	const admin = process.env.ADMIN_PUBLIC_KEY || (await (await ethers.getSigners())[0].getAddress())
-	
+
 	const symmioPartyB = await run("deploy:symmioPartyB", {
 		symmioAddress: await diamond.getAddress(),
 		admin: admin,
@@ -42,7 +41,13 @@ export async function initializeFixture(): Promise<RunContext> {
 	// Grant roles to affiliate hub
 	await affiliateHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
 	await affiliateHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("APPROVER_ROLE")), context.signers.admin.address)
+
 	await affiliateHub.connect(context.signers.admin).setWhitelistedSymmioCore(diamond, true)
+
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("PAUSER_ROLE")), context.signers.admin.address)
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE")), context.signers.admin.address)
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SIGNER_SETTER")), context.signers.admin.address)
 
 	// Register first affiliate
 	const affiliateData = {
@@ -86,7 +91,9 @@ export async function initializeFixture(): Promise<RunContext> {
 
 	// Approve affiliates
 	await context.controlFacet.connect(context.signers.admin).setAdmin(context.signers.admin.address)
-	await context.controlFacet.connect(context.signers.admin).grantRole(await affiliateHub.getAddress(), ethers.keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(await affiliateHub.getAddress(), ethers.keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
 	await affiliateHub.connect(context.signers.admin).approveAffiliate(affiliateAddress)
 	await affiliateHub.connect(context.signers.admin).approveAffiliate(affiliate2Address)
 
@@ -120,12 +127,21 @@ export async function initializeFixture(): Promise<RunContext> {
 	}
 
 	// Grant liquidator roles
-	await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE")))
-	await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("ACCOUNT_HUB_SIGNER_SETTER_ROLE")))
 
 	// Configure system
 	await context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress())
-	await context.controlFacet.connect(context.signers.admin).addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
 	await context.controlFacet.connect(context.signers.admin).setSymbolTypes([1], [1])
 	await context.controlFacet.whitelistSymbolType(context.signers.hedger.address, 1)
 	await context.controlFacet.whitelistSymbolType(context.signers.hedger2.address, 1)

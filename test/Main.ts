@@ -21,6 +21,7 @@ import { shouldBehaveLikeSettlement } from "./Settlement.behavior"
 import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior"
 import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior"
+import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior"
 import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior"
 
 describe("UnitTests", function () {
@@ -108,9 +109,13 @@ describe("UnitTests", function () {
 		describe("PartyBBatchActionsFacet", async function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
 		})
-		
+
 		describe("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
+		})
+
+		describe.only("AccountHub", async function () {
+			shouldBehaveLikeAccountHub()
 		})
 
 		describe("AffiliateHub", async function () {

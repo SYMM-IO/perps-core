@@ -83,10 +83,6 @@ interface IAccountHub {
 	// Account management
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
 	function editAccountName(address account, string memory name) external;
-	function depositForAccount(address account, uint256 amount) external;
-	function allocateForAccount(address account, uint256 amount) external;
-	function depositAndAllocateForAccount(address account, uint256 amount) external;
-	function withdrawFromAccount(address account, uint256 amount) external;
 	function _call(address account, bytes[] memory _callDatas) external;
 
 	// Symmio callback
@@ -97,7 +93,14 @@ interface IAccountHub {
 	function getRelatedCore(address account) external view returns (address);
 	function getSubAccounts(address owner) external view returns (address[] memory);
 	function getVirtualAccounts(address subAccount) external view returns (address[] memory);
+	function getSubAccountData(
+		address account
+	)
+		external
+		view
+		returns (address owner, bool isExists, string memory name, address affiliate,address symmioCore, bytes memory metadata, SubAccountIsolationType isolationType);
 
+	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory);
 	// Admin functions
 	function setSigner(address _signer) external;
 

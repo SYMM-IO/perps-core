@@ -17,6 +17,7 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
+import "hardhat/console.sol";
 
 /**
  * @title AccountHub
@@ -39,6 +40,8 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
+
+	uint256 public constant MAX_NAME_LENGTH = 100;
 
 	// ==================== State Variables ====================
 
@@ -133,42 +136,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @notice Deposits collateral for an account
-	 * @param account The account address
-	 * @param amount The amount to deposit
-	 */
-	function depositForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_depositForAccount(account, amount);
-	}
-
-	/**
-	 * @notice Allocates balance for trading in an account
-	 * @param account The account address
-	 * @param amount The amount to allocate
-	 */
-	function allocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_allocateForAccount(account, amount);
-	}
-
-	/**
-	 * @notice Deposits and allocates in a single transaction
-	 * @param account The account address
-	 * @param amount The amount to deposit and allocate
-	 */
-	function depositAndAllocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant {
-		_depositAndAllocateForAccount(account, amount);
-	}
-
-	/**
-	 * @notice Withdraws collateral from an account
-	 * @param account The account address
-	 * @param amount The amount to withdraw
-	 */
-	function withdrawFromAccount(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
-		_withdrawFromAccount(account, amount);
-	}
-
-	/**
 	 * @notice Executes arbitrary calls on behalf of an account
 	 * @param account The account address
 	 * @param callDatas Array of encoded function calls
@@ -181,14 +148,17 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			bytes4 selector = bytes4(cd[:4]);
 
 			if (selector == SEND_QUOTE_SELECTOR || selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
+				console.log("SELECTOR DETECTED");
 				QuoteParams memory p = _decodeQuoteParams(cd);
 
 				if (virtualAccounts[account].isExists) {
+					console.log("VIR is exist");
 					_handleVirtualAccountSendQuote(account, cd, p);
 					return;
 				}
 
 				if (subAccounts[account].isExists) {
+					console.log("VIR is not exist");
 					_handleSubAccountSendQuote(account, cd, p);
 					return;
 				}
@@ -306,13 +276,51 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		return subAccountToVirtualAccounts[subAccount].values();
 	}
 
+	/**
+	 * @notice Gets sub-account data
+	 * @param account The account address
+	 * @return owner The owner address
+	 * @return isExists Whether the account exists
+	 * @return name The account name
+	 * @return affiliate The affiliate address
+	 * @return symmioCore The symmioCore address
+	 * @return metadata The metadata
+	 * @return isolationType The isolation type
+	 */
+	function getSubAccountData(
+		address account
+	)
+		external
+		view
+		returns (
+			address owner,
+			bool isExists,
+			string memory name,
+			address affiliate,
+			address symmioCore,
+			bytes memory metadata,
+			SubAccountIsolationType isolationType
+		)
+	{
+		SubAccountData storage s = subAccounts[account];
+		return (s.owner, s.isExists, s.name, s.affiliate, s.symmioCore, s.metadata, s.isolationType);
+	}
+
+	/**
+	 * @notice Gets quote IDs for a sub-account
+	 * @param account The account address
+	 * @return Array of quote IDs
+	 */
+	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory) {
+		return subAccounts[account].quoteIds.values();
+	}
+
 	// ==================== Internal Functions ====================
 
 	/**
 	 * @dev Validates name length
 	 */
 	function _validateName(string memory name) private pure {
-		uint256 MAX_NAME_LENGTH = 100;
 		if (bytes(name).length == 0 || bytes(name).length > MAX_NAME_LENGTH) {
 			revert InvalidNameLength();
 		}
@@ -396,90 +404,56 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @dev Deposits collateral for an account
+	 * @dev Decodes quote parameters from calldata
 	 */
-	function _depositForAccount(address account, uint256 amount) private {
-		address signer = getSigner();
-		address core = getRelatedCore(account);
-		address collateral = ISymmio(core).getCollateral();
-
-		IERC20Upgradeable(collateral).safeTransferFrom(signer, address(this), amount);
-		IERC20Upgradeable(collateral).safeIncreaseAllowance(core, amount);
-
-		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.depositFor.selector, account, amount));
-
-		address affiliate = _getAffiliateForAccount(account);
-		_callHook(affiliate, IAccountHubHook.onDeposit.selector, abi.encode(account, amount));
-
-		emit DepositForAccount(signer, account, amount);
-	}
-
-	/**
-	 * @dev Allocates balance for an account
-	 */
-	function _allocateForAccount(address account, uint256 amount) private {
-		address signer = getSigner();
-		address core = getRelatedCore(account);
-		address collateral = ISymmio(core).getCollateral();
-		uint8 decimals = IERC20Metadata(collateral).decimals();
-
-		if (decimals > 18) revert InvalidTokenDecimals();
-
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** decimals);
-
-		ISymmio(core).setSigner(account);
-		ISymmio(core).allocate(amount);
-		ISymmio(core).setSigner(address(0));
-
-		emit AllocateForAccount(signer, account, amountWith18Decimals);
-	}
-
-	/**
-	 * @dev Deposits and allocates in one call
-	 */
-	function _depositAndAllocateForAccount(address account, uint256 amount) private {
-		_depositForAccount(account, amount);
-		_allocateForAccount(account, amount);
-	}
-
-	/**
-	 * @dev Withdraws from an account
-	 */
-	function _withdrawFromAccount(address account, uint256 amount) private {
-		address signer = getSigner();
-		_executeWithSigner(account, abi.encodeWithSelector(ISymmio.withdrawTo.selector, signer, amount));
-
-		address affiliate = _getAffiliateForAccount(account);
-		_callHook(affiliate, IAccountHubHook.onWithdraw.selector, abi.encode(account, amount));
-
-		emit WithdrawFromAccount(signer, account, amount);
-	}
-
 	/**
 	 * @dev Decodes quote parameters from calldata
 	 */
 	function _decodeQuoteParams(bytes calldata cd) private pure returns (QuoteParams memory) {
-		(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , , ) = abi.decode(
-			cd[4:],
-			(
-				address[],
-				uint256,
-				ISymmio.PositionType,
-				ISymmio.OrderType,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				uint256,
-				address,
-				ISymmio.SingleUpnlAndPriceSig
-			)
-		);
+		bytes4 selector = bytes4(cd[:4]);
 
-		return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
+		if (selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
+			(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , , ) = abi.decode(
+				cd[4:],
+				(
+					address[],
+					uint256,
+					ISymmio.PositionType,
+					ISymmio.OrderType,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					address,
+					ISymmio.SingleUpnlAndPriceSig
+				)
+			);
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
+		} else {
+			(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , ) = abi.decode(
+				cd[4:],
+				(
+					address[],
+					uint256,
+					ISymmio.PositionType,
+					ISymmio.OrderType,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					uint256,
+					ISymmio.SingleUpnlAndPriceSig
+				)
+			);
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
+		}
 	}
 
 	/**
@@ -494,6 +468,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			(isolationType == VirtualAccountIsolationType.MARKET_LONG && p.positionType != ISymmio.PositionType.LONG) ||
 			(isolationType == VirtualAccountIsolationType.MARKET_SHORT && p.positionType != ISymmio.PositionType.SHORT)
 		) {
+			console.log("VIR ::: 1");
 			revert PositionTypeNotAllowedForThisAccount();
 		}
 
@@ -502,11 +477,15 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				isolationType == VirtualAccountIsolationType.MARKET_LONG ||
 				isolationType == VirtualAccountIsolationType.MARKET_SHORT) && p.symbolId != accountData.symbolId
 		) {
+			console.log("VIR ::: 2");
 			revert SymbolNotAllowedForThisAccount();
 		}
 
+		console.log("VIR ::: 3");
 		_executeWithSigner(account, cd);
+		console.log("VIR ::: 4");
 		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId() - 1);
+		console.log("VIR ::: 5");
 	}
 
 	/**
@@ -523,8 +502,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		// create virtual account based on sub-account isolation type
 		address virtualAccount;
-		if (accountData.isolationType == SubAccountIsolationType.POSITION)
+		if (accountData.isolationType == SubAccountIsolationType.POSITION){
 			virtualAccount = _createVirtualAccount(account, hex"", VirtualAccountIsolationType.POSITION, p.symbolId);
+		}
 
 		if (accountData.isolationType == SubAccountIsolationType.MARKET)
 			virtualAccount = _createVirtualAccount(account, hex"", VirtualAccountIsolationType.MARKET, p.symbolId);
