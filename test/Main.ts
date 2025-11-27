@@ -118,7 +118,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeAccountHub()
 		})
 
-		describe("AffiliateHub", async function () {
+		describe.only("AffiliateHub", async function () {
 			shouldBehaveLikeAffiliateHub()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
