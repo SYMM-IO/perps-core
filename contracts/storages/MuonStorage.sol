@@ -125,7 +125,6 @@ struct SettlementSig {
 struct CrossQuoteSettlementData {
 	uint256 quoteId;
 	uint256 currentPrice;
-	int256 upnlPartyA;
 }
 
 struct CrossSettlementSig {
@@ -134,6 +133,8 @@ struct CrossSettlementSig {
 	CrossQuoteSettlementData[] quotesSettlementsData;
 	address partyB;
 	int256 upnlPartyB; //Party B UPNLs for all party As in master account mode enabled
+	address[] partyAs;
+	int256[] upnlPartyAs;
 	bytes gatewaySignature;
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }

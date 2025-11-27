@@ -26,8 +26,7 @@ library LibMuonCrossSettlement {
 			encodedData = abi.encodePacked(
 				encodedData, // Append the previously encoded data
 				settleSig.quotesSettlementsData[i].quoteId,
-				settleSig.quotesSettlementsData[i].currentPrice,
-				settleSig.quotesSettlementsData[i].upnlPartyA
+				settleSig.quotesSettlementsData[i].currentPrice
 			);
 		}
 		bytes32 hash = keccak256(
@@ -41,6 +40,8 @@ library LibMuonCrossSettlement {
 				encodedData,
 				settleSig.partyB,
 				settleSig.upnlPartyB,
+				settleSig.partyAs,
+				settleSig.upnlPartyAs,
 				settleSig.timestamp,
 				LibMuon.getChainId()
 			)

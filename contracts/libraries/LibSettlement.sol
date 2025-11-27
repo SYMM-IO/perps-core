@@ -170,6 +170,15 @@ library LibSettlement {
 			quote.openedPrice = updatedPrices[i];
 		}
 
+		// todo: # of Party A must be limited
+		for (uint256 i = 0; i < settleSig.upnlPartyAs.length; i++) {
+			address partyA = settleSig.partyAs[i];
+			require(
+				LibAccount.partyAAvailableBalanceForLiquidation(settleSig.upnlPartyAs[i], accountLayout.allocatedBalances[partyA], partyA) >= 0,
+				"LibSettlement: PartyA is insolvent"
+			);
+		}
+
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			CrossQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
@@ -179,15 +188,6 @@ library LibSettlement {
 			require(
 				LibAccount.partyBAvailableBalanceForLiquidationMasterAccount(settleSig.upnlPartyB, partyB, partyA) >= 0,
 				"LibSettlement: PartyB should be solvent"
-			);
-
-			require(
-				LibAccount.partyAAvailableBalanceForLiquidation(
-					settleSig.quotesSettlementsData[i].upnlPartyA,
-					accountLayout.allocatedBalances[partyA],
-					partyA
-				) >= 0,
-				"LibSettlement: PartyA is insolvent"
 			);
 
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
