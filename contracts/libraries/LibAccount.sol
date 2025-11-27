@@ -168,4 +168,18 @@ library LibAccount {
 			int256(accountLayout.partyBLockedBalances[partyB][partyA].cva + accountLayout.partyBLockedBalances[partyB][partyA].lf);
 		return a + upnl;
 	}
+
+	/**
+	 * @notice Calculates the available balance for liquidation for Party B in master account mode enabled.
+	 * @param upnl The unrealized profit and loss.
+	 * @param partyB The address of Party B.
+	 * @param partyA The address of Party A.
+	 * @return The available balance for liquidation for Party B.
+	 */
+	function partyBAvailableBalanceForLiquidationMasterAccount(int256 upnl, address partyB, address partyA) internal view returns (int256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][address(0)]) -
+			int256(accountLayout.partyBLockedBalances[partyB][partyA].cva + accountLayout.partyBLockedBalances[partyB][partyA].lf);
+		return a + upnl;
+	}
 }

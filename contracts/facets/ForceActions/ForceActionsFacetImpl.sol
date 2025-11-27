@@ -294,7 +294,7 @@ library ForceActionsFacetImpl {
 		}
 	}
 
-	function forceRealize(uint256 quoteId, SettlementSig memory settlementSig, uint256[] memory updatedPrices) internal {
+	function realizeUPNL(uint256 quoteId, SettlementSig memory settlementSig, uint256[] memory updatedPrices) internal {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
 		address partyA = quote.partyA;
@@ -304,41 +304,37 @@ library ForceActionsFacetImpl {
 			newPartyBsAllocatedBalances = LibSettlement.settleUpnl(settlementSig, updatedPrices, partyA, true);
 			ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
 			detail.timestamp = block.timestamp;
-			detail.forceCloseState = ForceCloseState.REALIZED;
+			detail.settlementState = UPNLSettlementState.REALIZED;
 		}
 	}
 
-	function forceRealizeMasterAccount(
+	function realizeUPNLMasterAccount(
 		uint256 quoteId,
 		CrossSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
-	) internal returns (uint256[] memory newPartyBsAllocatedBalances, uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
+	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
 
 		if (updatedPrices.length > 0) {
 			LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
-			(newPartyBsAllocatedBalances, newPartyAsAllocatedBalances, partyAs) = LibSettlement.crossSettleUpnl(settlementSig, updatedPrices, true);
-			detail.forceCloseState = ForceCloseState.REALIZED_MASTER_ACCOUNT;
+			(newPartyAsAllocatedBalances, partyAs) = LibSettlement.crossSettleUpnl(settlementSig, updatedPrices, true);
+			detail.settlementState = UPNLSettlementState.REALIZED_MASTER_ACCOUNT;
 			detail.timestamp = block.timestamp;
 		}
 	}
 
-	function forceFetchAllocatedMasterAccount(
-		CrossSettlementSig memory settlementSig
-	) internal returns (uint256[] memory gatheredAmounts, uint256[] memory newAllocatedBalances) {
+	function fetchAllocatedMasterAccount(address partyB, address[] memory partyAs, uint256[] memory fetchAmounts) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address partyB = settlementSig.partyB;
 
 		if (!(accountLayout.masterAccountMode[partyB])) {
 			revert ForceActionsFacetMasterAccountModeInactive();
 		}
-		LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
 
-		(gatheredAmounts, newAllocatedBalances) = LibSettlement.SettleAllocated(settlementSig);
+		LibSettlement.SettleAllocated(partyB, partyAs, fetchAmounts);
 
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
-		detail.forceCloseState = ForceCloseState.GATHER_ALLOCATED_MASTER_ACCOUNT;
+		detail.allocatedSettlementState = AllocatedSettlementState.GATHER_ALLOCATED_MASTER_ACCOUNT;
 		detail.timestamp = block.timestamp;
 	}
 }

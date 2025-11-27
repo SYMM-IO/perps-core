@@ -81,7 +81,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
 		address partyA = quote.partyA;
 
-		ForceActionsFacetImpl.forceRealize(quoteId, settleSig, updatedPrices);
+		ForceActionsFacetImpl.realizeUPNL(quoteId, settleSig, updatedPrices);
 		newPartyBsAllocatedBalances[0] = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
 		emit SettleUpnl(
 			settleSig.quotesSettlementsData,
@@ -94,35 +94,32 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		forceClose(quoteId, highLowPriceSig);
 	}
 
-	function forceRealizeMasterAccount(
+	function realizeUPNLMasterAccount(
 		uint256 quoteId,
 		HighLowPriceSig memory sig,
 		CrossSettlementSig memory settlementSig,
-		uint256[] memory updatedPrices
+		uint256[] memory updatedPrices,
+		address[] memory partyAs,
+		uint256[] memory fetchAmounts
 	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote memory quote = quoteLayout.quotes[quoteId];
+		address partyB = settlementSig.partyB;
 
-		(uint256[] memory newPartyBsAllocatedBalances, uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) = ForceActionsFacetImpl
-			.forceRealizeMasterAccount(quoteId, settlementSig, updatedPrices);
+		(uint256[] memory newPartyAsAllocatedBalances, address[] memory _partyAs) = ForceActionsFacetImpl.realizeUPNLMasterAccount(
+			quoteId,
+			settlementSig,
+			updatedPrices
+		);
 		emit CrossSettleUpnl(
 			settlementSig.quotesSettlementsData,
 			updatedPrices,
-			quote.partyB,
-			partyAs,
+			partyB,
+			_partyAs,
 			newPartyAsAllocatedBalances,
-			newPartyBsAllocatedBalances
+			AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)]
 		);
 
-		(uint256[] memory gatheredAmounts, uint256[] memory newAllocatedBalances) = ForceActionsFacetImpl
-			.forceFetchAllocatedMasterAccount(settlementSig);
-		emit CrossSettleAllocated(
-			settlementSig.quotesSettlementsData,
-			settlementSig.partyB,
-			settlementSig.partyAs,
-			newAllocatedBalances,
-			gatheredAmounts
-		);
+		ForceActionsFacetImpl.fetchAllocatedMasterAccount(partyB, partyAs, fetchAmounts);
+		emit CrossSettleAllocated(partyB, partyAs, AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)], fetchAmounts);
 
 		forceClose(quoteId, sig);
 	}

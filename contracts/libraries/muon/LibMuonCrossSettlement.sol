@@ -21,12 +21,13 @@ library LibMuonCrossSettlement {
 		address partyA;
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			partyA = quotes.quotes[settleSig.quotesSettlementsData[i].quoteId].partyA;
-			partyBNonces[i] = AccountStorage.layout().partyBNonces[quotes.quotes[settleSig.quotesSettlementsData[i].quoteId].partyB][partyA];
+			partyBNonces[i] = AccountStorage.layout().partyBNonces[settleSig.partyB][partyA];
 			partyANonces[i] = AccountStorage.layout().partyANonces[partyA];
 			encodedData = abi.encodePacked(
 				encodedData, // Append the previously encoded data
 				settleSig.quotesSettlementsData[i].quoteId,
-				settleSig.quotesSettlementsData[i].currentPrice
+				settleSig.quotesSettlementsData[i].currentPrice,
+				settleSig.quotesSettlementsData[i].upnlPartyA
 			);
 		}
 		bytes32 hash = keccak256(
@@ -39,8 +40,7 @@ library LibMuonCrossSettlement {
 				partyANonces,
 				encodedData,
 				settleSig.partyB,
-				settleSig.upnlPartyBs,
-				settleSig.upnlPartyAs,
+				settleSig.upnlPartyB,
 				settleSig.timestamp,
 				LibMuon.getChainId()
 			)

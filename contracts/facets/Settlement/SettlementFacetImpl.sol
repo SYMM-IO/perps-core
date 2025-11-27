@@ -21,7 +21,7 @@ library SettlementFacetImpl {
 	function crossSettleUpnl(
 		CrossSettlementSig memory settleSig,
 		uint256[] memory updatedPrices
-	) internal returns (uint256[] memory newPartyBsAllocatedBalances, uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
+	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
 		LibMuonCrossSettlement.verifyCrossSettlement(settleSig);
 		return LibSettlement.crossSettleUpnl(settleSig, updatedPrices, false);
 	}

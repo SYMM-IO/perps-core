@@ -13,12 +13,15 @@ enum LiquidationType {
 	OVERDUE
 }
 
-enum ForceCloseState {
+enum AllocatedSettlementState {
 	NONE,
-	NORMAL,
-	REALIZED,
-	REALIZED_MASTER_ACCOUNT,
 	GATHER_ALLOCATED_MASTER_ACCOUNT
+}
+
+enum UPNLSettlementState {
+	NONE,
+	REALIZED,
+	REALIZED_MASTER_ACCOUNT
 }
 
 enum PartyBForceCloseState {
@@ -38,7 +41,8 @@ struct SettlementState {
 struct ForceCloseDetail {
 	uint256 quoteId;
 	uint256 timestamp;
-	ForceCloseState forceCloseState;
+	UPNLSettlementState settlementState;
+	AllocatedSettlementState allocatedSettlementState;
 	PartyBForceCloseState partyBState;
 }
 
