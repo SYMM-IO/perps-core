@@ -150,6 +150,16 @@ library PartyAFacetImpl {
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			result = QuoteStatus.CANCELED;
+
+			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
+			address systemHook = accountLayout.affiliateHooks[address(0)];
+
+			if (affiliateHook != address(0)) {
+				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			}
+			if (systemHook != address(0)) {
+				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			}
 		} else {
 			// Quote is locked
 			quote.quoteStatus = QuoteStatus.CANCEL_PENDING;

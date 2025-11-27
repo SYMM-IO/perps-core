@@ -17,8 +17,6 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
-import "hardhat/console.sol";
-
 /**
  * @title AccountHub
  * @notice Manages sub-accounts and virtual accounts for the Symmio protocol
@@ -122,6 +120,29 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
+	 * @notice Manually creates a virtual account for a sub-account
+	 * @param parentAccount The parent sub-account address
+	 * @param metadata The metadata for the virtual account
+	 * @param isolationType The isolation type for the virtual account
+	 * @param symbolId The symbol ID (required for MARKET isolation types)
+	 * @return virtualAccount The created virtual account address
+	 */
+	function createCustomVirtualAccount(
+		address parentAccount,
+		bytes memory metadata,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) external whenNotPaused nonReentrant onlyAccountOwner(parentAccount) returns (address) {
+		SubAccountData storage parent = subAccounts[parentAccount];
+
+		if (parent.isolationType != SubAccountIsolationType.CUSTOM) {
+			revert OnlyCustomIsolationCanCreateManually();
+		}
+
+		return _createVirtualAccount(parentAccount, metadata, isolationType, symbolId);
+	}
+
+	/**
 	 * @notice Edits the name of an existing account
 	 * @param account The account address
 	 * @param name The new name
@@ -148,17 +169,14 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			bytes4 selector = bytes4(cd[:4]);
 
 			if (selector == SEND_QUOTE_SELECTOR || selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
-				console.log("SELECTOR DETECTED");
 				QuoteParams memory p = _decodeQuoteParams(cd);
 
 				if (virtualAccounts[account].isExists) {
-					console.log("VIR is exist");
 					_handleVirtualAccountSendQuote(account, cd, p);
 					return;
 				}
 
 				if (subAccounts[account].isExists) {
-					console.log("VIR is not exist");
 					_handleSubAccountSendQuote(account, cd, p);
 					return;
 				}
@@ -182,6 +200,19 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		address partyA,
 		address /* _partyB */
 	) external onlySymmio nonReentrant whenNotPaused {
+		_removeQuoteFromAccount(quoteId, partyA);
+	}
+
+	function onCancelQuote(uint256 quoteId, address partyA, address /* partyB */) external onlySymmio whenNotPaused {
+		_removeQuoteFromAccount(quoteId, partyA);
+	}
+
+	/**
+	 * @notice Internal function to remove a quote from virtual or sub account
+	 * @param quoteId The quote ID to remove
+	 * @param partyA The party A address
+	 */
+	function _removeQuoteFromAccount(uint256 quoteId, address partyA) private {
 		VirtualAccountData storage vData = virtualAccounts[partyA];
 		SubAccountData storage sData = subAccounts[partyA];
 
@@ -315,6 +346,26 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		return subAccounts[account].quoteIds.values();
 	}
 
+	function getVirtualAccountData(
+		address account
+	)
+		external
+		view
+		returns (address parentAccount, bool isExists, uint256 symbolId, bytes memory metadata, VirtualAccountIsolationType isolationType)
+	{
+		VirtualAccountData storage s = virtualAccounts[account];
+		return (s.parentAccount, s.isExists, s.symbolId, s.metadata, s.isolationType);
+	}
+
+	/**
+	 * @notice Gets quote IDs for a sub-account
+	 * @param account The account address
+	 * @return Array of quote IDs
+	 */
+	function getVirtualAccountQuoteIds(address account) external view returns (uint256[] memory) {
+		return virtualAccounts[account].quoteIds.values();
+	}
+
 	// ==================== Internal Functions ====================
 
 	/**
@@ -412,6 +463,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	function _decodeQuoteParams(bytes calldata cd) private pure returns (QuoteParams memory) {
 		bytes4 selector = bytes4(cd[:4]);
 
+		// TODO ::: add senfQuoteWithAffiliateAndData
 		if (selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
 			(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , , ) = abi.decode(
 				cd[4:],
@@ -464,11 +516,10 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		VirtualAccountIsolationType isolationType = accountData.isolationType;
 
 		if (
-			isolationType == VirtualAccountIsolationType.POSITION ||
+			(isolationType == VirtualAccountIsolationType.POSITION && accountData.quoteIds.length() > 0) ||
 			(isolationType == VirtualAccountIsolationType.MARKET_LONG && p.positionType != ISymmio.PositionType.LONG) ||
 			(isolationType == VirtualAccountIsolationType.MARKET_SHORT && p.positionType != ISymmio.PositionType.SHORT)
 		) {
-			console.log("VIR ::: 1");
 			revert PositionTypeNotAllowedForThisAccount();
 		}
 
@@ -477,15 +528,11 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				isolationType == VirtualAccountIsolationType.MARKET_LONG ||
 				isolationType == VirtualAccountIsolationType.MARKET_SHORT) && p.symbolId != accountData.symbolId
 		) {
-			console.log("VIR ::: 2");
 			revert SymbolNotAllowedForThisAccount();
 		}
 
-		console.log("VIR ::: 3");
 		_executeWithSigner(account, cd);
-		console.log("VIR ::: 4");
-		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId() - 1);
-		console.log("VIR ::: 5");
+		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
 	}
 
 	/**
@@ -496,13 +543,13 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		if (accountData.isolationType == SubAccountIsolationType.CUSTOM) {
 			_executeWithSigner(account, cd);
-			accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId() - 1);
+			accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
 			return;
 		}
 
 		// create virtual account based on sub-account isolation type
 		address virtualAccount;
-		if (accountData.isolationType == SubAccountIsolationType.POSITION){
+		if (accountData.isolationType == SubAccountIsolationType.POSITION) {
 			virtualAccount = _createVirtualAccount(account, hex"", VirtualAccountIsolationType.POSITION, p.symbolId);
 		}
 
@@ -525,7 +572,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		// send quote from virtual account
 		_executeWithSigner(virtualAccount, cd);
-		virtualAccounts[virtualAccount].quoteIds.add(ISymmio(getRelatedCore(virtualAccount)).getNextQuoteId() - 1);
+		virtualAccounts[virtualAccount].quoteIds.add(ISymmio(getRelatedCore(virtualAccount)).getNextQuoteId());
 	}
 
 	/**
@@ -534,7 +581,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
 		if (allocatedBalance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.deallocate.selector, allocatedBalance));
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance));
 		}
 
 		uint256 balance = ISymmio(core).balanceOf(account);
