@@ -20,4 +20,6 @@ interface IWithdrawEvents {
 	event Withdraw(address sender, address user, uint256 amount);
 
 	event WithdrawSuspended(uint256 requestId,address user);
+
+	event WithdrawRejected(uint256 requestId,address user);
 }

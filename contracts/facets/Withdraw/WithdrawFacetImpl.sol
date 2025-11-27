@@ -88,7 +88,7 @@ library WithdrawFacetImpl {
 		uint256 totalAmountWith18 = (totalAmount * 1e18) / (10 ** collateralDecimals);
 		require(
 			accountLayout.balances[msg.sender] >= totalAmountWith18,
-			"AccountFacet: Insufficient balance"
+			"WithdrawFacet: Insufficient balance"
 		);
 
 		accountLayout.balances[msg.sender] -= totalAmountWith18;
@@ -216,6 +216,31 @@ library WithdrawFacetImpl {
 		withdrawRequest.status = WithdrawStatus.PROVIDER_ACCEPTED;
 	}
 
+	function rejectWithdrawRequest(address user, uint256 requestId) internal {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		uint256 collateralDecimals = IERC20Metadata(GlobalAppStorage.layout().collateral).decimals();
+
+		require(requestId <= withdrawLayout.lastWithdrawRequestId[user], "Invalid withdraw request ID");
+
+		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[user][requestId];
+
+		require(withdrawRequest.user == user, "Invalid withdraw user");
+		require(withdrawRequest.status == WithdrawStatus.PENDING, "Invalid withdraw request status");
+		require(withdrawRequest.provider != address(0), "Only Virtual or Express withdraw needs to accept");
+		require(msg.sender == withdrawRequest.provider, "Not allowed to accept withdrawal.");
+
+		uint256 totalCancelAmount;
+		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
+			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
+			totalCancelAmount += withdrawal.amount;
+		}
+		uint256 totalAmountWith18Decimals = (totalCancelAmount * 1e18) / (10 ** collateralDecimals);
+		accountLayout.balances[withdrawRequest.user] += totalAmountWith18Decimals;
+
+		withdrawRequest.status = WithdrawStatus.PROVIDER_REJECTED;
+	}
+
 	function requestCancelWithdraw(uint256 requestId) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
@@ -278,9 +303,6 @@ library WithdrawFacetImpl {
 
 		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
 			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
-
-			require(withdrawal.expressProvider == address(0), "Not allowed for express withdrawals");
-
 			totalAmount += withdrawal.amount;
 		}
 

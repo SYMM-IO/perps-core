@@ -225,4 +225,8 @@ interface IViewFacet {
 	function isADLEnabled(address partyB) external view returns (bool);
 
 	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory);
+
+	function isExpressProviderRegistered(address provider) external view returns (bool);
+
+	function isVirtualProviderRegistered(address provider) external view returns (bool);
 }

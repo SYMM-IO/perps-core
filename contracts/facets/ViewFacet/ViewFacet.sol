@@ -1239,4 +1239,22 @@ contract ViewFacet is IViewFacet {
 	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory) {
 		return WithdrawStorage.layout().withdrawRequests[user][requestId];
 	}
+
+	/**
+	 * @notice Checks if an address is a registered express provider.
+	 * @param provider The address of the express provider.
+	 * @return True if the address is a registered express provider, false otherwise.
+	 */
+	function isExpressProviderRegistered(address provider) external view returns (bool) {
+		return GlobalAppStorage.layout().expressProviders[provider];
+	}
+
+	/**
+	 * @notice Checks if an address is a registered virtual provider.
+	 * @param provider The address of the virtual provider.
+	 * @return True if the address is a registered virtual provider, false otherwise.
+	 */
+	function isVirtualProviderRegistered(address provider) external view returns (bool) {
+		return GlobalAppStorage.layout().virtualProviders[provider];
+	}
 }

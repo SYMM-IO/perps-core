@@ -11,6 +11,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
+	function rejectWithdrawRequest(address user, uint256 requestId) external;
 }
 
 contract VirtualProvider is IVirtualProvider {
@@ -29,6 +30,10 @@ contract VirtualProvider is IVirtualProvider {
 
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external {
 		ISymmioCore(symmioAddress).acceptWithdrawCancelRequest(user, requestId);
+	}
+
+	function rejectWithdrawRequest(address user, uint256 requestId) external {
+		ISymmioCore(symmioAddress).rejectWithdrawRequest(user, requestId);
 	}
 
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest) external {
@@ -57,6 +62,6 @@ contract VirtualProvider is IVirtualProvider {
 	}
 
 	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external {
-		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "Withdraw not cancel requested");
+		require(withdrawRequest.status == WithdrawStatus.CANCELLED, "Withdraw not cancel requested");
 	}
 }

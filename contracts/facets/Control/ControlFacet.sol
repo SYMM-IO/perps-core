@@ -837,6 +837,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	function registerVirtualProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		require(!GlobalAppStorage.layout().expressProviders[provider] , "ControlFacet: Already a express provider");
+		require(!GlobalAppStorage.layout().virtualProviders[provider] , "ControlFacet: Already a virtual provider");
 		GlobalAppStorage.layout().virtualProviders[provider] = true;
 		emit RegisterVirtualProvider(provider);
 	}
@@ -847,6 +849,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	function registerExpressProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		require(!GlobalAppStorage.layout().virtualProviders[provider] , "ControlFacet: Already a virtual provider");
+		require(!GlobalAppStorage.layout().expressProviders[provider] , "ControlFacet: Already a express provider");
 		GlobalAppStorage.layout().expressProviders[provider] = true;
 		emit RegisterExpressProvider(provider);
 	}

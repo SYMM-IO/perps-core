@@ -62,6 +62,23 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	}
 
 	/**
+	 * @notice Operator rejects a withdrawal request.
+	 * @dev
+	 * - Can only be called by an operator.
+	 * - Refunds the user’s internal balance immediately.
+	 *
+	 * Emits:
+	 * - `WithdrawRejected`
+	 *
+	 * @param user The owner of the withdrawal request.
+	 * @param requestId ID of the withdrawal request.
+	 */
+	function rejectWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
+		WithdrawFacetImpl.rejectWithdrawRequest(user, requestId);
+		emit WithdrawRejected(requestId, user);
+	}
+
+	/**
 	 * @notice Finalizes an existing withdrawal request after cooldown expiry.
 	 * @dev
 	 * - Can only be called by the request owner.

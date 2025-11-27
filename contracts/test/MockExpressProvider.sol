@@ -12,6 +12,7 @@ interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
 	function finalizeWithdrawRequest(address user, uint256 requestId) external;
+	function rejectWithdrawRequest(address user, uint256 requestId) external;
 }
 
 contract ExpressProvider is IExpressProvider {
@@ -31,6 +32,10 @@ contract ExpressProvider is IExpressProvider {
 
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external {
 		ISymmioCore(symmioAddress).acceptWithdrawCancelRequest(user, requestId);
+	}
+
+	function rejectWithdrawRequest(address user, uint256 requestId) external {
+		ISymmioCore(symmioAddress).rejectWithdrawRequest(user, requestId);
 	}
 
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address collateral) external {
