@@ -109,7 +109,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @return affiliateAddress The generated affiliate address
 	 */
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
-		affiliateAddress = _generateAccountManagerAddress(reg.name);
+		affiliateAddress = _generateAccountManagerAddress(msg.sender, reg.name);
 
 		if (affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
 		if (reg.admin == address(0)) revert ZeroAddress();
@@ -126,6 +126,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		affiliate.feeDetails.symmioShare = reg.symmioShare;
 		affiliate.feeDetails.stakeholders = reg.stakeholders;
 		affiliate.legacyMultiAccounts = reg.legacyMultiAccounts;
+		affiliate.registrant = msg.sender;
 
 		for (uint256 i = 0; i < reg.symmioCores.length; i++) {
 			if (!whitelistedSymmioCores[reg.symmioCores[i]]) revert NoWhitelistedSymmioCore();
@@ -139,11 +140,22 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Cancels a pending affiliate registration
 	 * @param affiliate The affiliate address
 	 */
-	function cancelRegistration(address affiliate) external onlyAffiliateAdmin(affiliate) {
+	function cancelRegistration(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
 		delete affiliates[affiliate];
 		emit RegistrationCancelled(affiliate);
+	}
+
+	/**
+	 * @notice Rejects a pending affiliate registration
+	 * @param affiliate The affiliate address to reject
+	 */
+	function rejectRegistration(address affiliate) external onlyRole(APPROVER_ROLE) {
+		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
+
+		delete affiliates[affiliate];
+		emit RegistrationRejected(affiliate, msg.sender);
 	}
 
 	/**
@@ -153,7 +165,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	function approveAffiliate(address affiliate) external onlyRole(APPROVER_ROLE) whenNotPaused {
 		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
-		address accountManager = _deployAccountManager(affiliates[affiliate].name);
+		address accountManager = _deployAccountManager(affiliates[affiliate].registrant, affiliates[affiliate].name);
 		if (affiliate != accountManager) revert DeploymentFailed();
 		address feeDistributor = _generateFeeDistributorAddress(affiliate, ++globalNonce);
 
@@ -183,7 +195,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param affiliate The affiliate address
 	 * @param newAdmin The proposed new admin address
 	 */
-	function proposeAdminTransfer(address affiliate, address newAdmin) external onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
+	function proposeAdminTransfer(address affiliate, address newAdmin) external whenNotPaused onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
 		if (newAdmin == address(0)) revert ZeroAddress();
 
 		affiliates[affiliate].pendingAdmin = newAdmin;
@@ -194,7 +206,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Accepts the pending admin transfer
 	 * @param affiliate The affiliate address
 	 */
-	function acceptAdminTransfer(address affiliate) external {
+	function acceptAdminTransfer(address affiliate) external whenNotPaused {
 		if (affiliates[affiliate].pendingAdmin != msg.sender) revert Unauthorized();
 
 		address oldAdmin = affiliates[affiliate].admin;
@@ -208,7 +220,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Cancels the pending admin transfer
 	 * @param affiliate The affiliate address
 	 */
-	function cancelAdminTransfer(address affiliate) external onlyAffiliateAdmin(affiliate) {
+	function cancelAdminTransfer(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		affiliates[affiliate].pendingAdmin = address(0);
 		emit AdminTransferCancelled(affiliate);
 	}
@@ -223,7 +235,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		address affiliate,
 		string memory name,
 		string memory brandColor
-	) external onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		_validateName(name);
 
 		affiliates[affiliate].name = name;
@@ -236,7 +248,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Pauses an active affiliate
 	 * @param affiliate The affiliate address
 	 */
-	function pauseAffiliate(address affiliate) external onlyIfAffiliateIsActive(affiliate) {
+	function pauseAffiliate(address affiliate) external whenNotPaused onlyIfAffiliateIsActive(affiliate) {
 		if (!hasRole(PAUSER_ROLE, msg.sender) && affiliates[affiliate].admin != msg.sender) {
 			revert Unauthorized();
 		}
@@ -268,7 +280,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		address affiliate,
 		Stakeholder[] memory newStakeholders,
 		uint256 newSymmioShare
-	) external onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		_validateFeeShares(newStakeholders, newSymmioShare);
 
 		PendingFeeUpdate storage pending = pendingFeeUpdates[affiliate];
@@ -284,7 +296,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Cancels a pending fee update
 	 * @param affiliate The affiliate address
 	 */
-	function cancelFeeUpdate(address affiliate) external onlyAffiliateAdmin(affiliate) {
+	function cancelFeeUpdate(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		if (!pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
 
 		delete pendingFeeUpdates[affiliate];
@@ -312,7 +324,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param symmio The Symmio core address
 	 */
 	function claimAllFees(address affiliate, address symmio) external whenNotPaused nonReentrant {
-		claimFees(affiliate, symmio, _getClaimableFee(affiliate, symmio));
+		_claimFees(affiliate, symmio, _getClaimableFee(affiliate, symmio), msg.sender);
 	}
 
 	/**
@@ -322,6 +334,13 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param amount The amount to claim
 	 */
 	function claimFees(address affiliate, address symmio, uint256 amount) public whenNotPaused nonReentrant {
+		_claimFees(affiliate, symmio, amount, msg.sender);
+	}
+
+	/**
+	 * @dev fee claim logic
+	 */
+	function _claimFees(address affiliate, address symmio, uint256 amount, address caller) private {
 		address collateral = ISymmio(symmio).getCollateral();
 		FeeDetails storage feeDetails = affiliates[affiliate].feeDetails;
 		Stakeholder[] memory stakeholders = feeDetails.stakeholders;
@@ -330,13 +349,13 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		bool auth = false;
 
 		for (uint256 i = 0; i < stakeholders.length; i++) {
-			if (msg.sender == stakeholders[i].receiver) {
+			if (caller == stakeholders[i].receiver) {
 				auth = true;
 				break;
 			}
 		}
 
-		if (!auth && !hasRole(DISTRIBUTOR_ROLE, msg.sender)) revert Unauthorized();
+		if (!auth && !hasRole(DISTRIBUTOR_ROLE, caller)) revert Unauthorized();
 
 		// withdraw fees from Symmio
 		ISymmio(symmio).setSigner(feeDetails.feeDistributor);
@@ -348,6 +367,13 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 			uint256 share = (stakeholders[i].share * amount) / SHARE_PRECISION;
 			IERC20Upgradeable(collateral).safeTransfer(stakeholders[i].receiver, share);
 			emit FeesDistributed(stakeholders[i].receiver, share);
+		}
+
+		// transfer Symmio share to the protocol receiver
+		uint256 symmioAmount = (feeDetails.symmioShare * amount) / SHARE_PRECISION;
+		if (symmioAmount > 0) {
+			IERC20Upgradeable(collateral).safeTransfer(symmioFeeReceiver, symmioAmount);
+			emit FeesDistributed(symmioFeeReceiver, symmioAmount);
 		}
 
 		emit FeesClaimed(affiliate, symmio, amount);
@@ -384,12 +410,12 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param selector The function selector to hook
 	 * @param hook The hook contract address
 	 */
-	function setHook(address affiliate, bytes4 selector, address hook) external {
-		if (affiliates[affiliate].state != AffiliateState.ACTIVE) {
-			revert AffiliateNotActive();
-		}
-		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
-
+	function setHook(address affiliate, bytes4 selector, address hook)
+		external
+		whenNotPaused
+		onlyAffiliateAdmin(affiliate)
+		onlyIfAffiliateIsActive(affiliate)
+	{
 		affiliates[affiliate].hooks[selector] = hook;
 		emit HookSet(affiliate, selector, hook);
 	}
@@ -399,9 +425,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param affiliate The affiliate address
 	 * @param selector The function selector to unhook
 	 */
-	function removeHook(address affiliate, bytes4 selector) external {
-		if (affiliates[affiliate].admin != msg.sender) revert NotAdmin();
-
+	function removeHook(address affiliate, bytes4 selector) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		delete affiliates[affiliate].hooks[selector];
 		emit HookRemoved(affiliate, selector);
 	}
@@ -602,8 +626,8 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	/**
 	 * @dev Deploys account manager contract
 	 */
-	function _deployAccountManager(string memory name) private returns (address accountManager) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, name));
+	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
 		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
 
 		accountManager;
@@ -617,8 +641,8 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	/**
 	 * @dev Generates deterministic account manager address
 	 */
-	function _generateAccountManagerAddress(string memory name) private view returns (address) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, name));
+	function _generateAccountManagerAddress(address user, string memory name) private view returns (address) {
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
 		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
 		bytes32 initCodeHash = keccak256(bytecode);
 		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));

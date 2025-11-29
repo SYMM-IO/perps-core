@@ -38,6 +38,7 @@ interface IAffiliateHub {
 		EnumerableSet.AddressSet symmioCores;
 		mapping(bytes4 => address) hooks;
 		address accountManager;
+		address registrant;
 	}
 
 	struct AffiliateRegistration {
@@ -68,6 +69,7 @@ interface IAffiliateHub {
 	event StakeholdersUpdateRequested(address indexed affiliate);
 	event StakeholdersUpdated(address indexed affiliate);
 	event RegistrationCancelled(address indexed affiliate);
+	event RegistrationRejected(address indexed affiliate, address indexed admin);
 	event AdminTransferProposed(address indexed affiliate, address indexed newAdmin);
 	event AdminTransferCompleted(address indexed affiliate, address indexed oldAdmin, address indexed newAdmin);
 	event AdminTransferCancelled(address indexed affiliate);
@@ -87,6 +89,7 @@ interface IAffiliateHub {
 	// Affiliate management
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external returns (address affiliateAddress);
 	function cancelRegistration(address affiliate) external;
+	function rejectRegistration(address affiliate) external;
 	function approveAffiliate(address affiliate) external;
 	function proposeAdminTransfer(address affiliate, address newAdmin) external;
 	function acceptAdminTransfer(address affiliate) external;
@@ -138,4 +141,3 @@ interface IAffiliateHub {
 	error InvalidState();
 	error InvalidNameLength();
 }
-
