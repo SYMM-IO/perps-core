@@ -72,7 +72,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address user,
 		address recipient,
 		uint256 amount
-	) external whenNotAccountingPaused onlyRole(LibAccessibility.SUSPENDED_FUNDS_WITHDRAWER_ROLE) {
+	) external whenNotAccountingPaused onlySuspended(user) onlyRole(LibAccessibility.SUSPENDED_FUNDS_WITHDRAWER_ROLE) {
 		AccountFacetImpl.withdrawSuspendedUser(user, recipient, amount);
 		emit Withdraw(user, recipient, amount);
 		emit WithdrawSuspendedUser(msg.sender, user, recipient, amount);
@@ -81,7 +81,10 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows the system admin to deallocate the funds of a suspended user.
 	/// @param user The suspended user whose allocated balance will be reduced.
 	/// @param amount The allocated amount to move back to the user's balance, specified in 18 decimals.
-	function deallocateSuspendedUserFunds(address user, uint256 amount) external whenNotAccountingPaused onlyRole(LibAccessibility.SUSPENDED_FUNDS_WITHDRAWER_ROLE) {
+	function deallocateSuspendedUserFunds(
+		address user,
+		uint256 amount
+	) external whenNotAccountingPaused onlySuspended(user) onlyRole(LibAccessibility.SUSPENDED_FUNDS_WITHDRAWER_ROLE) {
 		uint256 newAllocatedBalance = AccountFacetImpl.deallocateSuspendedUser(user, amount);
 		emit DeallocatePartyA(user, amount, newAllocatedBalance);
 		emit DeallocateSuspendedUser(msg.sender, user, amount, newAllocatedBalance);

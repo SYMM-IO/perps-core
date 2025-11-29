@@ -150,7 +150,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				// admin have SUSPENDED_FUNDS_WITHDRAWER_ROLE in initialize
 				await expect(
 					context.accountFacet.connect(context.signers.admin).withdrawSuspendedUserFunds(userAddress, recipient, withdrawAmountStr),
-				).to.be.revertedWith("AccountFacet: User is not suspended")
+				).to.be.revertedWith("Accessibility: User is not suspended")
 			})
 
 			it("Should withdraw funds for suspended user", async function () {
@@ -189,7 +189,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			it("Should fail when user is not suspended", async function () {
 				await expect(
 					context.accountFacet.connect(context.signers.admin).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr),
-				).to.be.revertedWith("AccountFacet: User is not suspended")
+				).to.be.revertedWith("Accessibility: User is not suspended")
 			})
 
 			it("Should deallocate suspended user funds and enable withdrawal", async function () {
