@@ -103,7 +103,7 @@ library LibPartyBPositionsActions {
 			require(
 				newStatus == QuoteStatus.CANCELED ||
 					(quote.lockedValues.totalForPartyA() - filledLockedValues.totalForPartyA()) >=
-						SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue,
+					SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue,
 				"PartyBFacet: Quote value is low"
 			);
 

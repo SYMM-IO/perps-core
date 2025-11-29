@@ -83,7 +83,7 @@ abstract contract Accessibility {
 	}
 
 	modifier whenInstantModeIsActive(address sender) {
-		require(AccountStorage.layout().instantActionsMode[sender], "Instant Mode Not Active");
+		require (AccountStorage.layout().instantActionsMode[sender],"Instant Mode Not Active");
 		_;
 	}
 }

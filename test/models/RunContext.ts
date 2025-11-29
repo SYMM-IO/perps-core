@@ -19,7 +19,8 @@ import {
 	InstantLayer,
 	MultiAccount,
 	SymmioPartyB,
-	SymmioPartyA, WithdrawFacet,
+	SymmioPartyA,
+	WithdrawFacet,
 } from "../../src/types";
 import { TestManager } from "./TestManager"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"

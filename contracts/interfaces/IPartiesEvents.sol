@@ -55,7 +55,14 @@ interface IPartiesEvents {
 		LockedValues lockedValues
 	);
 
-	event AdlClosePositions(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus);
+	event AdlClosePositions(
+		uint256 quoteId,
+		address partyA,
+		address partyB,
+		uint256 filledAmount,
+		uint256 closedPrice,
+		QuoteStatus quoteStatus
+	);
 
 	event LiquidatePartyB(address liquidator, address partyB, address partyA, uint256 partyBAllocatedBalance, int256 upnl);
 }
