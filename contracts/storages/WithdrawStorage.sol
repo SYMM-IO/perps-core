@@ -25,6 +25,8 @@ pragma solidity >=0.8.18;
 		address provider;
 		bool isPureVirtual;
 		bytes providerData;
+		uint256 totalAmount;
+		uint256 totalVirtualAmount;
 	}
 
 	enum WithdrawStatus {

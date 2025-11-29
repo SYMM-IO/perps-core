@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
-// This contract is licensed under the SYMM Core Business Source License 1.1
-// Copyright (c) 2023 Symmetry Labs AG
-// For more information, see https://docs.symm.io/legal-disclaimer/license
-
 pragma solidity >=0.8.18;
 
 import "../interfaces/IExpressProvider.sol";
@@ -38,24 +34,27 @@ contract ExpressProvider is IExpressProvider {
 		ISymmioCore(symmioAddress).rejectWithdrawRequest(user, requestId);
 	}
 
-	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address collateral) external {
+	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address collateral) external override {
 		bool isExpressProvider = false;
 		for (uint i = 0; i < withdrawRequest.parts.length; i++) {
 			WithdrawReceiverPart memory part = withdrawRequest.parts[i];
 			if (part.expressProvider == address(this)) {
-				if(part.virtualProvider == address(0))
+				if (part.virtualProvider == address(0)) {
 					IERC20(collateral).transfer(_bytesToAddress(part.receiver), part.amount);
+				}
 				isExpressProvider = true;
 			}
 		}
 		require(isExpressProvider, "No parts for this express provider");
 	}
-	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external {
-		require(withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "Withdraw not accepted");
+
+	function onWithdrawComplete(WithdrawRequest memory _req) external override pure {
+		_req;
+		// no logic → pure
 	}
 
-	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external {
-		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "Withdraw not cancel requested");
+	function onWithdrawCancelRequest(WithdrawRequest memory _req) external override pure {
+		_req;
 	}
 
 	function _bytesToAddress(bytes memory data) internal pure returns (address addr) {

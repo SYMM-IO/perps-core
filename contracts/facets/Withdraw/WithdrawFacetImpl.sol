@@ -134,7 +134,9 @@ library WithdrawFacetImpl {
 			isCooldownModified: false,
 			provider: provider,
 			isPureVirtual: isPureVirtual,
-			providerData: data
+			providerData: data,
+			totalAmount: totalAmount,
+			totalVirtualAmount:totalVirtualAmount
 		});
 
 		withdrawLayout.withdrawRequests[msg.sender][currentId] = withdrawRequest;
@@ -273,18 +275,11 @@ library WithdrawFacetImpl {
 			"Invalid withdraw request status"
 		);
 
-		uint256 totalCancelAmount;
-		bool hasProvider;
-		address expressProvider;
-		address pureVirtualProvider;
 		if (withdrawRequest.status == WithdrawStatus.PENDING) {
+			withdrawLayout.withdrawLockedBalance -= (withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount);
+			uint256 amountWith18 = (withdrawRequest.totalAmount * 1e18) / (10 ** collateralDecimals);
+			accountLayout.balances[withdrawRequest.user] += amountWith18;
 			withdrawRequest.status = WithdrawStatus.CANCELLED;
-			for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
-				WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
-				totalCancelAmount += withdrawal.amount;
-			}
-			uint256 totalAmountWith18Decimals = (totalCancelAmount * 1e18) / (10 ** collateralDecimals);
-			accountLayout.balances[withdrawRequest.user] += totalAmountWith18Decimals;
 		} else {
 			// Status Update
 			withdrawRequest.status = WithdrawStatus.CANCEL_REQUESTED;
@@ -313,17 +308,13 @@ library WithdrawFacetImpl {
 		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "Invalid withdraw request status");
 		require(block.timestamp >= withdrawRequest.cooldownEndTime, "Withdraw cooldown not over");
 
-		uint256 totalAmount;
 
-		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
-			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
-			totalAmount += withdrawal.amount;
-		}
 
+		withdrawLayout.withdrawLockedBalance -= (withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount);
+
+		uint256 amountWith18 = (withdrawRequest.totalAmount * 1e18) / (10 ** collateralDecimals);
+		accountLayout.balances[withdrawRequest.user] += amountWith18;
 		withdrawRequest.status = WithdrawStatus.CANCELLED;
-
-		uint256 totalAmountWith18Decimals = (totalAmount * 1e18) / (10 ** collateralDecimals);
-		accountLayout.balances[withdrawRequest.user] += totalAmountWith18Decimals;
 
 		IVirtualProvider(withdrawRequest.provider).onForceWithdrawCancel(withdrawRequest);
 	}
@@ -342,16 +333,9 @@ library WithdrawFacetImpl {
 		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "Invalid withdraw request status");
 		require(msg.sender == withdrawRequest.provider, "Not allowed to accept cancel.");
 
-		uint256 totalAmount;
+		withdrawLayout.withdrawLockedBalance -= (withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount);
 
-		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
-			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
-			totalAmount += withdrawal.amount;
-			if(withdrawal.virtualProvider == address(0))
-				withdrawLayout.withdrawLockedBalance -= withdrawal.amount;
-		}
-
-		uint256 amountWith18 = (totalAmount * 1e18) / (10 ** collateralDecimals);
+		uint256 amountWith18 = (withdrawRequest.totalAmount * 1e18) / (10 ** collateralDecimals);
 		accountLayout.balances[withdrawRequest.user] += amountWith18;
 
 		withdrawRequest.status = WithdrawStatus.CANCELLED;
