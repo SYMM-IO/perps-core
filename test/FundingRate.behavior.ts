@@ -78,15 +78,28 @@ export function shouldBehaveLikeFundingRate(): void {
 	})
 
 	it("Should fail on high funding rate", async function () {
-		let symbol = await context.viewFacet.getSymbol(1)
-		let duration = symbol.fundingRateEpochDuration
-		let window = symbol.fundingRateWindowTime
-		let currentEpoch = (BigInt(await time.latest()) / duration) * duration
-		let targetTime = duration * 2n + window - 1n + currentEpoch
+		const symbol = await context.viewFacet.getSymbol(1)
+		const duration = symbol.fundingRateEpochDuration
+		const window = symbol.fundingRateWindowTime
+
+		const currentEpoch = (BigInt(await time.latest()) / duration) * duration
+		const targetTime = duration * 2n + window - 1n + currentEpoch
 
 		await time.setNextBlockTimestamp(targetTime)
+		const q = await context.viewFacet.getQuote(1)
+
+		const maxPerSec = BigInt(q.maxFundingRate)
+		const maxPerEpoch = maxPerSec * duration
+
+		const tooHighRate = maxPerEpoch + 1n
+
 		await expect(
-			hedger.chargeFundingRate(await context.signers.user.getAddress(), [1], [decimal(3n, 16)], await getDummyPairUpnlSig()),
+			hedger.chargeFundingRate(
+				await context.signers.user.getAddress(),
+				[1],
+				[tooHighRate],
+				await getDummyPairUpnlSig()
+			)
 		).to.be.revertedWith("ChargeFundingFacet: High funding rate")
 	})
 
