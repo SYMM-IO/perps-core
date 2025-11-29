@@ -73,6 +73,39 @@ library LibForceSolve {
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlPartyB, block.timestamp);
 	}
 
+	function verifyPrice(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view {
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		address partyB = quote.partyB;
+		address partyA = quote.partyA;
+
+		LibMuonForceActions.verifyHighLowPrice(highLowPrice, partyB, partyA, quote.symbolId);
+
+		if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
+			revert PartyAFacetInvalidState();
+		}
+
+		if (!(highLowPrice.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline)) {
+			revert PartyBFacetCloseRequestExpired();
+		}
+
+		if (quote.orderType != OrderType.LIMIT) {
+			revert PartyBFacetInvalidOrderType();
+		}
+
+		if (!(highLowPrice.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown)) {
+			revert PartyAFacetCooldownNotReached();
+		}
+
+		if (!(highLowPrice.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown)) {
+			revert PartyAFacetCooldownNotReached();
+		}
+
+		if (!(highLowPrice.averagePrice <= highLowPrice.highest && highLowPrice.averagePrice >= highLowPrice.lowest)) {
+			revert PartyAFacetInvalidAveragePrice();
+		}
+	}
+
 	function getAvailableBalancesAfterClose(
 		uint256 quoteId,
 		uint256 sig_currentPrice,

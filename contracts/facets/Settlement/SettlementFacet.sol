@@ -42,6 +42,7 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 		( uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) = SettlementFacetImpl
 			.crossSettleUpnl(settlementSig, updatedPrices);
 		emit CrossSettleUpnl(
+			settlementSig.reqId,
 			settlementSig.quotesSettlementsData,
 			updatedPrices,
 			partyB,

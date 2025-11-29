@@ -22,11 +22,8 @@ interface IForceActionsFacet is ForceActionsFacetEvents {
 
 	function realizeUPNLMasterAccount(
 		uint256 quoteId,
-		HighLowPriceSig memory sig,
 		CrossSettlementSig memory settlementSig,
-		uint256[] memory updatedPrices,
-		address[] memory partyAs,
-		uint256[] memory fetchAmounts
+		uint256[] memory updatedPrices
 	) external;
 }
 

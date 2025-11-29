@@ -214,7 +214,12 @@ library LibSettlement {
 			} else {
 				if (masterAccountMode) {
 					accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(-settlementAmount);
-					emit SharedEvents.MasterBalanceChangePartyB(partyB, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+					emit SharedEvents.BalanceChangePartyB(
+						partyB,
+						address(0),
+						uint256(-settlementAmount),
+						SharedEvents.BalanceChangeType.REALIZED_PNL_IN
+					);
 				} else {
 					accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-settlementAmount);
 					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
@@ -233,20 +238,22 @@ library LibSettlement {
 		}
 	}
 
-	function SettleAllocated(address partyB, address[] memory partyAs, uint256[] memory fetchAmounts) internal {
+	function settleAllocated(address partyB, address[] memory partyAs, uint256[] memory fetchAmounts) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		require(accountLayout.masterAccountMode[partyB], "LibSettlement: partyB is not using master account mode");
 
 		for (uint256 i = 0; i < partyAs.length; i++) {
 			address partyA = partyAs[i];
 			uint256 fetchAmount = fetchAmounts[i];
 			if (fetchAmount > 0) {
 				uint256 allocated = accountLayout.partyBAllocatedBalances[partyB][partyA];
-				if (fetchAmount > allocated) fetchAmount = allocated;
+				require(fetchAmount <= allocated, "LibSettlement: Fetch amount out of range");
 				if (fetchAmount > 0) {
 					accountLayout.partyBAllocatedBalances[partyB][partyA] = allocated - fetchAmount;
 					accountLayout.partyBAllocatedBalances[partyB][address(0)] += fetchAmount;
 					emit SharedEvents.BalanceChangePartyB(partyB, partyA, fetchAmount, SharedEvents.BalanceChangeType.DEALLOCATE);
-					emit SharedEvents.MasterBalanceChangePartyB(partyB, fetchAmount, SharedEvents.BalanceChangeType.ALLOCATE);
+					emit SharedEvents.BalanceChangePartyB(partyB, address(0), fetchAmount, SharedEvents.BalanceChangeType.ALLOCATE);
 				}
 			}
 			accountLayout.partyBNonces[partyB][partyA] += 1;

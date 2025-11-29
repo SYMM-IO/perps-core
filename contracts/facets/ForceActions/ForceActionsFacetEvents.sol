@@ -18,10 +18,16 @@ interface ForceActionsFacetEvents {
 		QuoteStatus quoteStatus,
 		uint256 closeId
 	);
-	event ForceFetchAllocated(		
+	event ForceClosePositionMaster(
+		uint256 quoteId,
+		address partyA,
 		address partyB,
-		address[] partyAs,
-		uint256[] FetchedAmount,
-		uint256[] newPartyBsAllocatedBalances
+		uint256 filledAmount,
+		uint256 closedPrice,
+		QuoteStatus quoteStatus,
+		uint256 closeId,
+		bytes forceCloseId
 	);
+	event ForceFetchAllocated(address partyB, address[] partyAs, uint256[] FetchedAmount, uint256[] newPartyBsAllocatedBalances);
+	event ForceCloseInitialized(address indexed initiator, address indexed partyB, uint256 quoteId, bytes forceCloseId, uint256 timestamp);
 }

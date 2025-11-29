@@ -26,8 +26,8 @@ enum UPNLSettlementState {
 
 enum PartyBForceCloseState {
 	NONE,
-	SOLVED,
 	INSOLVENT,
+	SOLVED,
 	LIQUIDATED
 }
 
@@ -39,11 +39,15 @@ struct SettlementState {
 }
 
 struct ForceCloseDetail {
+	bytes forceCloseId;
 	uint256 quoteId;
 	uint256 timestamp;
+	int256 partyBAvailableAfterClose;
+	uint256 closePrice;
 	UPNLSettlementState settlementState;
 	AllocatedSettlementState allocatedSettlementState;
 	PartyBForceCloseState partyBState;
+	bool inProgress;
 }
 
 struct LiquidationDetail {

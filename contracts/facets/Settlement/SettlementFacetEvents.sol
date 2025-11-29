@@ -16,6 +16,7 @@ interface SettlementFacetEvents is IPartiesEvents {
 	);
 
 	event CrossSettleUpnl(
+		bytes settlementId,
 		CrossQuoteSettlementData[] settlementData,
 		uint256[] updatedPrices,
 		address partyB,

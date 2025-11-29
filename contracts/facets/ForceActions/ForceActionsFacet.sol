@@ -94,33 +94,59 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		forceClose(quoteId, highLowPriceSig);
 	}
 
+	function initializeForceClose(uint256 quoteId, HighLowPriceSig memory sig) external {
+		ForceActionsFacetImpl.forceCloseInit(quoteId, sig);
+		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, sig.timestamp);
+	}
+
 	function realizeUPNLMasterAccount(
 		uint256 quoteId,
-		HighLowPriceSig memory sig,
 		CrossSettlementSig memory settlementSig,
-		uint256[] memory updatedPrices,
-		address[] memory partyAs,
-		uint256[] memory fetchAmounts
+		uint256[] memory updatedPrices
 	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		address partyB = settlementSig.partyB;
 
-		(uint256[] memory newPartyAsAllocatedBalances, address[] memory _partyAs) = ForceActionsFacetImpl.realizeUPNLMasterAccount(
+		(uint256[] memory _newPartyAsAllocatedBalances, address[] memory _partyAs) = ForceActionsFacetImpl.realizeUPNLMasterAccount(
 			quoteId,
 			settlementSig,
 			updatedPrices
 		);
+
 		emit CrossSettleUpnl(
+			settlementSig.reqId,
 			settlementSig.quotesSettlementsData,
 			updatedPrices,
 			partyB,
 			_partyAs,
-			newPartyAsAllocatedBalances,
+			_newPartyAsAllocatedBalances,
 			AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)]
 		);
+	}
 
+	function realizeAllocatedMasterAccount(
+		uint256 quoteId,
+		address partyB,
+		address[] memory partyAs,
+		uint256[] memory fetchAmounts
+	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		ForceActionsFacetImpl.fetchAllocatedMasterAccount(partyB, partyAs, fetchAmounts);
 		emit CrossSettleAllocated(partyB, partyAs, AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)], fetchAmounts);
+	}
 
-		forceClose(quoteId, sig);
+	function finalizeForceClose(uint256 quoteId) external {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+
+		ForceActionsFacetImpl.forceCloseMaster(quoteId);
+		emit ForceClosePositionMaster(
+			quoteId,
+			quote.partyA,
+			quote.partyB,
+			quote.quantityToClose,
+			detail.closePrice,
+			quote.quoteStatus,
+			QuoteStorage.layout().closeIds[quoteId],
+			detail.forceCloseId
+		);
 	}
 }

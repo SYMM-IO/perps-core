@@ -207,59 +207,14 @@ library ForceActionsFacetImpl {
 		partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
 	}
 
-	function forceClose(
-		uint256 quoteId,
-		HighLowPriceSig memory highLowPrice
-	) internal returns (uint256 closePrice, int256 upnlPartyB, bool isPartyBLiquidated) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+	function getClosePrice(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view returns (uint256 closePrice) {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		address partyB = quote.partyB;
-		address partyA = quote.partyA;
-
-		LibMuonForceActions.verifyHighLowPrice(highLowPrice, partyB, partyA, quote.symbolId);
-
-		bool isSolvent;
-		if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
-			revert PartyAFacetInvalidState();
-		}
-
-		if (!(highLowPrice.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline)) {
-			revert PartyBFacetCloseRequestExpired();
-		}
-
-		if (quote.orderType != OrderType.LIMIT) {
-			revert PartyBFacetInvalidOrderType();
-		}
-
-		if (!(highLowPrice.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown)) {
-			revert PartyAFacetCooldownNotReached();
-		}
-
-		if (!(highLowPrice.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown)) {
-			revert PartyAFacetCooldownNotReached();
-		}
-
-		if (!(highLowPrice.averagePrice <= highLowPrice.highest && highLowPrice.averagePrice >= highLowPrice.lowest)) {
-			revert PartyAFacetInvalidAveragePrice();
-		}
-
-		uint256 reservedBalance;
-		bool isMasterAccount = accountLayout.masterAccountMode[partyB];
-		if (isMasterAccount) {
-			reservedBalance = accountLayout.partyBAllocatedBalances[partyB][address(0)];
-		} else {
-			reservedBalance = accountLayout.reserveVault[partyB];
-		}
-
-		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
-		detail.timestamp = block.timestamp;
 
 		closePrice = LibForceSolve.GetClosePrice(
 			quote.positionType,
 			quote.requestedClosePrice,
-			symbolLayout.forceCloseGapRatio[quote.symbolId],
+			SymbolStorage.layout().forceCloseGapRatio[quote.symbolId],
 			highLowPrice.lowest,
 			highLowPrice.highest,
 			highLowPrice.averagePrice,
@@ -268,6 +223,13 @@ library ForceActionsFacetImpl {
 			maLayout.forceClosePricePenalty,
 			maLayout.forceCloseMinSigPeriod
 		);
+	}
+
+	function forceCloseInit(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal returns (uint256 closePrice) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+
+		LibForceSolve.verifyPrice(quoteId, highLowPrice);
+		closePrice = getClosePrice(quoteId, highLowPrice);
 
 		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceSolve.getAvailableBalancesAfterClose(
 			quoteId,
@@ -281,17 +243,93 @@ library ForceActionsFacetImpl {
 			revert PartyAFacetPartyAWillBeInsolvent();
 		}
 
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+		detail.timestamp = block.timestamp;
+		detail.partyBAvailableAfterClose = partyBAvailableBalance;
+		detail.inProgress = true;
+	}
+
+	function forceFinalization(
+		uint256 quoteId,
+		uint256 closePrice,
+		int256 partyBAvailableBalance,
+		uint256 reservedBalance,
+		int256 upnlPartyB,
+		uint256 currentPrice,
+		bool isMasterAccount
+	) internal returns (bool isSolvent, bool isPartyBLiquidated, int256 _upnlPartyB) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address partyB = quote.partyB;
+
 		isSolvent = LibForceSolve.solveUsingAllocatedBalances(quoteId, closePrice, partyBAvailableBalance, reservedBalance, isMasterAccount);
+
+		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
+		detail.timestamp = block.timestamp;
+		detail.inProgress = false;
 
 		if (isSolvent) {
 			detail.partyBState = PartyBForceCloseState.SOLVED;
 		} else {
 			if (!isMasterAccount) {
-				upnlPartyB = LibForceSolve.liquidatePartyB(quoteId, closePrice, reservedBalance, highLowPrice.upnlPartyB, highLowPrice.currentPrice);
+				_upnlPartyB = LibForceSolve.liquidatePartyB(quoteId, closePrice, reservedBalance, upnlPartyB, currentPrice);
 				isPartyBLiquidated = true;
 				detail.partyBState = PartyBForceCloseState.LIQUIDATED;
 			}
 		}
+	}
+
+	function forceCloseMaster(uint256 quoteId) internal returns (bool isSolvent) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address partyB = quote.partyB;
+
+		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
+		(isSolvent, , ) = forceFinalization(
+			quoteId,
+			detail.closePrice,
+			detail.partyBAvailableAfterClose,
+			accountLayout.partyBAllocatedBalances[partyB][address(0)],
+			0,
+			0,
+			true
+		);
+	}
+
+	function forceClose(
+		uint256 quoteId,
+		HighLowPriceSig memory highLowPrice
+	) internal returns (uint256 closePrice, int256 upnlPartyB, bool isPartyBLiquidated) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		address partyB = quote.partyB;
+
+		LibForceSolve.verifyPrice(quoteId, highLowPrice);
+		closePrice = getClosePrice(quoteId, highLowPrice);
+
+		uint256 reservedBalance = accountLayout.reserveVault[partyB];
+
+		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceSolve.getAvailableBalancesAfterClose(
+			quoteId,
+			highLowPrice.currentPrice,
+			highLowPrice.upnlPartyA,
+			highLowPrice.upnlPartyB,
+			closePrice
+		);
+
+		if (!(partyAAvailableBalance >= 0)) {
+			revert PartyAFacetPartyAWillBeInsolvent();
+		}
+
+		(, isPartyBLiquidated, upnlPartyB) = forceFinalization(
+			quoteId,
+			closePrice,
+			partyBAvailableBalance,
+			reservedBalance,
+			highLowPrice.upnlPartyB,
+			highLowPrice.currentPrice,
+			false
+		);
 	}
 
 	function realizeUPNL(uint256 quoteId, SettlementSig memory settlementSig, uint256[] memory updatedPrices) internal {
@@ -331,7 +369,7 @@ library ForceActionsFacetImpl {
 			revert ForceActionsFacetMasterAccountModeInactive();
 		}
 
-		LibSettlement.SettleAllocated(partyB, partyAs, fetchAmounts);
+		LibSettlement.settleAllocated(partyB, partyAs, fetchAmounts);
 
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
 		detail.allocatedSettlementState = AllocatedSettlementState.GATHER_ALLOCATED_MASTER_ACCOUNT;
