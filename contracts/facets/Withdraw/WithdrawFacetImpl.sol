@@ -180,7 +180,6 @@ library WithdrawFacetImpl {
 		}
 
 		uint256 totalExpressAmount;
-		uint256 totalWithdrawalAmount;
 		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
 			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
 
@@ -196,7 +195,6 @@ library WithdrawFacetImpl {
 			if (isExpress && !isVirtual) {
 				totalExpressAmount += withdrawal.amount;
 			}
-			totalWithdrawalAmount += withdrawal.amount;
 		}
 
 		if (totalExpressAmount > 0){
@@ -212,7 +210,7 @@ library WithdrawFacetImpl {
 		withdrawRequest.status = WithdrawStatus.COMPLETED;
 
 		// Event wise old events should still be emitted here
-		emit Withdraw(msg.sender, withdrawRequest.user,totalWithdrawalAmount );
+		emit Withdraw(msg.sender, withdrawRequest.user, withdrawRequest.totalAmount );
 	}
 
 	function acceptWithdrawRequest(address user, uint256 requestId) internal {
