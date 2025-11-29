@@ -40,12 +40,21 @@ library AccountFacetImpl {
 	}
 
 	function withdrawSuspendedUser(address user, address recipient, uint256 amount) internal {
-		require(AccountStorage.layout().suspendedAddresses[user], "AccountFacet: User is not suspended");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		require(accountLayout.suspendedAddresses[user], "AccountFacet: User is not suspended");
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		accountLayout.balances[user] -= amountWith18Decimals;
 		IERC20(appLayout.collateral).safeTransfer(recipient, amount);
+	}
+
+	function deallocateSuspendedUser(address user, uint256 amount) internal returns (uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		require(accountLayout.suspendedAddresses[user], "AccountFacet: User is not suspended");
+		require(accountLayout.allocatedBalances[user] >= amount, "AccountFacet: Insufficient allocated Balance");
+		accountLayout.allocatedBalances[user] -= amount;
+		accountLayout.balances[user] += amount;
+		return accountLayout.allocatedBalances[user];
 	}
 
 	function allocate(address user, uint256 amount) internal {

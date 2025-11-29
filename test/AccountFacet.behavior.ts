@@ -128,9 +128,13 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		describe("withdrawSuspendedUserFunds", function () {
 			let userAddress: string
+			let recipient: string
+			const withdrawAmount = 50n
+			const withdrawAmountStr = withdrawAmount.toString()
 
 			beforeEach(async function () {
 				userAddress = await context.signers.user.getAddress()
+				recipient = await context.signers.user2.getAddress()
 			})
 
 			it("Should fail when caller lacks role", async function () {
@@ -138,27 +142,70 @@ export function shouldBehaveLikeAccountFacet(): void {
 				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
 				// withdraw without sufficient role (as user)
 				await expect(
-					context.accountFacet.connect(context.signers.user).withdrawSuspendedUserFunds(userAddress, userAddress, "50"),
+					context.accountFacet.connect(context.signers.user).withdrawSuspendedUserFunds(userAddress, recipient, withdrawAmountStr),
 				).to.be.revertedWith("Accessibility: Must has role")
 			})
 
 			it("Should fail when user is not suspended", async function () {
 				// admin have SUSPENDED_FUNDS_WITHDRAWER_ROLE in initialize
 				await expect(
-					context.accountFacet.connect(context.signers.admin).withdrawSuspendedUserFunds(userAddress, userAddress, "50"),
+					context.accountFacet.connect(context.signers.admin).withdrawSuspendedUserFunds(userAddress, recipient, withdrawAmountStr),
 				).to.be.revertedWith("AccountFacet: User is not suspended")
 			})
 
 			it("Should withdraw funds for suspended user", async function () {
 				// suspend a user
 				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
-				
-				// withdraw
-				const withdrawAmount = 50
-				const recipient = await context.signers.user2.getAddress()
-				await context.accountFacet.connect(context.signers.admin).withdrawSuspendedUserFunds(userAddress, recipient, withdrawAmount)
-				expect(await context.viewFacet.balanceOf(userAddress)).to.equal(300 - withdrawAmount)
-				expect(await context.collateral.balanceOf(recipient)).to.equal(withdrawAmount)
+
+				const initialUserBalance = await context.viewFacet.balanceOf(userAddress)
+				const initialRecipientBalance = await context.collateral.balanceOf(recipient)
+
+				await context.accountFacet.connect(context.signers.admin).withdrawSuspendedUserFunds(userAddress, recipient, withdrawAmountStr)
+
+				expect(await context.viewFacet.balanceOf(userAddress)).to.equal(initialUserBalance - withdrawAmount)
+				expect(await context.collateral.balanceOf(recipient)).to.equal(initialRecipientBalance + withdrawAmount)
+			})
+		})
+
+		describe("deallocateSuspendedUserFunds", function () {
+			let userAddress: string
+			let recipient: string
+			const allocatedAmount = 150n
+			const allocatedAmountStr = allocatedAmount.toString()
+
+			beforeEach(async function () {
+				userAddress = await context.signers.user.getAddress()
+				recipient = await context.signers.user2.getAddress()
+				await context.accountFacet.connect(context.signers.user).allocate(allocatedAmountStr)
+			})
+
+			it("Should fail when caller lacks role", async function () {
+				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
+				await expect(
+					context.accountFacet.connect(context.signers.user).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr),
+				).to.be.revertedWith("Accessibility: Must has role")
+			})
+
+			it("Should fail when user is not suspended", async function () {
+				await expect(
+					context.accountFacet.connect(context.signers.admin).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr),
+				).to.be.revertedWith("AccountFacet: User is not suspended")
+			})
+
+			it("Should deallocate suspended user funds and enable withdrawal", async function () {
+				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
+
+				const initialAllocated = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+				const initialBalance = await context.viewFacet.balanceOf(userAddress)
+				const initialRecipientBalance = await context.collateral.balanceOf(recipient)
+
+				await context.accountFacet.connect(context.signers.admin).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr)
+				expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(initialAllocated - allocatedAmount)
+				expect(await context.viewFacet.balanceOf(userAddress)).to.equal(initialBalance + allocatedAmount)
+
+				await context.accountFacet.connect(context.signers.admin).withdrawSuspendedUserFunds(userAddress, recipient, allocatedAmountStr)
+				expect(await context.viewFacet.balanceOf(userAddress)).to.equal(initialBalance)
+				expect(await context.collateral.balanceOf(recipient)).to.equal(initialRecipientBalance + allocatedAmount)
 			})
 		})
 	})
