@@ -15,6 +15,12 @@ interface ISymmio {
 		MARKET
 	}
 
+	struct Fee {
+		uint256 openFee;
+		uint256 closeFee;
+		bool isSet; // true if the fee is explicitly set, false if default (unset/zero)
+	}
+
 	struct SchnorrSign {
 		uint256 signature;
 		address owner;
@@ -124,4 +130,6 @@ interface ISymmio {
 	function getNextQuoteId() external returns (uint256);
 
 	function registerAffiliate(address affiliate) external;
+
+	function getFee(address affiliate, uint256 symbolId) external returns (Fee memory);
 }

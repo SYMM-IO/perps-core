@@ -49,6 +49,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE")), context.signers.admin.address)
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SIGNER_SETTER")), context.signers.admin.address)
 
+	const MockMultiAccount = await ethers.getContractFactory("MockMultiAccount")
+	const multiAccountMock = await MockMultiAccount.deploy(diamond)
+
 	// Register first affiliate
 	const affiliateData = {
 		name: "test affiliate",
@@ -62,7 +65,7 @@ export async function initializeFixture(): Promise<RunContext> {
 		],
 		symmioShare: decimal(1n, 17),
 		metadata: "0x",
-		legacyMultiAccounts: [ZeroAddress],
+		legacyMultiAccounts: [await multiAccountMock.getAddress()],
 		symmioCores: [await diamond.getAddress()],
 	}
 
@@ -82,7 +85,7 @@ export async function initializeFixture(): Promise<RunContext> {
 		],
 		symmioShare: decimal(1n, 17),
 		metadata: "0x",
-		legacyMultiAccounts: [ZeroAddress],
+		legacyMultiAccounts: [await multiAccountMock.getAddress()],
 		symmioCores: [await diamond.getAddress()],
 	}
 
@@ -98,10 +101,10 @@ export async function initializeFixture(): Promise<RunContext> {
 	await affiliateHub.connect(context.signers.admin).approveAffiliate(affiliate2Address)
 
 	// Set up account managers
-	const accManager = await affiliateHub.getAffiliateAccountManager(affiliateAddress)
-	const accManager2 = await affiliateHub.getAffiliateAccountManager(affiliate2Address)
-	context.accountManager = await ethers.getContractAt("AccountManager", accManager)
-	context.accountManager2 = await ethers.getContractAt("AccountManager", accManager2)
+	const accManagerAddress = await affiliateHub.getAffiliateAccountManager(affiliateAddress)
+	const accManager2Address = await affiliateHub.getAffiliateAccountManager(affiliate2Address)
+	context.accountManager = await ethers.getContractAt("AccountManager", accManagerAddress)
+	context.accountManager2 = await ethers.getContractAt("AccountManager", accManager2Address)
 	context.accountHub = accountHub
 	context.affiliateHub = affiliateHub
 	context.symmioPartyB = symmioPartyB

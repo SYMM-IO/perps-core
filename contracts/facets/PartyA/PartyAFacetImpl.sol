@@ -82,10 +82,10 @@ library PartyAFacetImpl {
 
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, LibSigner.getSigner());
 		require(availableBalance > 0, "PartyAFacet: Available balance is lower than zero");
-		// require(
-		// 	uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * fee.openFee) / 1e36),
-		// 	"PartyAFacet: insufficient available balance"
-		// );
+		require(
+			uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * fee.openFee) / 1e36),
+			"PartyAFacet: insufficient available balance"
+		);
 		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
 
 		// lock funds the in middle of way
