@@ -40,6 +40,7 @@ library AccountFacetImpl {
 	}
 
 	function withdrawSuspendedUser(address user, address recipient, uint256 amount) internal {
+		require(AccountStorage.layout().suspendedAddresses[user], "AccountFacet: User is not suspended");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());

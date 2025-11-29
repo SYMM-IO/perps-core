@@ -73,7 +73,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address recipient,
 		uint256 amount
 	) external whenNotAccountingPaused onlyRole(LibAccessibility.SUSPENDED_FUNDS_WITHDRAWER_ROLE) {
-		require(AccountStorage.layout().suspendedAddresses[user], "AccountFacet: User is not suspended");
 		AccountFacetImpl.withdrawSuspendedUser(user, recipient, amount);
 		emit Withdraw(user, recipient, amount);
 		emit WithdrawSuspendedUser(msg.sender, user, recipient, amount);
