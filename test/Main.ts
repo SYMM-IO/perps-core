@@ -115,7 +115,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeInstantLayer()
 		})
 
-		describe.only("AccountHub", async function () {
+		describe("AccountHub", async function () {
 			shouldBehaveLikeAccountHub()
 		})
 
