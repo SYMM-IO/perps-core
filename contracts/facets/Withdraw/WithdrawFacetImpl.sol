@@ -350,17 +350,8 @@ library WithdrawFacetImpl {
 			withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED,
 			"Invalid withdraw request status"
 		);
-
-		uint256 totalAmount;
-
-		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
-			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
-			totalAmount += withdrawal.amount;
-			if(withdrawal.virtualProvider == address(0))
-				withdrawLayout.withdrawLockedBalance -= withdrawal.amount;
-		}
-
-		uint256 amountWith18 = (totalAmount * 1e18) / (10 ** collateralDecimals);
+		withdrawLayout.withdrawLockedBalance -= (withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount);
+		uint256 amountWith18 = (withdrawRequest.totalAmount * 1e18) / (10 ** collateralDecimals);
 		accountLayout.balances[withdrawRequest.user] += amountWith18;
 		withdrawRequest.status = WithdrawStatus.SUSPENDED;
 	}
