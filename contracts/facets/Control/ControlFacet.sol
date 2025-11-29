@@ -823,7 +823,15 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	function checkZeroAddress(address target) private pure {
 		require(target != address(0), "ControlFacet: Zero address");
 	}
-	// TODO: set coolDown for both deallocate and new withdraw in one transaction
+
+	function setMaxDeallocateWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;
+		emit SetWithdrawCooldownPeriod(_withdrawCooldownPeriod);
+		emit SetDeallocateCooldown(MAStorage.layout().deallocateCooldown, _withdrawCooldownPeriod);
+		MAStorage.layout().deallocateCooldown = _withdrawCooldownPeriod;
+	}
+
 	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		withdrawLayout.maxWithdrawParts = _maxWithdrawParts;

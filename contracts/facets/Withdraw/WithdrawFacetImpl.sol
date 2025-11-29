@@ -244,15 +244,10 @@ library WithdrawFacetImpl {
 		require(withdrawRequest.provider != address(0), "Only Virtual or Express withdraw needs to accept");
 		require(msg.sender == withdrawRequest.provider, "Not allowed to accept withdrawal.");
 
-		uint256 totalCancelAmount;
-		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
-			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
-			totalCancelAmount += withdrawal.amount;
-			if(withdrawal.virtualProvider == address(0))
-				withdrawLayout.withdrawLockedBalance -= withdrawal.amount;
-		}
-		uint256 totalAmountWith18Decimals = (totalCancelAmount * 1e18) / (10 ** collateralDecimals);
-		accountLayout.balances[withdrawRequest.user] += totalAmountWith18Decimals;
+		withdrawLayout.withdrawLockedBalance -= (withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount);
+
+		uint256 amountWith18 = (withdrawRequest.totalAmount * 1e18) / (10 ** collateralDecimals);
+		accountLayout.balances[withdrawRequest.user] += amountWith18;
 
 		withdrawRequest.status = WithdrawStatus.PROVIDER_REJECTED;
 	}

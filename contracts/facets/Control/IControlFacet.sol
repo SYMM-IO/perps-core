@@ -164,6 +164,8 @@ interface IControlFacet is IControlEvents {
 
 	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external;
 
+	function setSignatureVerifierAddress(address signatureVerifier) external;
+
 	function addRelayerForExternalTransferTarget(address target, address relayer) external;
 
 	function removeRelayerForExternalTransferTarget(address target) external;
@@ -185,6 +187,12 @@ interface IControlFacet is IControlEvents {
 	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external;
 
 	function setMaxPartyAConnectionLimit(uint256 maxLimit) external;
+
+	function setMaxDeallocateWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external;
+
+	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external;
+
+	function setWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external;
 
 	function registerVirtualProvider(address provider) external;
 
