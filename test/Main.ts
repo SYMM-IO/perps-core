@@ -119,11 +119,11 @@ describe("UnitTests", function () {
 			shouldBehaveLikeAccountHub()
 		})
 
-		describe.only("AffiliateHub", async function () {
+		describe("AffiliateHub", async function () {
 			shouldBehaveLikeAffiliateHub()
 		})
 
-		describe.only("AccountManager", async function () {
+		describe("AccountManager", async function () {
 			shouldBehaveLikeAccountManager()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {

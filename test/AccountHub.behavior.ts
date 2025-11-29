@@ -265,24 +265,6 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 
 			describe("SendQuote with isolation types", async () => {
-				const createSendQuoteCallData = async (quoteRequest: any) => {
-					return context.partyAFacet.interface.encodeFunctionData("sendQuote", [
-						quoteRequest.partyBWhiteList,
-						quoteRequest.symbolId,
-						quoteRequest.positionType,
-						quoteRequest.orderType,
-						quoteRequest.price,
-						quoteRequest.quantity,
-						quoteRequest.cva,
-						quoteRequest.lf,
-						quoteRequest.partyAmm,
-						quoteRequest.partyBmm,
-						quoteRequest.maxFundingRate,
-						await quoteRequest.deadline,
-						await quoteRequest.upnlSig,
-					])
-				}
-
 				describe("POSITION isolation (0)", async () => {
 					let positionSubAccount: string
 
@@ -1500,7 +1482,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(virtualAccountData.isExists).to.be.true
 				})
 
-				it.skip("should handle hook revert gracefully during deletion", async () => {
+				it("should handle hook revert gracefully during deletion", async () => {
 					await hookContract.setRevertForSelector(
 						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
 						true,
@@ -1516,6 +1498,54 @@ export function shouldBehaveLikeAccountHub(): void {
 					await expect(
 						context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]),
 					).to.be.revertedWithCustomError(context.accountHub, "hookFailed")
+				})
+			})
+
+			describe("pause/unpause", function () {
+				let subAccountAddress: string
+
+				beforeEach(async function () {
+					const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+						{
+							name: "PAUSE_TEST",
+							metadata: ethers.keccak256(toUtf8Bytes("PAUSE")),
+							symmioCore: context.diamond,
+							isolationType: 0,
+						},
+					]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
+					const accounts = await context.accountHub.getSubAccounts(context.signers.user)
+					subAccountAddress = accounts[0]
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositFor(subAccountAddress, BALANCES.DEPOSIT_AMOUNT)
+				})
+
+				it("should revert createSubAccounts when paused", async function () {
+					await context.accountHub.connect(context.signers.admin).pause()
+					const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+						{
+							name: "PAUSED",
+							metadata: ethers.keccak256(toUtf8Bytes("PAUSED")),
+							symmioCore: context.diamond,
+							isolationType: 0,
+						},
+					]
+					await expect(
+						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas),
+					).to.be.revertedWith("Pausable: paused")
+				})
+
+				it("should revert _call when paused", async function () {
+					await context.accountHub.connect(context.signers.admin).pause()
+					const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
+					await expect(context.accountHub.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWith("Pausable: paused")
+				})
+
+				it("should allow actions after unpause", async function () {
+					await context.accountHub.connect(context.signers.admin).pause()
+					await context.accountHub.connect(context.signers.admin).unpause()
+					const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
+					await expect(context.accountHub.connect(context.signers.user)._call(subAccountAddress, callData)).to.not.be.reverted
 				})
 			})
 		})
