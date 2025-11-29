@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import "../../storages/WithdrawStorage.sol";
 
 interface IWithdrawEvents {
-	event WithdrawInitiated(uint256 indexed requestId, address indexed user, WithdrawReceiverPart[] parts, bytes providerData);
+	event WithdrawInitiated(uint256 indexed requestId, address indexed user, WithdrawReceiverPart[] parts, bool speedUp, bytes providerData);
 
 	event WithdrawAccepted(uint256 indexed requestId, address indexed user);
 
@@ -22,4 +22,6 @@ interface IWithdrawEvents {
 	event WithdrawSuspended(uint256 requestId,address user);
 
 	event WithdrawRejected(uint256 requestId,address user);
+
+	event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldown);
 }

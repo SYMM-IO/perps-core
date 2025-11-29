@@ -35,11 +35,12 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * - `WithdrawInitiated`
 	 *
 	 * @param parts Array of withdrawal instructions. Each part may target a different chain/provider.
+	 * @param speedUp Whether to request a speed-up for this withdrawal.
 	 * @param data Additional provider-specific metadata.
 	 */
-	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bytes memory data) external notSuspended(msg.sender) nonReentrant {
-		uint256 requestId = WithdrawFacetImpl.initiateWithdraw(parts, data);
-		emit WithdrawInitiated(requestId, msg.sender, parts, data);
+	function initiateWithdraw(WithdrawReceiverPart[] memory parts,bool speedUp, bytes memory data) external notSuspended(msg.sender) nonReentrant {
+		uint256 requestId = WithdrawFacetImpl.initiateWithdraw(parts,speedUp, data);
+		emit WithdrawInitiated(requestId, msg.sender, parts, speedUp, data);
 	}
 
 	/**
@@ -171,5 +172,23 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	function suspendWithdrawRequest(address user, uint256 requestId) external nonReentrant {
 		WithdrawFacetImpl.suspendWithdrawRequest(user, requestId);
 		emit WithdrawSuspended(requestId, user);
+	}
+
+	/**
+	 * @notice Operator accepts a speed-up request for a withdrawal.
+	 * @dev
+	 * - Can only be called by an operator with the appropriate role.
+	 * - Reduces the remaining cooldown time for the specified withdrawal request.
+	 *
+	 * Emits:
+	 * - `WithdrawSpeedUpAccepted`
+	 *
+	 * @param user The user who initiated the withdrawal.
+	 * @param requestId ID of the withdrawal request.
+	 * @param newCooldown The new cooldown time in seconds.
+	 */
+	function acceptSpeedUpRequest(address user, uint256 requestId, uint256 newCooldown) external notSuspended(user) onlyRole(LibAccessibility.WITHDRAW_SPEED_UP_ROLE) nonReentrant {
+		WithdrawFacetImpl.acceptSpeedUpRequest(user, requestId, newCooldown);
+		emit WithdrawSpeedUpAccepted(requestId, user, newCooldown);
 	}
 }

@@ -20,6 +20,7 @@ library WithdrawFacetImpl {
 
 	function initiateWithdraw(
 		WithdrawReceiverPart[] memory parts,
+		bool speedUp,
 		bytes memory data
 	) internal returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -33,6 +34,7 @@ library WithdrawFacetImpl {
 		require(parts.length <= withdrawLayout.maxWithdrawParts, "Too many withdraw parts");
 
 		uint256 totalAmount;
+		uint256 totalVirtualAmount;
 
 		// Provider tracking
 		address expressProvider;
@@ -41,11 +43,15 @@ library WithdrawFacetImpl {
 		bool hasExpress;
 		bool hasVirtual;
 
+		if(speedUp)
+			require(withdrawLayout.speedUpWhitelist[msg.sender], "Not allowed to speed up withdraw");
+
 		for (uint256 i = 0; i < parts.length; i++) {
 			WithdrawReceiverPart memory part = parts[i];
 			require(part.amount > 0, 'Withdraw request part should have amount greater than 0.');
 			bool isExpress = part.expressProvider != address(0);
 			bool isVirtual = part.virtualProvider != address(0);
+			totalAmount += part.amount;
 
 			// EXPRESS HANDLING
 			if (isExpress) {
@@ -65,6 +71,7 @@ library WithdrawFacetImpl {
 			// CHECK VIRTUAL IS REGISTER
 			if (isVirtual){
 				require(appLayout.virtualProviders[part.virtualProvider], "Not registered virtual provider");
+				totalVirtualAmount += part.amount;
 			}
 
 			// VIRTUAL HANDLING (only matters if NO express anywhere)
@@ -79,8 +86,6 @@ library WithdrawFacetImpl {
 					);
 				}
 			}
-
-			totalAmount += part.amount;
 		}
 		if(hasExpress)
 			require(appLayout.expressProviders[expressProvider], "Not registered express provider");
@@ -90,7 +95,9 @@ library WithdrawFacetImpl {
 			accountLayout.balances[msg.sender] >= totalAmountWith18,
 			"WithdrawFacet: Insufficient balance"
 		);
+		require(IERC20Metadata(collateral).balanceOf(address (this)) - withdrawLayout.withdrawLockedBalance >= (totalAmount - totalVirtualAmount), "Insufficient contract collateral");
 
+		withdrawLayout.withdrawLockedBalance += (totalAmount - totalVirtualAmount);
 		accountLayout.balances[msg.sender] -= totalAmountWith18;
 
 		uint256 currentId = ++withdrawLayout.lastWithdrawRequestId[msg.sender];
@@ -103,6 +110,7 @@ library WithdrawFacetImpl {
 
 		if (hasExpress) {
 			// Rule 1: Express exists → always wins
+			require(!speedUp, "Speed up not allowed with express");
 			provider = expressProvider;
 			isPureVirtual = false;
 		} else if (hasVirtual) {
@@ -122,6 +130,8 @@ library WithdrawFacetImpl {
 			timestamp: block.timestamp,
 			cooldownEndTime: block.timestamp + withdrawLayout.withdrawCooldownPeriod,
 			status: WithdrawStatus.PENDING,
+			speedUp: speedUp,
+			isCooldownModified: false,
 			provider: provider,
 			isPureVirtual: isPureVirtual,
 			providerData: data
@@ -177,6 +187,7 @@ library WithdrawFacetImpl {
 
 			if (!isExpress && !isVirtual) {
 				IERC20(collateral).safeTransfer(_bytesToAddress(withdrawal.receiver), withdrawal.amount);
+				withdrawLayout.withdrawLockedBalance -= withdrawal.amount;
 				continue;
 			}
 
@@ -188,6 +199,7 @@ library WithdrawFacetImpl {
 
 		if (totalExpressAmount > 0){
 			IERC20(collateral).safeTransfer(withdrawRequest.provider, totalExpressAmount);
+			withdrawLayout.withdrawLockedBalance -= totalExpressAmount;
 			IExpressProvider(withdrawRequest.provider).onWithdrawComplete(withdrawRequest);
 		}
 
@@ -234,6 +246,8 @@ library WithdrawFacetImpl {
 		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
 			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
 			totalCancelAmount += withdrawal.amount;
+			if(withdrawal.virtualProvider == address(0))
+				withdrawLayout.withdrawLockedBalance -= withdrawal.amount;
 		}
 		uint256 totalAmountWith18Decimals = (totalCancelAmount * 1e18) / (10 ** collateralDecimals);
 		accountLayout.balances[withdrawRequest.user] += totalAmountWith18Decimals;
@@ -333,6 +347,8 @@ library WithdrawFacetImpl {
 		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
 			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
 			totalAmount += withdrawal.amount;
+			if(withdrawal.virtualProvider == address(0))
+				withdrawLayout.withdrawLockedBalance -= withdrawal.amount;
 		}
 
 		uint256 amountWith18 = (totalAmount * 1e18) / (10 ** collateralDecimals);
@@ -363,6 +379,8 @@ library WithdrawFacetImpl {
 		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
 			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
 			totalAmount += withdrawal.amount;
+			if(withdrawal.virtualProvider == address(0))
+				withdrawLayout.withdrawLockedBalance -= withdrawal.amount;
 		}
 
 		uint256 amountWith18 = (totalAmount * 1e18) / (10 ** collateralDecimals);
@@ -370,10 +388,31 @@ library WithdrawFacetImpl {
 		withdrawRequest.status = WithdrawStatus.SUSPENDED;
 	}
 
-	function _bytesToAddress(bytes memory data) internal pure returns (address addr) {
-		require(data.length == 20, "Invalid address bytes length");
-		assembly {
-			addr := shr(96, mload(add(data, 32)))
+	function acceptSpeedUpRequest(address user, uint256 requestId, uint256 newCooldown) internal {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+
+		require(requestId <= withdrawLayout.lastWithdrawRequestId[user], "Invalid withdraw request ID");
+
+		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[user][requestId];
+
+		require(withdrawRequest.user == user, "Invalid withdraw user");
+		require(withdrawRequest.speedUp, "Withdraw request is not speed up");
+		require(!withdrawRequest.isCooldownModified, "Cooldown already modified");
+		require(withdrawLayout.speedUpWhitelist[user], "User not in speed up whitelist");
+		require(withdrawRequest.status == WithdrawStatus.PENDING || withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "Invalid withdraw request status");
+		require(newCooldown <= withdrawLayout.minWithdrawCooldown, "New cooldown exceeds min cooldown");
+
+		withdrawRequest.cooldownEndTime = withdrawRequest.timestamp + newCooldown;
+		withdrawRequest.isCooldownModified = true;
+
+		if(withdrawRequest.isPureVirtual){
+			IVirtualProvider(withdrawRequest.provider).onSpeedUpWithdrawRequest(withdrawRequest, newCooldown);
 		}
 	}
+
+	function _bytesToAddress(bytes memory data) internal pure returns (address) {
+		require(data.length == 20, "Invalid address bytes length");
+		return address(uint160(bytes20(data)));
+	}
+
 }

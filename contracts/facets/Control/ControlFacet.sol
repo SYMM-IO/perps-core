@@ -859,4 +859,24 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.layout().expressProviders[provider] = false;
 		emit UnregisterExpressProvider(provider);
 	}
+
+	function setSpeedUpUser(address user) external onlyRole(LibAccessibility.WITHDRAW_SPEED_UP_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		require(!withdrawLayout.speedUpWhitelist[user] , "ControlFacet: User already whitelisted as speed up");
+		withdrawLayout.speedUpWhitelist[user] = true;
+		emit SetSpeedUpUser(user);
+	}
+
+	function unsetSpeedUpUser(address user) external onlyRole(LibAccessibility.WITHDRAW_SPEED_UP_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		require(withdrawLayout.speedUpWhitelist[user] , "ControlFacet: User not whitelisted as speed up");
+		withdrawLayout.speedUpWhitelist[user] = false;
+		emit UnsetSpeedUpUser(user);
+	}
+
+	function setMinWithdrawCooldown(uint256 cooldown) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		emit SetMinWithdrawCooldown(withdrawLayout.minWithdrawCooldown, cooldown);
+		withdrawLayout.minWithdrawCooldown = cooldown;
+	}
 }

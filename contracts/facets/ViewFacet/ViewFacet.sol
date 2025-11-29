@@ -1257,4 +1257,29 @@ contract ViewFacet is IViewFacet {
 	function isVirtualProviderRegistered(address provider) external view returns (bool) {
 		return GlobalAppStorage.layout().virtualProviders[provider];
 	}
+
+	/**
+	 * @notice Checks if a user is eligible for speed up.
+	 * @param user The address of the user.
+	 * @return True if the user is eligible for speed up, false otherwise.
+	 */
+	function isSpeedUpEligible(address user) external view returns (bool){
+		return WithdrawStorage.layout().speedUpWhitelist[user];
+	}
+
+	/**
+	 * @notice Retrieves the modified cooldown end time for a withdraw request of a user.
+	 * @param user The address of the user.
+	 * @param requestId The ID of the withdraw request.
+	 * @return The modified cooldown end time.
+	 */
+	function getModifiedCooldownEndTime(address user,uint256 requestId) external view returns (uint256){
+		WithdrawRequest storage request = WithdrawStorage.layout().withdrawRequests[user][requestId];
+		require(request.isCooldownModified, "Cooldown not modified");
+		return request.cooldownEndTime;
+	}
+
+	function getWithdrawLockedBalance() external view returns (uint256){
+		return WithdrawStorage.layout().withdrawLockedBalance;
+	}
 }

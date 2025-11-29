@@ -20,6 +20,8 @@ pragma solidity >=0.8.18;
 		uint256 timestamp;
 		uint256 cooldownEndTime;
 		WithdrawStatus status;
+		bool speedUp;
+		bool isCooldownModified;
 		address provider;
 		bool isPureVirtual;
 		bytes providerData;
@@ -41,8 +43,11 @@ library WithdrawStorage {
 	struct Layout {
 		uint256 maxWithdrawParts;
 		uint256 withdrawCooldownPeriod;
+		uint256 minWithdrawCooldown;
+		uint256 withdrawLockedBalance;
 		mapping(address => uint256) lastWithdrawRequestId;
 		mapping(address => mapping(uint256 => WithdrawRequest)) withdrawRequests;
+		mapping(address => bool) speedUpWhitelist;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -64,4 +64,9 @@ contract VirtualProvider is IVirtualProvider {
 	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external {
 		require(withdrawRequest.status == WithdrawStatus.CANCELLED, "Withdraw not cancel requested");
 	}
+
+	function onSpeedUpWithdrawRequest(WithdrawRequest memory withdrawRequest, uint256 newCooldown) external{
+		require(withdrawRequest.speedUp, "speed up not requested");
+	}
+
 }

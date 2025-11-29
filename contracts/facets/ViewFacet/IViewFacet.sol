@@ -229,4 +229,10 @@ interface IViewFacet {
 	function isExpressProviderRegistered(address provider) external view returns (bool);
 
 	function isVirtualProviderRegistered(address provider) external view returns (bool);
+
+	function isSpeedUpEligible(address user) external view returns (bool);
+
+	function getModifiedCooldownEndTime(address user,uint256 requestId) external view returns (uint256);
+
+	function getWithdrawLockedBalance() external view returns (uint256);
 }

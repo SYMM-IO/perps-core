@@ -193,4 +193,10 @@ interface IControlFacet is IControlEvents {
 	function registerExpressProvider(address provider) external;
 
 	function unregisterExpressProvider(address provider) external;
+
+	function setSpeedUpUser(address user) external;
+
+	function unsetSpeedUpUser(address user) external;
+
+	function setMinWithdrawCooldown(uint256 cooldown) external;
 }

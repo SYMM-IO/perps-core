@@ -108,15 +108,14 @@ describe("UnitTests", function () {
 		describe("PartyBBatchActionsFacet", async function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
 		})
-
+		
 		describe("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
 		})
 
-		describe("WithdrawFacet", async function () {
+		describe.only("WithdrawFacet", async function () {
 			shouldBehaveLikeWithdrawFacet()
 		})
-
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {
 			shouldBehaveLikeFuzzTest()
