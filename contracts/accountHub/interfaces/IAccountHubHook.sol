@@ -5,10 +5,8 @@
 pragma solidity >=0.8.18;
 
 interface IAccountHubHook {
-    function onAccountCreation(address account, bytes calldata data) external returns (bool);
-    function onDeposit(address account, uint256 amount) external returns (bool);
-    function onWithdraw(address account, uint256 amount) external returns (bool);
-    function onVirtualAccountCreation(address virtualAccount, address parent) external returns (bool);
-    function onVirtualAccountDeletion(address account) external;
-    function onCall(address account, bytes[] memory callDatas) external;
+	function onAccountCreation(address user, address subAccount) external returns (bool);
+	function onVirtualAccountCreation(address virtualAccount, address parent) external returns (bool);
+	function onVirtualAccountDeletion(address account) external;
+	function onCall(address account, bytes[] memory callDatas) external;
 }

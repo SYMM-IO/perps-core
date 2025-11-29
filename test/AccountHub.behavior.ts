@@ -8,7 +8,7 @@ import { RunContext } from "./models/RunContext"
 import { User } from "./models/User"
 import { Hedger } from "./models/Hedger"
 import { decimal } from "./utils/Common"
-import { IAccountHub } from "../src/types"
+import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { PositionType } from "./models/Enums"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
@@ -39,15 +39,9 @@ export function shouldBehaveLikeAccountHub(): void {
 
 	// Test constants
 	const BALANCES = {
-		INITIAL_COLLATERAL: decimal(5000n),
-		DEPOSIT_AMOUNT: decimal(300n),
-		WITHDRAW_AMOUNT: decimal(200n),
-		ALLOCATE_AMOUNT: decimal(100n),
-		DEALLOCATE_AMOUNT: decimal(50n),
-		TRANSFER_AMOUNT: decimal(100n),
+		INITIAL_COLLATERAL: decimal(10000n),
+		DEPOSIT_AMOUNT: decimal(3000n),
 		SMALL_AMOUNT: decimal(25n),
-		LARGE_AMOUNT: decimal(700n),
-		HEDGER_ALLOCATE: decimal(120n),
 	}
 
 	describe("AccountHub", async function () {
@@ -158,10 +152,6 @@ export function shouldBehaveLikeAccountHub(): void {
 					context.accountHub.connect(context.signers.user).createSubAccounts(context.signers.others[0].address, accountDatas),
 				).to.revertedWithCustomError(context.accountHub, "AffiliateNotActive")
 			})
-
-			it("should call Hook successfully", async () => {
-				// TODO :::
-			})
 		})
 
 		describe("editAccountName", async () => {
@@ -207,21 +197,21 @@ export function shouldBehaveLikeAccountHub(): void {
 				)
 			})
 
-			//TODO ::: Need legacy multiAccount ::: it("should allowed just by the account owner", async () => {
-			// 	const newAccountName = "NEW_EXAMPLE_NAME"
+			it("should allowed just by the account owner", async () => {
+				const newAccountName = "NEW_EXAMPLE_NAME"
 
-			// 	await expect(
-			// 		context.accountHub.connect(context.signers.others[0]).editAccountName(subAccountAddress, newAccountName),
-			// 	).to.revertedWithCustomError(context.accountHub, "NotOwner")
-			// })
+				await expect(
+					context.accountHub.connect(context.signers.others[0]).editAccountName(subAccountAddress, newAccountName),
+				).to.revertedWithCustomError(context.accountHub, "NotOwner")
+			})
 
-			//TODO ::: it("should failed when subAccount not exists", async () => {
-			// 	const newAccountName = "NEW_EXAMPLE_NAME"
+			it("should failed when subAccount not exists", async () => {
+				const newAccountName = "NEW_EXAMPLE_NAME"
 
-			// 	await expect(
-			// 		context.accountHub.connect(context.signers.user).editAccountName(context.signers.others[0], newAccountName),
-			// 	).to.revertedWithCustomError(context.accountHub, "InvalidNameLength")
-			// })
+				await expect(
+					context.accountHub.connect(context.signers.user).editAccountName(context.signers.others[0], newAccountName),
+				).to.revertedWithCustomError(context.accountHub, "NotOwner")
+			})
 		})
 
 		describe("_call", async () => {
@@ -264,8 +254,14 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(allocatedBalance).to.equal(BALANCES.SMALL_AMOUNT)
 				})
 
-				// TODO: Need legacy MultiAccount for ownership tests
-				// it("should only be callable by owner of subAccount", async () => { ... })
+				it("should only be callable by owner of subAccount", async () => {
+					const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
+
+					await expect(context.accountHub.connect(context.signers.others[0])._call(subAccountAddress, callData)).to.revertedWithCustomError(
+						context.accountHub,
+						"NotOwner",
+					)
+				})
 			})
 
 			describe("SendQuote with isolation types", async () => {
@@ -323,7 +319,7 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					it("should revert when trying to send another quote on existing virtual account", async () => {
 						const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
-						const sendQuoteCallData = await await createSendQuoteCallData(quoteRequest)
+						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 
 						await context.accountHub.connect(context.signers.user)._call(positionSubAccount, [sendQuoteCallData])
 						const virtualAccounts = await context.accountHub.getVirtualAccounts(positionSubAccount)
@@ -393,7 +389,7 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccounts = await context.accountHub.getVirtualAccounts(marketSubAccount)
 
 						await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
-						await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(virtualAccounts[0], BALANCES.DEPOSIT_AMOUNT)
+						await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(marketSubAccount, BALANCES.DEPOSIT_AMOUNT)
 
 						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
 
@@ -1088,7 +1084,440 @@ export function shouldBehaveLikeAccountHub(): void {
 				expect(allocatedBalance).to.equal(0n)
 			})
 		})
+
+		describe("hooks", async () => {
+			let hookContract: MockAccountHubHook
+			let subAccountAddress: string
+			let customSubAccountAddress: string
+
+			beforeEach(async () => {
+				// Deploy mock hook contract
+				const MockHook = await ethers.getContractFactory("MockAccountHubHook")
+				hookContract = await MockHook.deploy()
+				await hookContract.waitForDeployment()
+
+				const affiliateAddress = await context.accountManager.getAddress()
+
+				await context.affiliateHub.setHook(
+					affiliateAddress,
+					IAccountHubHook__factory.createInterface().getFunction("onAccountCreation").selector,
+					await hookContract.getAddress(),
+				)
+				await context.affiliateHub.setHook(
+					affiliateAddress,
+					IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
+					await hookContract.getAddress(),
+				)
+				await context.affiliateHub.setHook(
+					affiliateAddress,
+					IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+					await hookContract.getAddress(),
+				)
+
+				const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+					{
+						name: "HOOK_TEST_ACCOUNT",
+						metadata: ethers.keccak256(toUtf8Bytes("HOOK_TEST")),
+						symmioCore: context.diamond,
+						isolationType: 0, // POSITION
+					},
+				]
+
+				await context.accountHub.connect(context.signers.user).createSubAccounts(affiliateAddress, accountDatas)
+
+				const accounts = await context.accountHub.getSubAccounts(context.signers.user)
+				subAccountAddress = accounts[accounts.length - 1]
+
+				// Deposit funds
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+				await context.accountFacet.connect(context.signers.user).depositFor(subAccountAddress, BALANCES.DEPOSIT_AMOUNT)
+			})
+
+			describe("onAccountCreation hook", async () => {
+				it("should call onAccountCreation hook when sub-account is created", async () => {
+					const callCountBefore = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onAccountCreation").selector,
+					)
+
+					const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+						{
+							name: "NEW_ACCOUNT",
+							metadata: ethers.keccak256(toUtf8Bytes("NEW_METADATA")),
+							symmioCore: context.diamond,
+							isolationType: 1,
+						},
+					]
+
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
+
+					const callCountAfter = await hookContract.getCallCount(IAccountHubHook__factory.createInterface().getFunction("onAccountCreation").selector)
+
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
+				})
+
+				it("should pass correct data to onAccountCreation hook", async () => {
+					const metadata = ethers.keccak256(toUtf8Bytes("TEST_METADATA"))
+					const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+						{
+							name: "TEST_ACCOUNT",
+							metadata: metadata,
+							symmioCore: context.diamond,
+							isolationType: 2,
+						},
+					]
+
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
+
+					const accounts = await context.accountHub.getSubAccounts(context.signers.user)
+					const newAccount = accounts[accounts.length - 1]
+
+					expect(await hookContract.wasHookCalledForAccount(newAccount)).to.be.true
+
+					const lastAccount = await hookContract.getLastAccountForSelector(
+						IAccountHubHook__factory.createInterface().getFunction("onAccountCreation").selector,
+					)
+					expect(lastAccount).to.equal(newAccount)
+				})
+
+				it("should revert account creation if hook reverts", async () => {
+					// Configure hook to revert
+					await hookContract.setRevertForSelector(
+						IAccountHubHook__factory.createInterface().getFunction("onAccountCreation").selector,
+						true,
+						"Hook rejected account creation",
+					)
+
+					const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+						{
+							name: "WILL_FAIL",
+							metadata: ethers.keccak256(toUtf8Bytes("FAIL")),
+							symmioCore: context.diamond,
+							isolationType: 0,
+						},
+					]
+
+					await expect(
+						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas),
+					).to.be.revertedWithCustomError(context.accountHub, "hookFailed")
+				})
+
+				it("should continue if no hook is registered", async () => {
+					const affData = {
+						name: "test affiliate 1",
+						brandColor: "d69d00",
+						admin: context.signers.admin.address,
+						stakeholders: [
+							{
+								receiver: context.signers.admin.address,
+								share: decimal(9n, 17),
+							},
+						],
+						symmioShare: decimal(1n, 17),
+						metadata: "0x",
+						legacyMultiAccounts: [ZeroAddress],
+						symmioCores: [context.diamond],
+					}
+					const affiliateAddress = await context.affiliateHub.requestToRegisterAffiliate.staticCall(affData)
+
+					await context.affiliateHub.requestToRegisterAffiliate(affData)
+					await context.affiliateHub.approveAffiliate(affiliateAddress)
+
+					const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+						{
+							name: "NO_HOOK_ACCOUNT",
+							metadata: ethers.keccak256(toUtf8Bytes("NO_HOOK")),
+							symmioCore: context.diamond,
+							isolationType: 0,
+						},
+					]
+
+					// Should not revert even without hook
+					await expect(context.accountHub.connect(context.signers.user).createSubAccounts(affiliateAddress, accountDatas)).to.not.be.reverted
+				})
+			})
+
+			describe("onVirtualAccountCreation hook", async () => {
+				it("should call onVirtualAccountCreation when virtual account is auto-created", async () => {
+					const callCountBefore = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
+					)
+
+					// Send quote to trigger virtual account creation
+					const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+					const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+					await context.accountHub.connect(context.signers.user)._call(subAccountAddress, [sendQuoteCallData])
+
+					const callCountAfter = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
+					)
+
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
+				})
+
+				it("should call onVirtualAccountCreation when manually creating virtual account", async () => {
+					// Create CUSTOM sub-account
+					const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+						{
+							name: "CUSTOM_ACCOUNT",
+							metadata: ethers.keccak256(toUtf8Bytes("CUSTOM")),
+							symmioCore: context.diamond,
+							isolationType: 3, // CUSTOM
+						},
+					]
+
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
+
+					const accounts = await context.accountHub.getSubAccounts(context.signers.user)
+					customSubAccountAddress = accounts[accounts.length - 1]
+
+					const callCountBefore = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
+					)
+
+					// Manually create virtual account
+					await context.accountHub.connect(context.signers.user).createCustomVirtualAccount(
+						customSubAccountAddress,
+						ethers.keccak256(toUtf8Bytes("MANUAL_VIRTUAL")),
+						1, // MARKET
+						1, // symbolId
+					)
+
+					const callCountAfter = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
+					)
+
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
+				})
+
+				it("should call hook for each virtual account created", async () => {
+					// Create CUSTOM account to create multiple virtual accounts
+					const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+						{
+							name: "CUSTOM_MULTI",
+							metadata: ethers.keccak256(toUtf8Bytes("CUSTOM_MULTI")),
+							symmioCore: context.diamond,
+							isolationType: 3,
+						},
+					]
+
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
+
+					const accounts = await context.accountHub.getSubAccounts(context.signers.user)
+					const customAccount = accounts[accounts.length - 1]
+
+					const callCountBefore = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
+					)
+
+					// Create 3 virtual accounts
+					await context.accountHub.connect(context.signers.user).createCustomVirtualAccount(customAccount, ethers.keccak256(toUtf8Bytes("V1")), 1, 1)
+
+					await context.accountHub.connect(context.signers.user).createCustomVirtualAccount(customAccount, ethers.keccak256(toUtf8Bytes("V2")), 1, 2)
+
+					await context.accountHub.connect(context.signers.user).createCustomVirtualAccount(customAccount, ethers.keccak256(toUtf8Bytes("V3")), 2, 1)
+
+					const callCountAfter = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
+					)
+
+					expect(callCountAfter).to.equal(callCountBefore + 3n)
+				})
+
+				it("should revert virtual account creation if hook reverts", async () => {
+					// Configure hook to revert
+					await hookContract.setRevertForSelector(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
+						true,
+						"Hook rejected virtual account",
+					)
+
+					const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+					const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+					await expect(context.accountHub.connect(context.signers.user)._call(subAccountAddress, [sendQuoteCallData])).to.be.revertedWithCustomError(
+						context.accountHub,
+						"hookFailed",
+					)
+				})
+			})
+
+			describe("onVirtualAccountDeletion hook", async () => {
+				let virtualAccountAddress: string
+
+				beforeEach(async () => {
+					// Create virtual account with a quote
+					const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+					const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+					await context.accountHub.connect(context.signers.user)._call(subAccountAddress, [sendQuoteCallData])
+
+					const virtualAccounts = await context.accountHub.getVirtualAccounts(subAccountAddress)
+					virtualAccountAddress = virtualAccounts[0]
+				})
+
+				it("should call onVirtualAccountDeletion when position is closed", async () => {
+					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					const quoteId = quotes[0]
+
+					// Lock and open position
+					await hedger.lockQuote(quoteId)
+					const openRequest = limitOpenRequestBuilder().build()
+					await context.partyBPositionActionsFacet
+						.connect(context.signers.hedger)
+						.openPosition(
+							quoteId,
+							openRequest.filledAmount,
+							openRequest.openPrice,
+							await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
+						)
+
+					const callCountBefore = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+					)
+
+					// Request to close
+					const closeRequest = limitCloseRequestBuilder().build()
+					const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+						quoteId,
+						closeRequest.closePrice,
+						closeRequest.quantityToClose,
+						closeRequest.orderType,
+						await closeRequest.deadline,
+					])
+
+					await context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
+
+					// Fill close - this should delete virtual account and trigger hook
+					const fillCloseRequest = limitFillCloseRequestBuilder().build()
+					await context.partyBPositionActionsFacet
+						.connect(context.signers.hedger)
+						.fillCloseRequest(
+							quoteId,
+							fillCloseRequest.filledAmount,
+							fillCloseRequest.closedPrice,
+							await getDummyPairUpnlAndPriceSig(
+								BigInt(fillCloseRequest.price),
+								BigInt(fillCloseRequest.upnlPartyA),
+								BigInt(fillCloseRequest.upnlPartyB),
+							),
+						)
+
+					const callCountAfter = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+					)
+
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
+				})
+
+				it("should call onVirtualAccountDeletion when quote is cancelled", async () => {
+					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					const quoteId = quotes[0]
+
+					const callCountBefore = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+					)
+
+					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
+
+					await context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote])
+
+					const callCountAfter = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+					)
+
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
+
+					const virtualAccountData = await context.accountHub.getVirtualAccountData(virtualAccountAddress)
+					expect(virtualAccountData.isExists).to.be.false
+				})
+
+				it("should pass correct virtual account address to hook", async () => {
+					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					const quoteId = quotes[0]
+
+					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
+
+					await context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote])
+
+					const lastAccount = await hookContract.getLastAccountForSelector(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+					)
+					expect(lastAccount).to.equal(virtualAccountAddress)
+				})
+
+				it("should not call hook if virtual account is not deleted", async () => {
+					const accountDatas: IAccountHub.SubAccountCreationDataStruct[] = [
+						{
+							name: "MARKET_ACCOUNT",
+							metadata: ethers.keccak256(toUtf8Bytes("MARKET")),
+							symmioCore: context.diamond,
+							isolationType: 1, // MARKET
+						},
+					]
+
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), accountDatas)
+
+					const accounts = await context.accountHub.getSubAccounts(context.signers.user)
+					const marketAccount = accounts[accounts.length - 1]
+
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositFor(marketAccount, BALANCES.DEPOSIT_AMOUNT)
+
+					const quoteRequest1 = limitQuoteRequestBuilder().symbolId(1).build()
+					const sendQuoteCallData1 = await createSendQuoteCallData(quoteRequest1)
+					await context.accountHub.connect(context.signers.user)._call(marketAccount, [sendQuoteCallData1])
+
+					const virtualAccounts = await context.accountHub.getVirtualAccounts(marketAccount)
+					const marketVirtualAccount = virtualAccounts[0]
+
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(marketVirtualAccount, BALANCES.DEPOSIT_AMOUNT)
+
+					const quoteRequest2 = limitQuoteRequestBuilder().symbolId(1).build()
+					const sendQuoteCallData2 = await createSendQuoteCallData(quoteRequest2)
+					await context.accountHub.connect(context.signers.user)._call(marketVirtualAccount, [sendQuoteCallData2])
+
+					const callCountBefore = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+					)
+
+					// Cancel only first quote
+					const quotes = await context.accountHub.getVirtualAccountQuoteIds(marketVirtualAccount)
+					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quotes[0]])
+
+					await context.accountHub.connect(context.signers.user)._call(marketVirtualAccount, [encodedCancelQuote])
+
+					const callCountAfter = await hookContract.getCallCount(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+					)
+
+					// Hook should not be called because virtual account still has one quote
+					expect(callCountAfter).to.equal(callCountBefore)
+
+					// Virtual account should still exist
+					const virtualAccountData = await context.accountHub.getVirtualAccountData(marketVirtualAccount)
+					expect(virtualAccountData.isExists).to.be.true
+				})
+
+				it.skip("should handle hook revert gracefully during deletion", async () => {
+					await hookContract.setRevertForSelector(
+						IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+						true,
+						"Hook rejected deletion",
+					)
+
+					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					const quoteId = quotes[0]
+
+					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
+
+					// Should revert because hook rejects
+					await expect(
+						context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]),
+					).to.be.revertedWithCustomError(context.accountHub, "hookFailed")
+				})
+			})
+		})
 	})
 }
-
-// TODO ::: legacy MultiAccount Test

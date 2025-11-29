@@ -1233,4 +1233,16 @@ contract ViewFacet is IViewFacet {
 	function getSigner() external view returns (address) {
 		return MAStorage.layout().signer == address(0) ? msg.sender : MAStorage.layout().signer;
 	}
+
+	function getFee(address affiliate, uint256 symbolId) view external returns (Fee memory fee) {
+		if (GlobalAppStorage.layout().affiliateFee[affiliate][symbolId].isSet) {
+			fee = GlobalAppStorage.layout().affiliateFee[affiliate][symbolId];
+		} else {
+			fee = GlobalAppStorage.layout().defaultAffiliateFee[affiliate];
+			if (!fee.isSet) {
+				uint256 symbolTradingFee = SymbolStorage.layout().symbols[symbolId].tradingFee;
+				fee = Fee(symbolTradingFee, symbolTradingFee, true);
+			}
+		}
+	}
 }

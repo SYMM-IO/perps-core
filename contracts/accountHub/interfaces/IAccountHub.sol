@@ -66,6 +66,11 @@ interface IAccountHub {
 		uint256 cva;
 		uint256 lf;
 		uint256 partyAmm;
+		uint256 quantity;
+		uint256 price;
+		ISymmio.OrderType OrderType;
+		ISymmio.SingleUpnlAndPriceSig sig;
+		address affiliate;
 	}
 
 	// Account events
@@ -98,7 +103,15 @@ interface IAccountHub {
 	)
 		external
 		view
-		returns (address owner, bool isExists, string memory name, address affiliate,address symmioCore, bytes memory metadata, SubAccountIsolationType isolationType);
+		returns (
+			address owner,
+			bool isExists,
+			string memory name,
+			address affiliate,
+			address symmioCore,
+			bytes memory metadata,
+			SubAccountIsolationType isolationType
+		);
 
 	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory);
 	// Admin functions
@@ -127,4 +140,5 @@ interface IAccountHub {
 	error SymbolNotAllowedForThisAccount();
 	error AffiliateNotActive();
 	error OnlyCustomIsolationCanCreateManually();
+	error hookFailed();
 }

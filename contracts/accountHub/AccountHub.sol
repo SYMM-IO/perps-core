@@ -9,7 +9,6 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import "./interfaces/IAccountHub.sol";
@@ -17,6 +16,7 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
+
 /**
  * @title AccountHub
  * @notice Manages sub-accounts and virtual accounts for the Symmio protocol
@@ -399,7 +399,11 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		userToSubAccounts[sender].add(subAccountAddress);
 
-		_callHook(affiliate, IAccountHubHook.onAccountCreation.selector, abi.encode(subAccountAddress, data.metadata));
+		_callHook(
+			affiliate,
+			IAccountHubHook.onAccountCreation.selector,
+			abi.encodeWithSelector(IAccountHubHook.onAccountCreation.selector, sender, subAccountAddress)
+		);
 
 		emit SubAccountCreated(subAccountAddress, sender, affiliate, data.name);
 	}
@@ -428,7 +432,11 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		subAccountToVirtualAccounts[parentAccount].add(virtualAccount);
 
-		_callHook(parent.affiliate, IAccountHubHook.onVirtualAccountCreation.selector, abi.encode(virtualAccount, parentAccount));
+		_callHook(
+			parent.affiliate,
+			IAccountHubHook.onVirtualAccountCreation.selector,
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount)
+		);
 
 		emit VirtualAccountCreated(virtualAccount, parentAccount);
 	}
@@ -449,7 +457,12 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		vData.isExists = false;
 
 		address affiliate = _getAffiliateForAccount(account);
-		_callHook(affiliate, IAccountHubHook.onVirtualAccountDeletion.selector, abi.encode(account));
+
+		_callHook(
+			affiliate,
+			IAccountHubHook.onVirtualAccountDeletion.selector,
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountDeletion.selector, account)
+		);
 
 		emit VirtualAccountDeleted(account, parentAccount);
 	}
@@ -465,46 +478,75 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		// TODO ::: add senfQuoteWithAffiliateAndData
 		if (selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
-			(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , , ) = abi.decode(
-				cd[4:],
-				(
-					address[],
-					uint256,
-					ISymmio.PositionType,
-					ISymmio.OrderType,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					address,
-					ISymmio.SingleUpnlAndPriceSig
-				)
-			);
-			return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
+			(
+				,
+				uint256 symbolId,
+				ISymmio.PositionType positionType,
+				ISymmio.OrderType orderType,
+				uint256 price,
+				uint256 quantity,
+				uint256 cva,
+				uint256 lf,
+				uint256 partyAmm,
+				,
+				,
+				,
+				address affiliate,
+				ISymmio.SingleUpnlAndPriceSig memory sig
+			) = abi.decode(
+					cd[4:],
+					(
+						address[],
+						uint256,
+						ISymmio.PositionType,
+						ISymmio.OrderType,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						address,
+						ISymmio.SingleUpnlAndPriceSig
+					)
+				);
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, affiliate);
 		} else {
-			(, uint256 symbolId, ISymmio.PositionType positionType, , , , uint256 cva, uint256 lf, uint256 partyAmm, , , , ) = abi.decode(
-				cd[4:],
-				(
-					address[],
-					uint256,
-					ISymmio.PositionType,
-					ISymmio.OrderType,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					uint256,
-					ISymmio.SingleUpnlAndPriceSig
-				)
-			);
-			return QuoteParams(symbolId, positionType, cva, lf, partyAmm);
+			(
+				,
+				uint256 symbolId,
+				ISymmio.PositionType positionType,
+				ISymmio.OrderType orderType,
+				uint256 price,
+				uint256 quantity,
+				uint256 cva,
+				uint256 lf,
+				uint256 partyAmm,
+				,
+				,
+				,
+				ISymmio.SingleUpnlAndPriceSig memory sig
+			) = abi.decode(
+					cd[4:],
+					(
+						address[],
+						uint256,
+						ISymmio.PositionType,
+						ISymmio.OrderType,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						ISymmio.SingleUpnlAndPriceSig
+					)
+				);
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
 		}
 	}
 
@@ -530,6 +572,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		) {
 			revert SymbolNotAllowedForThisAccount();
 		}
+
+		address core = getRelatedCore(accountData.parentAccount);
+		_transferBalanceForSendQuote(core, accountData.parentAccount, account, p);
 
 		_executeWithSigner(account, cd);
 		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
@@ -564,11 +609,8 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			virtualAccount = _createVirtualAccount(account, hex"", vType, p.symbolId);
 		}
 
-		// transfer funds to virtual account
-		address core = getRelatedCore(virtualAccount);
-		ISymmio(core).setSigner(account);
-		ISymmio(core).internalTransfer(virtualAccount, p.cva + p.lf + p.partyAmm);
-		ISymmio(core).setSigner(address(0));
+		address core = getRelatedCore(account);
+		_transferBalanceForSendQuote(core, account, virtualAccount, p);
 
 		// send quote from virtual account
 		_executeWithSigner(virtualAccount, cd);
@@ -674,14 +716,10 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 */
 	function _callHook(address affiliate, bytes4 selector, bytes memory data) private {
 		address hook = IAffiliateHub(affiliateHub).getHook(affiliate, selector);
-		if (hook != address(0)) {
-			(bool success, bytes memory result) = hook.call(abi.encodeWithSelector(selector, data));
-
-			if (!success) {
-				assembly {
-					revert(add(result, 32), mload(result))
-				}
-			}
+		if (hook == address(0)) return;
+		(bool success,) = hook.call(data);
+		if (!success) {
+			revert hookFailed();
 		}
 	}
 
@@ -709,5 +747,21 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 					)
 				)
 			);
+	}
+
+	/**
+	 * @dev Helper to handle internal transfer and quote execution
+	 */
+	function _transferBalanceForSendQuote(
+		address core,
+		address signerAccount,
+		address transferTarget,
+		QuoteParams memory p
+	) private {
+		ISymmio(core).setSigner(signerAccount);
+		uint256 tradingPrice = p.OrderType == ISymmio.OrderType.LIMIT ? p.price : p.sig.price;
+		ISymmio.Fee memory fee = ISymmio(core).getFee(p.affiliate, p.symbolId);
+		ISymmio(core).internalTransfer(transferTarget, p.cva + p.lf + p.partyAmm + (p.quantity * tradingPrice * fee.openFee) / 1e36);
+		ISymmio(core).setSigner(address(0));
 	}
 }
