@@ -144,7 +144,7 @@ interface IControlFacet is IControlEvents {
 
 	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external;
 
-	function addBridge(address bridge, bool isVirtual) external;
+	function addBridge(address bridge) external;
 
 	function removeBridge(address bridge) external;
 
@@ -163,6 +163,8 @@ interface IControlFacet is IControlEvents {
 	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external;
 
 	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external;
+
+	function setSignatureVerifierAddress(address signatureVerifier) external;
 
 	function addRelayerForExternalTransferTarget(address target, address relayer) external;
 
@@ -185,4 +187,26 @@ interface IControlFacet is IControlEvents {
 	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external;
 
 	function setMaxPartyAConnectionLimit(uint256 maxLimit) external;
+
+	function setMaxDeallocateWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external;
+
+	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external;
+
+	function setWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external;
+
+	function registerVirtualProvider(address provider) external;
+
+	function unregisterVirtualProvider(address provider) external;
+
+	function registerExpressProvider(address provider) external;
+
+	function unregisterExpressProvider(address provider) external;
+
+	function setSpeedUpUser(address user) external;
+
+	function unsetSpeedUpUser(address user) external;
+
+	function setMinWithdrawCooldown(uint256 cooldown) external;
+
+	function deprecateOldWithdrawal() external;
 }

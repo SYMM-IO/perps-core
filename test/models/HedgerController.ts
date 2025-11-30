@@ -288,7 +288,6 @@ export class HedgerController {
 			}
 			case Action.NOTHING: {
 				if (actionWrapper.rethink) {
-					logger.info(`Hedger::ReThinking about quote: ${quote.id}`)
 					let status = quote.quoteStatus
 					setTimeout(async () => {
 						quote = await this.context.viewFacet.getQuote(quote.id)
