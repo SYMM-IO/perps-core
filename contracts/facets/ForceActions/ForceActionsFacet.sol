@@ -94,20 +94,20 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		forceClose(quoteId, highLowPriceSig);
 	}
 
-	function initializeForceClose(uint256 quoteId, HighLowPriceSig memory sig) external {
-		ForceActionsFacetImpl.forceCloseInit(quoteId, sig);
-		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, sig.timestamp);
+	function initializeForceClose(uint256 quoteId, HighLowPriceSig memory sig) external returns (uint256 forceCloseId) {
+		forceCloseId = ForceActionsFacetImpl.forceCloseInit(quoteId, sig);
+		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, forceCloseId, sig.timestamp);
 	}
 
 	function realizeUPNLMasterAccount(
-		uint256 quoteId,
+		uint256 forceCloseId,
 		CrossSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
-	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
+	) external whenNotPartyAActionsPaused {
 		address partyB = settlementSig.partyB;
 
 		(uint256[] memory _newPartyAsAllocatedBalances, address[] memory _partyAs) = ForceActionsFacetImpl.realizeUPNLMasterAccount(
-			quoteId,
+			forceCloseId,
 			settlementSig,
 			updatedPrices
 		);
@@ -119,34 +119,34 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 			partyB,
 			_partyAs,
 			_newPartyAsAllocatedBalances,
-			AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)]
+			AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)],
+			forceCloseId
 		);
 	}
 
-	function realizeAllocatedMasterAccount(
-		uint256 quoteId,
+	function settleAllocatedMasterAccount(
+		uint256 forceCloseId,
 		address partyB,
 		address[] memory partyAs,
 		uint256[] memory fetchAmounts
-	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
-		ForceActionsFacetImpl.fetchAllocatedMasterAccount(partyB, partyAs, fetchAmounts);
+	) external whenNotPartyAActionsPaused {
+		ForceActionsFacetImpl.fetchAllocatedMasterAccount(forceCloseId, partyB, partyAs, fetchAmounts);
 		emit CrossSettleAllocated(partyB, partyAs, AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)], fetchAmounts);
 	}
 
-	function finalizeForceClose(uint256 quoteId) external {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+	function finalizeForceClose(uint256 forceCloseId) external {
+		Quote storage quote = QuoteStorage.layout().quotes[forceCloseId];
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[forceCloseId];
 
-		ForceActionsFacetImpl.forceCloseMaster(quoteId);
+		ForceActionsFacetImpl.forceCloseMaster(forceCloseId);
 		emit ForceClosePositionMaster(
-			quoteId,
+			forceCloseId,
 			quote.partyA,
 			quote.partyB,
 			quote.quantityToClose,
 			detail.closePrice,
 			quote.quoteStatus,
-			QuoteStorage.layout().closeIds[quoteId],
-			detail.forceCloseId
+			QuoteStorage.layout().closeIds[forceCloseId]
 		);
 	}
 }

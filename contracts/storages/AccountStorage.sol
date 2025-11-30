@@ -39,7 +39,7 @@ struct SettlementState {
 }
 
 struct ForceCloseDetail {
-	bytes forceCloseId;
+	bytes priceSigId;
 	uint256 quoteId;
 	uint256 timestamp;
 	int256 partyBAvailableAfterClose;
@@ -145,7 +145,8 @@ library AccountStorage {
 		mapping(address => mapping(uint256 => bool)) partyBBlacklistedSymbols; // PartyB => symbolId   => isBlackListed
 		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
 		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
-		mapping(address => ForceCloseDetail) forceCloseDetails; // PartyB => Force close status
+		// ---- force close ----
+		mapping(uint256 => ForceCloseDetail) forceCloseDetails; // quoteId => Force close status
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -19,7 +19,8 @@ import {
 import {getDummyHighLowPriceSig, getDummyPriceSig} from "./utils/SignatureUtils"
 import {ForceClosePositionValidator} from "./models/validators/ForceClosePositionValidator"
 import {calculateExpectedAvgPriceForForceClose, calculateExpectedClosePriceForForceClose} from "./utils/PriceUtils"
-import {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
+import {QuoteSettlementDataStruct, QuoteStructOutput, SettlementSigStruct} from "../src/types/contracts/interfaces/ISymmio"
+import { ZeroAddress } from "ethers"
 
 export function shouldBehaveLikeForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -299,6 +300,11 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			const penalty = await context.viewFacet.forceClosePricePenalty()
 			const quote = await context.viewFacet.getQuote(1)
 
+			console.log("quote.avgClosedPrice", quote.avgClosedPrice)
+			console.log("quote.closedAmount", quote.closedAmount)
+			console.log("quote.quantityToClose", quote.quantityToClose)
+			
+
 			const expectedClosePrice = calculateExpectedClosePriceForForceClose(quote, penalty, true)
 			const expectedAvgClosedPrice = calculateExpectedAvgPriceForForceClose(quote, expectedClosePrice)
 
@@ -399,6 +405,117 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			const avgClosePrice = (await context.viewFacet.getQuote(2)).avgClosedPrice
 
 			expect(avgClosePrice).to.be.equal(expectedAvgClosedPrice)
+		})
+	})
+
+	describe.only("settleAndForceClosePosition", function () {
+		/**
+		 * Builds a minimal valid SettlementSig for a single quote/price.
+		 * You can replace this later with your own getDummySettlementSig helper
+		 * if you already have one.
+		 */
+		async function buildSimpleSettlementSig(
+			context: RunContext,
+			quoteId: bigint,
+			currentPrice: bigint,
+			upnlPartyA: bigint,
+			upnlPartyB: bigint,
+			partyBUpnlIndex: number = 0,
+		): Promise<SettlementSigStruct> {
+			const quote = await context.viewFacet.getQuote(quoteId)
+			const data: QuoteSettlementDataStruct = {
+				quoteId,
+				currentPrice,
+				partyBUpnlIndex,
+			}
+
+			const settlementSig: SettlementSigStruct = {
+				reqId: "0x11", // dummy
+				timestamp: BigInt(await getBlockTimestamp()),
+				quotesSettlementsData: [data],
+				upnlPartyBs: [upnlPartyB],
+				upnlPartyA,
+				gatewaySignature: "0x", // dummy, Muon verifier in tests usually accepts this
+				sigs: {
+					signature: 0n,
+					owner: await context.signers.liquidator.getAddress(),
+					nonce:ZeroAddress,
+				},
+			}
+
+			return settlementSig
+		}
+
+		it("should settle UPNL and then force close when updatedPrices is non-empty and partyB stays solvent", async function () {
+			// Use quote2ShortOpened which is OPEN + CLOSE_PENDING in your beforeEach
+			const quoteId = BigInt(quote2ShortOpened.id)
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio = await context.viewFacet.forceCloseGapRatio(quote2ShortOpened.symbolId)
+
+			// Choose updated price between openedPrice and currentPrice to satisfy LibSettlement range check
+			const quote = await context.viewFacet.getQuote(quoteId)
+			const openedPrice = BigInt(quote.openedPrice)
+
+			// Use something modestly above openedPrice for SHORT
+			const newPrice = openedPrice + decimal(1n) / 10n
+
+			const highLowSig = await getDummyHighLowPriceSig(
+				sigTimes[0], // start
+				sigTimes[1], // end
+				BigInt(quote.requestedClosePrice) + unDecimal(BigInt(quote.requestedClosePrice) * BigInt(gapRatio)) - decimal(1n), // lowest
+				decimal(3n), // highest
+				newPrice, // currentPrice
+				newPrice, // averagePrice
+				quote2ShortOpened.symbolId,
+				0n,
+				0n,
+			)
+
+			const settlementSig = await buildSimpleSettlementSig(
+				context,
+				quoteId,
+				newPrice,
+				0n, // upnlPartyA
+				0n, // upnlPartyB
+			)
+
+			const updatedPrices = [newPrice]
+
+			// Expect SettleUpnl + ForceClosePosition or LiquidatePartyB.
+			// We can't easily assert both events' exact args, but we can assert that:
+			//   - quote is no longer CLOSE_PENDING
+			//   - openedPrice has been updated by LibSettlement
+			await context.forceActionsFacet.connect(context.signers.user).settleAndForceClosePosition(quoteId, highLowSig, settlementSig, updatedPrices)
+
+			const closedQuote = await context.viewFacet.getQuote(quoteId)
+
+			// After force close the quote should not be CLOSE_PENDING any more
+			expect(closedQuote.quoteStatus).to.not.equal(QuoteStatus.CLOSE_PENDING)
+			// And the openedPrice should have been overwritten by updatedPrices[0]
+			expect(BigInt(closedQuote.openedPrice)).to.equal(newPrice)
+		})
+
+		it("should revert LibSettlement: Invalid length when updatedPrices length does not match quotesSettlementsData", async function () {
+			const quoteId = BigInt(quote2ShortOpened.id)
+			const sigTimes = await prepareSigTimes(100n)
+
+			const highLowSig = await getDummyHighLowPriceSig(
+				sigTimes[0],
+				sigTimes[1],
+				decimal(0n),
+				decimal(10n),
+				decimal(5n),
+				decimal(5n),
+				quote2ShortOpened.symbolId,
+				0n,
+				0n,
+			)
+
+			const settlementSig = await buildSimpleSettlementSig(context, quoteId, decimal(5n), 0n, 0n)
+
+			await expect(
+				context.forceActionsFacet.connect(context.signers.user).settleAndForceClosePosition(quoteId, highLowSig, settlementSig, []),
+			).to.be.revertedWith("LibSettlement: Invalid length")
 		})
 	})
 }

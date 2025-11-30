@@ -37,10 +37,10 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 		CrossSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices,
 		address partyA,
-		address partyB
+		address partyB,
+		uint256 forceCloseId
 	) external whenNotPartyBActionsPaused onlyPartyB notLiquidatedPartyA(partyA) {
-		( uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) = SettlementFacetImpl
-			.crossSettleUpnl(settlementSig, updatedPrices);
+		(uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) = SettlementFacetImpl.crossSettleUpnl(settlementSig, updatedPrices);
 		emit CrossSettleUpnl(
 			settlementSig.reqId,
 			settlementSig.quotesSettlementsData,
@@ -48,7 +48,8 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 			partyB,
 			partyAs,
 			newPartyAsAllocatedBalances,
-			AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)]
+			AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)],
+			forceCloseId
 		);
 	}
 }

@@ -56,7 +56,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeEmergencyClosePosition()
 		})
 
-		describe("ForceClosePosition", async function () {
+		describe.only("ForceClosePosition", async function () {
 			shouldBehaveLikeForceClosePosition()
 		})
 

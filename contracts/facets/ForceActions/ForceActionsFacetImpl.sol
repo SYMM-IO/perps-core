@@ -226,8 +226,6 @@ library ForceActionsFacetImpl {
 	}
 
 	function forceCloseInit(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal returns (uint256 closePrice) {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-
 		LibForceSolve.verifyPrice(quoteId, highLowPrice);
 		closePrice = getClosePrice(quoteId, highLowPrice);
 
@@ -239,13 +237,12 @@ library ForceActionsFacetImpl {
 			closePrice
 		);
 
-		if (!(partyAAvailableBalance >= 0)) {
-			revert PartyAFacetPartyAWillBeInsolvent();
-		}
+		if (!(partyAAvailableBalance >= 0)) revert PartyAFacetPartyAWillBeInsolvent();
 
-		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
 		detail.timestamp = block.timestamp;
 		detail.partyBAvailableAfterClose = partyBAvailableBalance;
+		detail.closePrice = closePrice;
 		detail.inProgress = true;
 	}
 
@@ -258,13 +255,11 @@ library ForceActionsFacetImpl {
 		uint256 currentPrice,
 		bool isMasterAccount
 	) internal returns (bool isSolvent, bool isPartyBLiquidated, int256 _upnlPartyB) {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address partyB = quote.partyB;
 
 		isSolvent = LibForceSolve.solveUsingAllocatedBalances(quoteId, closePrice, partyBAvailableBalance, reservedBalance, isMasterAccount);
 
-		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
+		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 		detail.timestamp = block.timestamp;
 		detail.inProgress = false;
 
@@ -280,16 +275,14 @@ library ForceActionsFacetImpl {
 	}
 
 	function forceCloseMaster(uint256 quoteId) internal returns (bool isSolvent) {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address partyB = quote.partyB;
 
-		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
+		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 		(isSolvent, , ) = forceFinalization(
 			quoteId,
 			detail.closePrice,
 			detail.partyBAvailableAfterClose,
-			accountLayout.partyBAllocatedBalances[partyB][address(0)],
+			accountLayout.partyBAllocatedBalances[QuoteStorage.layout().quotes[quoteId].partyB][address(0)],
 			0,
 			0,
 			true
@@ -340,19 +333,20 @@ library ForceActionsFacetImpl {
 		if (updatedPrices.length > 0) {
 			LibMuonSettlement.verifySettlement(settlementSig, partyA);
 			newPartyBsAllocatedBalances = LibSettlement.settleUpnl(settlementSig, updatedPrices, partyA, true);
-			ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+			ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
 			detail.timestamp = block.timestamp;
 			detail.settlementState = UPNLSettlementState.REALIZED;
 		}
 	}
 
 	function realizeUPNLMasterAccount(
-		uint256 quoteId,
+		uint256 forceCloseId,
 		CrossSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quote.partyB];
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[forceCloseId];
+
+		if (!detail.inProgress) revert ForceActionsFacetInvalidState();
 
 		if (updatedPrices.length > 0) {
 			LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
@@ -362,16 +356,15 @@ library ForceActionsFacetImpl {
 		}
 	}
 
-	function fetchAllocatedMasterAccount(address partyB, address[] memory partyAs, uint256[] memory fetchAmounts) internal {
+	function fetchAllocatedMasterAccount(uint256 forceCloseId, address partyB, address[] memory partyAs, uint256[] memory fetchAmounts) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[forceCloseId];
 
-		if (!(accountLayout.masterAccountMode[partyB])) {
-			revert ForceActionsFacetMasterAccountModeInactive();
-		}
+		if (!(accountLayout.masterAccountMode[partyB])) revert ForceActionsFacetMasterAccountModeInactive();
+		if (!detail.inProgress) revert ForceActionsFacetInvalidState();
 
 		LibSettlement.settleAllocated(partyB, partyAs, fetchAmounts);
 
-		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[partyB];
 		detail.allocatedSettlementState = AllocatedSettlementState.GATHER_ALLOCATED_MASTER_ACCOUNT;
 		detail.timestamp = block.timestamp;
 	}

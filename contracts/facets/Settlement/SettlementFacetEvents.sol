@@ -22,7 +22,8 @@ interface SettlementFacetEvents is IPartiesEvents {
 		address partyB,
 		address[] partyAs,
 		uint256[] newPartyAsAllocatedBalances,
-		uint256 newPartyBMasterBalance
+		uint256 newPartyBMasterBalance,
+		uint256 forceCloseId
 	);
 
 	event CrossSettleAllocated(address partyB, address[] partyAs, uint256 newPartyBMasterBalance, uint256[] gatheredAmounts);
