@@ -27,9 +27,10 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 		PairUpnlAndPricesSig memory upnlSig
 	) external whenNotPartyBActionsPaused {
 		uint256[] memory newIds = PartyBBatchActionsFacetImpl.openPositions(quoteIds, filledAmounts, openedPrices, upnlSig);
-		Quote storage firstQuote = QuoteStorage.layout().quotes[quoteIds[0]];
 		for (uint256 i = 0; i < newIds.length; i++) {
-			emit OpenPosition(quoteIds[i], firstQuote.partyA, firstQuote.partyB, filledAmounts[i], openedPrices[i]);
+			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
+			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
 			if (newIds[i] != 0) {
 				Quote storage newQuote = QuoteStorage.layout().quotes[newIds[i]];
 				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
@@ -79,16 +80,26 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 			upnlSig,
 			false
 		);
-		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
 		for (uint256 i = 0; i < quoteIds.length; i++) {
+			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
 			emit FillCloseRequest(
 				quoteIds[i],
-				firstQuote.partyA,
-				firstQuote.partyB,
+				quote.partyA,
+				quote.partyB,
 				filledAmounts[i],
 				closedPrices[i],
 				quoteStatuses[i],
 				closeIds[i]
+			);
+            emit FillCloseRequest(
+				quoteIds[i],
+				quote.partyA,
+				quote.partyB,
+				filledAmounts[i],
+				closedPrices[i],
+				quoteStatuses[i],
+				closeIds[i],
+        		quote.lockedValues
 			);
 		}
 	}

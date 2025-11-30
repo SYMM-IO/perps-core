@@ -5,9 +5,10 @@
 pragma solidity >=0.8.18;
 
 import "../../storages/AccountStorage.sol";
-import "../../storages/SymbolStorage.sol";
-import "../../storages/MuonStorage.sol";
 import "../../storages/BridgeStorage.sol";
+import "../../storages/MuonStorage.sol";
+import "../../storages/SymbolStorage.sol";
+import "../../storages/WithdrawStorage.sol";
 
 interface IViewFacet {
 	struct Bitmap {
@@ -224,4 +225,16 @@ interface IViewFacet {
 	function getAffiliateFee(address affiliate, uint256 symbolId) external view returns (Fee memory);
 
 	function isADLEnabled(address partyB) external view returns (bool);
+
+	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory);
+
+	function isExpressProviderRegistered(address provider) external view returns (bool);
+
+	function isVirtualProviderRegistered(address provider) external view returns (bool);
+
+	function isSpeedUpEligible(address user) external view returns (bool);
+
+	function getModifiedCooldownEndTime(address user,uint256 requestId) external view returns (uint256);
+
+	function getWithdrawLockedBalance() external view returns (uint256);
 }

@@ -6,11 +6,14 @@ pragma solidity >=0.8.18;
 
 import "../../libraries/LibQuote.sol";
 import "../../libraries/LibDiamond.sol";
+import "../../libraries/LibQuote.sol";
 import "../../libraries/muon/LibMuon.sol";
 import "../../storages/AccountStorage.sol";
-import "../../storages/MAStorage.sol";
-import "../../storages/QuoteStorage.sol";
+import "../../storages/BridgeStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
+import "../../storages/MAStorage.sol";
+import "../../storages/MuonStorage.sol";
+import "../../storages/QuoteStorage.sol";
 import "../../storages/SymbolStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/BridgeStorage.sol";
@@ -275,7 +278,12 @@ contract ViewFacet is IViewFacet {
 	 * @param symbol The symbol to convert.
 	 * @param symbolType The type of the symbol.
 	 * @return The symbol with type.
+	 * @notice Converts a symbol to a symbol with type.
+	 * @param symbol The symbol to convert.
+	 * @param symbolType The type of the symbol.
+	 * @return The symbol with type.
 	 */
+	function _toSymbolWithType(Symbol memory symbol, uint256 symbolType) internal pure returns (SymbolWithType memory) {
 	function _toSymbolWithType(Symbol memory symbol, uint256 symbolType) internal pure returns (SymbolWithType memory) {
 		return
 			SymbolWithType(
@@ -288,6 +296,20 @@ contract ViewFacet is IViewFacet {
 				symbol.maxLeverage,
 				symbol.fundingRateEpochDuration,
 				symbol.fundingRateWindowTime,
+				symbolType
+			);
+	}
+
+	/**
+	 * @notice Returns the details of a symbol along with its type.
+	 * @param symbolId The ID of the symbol to retrieve.
+	 * @return A SymbolWithType struct containing the symbol details and its type.
+	 */
+	function getSymbolWithType(uint256 symbolId) external view returns (SymbolWithType memory) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		Symbol memory symbol = symbolLayout.symbols[symbolId];
+
+		return _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbolId]);
 				symbolType
 			);
 	}
@@ -343,6 +365,7 @@ contract ViewFacet is IViewFacet {
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
+			symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 			symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 			unchecked {
 				++i;
@@ -412,6 +435,7 @@ contract ViewFacet is IViewFacet {
 		for (uint256 i = start; i < end; ) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
+				symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 				symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 			}
 			unchecked {
@@ -599,6 +623,7 @@ contract ViewFacet is IViewFacet {
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
 			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
+			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
 			unchecked {
 				++i;
 			}
@@ -630,10 +655,14 @@ contract ViewFacet is IViewFacet {
 		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
 		if (partyBOpenPositions.length < start + size) {
 			size = partyBOpenPositions.length - start;
+		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
+		if (partyBOpenPositions.length < start + size) {
+			size = partyBOpenPositions.length - start;
 		}
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
+			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
 			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
 			unchecked {
 				++i;
@@ -1012,6 +1041,14 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Returns the maxConnectedCounterParty.
+	 * @return maxConnectedCounterParty max Party A to Party B connection Count Limit.
+	 */
+	function maxConnectedCounterParty() external view returns (uint256) {
+		return MAStorage.layout().maxPartyAConnectionLimit;
+	}
+
+	/**
 	 * @notice Retrieves the configuration parameters of the Muon system.
 	 * @return upnlValidTime The validity period of UPNL.
 	 * @return priceValidTime The validity period of price.
@@ -1367,5 +1404,57 @@ contract ViewFacet is IViewFacet {
 	 */
 	function isADLEnabled(address partyB) external view returns (bool) {
 		return MAStorage.layout().adlEnabled[partyB];
+	}
+
+	/**
+	 * @notice Retrieves All withdraw requests of a user.
+	 * @param user The address of the user.
+	 * @return list of withdraw requests.
+	 */
+	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory) {
+		return WithdrawStorage.layout().withdrawRequests[user][requestId];
+	}
+
+	/**
+	 * @notice Checks if an address is a registered express provider.
+	 * @param provider The address of the express provider.
+	 * @return True if the address is a registered express provider, false otherwise.
+	 */
+	function isExpressProviderRegistered(address provider) external view returns (bool) {
+		return GlobalAppStorage.layout().expressProviders[provider];
+	}
+
+	/**
+	 * @notice Checks if an address is a registered virtual provider.
+	 * @param provider The address of the virtual provider.
+	 * @return True if the address is a registered virtual provider, false otherwise.
+	 */
+	function isVirtualProviderRegistered(address provider) external view returns (bool) {
+		return GlobalAppStorage.layout().virtualProviders[provider];
+	}
+
+	/**
+	 * @notice Checks if a user is eligible for speed up.
+	 * @param user The address of the user.
+	 * @return True if the user is eligible for speed up, false otherwise.
+	 */
+	function isSpeedUpEligible(address user) external view returns (bool){
+		return WithdrawStorage.layout().speedUpWhitelist[user];
+	}
+
+	/**
+	 * @notice Retrieves the modified cooldown end time for a withdraw request of a user.
+	 * @param user The address of the user.
+	 * @param requestId The ID of the withdraw request.
+	 * @return The modified cooldown end time.
+	 */
+	function getModifiedCooldownEndTime(address user,uint256 requestId) external view returns (uint256){
+		WithdrawRequest storage request = WithdrawStorage.layout().withdrawRequests[user][requestId];
+		require(request.isCooldownModified, "Cooldown not modified");
+		return request.cooldownEndTime;
+	}
+
+	function getWithdrawLockedBalance() external view returns (uint256){
+		return WithdrawStorage.layout().withdrawLockedBalance;
 	}
 }

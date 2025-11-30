@@ -30,6 +30,9 @@ library GlobalAppStorage {
 		mapping(address => Fee) defaultAffiliateFee; // affiliate => fee
 		bool instantLayerPaused;
 		bool masterAccountActivationMode;
+		mapping(address => bool) virtualProviders;
+		mapping(address => bool) expressProviders;
+		bool deprecateOldWithdrawalPaused;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
