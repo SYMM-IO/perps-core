@@ -23,6 +23,8 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		await user.setup()
 		await user.setBalances(ethers.parseEther("500"))
 		await context.collateral.mint(context.signers.admin.address, ethers.parseEther("10000"))
+		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, ethers.keccak256(ethers.toUtf8Bytes("WITHDRAW_SPEED_UP_ROLE")))
+		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, ethers.keccak256(ethers.toUtf8Bytes("SETTER_ROLE")))
 	})
 
 	describe("Provider Register" , async function (){
@@ -997,6 +999,79 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			time.increase(1000)
 			await expect(context.withdrawFacet.connect(context.signers.user).forceCancelWithdraw(1)).to.revertedWith("Not a pure virtual withdraw");
 		})
+	})
+
+	describe("Withdraw Speed Up",async function () {
+		beforeEach(async function() {
+			const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+			virtualProvider = await MockVirtualProvider.deploy(context.diamond)
+			await virtualProvider.waitForDeployment()
+			let virtualProviderAddress = await virtualProvider.getAddress()
+
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(virtualProviderAddress)
+			await context.collateral.transfer(virtualProviderAddress, ethers.parseUnits("1000", 18));
+		})
+		it("Should fail to speed up withdraw without role", async function () {
+			await context.accountFacet.connect(context.signers.user).deposit(ethers.parseEther("100"))
+			receiver1 = context.signers.user.address;
+			let parts = [
+				{
+					id: 1,
+					amount: ethers.parseUnits("50", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: ethers.ZeroAddress,
+				}
+			]
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
+			await expect(context.withdrawFacet.connect(context.signers.user).acceptSpeedUpRequest(user.address,1 , 10)).to.revertedWith("Accessibility: Must has role");
+		})
+
+		it("Should speed up withdraw for classic withdrawals", async function () {
+			await context.accountFacet.connect(context.signers.user).deposit(ethers.parseEther("100"))
+			receiver1 = context.signers.user.address;
+			let parts = [
+				{
+					id: 1,
+					amount: ethers.parseUnits("50", 18),
+					chainId: 1,
+					receiver: ethers.dataSlice(receiver1, 0, 20), // bytes20
+					virtualProvider: ethers.ZeroAddress,
+					expressProvider: ethers.ZeroAddress,
+				}
+			]
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
+			await expect(context.withdrawFacet.connect(context.signers.user).acceptSpeedUpRequest(user.address,1 , 10)).not.reverted;
+		})
+
+		it("Should speed up withdraw for virtual withdrawals", async function () {
+
+		})
+
+		it("Should set speed up user", async function () {
+
+		})
+
+		it("Should unset speed up user", async function () {
+
+		})
+
+		it("Should fail to lower cooldown less than threshold", async function () {
+
+		})
+
+		it("Should unset speed up user", async function () {
+
+		})
+
+		it("Should fail to speed up withdraw with express", async function () {
+
+		})
+
+
 	})
 
 }
