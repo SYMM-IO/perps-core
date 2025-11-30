@@ -30,6 +30,7 @@ library AccountFacetImpl {
 	function withdraw(address user, uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		require(appLayout.deprecateOldWithdrawalPaused == false, "This Withdrawal has been deprecated use new one;");
 		require(
 			block.timestamp >= accountLayout.withdrawCooldown[msg.sender] + MAStorage.layout().deallocateCooldown,
 			"AccountFacet: Cooldown hasn't reached"
@@ -163,6 +164,9 @@ library AccountFacetImpl {
 	}
 
 	function bindToPartyB(address partyB) internal {
+		// FIXME: check to have no open or locked position with other partyB
+		// FIXME: enable party BINDING
+		// FIXME: Check if bind no muon verify
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(partyB != address(0), "AccountFacet: Zero address");
 

@@ -29,6 +29,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		uint256 newId = PartyBPositionActionsFacetImpl.openPosition(quoteId, filledAmount, openedPrice, upnlSig);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		emit OpenPosition(quoteId, quote.partyA, quote.partyB, filledAmount, openedPrice);
+		emit OpenPosition(quoteId, quote.partyA, quote.partyB, filledAmount, openedPrice, quote.lockedValues);
 		if (newId != 0) {
 			Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 			if (newQuote.quoteStatus == QuoteStatus.PENDING) {
@@ -73,6 +74,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		PartyBPositionActionsFacetImpl.fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig);
 		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
+		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId], quote.lockedValues);
 	}
 
 	/**

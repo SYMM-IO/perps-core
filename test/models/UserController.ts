@@ -302,7 +302,6 @@ export class UserController {
 				break
 			case Action.NOTHING: {
 				if (actionWrapper.rethink) {
-					logger.info(`User::::ReThinking about quote: ${quote.id}`)
 					let status = quote.quoteStatus
 					setTimeout(async () => {
 						quote = await this.context.viewFacet.getQuote(quote.id)

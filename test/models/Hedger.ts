@@ -77,7 +77,6 @@ export class Hedger extends PartyEntity {
 					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
 				),
 		)
-		logger.info(`Hedger::OpenPosition: ${id}`)
 	}
 
 	public async getBalance(): Promise<bigint> {
@@ -105,7 +104,6 @@ export class Hedger extends PartyEntity {
 
 	public async acceptCancelRequest(id: BigNumberish) {
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).acceptCancelRequest(id))
-		logger.info(`Hedger::AcceptCancelRequest: ${id}`)
 	}
 
 	public async fillCloseRequest(id: BigNumberish, request: FillCloseRequest = limitFillCloseRequestBuilder().build()) {
@@ -130,17 +128,14 @@ export class Hedger extends PartyEntity {
 					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
 				),
 		)
-		logger.info(`Hedger::FillCloseRequest: ${id}`)
 	}
 
 	public async chargeFundingRate(partyA: string, quoteIds: BigNumberish[], rates: BigNumberish[], signature: PairUpnlSigStructOutput) {
 		await this.context.fundingRateFacet.connect(this.signer).chargeFundingRate(partyA, quoteIds, rates, signature)
-		logger.info(`Hedger::ChargeFundingRate: ${partyA}, ${quoteIds}, ${rates}`)
 	}
 
 	public async acceptCancelCloseRequest(id: BigNumberish) {
 		await runTx(this.context.partyBPositionActionsFacet.connect(this.signer).acceptCancelCloseRequest(id))
-		logger.info(`Hedger::AcceptCancelCloseRequest: ${id}`)
 	}
 
 	public async liquidate(partyA: string, sig: SingleUpnlSigStructOutput | Promise<SingleUpnlSigStructOutput> = getDummySingleUpnlSig()) {
@@ -148,7 +143,6 @@ export class Hedger extends PartyEntity {
 		await runTx(
 			this.context.liquidationFacet.connect(this.context.signers.liquidator).liquidatePartyB(await this.signer.getAddress(), partyA, signature),
 		)
-		logger.info(`Hedger::Liquidator: ${partyA}`)
 	}
 
 	public async emergencyClosePosition(id: BigNumberish, request: EmergencyCloseRequest = emergencyCloseRequestBuilder().build()) {
@@ -168,7 +162,6 @@ export class Hedger extends PartyEntity {
 				.connect(this.signer)
 				.emergencyClosePosition(id, await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB))),
 		)
-		logger.info(`Hedger::EmergencyClosePosition: ${id}`)
 	}
 
 	public async settleUpnl(
@@ -189,7 +182,6 @@ export class Hedger extends PartyEntity {
 			}),
 		)
 		await runTx(this.context.settlementFacet.connect(this.signer).settleUpnl(signature, updatedPrices, partyA))
-		logger.info(`Hedger::settleUpnl`)
 	}
 
 	public async getAddress() {
