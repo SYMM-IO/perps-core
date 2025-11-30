@@ -108,7 +108,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeClearingHouseFacet()
 		})
 
-		describe.skip("PartyBBatchActionsFacet", async function () {
+		describe("PartyBBatchActionsFacet", async function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
 		})
 
