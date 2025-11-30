@@ -339,7 +339,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 	// 	// })
 	// })
 
-	describe.skip("execute Batch", async function () {
+	describe("execute Batch", async function () {
 		let opSendQuoteA1: InstantLayer.SignedOperationStruct, opSendQuoteA2: InstantLayer.SignedOperationStruct
 		let opLockB1: InstantLayer.SignedOperationStruct, opOpenQuoteB1: InstantLayer.SignedOperationStruct
 		let opSendQuoteSignature1: BytesLike
