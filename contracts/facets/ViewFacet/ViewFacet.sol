@@ -1022,38 +1022,42 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Internal:Returns the parameters needed to calculate UPNL offchain.
+	 * @notice Returns the parameters needed to calculate UPNL offchain.
 	 * @param partyA Address of partyA
 	 * @param quoteStart Quote start ID
 	 * @param quoteEnd Quote end ID
+	 * @param getCount whether to return the position Count
+	 * @return positionsCount  Number of positions
 	 * @return partyBsAllocated  An array of party B Allocated Balance.
 	 * @return partyBs  An array of quotes partyBs.
 	 * @return quoteIds  An array of quotes IDs.
 	 * @return symbolIds  An array of quotes Symbols IDs.
 	 * @return symbolNames  An array of quotes Symbols names.
 	 * @return openPrices  An array of quotes open prices.
-	 * @return availableAmount  An array of quotes available amounts.
+	 * @return remainingOpenAmount  An array of quotes available amounts.
 	 * @return positionType  An array of quotes positions Type.
 	 */
 	function getPartyAUPNLParams(
 		address partyA,
 		uint256 quoteStart,
-		uint256 quoteEnd
+		uint256 quoteEnd,
+		bool getCount
 	)
 		external
 		view
 		returns (
-			// uint256 positionsCount,
+			uint256 positionsCount,
 			uint256[] memory partyBsAllocated,
 			address[] memory partyBs,
 			uint256[] memory quoteIds,
 			uint256[] memory symbolIds,
 			string[] memory symbolNames,
 			uint256[] memory openPrices,
-			uint256[] memory availableAmount,
+			uint256[] memory remainingOpenAmount,
 			uint256[] memory positionType
 		)
 	{
+		if (getCount) positionsCount = QuoteStorage.layout().partyAPositionsCount[partyA];
 		Quote[] memory quotes = getPartyAOpenPositionsImp(partyA, quoteStart, quoteEnd);
 		for (uint i = 0; i < (quoteEnd - quoteStart); i++) {
 			if (
@@ -1064,7 +1068,7 @@ contract ViewFacet is IViewFacet {
 				partyBs[i] = quotes[i].partyB;
 				partyBsAllocated[i] = AccountStorage.layout().partyBAllocatedBalances[partyBs[i]][partyA];
 				quoteIds[i] = quotes[i].id;
-				availableAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
+				remainingOpenAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
 				openPrices[i] = quotes[i].requestedOpenPrice;
 				symbolNames[i] = SymbolStorage.layout().symbols[quotes[i].symbolId].name;
 				positionType[i] = uint256(quotes[i].positionType);
@@ -1079,33 +1083,37 @@ contract ViewFacet is IViewFacet {
 	 * @param partyB Address of partyB
 	 * @param quoteStart Quote start ID
 	 * @param quoteEnd Quote end ID
+	 * @return positionsCount  Number of positions
 	 * @return partyBsAllocated  party B Allocated Balance.
 	 * @return quoteIds  An array of quotes IDs.
 	 * @return symbolIds  An array of quotes Symbols IDs.
 	 * @return symbolNames  An array of quotes Symbols names.
 	 * @return openPrices  An array of quotes open prices.
-	 * @return availableAmount  An array of quotes available amounts.
+	 * @return remainingOpenAmount  An array of quotes available amounts.
 	 * @return positionType  An array of quotes positions Type.
 	 */
 	function getPartyBUPNLParams(
 		address partyA,
 		address partyB,
 		uint256 quoteStart,
-		uint256 quoteEnd
+		uint256 quoteEnd,
+		bool getCount
 	)
 		external
 		view
 		returns (
-			// uint256 positionsCount,
+			uint256 positionsCount,
 			uint256[] memory partyBsAllocated,
 			uint256[] memory quoteIds,
 			uint256[] memory symbolIds,
 			string[] memory symbolNames,
 			uint256[] memory openPrices,
-			uint256[] memory availableAmount,
+			uint256[] memory remainingOpenAmount,
 			uint256[] memory positionType
 		)
 	{
+		if (getCount) positionsCount = QuoteStorage.layout().partyBPositionsCount[partyB][partyA];
+
 		Quote[] memory quotes = getPartyBOpenPositionsImp(partyB, partyA, quoteStart, quoteEnd);
 		for (uint i = 0; i < (quoteEnd - quoteStart); i++) {
 			if (
@@ -1115,7 +1123,7 @@ contract ViewFacet is IViewFacet {
 			) {
 				partyBsAllocated[i] = AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
 				quoteIds[i] = quotes[i].id;
-				availableAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
+				remainingOpenAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
 				openPrices[i] = quotes[i].requestedOpenPrice;
 				symbolNames[i] = SymbolStorage.layout().symbols[quotes[i].symbolId].name;
 				positionType[i] = uint256(quotes[i].positionType);
