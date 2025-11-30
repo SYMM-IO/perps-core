@@ -68,3 +68,13 @@ export enum BridgeStatus {
 	SUSPEND,
 	REMOVE,
 }
+
+export enum WithdrawStatus {
+	PENDING,
+	PROVIDER_ACCEPTED,
+	PROVIDER_REJECTED,
+	COMPLETED,
+	CANCEL_REQUESTED,
+	CANCELLED,
+	SUSPENDED
+}

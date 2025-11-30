@@ -1,6 +1,5 @@
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 import { expect } from "chai"
-import { ethers } from "hardhat"
 
 import { initializeFixture } from "./Initialize.fixture"
 import { RunContext } from "./models/RunContext"
@@ -10,7 +9,6 @@ import { TransferToBridgeValidator } from "./models/validators/TransferToBridgeV
 import { WithdrawLockedTransactionValidator } from "./models/validators/WithdrawLockedTransactionValidator"
 import { decimal, pauseAccounting, suspendAddress } from "./utils/Common"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { MockVirtualBridge } from "../src/types"
 
 export function shouldBehaveLikeBridgeFacet(): void {
 	let context: RunContext, user: User, user2: User
@@ -29,8 +27,8 @@ export function shouldBehaveLikeBridgeFacet(): void {
 		await user2.setBalances(decimal(3000n), decimal(3000n), decimal(500n))
 
 		// Setup bridges
-		await context.controlFacet.addBridge(await bridge.getAddress(), false)
-		await context.controlFacet.addBridge(await bridge2.getAddress(), false)
+		await context.controlFacet.addBridge(await bridge.getAddress())
+		await context.controlFacet.addBridge(await bridge2.getAddress())
 	})
 
 	describe("transferToBridge", async function () {
@@ -418,89 +416,4 @@ export function shouldBehaveLikeBridgeFacet(): void {
 		})
 	})
 
-	describe("Virtual Bridge Functionality", async function () {
-		let mockVirtualBridge: MockVirtualBridge
-		beforeEach(async function () {
-			const MockVirtualBridge = await ethers.getContractFactory("MockVirtualBridge")
-			mockVirtualBridge = await MockVirtualBridge.deploy()
-			await context.controlFacet.addBridge(await mockVirtualBridge.getAddress(), true)
-		})
-
-		describe("transferToVirtualBridge", async function () {
-			it("Should fail when bridge is not registered as virtual", async function () {
-				await expect(
-					context.bridgeFacet.connect(context.signers.user).transferToVirtualBridge(decimal(100n), await context.signers.bridge.getAddress(), "0x"),
-				).to.be.revertedWith("BridgeFacet: Invalid bridge")
-			})
-
-			it("Should transfer to virtual bridge successfully and call the callback", async function () {
-				const nextId = await context.viewFacet.getNextBridgeTransactionId()
-				const userBalanceBefore = await context.viewFacet.balanceOf(await context.signers.user.getAddress())
-
-				const data = "0x1234"
-				await expect(
-					context.bridgeFacet.connect(context.signers.user).transferToVirtualBridge(decimal(100n), await mockVirtualBridge.getAddress(), data),
-				).to.not.reverted
-
-				const createdTx = await context.viewFacet.getBridgeTransaction(nextId + 1n)
-				expect(createdTx.bridge).to.equal(await mockVirtualBridge.getAddress())
-				expect(createdTx.amount).to.equal(decimal(100n))
-				expect(createdTx.status).to.equal(BridgeTransactionStatus.RECEIVED)
-
-				const userBalanceAfter = await context.viewFacet.balanceOf(await context.signers.user.getAddress())
-				expect(userBalanceAfter).to.equal(userBalanceBefore - decimal(100n))
-
-				// Verify callback parameters via mock
-				const [cbUser, cbAmount, cbCollateral, cbData, cbCount] = await mockVirtualBridge.getLastTransferCall()
-				expect(cbUser).to.equal(await context.signers.user.getAddress())
-				expect(cbAmount).to.equal(decimal(100n))
-				expect(cbCollateral).to.equal(await context.viewFacet.getCollateral())
-				expect(cbData).to.equal(data)
-				expect(cbCount).to.equal(1n)
-			})
-		})
-
-		describe("completeVirtualBridge", async function () {
-			beforeEach(async function () {
-				// Create a virtual bridge transaction
-				await context.bridgeFacet.connect(context.signers.user).transferToVirtualBridge(decimal(100n), await mockVirtualBridge.getAddress(), "0x")
-			})
-
-			it("Should fail with invalid transaction ID", async function () {
-				await time.increase(43250) // cooldown
-				await expect(context.bridgeFacet.connect(context.signers.hedger).withdrawReceivedBridgeValue(999)).to.be.revertedWith(
-					"BridgeFacet: Invalid transactionId",
-				)
-			})
-
-			it("Should fail when cooldown period hasn't elapsed", async function () {
-				await expect(context.bridgeFacet.connect(context.signers.user).withdrawReceivedBridgeValue(1)).to.be.revertedWith(
-					"BridgeFacet: Cooldown hasn't reached",
-				)
-			})
-
-			it("Should fail when accounting is paused", async function () {
-				await time.increase(43250) // cooldown
-				await pauseAccounting(context)
-				await expect(context.bridgeFacet.connect(context.signers.user).withdrawReceivedBridgeValue(1)).to.be.revertedWith(
-					"Pausable: Accounting paused",
-				)
-			})
-
-			it("Should complete virtual bridge successfully and call the callback", async function () {
-				await time.increase(43250) // cooldown
-				await expect(mockVirtualBridge.withdrawReceivedBridgeValue(1, await context.bridgeFacet.getAddress())).to.not.reverted
-
-				const transaction = await context.viewFacet.getBridgeTransaction(1)
-				expect(transaction.status).to.equal(BridgeTransactionStatus.WITHDRAWN)
-
-				const [cbUser, cbAmount, cbCollateral, cbData, cbCount] = await mockVirtualBridge.getLastCompleteCall()
-				expect(cbUser).to.equal(await context.signers.user.getAddress())
-				expect(cbAmount).to.equal(decimal(100n))
-				expect(cbCollateral).to.equal(await context.viewFacet.getCollateral())
-				expect(cbData).to.equal("0x")
-				expect(cbCount).to.equal(1n)
-			})
-		})
-	})
 }

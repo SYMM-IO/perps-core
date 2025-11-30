@@ -21,6 +21,7 @@ import { shouldBehaveLikeSettlement } from "./Settlement.behavior"
 import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior"
 import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior"
+import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior";
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
@@ -110,6 +111,10 @@ describe("UnitTests", function () {
 		
 		describe("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
+		})
+
+		describe("WithdrawFacet", async function () {
+			shouldBehaveLikeWithdrawFacet()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {
