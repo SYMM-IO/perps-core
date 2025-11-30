@@ -24,6 +24,8 @@ library LibAccessibility {
 	bytes32 public constant CLEARING_HOUSE_ROLE = keccak256("CLEARING_HOUSE_ROLE");
 	bytes32 public constant DEALLOCATE_COOLDOWN_SETTER_ROLE = keccak256("DEALLOCATE_COOLDOWN_SETTER_ROLE");
 	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
+	bytes32 public constant SUSPENDED_FUNDS_WITHDRAWER_ROLE = keccak256("SUSPENDED_FUNDS_WITHDRAWER_ROLE");
+	bytes32 public constant WITHDRAW_SPEED_UP_ROLE = keccak256("WITHDRAW_SPEED_UP_ROLE");
 	bytes32 public constant ACCOUNT_HUB_SIGNER_SETTER_ROLE = keccak256("ACCOUNT_HUB_SIGNER_SETTER_ROLE");
 
 	/**

@@ -81,7 +81,7 @@ interface IControlEvents {
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);
 	event DeregisterAffiliate(address affiliate);
-	event AddBridge(address bridge, bool isVirtual);
+	event AddBridge(address bridge);
 	event RemoveBridge(address bridge);
 	event SetLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit);
 	event WhitelistSymbolType(address partyB, uint256 symbolType);
@@ -97,6 +97,17 @@ interface IControlEvents {
 	event RegisterHook(address affiliate, address hook);
 	event SetADLEnabled(address partyB, bool enabled);
 	event SetEntityMetadata(address entity, EntityMetadata metadata);
+	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
+	event SetMaxWithdrawParts(uint256 maxWithdrawParts);
+	event SetWithdrawCooldownPeriod(uint256 withdrawCooldownPeriod);
+	event RegisterVirtualProvider(address provider);
+	event UnregisterVirtualProvider(address provider);
+	event RegisterExpressProvider(address provider);
+	event UnregisterExpressProvider(address provider);
+	event SetSpeedUpUser(address user);
+	event UnsetSpeedUpUser(address user);
+	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
+	event DeprecateOldWithdrawalPaused();
 	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
 	event SignerSet(address signer);
 }

@@ -44,6 +44,7 @@ library MAStorage {
 		mapping(address => bool) adlEnabled;
 		mapping(address => EntityMetadata) entitiesMetadata;
 		uint256 maxPartyAConnectionLimit; // Party A Max number of Allowed party B
+		uint256 maxPartyAConnectionLimit; // Party A Max number of Allowed party B
 		address signer;
 	}
 

@@ -22,7 +22,9 @@ import {
 	AffiliateHub,
 	AccountHub,
 	FakeStablecoin,
-} from "../../src/types"
+	SymmioPartyA,
+	WithdrawFacet,
+} from "../../src/types";
 import { TestManager } from "./TestManager"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 
@@ -42,6 +44,7 @@ export class RunContext {
 	settlementFacet!: SettlementFacet
 	forceActionsFacet!: ForceActionsFacet
 	clearingHouseFacet!: ClearingHouseFacet
+	withdrawFacet!: WithdrawFacet
 	signers!: {
 		admin: SignerWithAddress
 		user: SignerWithAddress
@@ -104,6 +107,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.settlementFacet = await ethers.getContractAt("SettlementFacet", diamond)
 	context.forceActionsFacet = await ethers.getContractAt("ForceActionsFacet", diamond)
 	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
+	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
 
 	context.manager = new TestManager(context, onlyInitialize)
 	if (!onlyInitialize) await context.manager.start()
