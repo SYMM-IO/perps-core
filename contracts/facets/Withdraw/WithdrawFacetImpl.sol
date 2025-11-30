@@ -368,7 +368,7 @@ library WithdrawFacetImpl {
 		require(!withdrawRequest.isCooldownModified, "Cooldown already modified");
 		require(withdrawLayout.speedUpWhitelist[user], "User not in speed up whitelist");
 		require(withdrawRequest.status == WithdrawStatus.PENDING || withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "Invalid withdraw request status");
-		require(newCooldown <= withdrawLayout.minWithdrawCooldown, "New cooldown exceeds min cooldown");
+		require(newCooldown >= withdrawLayout.minWithdrawCooldown, "New cooldown exceeds min cooldown");
 
 		withdrawRequest.cooldownEndTime = withdrawRequest.timestamp + newCooldown;
 		withdrawRequest.isCooldownModified = true;
