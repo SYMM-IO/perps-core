@@ -26,36 +26,7 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 		uint256[] memory openedPrices,
 		PairUpnlAndPricesSig memory upnlSig
 	) external whenNotPartyBActionsPaused {
-//		uint256[] memory newIds = PartyBBatchActionsFacetImpl.openPositions(quoteIds, filledAmounts, openedPrices, upnlSig);
-//		for (uint256 i = 0; i < newIds.length; i++) {
-//			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
-//			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
-//			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
-//			if (newIds[i] != 0) {
-//				Quote storage newQuote = QuoteStorage.layout().quotes[newIds[i]];
-//				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-//					emit SendQuote(
-//						newQuote.partyA,
-//						newQuote.id,
-//						newQuote.partyBsWhiteList,
-//						newQuote.symbolId,
-//						newQuote.positionType,
-//						newQuote.orderType,
-//						newQuote.requestedOpenPrice,
-//						newQuote.marketPrice,
-//						newQuote.quantity,
-//						newQuote.lockedValues.cva,
-//						newQuote.lockedValues.lf,
-//						newQuote.lockedValues.partyAmm,
-//						newQuote.lockedValues.partyBmm,
-//						newQuote.tradingFee,
-//						newQuote.deadline
-//					);
-//				} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
-//					emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
-//				}
-//			}
-//		}
+		PartyBBatchActionsFacetImpl.openPositions(quoteIds, filledAmounts, openedPrices, upnlSig);
 	}
 
 	/**
@@ -72,36 +43,28 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 		uint256[] memory closedPrices,
 		PairUpnlAndPricesSig memory upnlSig
 	) external whenNotPartyBActionsPaused {
-//		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-//		(QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) = PartyBBatchActionsFacetImpl.closePositions(
-//			quoteIds,
-//			filledAmounts,
-//			closedPrices,
-//			upnlSig,
-//			false
-//		);
-//		for (uint256 i = 0; i < quoteIds.length; i++) {
-//			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
-//			emit FillCloseRequest(
-//				quoteIds[i],
-//				quote.partyA,
-//				quote.partyB,
-//				filledAmounts[i],
-//				closedPrices[i],
-//				quoteStatuses[i],
-//				closeIds[i]
-//			);
-//            emit FillCloseRequest(
-//				quoteIds[i],
-//				quote.partyA,
-//				quote.partyB,
-//				filledAmounts[i],
-//				closedPrices[i],
-//				quoteStatuses[i],
-//				closeIds[i],
-//        		quote.lockedValues
-//			);
-//		}
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		(QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) = PartyBBatchActionsFacetImpl.closePositions(
+			quoteIds,
+			filledAmounts,
+			closedPrices,
+			upnlSig,
+			false
+		);
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+			emit FillCloseRequest(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], closedPrices[i], quoteStatuses[i], closeIds[i]);
+			emit FillCloseRequest(
+				quoteIds[i],
+				quote.partyA,
+				quote.partyB,
+				filledAmounts[i],
+				closedPrices[i],
+				quoteStatuses[i],
+				closeIds[i],
+				quote.lockedValues
+			);
+		}
 	}
 
 	function adlClosePositions(
@@ -110,24 +73,11 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 		uint256[] memory closedPrices,
 		PairUpnlAndPricesSig memory upnlSig
 	) external whenNotPartyBActionsPaused {
-//		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-//		(QuoteStatus[] memory quoteStatuses,) = PartyBBatchActionsFacetImpl.closePositions(
-//			quoteIds,
-//			filledAmounts,
-//			closedPrices,
-//			upnlSig,
-//			true
-//		);
-//		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
-//		for (uint256 i = 0; i < quoteIds.length; i++) {
-//			emit AdlClosePositions(
-//				quoteIds[i],
-//				firstQuote.partyA,
-//				firstQuote.partyB,
-//				filledAmounts[i],
-//				closedPrices[i],
-//				quoteStatuses[i]
-//			);
-//		}
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		(QuoteStatus[] memory quoteStatuses, ) = PartyBBatchActionsFacetImpl.closePositions(quoteIds, filledAmounts, closedPrices, upnlSig, true);
+		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			emit AdlClosePositions(quoteIds[i], firstQuote.partyA, firstQuote.partyB, filledAmounts[i], closedPrices[i], quoteStatuses[i]);
+		}
 	}
 }
