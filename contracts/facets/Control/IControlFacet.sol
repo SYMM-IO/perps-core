@@ -210,8 +210,6 @@ interface IControlFacet is IControlEvents {
 
 	function deprecateOldWithdrawal() external;
 
-	function setMaxPartyAConnectionLimit(uint256 maxLimit) external;
-
 	function setSigner(address signer) external;
 
 }

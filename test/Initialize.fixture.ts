@@ -145,6 +145,8 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+	await context.controlFacet
+		.connect(context.signers.admin)
 		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("DEALLOCATE_COOLDOWN_SETTER_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)

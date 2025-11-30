@@ -108,6 +108,5 @@ interface IControlEvents {
 	event UnsetSpeedUpUser(address user);
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
 	event DeprecateOldWithdrawalPaused();
-	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
 	event SignerSet(address signer);
 }
