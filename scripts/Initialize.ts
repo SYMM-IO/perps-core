@@ -1,13 +1,13 @@
-import { keccak256, toUtf8Bytes } from "ethers/lib/utils"
 import { ethers, run } from "hardhat"
 
 import { createRunContext, RunContext } from "../test/models/RunContext"
 import { decimal } from "../test/utils/Common"
 import { runTx } from "../test/utils/TxUtils"
 import { ControlFacet } from "../src/types"
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers"
 import { symbolsMock } from "../test/models/SymbolManager"
 import { Addresses, loadAddresses, saveAddresses } from "./utils/file"
+import { keccak256, toUtf8Bytes } from "ethers"
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 
 export async function initialize(): Promise<RunContext> {
 	let collateral = await run("deploy:stablecoin")
@@ -20,10 +20,10 @@ export async function initialize(): Promise<RunContext> {
 
 	const multiAccount = await run("deploy:multiAccount", { symmioAddress: diamond.address, admin: process.env.ADMIN_PUBLIC_KEY });
 
-	let context = await createRunContext(diamond.address, collateral.address, multiAccount.address, undefined, true)
+	let context = await createRunContext(diamond.address, collateral.address, multiAccount.address)
 
 	await runTx(context.controlFacet.connect(context.signers.admin).setAdmin(context.signers.admin.getAddress()))
-	await runTx(context.controlFacet.connect(context.signers.admin).setCollateral(context.collateral.address))
+	await runTx(context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress()))
 	await runTx(
 		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("SYMBOL_MANAGER_ROLE"))),
 	)
@@ -53,7 +53,7 @@ export async function initialize(): Promise<RunContext> {
 		await runTx(
 			controlFacet
 				.connect(adminSigner)
-				.addSymbol(sym.name, sym.min_acceptable_quote_value, sym.min_acceptable_portion_lf, sym.trading_fee, decimal(100, 18), 28800, 900),
+				.addSymbol(sym.name, sym.min_acceptable_quote_value, sym.min_acceptable_portion_lf, sym.trading_fee, decimal(100n, 18), 28800, 900),
 		)
 	}
 

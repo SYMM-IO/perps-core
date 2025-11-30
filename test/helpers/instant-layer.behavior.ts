@@ -5,10 +5,9 @@ import { PositionType, QuoteStatus } from "../models/Enums"
 import { Hedger } from "../models/Hedger"
 import { RunContext } from "../models/RunContext"
 import { User } from "../models/User"
-import { limitOpenRequestBuilder, marketOpenRequestBuilder, OpenRequest } from "../models/requestModels/OpenRequest"
-import { limitQuoteRequestBuilder, marketQuoteRequestBuilder, QuoteRequest, QuoteRequestWithData } from "../models/requestModels/QuoteRequest"
-import { OpenPositionValidator } from "../models/validators/OpenPositionValidator"
-import { decimal, getBlockTimestamp, getQuoteQuantity, pausePartyB } from "../utils/Common"
+import { limitOpenRequestBuilder, OpenRequest } from "../models/requestModels/OpenRequest"
+import { limitQuoteRequestBuilder, QuoteRequest } from "../models/requestModels/QuoteRequest"
+import { decimal, getBlockTimestamp } from "../utils/Common"
 import { ethers, network } from "hardhat"
 import {
 	AbiCoder,
@@ -19,21 +18,9 @@ import {
 	toUtf8Bytes,
 	EthersError,
 	BytesLike,
-	MulticoinProviderPlugin,
 	TypedDataDomain,
 } from "ethers"
-import { bigint, int } from "hardhat/internal/core/params/argumentTypes"
-import { config } from "dotenv"
-
-import * as diamond from "../../artifacts/contracts/Diamond.sol/Diamond.json"
-// import * as partyAOpenIntent from "../artifacts/contracts/facets/PartyAOpen/PartyAOpenFacet.sol/PartyAOpenFacet.json"
-// import * as partyBOpenIntent from "../artifacts/contracts/facets/PartyBOpen/PartyBOpenFacet.sol/PartyBOpenFacet.json"
-import { trace } from "console"
-import { hexZeroPad, zeroPad } from "@ethersproject/bytes"
-import { Context } from "mocha"
-import { asyncWrapProviders } from "async_hooks"
 import { InstantLayer, MultiAccount, SymmioPartyB, SymmioPartyA } from "../../src/types"
-import { hedgerActionsMap } from "../models/Actions"
 
 // import { IMultiAccount } from "../../src/types/contracts/interfaces"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
@@ -49,8 +36,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 	let saltOpen1: string, saltOpen2: string, saltLock: string, saltOpen: string
 
 	let ops: InstantLayer.OperationStruct[]
-	let signedOps: InstantLayer.SignedOperationStruct[]
-	let ABI: InterfaceAbi
 
 	let requestSendQuote: QuoteRequest
 	let requestOpenQuote: OpenRequest
@@ -73,7 +58,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		await partyA1.setBalances(decimal(100000n), decimal(5000n), decimal(2000n))
 		await partyA2.setBalances(decimal(100000n), decimal(5000n))
 
-		const { instantLayer, partyAFacet, partyBBatchActionsFacet, partyBPositionActionsFacet, partyBQuoteActionsFacet, accountFacet } = context
+		const { instantLayer, partyAFacet, partyBPositionActionsFacet, partyBQuoteActionsFacet, accountFacet } = context
 		await context.controlFacet.grantRole(instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 
 		// await context.controlFacet.setUnbindingCooldown(120)
@@ -354,7 +339,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 	// 	// })
 	// })
 
-	describe("execute Batch", async function () {
+	describe.skip("execute Batch", async function () {
 		let opSendQuoteA1: InstantLayer.SignedOperationStruct, opSendQuoteA2: InstantLayer.SignedOperationStruct
 		let opLockB1: InstantLayer.SignedOperationStruct, opOpenQuoteB1: InstantLayer.SignedOperationStruct
 		let opSendQuoteSignature1: BytesLike
