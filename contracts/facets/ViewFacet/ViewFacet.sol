@@ -4,16 +4,17 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibQuote.sol";
 import "../../libraries/LibDiamond.sol";
+import "../../libraries/LibQuote.sol";
 import "../../libraries/muon/LibMuon.sol";
 import "../../storages/AccountStorage.sol";
+import "../../storages/GlobalAppStorage.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
-import "../../storages/GlobalAppStorage.sol";
 import "../../storages/SymbolStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/BridgeStorage.sol";
+import "../../storages/WithdrawStorage.sol";
 import "./IViewFacet.sol";
 
 contract ViewFacet is IViewFacet {
@@ -1244,5 +1245,57 @@ contract ViewFacet is IViewFacet {
 				fee = Fee(symbolTradingFee, symbolTradingFee, true);
 			}
 		}
+	}
+
+	/**
+	 * @notice Retrieves All withdraw requests of a user.
+	 * @param user The address of the user.
+	 * @return list of withdraw requests.
+	 */
+	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory) {
+		return WithdrawStorage.layout().withdrawRequests[user][requestId];
+	}
+
+	/**
+	 * @notice Checks if an address is a registered express provider.
+	 * @param provider The address of the express provider.
+	 * @return True if the address is a registered express provider, false otherwise.
+	 */
+	function isExpressProviderRegistered(address provider) external view returns (bool) {
+		return GlobalAppStorage.layout().expressProviders[provider];
+	}
+
+	/**
+	 * @notice Checks if an address is a registered virtual provider.
+	 * @param provider The address of the virtual provider.
+	 * @return True if the address is a registered virtual provider, false otherwise.
+	 */
+	function isVirtualProviderRegistered(address provider) external view returns (bool) {
+		return GlobalAppStorage.layout().virtualProviders[provider];
+	}
+
+	/**
+	 * @notice Checks if a user is eligible for speed up.
+	 * @param user The address of the user.
+	 * @return True if the user is eligible for speed up, false otherwise.
+	 */
+	function isSpeedUpEligible(address user) external view returns (bool){
+		return WithdrawStorage.layout().speedUpWhitelist[user];
+	}
+
+	/**
+	 * @notice Retrieves the modified cooldown end time for a withdraw request of a user.
+	 * @param user The address of the user.
+	 * @param requestId The ID of the withdraw request.
+	 * @return The modified cooldown end time.
+	 */
+	function getModifiedCooldownEndTime(address user,uint256 requestId) external view returns (uint256){
+		WithdrawRequest storage request = WithdrawStorage.layout().withdrawRequests[user][requestId];
+		require(request.isCooldownModified, "Cooldown not modified");
+		return request.cooldownEndTime;
+	}
+
+	function getWithdrawLockedBalance() external view returns (uint256){
+		return WithdrawStorage.layout().withdrawLockedBalance;
 	}
 }

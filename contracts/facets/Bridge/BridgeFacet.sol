@@ -60,13 +60,4 @@ contract BridgeFacet is Accessibility, Pausable, IBridgeFacet {
 		BridgeFacetImpl.acceptCancelBridgeTransactionRequest(transactionId);
 		emit AcceptCancelBridgeTransactionRequest(msg.sender, transactionId);
 	}
-
-	/// @notice Transfers to a virtual bridge.
-	/// @param amount The amount to be transferred.
-	/// @param bridge The address of the bridge to which the collateral will be transferred.
-	/// @param data The data to be transferred.
-	function transferToVirtualBridge(uint256 amount, address bridge, bytes memory data) external whenNotAccountingPaused notSuspended(msg.sender) {
-		uint256 transactionId = BridgeFacetImpl.transferToVirtualBridge(msg.sender, amount, bridge, data);
-		emit TransferToVirtualBridge(msg.sender, amount, bridge, data, transactionId);
-	}
 }

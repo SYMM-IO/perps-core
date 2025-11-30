@@ -24,6 +24,7 @@ import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior"
 import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior"
 import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior"
 import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior"
+import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior";
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
@@ -113,6 +114,10 @@ describe("UnitTests", function () {
 
 		describe.skip("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
+		})
+
+		describe("WithdrawFacet", async function () {
+			shouldBehaveLikeWithdrawFacet()
 		})
 
 		describe("AccountHub", async function () {

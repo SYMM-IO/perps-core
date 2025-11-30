@@ -78,6 +78,11 @@ abstract contract Accessibility {
 		_;
 	}
 
+	modifier onlySuspended(address user) {
+		require(AccountStorage.layout().suspendedAddresses[user], "Accessibility: User is not suspended");
+		_;
+	}
+
 	modifier whenInstantModeIsNotActive(address sender) {
 		require(!(AccountStorage.layout().instantActionsMode[sender] && !MAStorage.layout().callFromInstantLayer), "Instant Mode Not Active");
 		_;

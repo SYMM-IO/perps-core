@@ -8,26 +8,23 @@ import "../../storages/GlobalAppStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../storages/BridgeStorage.sol";
 import "../../storages/MAStorage.sol";
-import "../../interfaces/IVirtualBridge.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "../../storages/WithdrawStorage.sol";
+
 
 library BridgeFacetImpl {
 	using SafeERC20 for IERC20;
 
-	function _createBridgeTransaction(address user, uint256 amount, address bridge, bool isVirtualBridge) private returns (uint256 currentId) {
+	function _createBridgeTransaction(address user, uint256 amount, address bridge) private returns (uint256 currentId) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
-		if (isVirtualBridge) {
-			require(bridgeLayout.virtualBridges[bridge], "BridgeFacet: Invalid bridge");
-		} else {
-			require(bridgeLayout.bridges[bridge], "BridgeFacet: Invalid bridge");
-		}
+		address collateral = appLayout.collateral;
+		require(bridgeLayout.bridges[bridge], "BridgeFacet: Invalid bridge");
 		require(bridge != user, "BridgeFacet: Bridge and user can't be the same");
 
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(collateral).decimals());
 		require(accountLayout.balances[user] >= amountWith18Decimals, "BridgeFacet: Insufficient balance");
 
 		currentId = ++bridgeLayout.lastId;
@@ -41,22 +38,18 @@ library BridgeFacetImpl {
 		});
 
 		accountLayout.balances[user] -= amountWith18Decimals;
+
+		// check enough balance in the contract
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		require(IERC20Metadata(collateral).balanceOf(address (this)) - withdrawLayout.withdrawLockedBalance >= amount, "Insufficient contract collateral");
+		withdrawLayout.withdrawLockedBalance += amount;
+
 		bridgeLayout.bridgeTransactions[currentId] = bridgeTransaction;
 		bridgeLayout.bridgeTransactionIds[bridge].push(currentId);
 	}
 
 	function transferToBridge(address user, uint256 amount, address bridge) internal returns (uint256 currentId) {
-		currentId = _createBridgeTransaction(user, amount, bridge, false);
-	}
-
-	function transferToVirtualBridge(address user, uint256 amount, address bridge, bytes memory data) internal returns (uint256 currentId) {
-		currentId = _createBridgeTransaction(user, amount, bridge, true);
-
-		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
-		bridgeLayout.bridgesData[currentId] = data;
-
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		IVirtualBridge(bridge).onTransferToBridge(user, amount, appLayout.collateral, data);
+		currentId = _createBridgeTransaction(user, amount, bridge);
 	}
 
 	function withdrawReceivedBridgeValue(uint256 transactionId) internal {
@@ -71,16 +64,15 @@ library BridgeFacetImpl {
 			"BridgeFacet: Invalid state"
 		);
 		require(block.timestamp >= MAStorage.layout().deallocateCooldown + bridgeTransaction.timestamp, "BridgeFacet: Cooldown hasn't reached");
-
-		if (bridgeLayout.virtualBridges[bridgeTransaction.bridge]) {
-			bytes memory data = bridgeLayout.bridgesData[transactionId];
-			IVirtualBridge(bridgeTransaction.bridge).onBridgeComplete(bridgeTransaction.user, bridgeTransaction.amount, appLayout.collateral, data);
-		} else if (bridgeLayout.bridges[bridgeTransaction.bridge]) {
+		if (bridgeLayout.bridges[bridgeTransaction.bridge]) {
 			require(msg.sender == bridgeTransaction.bridge, "BridgeFacet: Sender is not the transaction's bridge");
 			IERC20(appLayout.collateral).safeTransfer(bridgeTransaction.bridge, bridgeTransaction.amount);
 		} else {
 			revert("BridgeFacet: Invalid bridge");
 		}
+
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		withdrawLayout.withdrawLockedBalance -= bridgeTransaction.amount;
 
 		bridgeTransaction.status = BridgeTransactionStatus.WITHDRAWN;
 	}
@@ -102,14 +94,6 @@ library BridgeFacetImpl {
 			if (bridgeLayout.bridges[bridgeTransaction.bridge]) {
 				require(bridgeTransaction.bridge == msg.sender, "BridgeFacet: Sender is not the transaction's bridge");
 				totalAmount += bridgeTransaction.amount;
-			} else if (bridgeLayout.virtualBridges[bridgeTransaction.bridge]) {
-				bytes memory data = bridgeLayout.bridgesData[transactionIds[i - 1]];
-				IVirtualBridge(bridgeTransaction.bridge).onBridgeComplete(
-					bridgeTransaction.user,
-					bridgeTransaction.amount,
-					appLayout.collateral,
-					data
-				);
 			} else {
 				revert("BridgeFacet: Invalid bridge");
 			}
@@ -117,6 +101,8 @@ library BridgeFacetImpl {
 			bridgeTransaction.status = BridgeTransactionStatus.WITHDRAWN;
 		}
 
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		withdrawLayout.withdrawLockedBalance -= totalAmount;
 		IERC20(appLayout.collateral).safeTransfer(msg.sender, totalAmount);
 	}
 
@@ -166,5 +152,7 @@ library BridgeFacetImpl {
 		bridgeTransaction.status = BridgeTransactionStatus.CANCELED;
 		uint256 amountWith18Decimals = (bridgeTransaction.amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		AccountStorage.layout().balances[bridgeTransaction.user] += amountWith18Decimals;
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		withdrawLayout.withdrawLockedBalance -= bridgeTransaction.amount;
 	}
 }
