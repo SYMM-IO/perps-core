@@ -31,6 +31,7 @@ library GlobalAppStorage {
 		bool instantLayerPaused;
 		mapping(address => bool) virtualProviders;
 		mapping(address => bool) expressProviders;
+		bool deprecateOldWithdrawalPaused;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

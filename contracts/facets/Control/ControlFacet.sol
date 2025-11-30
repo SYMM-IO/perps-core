@@ -884,4 +884,11 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit SetMinWithdrawCooldown(withdrawLayout.minWithdrawCooldown, cooldown);
 		withdrawLayout.minWithdrawCooldown = cooldown;
 	}
+
+	function deprecateOldWithdrawal() external onlyRole(LibAccessibility.SETTER_ROLE){
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		appLayout.deprecateOldWithdrawalPaused = true;
+	    emit DeprecateOldWithdrawalPaused();
+	}
+
 }

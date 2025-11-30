@@ -207,4 +207,6 @@ interface IControlFacet is IControlEvents {
 	function unsetSpeedUpUser(address user) external;
 
 	function setMinWithdrawCooldown(uint256 cooldown) external;
+
+	function deprecateOldWithdrawal() external;
 }

@@ -107,4 +107,5 @@ interface IControlEvents {
 	event SetSpeedUpUser(address user);
 	event UnsetSpeedUpUser(address user);
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
+	event DeprecateOldWithdrawalPaused();
 }
