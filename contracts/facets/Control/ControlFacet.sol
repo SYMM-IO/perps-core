@@ -664,19 +664,16 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Adds a bridge.
 	/// @param bridge The address of the bridge to be added.
-	/// @param isVirtual Whether the bridge is virtual.
-	function addBridge(address bridge, bool isVirtual) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	function addBridge(address bridge) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		checkZeroAddress(bridge);
 		BridgeStorage.layout().bridges[bridge] = true;
-		BridgeStorage.layout().virtualBridges[bridge] = isVirtual;
-		emit AddBridge(bridge, isVirtual);
+		emit AddBridge(bridge);
 	}
 
 	/// @notice Removes a bridge.
 	/// @param bridge The address of the bridge to be removed.
 	function removeBridge(address bridge) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		BridgeStorage.layout().bridges[bridge] = false;
-		BridgeStorage.layout().virtualBridges[bridge] = false;
 		emit RemoveBridge(bridge);
 	}
 

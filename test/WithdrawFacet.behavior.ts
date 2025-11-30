@@ -1029,7 +1029,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await expect(context.withdrawFacet.connect(context.signers.user).acceptSpeedUpRequest(user.address,1 , 10)).to.revertedWith("Accessibility: Must has role");
 		})
 
-		it.only("Should speed up withdraw for classic withdrawals", async function () {
+		it("Should speed up withdraw for classic withdrawals", async function () {
 			await context.accountFacet.connect(context.signers.user).deposit(ethers.parseEther("100"))
 			receiver1 = context.signers.user.address;
 			let parts = [

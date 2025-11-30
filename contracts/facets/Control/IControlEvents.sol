@@ -81,7 +81,7 @@ interface IControlEvents {
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);
 	event DeregisterAffiliate(address affiliate);
-	event AddBridge(address bridge, bool isVirtual);
+	event AddBridge(address bridge);
 	event RemoveBridge(address bridge);
 	event SetLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit);
 	event WhitelistSymbolType(address partyB, uint256 symbolType);
