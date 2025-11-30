@@ -233,7 +233,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		// The Quote Price is 1**18, we set it to 25**16,
 		// as we have CVA = 22, LF = 3, ==> Balance = 22 + 3 - 25 = 0 not liquidated yet
 		// The Price below 25 makes the position liquidated
-		it.only("Should Not change the insurance vault correctly in Late Liquidation", async function () {
+		it("Should Not change the insurance vault correctly in Late Liquidation", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			// Deallocate 399n so that it has 100n as allocated balance
