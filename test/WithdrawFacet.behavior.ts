@@ -206,6 +206,54 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			).to.revertedWith("Accessibility: Sender is Suspended");
 		});
 
+		it("Should fail to suspend withdraw for non-suspended user", async function() {
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(suspendedParts, false, "0x");
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.suspendWithdrawRequest(user.address, 1)
+			).to.revertedWith("User is not suspended");
+		});
+
+		it("Should fail to suspend withdraw with incorrect request id", async function() {
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(suspendedParts, false, "0x");
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.suspendedAddress(context.signers.user.address);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.suspendWithdrawRequest(user.address, 2)
+			).to.revertedWith("Invalid withdraw request ID")
+		});
+
+		it("Should fail to suspend withdraw with incorrect status", async function() {
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(suspendedParts, false, "0x");
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.requestCancelWithdraw(1);
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.suspendedAddress(context.signers.user.address);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.suspendWithdrawRequest(user.address, 1)
+			).to.revertedWith("Invalid withdraw request status");
+		});
+
 		it("Should suspend withdraw for suspended user", async function() {
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -234,6 +282,19 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 	});
 
 	describe("Normal Withdraw", function() {
+
+		it("Should fail to initiate withdraw with 0 parts", async function() {
+			await userDeposit("100");
+
+			const parts: any[] = [];
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.initiateWithdraw(parts, false, "0x")
+			).to.revertedWith("No withdraw parts");
+		});
+
 		it("Should fail to initiate withdraw with more than 50 parts", async function() {
 			await userDeposit("100");
 
@@ -275,6 +336,17 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			).to.revertedWith("WithdrawFacet: Insufficient balance");
 		});
 
+		it("Should fail to initiate withdraw because of amount 0", async function() {
+			await userDeposit("100");
+			const parts = buildParts(["50", "0"]);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.initiateWithdraw(parts, false, "0x")
+			).to.revertedWith("Withdraw request part should have amount greater than 0.")
+		});
+
 		it("Should initiate withdraw correctly", async function() {
 			await userDeposit("100");
 			const parts = buildParts(["50", "20"]);
@@ -314,6 +386,44 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			).to.revertedWith("Withdraw cooldown not over");
 		});
 
+		it("Should fail to finalize withdraw with wrong id", async function() {
+			await userDeposit("100");
+			const parts = [buildPart("50")];
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await time.increase(1000)
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.finalizeWithdrawRequest(user.address, 2)
+			).to.revertedWith("Invalid withdraw request ID");
+		});
+
+		it("Should fail to finalize withdraw with invalid status", async function() {
+			await userDeposit("100");
+			const parts = [buildPart("50")];
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.requestCancelWithdraw(1);
+
+			await time.increase(1000)
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.finalizeWithdrawRequest(user.address, 1)
+			).to.revertedWith("Invalid withdraw request status");
+		});
+
 		it("Should finalize withdraw", async function() {
 			await userDeposit("100");
 			const parts = buildParts(["50", "20"]);
@@ -339,6 +449,40 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			expect(balanceAfter - balanceBefore).be.equal(
 				ethers.parseUnits("70", 18)
 			);
+		});
+
+		it("Should fail to request to cancel withdraw with wrong id", async function() {
+			await userDeposit("100");
+			const parts = buildParts(["50", "20"]);
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.requestCancelWithdraw(2)
+			).to.revertedWith("Invalid withdraw request ID");
+		});
+
+		it("Should fail to request to cancel withdraw with wrong id", async function() {
+			await userDeposit("100");
+			const parts = buildParts(["50", "20"]);
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.requestCancelWithdraw(1);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.requestCancelWithdraw(1)
+			).to.revertedWith("Invalid withdraw request status");
 		});
 
 		it("Should request to cancel withdraw", async function() {
@@ -480,6 +624,29 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			);
 		});
 
+		it("Should fail to initiate withdraw by a non-registered provider", async function() {
+			await context.accountFacet
+				.connect(context.signers.admin)
+				.virtualDepositFor(
+					user.address,
+					ethers.parseEther("100")
+				);
+
+			receiver1 = context.signers.user.address;
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = buildParts(["50", "20"], {
+				virtualProvider: vpAddress,
+			});
+
+			await context.controlFacet.connect(context.signers.admin).unregisterVirtualProvider(vpAddress);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.initiateWithdraw(parts, false, "0x")
+			).to.revertedWith("Not registered virtual provider")
+		});
+
 		it("Should initiate withdraw correctly", async function() {
 			await context.accountFacet
 				.connect(context.signers.admin)
@@ -535,6 +702,132 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 					.connect(context.signers.user)
 					.finalizeWithdrawRequest(user.address, 1)
 			).to.revertedWith("Withdraw cooldown not over");
+		});
+
+		it("Should fail to accept withdraw with wrong id", async function() {
+			await userDeposit("100");
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expect(
+				virtualProvider.acceptWithdrawRequest(user.address, 2)
+			).to.revertedWith("Invalid withdraw request ID");
+		});
+
+		it("Should fail to accept normal withdraw", async function() {
+			await userDeposit("100");
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = [buildPart("50")];
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expect(
+				virtualProvider.acceptWithdrawRequest(user.address, 1)
+			).to.revertedWith("Only Virtual or Express withdraw needs to accept");
+		});
+
+		it("Should fail to accept withdraw with wrong status", async function() {
+			await userDeposit("100");
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1)
+			await expect(
+				virtualProvider.acceptWithdrawRequest(user.address, 1)
+			).to.revertedWith("Invalid withdraw request status");
+		});
+
+		it("Should fail to accept withdraw with wrong provider", async function() {
+			await userDeposit("100");
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expect(
+				context.withdrawFacet.connect(context.signers.user).acceptWithdrawRequest(user.address, 1)
+			).to.revertedWith("Not allowed to accept withdrawal.");
+		});
+
+		it("Should fail to reject withdraw with wrong id", async function() {
+			await userDeposit("100");
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expect(
+				virtualProvider.rejectWithdrawRequest(user.address, 2)
+			).to.revertedWith("Invalid withdraw request ID");
+		});
+
+		it("Should fail to reject normal withdraw", async function() {
+			await userDeposit("100");
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = [buildPart("50")];
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expect(
+				virtualProvider.rejectWithdrawRequest(user.address, 1)
+			).to.revertedWith("Only Virtual or Express withdraw needs to accept");
+		});
+
+		it("Should fail to reject withdraw with wrong status", async function() {
+			await userDeposit("100");
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1)
+			await expect(
+				virtualProvider.rejectWithdrawRequest(user.address, 1)
+			).to.revertedWith("Invalid withdraw request status");
+		});
+
+		it("Should fail to reject withdraw with wrong provider", async function() {
+			await userDeposit("100");
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expect(
+				context.withdrawFacet.connect(context.signers.user).rejectWithdrawRequest(user.address, 1)
+			).to.revertedWith("Not allowed to accept withdrawal.");
+		});
+
+		it("Should fail to finalize withdraw with invalid status", async function() {
+			await userDeposit("100");
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await time.increase(1000);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.finalizeWithdrawRequest(user.address, 1)
+			).to.revertedWith("Invalid withdraw request status");
 		});
 
 		it("Should finalize withdraw", async function() {
@@ -691,6 +984,61 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			).to.revertedWith("Withdraw cooldown not over");
 		});
 
+		it("Should fail to force cancel withdraw with wrong request Id", async function() {
+			await context.accountFacet
+				.connect(context.signers.admin)
+				.virtualDepositFor(
+					user.address,
+					ethers.parseEther("100")
+				);
+
+			receiver1 = context.signers.user.address;
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = buildParts(["50", "20"], {
+				virtualProvider: vpAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1);
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.requestCancelWithdraw(1);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.forceCancelWithdraw(2)
+			).to.revertedWith("Invalid withdraw request ID");
+		});
+
+		it("Should fail to force cancel withdraw with invalid status", async function() {
+			await context.accountFacet
+				.connect(context.signers.admin)
+				.virtualDepositFor(
+					user.address,
+					ethers.parseEther("100")
+				);
+
+			receiver1 = context.signers.user.address;
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = buildParts(["50", "20"], {
+				virtualProvider: vpAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.forceCancelWithdraw(1)
+			).to.revertedWith("Invalid withdraw request status");
+		});
+
 		it("Should force cancel withdraw after cooldown", async function() {
 			await context.accountFacet
 				.connect(context.signers.admin)
@@ -844,6 +1192,25 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			).to.revertedWith(
 				"Multiple express providers not allowed"
 			);
+		});
+
+
+		it("Should fail to initiate withdraw with non-registered provider", async function() {
+			await userDeposit("100");
+			const epAddress = await expressProvider.getAddress();
+
+			const parts = buildParts(["50", "20"], {
+				expressProvider: epAddress,
+			});
+
+			await context.controlFacet.connect(context.signers.admin).unregisterExpressProvider(epAddress);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.initiateWithdraw(parts, false, "0x")
+			).to.revertedWith("Not registered express provider")
+
 		});
 
 		it("Should initiate withdraw correctly", async function() {

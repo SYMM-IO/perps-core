@@ -220,7 +220,6 @@ library WithdrawFacetImpl {
 
 		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[user][requestId];
 
-		require(withdrawRequest.user == user, "Invalid withdraw user");
 		require(withdrawRequest.status == WithdrawStatus.PENDING, "Invalid withdraw request status");
 		require(withdrawRequest.provider != address(0), "Only Virtual or Express withdraw needs to accept");
 		require(msg.sender == withdrawRequest.provider, "Not allowed to accept withdrawal.");
@@ -237,7 +236,6 @@ library WithdrawFacetImpl {
 
 		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[user][requestId];
 
-		require(withdrawRequest.user == user, "Invalid withdraw user");
 		require(withdrawRequest.status == WithdrawStatus.PENDING, "Invalid withdraw request status");
 		require(withdrawRequest.provider != address(0), "Only Virtual or Express withdraw needs to accept");
 		require(msg.sender == withdrawRequest.provider, "Not allowed to accept withdrawal.");
@@ -259,8 +257,6 @@ library WithdrawFacetImpl {
 		require(requestId <= withdrawLayout.lastWithdrawRequestId[msg.sender], "Invalid withdraw request ID");
 
 		WithdrawRequest storage withdrawRequest = withdrawLayout.withdrawRequests[msg.sender][requestId];
-
-		require(withdrawRequest.user == msg.sender, "Not withdraw request owner");
 
 		require(
 			withdrawRequest.status == WithdrawStatus.PENDING ||
