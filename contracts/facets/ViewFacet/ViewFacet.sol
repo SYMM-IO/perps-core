@@ -278,12 +278,7 @@ contract ViewFacet is IViewFacet {
 	 * @param symbol The symbol to convert.
 	 * @param symbolType The type of the symbol.
 	 * @return The symbol with type.
-	 * @notice Converts a symbol to a symbol with type.
-	 * @param symbol The symbol to convert.
-	 * @param symbolType The type of the symbol.
-	 * @return The symbol with type.
 	 */
-	function _toSymbolWithType(Symbol memory symbol, uint256 symbolType) internal pure returns (SymbolWithType memory) {
 	function _toSymbolWithType(Symbol memory symbol, uint256 symbolType) internal pure returns (SymbolWithType memory) {
 		return
 			SymbolWithType(
@@ -296,20 +291,6 @@ contract ViewFacet is IViewFacet {
 				symbol.maxLeverage,
 				symbol.fundingRateEpochDuration,
 				symbol.fundingRateWindowTime,
-				symbolType
-			);
-	}
-
-	/**
-	 * @notice Returns the details of a symbol along with its type.
-	 * @param symbolId The ID of the symbol to retrieve.
-	 * @return A SymbolWithType struct containing the symbol details and its type.
-	 */
-	function getSymbolWithType(uint256 symbolId) external view returns (SymbolWithType memory) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		Symbol memory symbol = symbolLayout.symbols[symbolId];
-
-		return _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbolId]);
 				symbolType
 			);
 	}
@@ -619,17 +600,11 @@ contract ViewFacet is IViewFacet {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		uint256[] memory partyAOpenPositions = quoteLayout.partyAOpenPositions[partyA];
 
-		if (partyAOpenPositions.length < start + size) {
-			size = partyAOpenPositions.length - start;
-		uint256[] memory partyAOpenPositions = quoteLayout.partyAOpenPositions[partyA];
+		if (partyAOpenPositions.length < start + size) size = partyAOpenPositions.length - start;
 
-		if (partyAOpenPositions.length < start + size) {
-			size = partyAOpenPositions.length - start;
-		}
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
-			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
 			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
 			unchecked {
 				++i;
@@ -648,9 +623,7 @@ contract ViewFacet is IViewFacet {
 	 */
 	function getPartyBOpenPositions(address partyB, address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
-		if (partyBOpenPositions.length < start + size) {
-			size = partyBOpenPositions.length - start;
+
 		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
 		if (partyBOpenPositions.length < start + size) {
 			size = partyBOpenPositions.length - start;
@@ -658,7 +631,6 @@ contract ViewFacet is IViewFacet {
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
-			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
 			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
 			unchecked {
 				++i;
@@ -852,7 +824,6 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().defaultFeeCollector;
 	}
 
-
 	/**
 	 * @notice Indicates whether Party B accounts are allowed to activate master account mode.
 	 * @return True if activation is globally enabled, false otherwise.
@@ -860,7 +831,6 @@ contract ViewFacet is IViewFacet {
 	function getMasterAccountActivationMode() external view returns (bool) {
 		return GlobalAppStorage.layout().masterAccountActivationMode;
 	}
-
 
 	/**
 	 * @notice Checks if a party A is liquidated.
@@ -1016,14 +986,6 @@ contract ViewFacet is IViewFacet {
 	 */
 	function lastUpnlSettlementTimestamp(address senderPartyB, address targetPartyB, address partyA) external view returns (uint256) {
 		return MAStorage.layout().lastUpnlSettlementTimestamp[senderPartyB][targetPartyB][partyA];
-	}
-
-	/**
-	 * @notice Returns the maxConnectedCounterParty.
-	 * @return maxConnectedCounterParty max Party A to Party B connection Count Limit.
-	 */
-	function maxConnectedCounterParty() external view returns (uint256) {
-		return MAStorage.layout().maxPartyAConnectionLimit;
 	}
 
 	/**
@@ -1313,7 +1275,7 @@ contract ViewFacet is IViewFacet {
 	 * @param user The address of the user.
 	 * @return True if the user is eligible for speed up, false otherwise.
 	 */
-	function isSpeedUpEligible(address user) external view returns (bool){
+	function isSpeedUpEligible(address user) external view returns (bool) {
 		return WithdrawStorage.layout().speedUpWhitelist[user];
 	}
 
@@ -1323,13 +1285,13 @@ contract ViewFacet is IViewFacet {
 	 * @param requestId The ID of the withdraw request.
 	 * @return The modified cooldown end time.
 	 */
-	function getModifiedCooldownEndTime(address user,uint256 requestId) external view returns (uint256){
+	function getModifiedCooldownEndTime(address user, uint256 requestId) external view returns (uint256) {
 		WithdrawRequest storage request = WithdrawStorage.layout().withdrawRequests[user][requestId];
 		require(request.isCooldownModified, "Cooldown not modified");
 		return request.cooldownEndTime;
 	}
 
-	function getWithdrawLockedBalance() external view returns (uint256){
+	function getWithdrawLockedBalance() external view returns (uint256) {
 		return WithdrawStorage.layout().withdrawLockedBalance;
 	}
 }
