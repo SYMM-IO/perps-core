@@ -80,6 +80,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("DEALLOCATE_COOLDOWN_SETTER_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE")))
 
 	await context.controlFacet.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 
