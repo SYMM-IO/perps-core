@@ -215,7 +215,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.suspendWithdrawRequest(user.address, 1)
-			).to.revertedWith("User is not suspended");
+			).to.revertedWith("WithdrawFacet : User is not suspended");
 		});
 
 		it("Should fail to suspend withdraw with incorrect request id", async function() {
@@ -231,7 +231,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.suspendWithdrawRequest(user.address, 2)
-			).to.revertedWith("Invalid withdraw request ID")
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request ID")
 		});
 
 		it("Should fail to suspend withdraw with incorrect status", async function() {
@@ -251,7 +251,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.suspendWithdrawRequest(user.address, 1)
-			).to.revertedWith("Invalid withdraw request status");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request status");
 		});
 
 		it("Should suspend withdraw for suspended user", async function() {
@@ -292,7 +292,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("No withdraw parts");
+			).to.revertedWith("WithdrawFacet : No withdraw parts");
 		});
 
 		it("Should fail to initiate withdraw with more than 50 parts", async function() {
@@ -307,7 +307,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("Too many withdraw parts");
+			).to.revertedWith("WithdrawFacet : Too many withdraw parts");
 		});
 
 		it("Should initiate withdraw with 50 parts", async function() {
@@ -333,7 +333,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("WithdrawFacet: Insufficient balance");
+			).to.revertedWith("WithdrawFacet : Insufficient balance");
 		});
 
 		it("Should fail to initiate withdraw because of amount 0", async function() {
@@ -344,7 +344,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("Withdraw request part should have amount greater than 0.")
+			).to.revertedWith("WithdrawFacet : Not allowed withdrawal zero amount")
 		});
 
 		it("Should initiate withdraw correctly", async function() {
@@ -383,7 +383,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.finalizeWithdrawRequest(user.address, 1)
-			).to.revertedWith("Withdraw cooldown not over");
+			).to.revertedWith("WithdrawFacet : Withdraw cooldown not over");
 		});
 
 		it("Should fail to finalize withdraw with wrong id", async function() {
@@ -400,7 +400,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.finalizeWithdrawRequest(user.address, 2)
-			).to.revertedWith("Invalid withdraw request ID");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request ID");
 		});
 
 		it("Should fail to finalize withdraw with invalid status", async function() {
@@ -421,7 +421,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.finalizeWithdrawRequest(user.address, 1)
-			).to.revertedWith("Invalid withdraw request status");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request status");
 		});
 
 		it("Should finalize withdraw", async function() {
@@ -463,10 +463,10 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.requestCancelWithdraw(2)
-			).to.revertedWith("Invalid withdraw request ID");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request ID");
 		});
 
-		it("Should fail to request to cancel withdraw with wrong id", async function() {
+		it("Should fail to request to cancel withdraw with wrong status", async function() {
 			await userDeposit("100");
 			const parts = buildParts(["50", "20"]);
 
@@ -482,7 +482,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.requestCancelWithdraw(1)
-			).to.revertedWith("Invalid withdraw request status");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request status");
 		});
 
 		it("Should request to cancel withdraw", async function() {
@@ -547,7 +547,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("Too many withdraw parts");
+			).to.revertedWith("WithdrawFacet : Too many withdraw parts");
 		});
 
 		it("Should initiate withdraw with 50 parts", async function() {
@@ -584,7 +584,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("WithdrawFacet: Insufficient balance");
+			).to.revertedWith("WithdrawFacet : Insufficient balance");
 		});
 
 		it("Should fail to initiate withdraw with more than one virtual provider", async function() {
@@ -620,7 +620,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
 			).to.revertedWith(
-				"Multiple virtual providers not allowed"
+				"WithdrawFacet : Multiple virtual providers not allowed"
 			);
 		});
 
@@ -644,7 +644,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("Not registered virtual provider")
+			).to.revertedWith("WithdrawFacet : Not registered virtual provider")
 		});
 
 		it("Should initiate withdraw correctly", async function() {
@@ -701,7 +701,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.finalizeWithdrawRequest(user.address, 1)
-			).to.revertedWith("Withdraw cooldown not over");
+			).to.revertedWith("WithdrawFacet : Withdraw cooldown not over");
 		});
 
 		it("Should fail to accept withdraw with wrong id", async function() {
@@ -715,7 +715,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await expect(
 				virtualProvider.acceptWithdrawRequest(user.address, 2)
-			).to.revertedWith("Invalid withdraw request ID");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request ID");
 		});
 
 		it("Should fail to accept normal withdraw", async function() {
@@ -729,7 +729,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await expect(
 				virtualProvider.acceptWithdrawRequest(user.address, 1)
-			).to.revertedWith("Only Virtual or Express withdraw needs to accept");
+			).to.revertedWith("WithdrawFacet : Only Virtual or Express withdraw needs to accept");
 		});
 
 		it("Should fail to accept withdraw with wrong status", async function() {
@@ -742,7 +742,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await virtualProvider.acceptWithdrawRequest(user.address, 1)
 			await expect(
 				virtualProvider.acceptWithdrawRequest(user.address, 1)
-			).to.revertedWith("Invalid withdraw request status");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request status");
 		});
 
 		it("Should fail to accept withdraw with wrong provider", async function() {
@@ -755,7 +755,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await expect(
 				context.withdrawFacet.connect(context.signers.user).acceptWithdrawRequest(user.address, 1)
-			).to.revertedWith("Not allowed to accept withdrawal.");
+			).to.revertedWith("WithdrawFacet : Not allowed to accept withdrawal");
 		});
 
 		it("Should fail to reject withdraw with wrong id", async function() {
@@ -769,7 +769,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await expect(
 				virtualProvider.rejectWithdrawRequest(user.address, 2)
-			).to.revertedWith("Invalid withdraw request ID");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request ID");
 		});
 
 		it("Should fail to reject normal withdraw", async function() {
@@ -783,7 +783,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await expect(
 				virtualProvider.rejectWithdrawRequest(user.address, 1)
-			).to.revertedWith("Only Virtual or Express withdraw needs to accept");
+			).to.revertedWith("WithdrawFacet : Only Virtual or Express withdraw needs to accept");
 		});
 
 		it("Should fail to reject withdraw with wrong status", async function() {
@@ -796,7 +796,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await virtualProvider.acceptWithdrawRequest(user.address, 1)
 			await expect(
 				virtualProvider.rejectWithdrawRequest(user.address, 1)
-			).to.revertedWith("Invalid withdraw request status");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request status");
 		});
 
 		it("Should fail to reject withdraw with wrong provider", async function() {
@@ -809,7 +809,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await expect(
 				context.withdrawFacet.connect(context.signers.user).rejectWithdrawRequest(user.address, 1)
-			).to.revertedWith("Not allowed to accept withdrawal.");
+			).to.revertedWith("WithdrawFacet : Not allowed to accept withdrawal");
 		});
 
 		it("Should fail to finalize withdraw with invalid status", async function() {
@@ -827,7 +827,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.finalizeWithdrawRequest(user.address, 1)
-			).to.revertedWith("Invalid withdraw request status");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request status");
 		});
 
 		it("Should finalize withdraw", async function() {
@@ -981,7 +981,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.forceCancelWithdraw(1)
-			).to.revertedWith("Withdraw cooldown not over");
+			).to.revertedWith("WithdrawFacet : Withdraw cooldown not over");
 		});
 
 		it("Should fail to force cancel withdraw with wrong request Id", async function() {
@@ -1010,7 +1010,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.forceCancelWithdraw(2)
-			).to.revertedWith("Invalid withdraw request ID");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request ID");
 		});
 
 		it("Should fail to force cancel withdraw with invalid status", async function() {
@@ -1036,7 +1036,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.forceCancelWithdraw(1)
-			).to.revertedWith("Invalid withdraw request status");
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request status");
 		});
 
 		it("Should force cancel withdraw after cooldown", async function() {
@@ -1117,7 +1117,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("Too many withdraw parts");
+			).to.revertedWith("WithdrawFacet : Too many withdraw parts");
 		});
 
 		it("Should initiate withdraw with 50 parts", async function() {
@@ -1154,7 +1154,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("WithdrawFacet: Insufficient balance");
+			).to.revertedWith("WithdrawFacet : Insufficient balance");
 		});
 
 		it("Should fail to initiate withdraw with more than one express provider", async function() {
@@ -1190,7 +1190,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
 			).to.revertedWith(
-				"Multiple express providers not allowed"
+				"WithdrawFacet : Multiple express providers not allowed"
 			);
 		});
 
@@ -1209,7 +1209,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.initiateWithdraw(parts, false, "0x")
-			).to.revertedWith("Not registered express provider")
+			).to.revertedWith("WithdrawFacet : Not registered express provider")
 
 		});
 
@@ -1266,7 +1266,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.finalizeWithdrawRequest(user.address, 1)
-			).to.revertedWith("Withdraw cooldown not over");
+			).to.revertedWith("WithdrawFacet : Withdraw cooldown not over");
 		});
 
 		it("Should finalize withdraw", async function() {
@@ -1390,6 +1390,74 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			);
 		});
 
+		it("Should fail to accept cancel withdraw with invalid id", async function() {
+			await userDeposit("100");
+			const epAddress = await expressProvider.getAddress();
+
+			const parts = buildParts(["50", "20"], {
+				expressProvider: epAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expressProvider.acceptWithdrawRequest(user.address, 1);
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.requestCancelWithdraw(1);
+
+			await expect(expressProvider.acceptWithdrawCancelRequest(
+					user.address, 2
+				)
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request ID");
+		});
+
+		it("Should fail to accept cancel withdraw with invalid status", async function() {
+			await userDeposit("100");
+			const epAddress = await expressProvider.getAddress();
+
+			const parts = buildParts(["50", "20"], {
+				expressProvider: epAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expressProvider.acceptWithdrawRequest(user.address, 1);
+
+			await expect(expressProvider.acceptWithdrawCancelRequest(
+					user.address, 1
+				)
+			).to.revertedWith("WithdrawFacet : Invalid withdraw request status");
+		});
+
+		it("Should fail to accept cancel withdraw from non-provider", async function() {
+			await userDeposit("100");
+			const epAddress = await expressProvider.getAddress();
+
+			const parts = buildParts(["50", "20"], {
+				expressProvider: epAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expressProvider.acceptWithdrawRequest(user.address, 1);
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.requestCancelWithdraw(1);
+
+			await expect(context.withdrawFacet.connect(context.signers.admin).acceptWithdrawCancelRequest(
+					user.address, 1
+				)
+			).to.revertedWith("WithdrawFacet : Not allowed to accept cancel");
+		});
+
 		it("Should fail to force cancel withdraw with express provider", async function() {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
@@ -1415,7 +1483,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.forceCancelWithdraw(1)
-			).to.revertedWith("Not a pure virtual withdraw");
+			).to.revertedWith("WithdrawFacet : Not a pure virtual withdraw");
 		});
 	});
 
@@ -1497,7 +1565,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.finalizeWithdrawRequest(user.address, 1)
-			).to.revertedWith("Withdraw cooldown not over");
+			).to.revertedWith("WithdrawFacet : Withdraw cooldown not over");
 		});
 
 		it("Should finalize withdraw", async function() {
@@ -1772,27 +1840,78 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			expect(await context.viewFacet.isSpeedUpEligible(user.address)).to.equal(false)
 		})
 
-		it("Should fail to lower cooldown less than threshold", async function () {
+		it("Should fail to speed-up more than threshold", async function () {
 			await expect(context.controlFacet.connect(context.signers.admin).setMinWithdrawCooldown(10)).not.reverted;
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
 			await userDeposit("100");
 			const parts = [buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
-			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5)).to.revertedWith("New cooldown exceeds min cooldown");
+			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
+				.to.revertedWith("WithdrawFacet : New cooldown exceeds min cooldown");
 		})
 
 		it("Should fail to initiate speed up withdraw when not whitelisted", async function () {
 			await userDeposit("100");
 			const parts = [buildPart("50")];
-			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")).to.revertedWith("Not allowed to speed up withdraw")
+			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x"))
+				.to.revertedWith("WithdrawFacet : Not allowed to speed up withdraw")
 		})
 
-		it("Should fail to speed up withdraw with express", async function () {
+		it("Should fail to initiate speed up withdraw with express", async function () {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 			const parts = [buildPart("50" , {expressProvider: epAddress})];
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
-			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")).to.revertedWith("Speed up not allowed with express");
+			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x"))
+				.to.revertedWith("WithdrawFacet : Speed up not allowed with express");
+		})
+
+		it("Should fail to speed-up with invalid id", async function () {
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await userDeposit("100");
+			const parts = [buildPart("50")];
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
+			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,2 , 5))
+				.to.revertedWith("WithdrawFacet : Invalid withdraw request ID");
+		})
+
+		it("Should fail to speed-up more than one time", async function () {
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await userDeposit("100");
+			const parts = [buildPart("50")];
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
+			await context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 10)
+			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
+				.to.revertedWith("WithdrawFacet : Cooldown already modified");
+		})
+
+		it("Should fail to speed-up when user is not whitelisted", async function () {
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await userDeposit("100");
+			const parts = [buildPart("50")];
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
+			await context.controlFacet.connect(context.signers.admin).unsetSpeedUpUser(user.address)
+			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
+				.to.revertedWith("WithdrawFacet : User not in speed up whitelist");
+		})
+
+		it("Should fail to speed-up when user is not whitelisted", async function () {
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await userDeposit("100");
+			const parts = [buildPart("50")];
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
+			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)
+			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
+				.to.revertedWith("WithdrawFacet : Invalid withdraw request status");
+		})
+
+		it("Should fail to speed-up when request is not speed-up", async function () {
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await userDeposit("100");
+			const parts = [buildPart("50")];
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,false,"0x")
+			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
+				.to.revertedWith("WithdrawFacet : Withdraw request is not speed up");
 		})
 
 	});

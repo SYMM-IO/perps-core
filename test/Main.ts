@@ -113,7 +113,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeInstantLayer()
 		})
 
-		describe("WithdrawFacet", async function () {
+		describe.only("WithdrawFacet", async function () {
 			shouldBehaveLikeWithdrawFacet()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
