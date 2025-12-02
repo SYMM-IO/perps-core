@@ -408,7 +408,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		})
 	})
 
-	describe.only("settleAndForceClosePosition", function () {
+	describe("settleAndForceClosePosition", function () {
 		/**
 		 * Builds a minimal valid SettlementSig for a single quote/price.
 		 * You can replace this later with your own getDummySettlementSig helper
@@ -474,28 +474,25 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			const settlementSig = await buildSimpleSettlementSig(
 				context,
 				quoteId,
-				newPrice,
+				newPrice, // market Price
 				0n, // upnlPartyA
 				0n, // upnlPartyB
 			)
 
 			const updatedPrices = [newPrice]
 
-			// Expect SettleUpnl + ForceClosePosition or LiquidatePartyB.
-			// We can't easily assert both events' exact args, but we can assert that:
+			// Expect SettleUpnl + ForceClosePosition to solve or LiquidatePartyB.
+			// We can assert that:
 			//   - quote is no longer CLOSE_PENDING
-			//   - openedPrice has been updated by LibSettlement
-			await context.forceActionsFacet.connect(context.signers.user).settleAndForceClosePosition(quoteId, highLowSig, settlementSig, updatedPrices)
+			//   - openedPrice has been updated by settlement structure
+			await context.forceActionsFacet.connect(user.getSigner).settleAndForceClosePosition(quoteId, highLowSig, settlementSig, updatedPrices)
 
 			const closedQuote = await context.viewFacet.getQuote(quoteId)
-
-			// After force close the quote should not be CLOSE_PENDING any more
 			expect(closedQuote.quoteStatus).to.not.equal(QuoteStatus.CLOSE_PENDING)
-			// And the openedPrice should have been overwritten by updatedPrices[0]
 			expect(BigInt(closedQuote.openedPrice)).to.equal(newPrice)
 		})
 
-		it("should revert LibSettlement: Invalid length when updatedPrices length does not match quotesSettlementsData", async function () {
+		it.only("should revert LibSettlement: Invalid length when updatedPrices length does not match quotesSettlementsData", async function () {
 			const quoteId = BigInt(quote2ShortOpened.id)
 			const sigTimes = await prepareSigTimes(100n)
 
