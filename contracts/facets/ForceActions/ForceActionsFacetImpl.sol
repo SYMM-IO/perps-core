@@ -34,13 +34,13 @@ library ForceActionsFacetImpl {
 		// Enforce that the quote is in the expected cancel pending state. Revert with
 		// a custom error if not.
 		if (quote.quoteStatus != QuoteStatus.CANCEL_PENDING) {
-			revert PartyAFacetInvalidState();
+			revert ForceCloseErrors.InvalidState();
 		}
 		// Enforce that the force cancel cooldown has elapsed. If the current
 		// timestamp has not yet surpassed the last modify timestamp plus the
 		// cooldown period, revert.
 		if (!(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCooldown)) {
-			revert PartyAFacetCooldownNotReached();
+			revert ForceCloseErrors.CooldownNotReached();
 		}
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.CANCELED;
@@ -61,11 +61,11 @@ library ForceActionsFacetImpl {
 
 		// Validate the quote is in the cancel close pending state.
 		if (quote.quoteStatus != QuoteStatus.CANCEL_CLOSE_PENDING) {
-			revert PartyAFacetInvalidState();
+			revert ForceCloseErrors.InvalidState();
 		}
 		// Ensure the cancel close cooldown period has expired before proceeding.
 		if (!(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCloseCooldown)) {
-			revert PartyAFacetCooldownNotReached();
+			revert ForceCloseErrors.CooldownNotReached();
 		}
 
 		quote.statusModifyTimestamp = block.timestamp;
@@ -86,34 +86,34 @@ library ForceActionsFacetImpl {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		// Ensure the quote is in a close pending state.
 		if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
-			revert PartyAFacetInvalidState();
+			revert ForceCloseErrors.InvalidState();
 		}
 		// The close request must not be expired relative to the deadline.
 		if (!(sig.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline)) {
-			revert PartyBFacetCloseRequestExpired();
+			revert ForceCloseErrors.CloseRequestExpired();
 		}
 		// Only limit orders may be force closed.
 		if (quote.orderType != OrderType.LIMIT) {
-			revert PartyBFacetInvalidOrderType();
+			revert ForceCloseErrors.InvalidOrderType();
 		}
 		// Enforce first stage cooldown before starting force close.
 		if (!(sig.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown)) {
-			revert PartyAFacetCooldownNotReached();
+			revert ForceCloseErrors.CooldownNotReached();
 		}
 		// Enforce second stage cooldown before finalizing force close.
 		if (!(sig.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown)) {
-			revert PartyAFacetCooldownNotReached();
+			revert ForceCloseErrors.CooldownNotReached();
 		}
 		// The average price must lie within the high/low bounds.
 		if (!(sig.averagePrice <= sig.highest && sig.averagePrice >= sig.lowest)) {
-			revert PartyAFacetInvalidAveragePrice();
+			revert ForceCloseErrors.InvalidAveragePrice();
 		}
 		if (quote.positionType == PositionType.LONG) {
 			// For long positions the highest observed price must exceed the requested close
 			// price by at least the configured gap ratio. Otherwise the requested close
 			// price has not been reached and we revert.
 			if (!(sig.highest >= quote.requestedClosePrice + (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18)) {
-				revert PartyAFacetRequestedClosePriceNotReached();
+				revert ForceCloseErrors.RequestedClosePriceNotReached();
 			}
 			closePrice = quote.requestedClosePrice + (quote.requestedClosePrice * maLayout.forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sig.averagePrice ? closePrice : sig.averagePrice; // max
@@ -121,7 +121,7 @@ library ForceActionsFacetImpl {
 			// For short positions the lowest observed price must fall below the requested close
 			// price by at least the configured gap ratio. Otherwise we revert.
 			if (!(sig.lowest <= quote.requestedClosePrice - (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18)) {
-				revert PartyAFacetRequestedClosePriceNotReached();
+				revert ForceCloseErrors.RequestedClosePriceNotReached();
 			}
 			closePrice = quote.requestedClosePrice - (quote.requestedClosePrice * maLayout.forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sig.averagePrice ? sig.averagePrice : closePrice; // min
@@ -132,7 +132,7 @@ library ForceActionsFacetImpl {
 		// check the force close could be based on too narrow of a price window.
 		if (closePrice == sig.averagePrice) {
 			if (!(sig.endTime - sig.startTime >= maLayout.forceCloseMinSigPeriod)) {
-				revert PartyAFacetInvalidSignaturePeriod();
+				revert ForceCloseErrors.InvalidSignaturePeriod();
 			}
 		}
 
@@ -170,7 +170,7 @@ library ForceActionsFacetImpl {
 		);
 		// After computing the available balances ensure partyA will not become insolvent.
 		if (!(partyAAvailableBalance >= 0)) {
-			revert PartyAFacetPartyAWillBeInsolvent();
+			revert ForceCloseErrors.PartyAWillBeInsolvent();
 		}
 		if (partyBAvailableBalance >= 0) {
 			if (updatedPrices.length > 0) {
@@ -237,7 +237,7 @@ library ForceActionsFacetImpl {
 			closePrice
 		);
 
-		if (!(partyAAvailableBalance >= 0)) revert PartyAFacetPartyAWillBeInsolvent();
+		if (!(partyAAvailableBalance >= 0)) revert ForceCloseErrors.PartyAWillBeInsolvent();
 
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
 		detail.timestamp = block.timestamp;
@@ -246,7 +246,7 @@ library ForceActionsFacetImpl {
 		detail.inProgress = true;
 	}
 
-	function forceFinalization(
+	function forceCloseFinalization(
 		uint256 quoteId,
 		uint256 closePrice,
 		int256 partyBAvailableBalance,
@@ -278,7 +278,7 @@ library ForceActionsFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
-		(isSolvent, , ) = forceFinalization(
+		(isSolvent, , ) = forceCloseFinalization(
 			quoteId,
 			detail.closePrice,
 			detail.partyBAvailableAfterClose,
@@ -300,6 +300,8 @@ library ForceActionsFacetImpl {
 		LibForceSolve.verifyPrice(quoteId, highLowPrice);
 		closePrice = getClosePrice(quoteId, highLowPrice);
 
+		// TODO if master account mode callable
+
 		uint256 reservedBalance = accountLayout.reserveVault[partyB];
 
 		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceSolve.getAvailableBalancesAfterClose(
@@ -311,10 +313,10 @@ library ForceActionsFacetImpl {
 		);
 
 		if (!(partyAAvailableBalance >= 0)) {
-			revert PartyAFacetPartyAWillBeInsolvent();
+			revert ForceCloseErrors.PartyAWillBeInsolvent();
 		}
 
-		(, isPartyBLiquidated, upnlPartyB) = forceFinalization(
+		(, isPartyBLiquidated, upnlPartyB) = forceCloseFinalization(
 			quoteId,
 			closePrice,
 			partyBAvailableBalance,
@@ -330,13 +332,11 @@ library ForceActionsFacetImpl {
 		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
 		address partyA = quote.partyA;
 
-		if (updatedPrices.length > 0) {
-			LibMuonSettlement.verifySettlement(settlementSig, partyA);
-			newPartyBsAllocatedBalances = LibSettlement.settleUpnl(settlementSig, updatedPrices, partyA, true);
-			ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
-			detail.timestamp = block.timestamp;
-			detail.settlementState = UPNLSettlementState.REALIZED;
-		}
+		LibMuonSettlement.verifySettlement(settlementSig, partyA);
+		newPartyBsAllocatedBalances = LibSettlement.settleUpnl(settlementSig, updatedPrices, partyA, true);
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
+		detail.timestamp = block.timestamp;
+		detail.settlementState = UPNLSettlementState.REALIZED;
 	}
 
 	function realizeUPNLMasterAccount(
@@ -346,22 +346,20 @@ library ForceActionsFacetImpl {
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[forceCloseId];
 
-		if (!detail.inProgress) revert ForceActionsFacetInvalidState();
+		if (!detail.inProgress) revert ForceCloseErrors.InvalidState();
 
-		if (updatedPrices.length > 0) {
-			LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
-			(newPartyAsAllocatedBalances, partyAs) = LibSettlement.crossSettleUpnl(settlementSig, updatedPrices, true);
-			detail.settlementState = UPNLSettlementState.REALIZED_MASTER_ACCOUNT;
-			detail.timestamp = block.timestamp;
-		}
+		LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
+		(newPartyAsAllocatedBalances, partyAs) = LibSettlement.crossSettleUpnl(settlementSig, updatedPrices, true);
+		detail.settlementState = UPNLSettlementState.REALIZED_MASTER_ACCOUNT;
+		detail.timestamp = block.timestamp;
 	}
 
 	function fetchAllocatedMasterAccount(uint256 forceCloseId, address partyB, address[] memory partyAs, uint256[] memory fetchAmounts) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[forceCloseId];
 
-		if (!(accountLayout.masterAccountMode[partyB])) revert ForceActionsFacetMasterAccountModeInactive();
-		if (!detail.inProgress) revert ForceActionsFacetInvalidState();
+		if (!(accountLayout.masterAccountMode[partyB])) revert ForceCloseErrors.MasterAccountModeInactive();
+		if (!detail.inProgress) revert ForceCloseErrors.InvalidState();
 
 		LibSettlement.settleAllocated(partyB, partyAs, fetchAmounts);
 

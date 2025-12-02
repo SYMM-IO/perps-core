@@ -52,4 +52,9 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 			forceCloseId
 		);
 	}
+
+	function settleAllocated(address partyB, address[] memory partyAs, uint256[] memory fetchAmounts) external whenNotPartyBActionsPaused onlyPartyB {
+		LibSettlement.settleAllocated(partyB, partyAs, fetchAmounts);
+		emit CrossSettleAllocated(partyB, partyAs, AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)], fetchAmounts);
+	}
 }

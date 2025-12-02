@@ -246,16 +246,16 @@ library LibSettlement {
 		for (uint256 i = 0; i < partyAs.length; i++) {
 			address partyA = partyAs[i];
 			uint256 fetchAmount = fetchAmounts[i];
-			if (fetchAmount > 0) {
-				uint256 allocated = accountLayout.partyBAllocatedBalances[partyB][partyA];
-				require(fetchAmount <= allocated, "LibSettlement: Fetch amount out of range");
-				if (fetchAmount > 0) {
-					accountLayout.partyBAllocatedBalances[partyB][partyA] = allocated - fetchAmount;
-					accountLayout.partyBAllocatedBalances[partyB][address(0)] += fetchAmount;
-					emit SharedEvents.BalanceChangePartyB(partyB, partyA, fetchAmount, SharedEvents.BalanceChangeType.DEALLOCATE);
-					emit SharedEvents.BalanceChangePartyB(partyB, address(0), fetchAmount, SharedEvents.BalanceChangeType.ALLOCATE);
-				}
-			}
+			uint256 allocated = accountLayout.partyBAllocatedBalances[partyB][partyA];
+
+			require(fetchAmount > 0, "LibSettlement: Fetch amount must be greater than zero");
+			require(fetchAmount <= allocated, "LibSettlement: Fetch amount out of range");
+
+			accountLayout.partyBAllocatedBalances[partyB][partyA] = allocated - fetchAmount;
+			accountLayout.partyBAllocatedBalances[partyB][address(0)] += fetchAmount;
+			emit SharedEvents.BalanceChangePartyB(partyB, partyA, fetchAmount, SharedEvents.BalanceChangeType.DEALLOCATE);
+			emit SharedEvents.BalanceChangePartyB(partyB, address(0), fetchAmount, SharedEvents.BalanceChangeType.ALLOCATE);
+
 			accountLayout.partyBNonces[partyB][partyA] += 1;
 		}
 	}

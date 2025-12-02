@@ -124,9 +124,9 @@ struct SettlementSig {
 
 struct CrossQuoteSettlementData {
 	uint256 quoteId;
-	uint256 currentPrice;
+	uint256 currentPrice; //market price
 }
-
+ 
 struct CrossSettlementSig {
 	bytes reqId;
 	uint256 timestamp;

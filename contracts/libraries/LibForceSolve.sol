@@ -29,13 +29,13 @@ library LibForceSolve {
 	) internal pure returns (uint256 closePrice) {
 		if (positionType == PositionType.LONG) {
 			if (!(sig_highest >= requestedClosePrice + (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
-				revert PartyAFacetRequestedClosePriceNotReached();
+				revert ForceCloseErrors.RequestedClosePriceNotReached();
 			}
 			closePrice = requestedClosePrice + (requestedClosePrice * forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sig_averagePrice ? closePrice : sig_averagePrice;
 		} else {
 			if (!(sig_lowest <= requestedClosePrice - (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
-				revert PartyAFacetRequestedClosePriceNotReached();
+				revert ForceCloseErrors.RequestedClosePriceNotReached();
 			}
 			closePrice = requestedClosePrice - (requestedClosePrice * forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sig_averagePrice ? sig_averagePrice : closePrice;
@@ -43,7 +43,7 @@ library LibForceSolve {
 
 		if (closePrice == sig_averagePrice) {
 			if (!(sig_endTime - sig_startTime >= forceCloseMinSigPeriod)) {
-				revert PartyAFacetInvalidSignaturePeriod();
+				revert ForceCloseErrors.InvalidSignaturePeriod();
 			}
 		}
 
@@ -82,27 +82,27 @@ library LibForceSolve {
 		LibMuonForceActions.verifyHighLowPrice(highLowPrice, partyB, partyA, quote.symbolId);
 
 		if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
-			revert PartyAFacetInvalidState();
+			revert ForceCloseErrors.InvalidState();
 		}
 
 		if (!(highLowPrice.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline)) {
-			revert PartyBFacetCloseRequestExpired();
+			revert ForceCloseErrors.CloseRequestExpired();
 		}
 
 		if (quote.orderType != OrderType.LIMIT) {
-			revert PartyBFacetInvalidOrderType();
+			revert ForceCloseErrors.InvalidOrderType();
 		}
 
 		if (!(highLowPrice.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown)) {
-			revert PartyAFacetCooldownNotReached();
+			revert ForceCloseErrors.CooldownNotReached();
 		}
 
 		if (!(highLowPrice.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown)) {
-			revert PartyAFacetCooldownNotReached();
+			revert ForceCloseErrors.CooldownNotReached();
 		}
 
 		if (!(highLowPrice.averagePrice <= highLowPrice.highest && highLowPrice.averagePrice >= highLowPrice.lowest)) {
-			revert PartyAFacetInvalidAveragePrice();
+			revert ForceCloseErrors.InvalidAveragePrice();
 		}
 	}
 

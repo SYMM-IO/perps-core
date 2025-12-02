@@ -25,4 +25,10 @@ library SettlementFacetImpl {
 		LibMuonCrossSettlement.verifyCrossSettlement(settleSig);
 		return LibSettlement.crossSettleUpnl(settleSig, updatedPrices, false);
 	}
+
+	function settleAllocated(
+		address partyB, address[] memory partyAs, uint256[] memory fetchAmounts
+	) internal {
+		 LibSettlement.settleAllocated(partyB, partyAs, fetchAmounts);
+	}
 }
