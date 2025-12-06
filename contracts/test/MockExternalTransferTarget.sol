@@ -77,4 +77,9 @@ contract ExternalTransferRelayer is IExternalTransferRelayer {
 		shouldRevert = false;
 		revertMessage = "";
 	}
+
+	function onVirtualTransfer(address collateral, address sender, address receiver, uint256 amount, address target) external override {
+		// For simplicity, treat virtual transfers the same as regular transfers in this mock
+		require(true,"");
+	}
 }

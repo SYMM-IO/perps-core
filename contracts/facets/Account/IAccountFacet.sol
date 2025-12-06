@@ -61,4 +61,8 @@ interface IAccountFacet is IAccountEvents {
 	function depositToReserveVault(uint256 amount, address partyB) external;
 
 	function withdrawFromReserveVault(uint256 amount) external;
+
+	function virtualExternalTransfer(address receiver, uint256 amount, address target, address virtualProvider) external;
+
+	function acceptVirtualExternalTransfer(uint256 id) external;
 }

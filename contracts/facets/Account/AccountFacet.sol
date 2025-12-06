@@ -235,6 +235,33 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit ExternalTransfer(msg.sender, receiver, amount, target);
 	}
 
+	/**
+ * @notice Transfers collateral from sender's available balance to whitelisted target without any cooldown
+	 * @dev sender must not be suspended/liquidated for the operation to succeed
+	 * @param receiver The address of the recipient user in the target contract
+	 * @param amount The amount to transfer, specified in collateral decimals
+	 * @param target The address of the target contract that will receive the collateral
+	 */
+	function virtualExternalTransfer(
+		address receiver,
+		uint256 amount,
+		address target,
+		address virtualProvider
+	) external whenNotExternalTransferPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {
+		uint256 id = AccountFacetImpl.virtualExternalTransfer(msg.sender, receiver, amount, target, virtualProvider);
+		emit InitiateVirtualExternalTransfer(id,msg.sender, receiver, amount, target, virtualProvider);
+	}
+
+	/**
+	* @notice Accepts a virtual external transfer that was previously initiated
+	* @dev Can be called by the receiver of the virtual external transfer when not paused
+	* @param id The ID of the virtual external transfer to accept
+	*/
+	function acceptVirtualExternalTransfer(uint256 id) external whenNotExternalTransferPaused {
+		AccountFacetImpl.acceptVirtualExternalTransfer(id);
+		emit AcceptVirtualExternalTransfer(id);
+	}
+
 	/// @notice Allows Party A to bind to Party B
 	/// @dev Can only be called by Party A when not suspended
 	/// @param partyB The address of Party B

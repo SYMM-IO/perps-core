@@ -70,4 +70,9 @@ contract VirtualProvider is IVirtualProvider {
 		withdrawRequest;
 		_newCooldown;
 	}
+
+	function onExternalTransfer(ExternalTransfer memory externalTransfer) external override pure {
+		require(true, "");
+		externalTransfer;
+	}
 }

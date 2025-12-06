@@ -32,4 +32,10 @@ contract ExternalTransferRelayer is IExternalTransferRelayer, AccessControlEnume
 		IAccountFacet(target).depositFor(receiver, amount);
 		emit TransferExecuted(collateral, sender, receiver, amount, target);
 	}
+
+	function onVirtualTransfer(address collateral, address sender, address receiver, uint256 amount, address target) external onlyRole(CALLER_ROLE) {
+		if (receiver == address(0)) revert InvalidAddress();
+		IAccountFacet(target).virtualDepositFor(receiver, amount); // TODO : who should virtual deposit ?
+		emit TransferExecuted(collateral, sender, receiver, amount, target);
+	}
 }

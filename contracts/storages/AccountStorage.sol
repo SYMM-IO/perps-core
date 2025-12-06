@@ -74,6 +74,22 @@ struct Price {
 	uint256 timestamp;
 }
 
+enum ExternalTransferStatus {
+	PENDING,
+	COMPLETED
+}
+
+struct ExternalTransfer{
+	uint256 id;
+	address sender;
+	address receiver;
+	uint256 amount;
+	uint256 timestamp;
+	address provider;
+	address target;
+	ExternalTransferStatus status;
+}
+
 library AccountStorage {
 	bytes32 internal constant ACCOUNT_STORAGE_SLOT = keccak256("diamond.standard.storage.account");
 
@@ -115,6 +131,8 @@ library AccountStorage {
 		mapping(address => mapping(uint256 => bool)) partyBBlacklistedSymbols; // PartyB => symbolId   => isBlackListed
 		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
 		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
+		uint256 lastExternalTransferId;
+		mapping(uint256 => ExternalTransfer) externalTransfers;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

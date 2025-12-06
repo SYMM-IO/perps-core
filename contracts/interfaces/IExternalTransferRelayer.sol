@@ -13,4 +13,5 @@ interface IExternalTransferRelayer {
 	 * @param amount The amount of collateral being transferred
 	 */
 	function onTransfer(address collateral, address sender, address receiver, uint256 amount, address target) external;
+	function onVirtualTransfer(address collateral, address sender, address receiver, uint256 amount, address target) external;
 }

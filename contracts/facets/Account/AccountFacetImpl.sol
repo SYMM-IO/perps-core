@@ -12,6 +12,8 @@ import "../../storages/MAStorage.sol";
 import "../../libraries/muon/LibMuonAccount.sol";
 import "../../libraries/LibAccount.sol";
 import "../../interfaces/IExternalTransferRelayer.sol";
+import {WithdrawStorage} from "../../storages/WithdrawStorage.sol";
+import {IVirtualProvider} from "../../interfaces/IVirtualProvider.sol";
 
 library AccountFacetImpl {
 	using SafeERC20 for IERC20;
@@ -170,6 +172,7 @@ library AccountFacetImpl {
 	function externalTransfer(address sender, address receiver, uint256 amount, address target) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 
 		require(amount > 0, "AccountFacet: Amount is zero");
 		require(receiver != address(0) && target != address(0), "AccountFacet: Zero receiver or target");
@@ -178,9 +181,51 @@ library AccountFacetImpl {
 
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		accountLayout.balances[sender] -= amountWith18Decimals;
+		require(IERC20(appLayout.collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= amount, "AccountFacet: Insufficient contract balance");
 		IERC20(appLayout.collateral).safeTransfer(relayer, amount);
 
 		IExternalTransferRelayer(relayer).onTransfer(appLayout.collateral, sender, receiver, amount, target);
+	}
+
+	function virtualExternalTransfer(address sender, address receiver, uint256 amount, address target, address virtualProvider) internal returns (uint256){
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+
+		require(amount > 0, "AccountFacet: Amount is zero");
+		require(receiver != address(0) && target != address(0), "AccountFacet: Zero receiver or target");
+		address relayer = accountLayout.externalTransferTargetsRelayers[target];
+		require(relayer != address(0), "AccountFacet: Target not whitelisted");
+		require(appLayout.virtualProviders[virtualProvider], "AccountFacet: Invalid virtual provider");
+
+		uint256 currentId = ++accountLayout.lastExternalTransferId;
+		ExternalTransfer memory externalTransfer = ExternalTransfer({
+			id: currentId,
+			sender: sender,
+			receiver: receiver,
+			amount: amount,
+			timestamp: block.timestamp,
+			provider: virtualProvider,
+			target: target,
+			status: ExternalTransferStatus.PENDING
+		});
+		accountLayout.externalTransfers[currentId] = externalTransfer;
+		IVirtualProvider(virtualProvider).onExternalTransfer(externalTransfer);
+		return currentId;
+	}
+
+	function acceptVirtualExternalTransfer(uint256 id) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+
+		ExternalTransfer storage externalTransfer = accountLayout.externalTransfers[id];
+		require(externalTransfer.id == id, "AccountFacet: Invalid external transfer id");
+		require(externalTransfer.status == ExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
+		require(msg.sender == externalTransfer.provider, "AccountFacet: Only provider can accept the transfer");
+		uint256 amountWith18Decimals = (externalTransfer.amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		accountLayout.balances[externalTransfer.sender] -= amountWith18Decimals;
+		externalTransfer.status = ExternalTransferStatus.COMPLETED;
+		address relayer = accountLayout.externalTransferTargetsRelayers[externalTransfer.target];
+		IExternalTransferRelayer(relayer).onVirtualTransfer(appLayout.collateral, externalTransfer.sender, externalTransfer.receiver, externalTransfer.amount, externalTransfer.target);
 	}
 
 	function bindToPartyB(address partyB) internal {
