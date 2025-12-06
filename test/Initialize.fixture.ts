@@ -139,7 +139,7 @@ export async function initializeFixture(): Promise<RunContext> {
 		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
-		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("ACCOUNT_HUB_SIGNER_SETTER_ROLE")))
+		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("SIGNER_SETTER_ROLE")))
 
 	// Configure system
 	await context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress())

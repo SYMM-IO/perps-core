@@ -24,7 +24,7 @@ const AffiliateState = {
     DEACTIVATED: 4n,
 } as const
 
-const ACCOUNT_HUB_SIGNER_SETTER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("ACCOUNT_HUB_SIGNER_SETTER_ROLE"))
+const SIGNER_SETTER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SIGNER_SETTER_ROLE"))
 
 export function shouldBehaveLikeAffiliateHub() {
     describe("AffiliateHub", function () {
@@ -96,7 +96,7 @@ export function shouldBehaveLikeAffiliateHub() {
             affiliateHub = context.affiliateHub
             await context.controlFacet
                 .connect(context.signers.admin)
-                .grantRole(await affiliateHub.getAddress(), ACCOUNT_HUB_SIGNER_SETTER_ROLE)
+                .grantRole(await affiliateHub.getAddress(), SIGNER_SETTER_ROLE)
         })
 
         describe("requestToRegisterAffiliate", function () {
