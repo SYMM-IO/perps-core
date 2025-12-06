@@ -25,6 +25,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		LibDiamond.transferOwnership(owner);
 	}
 
+	/// @notice Cancels the pending ownership transfer.
+	/// @dev This function can only be called by the current owner of the contract.
+	function cancelOwnershipTransfer() external onlyOwner {
+		LibDiamond.cancelOwnershipTransfer();
+	}
+
 	/// @notice Accept ownership of the contract.
 	/// @dev This function can only be called by the pending owner of the contract.
 	function acceptOwnership() external {
@@ -662,6 +668,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		}
 	}
 
+	/// @notice Enables or disables master account activation for Party B.
+	/// @param enabled New activation status.
+	function setMasterAccountActivationMode(bool enabled) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetMasterAccountActivationMode(appLayout.masterAccountActivationMode, enabled);
+		appLayout.masterAccountActivationMode = enabled;
+	}
+
 	/// @notice Adds a bridge.
 	/// @param bridge The address of the bridge to be added.
 	function addBridge(address bridge) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
@@ -812,7 +826,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().adlEnabled[partyB] = enabled;
 		emit SetADLEnabled(partyB, enabled);
 	}
-
+	
 	function setMaxDeallocateWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;

@@ -1,8 +1,9 @@
 import { ethers, run } from "hardhat"
 import { createRunContext, RunContext } from "./models/RunContext"
 import { decimal } from "./utils/Common"
-import { toUtf8Bytes, ZeroAddress } from "ethers"
 import { AccountHub, AffiliateHub } from "../src/types"
+import { toUtf8Bytes } from "ethers"
+import type { ExternalTransferRelayer as SymmioExternalTransferRelayer } from "../src/types"
 
 export async function initializeFixture(): Promise<RunContext> {
 	const collateral = await run("deploy:stablecoin")
@@ -177,4 +178,47 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.controlFacet.connect(context.signers.admin).registerPartyB(context.signers.hedger2.address)
 
 	return context
+}
+
+export async function initializeExternalTransferRelayerFixture(): Promise<{
+	source: RunContext
+	target: RunContext
+	relayer: SymmioExternalTransferRelayer
+}> {
+	const source = await initializeFixture()
+
+	const relayerFactory = await ethers.getContractFactory("contracts/helpers/SymmioExternalTransferRelayer.sol:ExternalTransferRelayer")
+	const relayer = (await relayerFactory.deploy(await source.signers.admin.getAddress())) as unknown as SymmioExternalTransferRelayer
+	await relayer.waitForDeployment()
+
+	const targetDiamond = await run("deploy:diamond", {
+		logData: false,
+		genABI: false,
+		reportGas: true,
+	})
+
+	const target = await createRunContext(await targetDiamond.getAddress(), await source.collateral.getAddress(), true)
+	const adminAddress = await target.signers.admin.getAddress()
+
+	await target.controlFacet.connect(target.signers.admin).setAdmin(adminAddress)
+
+	const setterRole = ethers.keccak256(toUtf8Bytes("SETTER_ROLE"))
+	const pauserRole = ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))
+	const unpauserRole = ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE"))
+
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, setterRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, pauserRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, unpauserRole)
+
+	await target.controlFacet.connect(target.signers.admin).setCollateral(await source.collateral.getAddress())
+	await target.controlFacet.connect(target.signers.admin).setBalanceLimitPerUser(decimal(10000n))
+
+	const callerRole = await relayer.CALLER_ROLE()
+	await relayer.grantRole(callerRole, source.diamond)
+
+	return {
+		source,
+		target,
+		relayer,
+	}
 }

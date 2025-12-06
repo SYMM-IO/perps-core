@@ -141,6 +141,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			data
 		);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		emit SendQuoteData(quoteId, data);
 		emit SendQuote(
 			LibSigner.getSigner(),
 			quoteId,

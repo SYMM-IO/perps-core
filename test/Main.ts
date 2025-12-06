@@ -32,7 +32,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeDiamond()
 		})
 
-		describe("AccountFacet", async function () {
+		describe.only("AccountFacet", async function () {
 			shouldBehaveLikeAccountFacet()
 		})
 

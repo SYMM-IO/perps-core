@@ -2,7 +2,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers"
 import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture"
-import { LiquidationType, PositionType, QuoteStatus } from "./models/Enums"
+import { LiquidationType, OrderType, PositionType, QuoteStatus } from "./models/Enums"
 import { Hedger } from "./models/Hedger"
 import { RunContext } from "./models/RunContext"
 import { BalanceInfo, User } from "./models/User"
@@ -10,7 +10,7 @@ import { decimal, getPriceFetcher, getTotalLockedValuesForQuoteIds, getTradingFe
 import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { ethers, toUtf8Bytes } from "ethers"
-import { partyA } from "../src/types/contracts/facets"
+import { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
@@ -150,24 +150,203 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		})
 
 		it("Should change the insurance vault correctly", async function () {
-			let admin = new User(context, context.signers.admin)
-			await admin.setup()
-
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			const price = decimal(572n, 16)
 			await user.liquidateAndSetSymbolPrices([1n], [price])
 			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(decimal(1n))
+			await expectConnected(user.address, hedger.address, true)
+			const liquidationState = await user.getLiquidatedStateOfPartyA()
+			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
 
 			// console.log((await context.viewFacet.getLiquidatedStateOfPartyA(context.signers.user.address))["liquidationFee"])
 		})
 
-		it("Should change the insurance vault correctly in deferred liquidation", async function () {
-			let admin = new User(context, context.signers.admin)
-			await admin.setup()
+		// We have a Long Limit Position for User2 at index 4
+		// Tweak the price to get different UPNL in order to make the position liquid
+		// lower the price to make the party A position in near liquidation risk
+		// The Quote Price is 1**18, we set it to 25**16,
+		// as we have CVA = 22, LF = 3, ==> Balance = 22 + 3 - 25 = 0 not liquidated yet
+		// The Price below 25 makes the position liquidated
+		it("Should change the insurance vault correctly in Normal Liquidation", async function () {
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
+			// Deallocate 399n so that it has 100n as allocated balance
+			await context.accountFacet.connect(user2.getSigner).deallocate(decimal(399n), await getDummySingleUpnlSig())
+			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user2.address)
+			const allocatedBalance = (await user2.getBalanceInfo()).allocatedBalances
+			const quote = await context.viewFacet.getQuote(4)
+
+			let price = decimal(25n, 16)
+
+			let upnlTS = await user2.getUpnl(getPriceFetcher([1n], [price]))
+			let totalUnrealizedLoss = await user2.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
+			let sign = await getDummyLiquidationSig("0x10", upnlTS, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+			let lf = quote.lockedValues.lf
+			let cva = quote.lockedValues.cva
+
+			// AllocatedBalance:100, LF: 3,  CVA: 22, Quantity:100, Price:1**18, Trading Fee:1**16
+			// With the price Low enough, 24**16, we get UPNL of -76, this makes the Available Balance after calculations, to be ' -1 ',
+			// ready to Liquidate the position in Normal
+			// The result is negative
+			let remaingLF = 0n
+			let availableBalance = allocatedBalance - lf - cva + upnlTS
+			if (lf > -availableBalance) remaingLF = lf + availableBalance
+			let maxProfitPerPos = (await context.viewFacet.getLiquidationInsuranceVaultParams())[1]
+
+			await expect(context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)).to.be.revertedWith(
+				"LiquidationFacet: PartyA is solvent",
+			)
+
+			// the price of 25 makes the position just before liquidation,
+			// prices 24 and 23 makes it Normal Liquidated
+			price = decimal(24n, 16)
+
+			upnlTS = await user2.getUpnl(getPriceFetcher([1n], [price]))
+			totalUnrealizedLoss = await user2.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
+			sign = await getDummyLiquidationSig("0x10", upnlTS, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+			lf = quote.lockedValues.lf
+			cva = quote.lockedValues.cva
+
+			// AllocatedBalance:100, LF: 3,  CVA: 22, Quantity:100, Price:1**18, Trading Fee:1**16
+			// With the price Low enough, 24**16, we get UPNL of -76, this makes the Available Balance after calculations, to be ' -1 ',
+			// ready to Liquidate the position in Normal
+			// The result is negative
+			remaingLF = 0n
+			availableBalance = allocatedBalance - lf - cva + upnlTS
+			if (lf > -availableBalance) remaingLF = lf + availableBalance
+			maxProfitPerPos = (await context.viewFacet.getLiquidationInsuranceVaultParams())[1]
+
+			await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)
+			await context.liquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user2.address, sign)
+
+			// its ok as there is only one position
+			await expectConnected(user2.address, hedger.address, true)
+			const liquidationState = await user2.getLiquidatedStateOfPartyA()
+			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
+			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(remaingLF - maxProfitPerPos)
+		})
+
+		// We have a Long Limit Position for User2 at index 4
+		// Tweak the price to get different UPNL in order to make the position liquid
+		// lower the price to make the party A position in near liquidation risk
+		// The Quote Price is 1**18, we set it to 25**16,
+		// as we have CVA = 22, LF = 3, ==> Balance = 22 + 3 - 25 = 0 not liquidated yet
+		// The Price below 25 makes the position liquidated
+		it("Should Not change the insurance vault correctly in Late Liquidation", async function () {
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
+
+			// Deallocate 399n so that it has 100n as allocated balance
+			await context.accountFacet.connect(user2.getSigner).deallocate(decimal(399n), await getDummySingleUpnlSig())
+			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user2.address)
+			const allocatedBalance = (await user2.getBalanceInfo()).allocatedBalances
+			const quote = await context.viewFacet.getQuote(4)
+
+			// We have a Long Limit Position for User 2 at index 4
+			// Tweak the price to get different UPNL in order to make the position liquid
+			// lower the price to make the party A position in liquidation risk
+			let price = decimal(25n, 16)
+
+			let upnlTS = await user2.getUpnl(getPriceFetcher([1n], [price]))
+			let totalUnrealizedLoss = await user2.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
+			let sign = await getDummyLiquidationSig("0x10", upnlTS, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+			let lf = quote.lockedValues.lf
+			let cva = quote.lockedValues.cva
+
+			// AllocatedBalance:100, LF: 3,  CVA: 22, Quantity:100, Price:1**18, Trading Fee:1**16
+			// ready to Liquidate the position in Late
+			// The result is negative
+			let availableBalance = allocatedBalance - lf - cva + upnlTS
+			let deficit = 0n
+			if (lf + cva >= -availableBalance) deficit = -availableBalance - lf
+
+			await expect(context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)).to.be.revertedWith(
+				"LiquidationFacet: PartyA is solvent",
+			)
+
+			// the price of 25 makes the position just before liquidation,
+			// prices 24 to 22 makes it Normal Liquidated
+			// and Prices below 22 makes it late liquidated
+			price = decimal(2n, 16)
+
+			upnlTS = await user2.getUpnl(getPriceFetcher([1n], [price]))
+			totalUnrealizedLoss = await user2.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
+			sign = await getDummyLiquidationSig("0x10", upnlTS, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+			lf = quote.lockedValues.lf
+			cva = quote.lockedValues.cva
+
+			// AllocatedBalance:100, LF: 3,  CVA: 22, Quantity:100, Price:1**18, Trading Fee:1**16
+			// ready to Liquidate the position in Late
+			// The result is negative
+			availableBalance = allocatedBalance - lf - cva + upnlTS
+			deficit = 0n
+			if (lf + cva >= -availableBalance) deficit = -availableBalance - lf
+
+			await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)
+			await context.liquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user2.address, sign)
+
+			// its ok as there is only one position
+			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(0)
+			await expectConnected(user2.address, hedger.address, true)
+			const liquidationState = await user2.getLiquidatedStateOfPartyA()
+			expect(liquidationState["deficit"]).to.be.equal(deficit)
+			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.LATE)
+		})
+
+		it("Should Not change the insurance vault correctly in OVERDUE Liquidation", async function () {
+			let user3
+			user3 = new User(context, context.signers.feeCollector2)
+			await user3.setup()
+			await user3.setBalances(decimal(2000n), decimal(1000n), decimal(500n))
+			await user3.sendQuote(limitQuoteRequestBuilder().cva(decimal(20n)).build())
+			let lastID = await context.viewFacet.getNextQuoteId()
+			await hedger.lockQuote(lastID)
+			await hedger.openPosition(lastID)
+
+			await user3.sendQuote(limitQuoteRequestBuilder().cva(decimal(10n)).build())
+			lastID = await context.viewFacet.getNextQuoteId()
+			await hedger.lockQuote(lastID)
+			await hedger.openPosition(lastID)
+
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
+
+			// Deallocate 312 so that it has enough for locking and allocating balance
+			await context.accountFacet.connect(user3.getSigner).deallocate(decimal(312n), await getDummySingleUpnlSig())
+
+			// We have a Long Limit Position for User 2 at index 4
+			// Tweak the price to get different UPNL in order to make the position liquid
+			// lower the price to make the party A position in liquidation risk
+			const price = decimal(5n, 16)
+			const quote = await context.viewFacet.getQuote(lastID)
+
+			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user3.address)
+			const allocatedBalance = (await user3.getBalanceInfo()).allocatedBalances
+
+			const upnlTS = await user3.getUpnl(getPriceFetcher([1n], [price]))
+			const totalUnrealizedLoss = await user3.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
+			const sign = await getDummyLiquidationSig("0x10", upnlTS, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+			const lf = quote.lockedValues.lf
+			const cva = quote.lockedValues.cva
+
+			// AllocatedBalance:100, LF: 3,  CVA: 22, Quantity:100, Price:1**18, Trading Fee:1**16
+			// ready to Liquidate the position in Late
+			// The result is negative
+			const availableBalance = allocatedBalance - lf - cva + upnlTS
+			let deficit = 0n
+			if (lf + cva < -availableBalance) deficit = -availableBalance - (lf + cva)
+
+			await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user3.address, sign)
+			await context.liquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user3.address, sign)
+
+			// its ok as there is only one position
+			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(0)
+			await expectConnected(user3.address, hedger.address, true)
+			const liquidationState = await user3.getLiquidatedStateOfPartyA()
+			expect(liquidationState["deficit"]).to.be.equal(deficit)
+			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.OVERDUE)
+		})
+
+		it("Should change the insurance vault correctly in deferred liquidation", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			const price = decimal(572n, 16)
@@ -176,6 +355,37 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await expectConnected(user.address, hedger.address, true)
 
 			// console.log((await context.viewFacet.getLiquidatedStateOfPartyA(context.signers.user.address))["liquidationFee"])
+		})
+
+		it("Should change the insurance vault correctly in deferred liquidation", async function () {
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
+			await context.accountFacet.connect(user2.getSigner).deallocate(decimal(399n), await getDummySingleUpnlSig())
+			// 100n as allocated balance
+
+			// Tweak the price to get different UPNL in order to make the position liquid
+			const price = decimal(24n, 16) // lower the price to make the party A position in liquidation risk
+			const quote = await context.viewFacet.getQuote(4)
+
+			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user2.address)
+			const allocatedBalance = (await user2.getBalanceInfo()).allocatedBalances
+
+			const upnlTS = await user2.getUpnl(getPriceFetcher([1n], [price]))
+			const totalUnrealizedLoss = await user2.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
+			const sign = await getDummyLiquidationSig("0x10", upnlTS, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+			const lf = quote.lockedValues.lf
+			const cva = quote.lockedValues.cva
+			const availableBalance = allocated - lf - cva + upnlTS // the result is negative // 100 - 3 - 22 - (.5*100)
+			const remaingLF = lf > availableBalance ? lf + availableBalance : lf + cva + availableBalance
+			const maxProfitPerPos = (await context.viewFacet.getLiquidationInsuranceVaultParams())[1]
+
+			await context.liquidationFacet.connect(context.signers.liquidator).deferredLiquidatePartyA(user2.address, sign)
+			await context.liquidationFacet.connect(context.signers.liquidator).deferredSetSymbolsPrice(user2.address, sign)
+
+			// its ok as there is only one position
+			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(remaingLF - maxProfitPerPos)
+			await expectConnected(user2.address, hedger.address, true)
+			const liquidationState = await user2.getLiquidatedStateOfPartyA()
+			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
 		})
 
 		describe("Test normal branch", async function () {
