@@ -14,6 +14,7 @@ import "../../storages/SymbolStorage.sol";
 import "./IControlFacet.sol";
 import "../../libraries/LibDiamond.sol";
 import "../../storages/BridgeStorage.sol";
+import "../../storages/WithdrawStorage.sol";
 
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Transfers ownership of the contract to a new address.
@@ -22,6 +23,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	function transferOwnership(address owner) external onlyOwner {
 		checkZeroAddress(owner);
 		LibDiamond.transferOwnership(owner);
+	}
+
+	/// @notice Cancels the pending ownership transfer.
+	/// @dev This function can only be called by the current owner of the contract.
+	function cancelOwnershipTransfer() external onlyOwner {
+		LibDiamond.cancelOwnershipTransfer();
 	}
 
 	/// @notice Accept ownership of the contract.
@@ -696,21 +703,26 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		}
 	}
 
+	/// @notice Enables or disables master account activation for Party B.
+	/// @param enabled New activation status.
+	function setMasterAccountActivationMode(bool enabled) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetMasterAccountActivationMode(appLayout.masterAccountActivationMode, enabled);
+		appLayout.masterAccountActivationMode = enabled;
+	}
+
 	/// @notice Adds a bridge.
 	/// @param bridge The address of the bridge to be added.
-	/// @param isVirtual Whether the bridge is virtual.
-	function addBridge(address bridge, bool isVirtual) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	function addBridge(address bridge) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		checkZeroAddress(bridge);
 		BridgeStorage.layout().bridges[bridge] = true;
-		BridgeStorage.layout().virtualBridges[bridge] = isVirtual;
-		emit AddBridge(bridge, isVirtual);
+		emit AddBridge(bridge);
 	}
 
 	/// @notice Removes a bridge.
 	/// @param bridge The address of the bridge to be removed.
 	function removeBridge(address bridge) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		BridgeStorage.layout().bridges[bridge] = false;
-		BridgeStorage.layout().virtualBridges[bridge] = false;
 		emit RemoveBridge(bridge);
 	}
 
@@ -857,4 +869,75 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	function checkZeroAddress(address target) private pure {
 		require(target != address(0), "ControlFacet: Zero address");
 	}
+
+	function setMaxDeallocateWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;
+		emit SetWithdrawCooldownPeriod(_withdrawCooldownPeriod);
+		emit SetDeallocateCooldown(MAStorage.layout().deallocateCooldown, _withdrawCooldownPeriod);
+		MAStorage.layout().deallocateCooldown = _withdrawCooldownPeriod;
+	}
+
+	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		withdrawLayout.maxWithdrawParts = _maxWithdrawParts;
+		emit SetMaxWithdrawParts(_maxWithdrawParts);
+	}
+
+	function setWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;
+		emit SetWithdrawCooldownPeriod(_withdrawCooldownPeriod);
+	}
+
+	function registerVirtualProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		require(!GlobalAppStorage.layout().expressProviders[provider] , "ControlFacet: Already a express provider");
+		require(!GlobalAppStorage.layout().virtualProviders[provider] , "ControlFacet: Already a virtual provider");
+		GlobalAppStorage.layout().virtualProviders[provider] = true;
+		emit RegisterVirtualProvider(provider);
+	}
+
+	function unregisterVirtualProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		GlobalAppStorage.layout().virtualProviders[provider] = false;
+		emit UnregisterVirtualProvider(provider);
+	}
+
+	function registerExpressProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		require(!GlobalAppStorage.layout().virtualProviders[provider] , "ControlFacet: Already a virtual provider");
+		require(!GlobalAppStorage.layout().expressProviders[provider] , "ControlFacet: Already a express provider");
+		GlobalAppStorage.layout().expressProviders[provider] = true;
+		emit RegisterExpressProvider(provider);
+	}
+
+	function unregisterExpressProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		GlobalAppStorage.layout().expressProviders[provider] = false;
+		emit UnregisterExpressProvider(provider);
+	}
+
+	function setSpeedUpUser(address user) external onlyRole(LibAccessibility.WITHDRAW_SPEED_UP_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		require(!withdrawLayout.speedUpWhitelist[user] , "ControlFacet: User already whitelisted as speed up");
+		withdrawLayout.speedUpWhitelist[user] = true;
+		emit SetSpeedUpUser(user);
+	}
+
+	function unsetSpeedUpUser(address user) external onlyRole(LibAccessibility.WITHDRAW_SPEED_UP_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		require(withdrawLayout.speedUpWhitelist[user] , "ControlFacet: User not whitelisted as speed up");
+		withdrawLayout.speedUpWhitelist[user] = false;
+		emit UnsetSpeedUpUser(user);
+	}
+
+	function setMinWithdrawCooldown(uint256 cooldown) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		emit SetMinWithdrawCooldown(withdrawLayout.minWithdrawCooldown, cooldown);
+		withdrawLayout.minWithdrawCooldown = cooldown;
+	}
+
+	function deprecateOldWithdrawal() external onlyRole(LibAccessibility.SETTER_ROLE){
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		appLayout.deprecateOldWithdrawalPaused = true;
+	    emit DeprecateOldWithdrawalPaused();
+	}
+
 }

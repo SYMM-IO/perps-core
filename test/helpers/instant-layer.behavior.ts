@@ -154,6 +154,15 @@ export function shouldBehaveLikeInstantLayer(): void {
 		}
 	})
 
+	async function signOperation(
+		signer: any,
+		domain: TypedDataDomain,
+		types: ReturnType<typeof cloneTypes>,
+		op: InstantLayer.SignedOperationStruct,
+	): Promise<string> {
+		return signer.signTypedData(domain, types, op)
+	}
+
 	describe("Registering PartyB", async function () {
 		it("Should be failed when Sender not Setter Role ", async () => {
 			await expect(context.instantLayer.connect(partyA1.getSigner).registerPartyBs([partyA1.address])).to.be.reverted
@@ -517,19 +526,22 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		it("reverts when an operation's deadline has passed (verify stage)", async () => {
 			// craft an op with a past deadline and a valid signature
-			const pastDeadline = (await ethers.provider.getBlock("latest"))!.timestamp - 1
-			const opPast: InstantLayer.SignedOperationStruct = {
+			const deadline = (await ethers.provider.getBlock("latest"))!.timestamp + 100
+			const op: InstantLayer.SignedOperationStruct = {
 				...opSendQuoteA1,
 				replayAttackHeader: {
 					...opSendQuoteA1.replayAttackHeader,
-					deadline: BigInt(pastDeadline),
+					deadline: BigInt(deadline),
 					// keep a fresh salt to avoid any caching
 					salt: ethers.hexlify(ethers.randomBytes(32)),
 				},
 			}
-			const sigPast = await context.signers.admin.signTypedData(domain, types, opPast)
+			const sig = await context.signers.admin.signTypedData(domain, types, op)
+			await expect(context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
 
-			await expect(context.instantLayer.executeBatch([opPast], [sigPast])).to.be.revertedWithCustomError(context.instantLayer, "DeadlineExpired")
+			await time.increase(100)
+			const sigAfter = await signOperation(context.signers.admin, domain, types, op)
+			await expect(context.instantLayer.executeBatch([op], [sigAfter])).to.be.revertedWithCustomError(context.instantLayer, "DeadlineExpired")
 		})
 
 		it("bubbles inner target failures via OperationFailed(i, returndata)", async () => {
@@ -604,16 +616,93 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(q2.quoteStatus).to.equal(QuoteStatus.PENDING)
 		})
 
-		// it("should Register Symmio PartyB when sending as PartyB", async function () {
-		// 	const { instantLayer } = context
-		// 	const deadline = await getBlockTimestamp(24n)
+		it("should Register Symmio PartyB when sending as PartyB", async function () {
+			const op = { ...opLockB1, signerAccount: { multiAccount: ZeroAddress, addr: partyB2.address }, signer: partyB2.address }
+			const sig = await context.signers.hedger.signTypedData(domain, types, op)
+			await expect(context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
+		})
 
-		// 	opLockB1.side = 1
-		// 	opLockB1.actualSigner = partyB1.address
+		it("reverts UnregisteredMultiAccount when Multiaccount not whitelisted", async () => {
+			// unregister first
+			await context.instantLayer.unregisterMultiAccount(context.multiAccount)
+			const sig = await signOperation(context.signers.admin, domain, types, opSendQuoteA1)
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1], [sig])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"UnregisteredMultiAccount",
+			)
+		})
 
-		// 	await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
-		// 	await expect(context.instantLayer.executeBatch([opLockB1])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
-		// })
+		it("should be signed with valid signer for partyB", async function () {
+			// const op = { ...opLockB1, signerAccount: { multiAccount: ZeroAddress, addr: partyB2.address }, signer: partyB2.address }
+			const sig = await context.signers.hedger2.signTypedData(domain, types, opLockB1)
+			await expect(context.instantLayer.executeBatch([opLockB1], [sig])).to.be.revertedWithCustomError(context.instantLayer, "InvalidSignature")
+		})
+
+		it("reverts InvalidDelegation when delegate lacks selector grant", async () => {
+			// remove delegation (or choose a selector not granted)
+			const op = { ...opSendQuoteA1, signer: context.signers.user2.address } // not delegated
+			const sig = await context.signers.user2.signTypedData(domain, types, op)
+			await expect(context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(context.instantLayer, "InvalidDelegation")
+		})
+
+		it("should consider replay attack correctly", async () => {
+			const sig = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1], [sig])).not.to.be.reverted
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1], [sig])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"OperationAlreadyExecuted",
+			)
+		})
+
+		it("accepts contract signature via EIP-1271", async () => {
+			const Mock = await ethers.getContractFactory("Mock1271")
+			const mock = await Mock.deploy(await context.signers.admin.getAddress())
+			await mock.waitForDeployment()
+
+			const now = BigInt((await ethers.provider.getBlock("latest"))!.timestamp)
+			const expiry = now + 3600n // 1 hour future
+			const deadline = now + 600n // 10 mins future
+
+			const acc = {
+				multiAccount: await context.multiAccount.getAddress(), // adjust to your onlyOwner policy
+				addr: accounts[0].accountAddress, // account being delegated for
+			}
+
+			const nonceBefore: bigint = 1n
+			const replayAttackHeader = {
+				nonce: nonceBefore,
+				deadline,
+				salt: ethers.id("unique-salt-1"), // bytes32
+			}
+
+			const selectors = quoteCallData.slice(0, 10)
+			const delegationInfo = {
+				account: acc,
+				delegatedSigner: await mock.getAddress(),
+				selectors: [selectors],
+				expiryTimestamp: expiry,
+			}
+
+			const signedDelegation = {
+				delegationInfo,
+				replayAttackHeader,
+			}
+
+			const sig1: BytesLike = await context.signers.user.signTypedData(domain, DELEGATE_TYPES, signedDelegation)
+			await expect(context.instantLayer.connect(partyA1.getSigner).grantBatchDelegationBySig(signedDelegation, sig1)).not.to.be.reverted
+
+			const op = { ...opSendQuoteA1, signer: await mock.getAddress() }
+			const sig = await signOperation(context.signers.admin, domain, types, op) // signer is admin, validator is contract
+			await expect(context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+		})
+
+		it("reverts MismatchSignerAndAccount for PartyB path when signer != signerAccount.addr", async () => {
+			const bad = { ...opLockB1, signerAccount: { multiAccount: ZeroAddress, addr: partyB2.address } }
+			const sig = await context.signers.hedger.signTypedData(domain, types, bad)
+			await expect(context.instantLayer.executeBatch([bad], [sig]))
+				.to.be.revertedWithCustomError(context.instantLayer, "MismatchSignerAndAccount")
+				.withArgs(await context.symmioPartyB.getAddress(), partyB2.address)
+		})
 
 		it("should allow Sending Intents in a single batch", async function () {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
@@ -697,29 +786,45 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
 		// })
 
-		// it("should Fail Signature verification with Invalid Nonce", async function () {
-		// 	const latestBlock = await getLatestBlockTime()
-		// 	const deadline = latestBlock + 300
-		// 	// Granting Roles
-		// 	await context.instantLayer.registerMultiAccount(context.multiAccount)
-		// 	let saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-		// 	if (!/^0x[0-9a-fA-F]{64}$/.test(saltStr)) {
-		// 		throw new Error("Invalid bytes32 format")
-		// 	}
-		// 	const opOpenALocal: InstantLayer.SignedOperationStruct = {
-		// 		accountSource: await context.multiAccount.getAddress(),
-		// 		signer: accounts[0].account,
-		// 		callData: openIntentCallData,
-		// 		nonce: 2,
-		// 		salt: saltStr,
-		// 		deadline: deadline,
-		// 		signature: "0x",
-		// 	}
-		// 	const hash = await context.instantLayer.getOperationHash(opOpenALocal)
-		// 	opOpenALocal.signature = await partyA1.sign(ethers.getBytes(hash))
-		// 	await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
-		// 	await expect(context.instantLayer.executeBatch([opOpenALocal])).to.be.revertedWithCustomError(context.instantLayer, "InvalidNonce")
-		// })
+		it("should Fail Signature verification with Invalid Nonce", async function () {
+			const op1: InstantLayer.SignedOperationStruct = {
+				...opSendQuoteA1,
+				replayAttackHeader: {
+					...opSendQuoteA1.replayAttackHeader,
+					nonce: 2n,
+				},
+			}
+
+			const sig = await signOperation(context.signers.admin, domain, types, op1)
+			await expect(context.instantLayer.executeBatch([op1], [sig])).to.be.revertedWithCustomError(context.instantLayer, "InvalidNonce")
+			
+			const op2: InstantLayer.SignedOperationStruct = {
+				...opSendQuoteA1,
+				replayAttackHeader: {
+					...opSendQuoteA1.replayAttackHeader,
+					nonce: 1n,
+				},
+			}
+			const op3: InstantLayer.SignedOperationStruct = {
+				...opSendQuoteA1,
+				replayAttackHeader: {
+					...opSendQuoteA1.replayAttackHeader,
+					nonce: 0n,
+				},
+			}
+			const op4: InstantLayer.SignedOperationStruct = {
+				...opSendQuoteA1,
+				replayAttackHeader: {
+					...opSendQuoteA1.replayAttackHeader,
+					nonce: 2n,
+				},
+			}
+
+			const sig2 = await signOperation(context.signers.admin, domain, types, op2)
+			const sig3 = await signOperation(context.signers.admin, domain, types, op3)
+			const sig4 = await signOperation(context.signers.admin, domain, types, op4)
+			await expect(context.instantLayer.executeBatch([op2, op3, op4], [sig2, sig3, sig4])).not.to.be.reverted
+		})
 
 		// it("should Update Nonce on Signature verification with Valid nonce", async function () {
 		// 	const latestBlock = await getLatestBlockTime()
@@ -966,7 +1071,43 @@ export function shouldBehaveLikeInstantLayer(): void {
 				.withArgs(0, anyValue)
 		})
 
-		it("reverts with InvalidSourceIndex when op references a future/missing result", async () => {
+		it("reverts with MissingSourceResult when operation self references ", async () => {
+			await context.instantLayer.addTemplate("badAtOp0", [
+				{ insertionPoints: [0], sourceIndices: [0] }, // op0 will reference results[1] (invalid)
+			])
+			const badAtOp0 = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			const sig0 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			await expect(context.instantLayer.executeTemplate(badAtOp0, [opSendQuoteA1], [sig0])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"MissingSourceResult",
+			)
+		})
+
+		it("reverts in MissingSourceResult when source result is empty (non-32 bytes)", async () => {
+			await context.instantLayer.addTemplate("injectFromEmpty", [
+				{ insertionPoints: [0], sourceIndices: [0] },
+				{ insertionPoints: [0], sourceIndices: [0] },
+			])
+			const templateId = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			opSendQuoteSignature1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			opSendQuoteSignature2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
+			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opSendQuoteA2]
+			const sigCallDatas: BytesLike[] = [opSendQuoteSignature1, opSendQuoteSignature2]
+			await expect(context.instantLayer.executeBatch(signedOps, sigCallDatas)).not.to.be.reverted
+
+			const sig0 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+			const sig1 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+
+			// Expect revert from abi.decode inside _insertResults:
+			await expect(context.instantLayer.executeTemplate(templateId, [opLockB1, opLockB1], [sig0, sig1])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"MissingSourceResult",
+			)
+		})
+
+		it("reverts with InvalidSourceIndex when operation references a future/missing result", async () => {
 			await context.instantLayer.addTemplate("badAtOp0", [
 				{ insertionPoints: [0], sourceIndices: [1] }, // op0 will reference results[1] (invalid)
 			])
@@ -985,6 +1126,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 				{ insertionPoints: [opSendQuoteA1.callData.length], sourceIndices: [0] }, // op1 tries to write way past end
 			])
 			let oob = (await context.instantLayer.getNextTemplateId()) - 1n
+			const lastTemp = await context.instantLayer.getTemplate(oob)
+			console.log("last index:", oob)
+			console.log("last temp:", lastTemp.name)
+			console.log("opSendQuoteA1 length:", opSendQuoteA1.callData.length)
+			console.log("opLockB1 length:", opLockB1.callData.length)
+			console.log("opLockB1 calldata:", opLockB1.callData)
 
 			const sig0 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
 			const sig1 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
@@ -996,7 +1143,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			await context.instantLayer.addTemplate("oobInsert", [
 				{ insertionPoints: [], sourceIndices: [] }, // op0
-				{ insertionPoints: [opSendQuoteA1.callData.length - 36], sourceIndices: [0] }, // op1 tries to write way past end
+				{ insertionPoints: [opSendQuoteA1.callData.length - 36, 3], sourceIndices: [0, 1] }, // op1 tries to write way past end
 			])
 			oob = (await context.instantLayer.getNextTemplateId()) - 1n
 

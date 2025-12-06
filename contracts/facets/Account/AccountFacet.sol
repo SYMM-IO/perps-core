@@ -16,7 +16,8 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
 	function deposit(uint256 amount) external whenNotAccountingPaused {
 		AccountFacetImpl.deposit(msg.sender, amount);
-		emit Deposit(msg.sender, msg.sender, amount);
+		emit Deposit(msg.sender, msg.sender, amount); // For backward compatibility, will be removed in future
+		emit Deposit(msg.sender, msg.sender, amount, false);
 	}
 
 	/// @notice Allows either Party A or Party B to deposit collateral on behalf of another user.
@@ -25,14 +26,24 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function depositFor(address user, uint256 amount) external whenNotAccountingPaused {
 		AccountFacetImpl.deposit(user, amount);
 		emit Deposit(msg.sender, user, amount);
+		emit Deposit(msg.sender, user, amount, false);
+	}
+
+	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
+	/// @param user The recipient address for the deposit.
+	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
+	function _virtualDepositFor(address user, uint256 amount) internal {
+		AccountFacetImpl.virtualDepositFor(user, amount);
+		uint256 amountWithCollateralDecimal = (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18;
+		emit Deposit(msg.sender, user, amountWithCollateralDecimal); // For backward compatibility, will be removed in future
+		emit Deposit(msg.sender, user, amountWithCollateralDecimal, true);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
 	/// @param user The recipient address for the deposit.
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
 	function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
-		AccountFacetImpl.virtualDepositFor(user, amount);
-		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
+		_virtualDepositFor(user, amount);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer and allocate them.
@@ -42,9 +53,8 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address user,
 		uint256 amount
 	) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
-		AccountFacetImpl.virtualDepositFor(user, amount);
+		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
-		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
 		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
@@ -64,6 +74,32 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(msg.sender, user, amount);
 	}
 
+	/// @notice Allows the system admin to withdraw the balance of a suspended user to a target address.
+	/// @param user The suspended user whose funds will be moved.
+	/// @param recipient The destination address that will receive the funds.
+	/// @param amount The amount to withdraw, specified in collateral decimals.
+	function withdrawSuspendedUserFunds(
+		address user,
+		address recipient,
+		uint256 amount
+	) external whenNotAccountingPaused onlySuspended(user) onlyRole(LibAccessibility.SUSPENDED_FUNDS_WITHDRAWER_ROLE) {
+		AccountFacetImpl.withdrawSuspendedUser(user, recipient, amount);
+		emit Withdraw(user, recipient, amount);
+		emit WithdrawSuspendedUser(msg.sender, user, recipient, amount);
+	}
+
+	/// @notice Allows the system admin to deallocate the funds of a suspended user.
+	/// @param user The suspended user whose allocated balance will be reduced.
+	/// @param amount The allocated amount to move back to the user's balance, specified in 18 decimals.
+	function deallocateSuspendedUserFunds(
+		address user,
+		uint256 amount
+	) external whenNotAccountingPaused onlySuspended(user) onlyRole(LibAccessibility.SUSPENDED_FUNDS_WITHDRAWER_ROLE) {
+		uint256 newAllocatedBalance = AccountFacetImpl.deallocateSuspendedUser(user, amount);
+		emit DeallocatePartyA(user, amount, newAllocatedBalance);
+		emit DeallocateSuspendedUser(msg.sender, user, amount, newAllocatedBalance);
+	}
+
 	/// @notice Allows Party A to allocate a specified amount of collateral. Allocated amounts are which user can actually trade on.
 	/// @param amount The precise amount of collateral to be allocated, specified in 18 decimals.
 	function allocate(uint256 amount) external whenNotAccountingPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {
@@ -78,7 +114,8 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		AccountFacetImpl.deposit(msg.sender, amount);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
 		AccountFacetImpl.allocate(msg.sender, amountWith18Decimals);
-		emit Deposit(msg.sender, msg.sender, amount);
+		emit Deposit(msg.sender, msg.sender, amount); // For backward compatibility, will be removed in future
+		emit Deposit(msg.sender, msg.sender, amount, false);
 		emit AllocatePartyA(msg.sender, amountWith18Decimals, AccountStorage.layout().allocatedBalances[msg.sender]);
 		emit SharedEvents.BalanceChangePartyA(msg.sender, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
@@ -87,7 +124,8 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		AccountFacetImpl.deposit(user, amount);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
 		AccountFacetImpl.allocate(user, amountWith18Decimals);
-		emit Deposit(msg.sender, user, amount);
+		emit Deposit(msg.sender, user, amount); // For backward compatibility, will be removed in future
+		emit Deposit(msg.sender, user, amount, false);
 		emit AllocatePartyA(user, amountWith18Decimals, AccountStorage.layout().allocatedBalances[msg.sender]);
 		emit SharedEvents.BalanceChangePartyA(user, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}

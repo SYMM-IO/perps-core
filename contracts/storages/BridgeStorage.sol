@@ -30,7 +30,6 @@ library BridgeStorage {
 		mapping(address => uint256[]) bridgeTransactionIds;
 		uint256 lastId;
 		address invalidBridgedAmountsPool;
-		mapping(address => bool) virtualBridges;
 		mapping(uint256 => bytes) bridgesData;
 	}
 

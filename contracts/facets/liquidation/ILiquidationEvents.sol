@@ -26,6 +26,15 @@ interface ILiquidationEvents is IPartiesEvents {
 		uint256[] liquidatedAmounts,
 		uint256[] closeIds,
 		bytes liquidationId
+	);  // for backward compatability
+	event LiquidatePositionsPartyA(
+		address liquidator,
+		address partyA,
+		uint256[] quoteIds,
+		uint256[] liquidatedAmounts,
+		uint256[] closeIds,
+		uint256[] averageClosedPrices,
+		bytes liquidationId
 	);
 	event LiquidatePendingPositionsPartyA(address liquidator, address partyA, uint256[] quoteIds, uint256[] liquidatedAmounts, bytes liquidationId);
 	event SettlePartyALiquidation(address partyA, address[] partyBs, int256[] amounts, bytes liquidationId);
@@ -39,6 +48,15 @@ interface ILiquidationEvents is IPartiesEvents {
 		uint256[] quoteIds,
 		uint256[] liquidatedAmounts,
 		uint256[] closeIds
+	);  // for backward compatability
+	event LiquidatePositionsPartyB(
+		address liquidator,
+		address partyB,
+		address partyA,
+		uint256[] quoteIds,
+		uint256[] liquidatedAmounts,
+		uint256[] closeIds,
+		uint256[] averageClosedPrices
 	);
 	event FullyLiquidatedPartyB(address partyB, address partyA);
 	event SetSymbolsPrices(address liquidator, address partyA, uint256[] symbolIds, uint256[] prices, bytes liquidationId);

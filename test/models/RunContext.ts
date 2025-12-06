@@ -20,7 +20,8 @@ import {
 	MultiAccount,
 	SymmioPartyB,
 	SymmioPartyA,
-} from "../../src/types"
+	WithdrawFacet,
+} from "../../src/types";
 import { TestManager } from "./TestManager"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 import { multiAccount } from "../../src/types/contracts"
@@ -42,6 +43,7 @@ export class RunContext {
 	settlementFacet!: SettlementFacet
 	forceActionsFacet!: ForceActionsFacet
 	clearingHouseFacet!: ClearingHouseFacet
+	withdrawFacet!: WithdrawFacet
 	signers!: {
 		admin: SignerWithAddress
 		user: SignerWithAddress
@@ -105,6 +107,7 @@ export async function createRunContext(
 	context.settlementFacet = await ethers.getContractAt("SettlementFacet", diamond)
 	context.forceActionsFacet = await ethers.getContractAt("ForceActionsFacet", diamond)
 	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
+	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
 
 	context.manager = new TestManager(context, onlyInitialize)
 	if (!onlyInitialize) await context.manager.start()

@@ -6,11 +6,14 @@ pragma solidity >=0.8.18;
 
 import "../../libraries/LibQuote.sol";
 import "../../libraries/LibDiamond.sol";
+import "../../libraries/LibQuote.sol";
 import "../../libraries/muon/LibMuon.sol";
 import "../../storages/AccountStorage.sol";
-import "../../storages/MAStorage.sol";
-import "../../storages/QuoteStorage.sol";
+import "../../storages/BridgeStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
+import "../../storages/MAStorage.sol";
+import "../../storages/MuonStorage.sol";
+import "../../storages/QuoteStorage.sol";
 import "../../storages/SymbolStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/BridgeStorage.sol";
@@ -344,6 +347,7 @@ contract ViewFacet is IViewFacet {
 		for (uint256 i = start; i < end; ) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
+			symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 			unchecked {
 				++i;
 			}
@@ -412,6 +416,7 @@ contract ViewFacet is IViewFacet {
 		for (uint256 i = start; i < end; ) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
+				symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 				symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 			}
 			unchecked {
@@ -585,6 +590,30 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Internal: Returns an array of open positions associated with a party A address.
+	 * @param partyA The address of party A.
+	 * @param start The starting index.
+	 * @param size The size of the array.
+	 * @return An array of open positions.
+	 */
+	function getPartyAOpenPositionsImp(address partyA, uint256 start, uint256 size) internal view returns (Quote[] memory) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		uint256[] memory partyAOpenPositions = quoteLayout.partyAOpenPositions[partyA];
+		if (partyAOpenPositions.length < start + size) size = partyAOpenPositions.length - start;
+
+		Quote[] memory quotes = new Quote[](size);
+		uint256 end = start + size;
+		for (uint256 i = start; i < end; ) {
+			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
+			unchecked {
+				++i;
+			}
+		}
+		return quotes;
+	}
+
+	/**
 	 * @notice Returns an array of open positions associated with a party A address.
 	 * @param partyA The address of party A.
 	 * @param start The starting index.
@@ -592,16 +621,26 @@ contract ViewFacet is IViewFacet {
 	 * @return An array of open positions.
 	 */
 	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] memory partyAOpenPositions = quoteLayout.partyAOpenPositions[partyA];
+		return getPartyAOpenPositionsImp(partyA, start, size);
+	}
 
-		if (partyAOpenPositions.length < start + size) {
-			size = partyAOpenPositions.length - start;
-		}
+	/**
+	 * @notice Internal:rReturns an array of open positions associated with a party B address and a specific party A address.
+	 * @param partyB The address of party B.
+	 * @param partyA The address of party A.
+	 * @param start The starting index.
+	 * @param size The size of the array.
+	 * @return An array of open positions.
+	 */
+	function getPartyBOpenPositionsImp(address partyB, address partyA, uint256 start, uint256 size) internal view returns (Quote[] memory) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
+		if (partyBOpenPositions.length < start + size) size = partyBOpenPositions.length - start;
+
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;
 		for (uint256 i = start; i < end; ) {
-			quotes[i - start] = quoteLayout.quotes[partyAOpenPositions[i]];
+			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
 			unchecked {
 				++i;
 			}
@@ -618,20 +657,7 @@ contract ViewFacet is IViewFacet {
 	 * @return An array of open positions.
 	 */
 	function getPartyBOpenPositions(address partyB, address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
-		if (partyBOpenPositions.length < start + size) {
-			size = partyBOpenPositions.length - start;
-		}
-		Quote[] memory quotes = new Quote[](size);
-		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
-			quotes[i - start] = quoteLayout.quotes[partyBOpenPositions[i]];
-			unchecked {
-				++i;
-			}
-		}
-		return quotes;
+		return getPartyBOpenPositionsImp(partyB, partyA, start, size);
 	}
 
 	/**
@@ -820,6 +846,14 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Indicates whether Party B accounts are allowed to activate master account mode.
+	 * @return True if activation is globally enabled, false otherwise.
+	 */
+	function getMasterAccountActivationMode() external view returns (bool) {
+		return GlobalAppStorage.layout().masterAccountActivationMode;
+	}
+
+	/**
 	 * @notice Checks if a party A is liquidated.
 	 * @param partyA The address of party A.
 	 * @return True if party A is liquidated, false otherwise.
@@ -991,6 +1025,105 @@ contract ViewFacet is IViewFacet {
 	function getMuonConfig() external view returns (uint256 upnlValidTime, uint256 priceValidTime) {
 		upnlValidTime = MuonStorage.layout().upnlValidTime;
 		priceValidTime = MuonStorage.layout().priceValidTime;
+	}
+
+	/**
+	 * @notice Returns the parameters needed to calculate party A UPNL offchain.
+	 * @param partyA Address of partyA
+	 * @param quoteStart Quote start ID
+	 * @param quoteEnd Quote end ID
+	 * @param getCount whether to return the position Count
+	 * @return positionsCount  Number of positions
+	 * @return partyBsAllocated  An array of party B Allocated Balance.
+	 * @return partyBs  An array of quotes partyBs.
+	 * @return quoteIds  An array of quotes IDs.
+	 * @return symbolIds  An array of quotes Symbols IDs.
+	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return openPrices  An array of quotes open prices.
+	 * @return remainingOpenAmount  An array of quotes available amounts.
+	 * @return positionType  An array of quotes positions Type.
+	 */
+	function getPartyAUPNLParams(
+		address partyA,
+		uint256 quoteStart,
+		uint256 quoteEnd,
+		bool getCount
+	)
+		external
+		view
+		returns (
+			uint256 positionsCount,
+			uint256[] memory partyBsAllocated,
+			address[] memory partyBs,
+			uint256[] memory quoteIds,
+			uint256[] memory symbolIds,
+			string[] memory symbolNames,
+			uint256[] memory openPrices,
+			uint256[] memory remainingOpenAmount,
+			uint256[] memory positionType
+		)
+	{
+		if (getCount) positionsCount = QuoteStorage.layout().partyAPositionsCount[partyA];
+		Quote[] memory quotes = getPartyAOpenPositionsImp(partyA, quoteStart, quoteEnd);
+		for (uint i = 0; i < quotes.length; i++) {
+			partyBs[i] = quotes[i].partyB;
+			partyBsAllocated[i] = AccountStorage.layout().partyBAllocatedBalances[partyBs[i]][partyA];
+			quoteIds[i] = quotes[i].id;
+			remainingOpenAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
+			openPrices[i] = quotes[i].requestedOpenPrice;
+			symbolNames[i] = SymbolStorage.layout().symbols[quotes[i].symbolId].name;
+			positionType[i] = uint256(quotes[i].positionType);
+			symbolIds[i] = quotes[i].symbolId;
+		}
+	}
+
+	/**
+	 * @notice Returns the parameters needed to calculate Party B UPNL offchain.
+	 * @param partyA Address of partyA
+	 * @param partyB Address of partyB
+	 * @param quoteStart Quote start ID
+	 * @param quoteEnd Quote end ID
+	 * @return positionsCount  Number of positions
+	 * @return partyBsAllocated  party B Allocated Balance.
+	 * @return quoteIds  An array of quotes IDs.
+	 * @return symbolIds  An array of quotes Symbols IDs.
+	 * @return symbolNames  An array of quotes Symbols names.
+	 * @return openPrices  An array of quotes open prices.
+	 * @return remainingOpenAmount  An array of quotes available amounts.
+	 * @return positionType  An array of quotes positions Type.
+	 */
+	function getPartyBUPNLParams(
+		address partyA,
+		address partyB,
+		uint256 quoteStart,
+		uint256 quoteEnd,
+		bool getCount
+	)
+		external
+		view
+		returns (
+			uint256 positionsCount,
+			uint256[] memory partyBsAllocated,
+			uint256[] memory quoteIds,
+			uint256[] memory symbolIds,
+			string[] memory symbolNames,
+			uint256[] memory openPrices,
+			uint256[] memory remainingOpenAmount,
+			uint256[] memory positionType
+		)
+	{
+		if (getCount) positionsCount = QuoteStorage.layout().partyBPositionsCount[partyB][partyA];
+
+		Quote[] memory quotes = getPartyBOpenPositionsImp(partyB, partyA, quoteStart, quoteEnd);
+		for (uint i = 0; i < quotes.length; i++) {
+			partyBsAllocated[i] = AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
+			quoteIds[i] = quotes[i].id;
+			remainingOpenAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
+			openPrices[i] = quotes[i].requestedOpenPrice;
+			symbolNames[i] = SymbolStorage.layout().symbols[quotes[i].symbolId].name;
+			positionType[i] = uint256(quotes[i].positionType);
+			symbolIds[i] = quotes[i].symbolId;
+		}
 	}
 
 	/**
@@ -1247,5 +1380,57 @@ contract ViewFacet is IViewFacet {
 	 */
 	function isADLEnabled(address partyB) external view returns (bool) {
 		return MAStorage.layout().adlEnabled[partyB];
+	}
+
+	/**
+	 * @notice Retrieves All withdraw requests of a user.
+	 * @param user The address of the user.
+	 * @return list of withdraw requests.
+	 */
+	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory) {
+		return WithdrawStorage.layout().withdrawRequests[user][requestId];
+	}
+
+	/**
+	 * @notice Checks if an address is a registered express provider.
+	 * @param provider The address of the express provider.
+	 * @return True if the address is a registered express provider, false otherwise.
+	 */
+	function isExpressProviderRegistered(address provider) external view returns (bool) {
+		return GlobalAppStorage.layout().expressProviders[provider];
+	}
+
+	/**
+	 * @notice Checks if an address is a registered virtual provider.
+	 * @param provider The address of the virtual provider.
+	 * @return True if the address is a registered virtual provider, false otherwise.
+	 */
+	function isVirtualProviderRegistered(address provider) external view returns (bool) {
+		return GlobalAppStorage.layout().virtualProviders[provider];
+	}
+
+	/**
+	 * @notice Checks if a user is eligible for speed up.
+	 * @param user The address of the user.
+	 * @return True if the user is eligible for speed up, false otherwise.
+	 */
+	function isSpeedUpEligible(address user) external view returns (bool) {
+		return WithdrawStorage.layout().speedUpWhitelist[user];
+	}
+
+	/**
+	 * @notice Retrieves the modified cooldown end time for a withdraw request of a user.
+	 * @param user The address of the user.
+	 * @param requestId The ID of the withdraw request.
+	 * @return The modified cooldown end time.
+	 */
+	function getModifiedCooldownEndTime(address user, uint256 requestId) external view returns (uint256) {
+		WithdrawRequest storage request = WithdrawStorage.layout().withdrawRequests[user][requestId];
+		require(request.isCooldownModified, "Cooldown not modified");
+		return request.cooldownEndTime;
+	}
+
+	function getWithdrawLockedBalance() external view returns (uint256) {
+		return WithdrawStorage.layout().withdrawLockedBalance;
 	}
 }

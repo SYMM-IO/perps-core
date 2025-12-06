@@ -136,7 +136,6 @@ export class User extends PartyEntity {
 			}),
 		)
 		await runTx(this.context.partyAFacet.connect(this.signer).requestToCancelQuote(id))
-		logger.info(`User::::RequestToCancelQuote: ${id}`)
 	}
 
 	public async forceCancelQuote(id: BigNumberish) {
@@ -148,7 +147,6 @@ export class User extends PartyEntity {
 			}),
 		)
 		await runTx(this.context.forceActionsFacet.connect(this.signer).forceCancelQuote(id))
-		logger.info(`User::::ForceCancelQuote: ${id}`)
 	}
 
 	public async forceCancelCloseRequest(id: BigNumberish) {
@@ -160,7 +158,6 @@ export class User extends PartyEntity {
 			}),
 		)
 		await runTx(this.context.forceActionsFacet.connect(this.signer).forceCancelCloseRequest(id))
-		logger.info(`User::::ForceCancelCloseRequest: ${id}`)
 	}
 
 	public async getBalanceInfo(): Promise<BalanceInfo> {
@@ -196,7 +193,6 @@ export class User extends PartyEntity {
 				.connect(this.signer)
 				.requestToClosePosition(id, request.closePrice, request.quantityToClose, request.orderType, await request.deadline),
 		)
-		logger.info(`User::::RequestToClosePosition: ${id}`)
 	}
 
 	public async forceClosePosition(id: BigNumberish, signature: HighLowPriceSigStruct) {
@@ -208,7 +204,6 @@ export class User extends PartyEntity {
 			}),
 		)
 		await runTx(this.context.forceActionsFacet.connect(this.signer).forceClosePosition(id, signature))
-		logger.info(`User::::ForceClosePosition: ${id}`)
 	}
 
 	public async settleAndForceClosePosition(id: BigNumberish, highLowPriceSigStruct: HighLowPriceSigStruct, settleSig: SettlementSigStruct, updatedPrices: bigint[]) {
@@ -222,7 +217,6 @@ export class User extends PartyEntity {
 			}),
 		)
 		await runTx(this.context.forceActionsFacet.connect(this.signer).settleAndForceClosePosition(id, highLowPriceSigStruct, settleSig, updatedPrices))
-		logger.info(`User::::SettleAndForceClosePosition: ${id}`)
 	}
 
 	public async requestToCancelCloseRequest(id: BigNumberish) {
@@ -234,7 +228,6 @@ export class User extends PartyEntity {
 			}),
 		)
 		await runTx(this.context.partyAFacet.connect(this.signer).requestToCancelCloseRequest(id))
-		logger.info(`User::::RequestToCancelCloseRequest: ${id}`)
 	}
 
 	public getAddress() {
