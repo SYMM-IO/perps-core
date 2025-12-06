@@ -23,6 +23,15 @@ interface IControlEvents {
 		uint256 fundingRateWindowTime
 	);
 	event SetFeeCollector(address affiliate, address oldFeeCollector, address newFeeCollector);
+	event SetCustomAffiliateFee(
+		address affiliate,
+		address user,
+		uint256 symbolId,
+		uint256 oldOpenFee,
+		uint256 newOpenFee,
+		uint256 oldCloseFee,
+		uint256 newCloseFee
+	);
 	event SetAffiliateFee(address affiliate, uint256 symbolId, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
 	event SetDefaultAffiliateFee(address affiliate, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
 	event SetDefaultFeeCollector(address oldDefaultFeeCollector, address newDefaultFeeCollector);
@@ -98,4 +107,5 @@ interface IControlEvents {
 	event SetADLEnabled(address partyB, bool enabled);
 	event SetEntityMetadata(address entity, EntityMetadata metadata);
 	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
+	event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);
 }

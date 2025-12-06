@@ -222,4 +222,8 @@ interface IViewFacet {
 	function getAffiliateFee(address affiliate, uint256 symbolId) external view returns (Fee memory);
 
 	function isADLEnabled(address partyB) external view returns (bool);
+
+	function getCustomAffiliateFee(address affiliate,address user, uint256 symbolId) external view returns (Fee memory);
+
+	function getMinAffiliateFee() external view returns (uint256);
 }

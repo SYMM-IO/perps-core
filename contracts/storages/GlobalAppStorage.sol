@@ -29,6 +29,8 @@ library GlobalAppStorage {
 		mapping(address => mapping(uint256 => Fee)) affiliateFee; // affiliate => symbolId => fee
 		mapping(address => Fee) defaultAffiliateFee; // affiliate => fee
 		bool instantLayerPaused;
+		uint256 minAffiliateFee;
+		mapping(address => mapping(address => mapping(uint256 => Fee))) customAffiliateFee; // affiliate => user => symbolId => fee
 	}
 
 	function layout() internal pure returns (Layout storage l) {

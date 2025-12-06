@@ -165,4 +165,14 @@ export function shouldBehaveLikeSendQuote(): void {
 		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
 		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
 	})
+
+	it("should send quote with correct custom affiliate fee", async function () {
+		await context.controlFacet.registerAffiliate(context.signers.hedger)
+		await context.controlFacet.setAffiliateFee(context.signers.hedger, 1, 18, 18)
+		await context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, 17, 17)
+		let validator = new SendQuoteValidator()
+		const before = await validator.before(context, { user: user })
+		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
+		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
+	})
 }
