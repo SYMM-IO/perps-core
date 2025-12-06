@@ -76,7 +76,8 @@ struct Price {
 
 enum ExternalTransferStatus {
 	PENDING,
-	COMPLETED
+	COMPLETED,
+	CANCELED
 }
 
 struct ExternalTransfer{
@@ -86,7 +87,6 @@ struct ExternalTransfer{
 	uint256 amount;
 	uint256 timestamp;
 	address provider;
-	address target;
 	ExternalTransferStatus status;
 }
 

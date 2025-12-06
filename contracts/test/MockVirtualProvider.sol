@@ -75,4 +75,9 @@ contract VirtualProvider is IVirtualProvider {
 		require(true, "");
 		externalTransfer;
 	}
+
+	function onCancelExternalTransfer(uint256 id) external {
+		require(true, "");
+		id;
+	}
 }

@@ -240,16 +240,14 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	 * @dev sender must not be suspended/liquidated for the operation to succeed
 	 * @param receiver The address of the recipient user in the target contract
 	 * @param amount The amount to transfer, specified in collateral decimals
-	 * @param target The address of the target contract that will receive the collateral
 	 */
 	function virtualExternalTransfer(
 		address receiver,
 		uint256 amount,
-		address target,
 		address virtualProvider
 	) external whenNotExternalTransferPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {
-		uint256 id = AccountFacetImpl.virtualExternalTransfer(msg.sender, receiver, amount, target, virtualProvider);
-		emit InitiateVirtualExternalTransfer(id,msg.sender, receiver, amount, target, virtualProvider);
+		uint256 id = AccountFacetImpl.virtualExternalTransfer(msg.sender, receiver, amount, virtualProvider);
+		emit InitiateVirtualExternalTransfer(id,msg.sender, receiver, amount, virtualProvider);
 	}
 
 	/**

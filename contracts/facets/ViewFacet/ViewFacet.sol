@@ -1411,7 +1411,20 @@ contract ViewFacet is IViewFacet {
 		return request.cooldownEndTime;
 	}
 
+	/**
+	 * @notice Retrieves the total locked balance for withdrawals.
+	 * @return The total locked balance for withdrawals.
+	 */
 	function getWithdrawLockedBalance() external view returns (uint256) {
 		return WithdrawStorage.layout().withdrawLockedBalance;
+	}
+
+	/**
+	 * @notice Retrieves the virtual external transfer status for a given ID.
+	 * @param id The ID of the virtual external transfer.
+	 * @return The virtual external transfer status.
+	 */
+	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransfer memory) {
+		return AccountStorage.layout().externalTransfers[id];
 	}
 }
