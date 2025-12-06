@@ -334,6 +334,16 @@ library LibQuote {
 			}
 			quote.quoteStatus = QuoteStatus.EXPIRED;
 			result = QuoteStatus.EXPIRED;
+
+			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
+			address systemHook = accountLayout.affiliateHooks[address(0)];
+
+			if (affiliateHook != address(0)) {
+				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			}
+			if (systemHook != address(0)) {
+				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			}
 		} else if (quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
 			quote.statusModifyTimestamp = block.timestamp;
 			quote.requestedClosePrice = 0;

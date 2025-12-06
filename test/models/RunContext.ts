@@ -17,15 +17,16 @@ import {
 	SettlementFacet,
 	ViewFacet,
 	InstantLayer,
-	MultiAccount,
 	SymmioPartyB,
+	AccountManager,
+	AffiliateHub,
+	AccountHub,
+	FakeStablecoin,
 	SymmioPartyA,
 	WithdrawFacet,
 } from "../../src/types";
 import { TestManager } from "./TestManager"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { multiAccount } from "../../src/types/contracts"
-// import { instantLayer } from "../../src/types/contracts"
 
 export class RunContext {
 	accountFacet!: AccountFacet
@@ -55,23 +56,21 @@ export class RunContext {
 		bridge2: SignerWithAddress
 		feeCollector: SignerWithAddress
 		feeCollector2: SignerWithAddress
+		symmioFeeReceiver: SignerWithAddress
 		others: SignerWithAddress[]
 	}
 	diamond!: string
-	multiAccount!: MultiAccount
-	multiAccount2?: MultiAccount
+	accountManager!: AccountManager
+	accountManager2!: AccountManager
 	instantLayer!: InstantLayer
-	symmioPartyA!: SymmioPartyA
+	accountHub!: AccountHub
 	symmioPartyB!: SymmioPartyB
-	collateral: any
+	collateral!: FakeStablecoin
 	manager!: TestManager
+	affiliateHub!: AffiliateHub
 }
 
-export async function createRunContext(
-	diamond: string,
-	collateral: string,
-	onlyInitialize: boolean = false,
-): Promise<RunContext> {
+export async function createRunContext(diamond: string, collateral: string, onlyInitialize: boolean = false): Promise<RunContext> {
 	let context = new RunContext()
 
 	const signers: SignerWithAddress[] = await ethers.getSigners()
@@ -86,7 +85,8 @@ export async function createRunContext(
 		bridge2: signers[7],
 		feeCollector: signers[8],
 		feeCollector2: signers[9],
-		others: [signers[10], signers[11]],
+		symmioFeeReceiver: signers[10],
+		others: [signers[11], signers[12]],
 	}
 
 	context.diamond = diamond
