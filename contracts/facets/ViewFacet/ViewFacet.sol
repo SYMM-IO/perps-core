@@ -903,6 +903,15 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Returns the force close Detail structure.
+	 * @param forceCloseId The ID of force close
+	 * @return  forceCloseStruct The force close structure
+	 */
+	function getForceCloseStruct(uint256 forceCloseId) external view returns (ForceCloseDetail memory forceCloseStruct) {
+		forceCloseStruct = AccountStorage.layout().forceCloseDetails[forceCloseId];
+	}
+
+	/**
 	 * @notice Returns the liquidator share.
 	 * @return The liquidator share.
 	 */

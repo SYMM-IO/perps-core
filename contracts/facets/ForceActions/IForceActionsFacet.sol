@@ -30,7 +30,7 @@ library ForceCloseErrors {
 	// NOTE:
 	// The following custom error declarations are used by the ForceActions facet
 	// implementation to replace string-based revert reasons with more gas efficient
-	// and descriptive error types. 
+	// and descriptive error types.
 
 	/// @notice Thrown when a quote is in an invalid state for the attempted action.
 	/// This mirrors the old require with reason "PartyAFacet: Invalid state".
@@ -65,4 +65,7 @@ library ForceCloseErrors {
 
 	/// @notice Thrown when an action references a quote belonging to a different partyB.
 	error InvalidQuote();
+
+	/// @notice Thrown when an action in normal balance mode is called with master account enabled.
+	error MasterAccountModeNotEnabled();
 }

@@ -74,138 +74,138 @@ library ForceActionsFacetImpl {
 		quote.quantityToClose = 0;
 	}
 
-	function forceClosePosition(
-		uint256 quoteId,
-		HighLowPriceSig memory sig,
-		SettlementSig memory settlementSig,
-		uint256[] memory updatedPrices
-	) internal returns (uint256 closePrice, bool isPartyBLiquidated, int256 upnlPartyB, uint256 partyBAllocatedBalance) {
-		MAStorage.Layout storage maLayout = MAStorage.layout();
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		// Ensure the quote is in a close pending state.
-		if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
-			revert ForceCloseErrors.InvalidState();
-		}
-		// The close request must not be expired relative to the deadline.
-		if (!(sig.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline)) {
-			revert ForceCloseErrors.CloseRequestExpired();
-		}
-		// Only limit orders may be force closed.
-		if (quote.orderType != OrderType.LIMIT) {
-			revert ForceCloseErrors.InvalidOrderType();
-		}
-		// Enforce first stage cooldown before starting force close.
-		if (!(sig.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown)) {
-			revert ForceCloseErrors.CooldownNotReached();
-		}
-		// Enforce second stage cooldown before finalizing force close.
-		if (!(sig.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown)) {
-			revert ForceCloseErrors.CooldownNotReached();
-		}
-		// The average price must lie within the high/low bounds.
-		if (!(sig.averagePrice <= sig.highest && sig.averagePrice >= sig.lowest)) {
-			revert ForceCloseErrors.InvalidAveragePrice();
-		}
-		if (quote.positionType == PositionType.LONG) {
-			// For long positions the highest observed price must exceed the requested close
-			// price by at least the configured gap ratio. Otherwise the requested close
-			// price has not been reached and we revert.
-			if (!(sig.highest >= quote.requestedClosePrice + (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18)) {
-				revert ForceCloseErrors.RequestedClosePriceNotReached();
-			}
-			closePrice = quote.requestedClosePrice + (quote.requestedClosePrice * maLayout.forceClosePricePenalty) / 1e18;
-			closePrice = closePrice > sig.averagePrice ? closePrice : sig.averagePrice; // max
-		} else {
-			// For short positions the lowest observed price must fall below the requested close
-			// price by at least the configured gap ratio. Otherwise we revert.
-			if (!(sig.lowest <= quote.requestedClosePrice - (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18)) {
-				revert ForceCloseErrors.RequestedClosePriceNotReached();
-			}
-			closePrice = quote.requestedClosePrice - (quote.requestedClosePrice * maLayout.forceClosePricePenalty) / 1e18;
-			closePrice = closePrice > sig.averagePrice ? sig.averagePrice : closePrice; // min
-		}
+	// function forceClosePosition(
+	// 	uint256 quoteId,
+	// 	HighLowPriceSig memory sig,
+	// 	SettlementSig memory settlementSig,
+	// 	uint256[] memory updatedPrices
+	// ) internal returns (uint256 closePrice, bool isPartyBLiquidated, int256 upnlPartyB, uint256 partyBAllocatedBalance) {
+	// 	MAStorage.Layout storage maLayout = MAStorage.layout();
+	// 	AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+	// 	SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+	// 	Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+	// 	// Ensure the quote is in a close pending state.
+	// 	if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
+	// 		revert ForceCloseErrors.InvalidState();
+	// 	}
+	// 	// The close request must not be expired relative to the deadline.
+	// 	if (!(sig.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline)) {
+	// 		revert ForceCloseErrors.CloseRequestExpired();
+	// 	}
+	// 	// Only limit orders may be force closed.
+	// 	if (quote.orderType != OrderType.LIMIT) {
+	// 		revert ForceCloseErrors.InvalidOrderType();
+	// 	}
+	// 	// Enforce first stage cooldown before starting force close.
+	// 	if (!(sig.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown)) {
+	// 		revert ForceCloseErrors.CooldownNotReached();
+	// 	}
+	// 	// Enforce second stage cooldown before finalizing force close.
+	// 	if (!(sig.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown)) {
+	// 		revert ForceCloseErrors.CooldownNotReached();
+	// 	}
+	// 	// The average price must lie within the high/low bounds.
+	// 	if (!(sig.averagePrice <= sig.highest && sig.averagePrice >= sig.lowest)) {
+	// 		revert ForceCloseErrors.InvalidAveragePrice();
+	// 	}
+	// 	if (quote.positionType == PositionType.LONG) {
+	// 		// For long positions the highest observed price must exceed the requested close
+	// 		// price by at least the configured gap ratio. Otherwise the requested close
+	// 		// price has not been reached and we revert.
+	// 		if (!(sig.highest >= quote.requestedClosePrice + (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18)) {
+	// 			revert ForceCloseErrors.RequestedClosePriceNotReached();
+	// 		}
+	// 		closePrice = quote.requestedClosePrice + (quote.requestedClosePrice * maLayout.forceClosePricePenalty) / 1e18;
+	// 		closePrice = closePrice > sig.averagePrice ? closePrice : sig.averagePrice; // max
+	// 	} else {
+	// 		// For short positions the lowest observed price must fall below the requested close
+	// 		// price by at least the configured gap ratio. Otherwise we revert.
+	// 		if (!(sig.lowest <= quote.requestedClosePrice - (quote.requestedClosePrice * symbolLayout.forceCloseGapRatio[quote.symbolId]) / 1e18)) {
+	// 			revert ForceCloseErrors.RequestedClosePriceNotReached();
+	// 		}
+	// 		closePrice = quote.requestedClosePrice - (quote.requestedClosePrice * maLayout.forceClosePricePenalty) / 1e18;
+	// 		closePrice = closePrice > sig.averagePrice ? sig.averagePrice : closePrice; // min
+	// 	}
 
-		// If the computed close price equals the signature's average price then the
-		// signature period must meet the minimum length requirement. Without this
-		// check the force close could be based on too narrow of a price window.
-		if (closePrice == sig.averagePrice) {
-			if (!(sig.endTime - sig.startTime >= maLayout.forceCloseMinSigPeriod)) {
-				revert ForceCloseErrors.InvalidSignaturePeriod();
-			}
-		}
+	// 	// If the computed close price equals the signature's average price then the
+	// 	// signature period must meet the minimum length requirement. Without this
+	// 	// check the force close could be based on too narrow of a price window.
+	// 	if (closePrice == sig.averagePrice) {
+	// 		if (!(sig.endTime - sig.startTime >= maLayout.forceCloseMinSigPeriod)) {
+	// 			revert ForceCloseErrors.InvalidSignaturePeriod();
+	// 		}
+	// 	}
 
-		LibMuonForceActions.verifyHighLowPrice(sig, quote.partyB, quote.partyA, quote.symbolId);
-		if (updatedPrices.length > 0) {
-			LibMuonSettlement.verifySettlement(settlementSig, quote.partyA);
-		}
-		accountLayout.partyANonces[quote.partyA] += 1;
-		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
+	// 	LibMuonForceActions.verifyHighLowPrice(sig, quote.partyB, quote.partyA, quote.symbolId);
+	// 	if (updatedPrices.length > 0) {
+	// 		LibMuonSettlement.verifySettlement(settlementSig, quote.partyA);
+	// 	}
+	// 	accountLayout.partyANonces[quote.partyA] += 1;
+	// 	accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
 
-		uint256 reservedBalance;
-		if (accountLayout.masterAccountMode[quote.partyB]) {
-			reservedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][address(0)];
-		} else {
-			reservedBalance = accountLayout.reserveVault[quote.partyB];
-		}
+	// 	uint256 reservedBalance;
+	// 	if (accountLayout.masterAccountMode[quote.partyB]) {
+	// 		reservedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][address(0)];
+	// 	} else {
+	// 		reservedBalance = accountLayout.reserveVault[quote.partyB];
+	// 	}
 
-		uint256[] memory quoteIds = new uint256[](1);
-		uint256[] memory filledAmounts = new uint256[](1);
-		uint256[] memory closedPrices = new uint256[](1);
-		uint256[] memory marketPrices = new uint256[](1);
-		quoteIds[0] = quoteId;
-		filledAmounts[0] = quote.quantityToClose;
-		closedPrices[0] = closePrice;
-		marketPrices[0] = sig.currentPrice;
-		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibSolvency.getAvailableBalanceAfterClosePosition(
-			quoteIds,
-			filledAmounts,
-			closedPrices,
-			marketPrices,
-			sig.upnlPartyB,
-			sig.upnlPartyA,
-			quote.partyB,
-			quote.partyA
-		);
-		// After computing the available balances ensure partyA will not become insolvent.
-		if (!(partyAAvailableBalance >= 0)) {
-			revert ForceCloseErrors.PartyAWillBeInsolvent();
-		}
-		if (partyBAvailableBalance >= 0) {
-			if (updatedPrices.length > 0) {
-				LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
-			}
-			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
-		} else if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
-			uint256 available = uint256(-partyBAvailableBalance);
-			if (accountLayout.masterAccountMode[quote.partyB]) {
-				accountLayout.partyBAllocatedBalances[quote.partyB][address(0)] -= available;
-			} else {
-				accountLayout.reserveVault[quote.partyB] -= available;
-			}
+	// 	uint256[] memory quoteIds = new uint256[](1);
+	// 	uint256[] memory filledAmounts = new uint256[](1);
+	// 	uint256[] memory closedPrices = new uint256[](1);
+	// 	uint256[] memory marketPrices = new uint256[](1);
+	// 	quoteIds[0] = quoteId;
+	// 	filledAmounts[0] = quote.quantityToClose;
+	// 	closedPrices[0] = closePrice;
+	// 	marketPrices[0] = sig.currentPrice;
+	// 	(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibSolvency.getAvailableBalanceAfterClosePosition(
+	// 		quoteIds,
+	// 		filledAmounts,
+	// 		closedPrices,
+	// 		marketPrices,
+	// 		sig.upnlPartyB,
+	// 		sig.upnlPartyA,
+	// 		quote.partyB,
+	// 		quote.partyA
+	// 	);
+	// 	// After computing the available balances ensure partyA will not become insolvent.
+	// 	if (!(partyAAvailableBalance >= 0)) {
+	// 		revert ForceCloseErrors.PartyAWillBeInsolvent();
+	// 	}
+	// 	if (partyBAvailableBalance >= 0) {
+	// 		if (updatedPrices.length > 0) {
+	// 			LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
+	// 		}
+	// 		LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
+	// 	} else if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
+	// 		uint256 available = uint256(-partyBAvailableBalance);
+	// 		if (accountLayout.masterAccountMode[quote.partyB]) {
+	// 			accountLayout.partyBAllocatedBalances[quote.partyB][address(0)] -= available;
+	// 		} else {
+	// 			accountLayout.reserveVault[quote.partyB] -= available;
+	// 		}
 
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += available;
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
-		} else {
-			if (accountLayout.masterAccountMode[quote.partyB]) {
-				accountLayout.partyBAllocatedBalances[quote.partyB][address(0)] = 0;
-			} else {
-				accountLayout.reserveVault[quote.partyB] = 0;
-			}
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += reservedBalance;
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, reservedBalance, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			int256 diff = (int256(quote.quantityToClose) * (int256(closePrice) - int256(sig.currentPrice))) / 1e18;
-			if (quote.positionType == PositionType.LONG) {
-				diff = diff * -1;
-			}
-			isPartyBLiquidated = true;
-			upnlPartyB = sig.upnlPartyB + diff;
-			LibLiquidation.liquidatePartyB(quote.partyB, quote.partyA, upnlPartyB, block.timestamp);
-		}
-		partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
-	}
+	// 		accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += available;
+	// 		emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+	// 		LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
+	// 	} else {
+	// 		if (accountLayout.masterAccountMode[quote.partyB]) {
+	// 			accountLayout.partyBAllocatedBalances[quote.partyB][address(0)] = 0;
+	// 		} else {
+	// 			accountLayout.reserveVault[quote.partyB] = 0;
+	// 		}
+	// 		accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += reservedBalance;
+	// 		emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, reservedBalance, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+	// 		int256 diff = (int256(quote.quantityToClose) * (int256(closePrice) - int256(sig.currentPrice))) / 1e18;
+	// 		if (quote.positionType == PositionType.LONG) {
+	// 			diff = diff * -1;
+	// 		}
+	// 		isPartyBLiquidated = true;
+	// 		upnlPartyB = sig.upnlPartyB + diff;
+	// 		LibLiquidation.liquidatePartyB(quote.partyB, quote.partyA, upnlPartyB, block.timestamp);
+	// 	}
+	// 	partyBAllocatedBalance = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
+	// }
 
 	function getClosePrice(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view returns (uint256 closePrice) {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -297,12 +297,10 @@ library ForceActionsFacetImpl {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		address partyB = quote.partyB;
 
+		if (accountLayout.masterAccountMode[partyB]) revert ForceCloseErrors.MasterAccountModeNotEnabled();
+
 		LibForceSolve.verifyPrice(quoteId, highLowPrice);
 		closePrice = getClosePrice(quoteId, highLowPrice);
-
-		// TODO if master account mode callable
-
-		uint256 reservedBalance = accountLayout.reserveVault[partyB];
 
 		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceSolve.getAvailableBalancesAfterClose(
 			quoteId,
@@ -316,6 +314,7 @@ library ForceActionsFacetImpl {
 			revert ForceCloseErrors.PartyAWillBeInsolvent();
 		}
 
+		uint256 reservedBalance = accountLayout.reserveVault[partyB];
 		(, isPartyBLiquidated, upnlPartyB) = forceCloseFinalization(
 			quoteId,
 			closePrice,
