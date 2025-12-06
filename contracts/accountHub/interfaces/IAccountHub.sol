@@ -76,6 +76,7 @@ interface IAccountHub {
 	// Account events
 	event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
 	event VirtualAccountCreated(address indexed account, address indexed parent);
+	event VirtualAccountReused(address indexed account, address indexed parent);
 	event VirtualAccountDeleted(address indexed account, address indexed parent);
 
 	// Legacy compatibility events

@@ -48,6 +48,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	mapping(address => EnumerableSet.AddressSet) private userToSubAccounts;
 	mapping(address => EnumerableSet.AddressSet) private subAccountToVirtualAccounts;
 
+	// Pool of deleted virtual accounts for reuse: parentAccount => isolationType => symbolId => stack of addresses
+	mapping(address => mapping(VirtualAccountIsolationType => mapping(uint256 => address[]))) private deletedVirtualAccountsPool;
+
 	address public affiliateHub;
 	address internal globalSigner;
 	uint256 public globalNonce;
@@ -120,12 +123,12 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @notice Manually creates a virtual account for a sub-account
+	 * @notice Manually creates or reuses a virtual account for a sub-account
 	 * @param parentAccount The parent sub-account address
 	 * @param metadata The metadata for the virtual account
 	 * @param isolationType The isolation type for the virtual account
 	 * @param symbolId The symbol ID (required for MARKET isolation types)
-	 * @return virtualAccount The created virtual account address
+	 * @return virtualAccount The created or reused virtual account address
 	 */
 	function createCustomVirtualAccount(
 		address parentAccount,
@@ -139,7 +142,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			revert OnlyCustomIsolationCanCreateManually();
 		}
 
-		return _createVirtualAccount(parentAccount, metadata, isolationType, symbolId);
+		return _getOrCreateVirtualAccount(parentAccount, metadata, isolationType, symbolId);
 	}
 
 	/**
@@ -409,6 +412,53 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
+	 * @dev Gets or creates a virtual account, trying to reuse a deleted one first
+	 */
+	function _getOrCreateVirtualAccount(
+		address parentAccount,
+		bytes memory metadata,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) private returns (address) {
+		address reused = _tryReuseVirtualAccount(parentAccount, isolationType, symbolId);
+		if (reused != address(0)) return reused;
+		return _createVirtualAccount(parentAccount, metadata, isolationType, symbolId);
+	}
+
+	/**
+	 * @dev Tries to reuse a deleted virtual account from the pool
+	 * @return The reused account address, or address(0) if none available
+	 */
+	function _tryReuseVirtualAccount(address parentAccount, VirtualAccountIsolationType isolationType, uint256 symbolId) private returns (address) {
+		address[] storage pool = deletedVirtualAccountsPool[parentAccount][isolationType][symbolId];
+		
+		if (pool.length == 0) return address(0);
+
+		// Pop from the stack (LIFO)
+		address reusedAccount = pool[pool.length - 1];
+		pool.pop();
+
+		// Reactivate the virtual account
+		VirtualAccountData storage v = virtualAccounts[reusedAccount];
+		v.isExists = true;
+
+		// Add back to active set
+		subAccountToVirtualAccounts[parentAccount].add(reusedAccount);
+
+		SubAccountData storage parent = subAccounts[parentAccount];
+
+		_callHook(
+			parent.affiliate,
+			IAccountHubHook.onVirtualAccountCreation.selector,
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount)
+		);
+
+		emit VirtualAccountReused(reusedAccount, parentAccount);
+
+		return reusedAccount;
+	}
+
+	/**
 	 * @dev Creates a virtual account
 	 */
 	function _createVirtualAccount(
@@ -442,7 +492,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @dev Deletes a virtual account
+	 * @dev Deletes a virtual account and adds it to the reuse pool
 	 */
 	function _deleteVirtualAccount(address account) private {
 		VirtualAccountData storage vData = virtualAccounts[account];
@@ -455,6 +505,10 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_deallocateAndTransferBalance(account, parentAccount, core);
 
 		vData.isExists = false;
+
+		// Add to the reuse pool (stack) and remove from active set
+		deletedVirtualAccountsPool[parentAccount][vData.isolationType][vData.symbolId].push(account);
+		subAccountToVirtualAccounts[parentAccount].remove(account);
 
 		address affiliate = _getAffiliateForAccount(account);
 
@@ -592,21 +646,21 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			return;
 		}
 
-		// create virtual account based on sub-account isolation type
+		// Get or create virtual account based on sub-account isolation type (tries to reuse deleted ones first)
 		address virtualAccount;
 		if (accountData.isolationType == SubAccountIsolationType.POSITION) {
-			virtualAccount = _createVirtualAccount(account, hex"", VirtualAccountIsolationType.POSITION, p.symbolId);
+			virtualAccount = _getOrCreateVirtualAccount(account, hex"", VirtualAccountIsolationType.POSITION, p.symbolId);
 		}
 
 		if (accountData.isolationType == SubAccountIsolationType.MARKET)
-			virtualAccount = _createVirtualAccount(account, hex"", VirtualAccountIsolationType.MARKET, p.symbolId);
+			virtualAccount = _getOrCreateVirtualAccount(account, hex"", VirtualAccountIsolationType.MARKET, p.symbolId);
 
 		if (accountData.isolationType == SubAccountIsolationType.MARKET_DIRECTION) {
 			VirtualAccountIsolationType vType = p.positionType == ISymmio.PositionType.LONG
 				? VirtualAccountIsolationType.MARKET_LONG
 				: VirtualAccountIsolationType.MARKET_SHORT;
 
-			virtualAccount = _createVirtualAccount(account, hex"", vType, p.symbolId);
+			virtualAccount = _getOrCreateVirtualAccount(account, hex"", vType, p.symbolId);
 		}
 
 		address core = getRelatedCore(account);
@@ -717,7 +771,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	function _callHook(address affiliate, bytes4 selector, bytes memory data) private {
 		address hook = IAffiliateHub(affiliateHub).getHook(affiliate, selector);
 		if (hook == address(0)) return;
-		(bool success,) = hook.call(data);
+		(bool success, ) = hook.call(data);
 		if (!success) {
 			revert hookFailed();
 		}
@@ -752,12 +806,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	/**
 	 * @dev Helper to handle internal transfer and quote execution
 	 */
-	function _transferBalanceForSendQuote(
-		address core,
-		address signerAccount,
-		address transferTarget,
-		QuoteParams memory p
-	) private {
+	function _transferBalanceForSendQuote(address core, address signerAccount, address transferTarget, QuoteParams memory p) private {
 		ISymmio(core).setSigner(signerAccount);
 		uint256 tradingPrice = p.OrderType == ISymmio.OrderType.LIMIT ? p.price : p.sig.price;
 		ISymmio.Fee memory fee = ISymmio(core).getFee(p.affiliate, p.symbolId);
