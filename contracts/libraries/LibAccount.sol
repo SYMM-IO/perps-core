@@ -105,24 +105,25 @@ library LibAccount {
 	 */
 	function partyBAvailableForQuote(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address bucketKey = partyBAllocationBucket(partyB, partyA);
 		int256 available;
 		if (upnl >= 0) {
 			available =
-				int256(accountLayout.partyBAllocatedBalances[partyB][partyA]) +
+				int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) +
 				upnl -
 				int256(
-					(accountLayout.partyBLockedBalances[partyB][partyA].totalForPartyB() +
-						accountLayout.partyBPendingLockedBalances[partyB][partyA].totalForPartyB())
+					(accountLayout.partyBLockedBalances[partyB][bucketKey].totalForPartyB() +
+						accountLayout.partyBPendingLockedBalances[partyB][bucketKey].totalForPartyB())
 				);
 		} else {
-			int256 mm = int256(accountLayout.partyBLockedBalances[partyB][partyA].partyBmm);
+			int256 mm = int256(accountLayout.partyBLockedBalances[partyB][bucketKey].partyBmm);
 			int256 considering_mm = -upnl > mm ? -upnl : mm;
 			available =
-				int256(accountLayout.partyBAllocatedBalances[partyB][partyA]) -
+				int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) -
 				int256(
-					(accountLayout.partyBLockedBalances[partyB][partyA].cva +
-						accountLayout.partyBLockedBalances[partyB][partyA].lf +
-						accountLayout.partyBPendingLockedBalances[partyB][partyA].totalForPartyB())
+					(accountLayout.partyBLockedBalances[partyB][bucketKey].cva +
+						accountLayout.partyBLockedBalances[partyB][bucketKey].lf +
+						accountLayout.partyBPendingLockedBalances[partyB][bucketKey].totalForPartyB())
 				) -
 				considering_mm;
 		}
@@ -138,18 +139,19 @@ library LibAccount {
 	 */
 	function partyBAvailableBalance(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address bucketKey = partyBAllocationBucket(partyB, partyA);
 		int256 available;
 		if (upnl >= 0) {
 			available =
-				int256(accountLayout.partyBAllocatedBalances[partyB][partyA]) +
+				int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) +
 				upnl -
-				int256(accountLayout.partyBLockedBalances[partyB][partyA].totalForPartyB());
+				int256(accountLayout.partyBLockedBalances[partyB][bucketKey].totalForPartyB());
 		} else {
-			int256 mm = int256(accountLayout.partyBLockedBalances[partyB][partyA].partyBmm);
+			int256 mm = int256(accountLayout.partyBLockedBalances[partyB][bucketKey].partyBmm);
 			int256 considering_mm = -upnl > mm ? -upnl : mm;
 			available =
-				int256(accountLayout.partyBAllocatedBalances[partyB][partyA]) -
-				int256(accountLayout.partyBLockedBalances[partyB][partyA].cva + accountLayout.partyBLockedBalances[partyB][partyA].lf) -
+				int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) -
+				int256(accountLayout.partyBLockedBalances[partyB][bucketKey].cva + accountLayout.partyBLockedBalances[partyB][bucketKey].lf) -
 				considering_mm;
 		}
 		return available;
@@ -164,22 +166,22 @@ library LibAccount {
 	 */
 	function partyBAvailableBalanceForLiquidation(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][partyA]) -
-			int256(accountLayout.partyBLockedBalances[partyB][partyA].cva + accountLayout.partyBLockedBalances[partyB][partyA].lf);
+		address bucketKey = partyBAllocationBucket(partyB, partyA);
+		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) -
+			int256(accountLayout.partyBLockedBalances[partyB][bucketKey].cva + accountLayout.partyBLockedBalances[partyB][bucketKey].lf);
 		return a + upnl;
 	}
 
 	/**
-	 * @notice Calculates the available balance for liquidation for Party B in master account mode enabled.
-	 * @param upnl The unrealized profit and loss.
+	 * @notice Returns the key used for balance allocation mapping in Party B when master account mode enabled.
 	 * @param partyB The address of Party B.
 	 * @param partyA The address of Party A.
-	 * @return The available balance for liquidation for Party B.
+	 * @return bucket Party B allocation mapping key.
 	 */
-	function partyBAvailableBalanceForLiquidationMasterAccount(int256 upnl, address partyB, address partyA) internal view returns (int256) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][address(0)]) -
-			int256(accountLayout.partyBLockedBalances[partyB][partyA].cva + accountLayout.partyBLockedBalances[partyB][partyA].lf);
-		return a + upnl;
+	function partyBAllocationBucket(address partyB, address partyA) internal view returns (address bucket) {
+		if (AccountStorage.layout().masterAccountMode[partyB]) {
+			bucket = address(0);
+		}
+		bucket = partyA;
 	}
 }
