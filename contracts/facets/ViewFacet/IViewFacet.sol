@@ -125,6 +125,8 @@ interface IViewFacet {
 	// Role
 	function hasRole(address user, bytes32 role) external view returns (bool);
 
+	function isRoleAdmin(address account, bytes32 role) external view returns (bool);
+
 	function getRoleHash(string memory str) external pure returns (bytes32);
 
 	//////////////////////////////////////

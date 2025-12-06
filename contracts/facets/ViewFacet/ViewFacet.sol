@@ -17,6 +17,7 @@ import "../../storages/QuoteStorage.sol";
 import "../../storages/SymbolStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/BridgeStorage.sol";
+import "../../libraries/LibAccessibility.sol";
 import "./IViewFacet.sol";
 
 contract ViewFacet is IViewFacet {
@@ -809,6 +810,16 @@ contract ViewFacet is IViewFacet {
 	 */
 	function hasRole(address user, bytes32 role) external view returns (bool) {
 		return GlobalAppStorage.layout().hasRole[user][role];
+	}
+
+	/**
+	 * @notice Checks if a user is admin for a role.
+	 * @param user The address of the user.
+	 * @param role The role to check.
+	 * @return True if the user is an admin for the role, false otherwise.
+	 */
+	function isRoleAdmin(address user, bytes32 role) external view returns (bool) {
+		return LibAccessibility.isRoleAdmin(user, role);
 	}
 
 	/**

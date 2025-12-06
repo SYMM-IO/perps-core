@@ -33,6 +33,7 @@ library GlobalAppStorage {
 		mapping(address => bool) virtualProviders;
 		mapping(address => bool) expressProviders;
 		bool deprecateOldWithdrawalPaused;
+		mapping(bytes32 => mapping(address => bool)) roleAdmins;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

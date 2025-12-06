@@ -25,6 +25,12 @@ abstract contract Accessibility {
 		_;
 	}
 
+
+	modifier onlyRoleAdmin(bytes32 role) {
+		require(LibAccessibility.isRoleAdmin(msg.sender, role), "Accessibility: Must be role admin");
+		_;
+	}
+
 	modifier onlyRole(bytes32 role) {
 		require(LibAccessibility.hasRole(msg.sender, role), "Accessibility: Must has role");
 		_;

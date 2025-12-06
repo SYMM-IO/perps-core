@@ -37,4 +37,16 @@ library LibAccessibility {
 		GlobalAppStorage.Layout storage layout = GlobalAppStorage.layout();
 		return layout.hasRole[user][role];
 	}
+
+	/**
+	 * @notice Checks if a user is admin for a specific role.
+	 * @dev users with DEFAULT_ADMIN_ROLE are admin for all roles.
+	 * @param user The user to check.
+	 * @param role The role to check admin rights for.
+	 * @return Whether the user can administer the role.
+	 */
+	function isRoleAdmin(address user, bytes32 role) internal view returns (bool) {
+		GlobalAppStorage.Layout storage layout = GlobalAppStorage.layout();
+		return layout.roleAdmins[role][user] || layout.hasRole[user][DEFAULT_ADMIN_ROLE];
+	}
 }
