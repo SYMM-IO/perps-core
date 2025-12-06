@@ -35,7 +35,7 @@ library PartyAFacetImpl {
 		address affiliate,
 		SingleUpnlAndPriceSig memory upnlSig,
 		bytes memory data
-	) internal returns (uint256 currentId) {
+	) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -90,7 +90,7 @@ library PartyAFacetImpl {
 
 		// lock funds the in middle of way
 		accountLayout.pendingLockedBalances[LibSigner.getSigner()].add(lockedValues);
-		currentId = ++quoteLayout.lastId;
+		uint256 currentId = ++quoteLayout.lastId;
 
 		// create quote.
 		Quote memory quote = Quote({
