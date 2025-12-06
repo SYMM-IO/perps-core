@@ -18,17 +18,11 @@ library SettlementFacetImpl {
 		return LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, false);
 	}
 
-	function crossSettleUpnl(
-		CrossSettlementSig memory settleSig,
+	function settleUpnlMasterAccount(
+		MasterAccountSettlementSig memory settleSig,
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
-		LibMuonCrossSettlement.verifyCrossSettlement(settleSig);
-		return LibSettlement.crossSettleUpnl(settleSig, updatedPrices, false);
-	}
-
-	function settleAllocated(
-		address partyB, address[] memory partyAs, uint256[] memory fetchAmounts
-	) internal {
-		 LibSettlement.settleAllocated(partyB, partyAs, fetchAmounts);
+		LibMuonCrossSettlement.verifyMasterAccountSettlement(settleSig);
+		return LibSettlement.settleUpnlMasterAccount(settleSig, updatedPrices, false);
 	}
 }

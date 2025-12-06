@@ -18,7 +18,7 @@ interface ForceActionsFacetEvents {
 		QuoteStatus quoteStatus,
 		uint256 closeId
 	);
-	event ForceClosePositionMaster(
+	event ForceClosePositionMasterAccount(
 		uint256 quoteId,
 		address partyA,
 		address partyB,

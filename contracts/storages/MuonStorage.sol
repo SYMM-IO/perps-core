@@ -122,15 +122,15 @@ struct SettlementSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
-struct CrossQuoteSettlementData {
+struct MasterAccountQuoteSettlementData {
 	uint256 quoteId;
 	uint256 currentPrice; //market price
 }
- 
-struct CrossSettlementSig {
+
+struct MasterAccountSettlementSig {
 	bytes reqId;
 	uint256 timestamp;
-	CrossQuoteSettlementData[] quotesSettlementsData;
+	MasterAccountQuoteSettlementData[] quotesSettlementsData;
 	address partyB;
 	int256 upnlPartyB; //Party B UPNLs for all party As in master account mode enabled
 	address[] partyAs;

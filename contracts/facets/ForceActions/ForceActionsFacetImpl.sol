@@ -209,7 +209,7 @@ library ForceActionsFacetImpl {
 
 	function getClosePrice(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view returns (uint256 closePrice) {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
 
 		closePrice = LibForceSolve.GetClosePrice(
 			quote.positionType,
@@ -274,10 +274,10 @@ library ForceActionsFacetImpl {
 		}
 	}
 
-	function forceCloseMaster(uint256 quoteId) internal returns (bool isSolvent) {
+	function forceCloseMasterAccount(uint256 quoteId) internal returns (bool isSolvent) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
+		ForceCloseDetail memory detail = accountLayout.forceCloseDetails[quoteId];
 		(isSolvent, , ) = forceCloseFinalization(
 			quoteId,
 			detail.closePrice,
@@ -294,8 +294,7 @@ library ForceActionsFacetImpl {
 		HighLowPriceSig memory highLowPrice
 	) internal returns (uint256 closePrice, int256 upnlPartyB, bool isPartyBLiquidated) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		address partyB = quote.partyB;
+		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
 
 		if (accountLayout.masterAccountMode[partyB]) revert ForceCloseErrors.MasterAccountModeNotEnabled();
 
@@ -327,9 +326,8 @@ library ForceActionsFacetImpl {
 	}
 
 	function realizeUPNL(uint256 quoteId, SettlementSig memory settlementSig, uint256[] memory updatedPrices) internal {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
-		address partyA = quote.partyA;
+		address partyA = QuoteStorage.layout().quotes[quoteId].partyA;
 
 		LibMuonSettlement.verifySettlement(settlementSig, partyA);
 		newPartyBsAllocatedBalances = LibSettlement.settleUpnl(settlementSig, updatedPrices, partyA, true);
@@ -338,31 +336,18 @@ library ForceActionsFacetImpl {
 		detail.settlementState = UPNLSettlementState.REALIZED;
 	}
 
-	function realizeUPNLMasterAccount(
+	function settleUpnlMasterAccount(
 		uint256 forceCloseId,
-		CrossSettlementSig memory settlementSig,
+		MasterAccountSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[forceCloseId];
 
 		if (!detail.inProgress) revert ForceCloseErrors.InvalidState();
 
-		LibMuonCrossSettlement.verifyCrossSettlement(settlementSig);
-		(newPartyAsAllocatedBalances, partyAs) = LibSettlement.crossSettleUpnl(settlementSig, updatedPrices, true);
+		LibMuonCrossSettlement.verifyMasterAccountSettlement(settlementSig);
+		(newPartyAsAllocatedBalances, partyAs) = LibSettlement.settleUpnlMasterAccount(settlementSig, updatedPrices, true);
 		detail.settlementState = UPNLSettlementState.REALIZED_MASTER_ACCOUNT;
-		detail.timestamp = block.timestamp;
-	}
-
-	function fetchAllocatedMasterAccount(uint256 forceCloseId, address partyB, address[] memory partyAs, uint256[] memory fetchAmounts) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[forceCloseId];
-
-		if (!(accountLayout.masterAccountMode[partyB])) revert ForceCloseErrors.MasterAccountModeInactive();
-		if (!detail.inProgress) revert ForceCloseErrors.InvalidState();
-
-		LibSettlement.settleAllocated(partyB, partyAs, fetchAmounts);
-
-		detail.allocatedSettlementState = AllocatedSettlementState.GATHER_ALLOCATED_MASTER_ACCOUNT;
 		detail.timestamp = block.timestamp;
 	}
 }

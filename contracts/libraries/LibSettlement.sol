@@ -120,8 +120,8 @@ library LibSettlement {
 		}
 	}
 
-	function crossSettleUpnl(
-		CrossSettlementSig memory settleSig,
+	function settleUpnlMasterAccount(
+		MasterAccountSettlementSig memory settleSig,
 		uint256[] memory updatedPrices,
 		bool isForceClose
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
@@ -138,7 +138,7 @@ library LibSettlement {
 		partyAs = new address[](settleSig.quotesSettlementsData.length);
 
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
-			CrossQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
+			MasterAccountQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
 			require(
 				isForceClose || quoteLayout.partyBOpenPositions[msg.sender][quote.partyA].length > 0,
@@ -180,8 +180,8 @@ library LibSettlement {
 		}
 
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
-			CrossQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
-			Quote storage quote = quoteLayout.quotes[data.quoteId];
+			MasterAccountQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
+			Quote memory quote = quoteLayout.quotes[data.quoteId];
 			address partyA = quote.partyA;
 			address partyB = quote.partyB;
 
@@ -238,25 +238,4 @@ library LibSettlement {
 		}
 	}
 
-	function settleAllocated(address partyB, address[] memory partyAs, uint256[] memory fetchAmounts) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
-		require(accountLayout.masterAccountMode[partyB], "LibSettlement: partyB is not using master account mode");
-
-		for (uint256 i = 0; i < partyAs.length; i++) {
-			address partyA = partyAs[i];
-			uint256 fetchAmount = fetchAmounts[i];
-			uint256 allocated = accountLayout.partyBAllocatedBalances[partyB][partyA];
-
-			require(fetchAmount > 0, "LibSettlement: Fetch amount must be greater than zero");
-			require(fetchAmount <= allocated, "LibSettlement: Fetch amount out of range");
-
-			accountLayout.partyBAllocatedBalances[partyB][partyA] = allocated - fetchAmount;
-			accountLayout.partyBAllocatedBalances[partyB][address(0)] += fetchAmount;
-			emit SharedEvents.BalanceChangePartyB(partyB, partyA, fetchAmount, SharedEvents.BalanceChangeType.DEALLOCATE);
-			emit SharedEvents.BalanceChangePartyB(partyB, address(0), fetchAmount, SharedEvents.BalanceChangeType.ALLOCATE);
-
-			accountLayout.partyBNonces[partyB][partyA] += 1;
-		}
-	}
 }

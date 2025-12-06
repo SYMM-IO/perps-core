@@ -19,8 +19,6 @@ interface IForceActionsFacet is ForceActionsFacetEvents {
 		SettlementSig memory settleSig,
 		uint256[] memory updatedPrices
 	) external;
-
-	function realizeUPNLMasterAccount(uint256 quoteId, CrossSettlementSig memory settlementSig, uint256[] memory updatedPrices) external;
 }
 
 library ForceCloseErrors {

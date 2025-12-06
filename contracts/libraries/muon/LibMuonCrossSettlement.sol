@@ -9,7 +9,7 @@ import "../../storages/AccountStorage.sol";
 import "./LibMuon.sol";
 
 library LibMuonCrossSettlement {
-	function verifyCrossSettlement(CrossSettlementSig memory settleSig) internal view {
+	function verifyMasterAccountSettlement(MasterAccountSettlementSig memory settleSig) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		QuoteStorage.Layout storage quotes = QuoteStorage.layout();
 		// == SignatureCheck( ==
