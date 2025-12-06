@@ -54,7 +54,6 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		notSuspended(LibSigner.getSigner())
 		returns (uint256 quoteId)
 	{
-		quoteId = ++QuoteStorage.layout().lastId;
 		PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
@@ -72,6 +71,8 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			upnlSig,
 			""
 		);
+
+		quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		emit SendQuote(
 			LibSigner.getSigner(),
@@ -137,7 +138,6 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		notSuspended(LibSigner.getSigner())
 		returns (uint256 quoteId)
 	{
-		quoteId = ++QuoteStorage.layout().lastId;
 		PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
@@ -155,6 +155,8 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			upnlSig,
 			data
 		);
+
+		quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		emit SendQuoteData(quoteId, data);
 		emit SendQuote(
@@ -216,7 +218,6 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		notLiquidatedPartyA(LibSigner.getSigner())
 		notSuspended(LibSigner.getSigner())
 	{
-		uint256 quoteId = ++QuoteStorage.layout().lastId;
 		PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
@@ -234,6 +235,8 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			upnlSig,
 			""
 		);
+
+		uint256 quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
 		emit SendQuote(

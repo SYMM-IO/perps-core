@@ -9,8 +9,9 @@ import { RunContext } from "./models/RunContext"
 import { User } from "./models/User"
 import { Hedger } from "./models/Hedger"
 import { getDummySingleUpnlSig } from "./utils/SignatureUtils"
-import { decimal } from "./utils/Common"
+import { decimal, getBlockTimestamp } from "./utils/Common"
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer } from "../src/types"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"));
 
@@ -338,10 +339,13 @@ export function shouldBehaveLikeAccountFacet(): void {
 			hedger = new Hedger(context, context.signers.hedger)
 			await hedger.setup()
 			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			console.log(await context.viewFacet.getNextQuoteId())
 
 			const quoteId = await user.sendQuote()
 			const quote = await context.viewFacet.getQuote(quoteId)
-
+			console.log(await context.viewFacet.getNextQuoteId())
+			console.log(quote.quantity)
+ 
 			const notional = quote.quantity * quote.requestedOpenPrice / decimal(1n)
 			await context.accountFacet
 				.connect(context.signers.hedger)
@@ -515,9 +519,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 	})
 
 	describe("InternalTransfer", async function () {
-		const depositAmount = "300"
-		const transferAmount = "250"
-
 		beforeEach(async () => {
 			context = await loadFixture(initializeFixture)
 			
@@ -531,24 +532,23 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			hedger = new Hedger(context, context.signers.hedger)
 			await hedger.setup()
-			await hedger.setBalances("500")
+			await hedger.setBalances(BALANCES.INITIAL_COLLATERAL)
 
-			await context.accountFacet.connect(context.signers.user).deposit(depositAmount)
 		})
 
 		it("should internal transfer successfully", async () => {
-			await context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), transferAmount)
+			await context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)
 			expect(await context.viewFacet.balanceOf(await user2.getAddress())).to.be.equal("0")
-			expect(await context.viewFacet.allocatedBalanceOfPartyA(await user2.getAddress())).to.be.equal(transferAmount)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(await user2.getAddress())).to.be.equal(BALANCES.TRANSFER_AMOUNT)
 
-			const expectedRemainingBalance = (BigInt(depositAmount) - BigInt(transferAmount)).toString()
+			const expectedRemainingBalance = (BigInt(BALANCES.DEPOSIT_AMOUNT) - BigInt(BALANCES.TRANSFER_AMOUNT)).toString()
 			expect(await context.viewFacet.balanceOf(await user.getAddress())).to.be.equal(expectedRemainingBalance)
 		})
 
 		it("Should fail when internal transfers are paused", async function () {
 			await context.controlFacet.connect(context.signers.admin).pauseInternalTransfer()
 
-			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), transferAmount)).to.be.revertedWith(
+			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)).to.be.revertedWith(
 				"Pausable: Internal transfer paused",
 			)
 		})
@@ -556,7 +556,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should fail when accounting is paused", async function () {
 			await context.controlFacet.connect(context.signers.admin).pauseAccounting()
 
-			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), transferAmount)).to.be.revertedWith(
+			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)).to.be.revertedWith(
 				"Pausable: Accounting paused",
 			)
 		})
@@ -564,7 +564,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should fail when global pause is active", async function () {
 			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
 
-			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), transferAmount)).to.be.revertedWith(
+			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)).to.be.revertedWith(
 				"Pausable: Global paused",
 			)
 		})
@@ -590,7 +590,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await mockTarget2.waitForDeployment()
 			targetAddress2 = await mockTarget2.getAddress()
 
-			await context.accountFacet.connect(context.signers.user).deposit(BALANCES.DEPOSIT_AMOUNT)
 
 			await context.controlFacet.connect(context.signers.admin).addRelayerForExternalTransferTarget(targetAddress, targetAddress)
 		})
@@ -748,7 +747,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 	describe("ExternalTransfer (relayer integration)", function () {
 		let sourceContext: RunContext
 		let targetContext: RunContext
-		let relayer: symmioExternalTransferRelayerSol
+		let relayer: SymmioExternalTransferRelayer
 		let sourceUser: User
 		const sourceUserInitialBalance = "1000"
 		const relayerDepositAmount = "500"
