@@ -89,6 +89,12 @@ export function shouldBehaveLikeAccountHub(): void {
 			)
 	}
 
+	async function cancelVirtualAccountQuote(virtualAccount: string) {
+		const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccount)
+		const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quotes[0]])
+		await context.accountHub.connect(context.signers.user)._call(virtualAccount, [encodedCancelQuote])
+	}
+
 	async function closePositionForQuote(partyA: HardhatEthersSigner, quoteId: bigint, virtualAccount: string) {
 		const closeRequest = limitCloseRequestBuilder().build()
 		const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
@@ -899,9 +905,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
 				expect(quotesBeforeClose.length).to.equal(1)
 
-				const quoteId = quotesBeforeClose[0]
-				const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
-				await context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote])
+				await cancelVirtualAccountQuote(virtualAccountAddress)
 
 				const quotesAfterClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
 				expect(quotesAfterClose.length).to.equal(0)
@@ -1098,15 +1102,8 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 
 				it("should call onVirtualAccountDeletion when quote is cancelled", async () => {
-					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
-					const quoteId = quotes[0]
-
-					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
-
 					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountDeletion)
-
-					await context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote])
-
+					await cancelVirtualAccountQuote(virtualAccountAddress)
 					const callCountAfter = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountDeletion)
 
 					expect(callCountAfter).to.equal(callCountBefore + 1n)
@@ -1116,12 +1113,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 
 				it("should pass correct virtual account address to hook", async () => {
-					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
-					const quoteId = quotes[0]
-
-					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
-
-					await context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote])
+					await cancelVirtualAccountQuote(virtualAccountAddress)
 
 					const lastAccount = await hookContract.getLastAccountForSelector(HOOK_SELECTORS.onVirtualAccountDeletion)
 					expect(lastAccount).to.equal(virtualAccountAddress)
@@ -1143,9 +1135,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountDeletion)
 
 					// Cancel only first quote
-					const quotes = await context.accountHub.getVirtualAccountQuoteIds(marketVirtualAccount)
-					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quotes[0]])
-					await context.accountHub.connect(context.signers.user)._call(marketVirtualAccount, [encodedCancelQuote])
+					await cancelVirtualAccountQuote(marketVirtualAccount)
 
 					const callCountAfter = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountDeletion)
 
