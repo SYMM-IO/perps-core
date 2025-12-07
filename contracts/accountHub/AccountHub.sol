@@ -566,7 +566,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 					)
 				);
 			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, affiliate);
-		} else if(selector == SEND_QUOTE_SELECTOR) {
+		} else if (selector == SEND_QUOTE_SELECTOR) {
 			(
 				,
 				uint256 symbolId,
@@ -600,7 +600,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 					)
 				);
 			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
-		} else if(selector == SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR){
+		} else if (selector == SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR) {
 			(
 				,
 				uint256 symbolId,
@@ -616,6 +616,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				,
 				,
 				ISymmio.SingleUpnlAndPriceSig memory sig,
+
 			) = abi.decode(
 					cd[4:],
 					(
