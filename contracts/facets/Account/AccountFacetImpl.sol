@@ -187,15 +187,16 @@ library AccountFacetImpl {
 		IExternalTransferRelayer(relayer).onTransfer(appLayout.collateral, sender, receiver, amount, target);
 	}
 
-	function virtualExternalTransfer(address sender, address receiver, uint256 amount, address virtualProvider) internal returns (uint256){
+	function virtualExternalTransfer(address sender, address receiver, uint256 amount,address target, address virtualProvider) internal returns (uint256){
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
 		require(amount > 0, "AccountFacet: Amount is zero");
-		require(receiver != address(0), "AccountFacet: Zero receiver or target");
+		require(receiver != address(0), "AccountFacet: Zero receiver");
 		require(appLayout.virtualProviders[virtualProvider], "AccountFacet: Invalid virtual provider");
 
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		require(amountWith18Decimals <= accountLayout.balances[sender], "AccountFacet: Insufficient balance");
 		accountLayout.balances[sender] -= amountWith18Decimals;
 
 		uint256 currentId = ++accountLayout.lastExternalTransferId;
@@ -203,6 +204,8 @@ library AccountFacetImpl {
 			id: currentId,
 			sender: sender,
 			receiver: receiver,
+			source: address(this),
+			target: target,
 			amount: amount,
 			timestamp: block.timestamp,
 			provider: virtualProvider,
@@ -226,6 +229,7 @@ library AccountFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		ExternalTransfer storage externalTransfer = accountLayout.externalTransfers[id];
+		require(externalTransfer.sender == msg.sender, "AccountFacet: Only sender can cancel the transfer");
 		require(externalTransfer.status == ExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
 		externalTransfer.status = ExternalTransferStatus.CANCELED;
 		uint256 amountWith18Decimals = (externalTransfer.amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());

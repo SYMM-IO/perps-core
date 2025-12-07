@@ -8,16 +8,23 @@ interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
 	function rejectWithdrawRequest(address user, uint256 requestId) external;
+	function acceptVirtualExternalTransfer(uint256 id) external;
+	function virtualDepositFor(address user, uint256 amount) external;
 }
 
 contract VirtualProvider is IVirtualProvider {
 	address public symmioAddress;
 	uint256 public withdrawnAmount;
+	ExternalTransfer public externalTransferData;
 
 	event WithdrawCalled(address sender, WithdrawReceiverPart part, bytes providerData);
 
 	constructor(address _symmioAddress) {
 		symmioAddress = _symmioAddress;
+	}
+
+	function virtualDepositFor(address symmio, address user, uint256 amount) external {
+		ISymmioCore(symmio).virtualDepositFor(user, amount);
 	}
 
 	function acceptWithdrawRequest(address user, uint256 requestId) external {
@@ -30,6 +37,11 @@ contract VirtualProvider is IVirtualProvider {
 
 	function rejectWithdrawRequest(address user, uint256 requestId) external {
 		ISymmioCore(symmioAddress).rejectWithdrawRequest(user, requestId);
+	}
+
+	function acceptVirtualExternalTransfer(uint256 id) external {
+		ISymmioCore(externalTransferData.source).acceptVirtualExternalTransfer(id);
+		ISymmioCore(externalTransferData.target).virtualDepositFor(externalTransferData.receiver, externalTransferData.amount);
 	}
 
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest) external override {
@@ -71,13 +83,14 @@ contract VirtualProvider is IVirtualProvider {
 		_newCooldown;
 	}
 
-	function onExternalTransfer(ExternalTransfer memory externalTransfer) external override pure {
+	function onExternalTransfer(ExternalTransfer memory externalTransfer) external override {
 		require(true, "");
-		externalTransfer;
+		externalTransferData = externalTransfer;
 	}
 
 	function onCancelExternalTransfer(uint256 id) external {
 		require(true, "");
 		id;
 	}
+
 }

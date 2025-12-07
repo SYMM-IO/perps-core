@@ -84,6 +84,8 @@ struct ExternalTransfer{
 	uint256 id;
 	address sender;
 	address receiver;
+	address source;
+	address target;
 	uint256 amount;
 	uint256 timestamp;
 	address provider;

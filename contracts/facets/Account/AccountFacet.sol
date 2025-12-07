@@ -244,10 +244,11 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function virtualExternalTransfer(
 		address receiver,
 		uint256 amount,
+		address target,
 		address virtualProvider
 	) external whenNotExternalTransferPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {
-		uint256 id = AccountFacetImpl.virtualExternalTransfer(msg.sender, receiver, amount, virtualProvider);
-		emit InitiateVirtualExternalTransfer(id,msg.sender, receiver, amount, virtualProvider);
+		uint256 id = AccountFacetImpl.virtualExternalTransfer(msg.sender, receiver, amount, target,virtualProvider);
+		emit InitiateVirtualExternalTransfer(id,msg.sender, receiver, amount,target,virtualProvider);
 	}
 
 	/**
@@ -258,6 +259,11 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function acceptVirtualExternalTransfer(uint256 id) external whenNotExternalTransferPaused {
 		AccountFacetImpl.acceptVirtualExternalTransfer(id);
 		emit AcceptVirtualExternalTransfer(id);
+	}
+
+	function cancelVirtualExternalTransfer(uint256 id) external whenNotExternalTransferPaused {
+		AccountFacetImpl.cancelVirtualExternalTransfer(id);
+		emit CancelVirtualExternalTransfer(id);
 	}
 
 	/// @notice Allows Party A to bind to Party B
