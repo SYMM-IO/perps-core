@@ -22,6 +22,7 @@ import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavio
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior"
 import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior"
 import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior";
+import { shouldBehaveLikeAccessControlRoleAdmins } from "./AccessControlRoleAdmins.behavior"
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
@@ -91,6 +92,10 @@ describe("UnitTests", function () {
 
 		describe("ControlFacet", async function () {
 			shouldBehaveLikeControlFacet()
+		})
+
+		describe("AccessControlRoleAdmins", async function () {
+			shouldBehaveLikeAccessControlRoleAdmins()
 		})
 
 		describe("Settlement", async function () {
