@@ -46,10 +46,74 @@ export function shouldBehaveLikeControlFacet(): void {
 	describe("transferOwnership", () => {
 		it("Should transferOwnership successfully", async function () {
 			await expect(context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())).to.not.reverted
+			expect(await context.viewFacet.pendingOwner()).to.equal(await user2.getAddress())
 		})
 
-		it("Should not transferOwnership to Address zero", async function () {
-			await expect(context.controlFacet.connect(owner).transferOwnership(ethers.ZeroAddress)).to.be.revertedWith("ControlFacet: Zero address")
+		it("Should revert when passing zero address", async function () {
+			await expect(context.controlFacet.connect(owner).transferOwnership(ZeroAddress)).to.be.revertedWith("ControlFacet: Zero address")
+		})
+
+		it("Should revert when caller is not current owner", async function () {
+			await expect(context.controlFacet.connect(user2).transferOwnership(await user2.getAddress())).to.be.revertedWith(
+				"LibDiamond: Must be contract owner",
+			)
+		})
+	})
+
+	describe("cancelOwnershipTransfer", () => {
+		it("Should allow owner to cancel the pending owner", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			expect(await context.viewFacet.pendingOwner()).to.equal(await user2.getAddress())
+			await expect(context.controlFacet.connect(owner).cancelOwnershipTransfer()).to.not.reverted
+			expect(await context.viewFacet.pendingOwner()).to.equal(ZeroAddress)
+		})
+
+		it("Should revert when there is no pending owner", async function () {
+			// cancel current pending owner because we have transfered owner in 'before'
+			await context.controlFacet.connect(owner).cancelOwnershipTransfer()
+			// cancel pending owner which is zero address
+			await expect(context.controlFacet.connect(owner).cancelOwnershipTransfer()).to.be.revertedWith("LibDiamond: Pending owner is zero")
+			expect(await context.viewFacet.pendingOwner()).to.equal(ZeroAddress)
+		})
+
+		it("Should revert when caller is not current owner", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await expect(context.controlFacet.connect(user2).cancelOwnershipTransfer()).to.be.revertedWith("LibDiamond: Must be contract owner")
+		})
+	})
+
+	describe("acceptOwnership", () => {
+		it("Should revert when no pending owner is set", async function () {
+			await context.controlFacet.connect(owner).cancelOwnershipTransfer()
+			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.be.revertedWith("LibDiamond: Sender should be the pendingOwner")
+		})
+
+		it("Should revert when caller is not the pending owner", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await expect(context.controlFacet.connect(owner).acceptOwnership()).to.be.revertedWith("LibDiamond: Sender should be the pendingOwner")
+		})
+
+		it("Should allow pending owner to accept ownership", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.not.reverted
+			expect(await context.viewFacet.owner()).to.equal(await user2.getAddress())
+			expect(await context.viewFacet.pendingOwner()).to.equal(ZeroAddress)
+		})
+
+		it("Should not allow previous pending owner to accept after reset", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await context.controlFacet.connect(owner).cancelOwnershipTransfer()
+			await expect(context.controlFacet.connect(user2).acceptOwnership()).to.be.revertedWith("LibDiamond: Sender should be the pendingOwner")
+		})
+
+		it("Should update contract owner after acceptance", async function () {
+			await context.controlFacet.connect(owner).transferOwnership(await user2.getAddress())
+			await context.controlFacet.connect(user2).acceptOwnership()
+			await expect(context.controlFacet.connect(owner).transferOwnership(await hedger.getAddress())).to.be.revertedWith(
+				"LibDiamond: Must be contract owner",
+			)
+			await expect(context.controlFacet.connect(user2).transferOwnership(await hedger.getAddress())).to.not.reverted
+			expect(await context.viewFacet.pendingOwner()).to.equal(await hedger.getAddress())
 		})
 	})
 
@@ -286,12 +350,12 @@ export function shouldBehaveLikeControlFacet(): void {
 
 	describe("setFeeCollector", () => {
 		it("Should setFeeCollector successfully", async function () {
-			await expect(context.controlFacet.connect(owner).setFeeCollector(context.multiAccount2!, user2.address)).to.not.be.reverted
-			expect(await context.viewFacet.getFeeCollector(context.multiAccount2!)).to.equal(user2.address)
+			await expect(context.controlFacet.connect(owner).setFeeCollector(context.accountManager2!, user2.address)).to.not.be.reverted
+			expect(await context.viewFacet.getFeeCollector(context.accountManager2!)).to.equal(user2.address)
 		})
 
 		it("Should not setFeeCollector when address is zero", async function () {
-			await expect(context.controlFacet.connect(owner).setFeeCollector(context.multiAccount2!, ethers.ZeroAddress)).to.be.revertedWith(
+			await expect(context.controlFacet.connect(owner).setFeeCollector(context.accountManager2!, ethers.ZeroAddress)).to.be.revertedWith(
 				"ControlFacet: Zero address",
 			)
 		})
@@ -582,6 +646,28 @@ export function shouldBehaveLikeControlFacet(): void {
 			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(2e18), BigInt(2e18))).to.revertedWith(
 				"ControlFacet: High fee",
 			)
+		})
+	})
+
+	describe("setMasterAccountActivationMode", () => {
+		it("should allow admin to toggle master account activation", async function () {
+			expect(await context.viewFacet.getMasterAccountActivationMode()).to.equal(false)
+
+			// set true
+			await expect(context.controlFacet.connect(owner).setMasterAccountActivationMode(true))
+				.to.emit(context.controlFacet, "SetMasterAccountActivationMode")
+				.withArgs(false, true)
+			expect(await context.viewFacet.getMasterAccountActivationMode()).to.equal(true)
+
+			// set false
+			await expect(context.controlFacet.connect(owner).setMasterAccountActivationMode(false))
+				.to.emit(context.controlFacet, "SetMasterAccountActivationMode")
+				.withArgs(true, false)
+			expect(await context.viewFacet.getMasterAccountActivationMode()).to.equal(false)
+		})
+
+		it("should revert when caller dont have admin role for master account activation set", async function () {
+			await expect(context.controlFacet.connect(user2).setMasterAccountActivationMode(true)).to.be.revertedWith("Accessibility: Must has role")
 		})
 	})
 }

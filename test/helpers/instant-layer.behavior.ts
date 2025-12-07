@@ -5,10 +5,9 @@ import { PositionType, QuoteStatus } from "../models/Enums"
 import { Hedger } from "../models/Hedger"
 import { RunContext } from "../models/RunContext"
 import { User } from "../models/User"
-import { limitOpenRequestBuilder, marketOpenRequestBuilder, OpenRequest } from "../models/requestModels/OpenRequest"
-import { limitQuoteRequestBuilder, marketQuoteRequestBuilder, QuoteRequest, QuoteRequestWithData } from "../models/requestModels/QuoteRequest"
-import { OpenPositionValidator } from "../models/validators/OpenPositionValidator"
-import { decimal, getBlockTimestamp, getQuoteQuantity, pausePartyB } from "../utils/Common"
+import { limitOpenRequestBuilder, OpenRequest } from "../models/requestModels/OpenRequest"
+import { limitQuoteRequestBuilder, QuoteRequest } from "../models/requestModels/QuoteRequest"
+import { decimal, getBlockTimestamp } from "../utils/Common"
 import { ethers, network } from "hardhat"
 import {
 	AbiCoder,
@@ -19,21 +18,9 @@ import {
 	toUtf8Bytes,
 	EthersError,
 	BytesLike,
-	MulticoinProviderPlugin,
 	TypedDataDomain,
 } from "ethers"
-import { bigint, int } from "hardhat/internal/core/params/argumentTypes"
-import { config } from "dotenv"
-
-import * as diamond from "../../artifacts/contracts/Diamond.sol/Diamond.json"
-// import * as partyAOpenIntent from "../artifacts/contracts/facets/PartyAOpen/PartyAOpenFacet.sol/PartyAOpenFacet.json"
-// import * as partyBOpenIntent from "../artifacts/contracts/facets/PartyBOpen/PartyBOpenFacet.sol/PartyBOpenFacet.json"
-import { trace } from "console"
-import { hexZeroPad, zeroPad } from "@ethersproject/bytes"
-import { Context } from "mocha"
-import { asyncWrapProviders } from "async_hooks"
 import { InstantLayer, MultiAccount, SymmioPartyB, SymmioPartyA } from "../../src/types"
-import { hedgerActionsMap } from "../models/Actions"
 
 // import { IMultiAccount } from "../../src/types/contracts/interfaces"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
@@ -49,8 +36,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 	let saltOpen1: string, saltOpen2: string, saltLock: string, saltOpen: string
 
 	let ops: InstantLayer.OperationStruct[]
-	let signedOps: InstantLayer.SignedOperationStruct[]
-	let ABI: InterfaceAbi
 
 	let requestSendQuote: QuoteRequest
 	let requestOpenQuote: OpenRequest
@@ -73,7 +58,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		await partyA1.setBalances(decimal(100000n), decimal(5000n), decimal(2000n))
 		await partyA2.setBalances(decimal(100000n), decimal(5000n))
 
-		const { instantLayer, partyAFacet, partyBBatchActionsFacet, partyBPositionActionsFacet, partyBQuoteActionsFacet, accountFacet } = context
+		const { instantLayer, partyAFacet, partyBPositionActionsFacet, partyBQuoteActionsFacet, accountFacet } = context
 		await context.controlFacet.grantRole(instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 
 		// await context.controlFacet.setUnbindingCooldown(120)
@@ -153,6 +138,15 @@ export function shouldBehaveLikeInstantLayer(): void {
 			verifyingContract: await context.instantLayer.getAddress(),
 		}
 	})
+
+	async function signOperation(
+		signer: any,
+		domain: TypedDataDomain,
+		types: ReturnType<typeof cloneTypes>,
+		op: InstantLayer.SignedOperationStruct,
+	): Promise<string> {
+		return signer.signTypedData(domain, types, op)
+	}
 
 	describe("Registering PartyB", async function () {
 		it("Should be failed when Sender not Setter Role ", async () => {
@@ -382,12 +376,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
 			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
-			await context.instantLayer.registerMultiAccounts([context.multiAccount]) // Admin with SETTER Role
+			await context.instantLayer.registerMultiAccounts([context.accountManager]) // Admin with SETTER Role
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
 
-			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
-			accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
+			await expect(context.accountManager.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
+			accounts = await context.accountManager.getAccounts(partyA1.address, 0, 100)
 
 			await expect(context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)).not.reverted
 			// await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("TRUSTED_ROLE")), partyA1.address)
@@ -403,7 +397,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const selectorOpen = openQuoteCallData.slice(0, 10)
 			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
 				account: {
-					multiAccount: await context.multiAccount.getAddress(),
+					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
 				},
 				delegatedSigner: context.signers.admin.address,
@@ -412,7 +406,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			// Bind to Party B
-			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
+			await context.accountManager.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
 
 			// Whitelisting Symbol type
 			await context.controlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
@@ -436,7 +430,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: context.signers.admin.address,
 				callData: quoteCallData,
 				signerAccount: {
-					multiAccount: await context.multiAccount.getAddress(),
+					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
 				},
 				replayAttackHeader: {
@@ -450,7 +444,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: partyA1.address, // it should work for contracts as well as EOAs
 				callData: quoteCallData,
 				signerAccount: {
-					multiAccount: await context.multiAccount.getAddress(),
+					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
 				},
 				replayAttackHeader: {
@@ -517,19 +511,22 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		it("reverts when an operation's deadline has passed (verify stage)", async () => {
 			// craft an op with a past deadline and a valid signature
-			const pastDeadline = (await ethers.provider.getBlock("latest"))!.timestamp - 1
-			const opPast: InstantLayer.SignedOperationStruct = {
+			const deadline = (await ethers.provider.getBlock("latest"))!.timestamp + 100
+			const op: InstantLayer.SignedOperationStruct = {
 				...opSendQuoteA1,
 				replayAttackHeader: {
 					...opSendQuoteA1.replayAttackHeader,
-					deadline: BigInt(pastDeadline),
+					deadline: BigInt(deadline),
 					// keep a fresh salt to avoid any caching
 					salt: ethers.hexlify(ethers.randomBytes(32)),
 				},
 			}
-			const sigPast = await context.signers.admin.signTypedData(domain, types, opPast)
+			const sig = await context.signers.admin.signTypedData(domain, types, op)
+			await expect(context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
 
-			await expect(context.instantLayer.executeBatch([opPast], [sigPast])).to.be.revertedWithCustomError(context.instantLayer, "DeadlineExpired")
+			await time.increase(100)
+			const sigAfter = await signOperation(context.signers.admin, domain, types, op)
+			await expect(context.instantLayer.executeBatch([op], [sigAfter])).to.be.revertedWithCustomError(context.instantLayer, "DeadlineExpired")
 		})
 
 		it("bubbles inner target failures via OperationFailed(i, returndata)", async () => {
@@ -604,20 +601,97 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(q2.quoteStatus).to.equal(QuoteStatus.PENDING)
 		})
 
-		// it("should Register Symmio PartyB when sending as PartyB", async function () {
-		// 	const { instantLayer } = context
-		// 	const deadline = await getBlockTimestamp(24n)
+		it("should Register Symmio PartyB when sending as PartyB", async function () {
+			const op = { ...opLockB1, signerAccount: { multiAccount: ZeroAddress, addr: partyB2.address }, signer: partyB2.address }
+			const sig = await context.signers.hedger.signTypedData(domain, types, op)
+			await expect(context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
+		})
 
-		// 	opLockB1.side = 1
-		// 	opLockB1.actualSigner = partyB1.address
+		it("reverts UnregisteredMultiAccount when Multiaccount not whitelisted", async () => {
+			// unregister first
+			await context.instantLayer.unregisterMultiAccount(context.multiAccount)
+			const sig = await signOperation(context.signers.admin, domain, types, opSendQuoteA1)
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1], [sig])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"UnregisteredMultiAccount",
+			)
+		})
 
-		// 	await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
-		// 	await expect(context.instantLayer.executeBatch([opLockB1])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
-		// })
+		it("should be signed with valid signer for partyB", async function () {
+			// const op = { ...opLockB1, signerAccount: { multiAccount: ZeroAddress, addr: partyB2.address }, signer: partyB2.address }
+			const sig = await context.signers.hedger2.signTypedData(domain, types, opLockB1)
+			await expect(context.instantLayer.executeBatch([opLockB1], [sig])).to.be.revertedWithCustomError(context.instantLayer, "InvalidSignature")
+		})
+
+		it("reverts InvalidDelegation when delegate lacks selector grant", async () => {
+			// remove delegation (or choose a selector not granted)
+			const op = { ...opSendQuoteA1, signer: context.signers.user2.address } // not delegated
+			const sig = await context.signers.user2.signTypedData(domain, types, op)
+			await expect(context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(context.instantLayer, "InvalidDelegation")
+		})
+
+		it("should consider replay attack correctly", async () => {
+			const sig = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1], [sig])).not.to.be.reverted
+			await expect(context.instantLayer.executeBatch([opSendQuoteA1], [sig])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"OperationAlreadyExecuted",
+			)
+		})
+
+		it("accepts contract signature via EIP-1271", async () => {
+			const Mock = await ethers.getContractFactory("Mock1271")
+			const mock = await Mock.deploy(await context.signers.admin.getAddress())
+			await mock.waitForDeployment()
+
+			const now = BigInt((await ethers.provider.getBlock("latest"))!.timestamp)
+			const expiry = now + 3600n // 1 hour future
+			const deadline = now + 600n // 10 mins future
+
+			const acc = {
+				multiAccount: await context.multiAccount.getAddress(), // adjust to your onlyOwner policy
+				addr: accounts[0].accountAddress, // account being delegated for
+			}
+
+			const nonceBefore: bigint = 1n
+			const replayAttackHeader = {
+				nonce: nonceBefore,
+				deadline,
+				salt: ethers.id("unique-salt-1"), // bytes32
+			}
+
+			const selectors = quoteCallData.slice(0, 10)
+			const delegationInfo = {
+				account: acc,
+				delegatedSigner: await mock.getAddress(),
+				selectors: [selectors],
+				expiryTimestamp: expiry,
+			}
+
+			const signedDelegation = {
+				delegationInfo,
+				replayAttackHeader,
+			}
+
+			const sig1: BytesLike = await context.signers.user.signTypedData(domain, DELEGATE_TYPES, signedDelegation)
+			await expect(context.instantLayer.connect(partyA1.getSigner).grantBatchDelegationBySig(signedDelegation, sig1)).not.to.be.reverted
+
+			const op = { ...opSendQuoteA1, signer: await mock.getAddress() }
+			const sig = await signOperation(context.signers.admin, domain, types, op) // signer is admin, validator is contract
+			await expect(context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+		})
+
+		it("reverts MismatchSignerAndAccount for PartyB path when signer != signerAccount.addr", async () => {
+			const bad = { ...opLockB1, signerAccount: { multiAccount: ZeroAddress, addr: partyB2.address } }
+			const sig = await context.signers.hedger.signTypedData(domain, types, bad)
+			await expect(context.instantLayer.executeBatch([bad], [sig]))
+				.to.be.revertedWithCustomError(context.instantLayer, "MismatchSignerAndAccount")
+				.withArgs(await context.symmioPartyB.getAddress(), partyB2.address)
+		})
 
 		it("should allow Sending Intents in a single batch", async function () {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
-			const multiAccount = context.multiAccount
+			const multiAccount = context.accountManager
 
 			opSendQuoteSignature1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
 			opSendQuoteSignature2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
@@ -697,29 +771,45 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
 		// })
 
-		// it("should Fail Signature verification with Invalid Nonce", async function () {
-		// 	const latestBlock = await getLatestBlockTime()
-		// 	const deadline = latestBlock + 300
-		// 	// Granting Roles
-		// 	await context.instantLayer.registerMultiAccount(context.multiAccount)
-		// 	let saltStr: string = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-		// 	if (!/^0x[0-9a-fA-F]{64}$/.test(saltStr)) {
-		// 		throw new Error("Invalid bytes32 format")
-		// 	}
-		// 	const opOpenALocal: InstantLayer.SignedOperationStruct = {
-		// 		accountSource: await context.multiAccount.getAddress(),
-		// 		signer: accounts[0].account,
-		// 		callData: openIntentCallData,
-		// 		nonce: 2,
-		// 		salt: saltStr,
-		// 		deadline: deadline,
-		// 		signature: "0x",
-		// 	}
-		// 	const hash = await context.instantLayer.getOperationHash(opOpenALocal)
-		// 	opOpenALocal.signature = await partyA1.sign(ethers.getBytes(hash))
-		// 	await context.controlFacet.grantRole(context.instantLayer, ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
-		// 	await expect(context.instantLayer.executeBatch([opOpenALocal])).to.be.revertedWithCustomError(context.instantLayer, "InvalidNonce")
-		// })
+		it("should Fail Signature verification with Invalid Nonce", async function () {
+			const op1: InstantLayer.SignedOperationStruct = {
+				...opSendQuoteA1,
+				replayAttackHeader: {
+					...opSendQuoteA1.replayAttackHeader,
+					nonce: 2n,
+				},
+			}
+
+			const sig = await signOperation(context.signers.admin, domain, types, op1)
+			await expect(context.instantLayer.executeBatch([op1], [sig])).to.be.revertedWithCustomError(context.instantLayer, "InvalidNonce")
+			
+			const op2: InstantLayer.SignedOperationStruct = {
+				...opSendQuoteA1,
+				replayAttackHeader: {
+					...opSendQuoteA1.replayAttackHeader,
+					nonce: 1n,
+				},
+			}
+			const op3: InstantLayer.SignedOperationStruct = {
+				...opSendQuoteA1,
+				replayAttackHeader: {
+					...opSendQuoteA1.replayAttackHeader,
+					nonce: 0n,
+				},
+			}
+			const op4: InstantLayer.SignedOperationStruct = {
+				...opSendQuoteA1,
+				replayAttackHeader: {
+					...opSendQuoteA1.replayAttackHeader,
+					nonce: 2n,
+				},
+			}
+
+			const sig2 = await signOperation(context.signers.admin, domain, types, op2)
+			const sig3 = await signOperation(context.signers.admin, domain, types, op3)
+			const sig4 = await signOperation(context.signers.admin, domain, types, op4)
+			await expect(context.instantLayer.executeBatch([op2, op3, op4], [sig2, sig3, sig4])).not.to.be.reverted
+		})
 
 		// it("should Update Nonce on Signature verification with Valid nonce", async function () {
 		// 	const latestBlock = await getLatestBlockTime()
@@ -780,12 +870,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
 			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
-			await context.instantLayer.registerMultiAccounts([context.multiAccount]) // Admin with SETTER Role
+			await context.instantLayer.registerMultiAccounts([context.accountManager]) // Admin with SETTER Role
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
 
-			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
-			accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
+			await expect(context.accountManager.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
+			accounts = await context.accountManager.getAccounts(partyA1.address, 0, 100)
 
 			await expect(context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)).not.reverted
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("TRUSTED_ROLE")), partyA1.address)
@@ -800,7 +890,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const selectorQuote = quoteCallData.slice(0, 10)
 			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
 				account: {
-					multiAccount: await context.multiAccount.getAddress(),
+					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
 				},
 				delegatedSigner: context.signers.admin.address,
@@ -809,7 +899,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			// Bind to Party B
-			await context.multiAccount.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
+			await context.accountManager.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
 
 			// Whitelisting Symbol type
 			await context.controlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
@@ -822,7 +912,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: context.signers.admin.address,
 				callData: quoteCallData,
 				signerAccount: {
-					multiAccount: await context.multiAccount.getAddress(),
+					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
 				},
 				replayAttackHeader: {
@@ -836,7 +926,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: partyA1.address,
 				callData: quoteCallData,
 				signerAccount: {
-					multiAccount: await context.multiAccount.getAddress(),
+					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
 				},
 				replayAttackHeader: {
@@ -966,7 +1056,43 @@ export function shouldBehaveLikeInstantLayer(): void {
 				.withArgs(0, anyValue)
 		})
 
-		it("reverts with InvalidSourceIndex when op references a future/missing result", async () => {
+		it("reverts with MissingSourceResult when operation self references ", async () => {
+			await context.instantLayer.addTemplate("badAtOp0", [
+				{ insertionPoints: [0], sourceIndices: [0] }, // op0 will reference results[1] (invalid)
+			])
+			const badAtOp0 = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			const sig0 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			await expect(context.instantLayer.executeTemplate(badAtOp0, [opSendQuoteA1], [sig0])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"MissingSourceResult",
+			)
+		})
+
+		it("reverts in MissingSourceResult when source result is empty (non-32 bytes)", async () => {
+			await context.instantLayer.addTemplate("injectFromEmpty", [
+				{ insertionPoints: [0], sourceIndices: [0] },
+				{ insertionPoints: [0], sourceIndices: [0] },
+			])
+			const templateId = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			opSendQuoteSignature1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
+			opSendQuoteSignature2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
+			const signedOps: InstantLayer.SignedOperationStruct[] = [opSendQuoteA1, opSendQuoteA2]
+			const sigCallDatas: BytesLike[] = [opSendQuoteSignature1, opSendQuoteSignature2]
+			await expect(context.instantLayer.executeBatch(signedOps, sigCallDatas)).not.to.be.reverted
+
+			const sig0 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+			const sig1 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
+
+			// Expect revert from abi.decode inside _insertResults:
+			await expect(context.instantLayer.executeTemplate(templateId, [opLockB1, opLockB1], [sig0, sig1])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"MissingSourceResult",
+			)
+		})
+
+		it("reverts with InvalidSourceIndex when operation references a future/missing result", async () => {
 			await context.instantLayer.addTemplate("badAtOp0", [
 				{ insertionPoints: [0], sourceIndices: [1] }, // op0 will reference results[1] (invalid)
 			])
@@ -985,6 +1111,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 				{ insertionPoints: [opSendQuoteA1.callData.length], sourceIndices: [0] }, // op1 tries to write way past end
 			])
 			let oob = (await context.instantLayer.getNextTemplateId()) - 1n
+			const lastTemp = await context.instantLayer.getTemplate(oob)
+			console.log("last index:", oob)
+			console.log("last temp:", lastTemp.name)
+			console.log("opSendQuoteA1 length:", opSendQuoteA1.callData.length)
+			console.log("opLockB1 length:", opLockB1.callData.length)
+			console.log("opLockB1 calldata:", opLockB1.callData)
 
 			const sig0 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
 			const sig1 = await context.signers.hedger.signTypedData(domain, types, opLockB1)
@@ -996,7 +1128,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			await context.instantLayer.addTemplate("oobInsert", [
 				{ insertionPoints: [], sourceIndices: [] }, // op0
-				{ insertionPoints: [opSendQuoteA1.callData.length - 36], sourceIndices: [0] }, // op1 tries to write way past end
+				{ insertionPoints: [opSendQuoteA1.callData.length - 36, 3], sourceIndices: [0, 1] }, // op1 tries to write way past end
 			])
 			oob = (await context.instantLayer.getNextTemplateId()) - 1n
 
@@ -1145,7 +1277,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sigCallDatas: string[] = [opSendQuoteSignature1, opSendQuoteSignature2, opLockSignature, opOpenSignature]
 
 			const { instantLayer, symmioPartyB } = context
-			const multiAccount = context.multiAccount
+			const multiAccount = context.accountManager
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([symmioPartyB])
 			await context.instantLayer.registerMultiAccounts([multiAccount])
@@ -1267,9 +1399,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 	describe("grantBatchDelegationBySig", () => {
 		let accounts: IMultiAccount.AccountStructOutput[]
 		beforeEach(async () => {
-			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
-			accounts = await context.multiAccount.getAccounts(partyA1.address, 0, 100)
-			await context.instantLayer.registerMultiAccounts([context.multiAccount]) // Admin with SETTER Role
+			await expect(context.accountManager.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
+			accounts = await context.accountManager.getAccounts(partyA1.address, 0, 100)
+			await context.instantLayer.registerMultiAccounts([context.accountManager]) // Admin with SETTER Role
 		})
 
 		function ifaceSelectors(...fragments: string[]): string[] {
@@ -1281,7 +1413,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		it("grants batch delegations and bumps nonce", async () => {
 			// --- Arrange
 			const acc = {
-				multiAccount: await context.multiAccount.getAddress(), // adjust to your onlyOwner policy
+				multiAccount: await context.accountManager.getAddress(), // adjust to your onlyOwner policy
 				addr: accounts[0].accountAddress, // account being delegated for
 			}
 
@@ -1349,14 +1481,14 @@ export function shouldBehaveLikeInstantLayer(): void {
 		beforeEach(async () => {
 			delegateAddr = context.signers.admin.address
 
-			await expect(context.multiAccount.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
+			await expect(context.accountManager.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
 
 			delegatorAcct = {
-				multiAccount: await context.multiAccount.getAddress(),
-				addr: (await context.multiAccount.getAccounts(partyA1.address, 0, 1))[0].accountAddress,
+				multiAccount: await context.accountManager.getAddress(),
+				addr: (await context.accountManager.getAccounts(partyA1.address, 0, 1))[0].accountAddress,
 			}
 
-			context.instantLayer.registerMultiAccounts([await context.multiAccount.getAddress()])
+			context.instantLayer.registerMultiAccounts([await context.accountManager.getAddress()])
 			// choose two real selectors you already used
 			selA = context.partyAFacet.interface.getFunction("sendQuoteWithAffiliate").selector as `0x${string}`
 			selB = context.partyBQuoteActionsFacet.interface.getFunction("lockQuote").selector as `0x${string}`

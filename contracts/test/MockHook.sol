@@ -59,6 +59,10 @@ contract MockHook is ISymmioHook {
 		emit OnClosePosition(quoteId, filledAmount, closedPrice, partyA, partyB);
 	}
 
+	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external override{
+		return;
+	}
+
 	// Getters for test assertions
 	function getLastOpenCall()
 		external

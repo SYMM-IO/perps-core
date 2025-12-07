@@ -28,6 +28,8 @@ interface IPartiesEvents {
 		uint256 deadline
 	);
 
+	event SendQuoteData(uint256 quoteId, bytes data);
+
 	event ExpireQuoteOpen(QuoteStatus quoteStatus, uint256 quoteId);
 
 	event ExpireQuoteClose(QuoteStatus quoteStatus, uint256 quoteId, uint256 closeId);
@@ -55,14 +57,7 @@ interface IPartiesEvents {
 		LockedValues lockedValues
 	);
 
-	event AdlClosePositions(
-		uint256 quoteId,
-		address partyA,
-		address partyB,
-		uint256 filledAmount,
-		uint256 closedPrice,
-		QuoteStatus quoteStatus
-	);
+	event AdlClosePositions(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus);
 
 	event LiquidatePartyB(address liquidator, address partyB, address partyA, uint256 partyBAllocatedBalance, int256 upnl);
 }

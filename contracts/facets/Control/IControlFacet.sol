@@ -10,6 +10,8 @@ import "../../storages/SymbolStorage.sol";
 interface IControlFacet is IControlEvents {
 	function transferOwnership(address owner) external;
 
+	function cancelOwnershipTransfer() external;
+
 	function acceptOwnership() external;
 
 	function setAdmin(address user) external;
@@ -99,9 +101,9 @@ interface IControlFacet is IControlEvents {
 
 	function setUnbindCooldown(uint256 unbindCooldown) external;
 
-	// Pause State
 	function setFeeCollector(address affiliate, address feeCollector) external;
 
+	// Pause State
 	function pauseGlobal() external;
 
 	function pauseLiquidation() external;
@@ -209,4 +211,7 @@ interface IControlFacet is IControlEvents {
 	function setMinWithdrawCooldown(uint256 cooldown) external;
 
 	function deprecateOldWithdrawal() external;
+
+	function setSigner(address signer) external;
+
 }

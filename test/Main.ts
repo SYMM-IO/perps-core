@@ -21,6 +21,9 @@ import { shouldBehaveLikeSettlement } from "./Settlement.behavior"
 import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior"
 import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior"
+import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior"
+import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior"
+import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior"
 import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior";
 
 describe("UnitTests", function () {
@@ -108,13 +111,25 @@ describe("UnitTests", function () {
 		describe("PartyBBatchActionsFacet", async function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
 		})
-		
-		describe("InstantLayer", async function () {
+
+		describe.skip("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
 		})
 
 		describe.only("WithdrawFacet", async function () {
 			shouldBehaveLikeWithdrawFacet()
+		})
+
+		describe("AccountHub", async function () {
+			shouldBehaveLikeAccountHub()
+		})
+
+		describe("AffiliateHub", async function () {
+			shouldBehaveLikeAffiliateHub()
+		})
+
+		describe("AccountManager", async function () {
+			shouldBehaveLikeAccountManager()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {

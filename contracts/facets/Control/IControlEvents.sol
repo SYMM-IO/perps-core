@@ -77,6 +77,7 @@ interface IControlEvents {
 	event SetSuspendedAddress(address user, bool isSuspended);
 	event SetPartyBEmergencyStatus(address partyB, bool status);
 	event SetBalanceLimitPerUser(uint256 balanceLimitPerUser);
+	event SetMasterAccountActivationMode(bool oldValue, bool newValue);
 	event RegisterPartyB(address partyB);
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);
@@ -108,4 +109,5 @@ interface IControlEvents {
 	event UnsetSpeedUpUser(address user);
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
 	event DeprecateOldWithdrawalPaused();
+	event SignerSet(address signer);
 }
