@@ -169,7 +169,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param user The user who initiated the withdrawal.
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function suspendWithdrawRequest(address user, uint256 requestId) external nonReentrant { // TODO : Is it ok to be permission less ?
+	function suspendWithdrawRequest(address user, uint256 requestId) external nonReentrant {
 		WithdrawFacetImpl.suspendWithdrawRequest(user, requestId);
 		emit WithdrawSuspended(requestId, user);
 	}

@@ -239,4 +239,8 @@ interface IViewFacet {
 	function getModifiedCooldownEndTime(address user,uint256 requestId) external view returns (uint256);
 
 	function getWithdrawLockedBalance() external view returns (uint256);
+
+	function getCustomAffiliateFee(address affiliate,address user, uint256 symbolId) external view returns (Fee memory);
+
+	function getMinAffiliateFee() external view returns (uint256);
 }

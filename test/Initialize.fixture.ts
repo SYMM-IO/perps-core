@@ -1,28 +1,19 @@
 import { ethers, run } from "hardhat"
-
 import { createRunContext, RunContext } from "./models/RunContext"
 import { decimal } from "./utils/Common"
+import { AccountHub, AffiliateHub } from "../src/types"
 import { toUtf8Bytes } from "ethers"
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer } from "../src/types"
 
 export async function initializeFixture(): Promise<RunContext> {
-	let collateral = await run("deploy:stablecoin")
-	let diamond = await run("deploy:diamond", {
+	const collateral = await run("deploy:stablecoin")
+	const diamond = await run("deploy:diamond", {
 		logData: false,
 		genABI: false,
 		reportGas: true,
 	})
-	let multicall = process.env.DEPLOY_MULTICALL == "true" ? await run("deploy:multicall") : undefined
-	const admin = process.env.ADMIN_PUBLIC_KEY || (await (await ethers.getSigners())[0].getAddress())
-	const multiAccount = await run("deploy:multiAccount", {
-		symmioAddress: await diamond.getAddress(),
-		admin: admin,
-	})
 
-	const multiAccount2 = await run("deploy:multiAccount", {
-		symmioAddress: await diamond.getAddress(),
-		admin: admin,
-	})
+	const admin = process.env.ADMIN_PUBLIC_KEY || (await (await ethers.getSigners())[0].getAddress())
 
 	const symmioPartyB = await run("deploy:symmioPartyB", {
 		symmioAddress: await diamond.getAddress(),
@@ -34,49 +25,127 @@ export async function initializeFixture(): Promise<RunContext> {
 		admin: admin,
 	})
 
-	let context = await createRunContext(await diamond.getAddress(), await collateral.getAddress(), true)
-	context.instantLayer = instantLayer
-	context.multiAccount = multiAccount
-	context.multiAccount2 = multiAccount2
+	const context = await createRunContext(await diamond.getAddress(), await collateral.getAddress(), true)
+
+	const affiliateHub: AffiliateHub = await run("deploy:affiliateHub", {
+		admin: context.signers.admin.address,
+		symmioFeeReceiver: context.signers.symmioFeeReceiver.address,
+		logData: false,
+	})
+
+	const accountHub: AccountHub = await run("deploy:accountHub", {
+		admin: context.signers.admin.address,
+		affiliateHubAddress: await affiliateHub.getAddress(),
+		logData: false,
+	})
+
+	// Grant roles to affiliate hub
+	await affiliateHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
+	await affiliateHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("APPROVER_ROLE")), context.signers.admin.address)
+
+	await affiliateHub.connect(context.signers.admin).setWhitelistedSymmioCore(diamond, true)
+
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("PAUSER_ROLE")), context.signers.admin.address)
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE")), context.signers.admin.address)
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SIGNER_SETTER")), context.signers.admin.address)
+
+	const MockMultiAccount = await ethers.getContractFactory("MockMultiAccount")
+	const multiAccountMock = await MockMultiAccount.deploy(diamond)
+
+	// Register first affiliate
+	const affiliateData = {
+		name: "test affiliate",
+		brandColor: "d69d00",
+		admin: context.signers.admin.address,
+		stakeholders: [
+			{
+				receiver: context.signers.admin.address,
+				share: decimal(9n, 17),
+			},
+		],
+		symmioShare: decimal(1n, 17),
+		metadata: "0x",
+		legacyMultiAccounts: [await multiAccountMock.getAddress()],
+		symmioCores: [await diamond.getAddress()],
+	}
+
+	const affiliateAddress = await affiliateHub.requestToRegisterAffiliate.staticCall(affiliateData)
+	await affiliateHub.requestToRegisterAffiliate(affiliateData)
+
+	// Register second affiliate
+	const affiliate2Data = {
+		name: "test affiliate 2",
+		brandColor: "d69d00",
+		admin: context.signers.admin.address,
+		stakeholders: [
+			{
+				receiver: context.signers.admin.address,
+				share: decimal(9n, 17),
+			},
+		],
+		symmioShare: decimal(1n, 17),
+		metadata: "0x",
+		legacyMultiAccounts: [await multiAccountMock.getAddress()],
+		symmioCores: [await diamond.getAddress()],
+	}
+
+	const affiliate2Address = await affiliateHub.requestToRegisterAffiliate.staticCall(affiliate2Data)
+	await affiliateHub.requestToRegisterAffiliate(affiliate2Data)
+
+	// Approve affiliates
+	await context.controlFacet.connect(context.signers.admin).setAdmin(context.signers.admin.address)
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(await affiliateHub.getAddress(), ethers.keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
+	await affiliateHub.connect(context.signers.admin).approveAffiliate(affiliateAddress)
+	await affiliateHub.connect(context.signers.admin).approveAffiliate(affiliate2Address)
+
+	// Set up account managers
+	const accManagerAddress = await affiliateHub.getAffiliateAccountManager(affiliateAddress)
+	const accManager2Address = await affiliateHub.getAffiliateAccountManager(affiliate2Address)
+	context.accountManager = await ethers.getContractAt("AccountManager", accManagerAddress)
+	context.accountManager2 = await ethers.getContractAt("AccountManager", accManager2Address)
+	context.accountHub = accountHub
+	context.affiliateHub = affiliateHub
 	context.symmioPartyB = symmioPartyB
+	context.instantLayer = instantLayer
 
-	await context.controlFacet.connect(context.signers.admin).setAdmin(context.signers.admin.getAddress())
+	// Grant roles to admin
+	const rolesToGrant = [
+		"SYMBOL_MANAGER_ROLE",
+		"SETTER_ROLE",
+		"PAUSER_ROLE",
+		"PARTY_B_MANAGER_ROLE",
+		"SUSPENDER_ROLE",
+		"DISPUTE_ROLE",
+		"AFFILIATE_MANAGER_ROLE",
+		"MUON_SETTER_ROLE",
+		"LIQUIDATOR_ROLE",
+		"DEALLOCATE_COOLDOWN_SETTER_ROLE",
+		"INSTANT_LAYER_ROLE",
+	]
 
+	for (const role of rolesToGrant) {
+		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, ethers.keccak256(toUtf8Bytes(role)))
+	}
+
+	// Grant liquidator roles
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("SIGNER_SETTER_ROLE")))
+
+	// Configure system
 	await context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress())
-
 	await context.controlFacet
 		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("SYMBOL_MANAGER_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("PAUSER_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("PARTY_B_MANAGER_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("SUSPENDER_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("DISPUTE_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("MUON_SETTER_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.liquidator.getAddress(), ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.liquidator.getAddress(), ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
+		.addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("DEALLOCATE_COOLDOWN_SETTER_ROLE")))
@@ -90,14 +159,10 @@ export async function initializeFixture(): Promise<RunContext> {
 	// await context.controlFacet.connect(context.signers.admin).setMuonConfig(3600, 3600) // 1 hour validity
 	// await context.controlFacet.connect(context.signers.admin).setMuonIds(1, ethers.ZeroAddress, { x: 0, parity: 0 })
 
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
 	await context.controlFacet.connect(context.signers.admin).setSymbolTypes([1], [1])
 	await context.controlFacet.whitelistSymbolType(context.signers.hedger.address, 1)
 	await context.controlFacet.whitelistSymbolType(context.signers.hedger2.address, 1)
 	await context.controlFacet.setMaxPartyAConnectionLimit(5)
-
 	await context.controlFacet.connect(context.signers.admin).setPendingQuotesValidLength(10)
 	await context.controlFacet.connect(context.signers.admin).setLiquidatorShare(decimal(1n, 17))
 	await context.controlFacet.connect(context.signers.admin).setLiquidationTimeout(100)
@@ -108,13 +173,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.controlFacet.connect(context.signers.admin).setForceCloseCooldowns(300, 120)
 	await context.controlFacet.connect(context.signers.admin).setForceCancelCooldown(300)
 	await context.controlFacet.connect(context.signers.admin).setForceCancelCloseCooldown(300)
-	await context.controlFacet.connect(context.signers.admin).setInvalidBridgedAmountsPool(context.signers.feeCollector.getAddress())
-	await context.controlFacet.connect(context.signers.admin).registerPartyB(context.signers.hedger.getAddress())
-	await context.controlFacet.connect(context.signers.admin).registerPartyB(context.signers.hedger2.getAddress())
-	await context.controlFacet.connect(context.signers.admin).registerAffiliate(context.multiAccount)
-	await context.controlFacet.connect(context.signers.admin).registerAffiliate(context.multiAccount2!)
-	await context.controlFacet.connect(context.signers.admin).setFeeCollector(context.multiAccount, context.signers.feeCollector.address)
-	await context.controlFacet.connect(context.signers.admin).setFeeCollector(context.multiAccount2!, context.signers.feeCollector2.address)
+	await context.controlFacet.connect(context.signers.admin).setInvalidBridgedAmountsPool(context.signers.feeCollector.address)
+	await context.controlFacet.connect(context.signers.admin).registerPartyB(context.signers.hedger.address)
+	await context.controlFacet.connect(context.signers.admin).registerPartyB(context.signers.hedger2.address)
 
 	return context
 }

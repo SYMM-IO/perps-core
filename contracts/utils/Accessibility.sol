@@ -8,6 +8,7 @@ import "../storages/MAStorage.sol";
 import "../storages/AccountStorage.sol";
 import "../storages/QuoteStorage.sol";
 import "../libraries/LibAccessibility.sol";
+import "../libraries/LibSigner.sol";
 
 abstract contract Accessibility {
 	modifier onlyPartyB() {
@@ -68,7 +69,7 @@ abstract contract Accessibility {
 
 	modifier onlyPartyAOfQuote(uint256 quoteId) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		require(quote.partyA == msg.sender, "Accessibility: Should be partyA of quote");
+		require(quote.partyA == LibSigner.getSigner(), "Accessibility: Should be partyA of quote");
 		_;
 	}
 

@@ -33,7 +33,9 @@ library GlobalAppStorage {
 		mapping(address => bool) virtualProviders;
 		mapping(address => bool) expressProviders;
 		bool deprecateOldWithdrawalPaused;
-		mapping(bytes32 => mapping(address => bool)) roleAdmins;
+		uint256 minAffiliateFee;
+		mapping(address => mapping(address => mapping(uint256 => Fee))) customAffiliateFee; // affiliate => user => symbolId => fee
+		mapping(bytes32 => mapping(address => bool)) roleAdmins; // role => user => admin or not bool
 	}
 
 	function layout() internal pure returns (Layout storage l) {

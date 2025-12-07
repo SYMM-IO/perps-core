@@ -25,6 +25,15 @@ interface IControlEvents {
 		uint256 fundingRateWindowTime
 	);
 	event SetFeeCollector(address affiliate, address oldFeeCollector, address newFeeCollector);
+	event SetCustomAffiliateFee(
+		address affiliate,
+		address user,
+		uint256 symbolId,
+		uint256 oldOpenFee,
+		uint256 newOpenFee,
+		uint256 oldCloseFee,
+		uint256 newCloseFee
+	);
 	event SetAffiliateFee(address affiliate, uint256 symbolId, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
 	event SetDefaultAffiliateFee(address affiliate, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
 	event SetDefaultFeeCollector(address oldDefaultFeeCollector, address newDefaultFeeCollector);
@@ -111,4 +120,6 @@ interface IControlEvents {
 	event UnsetSpeedUpUser(address user);
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
 	event DeprecateOldWithdrawalPaused();
+	event SignerSet(address signer);
+	event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);
 }
