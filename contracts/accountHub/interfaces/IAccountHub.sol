@@ -141,5 +141,6 @@ interface IAccountHub {
 	error SymbolNotAllowedForThisAccount();
 	error AffiliateNotActive();
 	error OnlyCustomIsolationCanCreateManually();
-	error hookFailed();
+	error HookFailed();
+	error InvalidSelector();
 }
