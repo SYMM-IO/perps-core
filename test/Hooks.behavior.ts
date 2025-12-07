@@ -41,17 +41,17 @@ export function shouldBehaveLikeHooks(): void {
       await expect(
         context.controlFacet
           .connect(context.signers.user)
-          .registerHook(context.multiAccount, await mockHook.getAddress()),
+          .registerHook(context.accountManager, await mockHook.getAddress()),
       ).to.be.revertedWith("Accessibility: Must has role")
 
       // Admin has SETTER_ROLE in fixture
       await expect(
         context.controlFacet
           .connect(context.signers.admin)
-          .registerHook(context.multiAccount, await mockHook.getAddress()),
+          .registerHook(context.accountManager, await mockHook.getAddress()),
       ).to.not.reverted
 
-      const current = await context.viewFacet.getAffiliateHook(context.multiAccount)
+      const current = await context.viewFacet.getAffiliateHook(context.accountManager)
       expect(current).to.equal(await mockHook.getAddress())
     })
 
@@ -77,13 +77,13 @@ export function shouldBehaveLikeHooks(): void {
 
       await context.controlFacet
         .connect(context.signers.admin)
-        .registerHook(context.multiAccount, await mockHook.getAddress())
+        .registerHook(context.accountManager, await mockHook.getAddress())
 
       await context.controlFacet
         .connect(context.signers.admin)
-        .registerHook(context.multiAccount, ethers.ZeroAddress)
+        .registerHook(context.accountManager, ethers.ZeroAddress)
 
-      const current = await context.viewFacet.getAffiliateHook(context.multiAccount)
+      const current = await context.viewFacet.getAffiliateHook(context.accountManager)
       expect(current).to.equal(ethers.ZeroAddress)
     })
   })
@@ -97,7 +97,7 @@ export function shouldBehaveLikeHooks(): void {
       await systemHook.waitForDeployment()
 
       // Configure hooks
-      await context.controlFacet.connect(context.signers.admin).registerHook(context.multiAccount, await affiliateHook.getAddress())
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
       await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
 
       // Prepare a LONG quote with this affiliate
@@ -144,7 +144,7 @@ export function shouldBehaveLikeHooks(): void {
       const systemHook = await MockHook.deploy()
       await systemHook.waitForDeployment()
 
-      await context.controlFacet.connect(context.signers.admin).registerHook(context.multiAccount, await affiliateHook.getAddress())
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
       await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
 
       // Open a position first

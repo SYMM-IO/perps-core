@@ -15,7 +15,7 @@ async function main() {
 		chainId: Number((await ethers.provider.getNetwork()).chainId),
 		instantLayer: await context.instantLayer.getAddress(),
 		diamond: context.diamond as string, // or await ctx.partyAFacet.getAddress() if you prefer
-		multiAccount: await context.multiAccount.getAddress(),
+		multiAccount: await context.accountManager.getAddress(),
 		// add more if you want them in the UI…
 	}
 

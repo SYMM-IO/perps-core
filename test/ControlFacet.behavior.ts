@@ -350,12 +350,12 @@ export function shouldBehaveLikeControlFacet(): void {
 
 	describe("setFeeCollector", () => {
 		it("Should setFeeCollector successfully", async function () {
-			await expect(context.controlFacet.connect(owner).setFeeCollector(context.multiAccount2!, user2.address)).to.not.be.reverted
-			expect(await context.viewFacet.getFeeCollector(context.multiAccount2!)).to.equal(user2.address)
+			await expect(context.controlFacet.connect(owner).setFeeCollector(context.accountManager2!, user2.address)).to.not.be.reverted
+			expect(await context.viewFacet.getFeeCollector(context.accountManager2!)).to.equal(user2.address)
 		})
 
 		it("Should not setFeeCollector when address is zero", async function () {
-			await expect(context.controlFacet.connect(owner).setFeeCollector(context.multiAccount2!, ethers.ZeroAddress)).to.be.revertedWith(
+			await expect(context.controlFacet.connect(owner).setFeeCollector(context.accountManager2!, ethers.ZeroAddress)).to.be.revertedWith(
 				"ControlFacet: Zero address",
 			)
 		})

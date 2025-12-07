@@ -4,15 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibQuote.sol";
 import "../../libraries/LibDiamond.sol";
 import "../../libraries/LibQuote.sol";
 import "../../libraries/muon/LibMuon.sol";
 import "../../storages/AccountStorage.sol";
-import "../../storages/BridgeStorage.sol";
+import "../../storages/WithdrawStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
 import "../../storages/MAStorage.sol";
-import "../../storages/MuonStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/SymbolStorage.sol";
 import "../../storages/MuonStorage.sol";
@@ -1380,6 +1378,22 @@ contract ViewFacet is IViewFacet {
 	 */
 	function isADLEnabled(address partyB) external view returns (bool) {
 		return MAStorage.layout().adlEnabled[partyB];
+	}
+
+	function getSigner() external view returns (address) {
+		return MAStorage.layout().signer == address(0) ? msg.sender : MAStorage.layout().signer;
+	}
+
+	function getFee(address affiliate, uint256 symbolId) view external returns (Fee memory fee) {
+		if (GlobalAppStorage.layout().affiliateFee[affiliate][symbolId].isSet) {
+			fee = GlobalAppStorage.layout().affiliateFee[affiliate][symbolId];
+		} else {
+			fee = GlobalAppStorage.layout().defaultAffiliateFee[affiliate];
+			if (!fee.isSet) {
+				uint256 symbolTradingFee = SymbolStorage.layout().symbols[symbolId].tradingFee;
+				fee = Fee(symbolTradingFee, symbolTradingFee, true);
+			}
+		}
 	}
 
 	/**
