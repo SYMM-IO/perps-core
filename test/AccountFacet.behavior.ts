@@ -870,6 +870,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const externalTransfer = await context.viewFacet.getVirtualExternalTransfer(1)
 			expect(externalTransfer.status).to.equal(ExternalTransferStatus.CANCELED)
 			const afterBalance = await context.viewFacet.balanceOf(user.address)
+			expect(beforeBalance).to.equal( afterBalance)
 		})
 
 		it("Should change balance in cancel virtual external transfer correctly", async function () {
