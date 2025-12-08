@@ -236,10 +236,12 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	}
 
 	/**
- * @notice Transfers collateral from sender's available balance to whitelisted target without any cooldown
+ * @notice Transfers virtual collateral fund from sender's available balance in this Symmio Diamond to another Symmio Diamond
 	 * @dev sender must not be suspended/liquidated for the operation to succeed
 	 * @param receiver The address of the recipient user in the target contract
 	 * @param amount The amount to transfer, specified in collateral decimals
+	 * @param target The target Symmio contract
+	 * @param virtualProvider The provider who can virtualDeposit fund to target Symmio contract
 	 */
 	function virtualExternalTransfer(
 		address receiver,

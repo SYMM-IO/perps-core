@@ -187,18 +187,21 @@ library AccountFacetImpl {
 		IExternalTransferRelayer(relayer).onTransfer(appLayout.collateral, sender, receiver, amount, target);
 	}
 
-	function virtualExternalTransfer(address sender, address receiver, uint256 amount,address target, address virtualProvider) internal returns (uint256){
+	function virtualExternalTransfer(address sender, address receiver, uint256 amount, address target, address virtualProvider) internal returns (uint256){
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
+		// Input Checks
 		require(amount > 0, "AccountFacet: Amount is zero");
 		require(receiver != address(0) && target != address(0), "AccountFacet: Zero Receiver or Zero Target");
 		require(appLayout.virtualProviders[virtualProvider], "AccountFacet: Invalid virtual provider");
 
+		// Balance Adjustment
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		require(amountWith18Decimals <= accountLayout.balances[sender], "AccountFacet: Insufficient balance");
 		accountLayout.balances[sender] -= amountWith18Decimals;
 
+		// State Update
 		uint256 currentId = ++accountLayout.lastExternalTransferId;
 		ExternalTransferReq memory externalTransferReq = ExternalTransferReq({
 			id: currentId,
@@ -212,6 +215,8 @@ library AccountFacetImpl {
 			status: ExternalTransferStatus.PENDING
 		});
 		accountLayout.externalTransfers[currentId] = externalTransferReq;
+
+		// Callback to Virtual Provider
 		IVirtualProvider(virtualProvider).onExternalTransfer(externalTransferReq);
 		return currentId;
 	}
@@ -219,20 +224,27 @@ library AccountFacetImpl {
 	function acceptVirtualExternalTransfer(uint256 id) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ExternalTransferReq storage externalTransferReq = accountLayout.externalTransfers[id];
+
 		require(externalTransferReq.status == ExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
-		require(msg.sender == externalTransferReq.provider, "AccountFacet: Only provider can accept the transfer");
+		require(externalTransferReq.provider == msg.sender, "AccountFacet: Only provider can accept the transfer");
+
 		externalTransferReq.status = ExternalTransferStatus.COMPLETED;
 	}
 
 	function cancelVirtualExternalTransfer(uint256 id) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+
 		ExternalTransferReq storage externalTransferReq = accountLayout.externalTransfers[id];
+
 		require(externalTransferReq.sender == msg.sender, "AccountFacet: Invalid Sender");
 		require(externalTransferReq.status == ExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
-		externalTransferReq.status = ExternalTransferStatus.CANCELED;
+
 		uint256 amountWith18Decimals = (externalTransferReq.amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		accountLayout.balances[externalTransferReq.sender] += amountWith18Decimals;
+
+		externalTransferReq.status = ExternalTransferStatus.CANCELED;
+
 		IVirtualProvider(externalTransferReq.provider).onCancelExternalTransfer(id);
 	}
 

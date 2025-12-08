@@ -80,15 +80,16 @@ enum ExternalTransferStatus {
 	CANCELED
 }
 
+// External Transfer : Symmio1(user1) balance -> Symmio2(user2) balance
 struct ExternalTransferReq {
 	uint256 id;
-	address sender;
-	address receiver;
-	address source;
-	address target;
+	address sender; // user1 in source contract
+	address receiver; // user2 in target contract
+	address source; // Symmio contract 1
+	address target; // Symmio contract 2
 	uint256 amount;
 	uint256 timestamp;
-	address provider;
+	address provider; // virtual provider who handles the transfer
 	ExternalTransferStatus status;
 }
 
