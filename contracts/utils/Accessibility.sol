@@ -8,6 +8,7 @@ import "../storages/MAStorage.sol";
 import "../storages/AccountStorage.sol";
 import "../storages/QuoteStorage.sol";
 import "../libraries/LibAccessibility.sol";
+import "../libraries/LibSigner.sol";
 
 abstract contract Accessibility {
 	modifier onlyPartyB() {
@@ -62,7 +63,7 @@ abstract contract Accessibility {
 
 	modifier onlyPartyAOfQuote(uint256 quoteId) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		require(quote.partyA == msg.sender, "Accessibility: Should be partyA of quote");
+		require(quote.partyA == LibSigner.getSigner(), "Accessibility: Should be partyA of quote");
 		_;
 	}
 
@@ -74,6 +75,11 @@ abstract contract Accessibility {
 
 	modifier notSuspended(address user) {
 		require(!AccountStorage.layout().suspendedAddresses[user], "Accessibility: Sender is Suspended");
+		_;
+	}
+
+	modifier onlySuspended(address user) {
+		require(AccountStorage.layout().suspendedAddresses[user], "Accessibility: User is not suspended");
 		_;
 	}
 
