@@ -53,7 +53,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 				.deadline("100000000000000000")
 				.build(),
 		)
-		await context.controlFacet.whitelistSymbolType(await hedger.getAddress(), (await context.viewFacet.getSymbolWithType(1)).symbolType)
+		await context.symbolControlFacet.whitelistSymbolType(await hedger.getAddress(), (await context.viewFacetSymbol.getSymbolWithType(1)).symbolType)
 		await hedger.lockQuote(1)
 		await hedger.openPosition(
 			1,

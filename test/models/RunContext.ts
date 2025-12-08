@@ -5,6 +5,8 @@ import {
 	BridgeFacet,
 	ClearingHouseFacet,
 	ControlFacet,
+	SymbolControlFacet,
+	PauseControlFacet,
 	DiamondCutFacet,
 	DiamondLoupeFacet,
 	ForceActionsFacet,
@@ -16,6 +18,8 @@ import {
 	PartyBQuoteActionsFacet,
 	SettlementFacet,
 	ViewFacet,
+	ViewFacetSymbol,
+	ViewFacetQuote,
 	InstantLayer,
 	SymmioPartyB,
 	AccountManager,
@@ -38,8 +42,12 @@ export class RunContext {
 	partyBPositionActionsFacet!: PartyBPositionActionsFacet
 	bridgeFacet!: BridgeFacet
 	viewFacet!: ViewFacet
+	viewFacetSymbol!: ViewFacetSymbol
+	viewFacetQuote!: ViewFacetQuote
 	liquidationFacet!: LiquidationFacet
 	controlFacet!: ControlFacet
+	symbolControlFacet!: SymbolControlFacet
+	pauseControlFacet!: PauseControlFacet
 	fundingRateFacet!: FundingRateFacet
 	settlementFacet!: SettlementFacet
 	forceActionsFacet!: ForceActionsFacet
@@ -101,8 +109,12 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.partyBPositionActionsFacet = await ethers.getContractAt("PartyBPositionActionsFacet", diamond)
 	context.bridgeFacet = await ethers.getContractAt("BridgeFacet", diamond)
 	context.viewFacet = await ethers.getContractAt("ViewFacet", diamond)
+	context.viewFacetSymbol = await ethers.getContractAt("ViewFacetSymbol", diamond)
+	context.viewFacetQuote = await ethers.getContractAt("ViewFacetQuote", diamond)
 	context.liquidationFacet = await ethers.getContractAt("LiquidationFacet", diamond)
 	context.controlFacet = await ethers.getContractAt("ControlFacet", diamond)
+	context.symbolControlFacet = await ethers.getContractAt("SymbolControlFacet", diamond)
+	context.pauseControlFacet = await ethers.getContractAt("PauseControlFacet", diamond)
 	context.fundingRateFacet = await ethers.getContractAt("FundingRateFacet", diamond)
 	context.settlementFacet = await ethers.getContractAt("SettlementFacet", diamond)
 	context.forceActionsFacet = await ethers.getContractAt("ForceActionsFacet", diamond)

@@ -34,14 +34,14 @@ export class CloseRequestValidator implements TransactionValidator {
 		return {
 			balanceInfoPartyA: await arg.user.getBalanceInfo(),
 			balanceInfoPartyB: await arg.hedger.getBalanceInfo(await arg.user.getAddress()),
-			quote: await context.viewFacet.getQuote(arg.quoteId),
+			quote: await context.viewFacetQuote.getQuote(arg.quoteId),
 		}
 	}
 
 	async after(context: RunContext, arg: CloseRequestValidatorAfterArg) {
 		logger.debug("After CloseRequestValidator...")
 		// Check Quote
-		const newQuote = await context.viewFacet.getQuote(arg.quoteId)
+		const newQuote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		const oldQuote = arg.beforeOutput.quote
 		expect(newQuote.quoteStatus).to.be.equal(QuoteStatus.CLOSE_PENDING)
 		expect(newQuote.quantityToClose).to.be.equal(arg.quantityToClose)

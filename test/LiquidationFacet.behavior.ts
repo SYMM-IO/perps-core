@@ -59,9 +59,9 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	})
 
 	const expectConnected = async (partyA: string, partyB: string, expected: boolean) => {
-		const isConn = await context.viewFacet.isConnectedPartyB(partyA, partyB)
+		const isConn = await context.viewFacetSymbol.isConnectedPartyB(partyA, partyB)
 		expect(isConn).to.equal(expected)
-		const conns = await context.viewFacet.getConnectedPartyBs(partyA)
+		const conns = await context.viewFacetSymbol.getConnectedPartyBs(partyA)
 		if (expected) expect(conns).to.include(partyB)
 		else expect(conns).to.not.include(partyB)
 	}
@@ -89,8 +89,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await user.liquidateAndSetSymbolPrices([1n], [decimal(8n)])
 			await user.liquidatePendingPositions()
 
-			expect((await context.viewFacet.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
-			expect((await context.viewFacet.getQuote(3)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect((await context.viewFacetQuote.getQuote(3)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
 
 			let balanceInfoOfPartyA: BalanceInfo = await user.getBalanceInfo()
 			expect(balanceInfoOfPartyA.allocatedBalances).to.be.equal(decimal(500n) - (await getTradingFeeForQuotes(context, [1n, 2n, 3n, 4n])))
@@ -116,8 +116,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)])
 			await user.liquidatePendingPositions()
 
-			expect((await context.viewFacet.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
-			expect((await context.viewFacet.getQuote(3)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect((await context.viewFacetQuote.getQuote(3)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
 
 			let balanceInfoOfPartyA: BalanceInfo = await user.getBalanceInfo()
 			expect(balanceInfoOfPartyA.allocatedBalances).to.be.equal(decimal(500n) - (await getTradingFeeForQuotes(context, [1n, 2n, 3n, 4n])))
@@ -175,7 +175,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await context.accountFacet.connect(user2.getSigner).deallocate(decimal(399n), await getDummySingleUpnlSig())
 			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user2.address)
 			const allocatedBalance = (await user2.getBalanceInfo()).allocatedBalances
-			const quote = await context.viewFacet.getQuote(4)
+			const quote = await context.viewFacetQuote.getQuote(4)
 
 			let price = decimal(25n, 16)
 
@@ -240,7 +240,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await context.accountFacet.connect(user2.getSigner).deallocate(decimal(399n), await getDummySingleUpnlSig())
 			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user2.address)
 			const allocatedBalance = (await user2.getBalanceInfo()).allocatedBalances
-			const quote = await context.viewFacet.getQuote(4)
+			const quote = await context.viewFacetQuote.getQuote(4)
 
 			// We have a Long Limit Position for User 2 at index 4
 			// Tweak the price to get different UPNL in order to make the position liquid
@@ -299,12 +299,12 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await user3.setup()
 			await user3.setBalances(decimal(2000n), decimal(1000n), decimal(500n))
 			await user3.sendQuote(limitQuoteRequestBuilder().cva(decimal(20n)).build())
-			let lastID = await context.viewFacet.getNextQuoteId()
+			let lastID = await context.viewFacetQuote.getNextQuoteId()
 			await hedger.lockQuote(lastID)
 			await hedger.openPosition(lastID)
 
 			await user3.sendQuote(limitQuoteRequestBuilder().cva(decimal(10n)).build())
-			lastID = await context.viewFacet.getNextQuoteId()
+			lastID = await context.viewFacetQuote.getNextQuoteId()
 			await hedger.lockQuote(lastID)
 			await hedger.openPosition(lastID)
 
@@ -317,7 +317,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			// Tweak the price to get different UPNL in order to make the position liquid
 			// lower the price to make the party A position in liquidation risk
 			const price = decimal(5n, 16)
-			const quote = await context.viewFacet.getQuote(lastID)
+			const quote = await context.viewFacetQuote.getQuote(lastID)
 
 			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user3.address)
 			const allocatedBalance = (await user3.getBalanceInfo()).allocatedBalances
@@ -364,7 +364,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			// Tweak the price to get different UPNL in order to make the position liquid
 			const price = decimal(24n, 16) // lower the price to make the party A position in liquidation risk
-			const quote = await context.viewFacet.getQuote(4)
+			const quote = await context.viewFacetQuote.getQuote(4)
 
 			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user2.address)
 			const allocatedBalance = (await user2.getBalanceInfo()).allocatedBalances
@@ -416,7 +416,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			it("Should liquidate positions", async function () {
 				await user.liquidatePendingPositions()
 				await user.liquidatePositions([1])
-				expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
+				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
 				await expectConnected(user.address, hedger.address, false)
 			})
 
@@ -510,7 +510,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		it("Should liquidate positions deferred", async function () {
 			await user.liquidatePendingPositions()
 			await user.liquidatePositions([1])
-			expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
+			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
 		})
 
 		describe("Settle liquidation deferred", async function () {
@@ -602,7 +602,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			expect(balanceInfo.pendingLockedLf).to.be.equal("0")
 			expect(balanceInfo.totalPendingLockedPartyB).to.be.equal("0")
 
-			expect((await context.viewFacet.getQuote(5)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect((await context.viewFacetQuote.getQuote(5)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
 		})
 
 		it("Should fail to liquidate a partyB twice", async function () {

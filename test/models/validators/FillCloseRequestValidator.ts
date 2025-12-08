@@ -36,14 +36,14 @@ export class FillCloseRequestValidator implements TransactionValidator {
 		return {
 			balanceInfoPartyA: await arg.user.getBalanceInfo(),
 			balanceInfoPartyB: await arg.hedger.getBalanceInfo(await arg.user.getAddress()),
-			quote: await context.viewFacet.getQuote(arg.quoteId),
+			quote: await context.viewFacetQuote.getQuote(arg.quoteId),
 		}
 	}
 
 	async after(context: RunContext, arg: FillCloseRequestValidatorAfterArg) {
 		logger.debug("After FillCloseRequestValidator...")
 // Check Quote
-		const newQuote = await context.viewFacet.getQuote(arg.quoteId)
+		const newQuote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		const oldQuote = arg.beforeOutput.quote
 		const zeroToClose = newQuote.quantityToClose === 0n
 		const isFullyClosed = newQuote.quantity === newQuote.closedAmount

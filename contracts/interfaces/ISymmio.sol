@@ -6,11 +6,15 @@ pragma solidity >=0.8.18;
 
 import "../facets/Account/IAccountFacet.sol";
 import "../facets/Control/IControlFacet.sol";
+import "../facets/Control/ISymbolControlFacet.sol";
+import "../facets/Control/IPauseControlFacet.sol";
 import "../facets/FundingRate/IFundingRateFacet.sol";
 import "../facets/liquidation/ILiquidationFacet.sol";
 import "../facets/PartyA/IPartyAFacet.sol";
 import "../facets/Bridge/IBridgeFacet.sol";
 import "../facets/ViewFacet/IViewFacet.sol";
+import "../facets/ViewFacet/IViewFacetSymbol.sol";
+import "../facets/ViewFacet/IViewFacetQuote.sol";
 import "../facets/DiamondCut/IDiamondCut.sol";
 import "../facets/DiamondLoup/IDiamondLoupe.sol";
 import "../facets/PartyBQuoteActions/IPartyBQuoteActionsFacet.sol";
@@ -22,6 +26,8 @@ import "../facets/PartyBBatchActions/IPartyBBatchActionsFacet.sol";
 interface ISymmio is
 	IAccountFacet,
 	IControlFacet,
+	ISymbolControlFacet,
+	IPauseControlFacet,
 	IFundingRateFacet,
 	IBridgeFacet,
 	ISettlementFacet,
@@ -32,6 +38,8 @@ interface ISymmio is
 	IPartyAFacet,
 	ILiquidationFacet,
 	IViewFacet,
+	IViewFacetSymbol,
+	IViewFacetQuote,
 	IDiamondCut,
 	IDiamondLoupe
 {

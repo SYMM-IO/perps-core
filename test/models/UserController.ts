@@ -48,7 +48,7 @@ export class UserController {
 				this.manager
 					.getQueueObservable(status)
 					.pipe(
-						concatMap(qId => from(this.manager.context.viewFacet.getQuote(qId))),
+						concatMap(qId => from(this.manager.context.viewFacetQuote.getQuote(qId))),
 						filter(quote => quote.quoteStatus == BigInt(status) && quote.partyA == userAddress),
 					)
 					.subscribe(quote => {
@@ -83,7 +83,7 @@ export class UserController {
 	public async sendQuote(maxLockedAmountForQuote = decimal(100n)): Promise<void> {
 		if (await this.manager.getPauseState()) throw new Error("This method is not allowed when state is paused")
 
-		const pendingQuotes = await this.context.viewFacet.getPartyAPendingQuotes(this.user.getAddress())
+		const pendingQuotes = await this.context.viewFacetQuote.getPartyAPendingQuotes(this.user.getAddress())
 		if (pendingQuotes.length >= 10) throw new ManagedError("Too many open quotes")
 
 		const orderType = pick([OrderType.MARKET, OrderType.LIMIT])
@@ -143,7 +143,7 @@ export class UserController {
 				.maxFundingRate(0n)
 				.build(),
 		)
-		console.log((await this.context.viewFacet.getQuote(id)).deadline)
+		console.log((await this.context.viewFacetQuote.getQuote(id)).deadline)
 
 		if (randomBigNumber(100n, 1n) <= 110n) {
 			this.checkpoint.addBlockedQuotes(id)
@@ -179,7 +179,7 @@ export class UserController {
 				break
 			}
 			case Action.CLOSE_REQUEST: {
-				let symbol = await this.context.viewFacet.getSymbol(quote.symbolId)
+				let symbol = await this.context.viewFacetSymbol.getSymbol(quote.symbolId)
 				let symbolQP = this.manager.symbolManager.getSymbolQuantityPrecision(Number(symbol.symbolId))
 				let symbolPP = this.manager.symbolManager.getSymbolPricePrecision(Number(symbol.symbolId))
 
@@ -304,7 +304,7 @@ export class UserController {
 				if (actionWrapper.rethink) {
 					let status = quote.quoteStatus
 					setTimeout(async () => {
-						quote = await this.context.viewFacet.getQuote(quote.id)
+						quote = await this.context.viewFacetQuote.getQuote(quote.id)
 						if (quote.quoteStatus == status) {
 							this.manager.actionsLoop.next({
 								title: "User",

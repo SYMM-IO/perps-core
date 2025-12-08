@@ -44,7 +44,7 @@ export class Hedger extends PartyEntity {
 
 	public async lockQuote(id: BigNumberish, upnl: bigint = 0n, allocateCoefficient: bigint | null = decimal(12n, 17)) {
 		if (allocateCoefficient != null) {
-			const quote = await this.context.viewFacet.getQuote(id)
+			const quote = await this.context.viewFacetQuote.getQuote(id)
 			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
 			await runTx(this.context.accountFacet.connect(this.signer).allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA))
 		}
@@ -56,7 +56,7 @@ export class Hedger extends PartyEntity {
 	}
 
 	public async openPosition(id: BigNumberish, request: OpenRequest = limitOpenRequestBuilder().build()) {
-		const quote = await this.context.viewFacet.getQuote(id)
+		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
 		logger.detailedDebug(
 			serializeToJson({
@@ -107,7 +107,7 @@ export class Hedger extends PartyEntity {
 	}
 
 	public async fillCloseRequest(id: BigNumberish, request: FillCloseRequest = limitFillCloseRequestBuilder().build()) {
-		const quote = await this.context.viewFacet.getQuote(id)
+		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
 		logger.detailedDebug(
 			serializeToJson({
@@ -146,7 +146,7 @@ export class Hedger extends PartyEntity {
 	}
 
 	public async emergencyClosePosition(id: BigNumberish, request: EmergencyCloseRequest = emergencyCloseRequestBuilder().build()) {
-		const quote = await this.context.viewFacet.getQuote(id)
+		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
 		logger.detailedDebug(
 			serializeToJson({
@@ -193,7 +193,7 @@ export class Hedger extends PartyEntity {
 		const pageSize = 30
 		let last = 0
 		while (true) {
-			const page = await this.context.viewFacet.getPartyBOpenPositions(await this.getAddress(), partyA, last, pageSize)
+			const page = await this.context.viewFacetQuote.getPartyBOpenPositions(await this.getAddress(), partyA, last, pageSize)
 			openPositions.push(...page)
 			if (page.length < pageSize) break
 		}
