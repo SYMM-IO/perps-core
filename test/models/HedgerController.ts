@@ -51,7 +51,7 @@ export class HedgerController {
 				this.manager
 					.getQueueObservable(status)
 					.pipe(
-						concatMap(qId => from(this.context.viewFacet.getQuote(qId))),
+						concatMap(qId => from(this.context.viewFacetQuote.getQuote(qId))),
 						filter(quote => quote.quoteStatus == BigInt(status) && (quote.partyB == ethers.ZeroAddress || quote.partyB == userAddress)),
 					)
 					.subscribe(async quote => {
@@ -181,7 +181,7 @@ export class HedgerController {
 				const quantity = await getQuoteQuantity(this.context, quote.id)
 				let fillAmount = undefined
 				let partially = false
-				const symbol: SymbolStructOutput = await this.context.viewFacet.getSymbol(quote.symbolId)
+				const symbol: SymbolStructOutput = await this.context.viewFacetSymbol.getSymbol(quote.symbolId)
 				if (quote.orderType == BigInt(OrderType.LIMIT)) {
 					const locked = await getTotalLockedValuesForQuoteIds(this.context, [quote.id])
 					const minQuantity = safeDiv(symbol.minAcceptableQuoteValue * quantity, locked)
@@ -234,7 +234,7 @@ export class HedgerController {
 					break
 				}
 				let fillAmount = undefined
-				const symbol: SymbolStructOutput = await this.context.viewFacet.getSymbol(quote.symbolId)
+				const symbol: SymbolStructOutput = await this.context.viewFacetSymbol.getSymbol(quote.symbolId)
 				const minLeftQuantity = await getQuoteMinLeftQuantityForFill(this.manager.context, quote.id)
 				if (quote.orderType === BigInt(OrderType.LIMIT)) {
 					const maxFillAmount = quote.quantityToClose - minLeftQuantity
@@ -290,7 +290,7 @@ export class HedgerController {
 				if (actionWrapper.rethink) {
 					let status = quote.quoteStatus
 					setTimeout(async () => {
-						quote = await this.context.viewFacet.getQuote(quote.id)
+						quote = await this.context.viewFacetQuote.getQuote(quote.id)
 						if (quote.quoteStatus == status) {
 							this.manager.actionsLoop.next({
 								title: "User",

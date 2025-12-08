@@ -9,6 +9,7 @@ import "../../libraries/muon/LibMuonSettlement.sol";
 import "../../libraries/LibSettlement.sol";
 import "../../libraries/LibLiquidation.sol";
 import "../../libraries/LibSolvency.sol";
+import "../../libraries/LibQuoteClose.sol";
 import "../../storages/QuoteStorage.sol";
 
 library ForceActionsFacetImpl {
@@ -119,7 +120,7 @@ library ForceActionsFacetImpl {
 			if (updatedPrices.length > 0) {
 				LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
 			}
-			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
+			LibQuoteClose.closeQuote(quote.id, quote.quantityToClose, closePrice);
 		} else if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
 			uint256 available = uint256(-partyBAvailableBalance);
 			if (accountLayout.masterAccountMode[quote.partyB]) {
@@ -133,7 +134,7 @@ library ForceActionsFacetImpl {
 			if (updatedPrices.length > 0) {
 				LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
 			}
-			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
+			LibQuoteClose.closeQuote(quote.id, quote.quantityToClose, closePrice);
 		} else {
 			if (accountLayout.masterAccountMode[quote.partyB]) {
 				accountLayout.partyBAllocatedBalances[quote.partyB][address(0)] = 0;

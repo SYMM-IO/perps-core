@@ -38,6 +38,6 @@ export class SendQuoteValidator implements TransactionValidator {
 			(oldBalanceInfo.totalPendingLockedPartyA + await getTotalLockedValuesForQuoteIds(context, [arg.quoteId])).toString(),
 		)
 		expect(newBalanceInfo.allocatedBalances).to.be.equal((oldBalanceInfo.allocatedBalances - await getTradingFeeForQuotes(context, [arg.quoteId])))
-		expect((await context.viewFacet.getQuote(arg.quoteId)).quoteStatus).to.be.equal(QuoteStatus.PENDING)
+		expect((await context.viewFacetQuote.getQuote(arg.quoteId)).quoteStatus).to.be.equal(QuoteStatus.PENDING)
 	}
 }

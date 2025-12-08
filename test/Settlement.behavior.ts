@@ -66,7 +66,7 @@ export function shouldBehaveLikeSettlement(): void {
 	})
 
 	it("Should fail when partyB actions paused", async function () {
-		await context.controlFacet.connect(context.signers.admin).pausePartyBActions()
+		await context.pauseControlFacet.connect(context.signers.admin).pausePartyBActions()
 		await expect(hedger.settleUpnl(await user.getAddress(), [])).to.be.revertedWith("Pausable: PartyB actions paused")
 	})
 
@@ -209,8 +209,8 @@ export function shouldBehaveLikeSettlement(): void {
 		const beforeAllocatedPartyB = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
 		const beforeAllocatedPartyB2 = (await hedger2.getBalanceInfo(await user.getAddress())).allocatedBalances
 
-		const quote1 = await context.viewFacet.getQuote(shortHedger1)
-		const quote2 = await context.viewFacet.getQuote(shortHedger2)
+		const quote1 = await context.viewFacetQuote.getQuote(shortHedger1)
+		const quote2 = await context.viewFacetQuote.getQuote(shortHedger2)
 
 		await hedger.settleUpnl(await user.getAddress(), [decimal(5n, 17), decimal(5n, 17)], getDummySettlementSig(0n, [0n, 0n], [
 			{
@@ -227,8 +227,8 @@ export function shouldBehaveLikeSettlement(): void {
 		expect(await context.viewFacet.nonceOfPartyA(await user.getAddress())).to.be.eq(beforeNoncePartyA + 1n)
 		expect(await context.viewFacet.nonceOfPartyB(await hedger.getAddress(), await user.getAddress())).to.be.eq(beforeNoncePartyB + 1n)
 		expect(await context.viewFacet.nonceOfPartyB(await hedger2.getAddress(), await user.getAddress())).to.be.eq(beforeNoncePartyB2 + 1n)
-		expect((await context.viewFacet.getQuote(shortHedger1)).openedPrice).to.be.eq(decimal(5n, 17).toString())
-		expect((await context.viewFacet.getQuote(shortHedger2)).openedPrice).to.be.eq(decimal(5n, 17).toString())
+		expect((await context.viewFacetQuote.getQuote(shortHedger1)).openedPrice).to.be.eq(decimal(5n, 17).toString())
+		expect((await context.viewFacetQuote.getQuote(shortHedger2)).openedPrice).to.be.eq(decimal(5n, 17).toString())
 
 		expect((await user.getBalanceInfo()).allocatedBalances).to.be.eq(beforeAllocatedPartyA + unDecimal((quote1.quantity + quote2.quantity) * decimal(5n, 17)))
 		expect((await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances).to.be.eq(beforeAllocatedPartyB - unDecimal(quote1.quantity * decimal(5n, 17)))
