@@ -891,7 +891,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 
 		it("Should fail when sender is suspended", async function () {
-			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 			await expect(
 				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress),
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
@@ -974,7 +974,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when external transfers are paused", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseExternalTransfer()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseExternalTransfer()
 
 			await expect(
 				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
@@ -982,7 +982,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when accounting is paused", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseAccounting()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
 
 			await expect(
 				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
@@ -990,7 +990,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when global pause is active", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
 			await expect(
 				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
