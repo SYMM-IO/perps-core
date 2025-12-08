@@ -409,7 +409,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.accountManager.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
 
 			// Whitelisting Symbol type
-			await context.controlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
+			await context.symbolControlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
 
 			const sendQuoteWithAffiliateSignature =
 				"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(int256,uint256,uint256,uint256,bytes))"
@@ -563,7 +563,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await expect(context.instantLayer.executeBatch([opSendQuoteA1, opLockB1], [sig1, sig2])).not.to.be.reverted
 
 			// Optional: verify side-effects minimally (quote 1 exists & is locked)
-			const q1 = await context.viewFacet.getQuote(1)
+			const q1 = await context.viewFacetQuote.getQuote(1)
 			expect(q1.requestedOpenPrice).to.equal(requestSendQuote.price)
 			expect(q1.quantity).to.equal(requestSendQuote.quantity)
 			expect(q1.quoteStatus).to.equal(QuoteStatus.LOCKED)
@@ -589,8 +589,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
 
 			await expect(context.instantLayer.executeBatch([opSendQuoteA1, opSendQuoteA2], [sig1, sig2])).not.to.be.reverted
-			const q1 = await context.viewFacet.getQuote(1)
-			const q2 = await context.viewFacet.getQuote(2)
+			const q1 = await context.viewFacetQuote.getQuote(1)
+			const q2 = await context.viewFacetQuote.getQuote(2)
 
 			expect(q1.requestedOpenPrice).to.equal(requestSendQuote.price)
 			expect(q1.quantity).to.equal(requestSendQuote.quantity)
@@ -702,8 +702,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			await expect(instantLayer.executeBatch(signedOps, sigCallDatas)).not.to.be.reverted
 
-			let quote = await context.viewFacet.getQuote(1)
-			let quote2 = await context.viewFacet.getQuote(2)
+			let quote = await context.viewFacetQuote.getQuote(1)
+			let quote2 = await context.viewFacetQuote.getQuote(2)
 			expect(quote.requestedOpenPrice).to.be.equal(requestSendQuote.price)
 			expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
 			expect(quote2.requestedOpenPrice).to.be.equal(requestSendQuote.price)
@@ -729,20 +729,20 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	await expect(instantLayer.executeBatch(signedOps)).not.to.be.reverted // Admin with OPERATOR Role
 
 		// 	let lastID = 1
-		// 	let quote = await context.viewFacet.getQuote(lastID)
+		// 	let quote = await context.viewFacetQuote.getQuote(lastID)
 		// 	expect(quote.requestedOpenPrice).to.be.equal(requestSendQuote.price)
 		// 	expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
 		// 	console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.PENDING) ? "Pending" : quote.quoteStatus)
 
 		// 	const signedOpsLock: InstantLayer.SignedOperationStruct[] = [opLockB1]
 		// 	await expect(instantLayer.executeBatch(signedOpsLock)).not.to.be.reverted
-		// 	quote = await context.viewFacet.getQuote(lastID)
+		// 	quote = await context.viewFacetQuote.getQuote(lastID)
 		// 	console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.LOCKED) ? "Locked" : quote.quoteStatus)
 		// 	expect(quote.quoteStatus).to.be.equal(QuoteStatus.LOCKED)
 
 		// 	const signedOpsFill: InstantLayer.SignedOperationStruct[] = [opOpenQuoteB1]
 		// 	await expect(instantLayer.executeBatch(signedOpsFill)).not.to.be.reverted
-		// 	quote = await context.viewFacet.getQuote(lastID)
+		// 	quote = await context.viewFacetQuote.getQuote(lastID)
 		// 	console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.OPENED) ? "Opened" : quote.quoteStatus)
 
 		// 	expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
@@ -766,7 +766,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		// 	//Verificaiton
 		// 	let lastID = 1
-		// 	let quote = await context.viewFacet.getQuote(lastID)
+		// 	let quote = await context.viewFacetQuote.getQuote(lastID)
 		// 	console.log("Quote Status, ID:", lastID, quote.quoteStatus == BigInt(QuoteStatus.OPENED) ? "Opened" : quote.quoteStatus)
 		// 	expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
 		// })
@@ -902,7 +902,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.accountManager.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
 
 			// Whitelisting Symbol type
-			await context.controlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
+			await context.symbolControlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
 
 			const sendQuoteWithAffiliateSignature =
 				"sendQuoteWithAffiliate(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(int256,uint256,uint256,uint256,bytes))"
@@ -1148,7 +1148,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				.to.emit(context.instantLayer, "OperationsExecuted")
 				.withArgs(templateIdBasic, context.signers.admin.address)
 
-			const q1 = await context.viewFacet.getQuote(1)
+			const q1 = await context.viewFacetQuote.getQuote(1)
 			expect(q1.requestedOpenPrice).to.equal(requestSendQuote.price)
 			expect(q1.quantity).to.equal(requestSendQuote.quantity)
 			expect(q1.quoteStatus).to.equal(QuoteStatus.LOCKED)
@@ -1176,7 +1176,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		// 	await expect(context.instantLayer.executeTemplate(1, [opSendQuoteA1, opLockPatched], [sigSend, sigLock])).not.to.be.reverted
 
 		// 	// 4) Verify the quote is locked (means the injected quoteId was correct)
-		// 	const q1 = await context.viewFacet.getQuote(1)
+		// 	const q1 = await context.viewFacetQuote.getQuote(1)
 		// 	expect(q1.quoteStatus).to.equal(QuoteStatus.LOCKED)
 		// })
 
@@ -1290,8 +1290,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await expect(instantLayer.executeTemplate(tempID, signedOps, sigCallDatas)).not.to.be.reverted
 
 			//Verification
-			let quote = await context.viewFacet.getQuote(1)
-			let quote2 = await context.viewFacet.getQuote(2)
+			let quote = await context.viewFacetQuote.getQuote(1)
+			let quote2 = await context.viewFacetQuote.getQuote(2)
 			expect(quote.requestedOpenPrice).to.be.equal(requestSendQuote.price)
 			expect(quote.quantity).to.be.equal(requestSendQuote.quantity)
 			expect(quote2.requestedOpenPrice).to.be.equal(requestSendQuote.price)

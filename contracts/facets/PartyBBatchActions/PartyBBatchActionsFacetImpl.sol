@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../libraries/muon/LibMuonPartyBBatchActions.sol";
 import "../../libraries/LibSolvency.sol";
 import "../../libraries/LibPartyBPositionsActions.sol";
+import "../../libraries/LibQuoteClose.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
@@ -180,7 +181,7 @@ library PartyBBatchActionsFacetImpl {
 					);
 				}
 				quote.quantityToClose = quantityToClose;
-				LibQuote.closeQuote(quote, filledAmounts[i], closedPrices[i]);
+				LibQuoteClose.closeQuote(quote.id, filledAmounts[i], closedPrices[i]);
 				quoteStatuses[i] = quote.quoteStatus;
 				closeIds[i] = 0; // not used in ADL
 			} else {

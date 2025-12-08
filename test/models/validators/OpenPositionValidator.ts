@@ -43,7 +43,7 @@ export type OpenPositionValidatorAfterArg = {
 export class OpenPositionValidator implements TransactionValidator {
 	async before(context: RunContext, arg: OpenPositionValidatorBeforeArg): Promise<OpenPositionValidatorBeforeOutput> {
 		logger.debug("Before OpenPositionValidator...")
-		const quote = await context.viewFacet.getQuote(arg.quoteId)
+		const quote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		return {
 			balanceInfoPartyA: await arg.user.getBalanceInfo(),
 			balanceInfoPartyB: await arg.hedger.getBalanceInfo(await arg.user.getAddress()),
@@ -55,7 +55,7 @@ export class OpenPositionValidator implements TransactionValidator {
 	async after(context: RunContext, arg: OpenPositionValidatorAfterArg) {
 		logger.debug("After OpenPositionValidator...")
 		// Check Quote
-		const newQuote = await context.viewFacet.getQuote(arg.quoteId)
+		const newQuote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		const oldQuote = arg.beforeOutput.quote
 		expect(newQuote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
 		expect(newQuote.openedPrice).to.be.equal(arg.openedPrice)
@@ -74,7 +74,7 @@ export class OpenPositionValidator implements TransactionValidator {
 		const partially = !fillAmountCoef.eq(1)
 
 		if (partially && arg.newQuoteId != null) {
-			const newlyCreatedQuote = await context.viewFacet.getQuote(arg.newQuoteId!)
+			const newlyCreatedQuote = await context.viewFacetQuote.getQuote(arg.newQuoteId!)
 			expect(newlyCreatedQuote.quoteStatus).to.be.equal(arg.newQuoteTargetStatus!)
 			const lv = await getTotalPartyALockedValuesForQuotes([newlyCreatedQuote])
 			expect(newlyCreatedQuote.quantity).to.be.equal(oldQuote.quantity - arg.fillAmount)

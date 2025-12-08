@@ -36,7 +36,7 @@ export class UnlockQuoteValidator implements TransactionValidator {
 		expect(newBalanceInfo.totalPendingLockedPartyA).to.be.equal(oldBalanceInfo.totalPendingLockedPartyA.toString())
 		expect(newBalanceInfo.allocatedBalances).to.be.equal(oldBalanceInfo.allocatedBalances.toString())
 
-		const quote = await context.viewFacet.getQuote(arg.quoteId)
+		const quote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		expect(quote.quoteStatus).to.be.equal(QuoteStatus.PENDING)
 		expect(quote.partyB).to.be.equal(ethers.ZeroAddress)
 	}

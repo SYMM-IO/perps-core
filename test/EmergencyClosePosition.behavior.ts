@@ -36,20 +36,20 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 		await hedger2.setBalances(this.hedger_allocated, this.hedger_allocated)
 
 		// Quote1 LONG opened
-		quote1LongOpened = await context.viewFacet.getQuote(await user.sendQuote())
+		quote1LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote1LongOpened.id)
 		await hedger.openPosition(quote1LongOpened.id)
 
 		// Quote2 SHORT opened
-		quote2ShortOpened = await context.viewFacet.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
 		await hedger.lockQuote(quote2ShortOpened.id)
 		await hedger.openPosition(quote2ShortOpened.id)
 
 		// Quote3 SHORT sent
-		quote3JustSent = await context.viewFacet.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote3JustSent = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
 
 		// Quote4 LONG sent
-		quote4LongOpened = await context.viewFacet.getQuote(await user.sendQuote())
+		quote4LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote4LongOpened.id)
 		await hedger.openPosition(quote4LongOpened.id)
 	})
@@ -66,8 +66,8 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 
 		describe("Emergency status for partyB activated", async function () {
 			beforeEach(async function () {
-				await context.controlFacet.setPartyBEmergencyStatus([await hedger2.getAddress()], true)
-				await context.controlFacet.setPartyBEmergencyStatus([await hedger.getAddress()], true)
+				await context.pauseControlFacet.setPartyBEmergencyStatus([await hedger2.getAddress()], true)
+				await context.pauseControlFacet.setPartyBEmergencyStatus([await hedger.getAddress()], true)
 			})
 
 			it("Should fail on invalid partyB", async function () {
@@ -111,7 +111,7 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 
 		describe("Emergency mode get activated", async function () {
 			beforeEach(async function () {
-				await context.controlFacet.activeEmergencyMode()
+				await context.pauseControlFacet.activeEmergencyMode()
 			})
 
 			it("Should run successfully", async function () {
@@ -134,7 +134,7 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 
 		describe("Symbol gets deListed", async function () {
 			beforeEach(async function () {
-				await context.controlFacet.setSymbolValidationState((await context.viewFacet.getQuote(1)).symbolId, false)
+				await context.symbolControlFacet.setSymbolValidationState((await context.viewFacetQuote.getQuote(1)).symbolId, false)
 			})
 
 			it("Should run successfully", async function () {

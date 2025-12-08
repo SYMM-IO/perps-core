@@ -46,20 +46,20 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		await hedger2.setBalances(this.hedger_allocated, this.hedger_allocated)
 
 		// Quote1 LONG opened
-		quote1LongOpened = await context.viewFacet.getQuote(await user.sendQuote())
+		quote1LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote1LongOpened.id)
 		await hedger.openPosition(quote1LongOpened.id)
 
 		// Quote2 SHORT opened
-		quote2ShortOpened = await context.viewFacet.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
 		await hedger.lockQuote(quote2ShortOpened.id)
 		await hedger.openPosition(quote2ShortOpened.id)
 
 		// Quote3 SHORT sent
-		quote3JustSent = await context.viewFacet.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote3JustSent = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
 
 		// Quote4 LONG sent
-		quote4LongOpened = await context.viewFacet.getQuote(await user.sendQuote())
+		quote4LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote4LongOpened.id)
 		await hedger.openPosition(quote4LongOpened.id)
 
@@ -89,12 +89,12 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		)
 
 		await context.controlFacet.setForceCloseMinSigPeriod(10)
-		await context.controlFacet.setForceCloseGapRatio((await context.viewFacet.getQuote(quote1LongOpened.id)).symbolId, decimal(1n, 17))
+		await context.controlFacet.setForceCloseGapRatio((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).symbolId, decimal(1n, 17))
 
-		quote1LongOpened = await context.viewFacet.getQuote(quote1LongOpened.id)
-		quote2ShortOpened = await context.viewFacet.getQuote(quote2ShortOpened.id)
-		quote3JustSent = await context.viewFacet.getQuote(quote3JustSent.id)
-		quote4LongOpened = await context.viewFacet.getQuote(quote4LongOpened.id)
+		quote1LongOpened = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(quote2ShortOpened.id)
+		quote3JustSent = await context.viewFacetQuote.getQuote(quote3JustSent.id)
+		quote4LongOpened = await context.viewFacetQuote.getQuote(quote4LongOpened.id)
 	})
 
 	async function prepareSigTimes(period: bigint = 10n) {
@@ -145,7 +145,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 	it("Should fail when price not reached to requested close price", async function () {
 		const sigTimes = await prepareSigTimes()
-		const gapRatio1 = await context.viewFacet.forceCloseGapRatio(quote1LongOpened.symbolId)
+		const gapRatio1 = await context.viewFacetSymbol.forceCloseGapRatio(quote1LongOpened.symbolId)
 		let dummySig = await getDummyHighLowPriceSig(
 			sigTimes[0], // startTime
 			sigTimes[1], // endTime
@@ -159,7 +159,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		)
 		await expect(user.forceClosePosition(quote1LongOpened.id, dummySig)).to.be.revertedWith("PartyAFacet: Requested close price not reached")
 
-		const gapRatio2 = await context.viewFacet.forceCloseGapRatio(quote2ShortOpened.symbolId)
+		const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 		dummySig = await getDummyHighLowPriceSig(
 			sigTimes[0], // startTime
 			sigTimes[1], // endTime
@@ -176,7 +176,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 	it("Should fail when the sig time is lower than forceCloseMinSigPeriod", async function () {
 		const sigTimes = await prepareSigTimes(5n)
-		const gapRatio2 = await context.viewFacet.forceCloseGapRatio(quote2ShortOpened.symbolId)
+		const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 		const dummySig = await getDummyHighLowPriceSig(
 			sigTimes[0], // startTime
 			sigTimes[1], // endTime
@@ -202,7 +202,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			+ (decimal(1n))
 		) * (-1n)
 
-		const gapRatio2 = await context.viewFacet.forceCloseGapRatio(quote2ShortOpened.symbolId)
+		const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 		const dummySig = await getDummyHighLowPriceSig(
 			sigTimes[0],  // startTime
 			sigTimes[1],  // endTime
@@ -225,7 +225,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			const userAddress = await context.signers.user.getAddress()
 			const hedgerAddress = await context.signers.hedger.getAddress()
 
-			const gapRatio2 = await context.viewFacet.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 			const dummySig = await getDummyHighLowPriceSig(
 				sigTimes[0],   // startTime
 				sigTimes[1],   // endTime
@@ -246,10 +246,10 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 			await context.liquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyB(hedgerAddress, userAddress, sig)
 
-			expect((await context.viewFacet.getQuote(3)).quoteStatus).to.be.equal(QuoteStatus.PENDING)
-			expect((await context.viewFacet.getQuote(4)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
-			expect((await context.viewFacet.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
-			expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
+			expect((await context.viewFacetQuote.getQuote(3)).quoteStatus).to.be.equal(QuoteStatus.PENDING)
+			expect((await context.viewFacetQuote.getQuote(4)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
+			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
+			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
 		})
 	})
 
@@ -261,7 +261,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			quoteId: BigInt(quote2ShortOpened.id),
 		})
 		const sigTimes = await prepareSigTimes(100n)
-		const gapRatio2 = await context.viewFacet.forceCloseGapRatio(quote2ShortOpened.symbolId)
+		const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 		const dummySig = await getDummyHighLowPriceSig(
 			sigTimes[0],  // startTime
 			sigTimes[1],  // endTime
@@ -298,7 +298,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			await context.controlFacet.setForceClosePricePenalty(decimal(1n))
 
 			const penalty = await context.viewFacet.forceClosePricePenalty()
-			const quote = await context.viewFacet.getQuote(1)
+			const quote = await context.viewFacetQuote.getQuote(1)
 
 			console.log("quote.avgClosedPrice", quote.avgClosedPrice)
 			console.log("quote.closedAmount", quote.closedAmount)
@@ -308,7 +308,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			const expectedClosePrice = calculateExpectedClosePriceForForceClose(quote, penalty, true)
 			const expectedAvgClosedPrice = calculateExpectedAvgPriceForForceClose(quote, expectedClosePrice)
 
-			const gapRatio = await context.viewFacet.forceCloseGapRatio(quote1LongOpened.symbolId)
+			const gapRatio = await context.viewFacetSymbol.forceCloseGapRatio(quote1LongOpened.symbolId)
 			let dummySig = await getDummyHighLowPriceSig(
 				sigTimes[0], // startTime
 				sigTimes[1], // endTime
@@ -322,7 +322,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			)
 
 			await user.forceClosePosition(quote1LongOpened.id, dummySig)
-			const avgClosePrice = (await context.viewFacet.getQuote(quote1LongOpened.id)).avgClosedPrice
+			const avgClosePrice = (await context.viewFacetQuote.getQuote(quote1LongOpened.id)).avgClosedPrice
 			expect(avgClosePrice).to.be.equal(expectedAvgClosedPrice)
 		})
 
@@ -330,12 +330,12 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			const sigTimes = await prepareSigTimes()
 
 			await context.controlFacet.setForceClosePricePenalty(decimal(1n))
-			const quote = await context.viewFacet.getQuote(1)
+			const quote = await context.viewFacetQuote.getQuote(1)
 
 			const expectedClosePrice = decimal(4n) //sig.averagePrice
 			const expectedAvgClosedPrice = calculateExpectedAvgPriceForForceClose(quote, expectedClosePrice)
 
-			const gapRatio = await context.viewFacet.forceCloseGapRatio(quote1LongOpened.symbolId)
+			const gapRatio = await context.viewFacetSymbol.forceCloseGapRatio(quote1LongOpened.symbolId)
 			let dummySig = await getDummyHighLowPriceSig(
 				sigTimes[0], // startTime
 				sigTimes[1], // endTime
@@ -349,7 +349,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			)
 			await user.forceClosePosition(quote1LongOpened.id, dummySig)
 
-			const avgClosePrice = (await context.viewFacet.getQuote(quote1LongOpened.id)).avgClosedPrice
+			const avgClosePrice = (await context.viewFacetQuote.getQuote(quote1LongOpened.id)).avgClosedPrice
 			expect(avgClosePrice).to.be.equal(expectedAvgClosedPrice)
 		})
 	})
@@ -371,7 +371,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 			await user.forceClosePosition(2, dummySig)
 
-			const avgClosePrice = BigInt((await context.viewFacet.getQuote(2)).avgClosedPrice)
+			const avgClosePrice = BigInt((await context.viewFacetQuote.getQuote(2)).avgClosedPrice)
 
 			expect(avgClosePrice).to.be.equal(decimal(1n) / 6n / 2n) // sig.averagePrice
 
@@ -382,12 +382,12 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			await context.controlFacet.setForceClosePricePenalty(decimal(1n) / 2n)
 
 			const penalty = await context.viewFacet.forceClosePricePenalty()
-			const quote = await context.viewFacet.getQuote(2)
+			const quote = await context.viewFacetQuote.getQuote(2)
 
 			const expectClosePrice = calculateExpectedClosePriceForForceClose(quote, penalty, false)
 			const expectedAvgClosedPrice = calculateExpectedAvgPriceForForceClose(quote, expectClosePrice)
 
-			const gapRatio = await context.viewFacet.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const gapRatio = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 			const dummySig = await getDummyHighLowPriceSig(
 				sigTimes[0],  // startTime
 				sigTimes[1],  // endTime
@@ -402,7 +402,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 			await user.forceClosePosition(2, dummySig)
 
-			const avgClosePrice = (await context.viewFacet.getQuote(2)).avgClosedPrice
+			const avgClosePrice = (await context.viewFacetQuote.getQuote(2)).avgClosedPrice
 
 			expect(avgClosePrice).to.be.equal(expectedAvgClosedPrice)
 		})

@@ -11,6 +11,7 @@ import "../../storages/QuoteStorage.sol";
 import "../../libraries/SharedEvents.sol";
 import "../../libraries/LibQuote.sol";
 import "../../libraries/muon/LibMuonLiquidation.sol";
+import "../../interfaces/ISymmioHook.sol";
 
 library ClearingHouseFacetImpl {
 	using LockedValuesOps for LockedValues;
