@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import "../storages/QuoteStorage.sol";
+import "../storages/MAStorage.sol";
 import "../libraries/SharedEvents.sol";
 import "./LibAccount.sol";
 import "./LibQuote.sol";

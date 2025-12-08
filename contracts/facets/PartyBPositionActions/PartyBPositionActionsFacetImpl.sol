@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../libraries/muon/LibMuonPartyB.sol";
 import "../../libraries/LibSolvency.sol";
 import "../../libraries/LibPartyBPositionsActions.sol";
+import "../../libraries/LibQuoteClose.sol";
 import "../../libraries/LibConnections.sol";
 
 library PartyBPositionActionsFacetImpl {
@@ -128,6 +129,6 @@ library PartyBPositionActionsFacetImpl {
 
 		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
 		accountLayout.partyANonces[quote.partyA] += 1;
-		LibQuote.closeQuote(quote, filledAmount, upnlSig.price);
+		LibQuoteClose.closeQuote(quote.id, filledAmount, upnlSig.price);
 	}
 }

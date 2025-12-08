@@ -5,6 +5,7 @@ import { config as dotenvConfig } from "dotenv"
 import type { HardhatUserConfig } from "hardhat/config"
 import { resolve } from "path"
 import "solidity-docgen"
+import "hardhat-contract-sizer"
 
 import "./tasks/deploy"
 
@@ -44,7 +45,7 @@ const config: HardhatUserConfig = {
 			// forking: {
 			//   url: "",
 			// },
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 		},
 		docker: {
 			url: hardhatDockerUrl,
@@ -212,6 +213,12 @@ const config: HardhatUserConfig = {
 	typechain: {
 		outDir: "src/types",
 		target: "ethers-v6",
+	},
+	contractSizer: {
+		alphaSort: false,
+		disambiguatePaths: false,
+		runOnCompile: false,
+		strict: true,
 	},
 	mocha: {
 		timeout: 100000000,

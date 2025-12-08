@@ -7,20 +7,9 @@ pragma solidity >=0.8.18;
 import "../../storages/AccountStorage.sol";
 import "../../storages/BridgeStorage.sol";
 import "../../storages/MuonStorage.sol";
-import "../../storages/SymbolStorage.sol";
 import "../../storages/WithdrawStorage.sol";
 
 interface IViewFacet {
-	struct Bitmap {
-		uint256 size;
-		BitmapElement[] elements;
-	}
-
-	struct BitmapElement {
-		uint256 offset;
-		uint256 bitmap;
-	}
-
 	function pendingOwner() external view returns (address);
 
 	function owner() external view returns (address);
@@ -70,64 +59,12 @@ interface IViewFacet {
 
 	function getSettlementStates(address partyA, address[] memory partyBs) external view returns (SettlementState[] memory);
 
-	///////////////////////////////////////////
-
-	// Symbols
-	function getSymbol(uint256 symbolId) external view returns (Symbol memory);
-
-	function getSymbols(uint256 start, uint256 size) external view returns (Symbol[] memory);
-
-	function symbolsByQuoteId(uint256[] memory quoteIds) external view returns (Symbol[] memory);
-
-	function symbolNameByQuoteId(uint256[] memory quoteIds) external view returns (string[] memory);
-
-	function symbolNameById(uint256[] memory symbolIds) external view returns (string[] memory);
-
-	function isWhitelistedSymbolType(address partyB, uint256 symbolType) external view returns (bool);
-
-	////////////////////////////////////
-
-	// Quotes
-	function getQuote(uint256 quoteId) external view returns (Quote memory);
-
-	function getQuotesByParent(uint256 quoteId, uint256 size) external view returns (Quote[] memory);
-
-	function quoteIdsOf(address partyA, uint256 start, uint256 size) external view returns (uint256[] memory);
-
-	function getQuotes(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory);
-
-	function quotesLength(address user) external view returns (uint256);
-
-	function partyAPositionsCount(address partyA) external view returns (uint256);
-
-	function getBridgeTransactions(address bridge, uint256 start, uint256 size) external view returns (BridgeTransaction[] memory);
-
-	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory);
-
-	function getPartyBOpenPositions(address partyB, address partyA, uint256 start, uint256 size) external view returns (Quote[] memory);
-
-	function getPositionsFilteredByPartyB(address partyB, uint256 start, uint256 size) external view returns (Quote[] memory);
-
-	function getOpenPositionsFilteredByPartyB(address partyB, uint256 start, uint256 size) external view returns (Quote[] memory);
-
-	function getActivePositionsFilteredByPartyB(address partyB, uint256 start, uint256 size) external view returns (Quote[] memory);
-
-	function partyBPositionsCount(address partyB, address partyA) external view returns (uint256);
-
-	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
-
-	function getPartyBPendingQuotes(address partyB, address partyA) external view returns (uint256[] memory);
-
-	function getQuotesWithBitmap(Bitmap calldata bitmap, uint256 gasNeededForReturn) external view returns (Quote[] memory quotes);
-
-	/////////////////////////////////////
-
 	// Role
 	function hasRole(address user, bytes32 role) external view returns (bool);
 
-	function getRoleHash(string memory str) external pure returns (bytes32);
+	function isRoleAdmin(address account, bytes32 role) external view returns (bool);
 
-	//////////////////////////////////////
+	function getRoleHash(string memory str) external pure returns (bytes32);
 
 	// MA
 	function getCollateral() external view returns (address);
@@ -148,8 +85,6 @@ interface IViewFacet {
 
 	function pendingQuotesValidLength() external view returns (uint256);
 
-	function forceCloseGapRatio(uint256 symbolId) external view returns (uint256);
-
 	function forceClosePricePenalty() external view returns (uint256);
 
 	function forceCloseMinSigPeriod() external view returns (uint256);
@@ -162,15 +97,19 @@ interface IViewFacet {
 
 	function coolDownsOfMA() external view returns (uint256, uint256, uint256, uint256);
 
+	function forceCloseCooldowns() external view returns (uint256, uint256);
+
+	function deallocateCooldown() external view returns (uint256);
+
 	function settlementCooldown() external view returns (uint256);
 
 	function unbindCooldown() external view returns (uint256);
 
 	function lastUpnlSettlementTimestamp(address senderPartyB, address targetPartyB, address partyA) external view returns (uint256);
 
-	function isCallFromInstantLayer() external view returns (bool);
+	function maxConnectedCounterParty() external view returns (uint256);
 
-	///////////////////////////////////////////
+	function isCallFromInstantLayer() external view returns (bool);
 
 	function getMuonConfig() external view returns (uint256 upnlValidTime, uint256 priceValidTime);
 
@@ -196,25 +135,23 @@ interface IViewFacet {
 
 	function verifyMuonTSSAndGateway(bytes32 hash, IMuonSignatureVerifier.SchnorrSign memory sign, bytes memory gatewaySignature) external view;
 
-	function getNextQuoteId() external view returns (uint256);
-
 	function getBridgeTransaction(uint256 transactionId) external view returns (BridgeTransaction memory);
 
 	function getNextBridgeTransactionId() external view returns (uint256);
 
+	function getBridgeTransactions(address bridge, uint256 start, uint256 size) external view returns (BridgeTransaction[] memory);
+
 	function getLiquidationInsuranceVaultParams() external view returns (address, uint256);
 
 	function getPartyBCrossLiquidationStatus(address partyB) external view returns (bool);
+
+	function getCrossLiquidationDetails(address partyB) external view returns (CrossLiquidationDetail memory);
 
 	function getPartyBTotalCva(address partyB) external view returns (uint256);
 
 	function getPartyBTotalLf(address partyB) external view returns (uint256);
 
 	function getSignatureVerifier() external view returns (address);
-
-	function getFundingFeesOfPartyB(uint256 symbolId, address partyB) external view returns (FundingFee memory);
-
-	function getAccumulatedFundingFees(uint256[] memory quoteIds) external view returns (int256[] memory fees);
 
 	function getBindState(address user) external view returns (BindState memory);
 
@@ -226,6 +163,10 @@ interface IViewFacet {
 
 	function isADLEnabled(address partyB) external view returns (bool);
 
+	function getSigner() external view returns (address);
+
+	function getFee(address affiliate, uint256 symbolId) external view returns (Fee memory fee);
+
 	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory);
 
 	function isExpressProviderRegistered(address provider) external view returns (bool);
@@ -234,7 +175,7 @@ interface IViewFacet {
 
 	function isSpeedUpEligible(address user) external view returns (bool);
 
-	function getModifiedCooldownEndTime(address user,uint256 requestId) external view returns (uint256);
+	function getModifiedCooldownEndTime(address user, uint256 requestId) external view returns (uint256);
 
 	function getWithdrawLockedBalance() external view returns (uint256);
 
