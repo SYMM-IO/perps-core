@@ -369,9 +369,24 @@ contract ViewFacetQuote is IViewFacetQuote {
 			uint256[] memory positionType
 		)
 	{
-		if (getCount) positionsCount = QuoteStorage.layout().partyAPositionsCount[partyA];
+		if (getCount) {
+			positionsCount = QuoteStorage.layout().partyAPositionsCount[partyA];
+		}
+
 		Quote[] memory quotes = getPartyAOpenPositionsImp(partyA, quoteStart, quoteEnd);
-		for (uint i = 0; i < quotes.length; i++) {
+		uint256 len = quotes.length;
+
+		// allocate all arrays
+		partyBsAllocated = new uint256[](len);
+		partyBs = new address[](len);
+		quoteIds = new uint256[](len);
+		symbolIds = new uint256[](len);
+		symbolNames = new string[](len);
+		openPrices = new uint256[](len);
+		remainingOpenAmount = new uint256[](len);
+		positionType = new uint256[](len);
+
+		for (uint i = 0; i < len; i++) {
 			partyBs[i] = quotes[i].partyB;
 			partyBsAllocated[i] = AccountStorage.layout().partyBAllocatedBalances[partyBs[i]][partyA];
 			quoteIds[i] = quotes[i].id;
@@ -418,10 +433,23 @@ contract ViewFacetQuote is IViewFacetQuote {
 			uint256[] memory positionType
 		)
 	{
-		if (getCount) positionsCount = QuoteStorage.layout().partyBPositionsCount[partyB][partyA];
+		if (getCount) {
+			positionsCount = QuoteStorage.layout().partyBPositionsCount[partyB][partyA];
+		}
 
 		Quote[] memory quotes = getPartyBOpenPositionsImp(partyB, partyA, quoteStart, quoteEnd);
-		for (uint i = 0; i < quotes.length; i++) {
+		uint256 len = quotes.length;
+
+		// allocate arrays
+		partyBsAllocated = new uint256[](len);
+		quoteIds = new uint256[](len);
+		symbolIds = new uint256[](len);
+		symbolNames = new string[](len);
+		openPrices = new uint256[](len);
+		remainingOpenAmount = new uint256[](len);
+		positionType = new uint256[](len);
+
+		for (uint i = 0; i < len; i++) {
 			partyBsAllocated[i] = AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
 			quoteIds[i] = quotes[i].id;
 			remainingOpenAmount[i] = quotes[i].quantity - quotes[i].closedAmount;
