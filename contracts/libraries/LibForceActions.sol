@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import "../storages/MAStorage.sol";
 import "../storages/AccountStorage.sol";
+import "../storages/QuoteStorage.sol";
 import "./LibQuote.sol";
 import "./LibAccount.sol";
 import "./LibSolvency.sol";
@@ -14,35 +15,32 @@ import "./LibLiquidation.sol";
 
 import "../facets/ForceActions/IForceActionsFacet.sol";
 
-library LibForceSolve {
-	function GetClosePrice(
-		PositionType positionType,
-		uint256 requestedClosePrice,
-		uint256 forceCloseGapRatio,
-		uint256 sig_lowest,
-		uint256 sig_highest,
-		uint256 sig_averagePrice,
-		uint256 sig_startTime,
-		uint256 sig_endTime,
-		uint256 forceClosePricePenalty,
-		uint256 forceCloseMinSigPeriod
-	) internal pure returns (uint256 closePrice) {
+library LibForceActions {
+	function verifyAndGetClosePrice(uint256 quoteId, HighLowPriceSig memory sig) internal view returns (uint256 closePrice) {
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
+		PositionType positionType = quote.positionType;
+		uint256 forceCloseGapRatio = SymbolStorage.layout().forceCloseGapRatio[quote.symbolId];
+		uint256 forceClosePricePenalty = maLayout.forceClosePricePenalty;
+		uint256 requestedClosePrice = quote.requestedClosePrice;
+		uint256 sigAveragePrice = sig.averagePrice;
+
 		if (positionType == PositionType.LONG) {
-			if (!(sig_highest >= requestedClosePrice + (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
+			if (!(sig.highest >= requestedClosePrice + (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
 				revert ForceCloseErrors.RequestedClosePriceNotReached();
 			}
 			closePrice = requestedClosePrice + (requestedClosePrice * forceClosePricePenalty) / 1e18;
-			closePrice = closePrice > sig_averagePrice ? closePrice : sig_averagePrice;
+			closePrice = closePrice > sigAveragePrice ? closePrice : sigAveragePrice;
 		} else {
-			if (!(sig_lowest <= requestedClosePrice - (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
+			if (!(sig.lowest <= requestedClosePrice - (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
 				revert ForceCloseErrors.RequestedClosePriceNotReached();
 			}
 			closePrice = requestedClosePrice - (requestedClosePrice * forceClosePricePenalty) / 1e18;
-			closePrice = closePrice > sig_averagePrice ? sig_averagePrice : closePrice;
+			closePrice = closePrice > sigAveragePrice ? sigAveragePrice : closePrice;
 		}
 
-		if (closePrice == sig_averagePrice) {
-			if (!(sig_endTime - sig_startTime >= forceCloseMinSigPeriod)) {
+		if (closePrice == sigAveragePrice) {
+			if (!(sig.endTime - sig.startTime >= maLayout.forceCloseMinSigPeriod)) {
 				revert ForceCloseErrors.InvalidSignaturePeriod();
 			}
 		}
@@ -76,10 +74,8 @@ library LibForceSolve {
 	function verifyPrice(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		address partyB = quote.partyB;
-		address partyA = quote.partyA;
 
-		LibMuonForceActions.verifyHighLowPrice(highLowPrice, partyB, partyA, quote.symbolId);
+		LibMuonForceActions.verifyHighLowPrice(highLowPrice, quote.partyB, quote.partyA, quote.symbolId);
 
 		if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
 			revert ForceCloseErrors.InvalidState();
@@ -108,12 +104,12 @@ library LibForceSolve {
 
 	function getAvailableBalancesAfterClose(
 		uint256 quoteId,
-		uint256 sig_currentPrice,
-		int256 sig_upnlPartyA,
-		int256 sig_upnlPartyB,
+		uint256 sigCurrentPrice,
+		int256 sigUpnlPartyA,
+		int256 sigUpnlPartyB,
 		uint256 closePrice
 	) internal view returns (int256 partyBAvailableBalance, int256 partyAAvailableBalance) {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
 
 		uint256[] memory quoteIds = new uint256[](1);
 		uint256[] memory filledAmounts = new uint256[](1);
@@ -123,15 +119,15 @@ library LibForceSolve {
 		quoteIds[0] = quoteId;
 		filledAmounts[0] = quote.quantityToClose;
 		closedPrices[0] = closePrice;
-		marketPrices[0] = sig_currentPrice;
+		marketPrices[0] = sigCurrentPrice;
 
 		(partyBAvailableBalance, partyAAvailableBalance) = LibSolvency.getAvailableBalanceAfterClosePosition(
 			quoteIds,
 			filledAmounts,
 			closedPrices,
 			marketPrices,
-			sig_upnlPartyB,
-			sig_upnlPartyA,
+			sigUpnlPartyB,
+			sigUpnlPartyA,
 			quote.partyB,
 			quote.partyA
 		);

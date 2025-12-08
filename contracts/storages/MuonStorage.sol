@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../libraries/LibLockedValues.sol";
 import "../interfaces/IMuonSignatureVerifier.sol";
 
 struct SingleUpnlSig {
@@ -122,15 +121,15 @@ struct SettlementSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
-struct CrossQuoteSettlementData {
+struct MasterAccountQuoteSettlementData {
 	uint256 quoteId;
 	uint256 currentPrice; //market price
 }
- 
-struct CrossSettlementSig {
+
+struct MasterAccountSettlementSig {
 	bytes reqId;
 	uint256 timestamp;
-	CrossQuoteSettlementData[] quotesSettlementsData;
+	MasterAccountQuoteSettlementData[] quotesSettlementsData;
 	address partyB;
 	int256 upnlPartyB; //Party B UPNLs for all party As in master account mode enabled
 	address[] partyAs;

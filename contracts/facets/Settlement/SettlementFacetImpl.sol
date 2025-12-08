@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/muon/LibMuonCrossSettlement.sol";
 import "../../libraries/muon/LibMuonSettlement.sol";
 import "../../libraries/LibSettlement.sol";
 
@@ -16,19 +15,5 @@ library SettlementFacetImpl {
 	) internal returns (uint256[] memory newPartyBsAllocatedBalances) {
 		LibMuonSettlement.verifySettlement(settleSig, partyA);
 		return LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, false);
-	}
-
-	function crossSettleUpnl(
-		CrossSettlementSig memory settleSig,
-		uint256[] memory updatedPrices
-	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
-		LibMuonCrossSettlement.verifyCrossSettlement(settleSig);
-		return LibSettlement.crossSettleUpnl(settleSig, updatedPrices, false);
-	}
-
-	function settleAllocated(
-		address partyB, address[] memory partyAs, uint256[] memory fetchAmounts
-	) internal {
-		 LibSettlement.settleAllocated(partyB, partyAs, fetchAmounts);
 	}
 }

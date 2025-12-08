@@ -63,5 +63,15 @@ library PartyBQuoteActionsFacetImpl {
 		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 
 		LibQuote.removeFromPendingQuotes(quote);
+
+		address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
+		address systemHook = accountLayout.affiliateHooks[address(0)];
+
+		if (affiliateHook != address(0)) {
+			try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+		}
+		if (systemHook != address(0)) {
+			try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+		}
 	}
 }

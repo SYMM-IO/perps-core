@@ -8,6 +8,7 @@ import "./PartyAFacetImpl.sol";
 import "../../utils/Accessibility.sol";
 import "../../utils/Pausable.sol";
 import "./IPartyAFacet.sol";
+import "../../libraries/LibSigner.sol";
 
 contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	/**
@@ -47,13 +48,13 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		SingleUpnlAndPriceSig memory upnlSig
 	)
 		external
-		whenInstantModeIsNotActive(msg.sender)
+		whenInstantModeIsNotActive(LibSigner.getSigner())
 		whenNotPartyAActionsPaused
-		notLiquidatedPartyA(msg.sender)
-		notSuspended(msg.sender)
+		notLiquidatedPartyA(LibSigner.getSigner())
+		notSuspended(LibSigner.getSigner())
 		returns (uint256 quoteId)
 	{
-		quoteId = PartyAFacetImpl.sendQuote(
+		PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
 			positionType,
@@ -70,9 +71,11 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			upnlSig,
 			""
 		);
+
+		quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		emit SendQuote(
-			msg.sender,
+			LibSigner.getSigner(),
 			quoteId,
 			partyBsWhiteList,
 			symbolId,
@@ -129,13 +132,13 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		bytes memory data
 	)
 		external
-		whenInstantModeIsNotActive(msg.sender)
+		whenInstantModeIsNotActive(LibSigner.getSigner())
 		whenNotPartyAActionsPaused
-		notLiquidatedPartyA(msg.sender)
-		notSuspended(msg.sender)
+		notLiquidatedPartyA(LibSigner.getSigner())
+		notSuspended(LibSigner.getSigner())
 		returns (uint256 quoteId)
 	{
-		quoteId = PartyAFacetImpl.sendQuote(
+		PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
 			positionType,
@@ -152,10 +155,12 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			upnlSig,
 			data
 		);
+
+		quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		emit SendQuoteData(quoteId, data);
 		emit SendQuote(
-			msg.sender,
+			LibSigner.getSigner(),
 			quoteId,
 			partyBsWhiteList,
 			symbolId,
@@ -206,8 +211,14 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		uint256 maxFundingRate,
 		uint256 deadline,
 		SingleUpnlAndPriceSig memory upnlSig
-	) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused notLiquidatedPartyA(msg.sender) notSuspended(msg.sender) {
-		uint256 quoteId = PartyAFacetImpl.sendQuote(
+	)
+		external
+		whenInstantModeIsNotActive(LibSigner.getSigner())
+		whenNotPartyAActionsPaused
+		notLiquidatedPartyA(LibSigner.getSigner())
+		notSuspended(LibSigner.getSigner())
+	{
+		PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
 			positionType,
@@ -224,10 +235,12 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			upnlSig,
 			""
 		);
+
+		uint256 quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
 		emit SendQuote(
-			msg.sender,
+			LibSigner.getSigner(),
 			quoteId,
 			partyBsWhiteList,
 			symbolId,
@@ -271,7 +284,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	 */
 	function requestToCancelQuote(
 		uint256 quoteId
-	) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
+	) external whenInstantModeIsNotActive(LibSigner.getSigner()) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
 		QuoteStatus result = PartyAFacetImpl.requestToCancelQuote(quoteId);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
@@ -298,7 +311,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		uint256 quantityToClose,
 		OrderType orderType,
 		uint256 deadline
-	) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
+	) external whenInstantModeIsNotActive(LibSigner.getSigner()) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
 		PartyAFacetImpl.requestToClosePosition(quoteId, closePrice, quantityToClose, orderType, deadline);
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
@@ -321,7 +334,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	 */
 	function requestToCancelCloseRequest(
 		uint256 quoteId
-	) external whenInstantModeIsNotActive(msg.sender) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
+	) external whenInstantModeIsNotActive(LibSigner.getSigner()) whenNotPartyAActionsPaused onlyPartyAOfQuote(quoteId) notLiquidated(quoteId) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		QuoteStatus result = PartyAFacetImpl.requestToCancelCloseRequest(quoteId);

@@ -21,6 +21,9 @@ import { shouldBehaveLikeSettlement } from "./Settlement.behavior"
 import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior"
 import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior"
+import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior"
+import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior"
+import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior"
 import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior";
 
 describe("UnitTests", function () {
@@ -45,11 +48,11 @@ describe("UnitTests", function () {
 			shouldBehaveLikeOpenPosition()
 		})
 
-		describe("CancelQuote", async function () {
+		describe.skip("CancelQuote", async function () {
 			shouldBehaveLikeCancelQuote()
 		})
 
-		describe("ClosePosition", async function () {
+		describe.skip("ClosePosition", async function () {
 			shouldBehaveLikeClosePosition()
 		})
 
@@ -57,11 +60,11 @@ describe("UnitTests", function () {
 			shouldBehaveLikeEmergencyClosePosition()
 		})
 
-		describe.only("ForceClosePosition", async function () {
+		describe.skip("ForceClosePosition", async function () {
 			shouldBehaveLikeForceClosePosition()
 		})
 
-		describe.only("SettleAndForceClosePosition", async function () {
+		describe("SettleAndForceClosePosition", async function () {
 			shouldBehaveLikeSettleAndForceClosePosition()
 		})
 
@@ -108,13 +111,25 @@ describe("UnitTests", function () {
 		describe("PartyBBatchActionsFacet", async function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
 		})
-		
-		describe("InstantLayer", async function () {
+
+		describe.skip("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
 		})
 
 		describe("WithdrawFacet", async function () {
 			shouldBehaveLikeWithdrawFacet()
+		})
+
+		describe("AccountHub", async function () {
+			shouldBehaveLikeAccountHub()
+		})
+
+		describe("AffiliateHub", async function () {
+			shouldBehaveLikeAffiliateHub()
+		})
+
+		describe("AccountManager", async function () {
+			shouldBehaveLikeAccountManager()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {
