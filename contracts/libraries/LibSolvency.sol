@@ -100,6 +100,8 @@ library LibSolvency {
 		if (accountLayout.masterAccountMode[partyB]) {
 			partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidationMasterAccount(upnlPartyB, partyB, partyA);
 		} else
+			partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlPartyB, partyB, partyA);
+
 			partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 				upnlPartyA,
 				accountLayout.allocatedBalances[partyA],
