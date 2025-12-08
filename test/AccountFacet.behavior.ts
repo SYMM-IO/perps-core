@@ -206,12 +206,12 @@ export function shouldBehaveLikeAccountFacet(): void {
 				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
 
 				const initialUserBalance = await context.viewFacet.balanceOf(userAddress)
-				const initialRecipientBalance = await context.collateral.balanceOf(recipient)
+				const initialRecipientBalance = await context.viewFacet.balanceOf(recipient)
 
 				await context.accountFacet.connect(context.signers.admin).withdrawSuspendedUserFunds(userAddress, recipient, withdrawAmountStr)
 
 				expect(await context.viewFacet.balanceOf(userAddress)).to.equal(initialUserBalance - withdrawAmount)
-				expect(await context.collateral.balanceOf(recipient)).to.equal(initialRecipientBalance + withdrawAmount)
+				expect(await context.viewFacet.balanceOf(recipient)).to.equal(initialRecipientBalance + withdrawAmount)
 			})
 		})
 
@@ -240,12 +240,12 @@ export function shouldBehaveLikeAccountFacet(): void {
 				).to.be.revertedWith("Accessibility: User is not suspended")
 			})
 
-			it("Should deallocate suspended user funds and enable withdrawal", async function () {
+			it("Should deallocate and withdraw suspended user funds", async function () {
 				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
 
 				const initialAllocated = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
 				const initialBalance = await context.viewFacet.balanceOf(userAddress)
-				const initialRecipientBalance = await context.collateral.balanceOf(recipient)
+				const initialRecipientBalance = await context.viewFacet.balanceOf(recipient)
 
 				await context.accountFacet.connect(context.signers.admin).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr)
 				expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(initialAllocated - allocatedAmount)
@@ -253,7 +253,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 				await context.accountFacet.connect(context.signers.admin).withdrawSuspendedUserFunds(userAddress, recipient, allocatedAmountStr)
 				expect(await context.viewFacet.balanceOf(userAddress)).to.equal(initialBalance)
-				expect(await context.collateral.balanceOf(recipient)).to.equal(initialRecipientBalance + allocatedAmount)
+				expect(await context.viewFacet.balanceOf(recipient)).to.equal(initialRecipientBalance + allocatedAmount)
 			})
 		})
 	})

@@ -47,7 +47,7 @@ library AccountFacetImpl {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		accountLayout.balances[user] -= amountWith18Decimals;
-		IERC20(appLayout.collateral).safeTransfer(recipient, amount);
+		accountLayout.balances[recipient] += amountWith18Decimals;
 	}
 
 	function deallocateSuspendedUser(address user, uint256 amount) internal returns (uint256) {
