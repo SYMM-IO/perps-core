@@ -150,13 +150,13 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 		const balanceInfoBBefore=await hedger.getBalanceInfo(await user.getAddress())
 		
 		await context.settlementFacet.connect(hedger.getSigner).settleUpnl(settlementSig,[updatePrice],await user.getAddress())
-		expect((await context.viewFacet.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(updatePrice)
+		expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(updatePrice)
 		
 		const balanceInfoBAfter = await hedger.getBalanceInfo(await user.getAddress())
 
 		await user.forceClosePosition(quote1LongOpened.id, highLowSig)
 		const settledUpnl = unDecimal((updatePrice - quote2ShortOpened.openedPrice) * quote2ShortOpened.quantity)
-		expect((await context.viewFacet.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
+		expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
 		expect(balanceInfoBAfter.allocatedBalances - balanceInfoBBefore.allocatedBalances).to.be.equal(settledUpnl)
 	})
 

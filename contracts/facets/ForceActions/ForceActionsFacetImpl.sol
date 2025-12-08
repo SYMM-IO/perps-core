@@ -98,50 +98,22 @@ library ForceActionsFacetImpl {
 		detail.inProgress = true;
 	}
 
-	function _forceClose(
-		uint256 quoteId,
-		uint256 closePrice,
-		int256 partyBAvailableBalance,
-		uint256 reservedBalance,
-		int256 upnlPartyB,
-		uint256 currentPrice,
-		bool isMasterAccount
-	) internal returns (bool isSolvent, bool isPartyBLiquidated, int256 _upnlPartyB) {
+	function finalizeMasterAccountForceClose(uint256 quoteId) internal returns (bool isSolvent) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
-		isSolvent = LibForceActions.solveUsingAllocatedBalances(quoteId, closePrice, partyBAvailableBalance, reservedBalance, isMasterAccount);
-
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
-		detail.timestamp = block.timestamp;
-		detail.inProgress = false;
+
+		if (!accountLayout.masterAccountMode[QuoteStorage.layout().quotes[quoteId].partyB]) revert ForceCloseErrors.MasterAccountModeInactive();
+
+		isSolvent = LibForceActions.solveUsingAllocatedBalances(quoteId, detail.closePrice, detail.partyBAvailableAfterClose, accountLayout.partyBAllocatedBalances[QuoteStorage.layout().quotes[quoteId].partyB][address(0)], true);
 
 		if (isSolvent) {
 			detail.partyBState = PartyBForceCloseState.SOLVED;
 		} else {
-			if (!isMasterAccount) {
-				_upnlPartyB = LibForceActions.liquidatePartyB(quoteId, closePrice, reservedBalance, upnlPartyB, currentPrice);
-				isPartyBLiquidated = true;
-				detail.partyBState = PartyBForceCloseState.LIQUIDATED;
-			}
+			detail.partyBState = PartyBForceCloseState.INSOLVENT;
 		}
-	}
 
-	function finalizeMasterAccountForceClose(uint256 quoteId) internal returns (bool isSolvent) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		if (!accountLayout.masterAccountMode[QuoteStorage.layout().quotes[quoteId].partyB]) revert ForceCloseErrors.MasterAccountModeInactive();
-
-		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
-		(isSolvent, , ) = _forceClose(
-			quoteId,
-			detail.closePrice,
-			detail.partyBAvailableAfterClose,
-			accountLayout.partyBAllocatedBalances[QuoteStorage.layout().quotes[quoteId].partyB][address(0)],
-			0,
-			0,
-			true
-		);
-		detail.inProgress = false;
 		detail.timestamp = block.timestamp;
+		detail.inProgress = false;		
 	}
 
 	function forceClose(
@@ -168,16 +140,14 @@ library ForceActionsFacetImpl {
 			revert ForceCloseErrors.PartyAWillBeInsolvent();
 		}
 
+		bool isSolvent;
 		uint256 reservedBalance = accountLayout.reserveVault[partyB];
-		(, isPartyBLiquidated, upnlPartyB) = _forceClose(
-			quoteId,
-			closePrice,
-			partyBAvailableBalance,
-			reservedBalance,
-			sig.upnlPartyB,
-			sig.currentPrice,
-			false
-		);
+		isSolvent = LibForceActions.solveUsingAllocatedBalances(quoteId, closePrice, partyBAvailableBalance, reservedBalance, false);
+
+		if (!isSolvent) {			
+				upnlPartyB = LibForceActions.liquidatePartyB(quoteId, closePrice, reservedBalance, sig.upnlPartyB, sig.currentPrice);
+				isPartyBLiquidated = true;			
+		}
 	}
 
 	function settleUPNL(uint256 quoteId, SettlementSig memory sig, uint256[] memory updatedPrices) internal {
