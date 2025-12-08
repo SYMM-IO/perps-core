@@ -14,14 +14,8 @@ import { User } from "./models/User"
 import { Hedger } from "./models/Hedger"
 import { getDummySingleUpnlSig } from "./utils/SignatureUtils"
 import { decimal, getBlockTimestamp } from "./utils/Common"
-import type { ExternalTransferRelayer as SymmioExternalTransferRelayer } from "../src/types"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { decimal, unDecimal } from "./utils/Common"
-import { ethers } from "hardhat"
-import { ZeroAddress } from "ethers"
-import { toUtf8Bytes } from "ethers"
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types";
-import { viewFacet } from "../src/types/contracts/facets";
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { ExternalTransferStatus } from "./models/Enums";
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"));
@@ -30,6 +24,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger
 	let mockTarget: any, mockTarget2: any
 	let targetAddress: string, targetAddress2: string
+	let providerAddress: string, providerAddress2: string
 
 	// Test constants
 	const BALANCES = {
@@ -63,13 +58,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await user.setup()
 			await user.setBalances(BALANCES.INITIAL_COLLATERAL)
 		})
-	let providerAddress: string, providerAddress2: string
-	beforeEach(async function () {
-		context = await loadFixture(initializeFixture)
-		user = new User(context, context.signers.user)
-		await user.setup()
-		await user.setBalances("500")
-	})
 
 		it("Should fail when accounting is paused", async function () {
 			await context.controlFacet.pauseAccounting()
@@ -840,6 +828,10 @@ export function shouldBehaveLikeAccountFacet(): void {
 		const transferAmount = "100"
 
 		beforeEach(async function () {
+			context = await loadFixture(initializeFixture)
+			user = new User(context, context.signers.user)
+			await user.setup()
+
 			const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
 			mockProvider = await MockVirtualProvider.deploy(context.diamond)
 			await mockProvider.waitForDeployment()
@@ -900,7 +892,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail when sender is suspended", async function () {
 			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
-
 			await expect(
 				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress),
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
@@ -959,7 +950,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(2)
 			await expect(context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).to.revertedWith("AccountFacet: External transfer already processed")
 		})
-
 		it("Should fail to cancel virtual external transfer with invalid sender", async function () {
 			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
 			await expect(context.accountFacet.connect(context.signers.admin).cancelVirtualExternalTransfer(1)).to.revertedWith("AccountFacet: Invalid Sender")
@@ -1046,7 +1036,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.connect(sourceContext.signers.user)
 				.virtualExternalTransfer(receiver, firstExternalTransferAmount, targetContext.diamond, await virtualProvider.getAddress())
 			await virtualProvider.connect(sourceContext.signers.admin).acceptVirtualExternalTransfer(1)
-
 			// check balances
 			const expectedSourceBalanceAfterFirstTransfer = BigInt(virtualDepositAmount) - BigInt(firstExternalTransferAmount)
 			expect(await sourceContext.viewFacet.balanceOf(sourceContext.signers.user.address)).to.equal(expectedSourceBalanceAfterFirstTransfer.toString())
@@ -1069,6 +1058,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		})
 	})
+
 
 	describe("bindToPartyB", () => {
 		beforeEach(async function () {
