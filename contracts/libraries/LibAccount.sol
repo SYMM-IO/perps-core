@@ -27,9 +27,10 @@ library LibAccount {
 	 */
 	function partyBTotalLockedBalances(address partyB, address partyA) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address bucketKey = partyBAllocationBucket(partyB, partyA);
 		return
-			accountLayout.partyBPendingLockedBalances[partyB][partyA].totalForPartyB() +
-			accountLayout.partyBLockedBalances[partyB][partyA].totalForPartyB();
+			accountLayout.partyBPendingLockedBalances[partyB][bucketKey].totalForPartyB() +
+			accountLayout.partyBLockedBalances[partyB][bucketKey].totalForPartyB();
 	}
 
 	/**
