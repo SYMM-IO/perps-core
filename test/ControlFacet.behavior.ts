@@ -647,6 +647,16 @@ export function shouldBehaveLikeControlFacet(): void {
 				"ControlFacet: High fee",
 			)
 		})
+		it("should fail if fee is less than threshold", async () => {
+			await context.controlFacet.registerAffiliate(context.signers.hedger)
+			await context.controlFacet.setMinAffiliateFee(BigInt(5e17))
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(1e17), BigInt(9e17))).to.revertedWith(
+				"ControlFacet: Not allowed to set fee less than threshold",
+			)
+			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(9e17), BigInt(1e17))).to.revertedWith(
+				"ControlFacet: Not allowed to set fee less than threshold",
+			)
+		})
 	})
 
 	describe("setMasterAccountActivationMode", () => {
@@ -670,4 +680,57 @@ export function shouldBehaveLikeControlFacet(): void {
 			await expect(context.controlFacet.connect(user2).setMasterAccountActivationMode(true)).to.be.revertedWith("Accessibility: Must has role")
 		})
 	})
+
+	describe("setCustomAffiliateFee", () => {
+		it("should fail when the provided address as affiliate is not affiliate", async () => {
+			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(1e18), BigInt(1e18))).to.revertedWith(
+				"ControlFacet: Invalid affiliate",
+			)
+		})
+
+		it("should set fee for affiliate and user successfully", async () => {
+			await context.controlFacet.registerAffiliate(context.signers.hedger)
+			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(1e18), BigInt(1e18))).to.not.reverted
+
+			const fee = await context.viewFacet.getCustomAffiliateFee(context.signers.hedger,context.signers.user, 1)
+
+			expect(fee.openFee).to.equal(BigInt(1e18))
+			expect(fee.closeFee).to.equal(BigInt(1e18))
+		})
+
+		it("should fail if fee is high", async () => {
+			await context.controlFacet.registerAffiliate(context.signers.hedger)
+			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(2e18), BigInt(1e18))).to.revertedWith(
+				"ControlFacet: High fee",
+			)
+			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(1e18), BigInt(2e18))).to.revertedWith(
+				"ControlFacet: High fee",
+			)
+			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(2e18), BigInt(2e18))).to.revertedWith(
+				"ControlFacet: High fee",
+			)
+		})
+
+		it("should fail if fee is less than threshold", async () => {
+			await context.controlFacet.registerAffiliate(context.signers.hedger)
+			await context.controlFacet.setMinAffiliateFee(BigInt(5e17))
+			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(1e17), BigInt(9e17))).to.revertedWith(
+				"ControlFacet: Not allowed to set fee less than threshold",
+			)
+			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(9e17), BigInt(1e17))).to.revertedWith(
+				"ControlFacet: Not allowed to set fee less than threshold",
+			)
+		})
+	})
+
+	describe("setMinAffiliateFee", () => {
+
+		it("should set min fee for affiliates successfully", async () => {
+			await expect(context.controlFacet.setMinAffiliateFee(BigInt(1e16))).to.not.reverted
+			const threshold = await context.viewFacet.getMinAffiliateFee()
+			expect(threshold).to.equal(BigInt(1e16))
+		})
+	})
+
+
 }

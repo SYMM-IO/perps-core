@@ -33,6 +33,8 @@ library GlobalAppStorage {
 		mapping(address => bool) virtualProviders;
 		mapping(address => bool) expressProviders;
 		bool deprecateOldWithdrawalPaused;
+		uint256 minAffiliateFee;
+		mapping(address => mapping(address => mapping(uint256 => Fee))) customAffiliateFee; // affiliate => user => symbolId => fee
 	}
 
 	function layout() internal pure returns (Layout storage l) {

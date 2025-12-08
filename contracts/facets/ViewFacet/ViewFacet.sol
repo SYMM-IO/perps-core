@@ -669,6 +669,25 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Retrieves the custom affiliate fee of an affiliate for specific user and symbol.
+	 * @param affiliate The address of the affiliate.
+	 * @param user The address of the user.
+	 * @param symbolId The id of the symbol.
+	 * @return fee The affiliate fee of the affiliate.
+	 */
+	function getCustomAffiliateFee(address affiliate,address user, uint256 symbolId) external view returns (Fee memory) {
+		return GlobalAppStorage.layout().customAffiliateFee[affiliate][user][symbolId];
+	}
+
+	/**
+	 * @notice Retrieves the minimum affiliate fee.
+	 * @return fee The minimum affiliate fee.
+	 */
+	function getMinAffiliateFee() external view returns (uint256) {
+		return GlobalAppStorage.layout().minAffiliateFee;
+	}
+
+	/**
 	 * @notice Retrieves the affiliate fee of an affiliate.
 	 * @param affiliate The address of the affiliate.
 	 * @param symbolId The id of the symbol.

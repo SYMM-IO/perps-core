@@ -71,13 +71,17 @@ library PartyAFacetImpl {
 		}
 
 		Fee memory fee;
-		if (appLayout.affiliateFee[affiliate][symbolId].isSet) {
-			fee = appLayout.affiliateFee[affiliate][symbolId];
+		if (appLayout.customAffiliateFee[affiliate][msg.sender][symbolId].isSet) {
+			fee = appLayout.customAffiliateFee[affiliate][msg.sender][symbolId];
 		} else {
-			fee = appLayout.defaultAffiliateFee[affiliate];
-			if (!fee.isSet) {
-				uint256 symbolTradingFee = symbolLayout.symbols[symbolId].tradingFee;
-				fee = Fee(symbolTradingFee, symbolTradingFee, true);
+			if (appLayout.affiliateFee[affiliate][symbolId].isSet) {
+				fee = appLayout.affiliateFee[affiliate][symbolId];
+			} else {
+				fee = appLayout.defaultAffiliateFee[affiliate];
+				if (!fee.isSet) {
+					uint256 symbolTradingFee = symbolLayout.symbols[symbolId].tradingFee;
+					fee = Fee(symbolTradingFee, symbolTradingFee, true);
+				}
 			}
 		}
 
