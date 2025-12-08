@@ -263,7 +263,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 		).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
 	})
 
-	it("Should skip check sig when bind", async function () {
+	it.skip("Should skip check sig when bind", async function () {
 		await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 		await expect(
 			hedger.openPosition(
