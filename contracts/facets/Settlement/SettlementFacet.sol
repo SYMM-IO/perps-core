@@ -32,24 +32,4 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 			newPartyBsAllocatedBalances
 		);
 	}
-
-	function settleUpnlMasterAccount(
-		MasterAccountSettlementSig memory settlementSig,
-		uint256[] memory updatedPrices,
-		address partyA,
-		address partyB,
-		uint256 forceCloseId
-	) external whenNotPartyBActionsPaused onlyPartyB notLiquidatedPartyA(partyA) {
-		(uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) = SettlementFacetImpl.settleUpnlMasterAccount(settlementSig, updatedPrices);
-		emit SettleUpnlMasterAccount(
-			settlementSig.reqId,
-			settlementSig.quotesSettlementsData,
-			updatedPrices,
-			partyB,
-			partyAs,
-			newPartyAsAllocatedBalances,
-			AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)],
-			forceCloseId
-		);
-	}
 }

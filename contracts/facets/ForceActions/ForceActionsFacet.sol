@@ -81,7 +81,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
 		address partyA = quote.partyA;
 
-		ForceActionsFacetImpl.realizeUPNL(quoteId, settleSig, updatedPrices);
+		ForceActionsFacetImpl.settleUPNL(quoteId, settleSig, updatedPrices);
 		newPartyBsAllocatedBalances[0] = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
 		emit SettleUpnl(
 			settleSig.quotesSettlementsData,
@@ -94,8 +94,11 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		forceClose(quoteId, sig);
 	}
 
-	function initializeMasterAccountForceClose(uint256 quoteId, HighLowPriceSig memory sig) external returns (uint256 forceCloseId) {
-		forceCloseId = ForceActionsFacetImpl.forceCloseInit(quoteId, sig);
+	function initializeMasterAccountForceClose(
+		uint256 quoteId,
+		HighLowPriceSig memory sig
+	) external notLiquidated(quoteId) whenNotPartyAActionsPaused returns (uint256 forceCloseId) {
+		forceCloseId = ForceActionsFacetImpl.forceCloseMasterAccountInit(quoteId, sig);
 		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, forceCloseId, sig.timestamp);
 	}
 
@@ -127,7 +130,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	function finalizeMasterAccountForceClose(uint256 forceCloseId) external {
 		Quote storage quote = QuoteStorage.layout().quotes[forceCloseId];
 
-		ForceActionsFacetImpl.forceCloseMasterAccount(forceCloseId);
+		ForceActionsFacetImpl.finalizeMasterAccountForceClose(forceCloseId);
 		emit ForceClosePositionMasterAccount(
 			forceCloseId,
 			quote.partyA,
@@ -138,4 +141,6 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 			QuoteStorage.layout().closeIds[forceCloseId]
 		);
 	}
+
+	// function forceClosePosition(uint256 quoteId, HighLowPriceSig memory sig) external notLiquidated(quoteId) whenNotPartyAActionsPaused {}
 }

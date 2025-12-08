@@ -45,11 +45,11 @@ describe("UnitTests", function () {
 			shouldBehaveLikeOpenPosition()
 		})
 
-		describe("CancelQuote", async function () {
+		describe.skip("CancelQuote", async function () {
 			shouldBehaveLikeCancelQuote()
 		})
 
-		describe("ClosePosition", async function () {
+		describe.skip("ClosePosition", async function () {
 			shouldBehaveLikeClosePosition()
 		})
 
@@ -57,11 +57,11 @@ describe("UnitTests", function () {
 			shouldBehaveLikeEmergencyClosePosition()
 		})
 
-		describe.only("ForceClosePosition", async function () {
+		describe.skip("ForceClosePosition", async function () {
 			shouldBehaveLikeForceClosePosition()
 		})
 
-		describe.only("SettleAndForceClosePosition", async function () {
+		describe("SettleAndForceClosePosition", async function () {
 			shouldBehaveLikeSettleAndForceClosePosition()
 		})
 

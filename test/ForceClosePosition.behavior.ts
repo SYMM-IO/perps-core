@@ -492,7 +492,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			expect(BigInt(closedQuote.openedPrice)).to.equal(newPrice)
 		})
 
-		it.only("should revert LibSettlement: Invalid length when updatedPrices length does not match quotesSettlementsData", async function () {
+		it("should revert LibSettlement: Invalid length when updatedPrices length does not match quotesSettlementsData", async function () {
 			const quoteId = BigInt(quote2ShortOpened.id)
 			const sigTimes = await prepareSigTimes(100n)
 

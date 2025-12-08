@@ -8,6 +8,7 @@ import "../storages/MAStorage.sol";
 import "../storages/AccountStorage.sol";
 import "./LibQuote.sol";
 import "./LibAccount.sol";
+import "./muon/LibMuonCrossSettlement.sol";
 
 library LibSettlement {
 	function settleUpnl(
@@ -99,6 +100,7 @@ library LibSettlement {
 			accountLayout.partyBNonces[partyB][partyA] += 1;
 
 			int256 settlementAmount = settleAmounts[i];
+			
 			totalSettlementAmount += settlementAmount;
 			if (settlementAmount >= 0) {
 				accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(settlementAmount);
@@ -128,10 +130,13 @@ library LibSettlement {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
+		require(accountLayout.masterAccountMode[settleSig.partyB], "LibSettlement: Not in Master Account Mode!");
 		require(
 			settleSig.quotesSettlementsData.length > 0 && settleSig.quotesSettlementsData.length == updatedPrices.length,
 			"LibSettlement: Invalid length"
 		);
+
+		LibMuonCrossSettlement.verifyMasterAccountSettlement(settleSig);
 
 		int256[] memory settleAmounts = new int256[](settleSig.quotesSettlementsData.length);
 		newPartyAsAllocatedBalances = new uint256[](settleSig.quotesSettlementsData.length);
@@ -140,6 +145,7 @@ library LibSettlement {
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			MasterAccountQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
+
 			require(
 				isForceClose || quoteLayout.partyBOpenPositions[msg.sender][quote.partyA].length > 0,
 				"LibSettlement: Sender should have a position with partyA"
@@ -180,8 +186,7 @@ library LibSettlement {
 		}
 
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
-			MasterAccountQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
-			Quote memory quote = quoteLayout.quotes[data.quoteId];
+			Quote memory quote = quoteLayout.quotes[settleSig.quotesSettlementsData[i].quoteId];
 			address partyA = quote.partyA;
 			address partyB = quote.partyB;
 
@@ -193,7 +198,8 @@ library LibSettlement {
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
 			require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
 			require(settleSig.partyB == partyB, "LibSettlement, Invalid quote");
-
+			
+			//what is it?
 			if (!isForceClose && msg.sender != partyB) {
 				require(
 					block.timestamp >=
@@ -204,7 +210,6 @@ library LibSettlement {
 			}
 
 			int256 settlementAmount = settleAmounts[i];
-			bool masterAccountMode = accountLayout.masterAccountMode[partyB];
 			if (settlementAmount >= 0) {
 				accountLayout.partyBAllocatedBalances[partyB][address(0)] -= uint256(settlementAmount);
 				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
@@ -212,18 +217,9 @@ library LibSettlement {
 				accountLayout.allocatedBalances[partyA] += uint256(settlementAmount);
 				emit SharedEvents.BalanceChangePartyA(partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			} else {
-				if (masterAccountMode) {
-					accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(-settlementAmount);
-					emit SharedEvents.BalanceChangePartyB(
-						partyB,
-						address(0),
-						uint256(-settlementAmount),
-						SharedEvents.BalanceChangeType.REALIZED_PNL_IN
-					);
-				} else {
-					accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-settlementAmount);
-					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-				}
+				accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(-settlementAmount);
+				emit SharedEvents.BalanceChangePartyB(partyB, address(0), uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+
 				accountLayout.allocatedBalances[partyA] -= uint256(-settlementAmount);
 				emit SharedEvents.BalanceChangePartyA(partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
@@ -237,5 +233,4 @@ library LibSettlement {
 			partyAs[i] = partyA;
 		}
 	}
-
 }
