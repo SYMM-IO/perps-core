@@ -15,7 +15,7 @@ interface ISymmioCore {
 contract VirtualProvider is IVirtualProvider {
 	address public symmioAddress;
 	uint256 public withdrawnAmount;
-	ExternalTransfer public externalTransferData;
+	ExternalTransferReq public externalTransferData;
 
 	event WithdrawCalled(address sender, WithdrawReceiverPart part, bytes providerData);
 
@@ -83,12 +83,12 @@ contract VirtualProvider is IVirtualProvider {
 		_newCooldown;
 	}
 
-	function onExternalTransfer(ExternalTransfer memory externalTransfer) external override {
+	function onExternalTransfer(ExternalTransferReq memory externalTransfer) external override {
 		require(true, "");
 		externalTransferData = externalTransfer;
 	}
 
-	function onCancelExternalTransfer(uint256 id) external {
+	function onCancelExternalTransfer(uint256 id) external pure override{
 		require(true, "");
 		id;
 	}

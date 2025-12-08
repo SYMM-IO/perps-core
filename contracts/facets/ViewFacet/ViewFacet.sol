@@ -1424,7 +1424,7 @@ contract ViewFacet is IViewFacet {
 	 * @param id The ID of the virtual external transfer.
 	 * @return The virtual external transfer status.
 	 */
-	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransfer memory) {
+	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory) {
 		return AccountStorage.layout().externalTransfers[id];
 	}
 }

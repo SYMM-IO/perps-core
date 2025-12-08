@@ -261,6 +261,11 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit AcceptVirtualExternalTransfer(id);
 	}
 
+	/// @notice Cancels a previously initiated virtual external transfer.
+	/// @dev Delegates cancellation logic to AccountFacetImpl.cancelVirtualExternalTransfer(id).
+	///      Emits {CancelVirtualExternalTransfer}. Callable only when external transfers are not paused;
+	///      reverts if the transfer does not exist or the caller is not authorized per implementation rules.
+	/// @param id The identifier of the virtual external transfer to cancel.
 	function cancelVirtualExternalTransfer(uint256 id) external whenNotExternalTransferPaused {
 		AccountFacetImpl.cancelVirtualExternalTransfer(id);
 		emit CancelVirtualExternalTransfer(id);

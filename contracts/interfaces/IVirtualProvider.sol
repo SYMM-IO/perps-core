@@ -13,6 +13,6 @@ interface IVirtualProvider {
 	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
 	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external;
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory withdrawRequest, uint256 newCooldown) external;
-	function onExternalTransfer(ExternalTransfer memory externalTransfer) external;
+	function onExternalTransfer(ExternalTransferReq memory externalTransfer) external;
 	function onCancelExternalTransfer(uint256 id) external;
 }

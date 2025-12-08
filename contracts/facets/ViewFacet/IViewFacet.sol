@@ -237,4 +237,6 @@ interface IViewFacet {
 	function getModifiedCooldownEndTime(address user,uint256 requestId) external view returns (uint256);
 
 	function getWithdrawLockedBalance() external view returns (uint256);
+
+	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory);
 }

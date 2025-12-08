@@ -80,7 +80,7 @@ enum ExternalTransferStatus {
 	CANCELED
 }
 
-struct ExternalTransfer{
+struct ExternalTransferReq {
 	uint256 id;
 	address sender;
 	address receiver;
@@ -134,7 +134,7 @@ library AccountStorage {
 		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
 		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
 		uint256 lastExternalTransferId;
-		mapping(uint256 => ExternalTransfer) externalTransfers;
+		mapping(uint256 => ExternalTransferReq) externalTransfers;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
