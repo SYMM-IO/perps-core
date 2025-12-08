@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../libraries/muon/LibMuonFundingRate.sol";
 import "../../libraries/LibAccount.sol";
 import "../../libraries/LibQuote.sol";
+import "../../libraries/LibQuoteFunding.sol";
 import "../../libraries/LibFundingRate.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
@@ -289,7 +290,7 @@ library FundingRateFacetImpl {
 			);
 
 			// Delegate to library function that handles the actual fee calculation
-			LibQuote.chargeAccumulatedFundingFee(quoteIds[i]);
+			LibQuoteFunding.chargeAccumulatedFundingFee(quoteIds[i]);
 		}
 
 		// Verify solvency after all funding fees are applied

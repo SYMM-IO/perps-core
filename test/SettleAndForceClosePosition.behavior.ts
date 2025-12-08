@@ -40,14 +40,14 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 
 		// Quote1 LONG opened
-		quote1LongOpened = await context.viewFacet.getQuote(await user.sendQuote())
+		quote1LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote1LongOpened.id)
 		await hedger.openPosition(quote1LongOpened.id)
 
 
 		const quantityShort = decimal(75n)
 		// Quote2 SHORT opened
-		quote2ShortOpened = await context.viewFacet.getQuote(
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(
 			await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.positionType(PositionType.SHORT)
@@ -75,10 +75,10 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				.build(),
 		)
 		await context.controlFacet.setForceCloseMinSigPeriod(10)
-		await context.controlFacet.setForceCloseGapRatio((await context.viewFacet.getQuote(quote1LongOpened.id)).symbolId, decimal(1n, 17))
+		await context.controlFacet.setForceCloseGapRatio((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).symbolId, decimal(1n, 17))
 
-		quote1LongOpened = await context.viewFacet.getQuote(quote1LongOpened.id)
-		quote2ShortOpened = await context.viewFacet.getQuote(quote2ShortOpened.id)
+		quote1LongOpened = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(quote2ShortOpened.id)
 	})
 
 	async function prepareSigTimes(period: bigint = 10n) {
@@ -120,8 +120,8 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 		await user.settleAndForceClosePosition(quote1LongOpened.id, highLowSig, settlementSig, [decimal(5n)])
 
-		expect((await context.viewFacet.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
-		expect((await context.viewFacet.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(decimal(5n))
+		expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
+		expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(decimal(5n))
 	})
 
 	it("Should settle and forceClose the quote balance check", async function () {

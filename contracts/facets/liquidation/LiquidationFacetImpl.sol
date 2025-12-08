@@ -8,6 +8,7 @@ import "../../libraries/muon/LibMuonLiquidation.sol";
 import "../../libraries/LibAccount.sol";
 import "../../libraries/LibQuote.sol";
 import "../../libraries/LibLiquidation.sol";
+import "../../libraries/LibConnections.sol";
 import "../../libraries/SharedEvents.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";

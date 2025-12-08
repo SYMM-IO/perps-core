@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import "./IControlEvents.sol";
-import "../../storages/SymbolStorage.sol";
 
 interface IControlFacet is IControlEvents {
 	function transferOwnership(address owner) external;
@@ -33,45 +32,6 @@ interface IControlFacet is IControlEvents {
 	function setMuonIds(uint256 muonAppId) external;
 
 	function setCollateral(address collateral) external;
-
-	// Symbol State
-
-	function addSymbol(
-		string memory name,
-		uint256 minAcceptableQuoteValue,
-		uint256 minAcceptablePortionLF,
-		uint256 tradingFee,
-		uint256 maxLeverage,
-		uint256 fundingRateEpochDuration,
-		uint256 fundingRateWindowTime
-	) external;
-
-	function addSymbols(Symbol[] memory symbols) external;
-
-	function addSymbolWithType(
-		string memory name,
-		uint256 minAcceptableQuoteValue,
-		uint256 minAcceptablePortionLF,
-		uint256 tradingFee,
-		uint256 maxLeverage,
-		uint256 fundingRateEpochDuration,
-		uint256 fundingRateWindowTime,
-		uint256 symbolType
-	) external;
-
-	function addSymbolsWithType(SymbolWithType[] memory symbolsWithType) external;
-
-	function setSymbolFundingState(uint256 symbolId, uint256 fundingRateEpochDuration, uint256 fundingRateWindowTime) external;
-
-	function setSymbolValidationState(uint256 symbolId, bool isValid) external;
-
-	function setSymbolMaxLeverage(uint256 symbolId, uint256 maxLeverage) external;
-
-	function setSymbolAcceptableValues(uint256 symbolId, uint256 minAcceptableQuoteValue, uint256 minAcceptablePortionLF) external;
-
-	function setSymbolTradingFee(uint256 symbolId, uint256 tradingFee) external;
-
-	/////////////////////////////////////
 
 	// CoolDowns
 
@@ -103,68 +63,15 @@ interface IControlFacet is IControlEvents {
 
 	function setFeeCollector(address affiliate, address feeCollector) external;
 
-	// Pause State
-	function pauseGlobal() external;
-
-	function pauseLiquidation() external;
-
-	function pauseAccounting() external;
-
-	function pausePartyAActions() external;
-
-	function pausePartyBActions() external;
-
-	function pauseInternalTransfer() external;
-
-	function pauseExternalTransfer() external;
-
-	function activeEmergencyMode() external;
-
-	function unpauseGlobal() external;
-
-	function unpauseLiquidation() external;
-
-	function unpauseAccounting() external;
-
-	function unpausePartyAActions() external;
-
-	function unpausePartyBActions() external;
-
-	function unpauseInternalTransfer() external;
-
-	function unpauseExternalTransfer() external;
-
 	function setLiquidationTimeout(uint256 liquidationTimeout) external;
 
-	function suspendedAddress(address user) external;
-
-	function unsuspendedAddress(address user) external;
-
-	function deactiveEmergencyMode() external;
-
 	function setBalanceLimitPerUser(uint256 balanceLimitPerUser) external;
-
-	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external;
 
 	function addBridge(address bridge) external;
 
 	function removeBridge(address bridge) external;
 
 	function setLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit) external;
-
-	function whitelistSymbolType(address partyB, uint256 symbolType) external;
-
-	function whitelistSymbols(address partyB, uint256[] calldata symbolIds) external;
-
-	function removeSymbolTypeFromWhitelist(address partyB, uint256 symbolType) external;
-
-	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external;
-
-	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external;
-
-	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external;
-
-	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external;
 
 	function setSignatureVerifierAddress(address signatureVerifier) external;
 
@@ -181,6 +88,8 @@ interface IControlFacet is IControlEvents {
 	function setCustomAffiliateFee(address affiliate,address user, uint256 symbolId, uint256 openFee, uint256 closeFee) external;
 
 	function setAffiliateFee(address affiliate, uint256 symbolId, uint256 openFee, uint256 closeFee) external;
+
+	function setMinAffiliateFee(uint256 minAffiliateFee) external;
 
 	function setDefaultAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external;
 
@@ -212,8 +121,5 @@ interface IControlFacet is IControlEvents {
 
 	function setMinWithdrawCooldown(uint256 cooldown) external;
 
-	function deprecateOldWithdrawal() external;
-
 	function setSigner(address signer) external;
-
 }

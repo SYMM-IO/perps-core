@@ -97,18 +97,11 @@ library LibSolvency {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		if (accountLayout.masterAccountMode[partyB]) {
-			partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidationMasterAccount(upnlPartyB, partyB, partyA);
-		} else
-			partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlPartyB, partyB, partyA);
+		partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlPartyB, partyB, partyA);
+		partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(upnlPartyA, accountLayout.allocatedBalances[partyA], partyA);
 
-			partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
-				upnlPartyA,
-				accountLayout.allocatedBalances[partyA],
-				partyA
-			);
 		for (uint256 i = 0; i < quoteIds.length; i++) {
-			uint256 quoteId = quoteIds[i];	
+			uint256 quoteId = quoteIds[i];
 			uint256 filledAmount = filledAmounts[i];
 			uint256 closedPrice = closedPrices[i];
 			uint256 marketPrice = marketPrices[i];

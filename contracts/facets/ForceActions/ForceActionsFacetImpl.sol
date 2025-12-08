@@ -45,7 +45,7 @@ library ForceActionsFacetImpl {
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.CANCELED;
 		accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-		accountLayout.partyBPendingLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
+		accountLayout.partyBPendingLockedBalances[quote.partyB][LibAccount.partyBAllocationBucket(quote.partyB, quote.partyA)].subQuote(quote);
 
 		// send trading Fee back to partyA
 		uint256 fee = LibQuote.getOpenTradingFee(quote.id);

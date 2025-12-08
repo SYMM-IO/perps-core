@@ -42,14 +42,14 @@ export class ForceClosePositionValidator implements TransactionValidator {
 		return {
 			balanceInfoPartyA: await arg.user.getBalanceInfo(),
 			balanceInfoPartyB: await arg.hedger.getBalanceInfo(await arg.user.getAddress()),
-			quote: await context.viewFacet.getQuote(arg.quoteId),
+			quote: await context.viewFacetQuote.getQuote(arg.quoteId),
 		}
 	}
 
 	async after(context: RunContext, arg: ForceClosePositionValidatorAfterArg) {
 		logger.debug("After ForceClosePositionValidator...")
 		// Check Quote
-		const newQuote = await context.viewFacet.getQuote(arg.quoteId)
+		const newQuote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		const oldQuote = arg.beforeOutput.quote
 		const penalty = await context.viewFacet.forceClosePricePenalty()
 		const coolDownsOfMA = await context.viewFacet.forceCloseCooldowns()

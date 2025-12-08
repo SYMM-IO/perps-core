@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import "../../libraries/muon/LibMuonPartyB.sol";
 import "../../libraries/LibQuote.sol";
+import "../../libraries/LibQuoteClose.sol";
 import "../../libraries/LibPartyBQuoteActions.sol";
 import "../../storages/AccountStorage.sol";
 
@@ -35,7 +36,7 @@ library PartyBQuoteActionsFacetImpl {
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(quote.quoteStatus == QuoteStatus.LOCKED, "PartyBFacet: Invalid state");
 		if (block.timestamp > quote.deadline) {
-			QuoteStatus result = LibQuote.expireQuote(quoteId);
+			QuoteStatus result = LibQuoteClose.expireQuote(quoteId);
 			return result;
 		} else {
 			quote.statusModifyTimestamp = block.timestamp;
