@@ -223,7 +223,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.connect(context.signers.user)
 				.initiateWithdraw(suspendedParts, false, "0x");
 
-			await context.controlFacet
+			await context.pauseControlFacet
 				.connect(context.signers.admin)
 				.suspendedAddress(context.signers.user.address);
 
@@ -243,7 +243,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.connect(context.signers.user)
 				.requestCancelWithdraw(1);
 
-			await context.controlFacet
+			await context.pauseControlFacet
 				.connect(context.signers.admin)
 				.suspendedAddress(context.signers.user.address);
 

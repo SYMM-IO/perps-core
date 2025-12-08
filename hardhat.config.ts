@@ -45,7 +45,7 @@ const config: HardhatUserConfig = {
 			// forking: {
 			//   url: "",
 			// },
-			allowUnlimitedContractSize: true,
+			allowUnlimitedContractSize: false,
 		},
 		docker: {
 			url: hardhatDockerUrl,
