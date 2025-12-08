@@ -101,9 +101,9 @@ interface IControlFacet is IControlEvents {
 
 	function setUnbindCooldown(uint256 unbindCooldown) external;
 
-	// Pause State
 	function setFeeCollector(address affiliate, address feeCollector) external;
 
+	// Pause State
 	function pauseGlobal() external;
 
 	function pauseLiquidation() external;
@@ -178,6 +178,8 @@ interface IControlFacet is IControlEvents {
 
 	function setCallFromInstantLayer(bool callFromInstantLayer) external;
 
+	function setCustomAffiliateFee(address affiliate,address user, uint256 symbolId, uint256 openFee, uint256 closeFee) external;
+
 	function setAffiliateFee(address affiliate, uint256 symbolId, uint256 openFee, uint256 closeFee) external;
 
 	function setDefaultAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external;
@@ -211,4 +213,7 @@ interface IControlFacet is IControlEvents {
 	function setMinWithdrawCooldown(uint256 cooldown) external;
 
 	function deprecateOldWithdrawal() external;
+
+	function setSigner(address signer) external;
+
 }

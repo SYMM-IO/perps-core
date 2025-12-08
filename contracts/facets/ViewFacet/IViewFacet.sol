@@ -238,5 +238,9 @@ interface IViewFacet {
 
 	function getWithdrawLockedBalance() external view returns (uint256);
 
+	function getCustomAffiliateFee(address affiliate,address user, uint256 symbolId) external view returns (Fee memory);
+
+	function getMinAffiliateFee() external view returns (uint256);
+
 	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory);
 }

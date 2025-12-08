@@ -173,6 +173,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
+		require(openFee >= appLayout.minAffiliateFee && closeFee >= appLayout.minAffiliateFee, "ControlFacet: Not allowed to set fee less than threshold");
 		emit SetAffiliateFee(
 			affiliate,
 			symbolId,
@@ -182,6 +183,33 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 			closeFee
 		);
 		appLayout.affiliateFee[affiliate][symbolId] = Fee(openFee, closeFee, true);
+	}
+
+	/// @notice Sets the open and close trading fees for an specific affiliate and specific user in the system.
+	/// @param affiliate The address of affiliate.
+	/// @param user The address of user.
+	/// @param symbolId The id of symbol.
+	/// @param openFee The open trading fee.
+	/// @param closeFee The open trading fee.
+	function setCustomAffiliateFee(address affiliate,address user, uint256 symbolId, uint256 openFee, uint256 closeFee) external {
+		require(
+			LibAccessibility.hasRole(msg.sender, LibAccessibility.AFFILIATE_MANAGER_ROLE) || msg.sender == affiliate,
+			"ControlFacet: Not authorized"
+		);
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
+		require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
+		require(openFee >= appLayout.minAffiliateFee && closeFee >= appLayout.minAffiliateFee, "ControlFacet: Not allowed to set fee less than threshold");
+		emit SetCustomAffiliateFee(
+			affiliate,
+			user,
+			symbolId,
+			appLayout.customAffiliateFee[affiliate][user][symbolId].openFee,
+			openFee,
+			appLayout.customAffiliateFee[affiliate][user][symbolId].closeFee,
+			closeFee
+		);
+		appLayout.customAffiliateFee[affiliate][user][symbolId] = Fee(openFee, closeFee, true);
 	}
 
 	/// @notice Sets the default open and close trading fees for an specific affiliate in the system.
@@ -205,6 +233,13 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	function setDefaultFeeCollector(address feeCollector) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetDefaultFeeCollector(GlobalAppStorage.layout().defaultFeeCollector, feeCollector);
 		GlobalAppStorage.layout().defaultFeeCollector = feeCollector;
+	}
+
+	/// @notice Sets the minimum affiliate fee.
+	/// @param minAffiliateFee The minimum affiliate fee.
+	function setMinAffiliateFee(uint256 minAffiliateFee) external onlyRole(LibAccessibility.SETTER_ROLE) {
+		emit SetMinAffiliateFee(GlobalAppStorage.layout().minAffiliateFee, minAffiliateFee);
+		GlobalAppStorage.layout().minAffiliateFee = minAffiliateFee;
 	}
 
 	/// @notice Sets the deallocate debounce time. User can't deallocate more than once in this window
@@ -826,15 +861,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().adlEnabled[partyB] = enabled;
 		emit SetADLEnabled(partyB, enabled);
 	}
-
-	function symbolListingAuthorizationCheck(address sender, address partyB) private view {
-		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
-	}
-
-	function checkZeroAddress(address target) private pure {
-		require(target != address(0), "ControlFacet: Zero address");
-	}
-
+	
 	function setMaxDeallocateWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;
@@ -905,4 +932,17 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	    emit DeprecateOldWithdrawalPaused();
 	}
 
+
+	function symbolListingAuthorizationCheck(address sender, address partyB) private view {
+		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
+	}
+
+	function checkZeroAddress(address target) private pure {
+		require(target != address(0), "ControlFacet: Zero address");
+	}
+
+	function setSigner(address signer) external onlyRole(LibAccessibility.SIGNER_SETTER_ROLE){
+		MAStorage.layout().signer = signer;
+		emit SignerSet(signer);
+	}
 }
