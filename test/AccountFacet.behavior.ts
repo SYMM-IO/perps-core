@@ -60,7 +60,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when accounting is paused", async function () {
-			await context.controlFacet.pauseAccounting()
+			await context.pauseControlFacet.pauseAccounting()
 			await expect(
 				context.accountFacet.connect(context.signers.user).deposit(BALANCES.DEPOSIT_AMOUNT)
 			).to.be.revertedWith("Pausable: Accounting paused")
@@ -104,7 +104,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.connect(context.signers.admin)
 				.grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE")))
 
-			await context.controlFacet.pauseAccounting()
+			await context.pauseControlFacet.pauseAccounting()
 			await expect(context.accountFacet.connect(context.signers.admin).virtualDepositFor(await user.getAddress(), decimal(1n))).to.be.revertedWith(
 				"Pausable: Accounting paused",
 			)
@@ -150,7 +150,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when accounting is paused", async function () {
-			await context.controlFacet.pauseAccounting()
+			await context.pauseControlFacet.pauseAccounting()
 			await expect(
 				context.accountFacet.connect(context.signers.user).withdraw(BALANCES.DEPOSIT_AMOUNT)
 			).to.be.revertedWith("Pausable: Accounting paused")
@@ -193,7 +193,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			it("Should fail when caller lacks role", async function () {
 				// suspend a user
-				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
+				await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
 				// withdraw without sufficient role (as user)
 				await expect(
 					context.accountFacet.connect(context.signers.user).withdrawSuspendedUserFunds(userAddress, recipient, withdrawAmountStr),
@@ -209,7 +209,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			it("Should withdraw funds for suspended user", async function () {
 				// suspend a user
-				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
+				await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
 
 				const initialUserBalance = await context.viewFacet.balanceOf(userAddress)
 				const initialRecipientBalance = await context.collateral.balanceOf(recipient)
@@ -234,7 +234,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			})
 
 			it("Should fail when caller lacks role", async function () {
-				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
+				await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
 				await expect(
 					context.accountFacet.connect(context.signers.user).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr),
 				).to.be.revertedWith("Accessibility: Must has role")
@@ -247,7 +247,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			})
 
 			it("Should deallocate suspended user funds and enable withdrawal", async function () {
-				await context.controlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
+				await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
 
 				const initialAllocated = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
 				const initialBalance = await context.viewFacet.balanceOf(userAddress)
@@ -280,7 +280,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when accounting is paused", async function () {
-			await context.controlFacet.pauseAccounting()
+			await context.pauseControlFacet.pauseAccounting()
 			await expect(
 				context.accountFacet.connect(context.signers.user).allocate(BALANCES.DEPOSIT_AMOUNT)
 			).to.be.revertedWith("Pausable: Accounting paused")
@@ -345,11 +345,11 @@ export function shouldBehaveLikeAccountFacet(): void {
 			hedger = new Hedger(context, context.signers.hedger)
 			await hedger.setup()
 			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
-			console.log(await context.viewFacet.getNextQuoteId())
+			console.log(await context.viewFacetQuote.getNextQuoteId())
 
 			const quoteId = await user.sendQuote()
-			const quote = await context.viewFacet.getQuote(quoteId)
-			console.log(await context.viewFacet.getNextQuoteId())
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			console.log(await context.viewFacetQuote.getNextQuoteId())
 			console.log(quote.quantity)
 
 			const notional = quote.quantity * quote.requestedOpenPrice / decimal(1n)
@@ -415,7 +415,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when accounting is paused", async function () {
-			await context.controlFacet.pauseAccounting()
+			await context.pauseControlFacet.pauseAccounting()
 			await expect(
 				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEPOSIT_AMOUNT, await getDummySingleUpnlSig())
 			).to.be.revertedWith("Pausable: Accounting paused")
@@ -497,7 +497,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when accounting is paused", async function () {
-			await context.controlFacet.pauseAccounting()
+			await context.pauseControlFacet.pauseAccounting()
 			await expect(
 				context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEPOSIT_AMOUNT)
 			).to.be.revertedWith("Pausable: Accounting paused")
@@ -552,7 +552,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when internal transfers are paused", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseInternalTransfer()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
 
 			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)).to.be.revertedWith(
 				"Pausable: Internal transfer paused",
@@ -560,7 +560,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when accounting is paused", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseAccounting()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
 
 			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)).to.be.revertedWith(
 				"Pausable: Accounting paused",
@@ -568,7 +568,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when global pause is active", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
 			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)).to.be.revertedWith(
 				"Pausable: Global paused",
@@ -606,7 +606,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when sender is suspended", async function () {
-			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 
 			await expect(
 				context.accountFacet
@@ -726,7 +726,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when external transfers are paused", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseExternalTransfer()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseExternalTransfer()
 
 			await expect(
 				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
@@ -734,7 +734,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when accounting is paused", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseAccounting()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
 
 			await expect(
 				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
@@ -742,7 +742,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when global pause is active", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
 			await expect(
 				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
@@ -1068,7 +1068,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when user suspended", async () => {
-			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 			await expect(
 				context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
@@ -1122,7 +1122,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when user suspended", async () => {
-			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 			await expect(
 				context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
@@ -1175,7 +1175,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when user suspended", async () => {
-			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 			await expect(
 				context.accountFacet.connect(context.signers.user).cancelUnbindRequest()
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
@@ -1224,7 +1224,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when user suspended", async () => {
-			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.hedger.address)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.hedger.address)
 			await expect(
 				context.accountFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)
 			).to.be.revertedWith("Accessibility: Sender is Suspended")

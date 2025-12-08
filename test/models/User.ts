@@ -244,7 +244,7 @@ export class User extends PartyEntity {
 			const priceDiff = pos.openedPrice - (
 				symbolIdPriceFetcher != null
 					? await symbolIdPriceFetcher(pos.symbolId)
-					: await symbolNamePriceFetcher((await this.context.viewFacet.getSymbol(pos.symbolId)).name)
+					: await symbolNamePriceFetcher((await this.context.viewFacetSymbol.getSymbol(pos.symbolId)).name)
 			)
 			const amount = pos.quantity - pos.closedAmount
 			upnl += unDecimal(amount * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? -1n : 1n)
@@ -262,7 +262,7 @@ export class User extends PartyEntity {
 			const priceDiff = pos.openedPrice - (
 				symbolIdPriceFetcher != null
 					? await symbolIdPriceFetcher(pos.symbolId)
-					: await symbolNamePriceFetcher((await this.context.viewFacet.getSymbol(pos.symbolId)).name)
+					: await symbolNamePriceFetcher((await this.context.viewFacetSymbol.getSymbol(pos.symbolId)).name)
 			)
 			const amount = pos.quantity - pos.closedAmount
 			upnl += unDecimal(amount * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? 0n : 1n)
@@ -328,7 +328,7 @@ export class User extends PartyEntity {
 		const pageSize = 30
 		let last = 0
 		while (true) {
-			let page = await this.context.viewFacet.getPartyAOpenPositions(this.getAddress(), last, pageSize)
+			let page = await this.context.viewFacetQuote.getPartyAOpenPositions(this.getAddress(), last, pageSize)
 			openPositions.push(...page)
 			if (page.length < pageSize) break
 		}

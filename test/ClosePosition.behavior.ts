@@ -51,20 +51,20 @@ export function shouldBehaveLikeClosePosition(): void {
 		await hedger2.setBalances(this.hedger_allocated, this.hedger_allocated)
 
 		// Quote1 LONG opened
-		quote1LongOpened = await context.viewFacet.getQuote(await user.sendQuote())
+		quote1LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote1LongOpened.id)
 		await hedger.openPosition(quote1LongOpened.id)
 
 		// Quote2 SHORT opened
-		quote2ShortOpened = await context.viewFacet.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
 		await hedger.lockQuote(quote2ShortOpened.id)
 		await hedger.openPosition(quote2ShortOpened.id)
 
 		// Quote3 SHORT sent
-		quote3JustSent = await context.viewFacet.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote3JustSent = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
 
 		// Quote4 LONG sent
-		quote4LongOpened = await context.viewFacet.getQuote(await user.sendQuote())
+		quote4LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote4LongOpened.id)
 		await hedger.openPosition(quote4LongOpened.id)
 	})
@@ -206,7 +206,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		)
 		await time.increase(1000)
 		await context.partyAFacet.expireQuote([1])
-		let q = await context.viewFacet.getQuote(1)
+		let q = await context.viewFacetQuote.getQuote(1)
 		expect(q.quoteStatus).to.be.equal(QuoteStatus.OPENED)
 	})
 
@@ -546,7 +546,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		it("Should expire request", async function () {
 			await time.increase(1000)
 			await user.requestToCancelCloseRequest(1)
-			expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.OPENED)
+			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.OPENED)
 		})
 
 		describe("Accepting cancel request", async function () {
@@ -592,7 +592,7 @@ export function shouldBehaveLikeClosePosition(): void {
 				await expect(user.forceCancelCloseRequest(1)).to.be.revertedWith("PartyAFacet: Cooldown not reached")
 				await time.increase(300)
 				await user.forceCancelCloseRequest(1)
-				expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.eq(QuoteStatus.OPENED)
+				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.eq(QuoteStatus.OPENED)
 			})
 		})
 	})
