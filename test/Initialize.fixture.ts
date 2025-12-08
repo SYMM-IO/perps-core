@@ -3,7 +3,7 @@ import { createRunContext, RunContext } from "./models/RunContext"
 import { decimal } from "./utils/Common"
 import { AccountHub, AffiliateHub } from "../src/types"
 import { toUtf8Bytes } from "ethers"
-import type { ExternalTransferRelayer as SymmioExternalTransferRelayer } from "../src/types"
+import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types";
 
 export async function initializeFixture(): Promise<RunContext> {
 	const collateral = await run("deploy:stablecoin")
@@ -220,5 +220,52 @@ export async function initializeExternalTransferRelayerFixture(): Promise<{
 		source,
 		target,
 		relayer,
+	}
+}
+
+export async function initializeVirtualFixture(): Promise<{
+	source: RunContext
+	target: RunContext
+	provider: VirtualProvider
+}> {
+	const source = await initializeFixture()
+
+	const targetDiamond = await run("deploy:diamond", {
+		logData: false,
+		genABI: false,
+		reportGas: true,
+	})
+
+	const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+	const provider = (await MockVirtualProvider.deploy(await targetDiamond.getAddress())) as unknown as VirtualProvider
+	await provider.waitForDeployment()
+
+	const target = await createRunContext(await targetDiamond.getAddress(), await source.collateral.getAddress(), true)
+	const adminAddress = await target.signers.admin.getAddress()
+
+	await target.controlFacet.connect(target.signers.admin).setAdmin(adminAddress)
+
+	const setterRole = ethers.keccak256(toUtf8Bytes("SETTER_ROLE"))
+	const pauserRole = ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))
+	const unpauserRole = ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE"))
+	const virtualRole = ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE"))
+
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, setterRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, pauserRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, unpauserRole)
+
+	await target.controlFacet.connect(target.signers.admin).setCollateral(await source.collateral.getAddress())
+	await target.controlFacet.connect(target.signers.admin).setBalanceLimitPerUser(decimal(10000n))
+
+	await source.controlFacet.connect(source.signers.admin).grantRole(await provider.getAddress(), virtualRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(await provider.getAddress(), virtualRole)
+
+	await source.controlFacet.connect(source.signers.admin).registerVirtualProvider(await provider.getAddress())
+	await target.controlFacet.connect(target.signers.admin).registerVirtualProvider(await provider.getAddress())
+
+	return {
+		source,
+		target,
+		provider
 	}
 }
