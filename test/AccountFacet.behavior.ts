@@ -15,6 +15,8 @@ import { ethers } from "hardhat"
 import { ZeroAddress } from "ethers"
 import { toUtf8Bytes } from "ethers"
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types";
+import { viewFacet } from "../src/types/contracts/facets";
+import { ExternalTransferStatus } from "./models/Enums";
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"));
 
@@ -633,7 +635,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 		let mockProvider: any, mockProvider2: any
 		const depositAmount = "300"
 		const transferAmount = "100"
-		const zeroExternalTransferAmount = "0"
 
 		beforeEach(async function () {
 			const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
@@ -656,14 +657,32 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should virtual external transfer correctly", async function () {
 			await expect(context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress))
 				.to.not.be.reverted
+			const externalTransfer = await context.viewFacet.getVirtualExternalTransfer(1)
+			expect(externalTransfer.status).to.equal(ExternalTransferStatus.PENDING)
 		})
 
-		it("Should fail when sender is suspended", async function () {
-			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
+		it("Should accept virtual external transfer correctly", async function () {
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
+			await expect(mockProvider.acceptVirtualExternalTransfer(1)).not.reverted
+			const externalTransfer = await context.viewFacet.getVirtualExternalTransfer(1)
+			expect(externalTransfer.status).to.equal(ExternalTransferStatus.COMPLETED)
+		})
 
-			await expect(
-				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress),
-			).to.be.revertedWith("Accessibility: Sender is Suspended")
+		it("Should cancel virtual external transfer correctly", async function () {
+			const beforeBalance = await context.viewFacet.balanceOf(user.address)
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
+			await expect(context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).not.reverted
+			const externalTransfer = await context.viewFacet.getVirtualExternalTransfer(1)
+			expect(externalTransfer.status).to.equal(ExternalTransferStatus.CANCELED)
+			const afterBalance = await context.viewFacet.balanceOf(user.address)
+		})
+
+		it("Should change balance in cancel virtual external transfer correctly", async function () {
+			const beforeBalance = await context.viewFacet.balanceOf(user.address)
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
+			await expect(context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).not.reverted
+			const afterBalance = await context.viewFacet.balanceOf(user.address)
+			expect(afterBalance).to.equal(beforeBalance)
 		})
 
 		it("Should correctly update sender balance", async function () {
@@ -673,6 +692,15 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			const finalBalance = await context.viewFacet.balanceOf(context.signers.user.address)
 			expect(finalBalance).to.equal(initialBalance - BigInt(transferAmount))
+		})
+
+
+		it("Should fail when sender is suspended", async function () {
+			await context.controlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress),
+			).to.be.revertedWith("Accessibility: Sender is Suspended")
 		})
 
 		it("Should fail with insufficient balance", async function () {
@@ -693,8 +721,47 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should fail with zero receiver address", async function () {
 			await expect(
 				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(ethers.ZeroAddress, transferAmount, context.diamond,providerAddress)
-			).to.be.revertedWith("AccountFacet: Zero receiver")
+			).to.be.revertedWith("AccountFacet: Zero Receiver or Zero Target")
 		})
+
+		it("Should fail with zero target address", async function () {
+			await expect(
+				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount, ethers.ZeroAddress,providerAddress)
+			).to.be.revertedWith("AccountFacet: Zero Receiver or Zero Target")
+		})
+
+		it("Should fail to accept virtual external transfer with invalid status", async function () {
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
+			await mockProvider.acceptVirtualExternalTransfer(1)
+			await expect(mockProvider.acceptVirtualExternalTransfer(1)).to.revertedWith("AccountFacet: External transfer already processed")
+
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
+			await context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(2)
+			await expect(mockProvider.acceptVirtualExternalTransfer(2)).to.revertedWith("AccountFacet: External transfer already processed")
+		})
+
+		it("Should fail to accept virtual external transfer with invalid status", async function () {
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(providerAddress2)
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress2)
+			await expect(mockProvider2.acceptVirtualExternalTransfer(1)).to.revertedWith("AccountFacet: Only provider can accept the transfer")
+		})
+
+		it("Should fail to cancel virtual external transfer with invalid status", async function () {
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
+			await mockProvider.acceptVirtualExternalTransfer(1)
+			await expect(context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).to.revertedWith("AccountFacet: External transfer already processed")
+
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
+			await context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(2)
+			await expect(context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).to.revertedWith("AccountFacet: External transfer already processed")
+		})
+
+		it("Should fail to cancel virtual external transfer with invalid sender", async function () {
+			await context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
+			await expect(context.accountFacet.connect(context.signers.admin).cancelVirtualExternalTransfer(1)).to.revertedWith("AccountFacet: Invalid Sender")
+		})
+
 
 		it("Should fail with zero provider address", async function () {
 			await expect(
@@ -709,7 +776,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail when provider is not registered", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress2),
+				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress2)
 			).to.be.revertedWith("AccountFacet: Invalid virtual provider")
 		})
 
@@ -717,7 +784,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).pauseExternalTransfer()
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress),
+				context.accountFacet.connect(context.signers.user).virtualExternalTransfer(context.signers.user2.address, transferAmount,context.diamond, providerAddress)
 			).to.be.revertedWith("Pausable: External transfer paused")
 		})
 
