@@ -9,6 +9,7 @@ import "../storages/AccountStorage.sol";
 import "./LibQuote.sol";
 import "./LibAccount.sol";
 import "./muon/LibMuonCrossSettlement.sol";
+import "./SharedEvents.sol";
 
 library LibSettlement {
 	function settleUpnl(
@@ -191,7 +192,7 @@ library LibSettlement {
 			address partyB = quote.partyB;
 
 			require(
-				LibAccount.partyBAvailableBalanceForLiquidationMasterAccount(settleSig.upnlPartyB, partyB, partyA) >= 0,
+				LibAccount.partyBAvailableBalanceForLiquidation(settleSig.upnlPartyB, partyB, partyA) >= 0,
 				"LibSettlement: PartyB should be solvent"
 			);
 

@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import "../storages/MAStorage.sol";
 import "../storages/AccountStorage.sol";
 import "../storages/QuoteStorage.sol";
-import "./LibQuote.sol";
+import "./LibQuoteClose.sol";
 import "./LibAccount.sol";
 import "./LibSolvency.sol";
 import "./muon/LibMuonForceActions.sol";
@@ -146,7 +146,7 @@ library LibForceActions {
 		address partyB = quote.partyB;
 
 		if (partyBAvailableBalance >= 0) {
-			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
+			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			solved = true;
 		} else if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
 			uint256 available = uint256(-partyBAvailableBalance);
@@ -161,8 +161,8 @@ library LibForceActions {
 			emit SharedEvents.BalanceChangePartyB(partyB, partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
 			accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
-
-			LibQuote.closeQuote(quote, quote.quantityToClose, closePrice);
+	
+			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			solved = true;
 		}
 	}
