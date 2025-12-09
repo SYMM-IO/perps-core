@@ -345,12 +345,11 @@ export function shouldBehaveLikeAccountFacet(): void {
 			hedger = new Hedger(context, context.signers.hedger)
 			await hedger.setup()
 			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+
 			console.log(await context.viewFacetQuote.getNextQuoteId())
 
 			const quoteId = await user.sendQuote()
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
-			console.log(await context.viewFacetQuote.getNextQuoteId())
-			console.log(quote.quantity)
 
 			const notional = quote.quantity * quote.requestedOpenPrice / decimal(1n)
 			await context.accountFacet

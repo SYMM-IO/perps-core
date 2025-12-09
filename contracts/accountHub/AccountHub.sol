@@ -35,6 +35,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 	bytes4 private constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
 	bytes4 private constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
+	bytes4 private constant SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR = 0x7cd6168d;
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
@@ -431,7 +432,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 */
 	function _tryReuseVirtualAccount(address parentAccount, VirtualAccountIsolationType isolationType, uint256 symbolId) private returns (address) {
 		address[] storage pool = deletedVirtualAccountsPool[parentAccount][isolationType][symbolId];
-		
 		if (pool.length == 0) return address(0);
 
 		// Pop from the stack (LIFO)
@@ -530,7 +530,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	function _decodeQuoteParams(bytes calldata cd) private pure returns (QuoteParams memory) {
 		bytes4 selector = bytes4(cd[:4]);
 
-		// TODO ::: add senfQuoteWithAffiliateAndData
 		if (selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
 			(
 				,
@@ -567,7 +566,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 					)
 				);
 			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, affiliate);
-		} else {
+		} else if (selector == SEND_QUOTE_SELECTOR) {
 			(
 				,
 				uint256 symbolId,
@@ -601,7 +600,46 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 					)
 				);
 			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
+		} else if (selector == SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR) {
+			(
+				,
+				uint256 symbolId,
+				ISymmio.PositionType positionType,
+				ISymmio.OrderType orderType,
+				uint256 price,
+				uint256 quantity,
+				uint256 cva,
+				uint256 lf,
+				uint256 partyAmm,
+				,
+				,
+				,
+				,
+				ISymmio.SingleUpnlAndPriceSig memory sig,
+
+			) = abi.decode(
+					cd[4:],
+					(
+						address[],
+						uint256,
+						ISymmio.PositionType,
+						ISymmio.OrderType,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						uint256,
+						address,
+						ISymmio.SingleUpnlAndPriceSig,
+						bytes
+					)
+				);
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
 		}
+		revert InvalidSelector();
 	}
 
 	/**
@@ -773,7 +811,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		if (hook == address(0)) return;
 		(bool success, ) = hook.call(data);
 		if (!success) {
-			revert hookFailed();
+			revert HookFailed();
 		}
 	}
 
