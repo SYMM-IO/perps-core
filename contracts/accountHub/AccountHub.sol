@@ -54,6 +54,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	address public affiliateHub;
 	address internal globalSigner;
 	uint256 public globalNonce;
+	address public instantLayer;
 
 	// ==================== Modifiers ====================
 
@@ -164,8 +165,17 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param account The account address
 	 * @param callDatas Array of encoded function calls
 	 */
-	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant returns (bytes[] memory) {
 		if (callDatas.length == 0) revert EmptyArray();
+
+		if (!_isOwnerOf(account, msg.sender)) {
+			if (msg.sender != instantLayer) {
+				address core = getRelatedCore(account);
+				if (!ISymmio(core).isCallFromInstantLayer()) revert NotOwner();
+			}
+		}
+
+		bytes[] memory results = new bytes[](callDatas.length);
 
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			bytes calldata cd = callDatas[i];
@@ -175,18 +185,20 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				QuoteParams memory p = _decodeQuoteParams(cd);
 
 				if (virtualAccounts[account].isExists) {
-					_handleVirtualAccountSendQuote(account, cd, p);
-					return;
+					results[i] = _handleVirtualAccountSendQuote(account, cd, p);
+					return results;
 				}
 
 				if (subAccounts[account].isExists) {
-					_handleSubAccountSendQuote(account, cd, p);
-					return;
+					results[i] = _handleSubAccountSendQuote(account, cd, p);
+					return results;
 				}
 			}
 
-			_executeWithSigner(account, cd);
+			results[i] = _executeWithSigner(account, cd);
 		}
+
+		return results;
 	}
 
 	// ==================== Symmio Callback ====================
@@ -243,6 +255,15 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
+	 * @notice sets the instantLayer address
+	 * @param _instantLayer the instantLayer contract address (zero for disable)
+	 */
+	function setInstantLayer(address _instantLayer) external onlyRole(SETTER_ROLE) {
+		emit InstantLayerUpdated(instantLayer, _instantLayer);
+		instantLayer = _instantLayer;
+	}
+
+	/**
 	 * @notice Sets the global signer address
 	 * @param _signer The new signer address
 	 */
@@ -290,6 +311,15 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		}
 
 		return _getLegacyCore(account);
+	}
+
+	/**
+	 * @notice Resolves the owner of a sub account & virtual account & legacy account
+	 * @param account The account address to resolve
+	 * @return The resolved owner address
+	 */
+	function ownerOf(address account) external view returns (address) {
+		return _resolveAccountOwner(account);
 	}
 
 	/**
@@ -607,7 +637,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	/**
 	 * @dev Handles sendQuote for virtual accounts
 	 */
-	function _handleVirtualAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private {
+	function _handleVirtualAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private returns (bytes memory) {
 		VirtualAccountData storage accountData = virtualAccounts[account];
 		VirtualAccountIsolationType isolationType = accountData.isolationType;
 
@@ -630,20 +660,21 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		address core = getRelatedCore(accountData.parentAccount);
 		_transferBalanceForSendQuote(core, accountData.parentAccount, account, p);
 
-		_executeWithSigner(account, cd);
+		bytes memory result = _executeWithSigner(account, cd);
 		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
+		return result;
 	}
 
 	/**
 	 * @dev Handles sendQuote for sub-accounts
 	 */
-	function _handleSubAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private {
+	function _handleSubAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private returns (bytes memory) {
 		SubAccountData storage accountData = subAccounts[account];
 
 		if (accountData.isolationType == SubAccountIsolationType.CUSTOM) {
-			_executeWithSigner(account, cd);
+			bytes memory customResult = _executeWithSigner(account, cd);
 			accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
-			return;
+			return customResult;
 		}
 
 		// Get or create virtual account based on sub-account isolation type (tries to reuse deleted ones first)
@@ -667,8 +698,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_transferBalanceForSendQuote(core, account, virtualAccount, p);
 
 		// send quote from virtual account
-		_executeWithSigner(virtualAccount, cd);
+		bytes memory result = _executeWithSigner(virtualAccount, cd);
 		virtualAccounts[virtualAccount].quoteIds.add(ISymmio(getRelatedCore(virtualAccount)).getNextQuoteId());
+		return result;
 	}
 
 	/**
@@ -689,7 +721,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	/**
 	 * @dev Executes a call with signer set
 	 */
-	function _executeWithSigner(address account, bytes memory callData) private {
+	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
 		address signer = getSigner();
 		address core = getRelatedCore(account);
 
@@ -704,36 +736,44 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		}
 
 		emit Call(signer, account, callData, true, result);
+		return result;
 	}
 
 	/**
 	 * @dev Checks if user is owner of account
 	 */
 	function _isOwnerOf(address account, address user) private view returns (bool) {
-		if (subAccounts[account].owner == user) {
-			return true;
-		}
-
-		address parent = virtualAccounts[account].parentAccount;
-		if (parent != address(0)) {
-			return _isOwnerOf(parent, user);
-		}
-
-		return _checkLegacyOwnership(account, user);
+		return _resolveAccountOwner(account) == user;
 	}
 
 	/**
-	 * @dev Checks legacy multi-account ownership
+	 * @dev Resolves the owner for sub accounts or legacy accounts
 	 */
-	function _checkLegacyOwnership(address account, address user) private view returns (bool) {
-		address[] memory legacyAccounts = IAffiliateHub(affiliateHub).getLegacyMultiAccounts();
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (owner == user) {
-				return true;
+	function _resolveAccountOwner(address account) private view returns (address) {
+		address owner = subAccounts[account].owner;
+		if (owner != address(0)) {
+			return owner;
+		}
+
+		// sub accounts
+		address parent = virtualAccounts[account].parentAccount;
+		if (parent != address(0)) {
+			address parentOwner = subAccounts[parent].owner;
+			if (parentOwner != address(0)) {
+				return parentOwner;
 			}
 		}
-		return false;
+
+		// multi accounts
+		address[] memory legacyAccounts = IAffiliateHub(affiliateHub).getLegacyMultiAccounts();
+		for (uint256 i = 0; i < legacyAccounts.length; i++) {
+			address legacyOwner = IMultiAccount(legacyAccounts[i]).owners(account);
+			if (legacyOwner != address(0)) {
+				return legacyOwner;
+			}
+		}
+
+		return address(0);
 	}
 
 	/**
