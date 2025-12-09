@@ -92,13 +92,13 @@ export function shouldBehaveLikeLockQuote(): void {
 
 		it("Should fail when symbol type is not whitelisted", async function () {
 			await expect(hedger.lockQuote(1)).not.to.be.reverted
-			const q1 = await context.viewFacet.getQuote(1n)
+			const q1 = await context.viewFacetQuote.getQuote(1n)
 			const upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
 			await expect(
 				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig),
 			).to.not.be.reverted
-			await context.controlFacet.removeSymbolTypeFromWhitelist(context.signers.hedger.address, 1)
-			await context.controlFacet.removeSymbolsFromWhitelist(context.signers.hedger.address, [1])
+			await context.symbolControlFacet.removeSymbolTypeFromWhitelist(context.signers.hedger.address, 1)
+			await context.symbolControlFacet.removeSymbolsFromWhitelist(context.signers.hedger.address, [1])
 			await expect(hedger2.lockQuote(2)).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
 		})
 
@@ -149,7 +149,7 @@ export function shouldBehaveLikeLockQuote(): void {
 		it("Should expire quote during unlock", async function () {
 			await time.increase(1000)
 			await hedger.unlockQuote(1)
-			let q: QuoteStruct = await context.viewFacet.getQuote(1)
+			let q: QuoteStruct = await context.viewFacetQuote.getQuote(1)
 			expect(q.quoteStatus).to.be.equal(QuoteStatus.EXPIRED)
 		})
 

@@ -9,6 +9,8 @@ import "../../storages/MAStorage.sol";
 interface IControlEvents {
 	event RoleGranted(bytes32 role, address user);
 	event RoleRevoked(bytes32 role, address user);
+	event RoleAdminAdded(bytes32 role, address admin);
+	event RoleAdminRemoved(bytes32 role, address admin);
 	event SetMuonConfig(uint256 upnlValidTime, uint256 priceValidTime);
 	event SetMuonIds(uint256 muonAppId);
 	event SetCollateral(address collateral);
@@ -45,7 +47,6 @@ interface IControlEvents {
 		uint256 minAcceptablePortionLF
 	);
 	event SetSymbolTradingFee(uint256 symbolId, uint256 oldTradingFee, uint256 tradingFee);
-	event SetSymbolMaxSlippage(uint256 symbolId, uint256 oldMaxSlippage, uint256 maxSlippage);
 	event SetSymbolMaxLeverage(uint256 symbolId, uint256 oldMaxLeverage, uint256 maxLeverage);
 	event SetDeallocateCooldown(uint256 oldDeallocateCooldown, uint256 newDeallocateCooldown);
 	event SetForceCancelCooldown(uint256 oldForceCancelCooldown, uint256 newForceCancelCooldown);
@@ -98,7 +99,6 @@ interface IControlEvents {
 	event WhitelistSymbols(address partyB, uint256[] symbolIds);
 	event RemoveSymbolTypeFromWhitelist(address partyB, uint256 symbolType);
 	event RemoveSymbolsFromWhitelist(address partyB, uint256[] symbolIds);
-	event BlacklistSymbolType(address indexed partyB, uint256 indexed symbolType);
 	event BlacklistSymbols(address indexed partyB, uint256[] indexed symbolId);
 	event RemoveSymbolsFromBlacklist(address indexed partyB, uint256[] indexed symbolId);
 	event SetSignatureVerifierAddress(address SignatureVerifier);

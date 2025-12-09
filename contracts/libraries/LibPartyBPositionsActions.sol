@@ -6,6 +6,8 @@ pragma solidity >=0.8.18;
 
 import "../storages/QuoteStorage.sol";
 import "./LibQuote.sol";
+import "./LibQuoteClose.sol";
+import "./LibQuoteFunding.sol";
 
 library LibPartyBPositionsActions {
 	using LockedValuesOps for LockedValues;
@@ -27,7 +29,7 @@ library LibPartyBPositionsActions {
 		} else {
 			require(quote.quantityToClose == filledAmount, "PartyBFacet: Invalid filledAmount");
 		}
-		LibQuote.closeQuote(quote, filledAmount, closedPrice);
+		LibQuoteClose.closeQuote(quote.id, filledAmount, closedPrice);
 	}
 
 	function openPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice) internal returns (uint256 currentId) {
@@ -60,7 +62,7 @@ library LibPartyBPositionsActions {
 		quote.initialOpenedPrice = openedPrice;
 		quote.statusModifyTimestamp = block.timestamp;
 
-		LibQuote.updateAccumulatedPaidFunding(quote);
+		LibQuoteFunding.updateAccumulatedPaidFunding(quoteId);
 		LibQuote.removeFromPendingQuotes(quote);
 		quote.lastFundingPaymentTimestamp = block.timestamp;
 

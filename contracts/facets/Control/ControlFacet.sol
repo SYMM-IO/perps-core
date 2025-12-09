@@ -18,28 +18,22 @@ import "../../storages/WithdrawStorage.sol";
 
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Transfers ownership of the contract to a new address.
-	/// @dev This function can only be called by the current owner of the contract.
-	/// @param owner The address of the new owner.
 	function transferOwnership(address owner) external onlyOwner {
 		checkZeroAddress(owner);
 		LibDiamond.transferOwnership(owner);
 	}
 
 	/// @notice Cancels the pending ownership transfer.
-	/// @dev This function can only be called by the current owner of the contract.
 	function cancelOwnershipTransfer() external onlyOwner {
 		LibDiamond.cancelOwnershipTransfer();
 	}
 
 	/// @notice Accept ownership of the contract.
-	/// @dev This function can only be called by the pending owner of the contract.
 	function acceptOwnership() external {
 		LibDiamond.acceptOwnership();
 	}
 
 	/// @notice Grants admin role to a specified user.
-	/// @dev This function can only be called by the current owner of the contract.
-	/// @param user The address of the user to be granted admin role.
 	function setAdmin(address user) external onlyOwner {
 		checkZeroAddress(user);
 		GlobalAppStorage.layout().hasRole[user][LibAccessibility.DEFAULT_ADMIN_ROLE] = true;
@@ -49,7 +43,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Grants a specified role to a user.
 	/// @param user The address of the user to whom the role will be granted.
 	/// @param role The role to be granted
-	function grantRole(address user, bytes32 role) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	function grantRole(address user, bytes32 role) external onlyRoleAdmin(role) {
 		checkZeroAddress(user);
 		if (role == LibAccessibility.LIQUIDATOR_ROLE) {
 			require(
@@ -64,13 +58,30 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Revokes a specified role from a user.
 	/// @param user The address of the user from whom the role will be revoked.
 	/// @param role The role to be revoked
-	function revokeRole(address user, bytes32 role) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	function revokeRole(address user, bytes32 role) external onlyRoleAdmin(role) {
 		GlobalAppStorage.layout().hasRole[user][role] = false;
 		emit RoleRevoked(role, user);
 	}
 
+	/// @notice Adds an account as admin for a specific role.
+	/// @param role The role whose admin is being updated.
+	/// @param admin The account to add as admin.
+	function addRoleAdmin(bytes32 role, address admin) external onlyRoleAdmin(role) {
+		checkZeroAddress(admin);
+		GlobalAppStorage.layout().roleAdmins[role][admin] = true;
+		emit RoleAdminAdded(role, admin);
+	}
+
+	/// @notice Removes an account from the admins for a specific role.
+	/// @param role The role whose admin is being updated.
+	/// @param admin The account to remove as admin.
+	function removeRoleAdmin(bytes32 role, address admin) external onlyRoleAdmin(role) {
+		checkZeroAddress(admin);
+		GlobalAppStorage.layout().roleAdmins[role][admin] = false;
+		emit RoleAdminRemoved(role, admin);
+	}
+
 	/// @notice Registers a Party B into the system.
-	/// @param partyB The address of the Party B to be registered.
 	function registerPartyB(address partyB) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		checkZeroAddress(partyB);
 		require(!MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is already registered");
@@ -80,8 +91,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Deregisters a Party B from the system.
-	/// @param partyB The address of the Party B to be deregistered.
-	/// @param index The index of the Party B address in the partyBList.
 	function deregisterPartyB(address partyB, uint256 index) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		checkZeroAddress(partyB);
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
@@ -95,7 +104,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Registers an affiliate into the system.
-	/// @param affiliate The address of the affiliate to be registered.
 	function registerAffiliate(address affiliate) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
 		require(!MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Address is already registered");
 		MAStorage.layout().affiliateStatus[affiliate] = true;
@@ -103,7 +111,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Deregisters an affiliate from the system.
-	/// @param affiliate The address of the affiliate to be deregistered.
 	function deregisterAffiliate(address affiliate) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Address is not registered");
 		MAStorage.layout().affiliateStatus[affiliate] = false;
@@ -111,8 +118,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Sets the configuration parameters for Muon.
-	/// @param upnlValidTime The validity duration for upnl.
-	/// @param priceValidTime The validity duration for price.
 	function setMuonConfig(uint256 upnlValidTime, uint256 priceValidTime) external onlyRole(LibAccessibility.MUON_SETTER_ROLE) {
 		emit SetMuonConfig(upnlValidTime, priceValidTime);
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
@@ -120,8 +125,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		muonLayout.priceValidTime = priceValidTime;
 	}
 
-	/// @notice Sets the Muon application ID, valid gateway address, and public key.
-	/// @param muonAppId The Muon application ID.
+	/// @notice Sets the Muon application ID.
 	function setMuonIds(uint256 muonAppId) external onlyRole(LibAccessibility.MUON_SETTER_ROLE) {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		muonLayout.muonAppId = muonAppId;
@@ -129,7 +133,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Sets the address of the collateral token.
-	/// @param collateral The address of the collateral token.
 	function setCollateral(address collateral) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		checkZeroAddress(collateral);
 		require(IERC20Metadata(collateral).decimals() <= 18, "ControlFacet: Token with more than 18 decimals not allowed");
@@ -143,16 +146,13 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit SetCollateral(collateral);
 	}
 
-	/// @notice Sets number of allowed pending qutoes per user.
-	/// @param pendingQuotesValidLength The number of pending quotes allowd.
+	/// @notice Sets number of allowed pending quotes per user.
 	function setPendingQuotesValidLength(uint256 pendingQuotesValidLength) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetPendingQuotesValidLength(MAStorage.layout().pendingQuotesValidLength, pendingQuotesValidLength);
 		MAStorage.layout().pendingQuotesValidLength = pendingQuotesValidLength;
 	}
 
-	/// @notice Sets the address which protocol fees for an specific affiliate are being transferred to in the system.
-	/// @param affiliate The address of affiliate.
-	/// @param feeCollector The address of fee collector.
+	/// @notice Sets the address which protocol fees for an specific affiliate are being transferred to.
 	function setFeeCollector(address affiliate, address feeCollector) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
 		checkZeroAddress(feeCollector);
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
@@ -160,11 +160,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.layout().affiliateFeeCollector[affiliate] = feeCollector;
 	}
 
-	/// @notice Sets the open and close trading fees for an specific affiliate in the system.
-	/// @param affiliate The address of affiliate.
-	/// @param symbolId The id of symbol.
-	/// @param openFee The open trading fee.
-	/// @param closeFee The open trading fee.
+	/// @notice Sets the open and close trading fees for an specific affiliate.
 	function setAffiliateFee(address affiliate, uint256 symbolId, uint256 openFee, uint256 closeFee) external {
 		require(
 			LibAccessibility.hasRole(msg.sender, LibAccessibility.AFFILIATE_MANAGER_ROLE) || msg.sender == affiliate,
@@ -229,7 +225,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Sets the address of the default fee collector.
-	/// @param feeCollector The address of fee collector.
 	function setDefaultFeeCollector(address feeCollector) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetDefaultFeeCollector(GlobalAppStorage.layout().defaultFeeCollector, feeCollector);
 		GlobalAppStorage.layout().defaultFeeCollector = feeCollector;
@@ -250,7 +245,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Sets invalid bridged amounts pool address.
-	/// @param pool the address of new pool.
 	function setInvalidBridgedAmountsPool(address pool) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		checkZeroAddress(pool);
 		emit SetInvalidBridgedAmountsPool(BridgeStorage.layout().invalidBridgedAmountsPool, pool);
@@ -258,240 +252,32 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Sets the metadata for an affiliate.
-	/// @param affiliate The address of the affiliate.
-	/// @param metadata The metadata for the affiliate.
 	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
 		MAStorage.layout().entitiesMetadata[affiliate] = metadata;
 		emit SetEntityMetadata(affiliate, metadata);
 	}
 
 	/// @notice Sets the metadata for a party B.
-	/// @param partyB The address of the party B.
-	/// @param metadata The metadata for the party B.
 	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		MAStorage.layout().entitiesMetadata[partyB] = metadata;
 		emit SetEntityMetadata(partyB, metadata);
 	}
 
-	// Symbol State //////////////////////////////////////////////////////////////////
-
-	/// @notice Adds a new trading symbol.
-	/// @param name The name of the trading symbol.
-	/// @param minAcceptableQuoteValue The minimum acceptable quote value for the symbol.
-	/// @param minAcceptablePortionLF The minimum acceptable portion of liquidation fee in quote.
-	/// @param tradingFee The trading fee for the symbol.
-	/// @param maxLeverage The maximum leverage allowed for the symbol.
-	/// @param fundingRateEpochDuration The duration of each funding rate epoch for the symbol.
-	/// @param fundingRateWindowTime The window time for calculating the funding rate.
-	function addSymbol(
-		string memory name,
-		uint256 minAcceptableQuoteValue,
-		uint256 minAcceptablePortionLF,
-		uint256 tradingFee,
-		uint256 maxLeverage,
-		uint256 fundingRateEpochDuration,
-		uint256 fundingRateWindowTime
-	) public onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		require(fundingRateWindowTime < fundingRateEpochDuration / 2, "ControlFacet: High window time");
-		require(tradingFee <= 1e18, "ControlFacet: High default fee");
-		uint256 lastId = ++SymbolStorage.layout().lastId;
-		Symbol memory symbol = Symbol(
-			lastId,
-			name,
-			true,
-			minAcceptableQuoteValue,
-			minAcceptablePortionLF,
-			tradingFee,
-			maxLeverage,
-			fundingRateEpochDuration,
-			fundingRateWindowTime
-		);
-		SymbolStorage.layout().symbols[lastId] = symbol;
-		emit AddSymbol(
-			lastId,
-			name,
-			minAcceptableQuoteValue,
-			minAcceptablePortionLF,
-			tradingFee,
-			maxLeverage,
-			fundingRateEpochDuration,
-			fundingRateWindowTime
-		);
-	}
-
-	/// @notice Adds a new trading symbol with its type.
-	/// @param name The name of the trading symbol.
-	/// @param minAcceptableQuoteValue The minimum acceptable quote value for the symbol.
-	/// @param minAcceptablePortionLF The minimum acceptable portion of liquidation fee in quote.
-	/// @param tradingFee The default fee for the symbol.
-	/// @param maxLeverage The maximum leverage allowed for the symbol.
-	/// @param fundingRateEpochDuration The duration of each funding rate epoch for the symbol.
-	/// @param fundingRateWindowTime The window time for calculating the funding rate.
-	/// @param symbolType The type of the symbol to be added.
-	function addSymbolWithType(
-		string memory name,
-		uint256 minAcceptableQuoteValue,
-		uint256 minAcceptablePortionLF,
-		uint256 tradingFee,
-		uint256 maxLeverage,
-		uint256 fundingRateEpochDuration,
-		uint256 fundingRateWindowTime,
-		uint256 symbolType
-	) public onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		addSymbol(name, minAcceptableQuoteValue, minAcceptablePortionLF, tradingFee, maxLeverage, fundingRateEpochDuration, fundingRateWindowTime);
-		uint256 id = SymbolStorage.layout().lastId;
-		setSymbolType(id, symbolType);
-	}
-
-	/// @notice Adds multiple symbols with their types in one call.
-	/// @param symbolsWithType An array of symbolType structs containing details of each symbol and its type to be added.
-	function addSymbolsWithType(SymbolWithType[] memory symbolsWithType) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		for (uint256 i; i < symbolsWithType.length; i++) {
-			addSymbol(
-				symbolsWithType[i].name,
-				symbolsWithType[i].minAcceptableQuoteValue,
-				symbolsWithType[i].minAcceptablePortionLF,
-				symbolsWithType[i].tradingFee,
-				symbolsWithType[i].maxLeverage,
-				symbolsWithType[i].fundingRateEpochDuration,
-				symbolsWithType[i].fundingRateWindowTime
-			);
-
-			uint256 id = SymbolStorage.layout().lastId;
-			setSymbolType(id, symbolsWithType[i].symbolType);
-		}
-	}
-
-	/// @notice Adds multiple symbols in one call.
-	/// @param symbols An array of Symbol structs containing details of each symbol to be added.
-	function addSymbols(Symbol[] memory symbols) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		for (uint256 i; i < symbols.length; i++) {
-			addSymbol(
-				symbols[i].name,
-				symbols[i].minAcceptableQuoteValue,
-				symbols[i].minAcceptablePortionLF,
-				symbols[i].tradingFee,
-				symbols[i].maxLeverage,
-				symbols[i].fundingRateEpochDuration,
-				symbols[i].fundingRateWindowTime
-			);
-		}
-	}
-
-	/// @notice Sets the funding rate params for a specific symbol.
-	/// @param symbolId The ID of the symbol whose funding rate state is to be set.
-	/// @param fundingRateEpochDuration The new duration of each funding rate epoch for the symbol.
-	/// @param fundingRateWindowTime The new window time for calculating the funding rate.
-	function setSymbolFundingState(
-		uint256 symbolId,
-		uint256 fundingRateEpochDuration,
-		uint256 fundingRateWindowTime
-	) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "ControlFacet: Invalid id");
-		require(fundingRateWindowTime < fundingRateEpochDuration / 2, "ControlFacet: High window time");
-		symbolLayout.symbols[symbolId].fundingRateEpochDuration = fundingRateEpochDuration;
-		symbolLayout.symbols[symbolId].fundingRateWindowTime = fundingRateWindowTime;
-		emit SetSymbolFundingState(symbolId, fundingRateEpochDuration, fundingRateWindowTime);
-	}
-
-	/// @notice Validates or invalidates a symbol.
-	/// @param symbolId The ID of the symbol whose validation state is to be set.
-	/// @param isValid The new validation state for the symbol.
-	function setSymbolValidationState(uint256 symbolId, bool isValid) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "ControlFacet: Invalid id");
-		emit SetSymbolValidationState(symbolId, symbolLayout.symbols[symbolId].isValid, isValid);
-		symbolLayout.symbols[symbolId].isValid = isValid;
-	}
-
-	/// @notice Sets the maximum leverage for a specific symbol.
-	/// @param symbolId The ID of the symbol whose maximum leverage is to be set.
-	/// @param maxLeverage The new maximum leverage for the symbol.
-	function setSymbolMaxLeverage(uint256 symbolId, uint256 maxLeverage) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "ControlFacet: Invalid id");
-		emit SetSymbolMaxLeverage(symbolId, symbolLayout.symbols[symbolId].maxLeverage, maxLeverage);
-		symbolLayout.symbols[symbolId].maxLeverage = maxLeverage;
-	}
-
-	/// @notice Sets the minimum acceptable values for a specific symbol.
-	/// @param symbolId The ID of the symbol whose acceptable values are to be set.
-	/// @param minAcceptableQuoteValue The new minimum acceptable quote value for the symbol.
-	/// @param minAcceptablePortionLF The new minimum acceptable LF portion of a quote for the symbol.
-	function setSymbolAcceptableValues(
-		uint256 symbolId,
-		uint256 minAcceptableQuoteValue,
-		uint256 minAcceptablePortionLF
-	) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "ControlFacet: Invalid id");
-		emit SetSymbolAcceptableValues(
-			symbolId,
-			symbolLayout.symbols[symbolId].minAcceptableQuoteValue,
-			symbolLayout.symbols[symbolId].minAcceptablePortionLF,
-			minAcceptableQuoteValue,
-			minAcceptablePortionLF
-		);
-		symbolLayout.symbols[symbolId].minAcceptableQuoteValue = minAcceptableQuoteValue;
-		symbolLayout.symbols[symbolId].minAcceptablePortionLF = minAcceptablePortionLF;
-	}
-
-	/// @notice Sets the default fee for a specific symbol.
-	/// @param symbolId The ID of the symbol whose default fee is to be set.
-	/// @param tradingFee The new trading fee for the symbol.
-	function setSymbolTradingFee(uint256 symbolId, uint256 tradingFee) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "ControlFacet: Invalid id");
-		emit SetSymbolTradingFee(symbolId, symbolLayout.symbols[symbolId].tradingFee, tradingFee);
-		symbolLayout.symbols[symbolId].tradingFee = tradingFee;
-	}
-
-	/// @notice Sets the type of a symbol.
-	/// @param symbolId The ID of the symbol whose type is to be set.
-	/// @param symbolType The new type of the symbol.
-	function setSymbolType(uint256 symbolId, uint256 symbolType) internal {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-
-		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "ControlFacet: Invalid id");
-
-		symbolLayout.symbolTypes[symbolId] = symbolType;
-		emit SetSymbolType(symbolId, symbolType);
-	}
-
-	/// @notice Sets the types of multiple symbols.
-	/// @param symbolIds The IDs of the symbols whose types are to be set.
-	/// @param symbolTypes The new types of the symbols.
-	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		require(symbolIds.length == symbolTypes.length, "ControlFacet: Array length mismatch");
-
-		for (uint256 i = 0; i < symbolIds.length; i++) {
-			uint256 symbolId = symbolIds[i];
-			uint256 symbolType = symbolTypes[i];
-
-			setSymbolType(symbolId, symbolType);
-		}
-	}
-
 	// CoolDowns //////////////////////////////////////////////////
 
-	/// @notice Sets the cooldown period for deallocation, requiring users to wait before they can proceed with withdrawals.
-	/// @param deallocateCooldown The new cooldown period for deallocation, specified in seconds.
+	/// @notice Sets the cooldown period for deallocation.
 	function setDeallocateCooldown(uint256 deallocateCooldown) external onlyRole(LibAccessibility.DEALLOCATE_COOLDOWN_SETTER_ROLE) {
 		emit SetDeallocateCooldown(MAStorage.layout().deallocateCooldown, deallocateCooldown);
 		MAStorage.layout().deallocateCooldown = deallocateCooldown;
 	}
 
-	/// @notice Sets the cooldown period for force cancellation, mandating that users wait after submitting a cancellation request before they are permitted to initiate a force cancellation.
-	/// @param forceCancelCooldown The new cooldown period for force cancellation, specified in seconds.
+	/// @notice Sets the cooldown period for force cancellation.
 	function setForceCancelCooldown(uint256 forceCancelCooldown) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetForceCancelCooldown(MAStorage.layout().forceCancelCooldown, forceCancelCooldown);
 		MAStorage.layout().forceCancelCooldown = forceCancelCooldown;
 	}
 
-	/// @notice Sets the cooldown periods for force closing positions.These parameters define the minimum time frames: one is for before the target price is reached, and the other one is for after that.
-	/// @param forceCloseFirstCooldown The first new cooldown period, specified in seconds.
-	/// @param forceCloseSecondCooldown The second new cooldown period, specified in seconds.
+	/// @notice Sets the cooldown periods for force closing positions.
 	function setForceCloseCooldowns(
 		uint256 forceCloseFirstCooldown,
 		uint256 forceCloseSecondCooldown
@@ -506,205 +292,68 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().forceCloseSecondCooldown = forceCloseSecondCooldown;
 	}
 
-	/// @notice Sets the penalty applied to partyB during force closing of positions.
-	/// @param forceClosePricePenalty The new penalty applied during force closing of positions based on price.
+	/// @notice Sets the penalty applied to partyB during force closing.
 	function setForceClosePricePenalty(uint256 forceClosePricePenalty) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetForceClosePricePenalty(MAStorage.layout().forceClosePricePenalty, forceClosePricePenalty);
 		MAStorage.layout().forceClosePricePenalty = forceClosePricePenalty;
 	}
 
-	/// @notice Sets the minimum signature period required for force closing of positions.
-	/// @param forceCloseMinSigPeriod The new minimum signature period required for force closing of positions.
+	/// @notice Sets the minimum signature period for force closing.
 	function setForceCloseMinSigPeriod(uint256 forceCloseMinSigPeriod) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetForceCloseMinSigPeriod(MAStorage.layout().forceCloseMinSigPeriod, forceCloseMinSigPeriod);
 		MAStorage.layout().forceCloseMinSigPeriod = forceCloseMinSigPeriod;
 	}
 
-	/// @notice Sets the cooldown period for force canceling of close requests. Requiring users to observe a waiting period before they can forcefully cancel their closure requests.
-	/// @param forceCancelCloseCooldown The new cooldown period for force canceling of close requests, specified in seconds.
+	/// @notice Sets the cooldown period for force canceling close requests.
 	function setForceCancelCloseCooldown(uint256 forceCancelCloseCooldown) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetForceCancelCloseCooldown(MAStorage.layout().forceCancelCloseCooldown, forceCancelCloseCooldown);
 		MAStorage.layout().forceCancelCloseCooldown = forceCancelCloseCooldown;
 	}
 
-	/// @notice Sets the percentage of funds distributed to liquidators from liquidated positions.
-	/// @param liquidatorShare The new percentage of funds distributed to liquidators from liquidated positions.
+	/// @notice Sets the percentage of funds distributed to liquidators.
 	function setLiquidatorShare(uint256 liquidatorShare) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetLiquidatorShare(MAStorage.layout().liquidatorShare, liquidatorShare);
 		MAStorage.layout().liquidatorShare = liquidatorShare;
 	}
 
-	/// @notice Sets the gap ratio used in force closing of positions.
-	/// @param symbolId The symbolId that this ratio is going to be applied for.
-	/// @param forceCloseGapRatio The new gap ratio used in force closing of positions.
+	/// @notice Sets the gap ratio used in force closing.
 	function setForceCloseGapRatio(uint256 symbolId, uint256 forceCloseGapRatio) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetForceCloseGapRatio(symbolId, SymbolStorage.layout().forceCloseGapRatio[symbolId], forceCloseGapRatio);
 		SymbolStorage.layout().forceCloseGapRatio[symbolId] = forceCloseGapRatio;
 	}
 
-	/// @notice Sets the cooldown period for settle upnl of positions.
-	/// @param settlementCooldown The new cooldown period, specified in seconds.
+	/// @notice Sets the cooldown period for settle upnl.
 	function setSettlementCooldown(uint256 settlementCooldown) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetSettlementCooldown(MAStorage.layout().settlementCooldown, settlementCooldown);
 		MAStorage.layout().settlementCooldown = settlementCooldown;
 	}
 
 	/// @notice Sets the cooldown period for unbinding.
-	/// @param unbindCooldown The new cooldown period, specified in seconds.
 	function setUnbindCooldown(uint256 unbindCooldown) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetUnbindCooldown(MAStorage.layout().unbindCooldown, unbindCooldown);
 		MAStorage.layout().unbindCooldown = unbindCooldown;
 	}
 
 	/// @notice Sets PartyA Max Connection with PartyB.
-	/// @param maxLimit Max Connection limit.
 	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		require(maxLimit > 0, "ControlFacet: Value must be greater than zero");
 		MAStorage.layout().maxPartyAConnectionLimit = maxLimit;
 		emit SetMaxPartyAConnectionLimit(maxLimit);
 	}
 
-	// Pause State //////////////////////////////////////////////////
-
-	/// @notice Pauses global operations.
-	function pauseGlobal() external onlyRole(LibAccessibility.PAUSER_ROLE) {
-		GlobalAppStorage.layout().globalPaused = true;
-		emit PauseGlobal();
-	}
-
-	/// @notice Pauses liquidation operations.
-	function pauseLiquidation() external onlyRole(LibAccessibility.PAUSER_ROLE) {
-		GlobalAppStorage.layout().liquidationPaused = true;
-		emit PauseLiquidation();
-	}
-
-	/// @notice Pauses accounting operations.
-	function pauseAccounting() external onlyRole(LibAccessibility.PAUSER_ROLE) {
-		GlobalAppStorage.layout().accountingPaused = true;
-		emit PauseAccounting();
-	}
-
-	/// @notice Pauses Party A actions.
-	function pausePartyAActions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
-		GlobalAppStorage.layout().partyAActionsPaused = true;
-		emit PausePartyAActions();
-	}
-
-	/// @notice Pauses Party B actions.
-	function pausePartyBActions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
-		GlobalAppStorage.layout().partyBActionsPaused = true;
-		emit PausePartyBActions();
-	}
-
-	/// @notice Pauses internal transfers.
-	function pauseInternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
-		GlobalAppStorage.layout().internalTransferPaused = true;
-		emit PauseInternalTransfer();
-	}
-
-	/// @notice Pauses external transfers.
-	function pauseExternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
-		GlobalAppStorage.layout().externalTransferPaused = true;
-		emit PauseExternalTransfer();
-	}
-
-	/// @notice Activates emergency mode.
-	function activeEmergencyMode() external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		GlobalAppStorage.layout().emergencyMode = true;
-		emit ActiveEmergencyMode();
-	}
-
-	/// @notice Unpauses global operations.
-	function unpauseGlobal() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
-		GlobalAppStorage.layout().globalPaused = false;
-		emit UnpauseGlobal();
-	}
-
-	/// @notice Unpauses liquidation operations.
-	function unpauseLiquidation() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
-		GlobalAppStorage.layout().liquidationPaused = false;
-		emit UnpauseLiquidation();
-	}
-
-	/// @notice Unpauses accounting operations.
-	function unpauseAccounting() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
-		GlobalAppStorage.layout().accountingPaused = false;
-		emit UnpauseAccounting();
-	}
-
-	/// @notice Unpauses Party A actions.
-	function unpausePartyAActions() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
-		GlobalAppStorage.layout().partyAActionsPaused = false;
-		emit UnpausePartyAActions();
-	}
-
-	/// @notice Unpauses Party B actions.
-	function unpausePartyBActions() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
-		GlobalAppStorage.layout().partyBActionsPaused = false;
-		emit UnpausePartyBActions();
-	}
-
-	/// @notice Unpauses internal transfers.
-	function unpauseInternalTransfer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
-		GlobalAppStorage.layout().internalTransferPaused = false;
-		emit UnpauseInternalTransfer();
-	}
-
-	/// @notice Unpauses external transfers.
-	function unpauseExternalTransfer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
-		GlobalAppStorage.layout().externalTransferPaused = false;
-		emit UnpauseExternalTransfer();
-	}
-
 	/// @notice Sets the timeout duration for liquidation.
-	/// @param liquidationTimeout The new timeout duration for liquidation, specified in seconds.
 	function setLiquidationTimeout(uint256 liquidationTimeout) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		emit SetLiquidationTimeout(MAStorage.layout().liquidationTimeout, liquidationTimeout);
 		MAStorage.layout().liquidationTimeout = liquidationTimeout;
 	}
 
-	/// @notice Suspends a user's address.
-	/// @param user The address of the user to be suspended.
-	function suspendedAddress(address user) external onlyRole(LibAccessibility.SUSPENDER_ROLE) {
-		checkZeroAddress(user);
-		emit SetSuspendedAddress(user, true);
-		AccountStorage.layout().suspendedAddresses[user] = true;
-	}
-
-	/// @notice Unsuspends a user's address.
-	/// @param user The address of the user to be unsuspended.
-	function unsuspendedAddress(address user) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		checkZeroAddress(user);
-		emit SetSuspendedAddress(user, false);
-		AccountStorage.layout().suspendedAddresses[user] = false;
-	}
-
-	/// @notice Deactivates emergency mode.
-	function deactiveEmergencyMode() external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		GlobalAppStorage.layout().emergencyMode = false;
-		emit DeactiveEmergencyMode();
-	}
-
 	/// @notice Sets the balance limit per user.
-	/// @param balanceLimitPerUser The new balance limit per user.
 	function setBalanceLimitPerUser(uint256 balanceLimitPerUser) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		emit SetBalanceLimitPerUser(balanceLimitPerUser);
 		GlobalAppStorage.layout().balanceLimitPerUser = balanceLimitPerUser;
 	}
 
-	/// @notice Sets the emergency status for Party B addresses.
-	/// @param partyBs The addresses of Party B users.
-	/// @param status The emergency status to be set.
-	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
-		for (uint256 i; i < partyBs.length; i++) {
-			checkZeroAddress(partyBs[i]);
-			GlobalAppStorage.layout().partyBEmergencyStatus[partyBs[i]] = status;
-			emit SetPartyBEmergencyStatus(partyBs[i], status);
-		}
-	}
-
 	/// @notice Enables or disables master account activation for Party B.
-	/// @param enabled New activation status.
 	function setMasterAccountActivationMode(bool enabled) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		emit SetMasterAccountActivationMode(appLayout.masterAccountActivationMode, enabled);
@@ -712,7 +361,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Adds a bridge.
-	/// @param bridge The address of the bridge to be added.
 	function addBridge(address bridge) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		checkZeroAddress(bridge);
 		BridgeStorage.layout().bridges[bridge] = true;
@@ -720,15 +368,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Removes a bridge.
-	/// @param bridge The address of the bridge to be removed.
 	function removeBridge(address bridge) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		BridgeStorage.layout().bridges[bridge] = false;
 		emit RemoveBridge(bridge);
 	}
 
 	/// @notice Sets the params for liquidation insurance vault.
-	/// @param insuranceVault The address of the vault.
-	/// @param maxLiquidationProfit The max profit from liquidation per position.
 	function setLiquidationInsuranceVaultParams(
 		address insuranceVault,
 		uint256 maxLiquidationProfit
@@ -740,91 +385,13 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit SetLiquidationInsuranceVaultParams(insuranceVault, maxLiquidationProfit);
 	}
 
-	/// @notice Whitelists a symbol type for a party B. Reverts if the type is blacklisted.
-	function whitelistSymbolType(address partyB, uint256 symbolType) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType] = true;
-		emit WhitelistSymbolType(partyB, symbolType);
-	}
-
-	/// @notice Whitelists symbols for a party B. Reverts if any symbol is blacklisted.
-	function whitelistSymbols(address partyB, uint256[] calldata symbolIds) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
-
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
-			uint256 id = symbolIds[i];
-			require(!accountLayout.partyBBlacklistedSymbols[partyB][id], "ControlFacet: Blacklist conflict");
-			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
-			unchecked {
-				++i;
-			}
-		}
-
-		emit WhitelistSymbols(partyB, symbolIds);
-	}
-
-	/// @notice Removes a symbol type from the whitelist for a party B.
-	function removeSymbolTypeFromWhitelist(address partyB, uint256 symbolType) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
-		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = false;
-		emit RemoveSymbolTypeFromWhitelist(partyB, symbolType);
-	}
-
-	/// @notice Removes symbols from the whitelist for a party B.
-	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
-			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
-			unchecked {
-				++i;
-			}
-		}
-		emit RemoveSymbolsFromWhitelist(partyB, symbolIds);
-	}
-
-	/// @notice Blacklists symbols for a party B. Reverts if any is whitelisted.
-	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
-
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
-			uint256 id = symbolIds[i];
-			require(!accountLayout.partyBWhitelistedSymbols[partyB][id], "ControlFacet: Whitelist conflict");
-			accountLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
-			unchecked {
-				++i;
-			}
-		}
-
-		emit BlacklistSymbols(partyB, symbolIds);
-	}
-
-	/// @notice Removes symbols from the blacklist for a party B.
-	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
-			accountLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
-			unchecked {
-				++i;
-			}
-		}
-		emit RemoveSymbolsFromBlacklist(partyB, symbolIds);
-	}
-
 	/// @notice Sets the signature verifier address.
-	/// @param signatureVerifier The address of the signature verifier.
 	function setSignatureVerifierAddress(address signatureVerifier) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		GlobalAppStorage.layout().signatureVerifier = signatureVerifier;
 		emit SetSignatureVerifierAddress(signatureVerifier);
 	}
 
 	/// @notice Adds a relayer for an external transfer target.
-	/// @param target The address of the target.
-	/// @param relayer The address of the relayer.
 	function addRelayerForExternalTransferTarget(address target, address relayer) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		checkZeroAddress(target);
 		AccountStorage.layout().externalTransferTargetsRelayers[target] = relayer;
@@ -832,7 +399,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Removes a relayer for an external transfer target.
-	/// @param target The address of the target.
 	function removeRelayerForExternalTransferTarget(address target) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		checkZeroAddress(target);
 		AccountStorage.layout().externalTransferTargetsRelayers[target] = address(0);
@@ -840,28 +406,23 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Registers a hook for an affiliate.
-	/// @param affiliate The address of the affiliate.
-	/// @param hook The address of the hook.
 	function registerHook(address affiliate, address hook) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		AccountStorage.layout().affiliateHooks[affiliate] = hook;
 		emit RegisterHook(affiliate, hook);
 	}
 
-	/// @notice Sets the call from instant layer
-	/// @param _callFromInstantLayer The call from instant layer
+	/// @notice Sets the call from instant layer.
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
 		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
 		MAStorage.layout().callFromInstantLayer = _callFromInstantLayer;
 	}
 
 	/// @notice Sets the ADL enabled status for a party B.
-	/// @param partyB The address of the party B.
-	/// @param enabled The ADL enabled status to be set.
 	function setADLEnabled(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		MAStorage.layout().adlEnabled[partyB] = enabled;
 		emit SetADLEnabled(partyB, enabled);
 	}
-	
+
 	function setMaxDeallocateWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;
@@ -883,8 +444,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	function registerVirtualProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		require(!GlobalAppStorage.layout().expressProviders[provider] , "ControlFacet: Already a express provider");
-		require(!GlobalAppStorage.layout().virtualProviders[provider] , "ControlFacet: Already a virtual provider");
+		require(!GlobalAppStorage.layout().expressProviders[provider], "ControlFacet: Already a express provider");
+		require(!GlobalAppStorage.layout().virtualProviders[provider], "ControlFacet: Already a virtual provider");
 		GlobalAppStorage.layout().virtualProviders[provider] = true;
 		emit RegisterVirtualProvider(provider);
 	}
@@ -895,8 +456,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	function registerExpressProvider(address provider) external onlyRole(LibAccessibility.SETTER_ROLE) {
-		require(!GlobalAppStorage.layout().virtualProviders[provider] , "ControlFacet: Already a virtual provider");
-		require(!GlobalAppStorage.layout().expressProviders[provider] , "ControlFacet: Already a express provider");
+		require(!GlobalAppStorage.layout().virtualProviders[provider], "ControlFacet: Already a virtual provider");
+		require(!GlobalAppStorage.layout().expressProviders[provider], "ControlFacet: Already a express provider");
 		GlobalAppStorage.layout().expressProviders[provider] = true;
 		emit RegisterExpressProvider(provider);
 	}
@@ -908,14 +469,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	function setSpeedUpUser(address user) external onlyRole(LibAccessibility.WITHDRAW_SPEED_UP_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-		require(!withdrawLayout.speedUpWhitelist[user] , "ControlFacet: User already whitelisted as speed up");
+		require(!withdrawLayout.speedUpWhitelist[user], "ControlFacet: User already whitelisted as speed up");
 		withdrawLayout.speedUpWhitelist[user] = true;
 		emit SetSpeedUpUser(user);
 	}
 
 	function unsetSpeedUpUser(address user) external onlyRole(LibAccessibility.WITHDRAW_SPEED_UP_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-		require(withdrawLayout.speedUpWhitelist[user] , "ControlFacet: User not whitelisted as speed up");
+		require(withdrawLayout.speedUpWhitelist[user], "ControlFacet: User not whitelisted as speed up");
 		withdrawLayout.speedUpWhitelist[user] = false;
 		emit UnsetSpeedUpUser(user);
 	}
@@ -926,24 +487,13 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		withdrawLayout.minWithdrawCooldown = cooldown;
 	}
 
-	function deprecateOldWithdrawal() external onlyRole(LibAccessibility.SETTER_ROLE){
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		appLayout.deprecateOldWithdrawalPaused = true;
-	    emit DeprecateOldWithdrawalPaused();
-	}
-
-
-	function symbolListingAuthorizationCheck(address sender, address partyB) private view {
-		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
+	function setSigner(address signer) external onlyRole(LibAccessibility.SIGNER_SETTER_ROLE) {
+		MAStorage.layout().signer = signer;
+		emit SignerSet(signer);
 	}
 
 	function checkZeroAddress(address target) private pure {
 		require(target != address(0), "ControlFacet: Zero address");
-	}
-
-	function setSigner(address signer) external onlyRole(LibAccessibility.SIGNER_SETTER_ROLE){
-		MAStorage.layout().signer = signer;
-		emit SignerSet(signer);
 	}
 
 	function setPartyBBindable(address partyB) external onlyRole(LibAccessibility.BINDABLE_SETTER_ROLE) {

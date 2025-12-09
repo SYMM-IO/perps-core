@@ -193,9 +193,9 @@ export function shouldBehaveLikeControlFacet(): void {
 			const minQty = BigInt("100000000000000000000")
 			const maxQty = BigInt("60000000000000000000")
 
-			await expect(context.controlFacet.connect(owner).addSymbol("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period)).to.not.be
+			await expect(context.symbolControlFacet.connect(owner).addSymbol("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period)).to.not.be
 				.reverted
-			expect((await context.viewFacet.getSymbol(2)).name).to.be.equal("ETHUSDT")
+			expect((await context.viewFacetSymbol.getSymbol(2)).name).to.be.equal("ETHUSDT")
 		})
 
 		it("Should not addSymbol if windowTime be high", async function () {
@@ -207,8 +207,8 @@ export function shouldBehaveLikeControlFacet(): void {
 			const maxQty = BigInt("60000000000000000000")
 
 			await expect(
-				context.controlFacet.connect(owner).addSymbol("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period),
-			).to.be.revertedWith("ControlFacet: High window time")
+				context.symbolControlFacet.connect(owner).addSymbol("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period),
+			).to.be.revertedWith("SymbolControlFacet: High window time")
 		})
 
 		it("Should not addSymbol if tradingFee be high", async function () {
@@ -220,88 +220,88 @@ export function shouldBehaveLikeControlFacet(): void {
 			const maxQty = BigInt("60000000000000000000")
 
 			await expect(
-				context.controlFacet.connect(owner).addSymbol("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period),
-			).to.be.revertedWith("ControlFacet: High default fee")
+				context.symbolControlFacet.connect(owner).addSymbol("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period),
+			).to.be.revertedWith("SymbolControlFacet: High default fee")
 		})
 	})
 
 	describe("setSymbolFundingState", () => {
 		it("Should setSymbolFundingState successfully", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolFundingState(1, 28900, 910)).to.not.reverted
-			expect((await context.viewFacet.getSymbol(1)).fundingRateEpochDuration).to.be.equal(28900)
-			expect((await context.viewFacet.getSymbol(1)).fundingRateWindowTime).to.be.equal(910)
+			await expect(context.symbolControlFacet.connect(owner).setSymbolFundingState(1, 28900, 910)).to.not.reverted
+			expect((await context.viewFacetSymbol.getSymbol(1)).fundingRateEpochDuration).to.be.equal(28900)
+			expect((await context.viewFacetSymbol.getSymbol(1)).fundingRateWindowTime).to.be.equal(910)
 		})
 
 		it("Should not setSymbolFundingState if windowTime be high", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolFundingState(1, 910, 28900)).to.revertedWith("ControlFacet: High window time")
+			await expect(context.symbolControlFacet.connect(owner).setSymbolFundingState(1, 910, 28900)).to.revertedWith("SymbolControlFacet: High window time")
 		})
 
 		it("Should not setSymbolFundingState if invalid symbol id", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolFundingState(0, 910, 28900)).to.revertedWith("ControlFacet: Invalid id")
-			await expect(context.controlFacet.connect(owner).setSymbolFundingState(3, 910, 28900)).to.revertedWith("ControlFacet: Invalid id")
+			await expect(context.symbolControlFacet.connect(owner).setSymbolFundingState(0, 910, 28900)).to.revertedWith("SymbolControlFacet: Invalid id")
+			await expect(context.symbolControlFacet.connect(owner).setSymbolFundingState(3, 910, 28900)).to.revertedWith("SymbolControlFacet: Invalid id")
 		})
 	})
 
 	describe("setSymbolValidationState", () => {
 		it("Should setSymbolValidationState successfully", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolValidationState(1, false)).to.not.reverted
-			expect((await context.viewFacet.getSymbol(1)).isValid).to.be.equal(false)
-			await expect(context.controlFacet.connect(owner).setSymbolValidationState(1, true)).to.not.reverted
-			expect((await context.viewFacet.getSymbol(1)).isValid).to.be.equal(true)
+			await expect(context.symbolControlFacet.connect(owner).setSymbolValidationState(1, false)).to.not.reverted
+			expect((await context.viewFacetSymbol.getSymbol(1)).isValid).to.be.equal(false)
+			await expect(context.symbolControlFacet.connect(owner).setSymbolValidationState(1, true)).to.not.reverted
+			expect((await context.viewFacetSymbol.getSymbol(1)).isValid).to.be.equal(true)
 		})
 
 		it("Should not setSymbolFundingState if invalid symbol id", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolValidationState(0, false)).to.revertedWith("ControlFacet: Invalid id")
-			await expect(context.controlFacet.connect(owner).setSymbolValidationState(3, false)).to.revertedWith("ControlFacet: Invalid id")
+			await expect(context.symbolControlFacet.connect(owner).setSymbolValidationState(0, false)).to.revertedWith("SymbolControlFacet: Invalid id")
+			await expect(context.symbolControlFacet.connect(owner).setSymbolValidationState(3, false)).to.revertedWith("SymbolControlFacet: Invalid id")
 		})
 	})
 
 	describe("setSymbolMaxLeverage", () => {
 		it("Should setSymbolMaxLeverage successfully", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolMaxLeverage(1, BigInt("3000000000000000"))).to.not.be.reverted
-			expect((await context.viewFacet.getSymbol(1)).maxLeverage).to.equal(BigInt("3000000000000000"))
+			await expect(context.symbolControlFacet.connect(owner).setSymbolMaxLeverage(1, BigInt("3000000000000000"))).to.not.be.reverted
+			expect((await context.viewFacetSymbol.getSymbol(1)).maxLeverage).to.equal(BigInt("3000000000000000"))
 		})
 
 		it("Should not setSymbolFundingState if invalid symbol id", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolMaxLeverage(0, BigInt("1000000000000000"))).to.be.revertedWith(
-				"ControlFacet: Invalid id",
+			await expect(context.symbolControlFacet.connect(owner).setSymbolMaxLeverage(0, BigInt("1000000000000000"))).to.be.revertedWith(
+				"SymbolControlFacet: Invalid id",
 			)
-			await expect(context.controlFacet.connect(owner).setSymbolMaxLeverage(3, BigInt("1000000000000000"))).to.be.revertedWith(
-				"ControlFacet: Invalid id",
+			await expect(context.symbolControlFacet.connect(owner).setSymbolMaxLeverage(3, BigInt("1000000000000000"))).to.be.revertedWith(
+				"SymbolControlFacet: Invalid id",
 			)
 		})
 	})
 
 	describe("setSymbolAcceptableValues", () => {
 		it("Should setSymbolAcceptableValues successfully", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolAcceptableValues(1, BigInt("200000000000000000000"), BigInt("300000000000000000000")))
+			await expect(context.symbolControlFacet.connect(owner).setSymbolAcceptableValues(1, BigInt("200000000000000000000"), BigInt("300000000000000000000")))
 				.to.not.be.reverted
-			expect((await context.viewFacet.getSymbol(1)).minAcceptablePortionLF).to.equal(BigInt("300000000000000000000"))
-			expect((await context.viewFacet.getSymbol(1)).minAcceptableQuoteValue).to.equal(BigInt("200000000000000000000"))
+			expect((await context.viewFacetSymbol.getSymbol(1)).minAcceptablePortionLF).to.equal(BigInt("300000000000000000000"))
+			expect((await context.viewFacetSymbol.getSymbol(1)).minAcceptableQuoteValue).to.equal(BigInt("200000000000000000000"))
 		})
 
 		it("Should not setSymbolFundingState if invalid symbol id", async function () {
 			await expect(
-				context.controlFacet.connect(owner).setSymbolAcceptableValues(0, BigInt("200000000000000000000"), BigInt("300000000000000000000")),
-			).to.be.revertedWith("ControlFacet: Invalid id")
+				context.symbolControlFacet.connect(owner).setSymbolAcceptableValues(0, BigInt("200000000000000000000"), BigInt("300000000000000000000")),
+			).to.be.revertedWith("SymbolControlFacet: Invalid id")
 			await expect(
-				context.controlFacet.connect(owner).setSymbolAcceptableValues(4, BigInt("200000000000000000000"), BigInt("300000000000000000000")),
-			).to.be.revertedWith("ControlFacet: Invalid id")
+				context.symbolControlFacet.connect(owner).setSymbolAcceptableValues(4, BigInt("200000000000000000000"), BigInt("300000000000000000000")),
+			).to.be.revertedWith("SymbolControlFacet: Invalid id")
 		})
 	})
 
 	describe("setSymbolTradingFee", () => {
 		it("Should setSymbolTradingFee successfully", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolTradingFee(1, BigInt("200000000000000000000"))).to.not.be.reverted
-			expect((await context.viewFacet.getSymbol(1)).tradingFee).to.equal(BigInt("200000000000000000000"))
+			await expect(context.symbolControlFacet.connect(owner).setSymbolTradingFee(1, BigInt("200000000000000000000"))).to.not.be.reverted
+			expect((await context.viewFacetSymbol.getSymbol(1)).tradingFee).to.equal(BigInt("200000000000000000000"))
 		})
 
 		it("Should not setSymbolTradingFee if invalid symbol id", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolTradingFee(0, BigInt("200000000000000000000"))).to.be.revertedWith(
-				"ControlFacet: Invalid id",
+			await expect(context.symbolControlFacet.connect(owner).setSymbolTradingFee(0, BigInt("200000000000000000000"))).to.be.revertedWith(
+				"SymbolControlFacet: Invalid id",
 			)
-			await expect(context.controlFacet.connect(owner).setSymbolTradingFee(6, BigInt("200000000000000000000"))).to.be.revertedWith(
-				"ControlFacet: Invalid id",
+			await expect(context.symbolControlFacet.connect(owner).setSymbolTradingFee(6, BigInt("200000000000000000000"))).to.be.revertedWith(
+				"SymbolControlFacet: Invalid id",
 			)
 		})
 	})
@@ -345,7 +345,7 @@ export function shouldBehaveLikeControlFacet(): void {
 	describe("setForceCloseGapRatio", () => {
 		it("Should setForceCloseGapRatio successfully", async function () {
 			await expect(context.controlFacet.connect(owner).setForceCloseGapRatio(1, BigInt("200"))).to.not.be.reverted
-			expect(await context.viewFacet.forceCloseGapRatio(1)).to.equal(BigInt("200"))
+			expect(await context.viewFacetSymbol.forceCloseGapRatio(1)).to.equal(BigInt("200"))
 		})
 	})
 
@@ -364,78 +364,78 @@ export function shouldBehaveLikeControlFacet(): void {
 
 	describe("pauseGlobal", () => {
 		it("Should pauseGlobal successfully", async function () {
-			await expect(context.controlFacet.connect(owner).pauseGlobal()).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).pauseGlobal()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).globalPaused).to.be.equal(true)
 		})
 	})
 
 	describe("pauseLiquidation", () => {
 		it("Should pauseLiquidation successfully", async function () {
-			await expect(context.controlFacet.connect(owner).pauseLiquidation()).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).pauseLiquidation()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).liquidationPaused).to.be.equal(true)
 		})
 	})
 
 	describe("activeEmergencyMode", () => {
 		it("Should activeEmergencyMode successfully", async function () {
-			await expect(context.controlFacet.connect(owner).activeEmergencyMode()).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).activeEmergencyMode()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).emergencyMode).to.be.equal(true)
 		})
 	})
 
 	describe("unpauseGlobal", () => {
 		it("Should unpauseGlobal successfully", async function () {
-			await expect(context.controlFacet.connect(owner).unpauseGlobal()).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).unpauseGlobal()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).globalPaused).to.be.equal(false)
 		})
 	})
 
 	describe("unpauseLiquidation", () => {
 		it("Should unpauseLiquidation successfully", async function () {
-			await expect(context.controlFacet.connect(owner).unpauseLiquidation()).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).unpauseLiquidation()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).liquidationPaused).to.be.equal(false)
 		})
 	})
 
 	describe("unpauseAccounting", () => {
 		it("Should unpauseAccounting successfully", async function () {
-			await expect(context.controlFacet.connect(owner).unpauseAccounting()).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).unpauseAccounting()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).accountingPaused).to.be.equal(false)
 		})
 	})
 
 	describe("unpausePartyAActions", () => {
 		it("Should unpausePartyAActions successfully", async function () {
-			await expect(context.controlFacet.connect(owner).unpausePartyAActions()).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).unpausePartyAActions()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).partyAActionsPaused).to.be.equal(false)
 		})
 	})
 
 	describe("unpausePartyBActions", () => {
 		it("Should unpausePartyBActions successfully", async function () {
-			await expect(context.controlFacet.connect(owner).unpausePartyBActions()).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).unpausePartyBActions()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).partyBActionsPaused).to.be.equal(false)
 		})
 	})
 
 	describe("suspendedAddress", () => {
 		it("Should suspendedAddress successfully", async function () {
-			await expect(context.controlFacet.connect(owner).suspendedAddress(user2.address)).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).suspendedAddress(user2.address)).to.not.reverted
 			expect(await context.viewFacet.isSuspended(user2.address)).to.be.equal(true)
 		})
 	})
 
 	describe("unsuspendedAddress", () => {
 		it("Should unsuspendedAddress successfully", async function () {
-			await expect(context.controlFacet.connect(owner).suspendedAddress(user2.address)).to.not.reverted
-			await expect(context.controlFacet.connect(owner).unsuspendedAddress(user2.address)).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).suspendedAddress(user2.address)).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).unsuspendedAddress(user2.address)).to.not.reverted
 			expect(await context.viewFacet.isSuspended(user2.address)).to.be.equal(false)
 		})
 	})
 
 	describe("deactiveEmergencyMode", () => {
 		it("Should deactiveEmergencyMode successfully", async function () {
-			await expect(context.controlFacet.connect(owner).deactiveEmergencyMode()).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).deactiveEmergencyMode()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).emergencyMode).to.be.equal(false)
 		})
 	})
@@ -485,13 +485,13 @@ export function shouldBehaveLikeControlFacet(): void {
 
 	describe("setSymbolTypes", () => {
 		it("Should setSymbolTypes successfully", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolTypes([1], [2])).to.not.be.reverted
-			expect((await context.viewFacet.getSymbolWithType(1)).symbolType).to.be.equal(2)
+			await expect(context.symbolControlFacet.connect(owner).setSymbolTypes([1], [2])).to.not.be.reverted
+			expect((await context.viewFacetSymbol.getSymbolWithType(1)).symbolType).to.be.equal(2)
 		})
 
 		it("Should not setSymbolTypes if invalid symbol id", async function () {
-			await expect(context.controlFacet.connect(owner).setSymbolTypes([0], [1])).to.be.revertedWith("ControlFacet: Invalid id")
-			await expect(context.controlFacet.connect(owner).setSymbolTypes([3], [1])).to.be.revertedWith("ControlFacet: Invalid id")
+			await expect(context.symbolControlFacet.connect(owner).setSymbolTypes([0], [1])).to.be.revertedWith("SymbolControlFacet: Invalid id")
+			await expect(context.symbolControlFacet.connect(owner).setSymbolTypes([3], [1])).to.be.revertedWith("SymbolControlFacet: Invalid id")
 		})
 	})
 
@@ -506,10 +506,10 @@ export function shouldBehaveLikeControlFacet(): void {
 			const symbolType = 2
 
 			await expect(
-				context.controlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
+				context.symbolControlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
 			).to.not.be.reverted
-			expect((await context.viewFacet.getSymbol(2)).name).to.be.equal("ETHUSDT")
-			expect((await context.viewFacet.getSymbolWithType(2)).symbolType).to.be.equal(symbolType)
+			expect((await context.viewFacetSymbol.getSymbol(2)).name).to.be.equal("ETHUSDT")
+			expect((await context.viewFacetSymbol.getSymbolWithType(2)).symbolType).to.be.equal(symbolType)
 		})
 
 		it("Should not addSymbolWithType if windowTime be high", async function () {
@@ -522,8 +522,8 @@ export function shouldBehaveLikeControlFacet(): void {
 			const symbolType = 1
 
 			await expect(
-				context.controlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.be.revertedWith("ControlFacet: High window time")
+				context.symbolControlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
+			).to.be.revertedWith("SymbolControlFacet: High window time")
 		})
 
 		it("Should not addSymbolWithType if tradingFee be high", async function () {
@@ -536,8 +536,8 @@ export function shouldBehaveLikeControlFacet(): void {
 			const symbolType = 1
 
 			await expect(
-				context.controlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.be.revertedWith("ControlFacet: High default fee")
+				context.symbolControlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
+			).to.be.revertedWith("SymbolControlFacet: High default fee")
 		})
 	})
 
@@ -572,11 +572,11 @@ export function shouldBehaveLikeControlFacet(): void {
 				},
 			]
 
-			await expect(context.controlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.not.be.reverted
-			expect((await context.viewFacet.getSymbol(2)).name).to.be.equal("ETHUSDT")
-			expect((await context.viewFacet.getSymbolWithType(2)).symbolType).to.be.equal(2)
-			expect((await context.viewFacet.getSymbol(3)).name).to.be.equal("ADAUSDT")
-			expect((await context.viewFacet.getSymbolWithType(3)).symbolType).to.be.equal(3)
+			await expect(context.symbolControlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.not.be.reverted
+			expect((await context.viewFacetSymbol.getSymbol(2)).name).to.be.equal("ETHUSDT")
+			expect((await context.viewFacetSymbol.getSymbolWithType(2)).symbolType).to.be.equal(2)
+			expect((await context.viewFacetSymbol.getSymbol(3)).name).to.be.equal("ADAUSDT")
+			expect((await context.viewFacetSymbol.getSymbolWithType(3)).symbolType).to.be.equal(3)
 		})
 
 		it("Should not addSymbolsWithType if windowTime be high", async function () {
@@ -596,7 +596,7 @@ export function shouldBehaveLikeControlFacet(): void {
 				},
 			]
 
-			await expect(context.controlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("ControlFacet: High window time")
+			await expect(context.symbolControlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("SymbolControlFacet: High window time")
 		})
 
 		it("Should not addSymbolsWithType if tradingFee be high", async function () {
@@ -615,7 +615,7 @@ export function shouldBehaveLikeControlFacet(): void {
 				},
 			]
 
-			await expect(context.controlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("ControlFacet: High default fee")
+			await expect(context.symbolControlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("SymbolControlFacet: High default fee")
 		})
 	})
 

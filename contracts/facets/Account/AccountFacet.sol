@@ -277,6 +277,45 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit ExternalTransfer(LibSigner.getSigner(), receiver, amount, target);
 	}
 
+	/**
+     * @notice Transfers virtual collateral fund from sender's available balance in this Symmio Diamond to another Symmio Diamond
+	 * @dev sender must not be suspended/liquidated for the operation to succeed
+	 * @param receiver The address of the recipient user in the target contract
+	 * @param amount The amount to transfer, specified in collateral decimals
+	 * @param target The target Symmio contract
+	 * @param virtualProvider The provider who can virtualDeposit fund to target Symmio contract
+	 */
+	function virtualExternalTransfer(
+		address receiver,
+		uint256 amount,
+		address target,
+		address virtualProvider
+	) external whenNotExternalTransferPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {
+		uint256 id = AccountFacetImpl.virtualExternalTransfer(msg.sender, receiver, amount, target,virtualProvider);
+		emit InitiateVirtualExternalTransfer(id,msg.sender, receiver, amount,target,virtualProvider);
+	}
+
+	/**
+	* @notice Accepts a virtual external transfer that was previously initiated
+	* @dev Can be called by the receiver of the virtual external transfer when not paused
+	* @param id The ID of the virtual external transfer to accept
+	*/
+	function acceptVirtualExternalTransfer(uint256 id) external whenNotExternalTransferPaused {
+		AccountFacetImpl.acceptVirtualExternalTransfer(id);
+		emit AcceptVirtualExternalTransfer(id);
+	}
+	/**
+	* @notice Cancels a previously initiated virtual external transfer.
+	* @dev Delegates cancellation logic to AccountFacetImpl.cancelVirtualExternalTransfer(id).
+	*      Emits {CancelVirtualExternalTransfer}. Callable only when external transfers are not paused;
+	*      reverts if the transfer does not exist or the caller is not authorized per implementation rules.
+	* @param id The identifier of the virtual external transfer to cancel.
+	*/
+	function cancelVirtualExternalTransfer(uint256 id) external whenNotExternalTransferPaused {
+		AccountFacetImpl.cancelVirtualExternalTransfer(id);
+		emit CancelVirtualExternalTransfer(id);
+	}
+
 	/// @notice Allows Party A to bind to Party B
 	/// @dev Can only be called by Party A when not suspended
 	/// @param partyB The address of Party B

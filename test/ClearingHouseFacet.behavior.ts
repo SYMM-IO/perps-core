@@ -92,7 +92,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 		})
 
 		it("Should fail when liquidation is paused", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseLiquidation()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseLiquidation()
 
 			await expect(
 				context.clearingHouseFacet
@@ -102,7 +102,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 		})
 
 		it("Should fail when globally paused", async function () {
-			await context.controlFacet.connect(context.signers.admin).pauseGlobal()
+			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
 			await expect(
 				context.clearingHouseFacet
@@ -311,11 +311,11 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should liquidate pending quotes successfully", async () => {
-				const oldUserPendingQuotes = await context.viewFacet.getPartyAPendingQuotes(context.signers.user)
+				const oldUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
 				const targetedQuotes: QuoteStructOutput[] = []
 
 				for await (const qId of oldUserPendingQuotes) {
-					const q = await context.viewFacet.getQuote(qId)
+					const q = await context.viewFacetQuote.getQuote(qId)
 					if (
 						q.partyB == context.signers.hedger.address &&
 						(q.quoteStatus == BigInt(QuoteStatus.LOCKED) || q.quoteStatus == BigInt(QuoteStatus.CANCEL_PENDING))
@@ -328,25 +328,25 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user]),
 				).to.not.reverted
 
-				const newUserPendingQuotes = await context.viewFacet.getPartyAPendingQuotes(context.signers.user)
+				const newUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
 
 				for await (const q of targetedQuotes) {
-					const qq = await context.viewFacet.getQuote(q.id)
+					const qq = await context.viewFacetQuote.getQuote(q.id)
 					expect(qq.quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
 					expect(newUserPendingQuotes.indexOf(qq.id)).to.equal(-1)
 				}
 			})
 
 			it("should liquidate pending quotes for multiple partyAs in batch", async () => {
-				const oldUserPendingQuotes = await context.viewFacet.getPartyAPendingQuotes(context.signers.user)
-				const oldUser2PendingQuotes = await context.viewFacet.getPartyAPendingQuotes(context.signers.user2)
+				const oldUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
+				const oldUser2PendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user2)
 
 				await expect(
 					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user, context.signers.user2]),
 				).to.not.reverted
 
-				const newUserPendingQuotes = await context.viewFacet.getPartyAPendingQuotes(context.signers.user)
-				const newUser2PendingQuotes = await context.viewFacet.getPartyAPendingQuotes(context.signers.user2)
+				const newUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
+				const newUser2PendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user2)
 
 				expect(newUserPendingQuotes.length).to.be.lessThanOrEqual(oldUserPendingQuotes.length)
 				expect(newUser2PendingQuotes.length).to.be.lessThanOrEqual(oldUser2PendingQuotes.length)
@@ -378,7 +378,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						.liquidatePositionsForCrossLiquidation(context.signers.hedger, context.signers.user, priceSig),
 				).to.not.reverted
 
-				const quote1: QuoteStructOutput = await context.viewFacet.getQuote(1)
+				const quote1: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
 
 				expect(quote1.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
 			})
@@ -396,8 +396,8 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			it("should update position statuses correctly", async () => {
 				const priceSig = await getDummyPriceSig([1n, 4n], [decimal(1n), decimal(1n)])
 
-				const quote1Before: QuoteStructOutput = await context.viewFacet.getQuote(1)
-				const quote4Before: QuoteStructOutput = await context.viewFacet.getQuote(4)
+				const quote1Before: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
+				const quote4Before: QuoteStructOutput = await context.viewFacetQuote.getQuote(4)
 
 				expect(quote1Before.quoteStatus).to.equal(QuoteStatus.OPENED)
 				expect(quote4Before.quoteStatus).to.equal(QuoteStatus.OPENED)
@@ -406,8 +406,8 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidatePositionsForCrossLiquidation(context.signers.hedger, context.signers.user, priceSig)
 
-				const quote1After: QuoteStructOutput = await context.viewFacet.getQuote(1)
-				const quote4After: QuoteStructOutput = await context.viewFacet.getQuote(4)
+				const quote1After: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
+				const quote4After: QuoteStructOutput = await context.viewFacetQuote.getQuote(4)
 
 				expect(quote1After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
 				expect(quote4After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)

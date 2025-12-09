@@ -9,6 +9,7 @@ import "../../utils/Accessibility.sol";
 import "../../utils/Pausable.sol";
 import "./IPartyAFacet.sol";
 import "../../libraries/LibSigner.sol";
+import "../../libraries/LibQuoteClose.sol";
 
 contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	/**
@@ -265,7 +266,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	function expireQuote(uint256[] memory expiredQuoteIds) external whenNotPartyAActionsPaused {
 		QuoteStatus result;
 		for (uint256 i; i < expiredQuoteIds.length; i++) {
-			result = LibQuote.expireQuote(expiredQuoteIds[i]);
+			result = LibQuoteClose.expireQuote(expiredQuoteIds[i]);
 			if (result == QuoteStatus.OPENED) {
 				emit ExpireQuoteClose(result, expiredQuoteIds[i], QuoteStorage.layout().closeIds[expiredQuoteIds[i]]);
 			} else {
