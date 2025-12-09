@@ -73,6 +73,28 @@ interface IAccountHub {
 		address affiliate;
 	}
 
+	struct SubAccountDetail {
+		address accountAddress;
+		address owner;
+		string name;
+		bool isExists;
+		address affiliate;
+		address symmioCore;
+		bytes metadata;
+		SubAccountIsolationType isolationType;
+		uint256[] quoteIds;
+	}
+
+	struct VirtualAccountDetail {
+		address accountAddress;
+		address parentAccount;
+		uint256 symbolId;
+		bool isExists;
+		bytes metadata;
+		VirtualAccountIsolationType isolationType;
+		uint256[] quoteIds;
+	}
+
 	// Account events
 	event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
 	event VirtualAccountCreated(address indexed account, address indexed parent);
@@ -99,21 +121,6 @@ interface IAccountHub {
 	function getRelatedCore(address account) external view returns (address);
 	function getSubAccounts(address owner) external view returns (address[] memory);
 	function getVirtualAccounts(address subAccount) external view returns (address[] memory);
-	function getSubAccountData(
-		address account
-	)
-		external
-		view
-		returns (
-			address owner,
-			bool isExists,
-			string memory name,
-			address affiliate,
-			address symmioCore,
-			bytes memory metadata,
-			SubAccountIsolationType isolationType
-		);
-
 	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory);
 	// Admin functions
 	function setSigner(address _signer) external;

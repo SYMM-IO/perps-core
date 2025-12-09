@@ -125,7 +125,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeWithdrawFacet()
 		})
 
-		describe("AccountHub", async function () {
+		describe.only("AccountHub", async function () {
 			shouldBehaveLikeAccountHub()
 		})
 

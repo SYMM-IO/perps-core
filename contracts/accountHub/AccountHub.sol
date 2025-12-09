@@ -16,6 +16,7 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
+import "hardhat/console.sol";
 
 /**
  * @title AccountHub
@@ -294,51 +295,153 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @notice Gets all sub-accounts for an owner
+	 * @notice Gets all sub-account addresses for an owner
 	 * @param owner The owner address
 	 * @return Array of sub-account addresses
 	 */
-	function getSubAccounts(address owner) external view returns (address[] memory) {
+	function getSubAccountAddresses(address owner) external view returns (address[] memory) {
 		return userToSubAccounts[owner].values();
 	}
 
 	/**
-	 * @notice Gets all virtual accounts for a sub-account
+	 * @notice Gets detailed information for a single sub-account
+	 * @param account The sub-account address
+	 * @return SubAccountDetail struct with account information
+	 */
+	function getSubAccountDetail(address account) external view returns (SubAccountDetail memory) {
+		SubAccountData storage s = subAccounts[account];
+
+		return
+			SubAccountDetail({
+				accountAddress: account,
+				owner: s.owner,
+				name: s.name,
+				isExists: s.isExists,
+				affiliate: s.affiliate,
+				symmioCore: s.symmioCore,
+				metadata: s.metadata,
+				isolationType: s.isolationType,
+				quoteIds: s.quoteIds.values()
+			});
+	}
+
+	/**
+	 * @notice Gets paginated detailed information for sub-accounts of an owner
+	 * @param owner The owner address
+	 * @param offset The starting index
+	 * @param limit The maximum number of accounts to return
+	 * @return details Array of SubAccountDetail structs
+	 * @return total Total number of sub-accounts for this owner
+	 */
+	function getSubAccountsDetailBatch(
+		address owner,
+		uint256 offset,
+		uint256 limit
+	) external view returns (SubAccountDetail[] memory details, uint256 total) {
+		address[] memory allAccounts = userToSubAccounts[owner].values();
+		total = allAccounts.length;
+
+		if (offset >= total) {
+			return (new SubAccountDetail[](0), total);
+		}
+
+		uint256 end = offset + limit;
+		if (end > total) {
+			end = total;
+		}
+
+		uint256 resultSize = end - offset;
+		details = new SubAccountDetail[](resultSize);
+
+		for (uint256 i = 0; i < resultSize; i++) {
+			address accountAddr = allAccounts[offset + i];
+			SubAccountData storage s = subAccounts[accountAddr];
+
+			details[i] = SubAccountDetail({
+				accountAddress: accountAddr,
+				owner: s.owner,
+				name: s.name,
+				isExists: s.isExists,
+				affiliate: s.affiliate,
+				symmioCore: s.symmioCore,
+				metadata: s.metadata,
+				isolationType: s.isolationType,
+				quoteIds: s.quoteIds.values()
+			});
+		}
+	}
+
+	/**
+	 * @notice Gets all virtual account addresses for a sub-account
 	 * @param subAccount The sub-account address
 	 * @return Array of virtual account addresses
 	 */
-	function getVirtualAccounts(address subAccount) external view returns (address[] memory) {
+	function getVirtualAccountAddresses(address subAccount) external view returns (address[] memory) {
 		return subAccountToVirtualAccounts[subAccount].values();
 	}
 
 	/**
-	 * @notice Gets sub-account data
-	 * @param account The account address
-	 * @return owner The owner address
-	 * @return isExists Whether the account exists
-	 * @return name The account name
-	 * @return affiliate The affiliate address
-	 * @return symmioCore The symmioCore address
-	 * @return metadata The metadata
-	 * @return isolationType The isolation type
+	 * @notice Gets detailed information for a single virtual account
+	 * @param account The virtual account address
+	 * @return VirtualAccountDetail struct with account information
 	 */
-	function getSubAccountData(
-		address account
-	)
-		external
-		view
-		returns (
-			address owner,
-			bool isExists,
-			string memory name,
-			address affiliate,
-			address symmioCore,
-			bytes memory metadata,
-			SubAccountIsolationType isolationType
-		)
-	{
-		SubAccountData storage s = subAccounts[account];
-		return (s.owner, s.isExists, s.name, s.affiliate, s.symmioCore, s.metadata, s.isolationType);
+	function getVirtualAccountDetail(address account) external view returns (VirtualAccountDetail memory) {
+		VirtualAccountData storage v = virtualAccounts[account];
+
+		return
+			VirtualAccountDetail({
+				accountAddress: account,
+				parentAccount: v.parentAccount,
+				symbolId: v.symbolId,
+				metadata: v.metadata,
+				isExists: v.isExists,
+				isolationType: v.isolationType,
+				quoteIds: v.quoteIds.values()
+			});
+	}
+
+	/**
+	 * @notice Gets paginated detailed information for virtual accounts of a sub-account
+	 * @param subAccount The sub-account address
+	 * @param offset The starting index
+	 * @param limit The maximum number of accounts to return
+	 * @return details Array of VirtualAccountDetail structs
+	 * @return total Total number of virtual accounts for this sub-account
+	 */
+	function getVirtualAccountsDetailBatch(
+		address subAccount,
+		uint256 offset,
+		uint256 limit
+	) external view returns (VirtualAccountDetail[] memory details, uint256 total) {
+		address[] memory allAccounts = subAccountToVirtualAccounts[subAccount].values();
+		total = allAccounts.length;
+
+		if (offset >= total) {
+			return (new VirtualAccountDetail[](0), total);
+		}
+
+		uint256 end = offset + limit;
+		if (end > total) {
+			end = total;
+		}
+
+		uint256 resultSize = end - offset;
+		details = new VirtualAccountDetail[](resultSize);
+
+		for (uint256 i = 0; i < resultSize; i++) {
+			address accountAddr = allAccounts[offset + i];
+			VirtualAccountData storage v = virtualAccounts[accountAddr];
+
+			details[i] = VirtualAccountDetail({
+				accountAddress: accountAddr,
+				parentAccount: v.parentAccount,
+				symbolId: v.symbolId,
+				metadata: v.metadata,
+				isExists: v.isExists,
+				isolationType: v.isolationType,
+				quoteIds: v.quoteIds.values()
+			});
+		}
 	}
 
 	/**
@@ -350,24 +453,93 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		return subAccounts[account].quoteIds.values();
 	}
 
-	function getVirtualAccountData(
-		address account
-	)
-		external
-		view
-		returns (address parentAccount, bool isExists, uint256 symbolId, bytes memory metadata, VirtualAccountIsolationType isolationType)
-	{
-		VirtualAccountData storage s = virtualAccounts[account];
-		return (s.parentAccount, s.isExists, s.symbolId, s.metadata, s.isolationType);
-	}
-
 	/**
-	 * @notice Gets quote IDs for a sub-account
+	 * @notice Gets quote IDs for a virtual account
 	 * @param account The account address
 	 * @return Array of quote IDs
 	 */
 	function getVirtualAccountQuoteIds(address account) external view returns (uint256[] memory) {
 		return virtualAccounts[account].quoteIds.values();
+	}
+
+	/**
+	 * @notice Gets the total count of sub-accounts for an owner
+	 * @param owner The owner address
+	 * @return The total number of sub-accounts
+	 */
+	function getSubAccountCount(address owner) external view returns (uint256) {
+		return userToSubAccounts[owner].length();
+	}
+
+	/**
+	 * @notice Gets the total count of virtual accounts for a sub-account
+	 * @param subAccount The sub-account address
+	 * @return The total number of virtual accounts
+	 */
+	function getVirtualAccountCount(address subAccount) external view returns (uint256) {
+		return subAccountToVirtualAccounts[subAccount].length();
+	}
+
+	/**
+	 * @notice Gets deleted virtual account addresses for a specific isolation type and symbol
+	 * @param subAccount The sub-account address
+	 * @param isolationType The virtual account isolation type
+	 * @param symbolId The symbol ID (0 for position isolation)
+	 * @return Array of deleted virtual account addresses
+	 */
+	function getDeletedVirtualAccountAddresses(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) external view returns (address[] memory) {
+		return deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
+	}
+
+	/**
+	 * @notice Gets detailed information for deleted virtual accounts of a specific type
+	 * @param subAccount The sub-account address
+	 * @param isolationType The virtual account isolation type
+	 * @param symbolId The symbol ID (0 for position isolation)
+	 * @return Array of VirtualAccountDetail structs for deleted accounts
+	 */
+	function getDeletedVirtualAccountsDetail(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) external view returns (VirtualAccountDetail[] memory) {
+		address[] memory deletedAccounts = deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
+		VirtualAccountDetail[] memory details = new VirtualAccountDetail[](deletedAccounts.length);
+
+		for (uint256 i = 0; i < deletedAccounts.length; i++) {
+			VirtualAccountData storage v = virtualAccounts[deletedAccounts[i]];
+
+			details[i] = VirtualAccountDetail({
+				accountAddress: deletedAccounts[i],
+				parentAccount: v.parentAccount,
+				symbolId: v.symbolId,
+				metadata: v.metadata,
+				isExists: v.isExists,
+				isolationType: v.isolationType,
+				quoteIds: v.quoteIds.values()
+			});
+		}
+
+		return details;
+	}
+
+	/**
+	 * @notice Gets the count of deleted virtual accounts for a specific type
+	 * @param subAccount The sub-account address
+	 * @param isolationType The virtual account isolation type
+	 * @param symbolId The symbol ID (0 for position isolation)
+	 * @return The total number of deleted virtual accounts
+	 */
+	function getDeletedVirtualAccountCount(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) external view returns (uint256) {
+		return deletedVirtualAccountsPool[subAccount][isolationType][symbolId].length;
 	}
 
 	// ==================== Internal Functions ====================
