@@ -8,6 +8,7 @@ import "../../storages/AccountStorage.sol";
 import "../../storages/BridgeStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/WithdrawStorage.sol";
+import "../../storages/MAStorage.sol";
 
 interface IViewFacet {
 	function pendingOwner() external view returns (address);
@@ -184,4 +185,6 @@ interface IViewFacet {
 	function getMinAffiliateFee() external view returns (uint256);
 
 	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory);
+
+	function getEntityMetadata(address entity) external view returns (EntityMetadata memory);
 }

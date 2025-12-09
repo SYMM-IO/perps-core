@@ -805,4 +805,13 @@ contract ViewFacet is IViewFacet {
 	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory) {
 		return AccountStorage.layout().externalTransfers[id];
 	}
+
+	/**
+	 * @notice Retrieves the metadata of an entity (affiliate or partyB).
+	 * @param entity The address of the entity.
+	 * @return The metadata of the entity.
+	 */
+	function getEntityMetadata(address entity) external view returns (EntityMetadata memory) {
+		return MAStorage.layout().entitiesMetadata[entity];
+	}
 }
