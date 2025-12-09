@@ -78,3 +78,9 @@ export enum WithdrawStatus {
 	CANCELLED,
 	SUSPENDED
 }
+
+export enum ExternalTransferStatus {
+	PENDING,
+	COMPLETED,
+	CANCELED
+}

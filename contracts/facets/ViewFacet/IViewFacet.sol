@@ -8,6 +8,7 @@ import "../../storages/AccountStorage.sol";
 import "../../storages/BridgeStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/WithdrawStorage.sol";
+import "../../storages/MAStorage.sol";
 
 interface IViewFacet {
 	function pendingOwner() external view returns (address);
@@ -61,6 +62,8 @@ interface IViewFacet {
 
 	// Role
 	function hasRole(address user, bytes32 role) external view returns (bool);
+
+	function isRoleAdmin(address account, bytes32 role) external view returns (bool);
 
 	function getRoleHash(string memory str) external pure returns (bytes32);
 
@@ -176,4 +179,8 @@ interface IViewFacet {
 	function getCustomAffiliateFee(address affiliate, address user, uint256 symbolId) external view returns (Fee memory);
 
 	function getMinAffiliateFee() external view returns (uint256);
+
+	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory);
+
+	function getEntityMetadata(address entity) external view returns (EntityMetadata memory);
 }

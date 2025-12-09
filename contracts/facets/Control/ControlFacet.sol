@@ -41,7 +41,9 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Grants a specified role to a user.
-	function grantRole(address user, bytes32 role) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	/// @param user The address of the user to whom the role will be granted.
+	/// @param role The role to be granted
+	function grantRole(address user, bytes32 role) external onlyRoleAdmin(role) {
 		checkZeroAddress(user);
 		if (role == LibAccessibility.LIQUIDATOR_ROLE) {
 			require(
@@ -54,9 +56,29 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Revokes a specified role from a user.
-	function revokeRole(address user, bytes32 role) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	/// @param user The address of the user from whom the role will be revoked.
+	/// @param role The role to be revoked
+	function revokeRole(address user, bytes32 role) external onlyRoleAdmin(role) {
 		GlobalAppStorage.layout().hasRole[user][role] = false;
 		emit RoleRevoked(role, user);
+	}
+
+	/// @notice Adds an account as admin for a specific role.
+	/// @param role The role whose admin is being updated.
+	/// @param admin The account to add as admin.
+	function addRoleAdmin(bytes32 role, address admin) external onlyRoleAdmin(role) {
+		checkZeroAddress(admin);
+		GlobalAppStorage.layout().roleAdmins[role][admin] = true;
+		emit RoleAdminAdded(role, admin);
+	}
+
+	/// @notice Removes an account from the admins for a specific role.
+	/// @param role The role whose admin is being updated.
+	/// @param admin The account to remove as admin.
+	function removeRoleAdmin(bytes32 role, address admin) external onlyRoleAdmin(role) {
+		checkZeroAddress(admin);
+		GlobalAppStorage.layout().roleAdmins[role][admin] = false;
+		emit RoleAdminRemoved(role, admin);
 	}
 
 	/// @notice Registers a Party B into the system.

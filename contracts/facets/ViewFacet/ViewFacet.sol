@@ -15,6 +15,7 @@ import "../../storages/QuoteStorage.sol";
 import "../../storages/SymbolStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/BridgeStorage.sol";
+import "../../libraries/LibAccessibility.sol";
 import "./IViewFacet.sol";
 
 contract ViewFacet is IViewFacet {
@@ -291,6 +292,16 @@ contract ViewFacet is IViewFacet {
 	 */
 	function hasRole(address user, bytes32 role) external view returns (bool) {
 		return GlobalAppStorage.layout().hasRole[user][role];
+	}
+
+	/**
+	 * @notice Checks if a user is admin for a role.
+	 * @param user The address of the user.
+	 * @param role The role to check.
+	 * @return True if the user is an admin for the role, false otherwise.
+	 */
+	function isRoleAdmin(address user, bytes32 role) external view returns (bool) {
+		return LibAccessibility.isRoleAdmin(user, role);
 	}
 
 	/**
@@ -771,7 +782,29 @@ contract ViewFacet is IViewFacet {
 		return request.cooldownEndTime;
 	}
 
+	/**
+	 * @notice Retrieves the total locked balance for withdrawals.
+	 * @return The total locked balance for withdrawals.
+	 */
 	function getWithdrawLockedBalance() external view returns (uint256) {
 		return WithdrawStorage.layout().withdrawLockedBalance;
+	}
+
+	/**
+	 * @notice Retrieves the virtual external transfer status for a given ID.
+	 * @param id The ID of the virtual external transfer.
+	 * @return The virtual external transfer status.
+	 */
+	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory) {
+		return AccountStorage.layout().externalTransfers[id];
+	}
+
+	/**
+	 * @notice Retrieves the metadata of an entity (affiliate or partyB).
+	 * @param entity The address of the entity.
+	 * @return The metadata of the entity.
+	 */
+	function getEntityMetadata(address entity) external view returns (EntityMetadata memory) {
+		return MAStorage.layout().entitiesMetadata[entity];
 	}
 }

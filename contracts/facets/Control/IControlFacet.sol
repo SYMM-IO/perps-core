@@ -19,6 +19,10 @@ interface IControlFacet is IControlEvents {
 
 	function revokeRole(address user, bytes32 role) external;
 
+	function addRoleAdmin(bytes32 role, address admin) external;
+
+	function removeRoleAdmin(bytes32 role, address admin) external;
+
 	function registerPartyB(address partyB) external;
 
 	function deregisterPartyB(address partyB, uint256 index) external;
