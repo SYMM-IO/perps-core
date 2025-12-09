@@ -809,9 +809,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	function _callHook(address affiliate, bytes4 selector, bytes memory data) private {
 		address hook = IAffiliateHub(affiliateHub).getHook(affiliate, selector);
 		if (hook == address(0)) return;
-		(bool success, ) = hook.call(data);
+		(bool success, bytes memory result) = hook.call(data);
 		if (!success) {
-			revert HookFailed();
+			revert HookFailed(result);
 		}
 	}
 

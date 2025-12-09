@@ -986,6 +986,24 @@ export function shouldBehaveLikeAccountHub(): void {
 					).to.be.revertedWithCustomError(context.accountHub, "HookFailed")
 				})
 
+				it("should return the hook failure reason in HookFailed error", async () => {
+					const revertMessage = "Custom rejection reason from hook"
+					await hookContract.setRevertForSelector(HOOK_SELECTORS.onAccountCreation, true, revertMessage)
+
+					const subAccountData = [createSubAccountData("WILL_FAIL", 0)]
+
+					// The revert reason includes the Error(string) selector (0x08c379a0) followed by the ABI-encoded string
+					const errorSelector = "0x08c379a0"
+					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
+					const encodedReason = errorSelector + encodedString.slice(2)
+
+					await expect(
+						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData),
+					)
+						.to.be.revertedWithCustomError(context.accountHub, "HookFailed")
+						.withArgs(encodedReason)
+				})
+
 				it("should continue if no hook is registered", async () => {
 					const affData = {
 						name: "test affiliate 1",
@@ -1017,7 +1035,7 @@ export function shouldBehaveLikeAccountHub(): void {
 			describe("onVirtualAccountCreation hook", async () => {
 				const subAccountData = [createSubAccountData("CUSTOM_ACCOUNT", 3)]
 
-				it.only("should call onVirtualAccountCreation when virtual account is auto-created", async () => {
+				it("should call onVirtualAccountCreation when virtual account is auto-created", async () => {
 					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountCreation)
 
 					await sendQuoteAndGetVirtualAccount(subAccountAddress)
@@ -1074,8 +1092,23 @@ export function shouldBehaveLikeAccountHub(): void {
 					const sendQuoteCallData = await createSendQuoteCallData()
 					await expect(context.accountHub.connect(context.signers.user)._call(subAccountAddress, [sendQuoteCallData])).to.be.revertedWithCustomError(
 						context.accountHub,
-						"hookFailed",
+						"HookFailed",
 					)
+				})
+
+				it("should return the hook failure reason for virtual account creation", async () => {
+					const revertMessage = "Virtual account creation blocked by policy"
+					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountCreation, true, revertMessage)
+
+					const sendQuoteCallData = await createSendQuoteCallData()
+					// The revert reason includes the Error(string) selector (0x08c379a0) followed by the ABI-encoded string
+					const errorSelector = "0x08c379a0"
+					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
+					const encodedReason = errorSelector + encodedString.slice(2)
+
+					await expect(context.accountHub.connect(context.signers.user)._call(subAccountAddress, [sendQuoteCallData]))
+						.to.be.revertedWithCustomError(context.accountHub, "HookFailed")
+						.withArgs(encodedReason)
 				})
 			})
 
@@ -1148,6 +1181,9 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(virtualAccountData.isExists).to.be.true
 				})
 
+				// Note: These tests are skipped because the beforeEach in this describe block
+				// fails with "Transaction reverted without a reason string" when trying to
+				// create a virtual account via sendQuote. This is a pre-existing issue.
 				it.skip("should handle hook revert gracefully during deletion", async () => {
 					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountDeletion, true, "Hook rejected deletion")
 
@@ -1159,7 +1195,27 @@ export function shouldBehaveLikeAccountHub(): void {
 					// Should revert because hook rejects
 					await expect(
 						context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]),
-					).to.be.revertedWithCustomError(context.accountHub, "hookFailed")
+					).to.be.revertedWithCustomError(context.accountHub, "HookFailed")
+				})
+
+				it.skip("should return the hook failure reason for virtual account deletion", async () => {
+					const revertMessage = "Deletion blocked: account has pending rewards"
+
+					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					const quoteId = quotes[0]
+
+					// Configure hook to revert AFTER virtual account is created
+					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountDeletion, true, revertMessage)
+
+					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
+					// The revert reason includes the Error(string) selector (0x08c379a0) followed by the ABI-encoded string
+					const errorSelector = "0x08c379a0"
+					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
+					const encodedReason = errorSelector + encodedString.slice(2)
+
+					await expect(context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]))
+						.to.be.revertedWithCustomError(context.accountHub, "HookFailed")
+						.withArgs(encodedReason)
 				})
 			})
 		})
