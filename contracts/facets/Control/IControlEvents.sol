@@ -120,4 +120,6 @@ interface IControlEvents {
 	event DeprecateOldWithdrawalPaused();
 	event SignerSet(address signer);
 	event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);
+	event SetPartyBBindable(address partyB);
+	event UnsetPartyBBindable(address partyB);
 }

@@ -200,23 +200,14 @@ library AccountFacetImpl {
 	}
 
 	function bindToPartyB(address partyB) internal {
-		// FIXME: check to have no open or locked position with other partyB
-		// FIXME: enable party BINDING
 		// FIXME: Check if bind no muon verify
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		require(quoteLayout.partyAOpenPositions[msg.sender].length == quoteLayout.partyBOpenPositions[partyB][msg.sender].length,"AccountFacet : Have Open Positions with Other Party B");
-		uint256 partyALockedQuotesCount;
-		for(uint256 i; i < quoteLayout.partyAPendingQuotes[msg.sender].length;i++){
-			uint256 quoteId = quoteLayout.partyAPendingQuotes[msg.sender][i];
-			if(quoteLayout.quotes[quoteId].quoteStatus == QuoteStatus.LOCKED)
-				partyALockedQuotesCount++;
-		}
-		require(partyALockedQuotesCount == quoteLayout.partyBPendingQuotes[partyB][msg.sender].length,"AccountFacet : Have Locked Quotes with Other Party B");
 
 		require(partyB != address(0), "AccountFacet: Zero address");
-
+		require(quoteLayout.partyAOpenPositions[msg.sender].length == quoteLayout.partyBOpenPositions[partyB][msg.sender].length,"AccountFacet : Have Open Positions with Other Party B");
+		require(quoteLayout.partyALockQuotesCount[msg.sender] == quoteLayout.partyBPendingQuotes[partyB][msg.sender].length,"AccountFacet : Have Locked Quotes with Other Party B");
+		require(accountLayout.isPartyBBindable[partyB], "AccountFacet: Not Bindable");
 		BindState storage bindState = accountLayout.bindState[LibSigner.getSigner()];
 		require(bindState.status == BindStatus.NOT_BOUND, "AccountFacet: Invalid state");
 

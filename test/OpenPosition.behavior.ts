@@ -14,6 +14,7 @@ import { last } from "rxjs"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest"
 import { PairUpnlAndPriceSigStruct } from "../src/types/contracts/interfaces/ISymmio"
 import { FillCloseRequest, limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
+import { ethers, toUtf8Bytes } from "ethers";
 
 export function shouldBehaveLikeOpenPosition(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -263,7 +264,11 @@ export function shouldBehaveLikeOpenPosition(): void {
 		).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
 	})
 
-	it.skip("Should skip check sig when bind", async function () {
+	it("Should skip check sig when bind", async function () {
+		await user.requestToCancelQuote(2)
+		await hedger2.acceptCancelRequest(2)
+		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
 		await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 		await expect(
 			hedger.openPosition(

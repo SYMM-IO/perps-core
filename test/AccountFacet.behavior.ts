@@ -11,12 +11,13 @@ import { Hedger } from "./models/Hedger"
 import { getDummySingleUpnlSig } from "./utils/SignatureUtils"
 import { decimal, getBlockTimestamp } from "./utils/Common"
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer } from "../src/types"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest";
+import { PositionType } from "./models/Enums";
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"));
 
 export function shouldBehaveLikeAccountFacet(): void {
-	let context: RunContext, user: User, user2: User, hedger: Hedger
+	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
 	let mockTarget: any, mockTarget2: any
 	let targetAddress: string, targetAddress2: string
 
@@ -819,8 +820,26 @@ export function shouldBehaveLikeAccountFacet(): void {
 	describe("bindToPartyB", () => {
 		beforeEach(async function () {
 			context = await loadFixture(initializeFixture)
+			this.user_allocated = decimal(500n)
+			this.hedger_allocated = decimal(4000n)
+
 			user = new User(context, context.signers.user)
 			await user.setup()
+			await user.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(this.hedger_allocated, this.hedger_allocated)
+
+			hedger2 = new Hedger(context, context.signers.hedger2)
+			await hedger2.setup()
+			await hedger2.setBalances(this.hedger_allocated, this.hedger_allocated)
+
+			await user.sendQuote()
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(hedger.address)
 		})
 
 		it("Should fail when user suspended", async () => {
@@ -845,6 +864,29 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await expect(
 				context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			).to.be.revertedWith("AccountFacet: Invalid state")
+		})
+
+		it("Should fail to bind to hedger when have locked quote with another hedger", async function () {
+			await hedger.lockQuote(1)
+			await hedger2.lockQuote(2)
+			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address))
+				.to.revertedWith("AccountFacet : Have Locked Quotes with Other Party B")
+		})
+
+		it("Should fail to bind to hedger when have open position quote with another hedger", async function () {
+			await hedger.lockQuote(1)
+			await hedger2.lockQuote(2)
+			await hedger.openPosition(1)
+			await hedger2.openPosition(2)
+			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address))
+				.to.revertedWith("AccountFacet : Have Open Positions with Other Party B")
+		})
+
+		it("Should fail to bind to a non-bindable party B", async () => {
+			await context.controlFacet.connect(context.signers.admin).unsetPartyBBindable(context.signers.hedger.address)
+			await expect(
+				context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			).to.be.revertedWith("AccountFacet: Not Bindable")
 		})
 
 		it("Should bind successfully", async () => {
@@ -875,6 +917,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			context = await loadFixture(initializeFixture)
 			user = new User(context, context.signers.user)
 			await user.setup()
+
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
 		})
 
 		it("Should fail when user suspended", async () => {
@@ -928,6 +973,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			context = await loadFixture(initializeFixture)
 			user = new User(context, context.signers.user)
 			await user.setup()
+
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
 		})
 
 		it("Should fail when user suspended", async () => {
@@ -974,7 +1022,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 			context = await loadFixture(initializeFixture)
 			user = new User(context, context.signers.user)
 			await user.setup()
-			
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
 			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await context.controlFacet.connect(context.signers.admin).setUnbindCooldown(LIMITS.UNBIND_COOLDOWN)
 		})

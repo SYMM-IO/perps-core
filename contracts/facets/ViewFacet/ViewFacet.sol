@@ -1447,4 +1447,12 @@ contract ViewFacet is IViewFacet {
 	function getWithdrawLockedBalance() external view returns (uint256) {
 		return WithdrawStorage.layout().withdrawLockedBalance;
 	}
+
+	function getPartyALockedQuotesCount(address user) external view returns(uint256){
+		return QuoteStorage.layout().partyALockQuotesCount[user];
+	}
+
+	function isBindable(address partyB) external view returns(bool){
+		return AccountStorage.layout().isPartyBBindable[partyB];
+	}
 }

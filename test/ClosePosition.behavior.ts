@@ -24,6 +24,7 @@ import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestV
 import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator"
 import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator"
 import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import { ethers, toUtf8Bytes } from "ethers";
 
 export function shouldBehaveLikeClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -484,6 +485,8 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		it("Should skip check sig when bind", async function () {
 			let closePrice = decimal(11n, 17)
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
 			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await expect(
 				hedger.fillCloseRequest(

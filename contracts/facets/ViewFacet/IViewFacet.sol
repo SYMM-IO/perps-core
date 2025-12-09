@@ -241,4 +241,8 @@ interface IViewFacet {
 	function getCustomAffiliateFee(address affiliate,address user, uint256 symbolId) external view returns (Fee memory);
 
 	function getMinAffiliateFee() external view returns (uint256);
+
+	function getPartyALockedQuotesCount(address user) external view returns(uint256);
+
+	function isBindable(address partyB) external view returns(bool);
 }

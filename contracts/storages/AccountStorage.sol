@@ -115,6 +115,7 @@ library AccountStorage {
 		mapping(address => mapping(uint256 => bool)) partyBBlacklistedSymbols; // PartyB => symbolId   => isBlackListed
 		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
 		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
+		mapping(address => bool) isPartyBBindable;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

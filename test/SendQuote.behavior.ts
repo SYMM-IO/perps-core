@@ -10,6 +10,7 @@ import { SendQuoteValidator } from "./models/validators/SendQuoteValidator"
 import { decimal, getBlockTimestamp, pausePartyA } from "./utils/Common"
 import { getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils"
 import { ethers } from "ethers"
+import { toUtf8Bytes } from "ethers";
 
 export function shouldBehaveLikeSendQuote(): void {
 	let user: User, context: RunContext
@@ -20,6 +21,7 @@ export function shouldBehaveLikeSendQuote(): void {
 		user = new User(context, context.signers.user)
 		await user.setup()
 		await user.setBalances(decimal(2000n), decimal(1500n), this.user_allocated)
+		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
 	})
 
 	it("Should fail on paused partyA", async function () {
@@ -124,7 +126,8 @@ export function shouldBehaveLikeSendQuote(): void {
 	})
 
 	it("Should fail when bind to a partyB and the partyB is not in the whitelisted partyBs", async function () {
-		await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.user2.getAddress())
+		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+		await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.getAddress())
 		await expect(
 			user.sendQuote(
 				limitQuoteRequestBuilder()

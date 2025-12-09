@@ -98,6 +98,7 @@ library QuoteStorage {
 		uint256 lastId;
 		uint256 lastCloseId;
 		mapping(uint256 => uint256) closeIds;
+		mapping(address => uint256) partyALockQuotesCount;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

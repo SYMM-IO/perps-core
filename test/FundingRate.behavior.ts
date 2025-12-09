@@ -10,6 +10,7 @@ import { expect } from "chai"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { PositionType } from "./models/Enums"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
+import { ethers, toUtf8Bytes } from "ethers";
 
 export function shouldBehaveLikeFundingRate(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
@@ -245,6 +246,8 @@ export function shouldBehaveLikeFundingRate(): void {
 	})
 
 	it("should skip check sig when bound", async function () {
+		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
 		await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 
 		let symbol = await context.viewFacet.getSymbol(1)
