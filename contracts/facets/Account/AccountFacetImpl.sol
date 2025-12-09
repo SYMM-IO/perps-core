@@ -200,7 +200,6 @@ library AccountFacetImpl {
 	}
 
 	function bindToPartyB(address partyB) internal {
-		// FIXME: Check if bind no muon verify
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
