@@ -14,6 +14,7 @@ import "../storages/GlobalAppStorage.sol";
 import "../storages/SymbolStorage.sol";
 import "../storages/MAStorage.sol";
 import "../interfaces/ISymmioHook.sol";
+import "./LibAccount.sol";
 
 library LibQuoteClose {
 	using LockedValuesOps for LockedValues;
@@ -53,9 +54,7 @@ library LibQuoteClose {
 		);
 
 		accountLayout.lockedBalances[quote.partyA].subQuote(quote).add(lockedValues);
-		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].subQuote(quote).add(lockedValues);
-		accountLayout.partyBTotalCva[quote.partyB] -= quote.lockedValues.cva;
-		accountLayout.partyBTotalLf[quote.partyB] -= quote.lockedValues.lf;
+		LibAccount.partyBLockedBalances(quote).subQuote(quote).add(lockedValues);
 		quote.lockedValues = lockedValues;
 
 		if (LibQuote.quoteOpenAmount(quote) == quote.quantityToClose) {
@@ -185,7 +184,7 @@ library LibQuoteClose {
 
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
-				accountLayout.partyBPendingLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
+				LibAccount.partyBPendingLockedBalances(quote).subQuote(quote);
 				LibQuote.removeFromPartyBPendingQuotes(quote);
 			}
 			quote.quoteStatus = QuoteStatus.EXPIRED;

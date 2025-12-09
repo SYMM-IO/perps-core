@@ -12,6 +12,7 @@ import "../../libraries/SharedEvents.sol";
 import "../../libraries/LibQuote.sol";
 import "../../libraries/muon/LibMuonLiquidation.sol";
 import "../../interfaces/ISymmioHook.sol";
+import "../../libraries/LibAccount.sol";
 
 library ClearingHouseFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -23,10 +24,10 @@ library ClearingHouseFacetImpl {
 		require(accountLayout.masterAccountMode[partyB], "ClearingHouseFacet: partyB is not using master account mode");
 		LibMuonLiquidation.verifyCrossLiquidation(liquidationSig, partyB);
 
-		int256 solvencyCheck = liquidationSig.upnl +
-			(int256(liquidationSig.totalAllocatedBalance + accountLayout.partyBAllocatedBalances[partyB][address(0)]) -
-				int256(accountLayout.partyBTotalCva[partyB] + accountLayout.partyBTotalLf[partyB]));
-		require(solvencyCheck < 0, "ClearingHouseFacet: partyB is solvent");
+		require(
+			LibAccount.partyBAvailableBalanceForLiquidation(liquidationSig.upnl, partyB, address(0)) < 0,
+			"ClearingHouseFacet: partyB is solvent"
+		);
 		maLayout.partyBLiquidationTimestamp[partyB][address(0)] = liquidationSig.timestamp;
 		accountLayout.crossLiquidationDetails[partyB] = CrossLiquidationDetail({
 			liquidationId: liquidationSig.liquidationId,
@@ -93,8 +94,6 @@ library ClearingHouseFacetImpl {
 
 			if (quoteLayout.partyBPendingQuotes[partyB][partyA].length > 0) {
 				delete quoteLayout.partyBPendingQuotes[partyB][partyA];
-				accountLayout.partyBLockedBalances[partyB][partyA].makeZero();
-				accountLayout.partyBPendingLockedBalances[partyB][partyA].makeZero();
 				accountLayout.partyANonces[partyA] += 1;
 			}
 		}
@@ -102,12 +101,12 @@ library ClearingHouseFacetImpl {
 
 	function liquidatePositionsForCrossLiquidation(
 		address partyB,
-		address partyA,
 		QuotePriceSig memory priceSig
 	) internal returns (uint256[] memory liquidatedAmounts, uint256[] memory closeIds) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		address partyA;
 
 		LibMuonLiquidation.verifyQuotePrices(priceSig);
 
@@ -125,13 +124,14 @@ library ClearingHouseFacetImpl {
 
 		for (uint256 i = 0; i < priceSig.quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[priceSig.quoteIds[i]];
+			partyA = quote.partyA;
 			require(
 				quote.quoteStatus == QuoteStatus.OPENED ||
 					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
 					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
 				"ClearingHouseFacet: Invalid state"
 			);
-			require(quote.partyA == partyA && quote.partyB == partyB, "ClearingHouseFacet: Invalid party");
+			require(quote.partyB == partyB, "ClearingHouseFacet: Invalid party");
 
 			liquidatedAmounts[i] = quote.quantity - quote.closedAmount;
 			closeIds[i] = quoteLayout.closeIds[quote.id];
@@ -146,8 +146,6 @@ library ClearingHouseFacetImpl {
 				(quote.closedAmount + LibQuote.quoteOpenAmount(quote));
 			quote.closedAmount = quote.quantity;
 
-			accountLayout.partyBTotalLf[partyB] -= quote.lockedValues.lf;
-			accountLayout.partyBTotalCva[partyB] -= quote.lockedValues.cva;
 			LibQuote.removeFromOpenPositions(quote.id);
 			quoteLayout.partyAPositionsCount[partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
@@ -161,15 +159,17 @@ library ClearingHouseFacetImpl {
 				{} catch {}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, quote.partyB) {} catch {}
+			}
+			if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
+				accountLayout.partyBNonces[partyB][partyA] += 1;
 			}
 		}
 
-		if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
-			accountLayout.partyBNonces[partyB][partyA] += 1;
-		}
-
 		if (quoteLayout.partyBPositionsCount[partyB][address(0)] == 0) {
+			accountLayout.partyBLockedBalances[partyB][address(0)].makeZero();
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].makeZero();
+
 			crossLiquidationDetail.inProgress = false;
 			crossLiquidationDetail.timestamp = 0;
 		}

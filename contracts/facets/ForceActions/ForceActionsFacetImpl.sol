@@ -45,7 +45,7 @@ library ForceActionsFacetImpl {
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.CANCELED;
 		accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-		accountLayout.partyBPendingLockedBalances[quote.partyB][LibAccount.partyBAllocationBucket(quote.partyB, quote.partyA)].subQuote(quote);
+		LibAccount.partyBPendingLockedBalances(quote).subQuote(quote);
 
 		// send trading Fee back to partyA
 		uint256 fee = LibQuote.getOpenTradingFee(quote.id);
@@ -104,7 +104,13 @@ library ForceActionsFacetImpl {
 
 		if (!accountLayout.masterAccountMode[QuoteStorage.layout().quotes[quoteId].partyB]) revert ForceCloseErrors.MasterAccountModeInactive();
 
-		isSolvent = LibForceActions.solveUsingAllocatedBalances(quoteId, detail.closePrice, detail.partyBAvailableAfterClose, accountLayout.partyBAllocatedBalances[QuoteStorage.layout().quotes[quoteId].partyB][address(0)], true);
+		isSolvent = LibForceActions.solveUsingAllocatedBalances(
+			quoteId,
+			detail.closePrice,
+			detail.partyBAvailableAfterClose,
+			accountLayout.partyBAllocatedBalances[QuoteStorage.layout().quotes[quoteId].partyB][address(0)],
+			true
+		);
 
 		if (isSolvent) {
 			detail.partyBState = PartyBForceCloseState.SOLVED;
@@ -113,7 +119,7 @@ library ForceActionsFacetImpl {
 		}
 
 		detail.timestamp = block.timestamp;
-		detail.inProgress = false;		
+		detail.inProgress = false;
 	}
 
 	function forceClose(
@@ -144,9 +150,9 @@ library ForceActionsFacetImpl {
 		uint256 reservedBalance = accountLayout.reserveVault[partyB];
 		isSolvent = LibForceActions.solveUsingAllocatedBalances(quoteId, closePrice, partyBAvailableBalance, reservedBalance, false);
 
-		if (!isSolvent) {			
-				upnlPartyB = LibForceActions.liquidatePartyB(quoteId, closePrice, reservedBalance, sig.upnlPartyB, sig.currentPrice);
-				isPartyBLiquidated = true;			
+		if (!isSolvent) {
+			upnlPartyB = LibForceActions.liquidatePartyB(quoteId, closePrice, reservedBalance, sig.upnlPartyB, sig.currentPrice);
+			isPartyBLiquidated = true;
 		}
 	}
 

@@ -145,10 +145,6 @@ interface IViewFacet {
 
 	function getCrossLiquidationDetails(address partyB) external view returns (CrossLiquidationDetail memory);
 
-	function getPartyBTotalCva(address partyB) external view returns (uint256);
-
-	function getPartyBTotalLf(address partyB) external view returns (uint256);
-
 	function getSignatureVerifier() external view returns (address);
 
 	function getBindState(address user) external view returns (BindState memory);
@@ -177,7 +173,7 @@ interface IViewFacet {
 
 	function getWithdrawLockedBalance() external view returns (uint256);
 
-	function getCustomAffiliateFee(address affiliate,address user, uint256 symbolId) external view returns (Fee memory);
+	function getCustomAffiliateFee(address affiliate, address user, uint256 symbolId) external view returns (Fee memory);
 
 	function getMinAffiliateFee() external view returns (uint256);
 }

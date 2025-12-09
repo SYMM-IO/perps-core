@@ -45,7 +45,7 @@ library LibPartyBQuoteActions {
 		quote.quoteStatus = QuoteStatus.LOCKED;
 		quote.partyB = msg.sender;
 		// lock funds for partyB
-		accountLayout.partyBPendingLockedBalances[msg.sender][LibAccount.partyBAllocationBucket(quote.partyB, quote.partyA)].addQuote(quote);
+		LibAccount.partyBPendingLockedBalances(quote).addQuote(quote);
 		quoteLayout.partyBPendingQuotes[msg.sender][quote.partyA].push(quote.id);
 	}
 }

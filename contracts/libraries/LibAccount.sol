@@ -9,6 +9,8 @@ import "../storages/AccountStorage.sol";
 library LibAccount {
 	using LockedValuesOps for LockedValues;
 
+	/* getters */
+
 	/**
 	 * @notice Calculates the total locked balances of Party A.
 	 * @param partyA The address of Party A.
@@ -184,5 +186,21 @@ library LibAccount {
 			bucket = address(0);
 		}
 		bucket = partyA;
+	}
+
+	/**
+	 * @notice returns locked balances for Party B for a specific quote.
+	 * @param quote The quote for which to return the locked balance.
+	 */
+	function partyBLockedBalances(Quote storage quote) internal view returns (LockedValues storage) {
+		return AccountStorage.layout().partyBLockedBalances[quote.partyB][partyBAllocationBucket(quote.partyB, quote.partyA)];
+	}
+
+	/**
+	 * @notice returns pending locked balances for Party B for a specific quote.
+	 * @param quote The quote for which to return the locked balance.
+	 */
+	function partyBPendingLockedBalances(Quote storage quote) internal view returns (LockedValues storage) {
+		return AccountStorage.layout().partyBPendingLockedBalances[quote.partyB][partyBAllocationBucket(quote.partyB, quote.partyA)];
 	}
 }

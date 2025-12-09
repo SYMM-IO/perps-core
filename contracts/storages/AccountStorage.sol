@@ -130,8 +130,6 @@ library AccountStorage {
 		mapping(address => uint256) reserveVault;
 		mapping(address => BindState) bindState;
 		mapping(address => bool) masterAccountMode;
-		mapping(address => uint256) partyBTotalCva;
-		mapping(address => uint256) partyBTotalLf;
 		mapping(address => CrossLiquidationDetail) crossLiquidationDetails;
 		mapping(address => address) externalTransferTargetsRelayers;
 		mapping(address => address) affiliateHooks;
