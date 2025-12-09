@@ -4,7 +4,7 @@ export type DelegateTypedDataTypes = Readonly<Record<string, readonly TypedDataE
 
 export const DELEGATE_TYPES = {
 	Account: [
-		{ name: "multiAccount", type: "address" },
+		{ name: "accountHub", type: "address" },
 		{ name: "addr", type: "address" },
 	],
 	ReplayAttackHeader: [
@@ -27,7 +27,7 @@ export const DELEGATE_TYPES = {
 export type TypedDataTypes = Record<string, Array<{ name: string; type: string }>>
 export const BASE_TYPES = Object.freeze({
 	Account: Object.freeze([
-		{ name: "multiAccount", type: "address" },
+		{ name: "accountHub", type: "address" },
 		{ name: "addr", type: "address" },
 	]),
 	ReplayAttackHeader: Object.freeze([
