@@ -26,7 +26,7 @@ library LibAccessibility {
 	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
 	bytes32 public constant SUSPENDED_FUNDS_WITHDRAWER_ROLE = keccak256("SUSPENDED_FUNDS_WITHDRAWER_ROLE");
 	bytes32 public constant WITHDRAW_SPEED_UP_ROLE = keccak256("WITHDRAW_SPEED_UP_ROLE");
-	bytes32 public constant ACCOUNT_HUB_SIGNER_SETTER_ROLE = keccak256("ACCOUNT_HUB_SIGNER_SETTER_ROLE");
+	bytes32 public constant SIGNER_SETTER_ROLE = keccak256("SIGNER_SETTER_ROLE");
 
 	/**
 	 * @notice Checks if a user has a specific role.
@@ -37,5 +37,17 @@ library LibAccessibility {
 	function hasRole(address user, bytes32 role) internal view returns (bool) {
 		GlobalAppStorage.Layout storage layout = GlobalAppStorage.layout();
 		return layout.hasRole[user][role];
+	}
+
+	/**
+	 * @notice Checks if a user is admin for a specific role.
+	 * @dev users with DEFAULT_ADMIN_ROLE are admin for all roles.
+	 * @param user The user to check.
+	 * @param role The role to check admin rights for.
+	 * @return Whether the user can administer the role.
+	 */
+	function isRoleAdmin(address user, bytes32 role) internal view returns (bool) {
+		GlobalAppStorage.Layout storage layout = GlobalAppStorage.layout();
+		return layout.roleAdmins[role][user] || layout.hasRole[user][DEFAULT_ADMIN_ROLE];
 	}
 }

@@ -138,9 +138,10 @@ export function shouldBehaveLikeAccountHub(): void {
 
 			await context.controlFacet.registerHook(ZeroAddress, await context.accountHub.getAddress())
 
-			await context.controlFacet
+			await context.symbolControlFacet
 				.connect(context.signers.admin)
 				.addSymbol("ETHUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+
 		})
 
 		describe("initialize", async () => {

@@ -96,7 +96,7 @@ export function shouldBehaveLikeSendQuote(): void {
 		await expect(context.partyAFacet.expireQuote([qId])).to.be.revertedWith("LibQuote: Quote isn't expired")
 		await time.increase(1000)
 		await context.partyAFacet.expireQuote([1])
-		expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.EXPIRED)
+		expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.EXPIRED)
 	})
 
 	it("Should run successfully for limit", async function () {
@@ -152,7 +152,7 @@ export function shouldBehaveLikeSendQuote(): void {
 		const before = await validator.before(context, { user: user })
 		let qId = await user.sendQuoteWithData()
 		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
-		let quote = await context.viewFacet.getQuote(qId)
+		let quote = await context.viewFacetQuote.getQuote(qId)
 		let text = ethers.AbiCoder.defaultAbiCoder().decode(["string"], quote.data)
 		expect(text[0]).to.be.equal("hello-world")
 	})
@@ -160,6 +160,16 @@ export function shouldBehaveLikeSendQuote(): void {
 	it("should send quote with correct affiliate fee", async function () {
 		await context.controlFacet.registerAffiliate(context.signers.hedger)
 		await context.controlFacet.setAffiliateFee(context.signers.hedger, 1, 17, 17)
+		let validator = new SendQuoteValidator()
+		const before = await validator.before(context, { user: user })
+		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
+		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
+	})
+
+	it("should send quote with correct custom affiliate fee", async function () {
+		await context.controlFacet.registerAffiliate(context.signers.hedger)
+		await context.controlFacet.setAffiliateFee(context.signers.hedger, 1, 18, 18)
+		await context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, 17, 17)
 		let validator = new SendQuoteValidator()
 		const before = await validator.before(context, { user: user })
 		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())

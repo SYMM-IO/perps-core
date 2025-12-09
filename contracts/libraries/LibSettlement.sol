@@ -8,6 +8,7 @@ import "../storages/MAStorage.sol";
 import "../storages/AccountStorage.sol";
 import "./LibQuote.sol";
 import "./LibAccount.sol";
+import "./SharedEvents.sol";
 
 library LibSettlement {
 	function settleUpnl(

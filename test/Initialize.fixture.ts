@@ -3,7 +3,7 @@ import { createRunContext, RunContext } from "./models/RunContext"
 import { decimal } from "./utils/Common"
 import { AccountHub, AffiliateHub } from "../src/types"
 import { toUtf8Bytes } from "ethers"
-import type { ExternalTransferRelayer as SymmioExternalTransferRelayer } from "../src/types"
+import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types";
 
 export async function initializeFixture(): Promise<RunContext> {
 	const collateral = await run("deploy:stablecoin")
@@ -139,11 +139,11 @@ export async function initializeFixture(): Promise<RunContext> {
 		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
-		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("ACCOUNT_HUB_SIGNER_SETTER_ROLE")))
+		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("SIGNER_SETTER_ROLE")))
 
 	// Configure system
 	await context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress())
-	await context.controlFacet
+	await context.symbolControlFacet
 		.connect(context.signers.admin)
 		.addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
 	await context.controlFacet
@@ -159,9 +159,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	// await context.controlFacet.connect(context.signers.admin).setMuonConfig(3600, 3600) // 1 hour validity
 	// await context.controlFacet.connect(context.signers.admin).setMuonIds(1, ethers.ZeroAddress, { x: 0, parity: 0 })
 
-	await context.controlFacet.connect(context.signers.admin).setSymbolTypes([1], [1])
-	await context.controlFacet.whitelistSymbolType(context.signers.hedger.address, 1)
-	await context.controlFacet.whitelistSymbolType(context.signers.hedger2.address, 1)
+	await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([1], [1])
+	await context.symbolControlFacet.whitelistSymbolType(context.signers.hedger.address, 1)
+	await context.symbolControlFacet.whitelistSymbolType(context.signers.hedger2.address, 1)
 	await context.controlFacet.setMaxPartyAConnectionLimit(5)
 	await context.controlFacet.connect(context.signers.admin).setPendingQuotesValidLength(10)
 	await context.controlFacet.connect(context.signers.admin).setLiquidatorShare(decimal(1n, 17))
@@ -220,5 +220,52 @@ export async function initializeExternalTransferRelayerFixture(): Promise<{
 		source,
 		target,
 		relayer,
+	}
+}
+
+export async function initializeVirtualFixture(): Promise<{
+	source: RunContext
+	target: RunContext
+	provider: VirtualProvider
+}> {
+	const source = await initializeFixture()
+
+	const targetDiamond = await run("deploy:diamond", {
+		logData: false,
+		genABI: false,
+		reportGas: true,
+	})
+
+	const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+	const provider = (await MockVirtualProvider.deploy(await targetDiamond.getAddress())) as unknown as VirtualProvider
+	await provider.waitForDeployment()
+
+	const target = await createRunContext(await targetDiamond.getAddress(), await source.collateral.getAddress(), true)
+	const adminAddress = await target.signers.admin.getAddress()
+
+	await target.controlFacet.connect(target.signers.admin).setAdmin(adminAddress)
+
+	const setterRole = ethers.keccak256(toUtf8Bytes("SETTER_ROLE"))
+	const pauserRole = ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))
+	const unpauserRole = ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE"))
+	const virtualRole = ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE"))
+
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, setterRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, pauserRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, unpauserRole)
+
+	await target.controlFacet.connect(target.signers.admin).setCollateral(await source.collateral.getAddress())
+	await target.controlFacet.connect(target.signers.admin).setBalanceLimitPerUser(decimal(10000n))
+
+	await source.controlFacet.connect(source.signers.admin).grantRole(await provider.getAddress(), virtualRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(await provider.getAddress(), virtualRole)
+
+	await source.controlFacet.connect(source.signers.admin).registerVirtualProvider(await provider.getAddress())
+	await target.controlFacet.connect(target.signers.admin).registerVirtualProvider(await provider.getAddress())
+
+	return {
+		source,
+		target,
+		provider
 	}
 }

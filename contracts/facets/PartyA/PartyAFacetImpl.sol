@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../libraries/muon/LibMuonPartyA.sol";
 import "../../libraries/LibAccount.sol";
 import "../../libraries/LibQuote.sol";
+import "../../libraries/LibQuoteClose.sol";
 import "../../libraries/LibAccessibility.sol";
 import "../../libraries/SharedEvents.sol";
 import "../../storages/MAStorage.sol";
@@ -70,13 +71,17 @@ library PartyAFacetImpl {
 		}
 
 		Fee memory fee;
-		if (appLayout.affiliateFee[affiliate][symbolId].isSet) {
-			fee = appLayout.affiliateFee[affiliate][symbolId];
+		if (appLayout.customAffiliateFee[affiliate][msg.sender][symbolId].isSet) {
+			fee = appLayout.customAffiliateFee[affiliate][msg.sender][symbolId];
 		} else {
-			fee = appLayout.defaultAffiliateFee[affiliate];
-			if (!fee.isSet) {
-				uint256 symbolTradingFee = symbolLayout.symbols[symbolId].tradingFee;
-				fee = Fee(symbolTradingFee, symbolTradingFee, true);
+			if (appLayout.affiliateFee[affiliate][symbolId].isSet) {
+				fee = appLayout.affiliateFee[affiliate][symbolId];
+			} else {
+				fee = appLayout.defaultAffiliateFee[affiliate];
+				if (!fee.isSet) {
+					uint256 symbolTradingFee = symbolLayout.symbols[symbolId].tradingFee;
+					fee = Fee(symbolTradingFee, symbolTradingFee, true);
+				}
 			}
 		}
 
@@ -141,7 +146,7 @@ library PartyAFacetImpl {
 		require(quote.quoteStatus == QuoteStatus.PENDING || quote.quoteStatus == QuoteStatus.LOCKED, "PartyAFacet: Invalid state");
 
 		if (block.timestamp > quote.deadline) {
-			result = LibQuote.expireQuote(quoteId);
+			result = LibQuoteClose.expireQuote(quoteId);
 		} else if (quote.quoteStatus == QuoteStatus.PENDING) {
 			quote.quoteStatus = QuoteStatus.CANCELED;
 			uint256 fee = LibQuote.getOpenTradingFee(quote.id);
@@ -199,7 +204,7 @@ library PartyAFacetImpl {
 
 		require(quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyAFacet: Invalid state");
 		if (block.timestamp > quote.deadline) {
-			LibQuote.expireQuote(quoteId);
+			LibQuoteClose.expireQuote(quoteId);
 			return QuoteStatus.OPENED;
 		} else {
 			quote.statusModifyTimestamp = block.timestamp;

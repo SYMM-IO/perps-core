@@ -30,14 +30,14 @@ export class AcceptCancelRequestValidator implements TransactionValidator {
 		logger.debug("Before AcceptCancelRequestValidator...")
 		return {
 			balanceInfoPartyA: await arg.user.getBalanceInfo(),
-			quote: await context.viewFacet.getQuote(arg.quoteId),
+			quote: await context.viewFacetQuote.getQuote(arg.quoteId),
 		}
 	}
 
 	async after(context: RunContext, arg: AcceptCancelRequestValidatorAfterArg) {
 		logger.debug("After AcceptCancelRequestValidator...")
 		// Check Quote
-		const newQuote = await context.viewFacet.getQuote(arg.quoteId)
+		const newQuote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		const oldQuote = arg.beforeOutput.quote
 		expect(newQuote.quoteStatus).to.be.equal(QuoteStatus.CANCELED)
 

@@ -101,7 +101,7 @@ export function shouldBehaveLikeMultiAccount() {
 
 		await multiAccount.connect(context.signers.admin).setRevokeCooldown(300)
 
-		await context.controlFacet
+		await context.symbolControlFacet
 			.connect(context.signers.admin)
 			.addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
 	})
@@ -226,7 +226,7 @@ export function shouldBehaveLikeMultiAccount() {
 				let sendQuote1 = context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", await getListFormatOfQuoteRequest(quoteRequest1))
 				await multiAccount.connect(context.signers.user).delegateAccess(partyAAccount, user2Address, selector)
 				await multiAccount.connect(context.signers.user2)._call(partyAAccount, [sendQuote1])
-				expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.PENDING)
+				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.PENDING)
 			})
 		})
 
@@ -308,7 +308,7 @@ export function shouldBehaveLikeMultiAccount() {
 				.build()
 			let sendQuote1 = context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", await getListFormatOfQuoteRequest(quoteRequest1))
 			await multiAccount.connect(context.signers.user)._call(partyAAccount, [sendQuote1])
-			expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.PENDING)
+			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.PENDING)
 		})
 
 		describe("Locking quotes", function () {
@@ -338,20 +338,20 @@ export function shouldBehaveLikeMultiAccount() {
 			})
 
 			it("Should be able to lock Quote", async () => {
-				await context.controlFacet
+				await context.symbolControlFacet
 					.connect(context.signers.admin)
-					.whitelistSymbolType(await symmioPartyB.getAddress(), (await context.viewFacet.getSymbolWithType(1)).symbolType)
+					.whitelistSymbolType(await symmioPartyB.getAddress(), (await context.viewFacetSymbol.getSymbolWithType(1)).symbolType)
 				let lockQuote = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [1, await getDummySingleUpnlSig()])
 
 				await expect(symmioPartyB.connect(context.signers.admin)._call([lockQuote])).to.not.be.reverted
-				expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LOCKED)
+				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LOCKED)
 			})
 
 			describe("Open quotes", function () {
 				beforeEach(async () => {
-					await context.controlFacet.whitelistSymbolType(
+					await context.symbolControlFacet.whitelistSymbolType(
 						await symmioPartyB.getAddress(),
-						(await context.viewFacet.getSymbolWithType(1)).symbolType,
+						(await context.viewFacetSymbol.getSymbolWithType(1)).symbolType,
 					)
 					let lockQuote = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [1, await getDummySingleUpnlSig()])
 
@@ -366,7 +366,7 @@ export function shouldBehaveLikeMultiAccount() {
 					])
 					await symmioPartyB.connect(context.signers.admin)._call([openPositionCallData2])
 
-					expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.OPENED)
+					expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.OPENED)
 				})
 
 				describe("Request to close", function () {
@@ -387,7 +387,7 @@ export function shouldBehaveLikeMultiAccount() {
 						])
 						await multiAccount.connect(context.signers.user)._call(partyAAccount, [closeRequestCallData1])
 
-						expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.CLOSE_PENDING)
+						expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.CLOSE_PENDING)
 					})
 					describe("Request to fill close", function () {
 						beforeEach(async () => {
@@ -407,7 +407,7 @@ export function shouldBehaveLikeMultiAccount() {
 							])
 							await symmioPartyB.connect(context.signers.admin)._call([fillCloseRequestCallData])
 
-							expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.CLOSED)
+							expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.CLOSED)
 						})
 					})
 				})
