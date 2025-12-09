@@ -12,7 +12,6 @@ interface IClearingHouseFacetEvents {
 	event LiquidatePendingPositionsForCrossLiquidation(address indexed partyB, address[] indexed partyAs);
 	event LiquidatePositionsForCrossLiquidation(
 		address indexed partyB,
-		address indexed partyA,
 		uint256[] quoteIds,
 		uint256[] liquidatedAmounts,
 		uint256[] closeIds

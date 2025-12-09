@@ -375,7 +375,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.liquidatePositionsForCrossLiquidation(context.signers.hedger, context.signers.user, priceSig),
+						.liquidatePositionsForCrossLiquidation(context.signers.hedger, priceSig),
 				).to.not.reverted
 
 				const quote1: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
@@ -389,7 +389,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.liquidatePositionsForCrossLiquidation(context.signers.hedger2, context.signers.user, priceSig),
+						.liquidatePositionsForCrossLiquidation(context.signers.hedger2, priceSig),
 				).to.be.revertedWith("ClearingHouseFacet: PartyB is solvent")
 			})
 
@@ -404,7 +404,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidatePositionsForCrossLiquidation(context.signers.hedger, context.signers.user, priceSig)
+					.liquidatePositionsForCrossLiquidation(context.signers.hedger,  priceSig)
 
 				const quote1After: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
 				const quote4After: QuoteStructOutput = await context.viewFacetQuote.getQuote(4)
