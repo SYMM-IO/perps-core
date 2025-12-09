@@ -74,6 +74,25 @@ struct Price {
 	uint256 timestamp;
 }
 
+enum ExternalTransferStatus {
+	PENDING,
+	COMPLETED,
+	CANCELED
+}
+
+// External Transfer : Symmio1(user1) balance -> Symmio2(user2) balance
+struct ExternalTransferReq {
+	uint256 id;
+	address sender; // user1 in source contract
+	address receiver; // user2 in target contract
+	address source; // Symmio contract 1
+	address target; // Symmio contract 2
+	uint256 amount;
+	uint256 timestamp;
+	address provider; // virtual provider who handles the transfer
+	ExternalTransferStatus status;
+}
+
 library AccountStorage {
 	bytes32 internal constant ACCOUNT_STORAGE_SLOT = keccak256("diamond.standard.storage.account");
 
@@ -115,6 +134,8 @@ library AccountStorage {
 		mapping(address => mapping(uint256 => bool)) partyBBlacklistedSymbols; // PartyB => symbolId   => isBlackListed
 		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
 		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
+		uint256 lastExternalTransferId;
+		mapping(uint256 => ExternalTransferReq) externalTransfers;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -789,7 +789,29 @@ contract ViewFacet is IViewFacet {
 		return request.cooldownEndTime;
 	}
 
+	/**
+	 * @notice Retrieves the total locked balance for withdrawals.
+	 * @return The total locked balance for withdrawals.
+	 */
 	function getWithdrawLockedBalance() external view returns (uint256) {
 		return WithdrawStorage.layout().withdrawLockedBalance;
+	}
+
+	/**
+	 * @notice Retrieves the virtual external transfer status for a given ID.
+	 * @param id The ID of the virtual external transfer.
+	 * @return The virtual external transfer status.
+	 */
+	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory) {
+		return AccountStorage.layout().externalTransfers[id];
+	}
+
+	/**
+	 * @notice Retrieves the metadata of an entity (affiliate or partyB).
+	 * @param entity The address of the entity.
+	 * @return The metadata of the entity.
+	 */
+	function getEntityMetadata(address entity) external view returns (EntityMetadata memory) {
+		return MAStorage.layout().entitiesMetadata[entity];
 	}
 }
