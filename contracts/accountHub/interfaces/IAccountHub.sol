@@ -119,9 +119,9 @@ interface IAccountHub {
 	// View functions
 	function getSigner() external view returns (address);
 	function getRelatedCore(address account) external view returns (address);
-	function getSubAccounts(address owner) external view returns (address[] memory);
-	function getVirtualAccounts(address subAccount) external view returns (address[] memory);
-	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory);
+	// function getSubAccounts(address owner) external view returns (address[] memory);
+	// function getVirtualAccounts(address subAccount) external view returns (address[] memory);
+	// function getSubAccountQuoteIds(address account) external view returns (uint256[] memory);
 	// Admin functions
 	function setSigner(address _signer) external;
 
