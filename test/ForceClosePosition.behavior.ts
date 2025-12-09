@@ -422,7 +422,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			upnlPartyB: bigint,
 			partyBUpnlIndex: number = 0,
 		): Promise<SettlementSigStruct> {
-			const quote = await context.viewFacet.getQuote(quoteId)
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
 			const data: QuoteSettlementDataStruct = {
 				quoteId,
 				currentPrice,
@@ -450,10 +450,10 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			// Use quote2ShortOpened which is OPEN + CLOSE_PENDING in your beforeEach
 			const quoteId = BigInt(quote2ShortOpened.id)
 			const sigTimes = await prepareSigTimes(100n)
-			const gapRatio = await context.viewFacet.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const gapRatio = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 
 			// Choose updated price between openedPrice and currentPrice to satisfy LibSettlement range check
-			const quote = await context.viewFacet.getQuote(quoteId)
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
 			const openedPrice = BigInt(quote.openedPrice)
 
 			// Use something modestly above openedPrice for SHORT
@@ -487,7 +487,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			//   - openedPrice has been updated by settlement structure
 			await context.forceActionsFacet.connect(user.getSigner).settleAndForceClosePosition(quoteId, highLowSig, settlementSig, updatedPrices)
 
-			const closedQuote = await context.viewFacet.getQuote(quoteId)
+			const closedQuote = await context.viewFacetQuote.getQuote(quoteId)
 			expect(closedQuote.quoteStatus).to.not.equal(QuoteStatus.CLOSE_PENDING)
 			expect(BigInt(closedQuote.openedPrice)).to.equal(newPrice)
 		})

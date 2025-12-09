@@ -26,24 +26,17 @@ library LibForceActions {
 		uint256 sigAveragePrice = sig.averagePrice;
 
 		if (positionType == PositionType.LONG) {
-			if (!(sig.highest >= requestedClosePrice + (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
-				revert ForceCloseErrors.RequestedClosePriceNotReached();
-			}
+			require (sig.highest >= requestedClosePrice + (requestedClosePrice * forceCloseGapRatio) / 1e18, "PartyAFacet: Requested close price not reached");
 			closePrice = requestedClosePrice + (requestedClosePrice * forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sigAveragePrice ? closePrice : sigAveragePrice;
 		} else {
-			if (!(sig.lowest <= requestedClosePrice - (requestedClosePrice * forceCloseGapRatio) / 1e18)) {
-				revert ForceCloseErrors.RequestedClosePriceNotReached();
-			}
+			require (sig.lowest <= requestedClosePrice - (requestedClosePrice * forceCloseGapRatio) / 1e18, "PartyAFacet: Requested close price not reached");
 			closePrice = requestedClosePrice - (requestedClosePrice * forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sigAveragePrice ? sigAveragePrice : closePrice;
 		}
 
-		if (closePrice == sigAveragePrice) {
-			if (!(sig.endTime - sig.startTime >= maLayout.forceCloseMinSigPeriod)) {
-				revert ForceCloseErrors.InvalidSignaturePeriod();
-			}
-		}
+		if (closePrice == sigAveragePrice)
+			require(sig.endTime - sig.startTime >= maLayout.forceCloseMinSigPeriod, "PartyAFacet: Invalid signature period");
 
 		return closePrice;
 	}
@@ -77,29 +70,20 @@ library LibForceActions {
 
 		LibMuonForceActions.verifyHighLowPrice(highLowPrice, quote.partyB, quote.partyA, quote.symbolId);
 
-		if (quote.quoteStatus != QuoteStatus.CLOSE_PENDING) {
-			revert ForceCloseErrors.InvalidState();
-		}
+		require(quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyAFacet: Invalid state");
 
-		if (!(highLowPrice.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline)) {
-			revert ForceCloseErrors.CloseRequestExpired();
-		}
+		require(highLowPrice.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline, "PartyBFacet: Close request is expired");
 
-		if (quote.orderType != OrderType.LIMIT) {
-			revert ForceCloseErrors.InvalidOrderType();
-		}
+		require(quote.orderType == OrderType.LIMIT, "PartyBFacet: Quote's order type should be LIMIT");
 
-		if (!(highLowPrice.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown)) {
-			revert ForceCloseErrors.CooldownNotReached();
-		}
+		require(highLowPrice.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown, "PartyAFacet: Cooldown not reached");
 
-		if (!(highLowPrice.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown)) {
-			revert ForceCloseErrors.CooldownNotReached();
-		}
+		require(highLowPrice.endTime <= block.timestamp - maLayout.forceCloseSecondCooldown, "PartyAFacet: Cooldown not reached");
 
-		if (!(highLowPrice.averagePrice <= highLowPrice.highest && highLowPrice.averagePrice >= highLowPrice.lowest)) {
-			revert ForceCloseErrors.InvalidAveragePrice();
-		}
+		require(
+			highLowPrice.averagePrice <= highLowPrice.highest && highLowPrice.averagePrice >= highLowPrice.lowest,
+			"PartyAFacet: Invalid average price"
+		);
 	}
 
 	function getAvailableBalancesAfterClose(
@@ -161,7 +145,7 @@ library LibForceActions {
 			emit SharedEvents.BalanceChangePartyB(partyB, partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
 			accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
-	
+
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			solved = true;
 		}

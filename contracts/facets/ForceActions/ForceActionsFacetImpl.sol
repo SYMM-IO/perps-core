@@ -33,15 +33,11 @@ library ForceActionsFacetImpl {
 
 		// Enforce that the quote is in the expected cancel pending state. Revert with
 		// a custom error if not.
-		if (quote.quoteStatus != QuoteStatus.CANCEL_PENDING) {
-			revert ForceCloseErrors.InvalidState();
-		}
+		require(quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyAFacet: Invalid state");
 		// Enforce that the force cancel cooldown has elapsed. If the current
 		// timestamp has not yet surpassed the last modify timestamp plus the
 		// cooldown period, revert.
-		if (!(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCooldown)) {
-			revert ForceCloseErrors.CooldownNotReached();
-		}
+		require(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCooldown, "PartyAFacet: Cooldown not reached");
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.CANCELED;
 		accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
@@ -60,13 +56,9 @@ library ForceActionsFacetImpl {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
 		// Validate the quote is in the cancel close pending state.
-		if (quote.quoteStatus != QuoteStatus.CANCEL_CLOSE_PENDING) {
-			revert ForceCloseErrors.InvalidState();
-		}
+		require(quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING, "PartyAFacet: Invalid state");
 		// Ensure the cancel close cooldown period has expired before proceeding.
-		if (!(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCloseCooldown)) {
-			revert ForceCloseErrors.CooldownNotReached();
-		}
+		require(block.timestamp > quote.statusModifyTimestamp + maLayout.forceCancelCloseCooldown, "PartyAFacet: Cooldown not reached");
 
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.OPENED;
@@ -89,7 +81,7 @@ library ForceActionsFacetImpl {
 			closePrice
 		);
 
-		if (!(partyAAvailableBalance >= 0)) revert ForceCloseErrors.PartyAWillBeInsolvent();
+		require (partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
 		detail.timestamp = block.timestamp;
@@ -142,9 +134,7 @@ library ForceActionsFacetImpl {
 			closePrice
 		);
 
-		if (!(partyAAvailableBalance >= 0)) {
-			revert ForceCloseErrors.PartyAWillBeInsolvent();
-		}
+		require (partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
 		bool isSolvent;
 		uint256 reservedBalance = accountLayout.reserveVault[partyB];
