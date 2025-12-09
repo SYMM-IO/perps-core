@@ -16,7 +16,6 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
-import "hardhat/console.sol";
 
 /**
  * @title AccountHub
@@ -331,26 +330,20 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param offset The starting index
 	 * @param limit The maximum number of accounts to return
 	 * @return details Array of SubAccountDetail structs
-	 * @return total Total number of sub-accounts for this owner
 	 */
-	function getSubAccountsDetailBatch(
-		address owner,
-		uint256 offset,
-		uint256 limit
-	) external view returns (SubAccountDetail[] memory details, uint256 total) {
+	function getSubAccountsDetailBatch(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details) {
 		address[] memory allAccounts = userToSubAccounts[owner].values();
-		total = allAccounts.length;
+		uint256 total = allAccounts.length;
 
+		// Return empty array if offset is out of bounds
 		if (offset >= total) {
-			return (new SubAccountDetail[](0), total);
+			return new SubAccountDetail[](0);
 		}
 
-		uint256 end = offset + limit;
-		if (end > total) {
-			end = total;
-		}
+		// Calculate how many results to return
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
 
-		uint256 resultSize = end - offset;
 		details = new SubAccountDetail[](resultSize);
 
 		for (uint256 i = 0; i < resultSize; i++) {
@@ -406,26 +399,24 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param offset The starting index
 	 * @param limit The maximum number of accounts to return
 	 * @return details Array of VirtualAccountDetail structs
-	 * @return total Total number of virtual accounts for this sub-account
 	 */
 	function getVirtualAccountsDetailBatch(
 		address subAccount,
 		uint256 offset,
 		uint256 limit
-	) external view returns (VirtualAccountDetail[] memory details, uint256 total) {
+	) external view returns (VirtualAccountDetail[] memory details) {
 		address[] memory allAccounts = subAccountToVirtualAccounts[subAccount].values();
-		total = allAccounts.length;
+		uint256 total = allAccounts.length;
 
+		// Return empty array if offset is out of bounds
 		if (offset >= total) {
-			return (new VirtualAccountDetail[](0), total);
+			return new VirtualAccountDetail[](0);
 		}
 
-		uint256 end = offset + limit;
-		if (end > total) {
-			end = total;
-		}
+		// Calculate how many results to return
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
 
-		uint256 resultSize = end - offset;
 		details = new VirtualAccountDetail[](resultSize);
 
 		for (uint256 i = 0; i < resultSize; i++) {

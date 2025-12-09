@@ -1242,5 +1242,240 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 			})
 		})
+
+		describe("Getter Methods", async () => {
+			let subAccountAddress: string
+			let virtualAccountAddress: string
+
+			beforeEach(async () => {
+				const subAccountData = [createSubAccountData("GETTER_TEST_ACCOUNT", 0, "GETTER_METADATA")]
+				subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+			})
+
+			describe("getSigner", async () => {
+				it("should return msg.sender when globalSigner is not set", async function () {
+					const signer = await context.accountHub.getSigner()
+					expect(signer).to.not.equal(ZeroAddress)
+				})
+			})
+
+			describe("getRelatedCore", async () => {
+				it("should return symmioCore for a sub-account", async function () {
+					const core = await context.accountHub.getRelatedCore(subAccountAddress)
+					expect(core).to.equal(context.diamond)
+				})
+
+				it("should return symmioCore for a virtual account via parent", async function () {
+					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress)
+					virtualAccountAddress = virtualAccounts[0]
+
+					const core = await context.accountHub.getRelatedCore(virtualAccountAddress)
+					expect(core).to.equal(context.diamond)
+				})
+			})
+
+			describe("getSubAccountAddresses", async () => {
+				it("should return empty array for user with no sub-accounts", async function () {
+					const addresses = await context.accountHub.getSubAccountAddresses(context.signers.user2.address)
+					expect(addresses).to.be.an("array").that.is.empty
+				})
+
+				it("should return correct sub-account addresses for owner", async function () {
+					const addresses = await context.accountHub.getSubAccountAddresses(context.signers.user.address)
+					expect(addresses).to.include(subAccountAddress)
+					expect(addresses.length).to.be.greaterThanOrEqual(1)
+				})
+
+				it("should return multiple sub-accounts when created", async function () {
+					const secondSubAccountData = [createSubAccountData("SECOND_ACCOUNT", 0, "METADATA2")]
+					const secondSubAccount = await createSubAccountAndDeposit(context.signers.user, secondSubAccountData, BALANCES.DEPOSIT_AMOUNT)
+
+					const addresses = await context.accountHub.getSubAccountAddresses(context.signers.user.address)
+					expect(addresses).to.include(subAccountAddress)
+					expect(addresses).to.include(secondSubAccount)
+				})
+			})
+
+			describe("getSubAccountDetail", async () => {
+				it("should return correct sub-account details", async function () {
+					const detail = await context.accountHub.getSubAccountDetail(subAccountAddress)
+
+					expect(detail.accountAddress).to.equal(subAccountAddress)
+					expect(detail.owner).to.equal(context.signers.user.address)
+					expect(detail.name).to.equal("GETTER_TEST_ACCOUNT")
+					expect(detail.affiliate).to.equal(await context.accountManager.getAddress())
+					expect(detail.symmioCore).to.equal(context.diamond)
+				})
+			})
+
+			describe("getSubAccountsDetailBatch", async () => {
+				it("should return empty array if no sub-accounts exist", async function () {
+					const details = await context.accountHub.getSubAccountsDetailBatch(context.signers.others[0].address, 0, 10)
+					expect(details.length).to.be.equal(0)
+				})
+
+				it("should return paginated sub-account details", async function () {
+					const details = await context.accountHub.getSubAccountsDetailBatch(context.signers.user.address, 0, 10)
+
+					expect(details.length).to.be.greaterThanOrEqual(1)
+					expect(details[0].accountAddress).to.equal(subAccountAddress)
+				})
+
+				it("should respect offset and limit", async function () {
+					const secondSubAccountData = [createSubAccountData("SECOND_ACCOUNT", 0, "METADATA2")]
+					await createSubAccountAndDeposit(context.signers.user, secondSubAccountData, BALANCES.DEPOSIT_AMOUNT)
+
+					const allDetails = await context.accountHub.getSubAccountsDetailBatch(context.signers.user.address, 0, 10)
+					const firstOnly = await context.accountHub.getSubAccountsDetailBatch(context.signers.user.address, 0, 1)
+					const secondOnly = await context.accountHub.getSubAccountsDetailBatch(context.signers.user.address, 1, 1)
+
+					expect(allDetails.length).to.be.greaterThanOrEqual(2)
+					expect(firstOnly.length).to.equal(1)
+					expect(secondOnly.length).to.equal(1)
+				})
+			})
+
+			describe("getVirtualAccountAddresses", async () => {
+				it("should return empty array when no virtual accounts exist", async function () {
+					const addresses = await context.accountHub.getVirtualAccountAddresses(subAccountAddress)
+					expect(addresses).to.be.an("array").that.is.empty
+				})
+
+				it("should return virtual account addresses after quote", async function () {
+					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress)
+
+					const addresses = await context.accountHub.getVirtualAccountAddresses(subAccountAddress)
+					expect(addresses.length).to.be.greaterThanOrEqual(1)
+					expect(addresses).to.include(virtualAccounts[0])
+				})
+			})
+
+			describe("getVirtualAccountDetail", async () => {
+				it("should return correct virtual account details", async function () {
+					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress)
+					virtualAccountAddress = virtualAccounts[0]
+
+					const detail = await context.accountHub.getVirtualAccountDetail(virtualAccountAddress)
+
+					expect(detail.accountAddress).to.equal(virtualAccountAddress)
+					expect(detail.parentAccount).to.equal(subAccountAddress)
+					expect(detail.isExists).to.equal(true)
+				})
+			})
+
+			describe("getVirtualAccountsDetailBatch", async () => {
+				it("should return paginated virtual account details", async function () {
+					await sendQuoteAndGetVirtualAccount(subAccountAddress)
+
+					const details = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 10)
+					expect(details.length).to.be.greaterThanOrEqual(1)
+				})
+
+				it("should return empty array if no virtual accounts exist", async function () {
+					const details = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 10)
+					expect(details).to.be.an("array").that.is.empty
+				})
+
+				it("should respect offset and limit", async function () {
+					// Create two virtual accounts
+					await sendQuoteAndGetVirtualAccount(subAccountAddress)
+					await sendQuoteAndGetVirtualAccount(subAccountAddress)
+
+					const allDetails = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 10)
+					const firstOnly = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 1)
+					const secondOnly = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 1, 1)
+
+					expect(allDetails.length).to.be.greaterThanOrEqual(2)
+					expect(firstOnly.length).to.equal(1)
+					expect(secondOnly.length).to.equal(1)
+					expect(allDetails[0].accountAddress).to.equal(firstOnly[0].accountAddress)
+					expect(allDetails[1].accountAddress).to.equal(secondOnly[0].accountAddress)
+				})
+
+				it("should return correct details for each virtual account", async function () {
+					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress)
+					const details = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 10)
+					expect(details[0].accountAddress).to.equal(virtualAccounts[0])
+					expect(details[0].parentAccount).to.equal(subAccountAddress)
+					expect(details[0].isExists).to.be.true
+				})
+			})
+
+			describe("getSubAccountQuoteIds", async () => {
+				it("should return empty array for sub-account with no quotes", async function () {
+					const quoteIds = await context.accountHub.getSubAccountQuoteIds(subAccountAddress)
+					expect(quoteIds).to.be.an("array").that.is.empty
+				})
+			})
+
+			describe("getVirtualAccountQuoteIds", async () => {
+				it("should return quote IDs for virtual account", async function () {
+					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress)
+					virtualAccountAddress = virtualAccounts[0]
+
+					const quoteIds = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					expect(quoteIds.length).to.be.greaterThanOrEqual(1)
+				})
+			})
+
+			describe("getSubAccountCount", async () => {
+				it("should return 0 for user with no sub-accounts", async function () {
+					const count = await context.accountHub.getSubAccountCount(context.signers.user2.address)
+					expect(count).to.equal(0)
+				})
+
+				it("should return correct count after creating sub-accounts", async function () {
+					const count = await context.accountHub.getSubAccountCount(context.signers.user.address)
+					expect(count).to.be.greaterThanOrEqual(1)
+				})
+			})
+
+			describe("getVirtualAccountCount", async () => {
+				it("should return 0 when no virtual accounts exist", async function () {
+					const count = await context.accountHub.getVirtualAccountCount(subAccountAddress)
+					expect(count).to.equal(0)
+				})
+
+				it("should return correct count after sending quote", async function () {
+					await sendQuoteAndGetVirtualAccount(subAccountAddress)
+
+					const count = await context.accountHub.getVirtualAccountCount(subAccountAddress)
+					expect(count).to.be.greaterThanOrEqual(1)
+				})
+			})
+
+			describe("getDeletedVirtualAccountAddresses", async () => {
+				it("should return empty array when no deleted virtual accounts", async function () {
+					// VirtualAccountIsolationType.POSITION = 0, symbolId = 1
+					const addresses = await context.accountHub.getDeletedVirtualAccountAddresses(subAccountAddress, 0, 1)
+					expect(addresses).to.be.an("array").that.is.empty
+				})
+			})
+
+			describe("getDeletedVirtualAccountCount", async () => {
+				it("should return 0 when no deleted virtual accounts", async function () {
+					// VirtualAccountIsolationType.POSITION = 0, symbolId = 1
+					const count = await context.accountHub.getDeletedVirtualAccountCount(subAccountAddress, 0, 1)
+					expect(count).to.equal(0)
+				})
+			})
+
+			describe("Public Constants and Variables", async () => {
+				it("should return MAX_NAME_LENGTH", async function () {
+					const maxLength = await context.accountHub.MAX_NAME_LENGTH()
+					expect(maxLength).to.be.greaterThan(0)
+				})
+
+				it("should return affiliateHub address", async function () {
+					const hubAddress = await context.accountHub.affiliateHub()
+					expect(hubAddress).to.equal(await context.affiliateHub.getAddress())
+				})
+
+				it("should return globalNonce > 0 after account creation", async function () {
+					const nonce = await context.accountHub.globalNonce()
+					expect(nonce).to.be.greaterThan(0)
+				})
+			})
+		})
 	})
 }

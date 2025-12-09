@@ -125,17 +125,17 @@ describe("UnitTests", function () {
 			shouldBehaveLikeWithdrawFacet()
 		})
 
-		describe.only("AccountHub", async function () {
+		describe("AccountHub", async function () {
 			shouldBehaveLikeAccountHub()
 		})
 
-		// describe("AffiliateHub", async function () {
-		// 	shouldBehaveLikeAffiliateHub()
-		// })
+		describe("AffiliateHub", async function () {
+			shouldBehaveLikeAffiliateHub()
+		})
 
-		// describe("AccountManager", async function () {
-		// 	shouldBehaveLikeAccountManager()
-		// })
+		describe("AccountManager", async function () {
+			shouldBehaveLikeAccountManager()
+		})
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {
 			shouldBehaveLikeFuzzTest()
