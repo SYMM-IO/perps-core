@@ -85,11 +85,12 @@ interface IAccountHub {
 	event AllocateForAccount(address indexed sender, address indexed account, uint256 amount);
 	event WithdrawFromAccount(address indexed sender, address indexed account, uint256 amount);
 	event Call(address indexed sender, address indexed account, bytes callData, bool success, bytes resultData);
+	event InstantLayerUpdated(address indexed oldInstantLayer, address indexed newInstantLayer);
 
 	// Account management
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
 	function editAccountName(address account, string memory name) external;
-	function _call(address account, bytes[] memory _callDatas) external;
+	function _call(address account, bytes[] calldata _callDatas) external returns (bytes[] memory);
 
 	// Symmio callback
 	function onClosePosition(uint256 quoteId, uint256 _filledAmount, uint256 _closedPrice, address partyA, address _partyB) external;
@@ -115,8 +116,10 @@ interface IAccountHub {
 		);
 
 	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory);
+	function ownerOf(address account) external view returns (address);
 	// Admin functions
 	function setSigner(address _signer) external;
+	function setInstantLayer(address _instantLayer) external;
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();
