@@ -917,27 +917,28 @@ export function shouldBehaveLikeAccountHub(): void {
 		})
 
 		describe("pause/unpause", async () => {
-			const subAccountData = [createSubAccountData("MARKET_ACCOUNT", 1)]
 			let subAccountAddress: string
 
-			beforeEach(async ()=> {
+			beforeEach(async () => {
+				const subAccountData = [createSubAccountData("MARKET_ACCOUNT", 1)]
 				subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
 			})
 
-			it("should revert createSubAccounts when paused", async ()=> {
+			it("should revert createSubAccounts when paused", async () => {
 				await context.accountHub.connect(context.signers.admin).pause()
+				const subAccountData = [createSubAccountData("MARKET_ACCOUNT", 1)]
 				await expect(
 					context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData),
 				).to.be.revertedWith("Pausable: paused")
 			})
 
-			it("should revert _call when paused", async ()=> {
+			it("should revert _call when paused", async () => {
 				await context.accountHub.connect(context.signers.admin).pause()
 				const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
 				await expect(context.accountHub.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWith("Pausable: paused")
 			})
 
-			it("should allow actions after unpause", async ()=> {
+			it("should allow actions after unpause", async () => {
 				await context.accountHub.connect(context.signers.admin).pause()
 				await context.accountHub.connect(context.signers.admin).unpause()
 				const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
