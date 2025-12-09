@@ -104,8 +104,8 @@ library LibQuote {
 
 		lastOpenPositionIndex = quoteLayout.partyBPositionsCount[quote.partyB][quote.partyA] - 1;
 		quoteLayout.partyBOpenPositions[quote.partyB][quote.partyA][indexOfPartyBPosition] = quoteLayout.partyBOpenPositions[quote.partyB][
-			quote.partyA
-		][lastOpenPositionIndex];
+						quote.partyA
+			][lastOpenPositionIndex];
 		quoteLayout.partyBPositionsIndex[quoteLayout.partyBOpenPositions[quote.partyB][quote.partyA][lastOpenPositionIndex]] = indexOfPartyBPosition;
 		quoteLayout.partyBOpenPositions[quote.partyB][quote.partyA].pop();
 
@@ -155,99 +155,6 @@ library LibQuote {
 			fee = (LibQuote.quoteOpenAmount(quote) * quote.requestedOpenPrice * quote.tradingFee) / 1e36;
 		} else {
 			fee = (LibQuote.quoteOpenAmount(quote) * quote.marketPrice * quote.tradingFee) / 1e36;
-		}
-	}
-
-	/**
-	 * @notice Calculates the accumulated funding fee for a position
-	 * @dev Uses weighted average funding rates over time
-	 * @param quote The quote to calculate funding for
-	 * @return fee The net funding fee (positive = trader pays, negative = trader receives)
-	 */
-	function getAccumulatedFundingFee(Quote storage quote) internal view returns (int256 fee) {
-		FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[quote.symbolId][quote.partyB];
-
-		// Early exit conditions:
-		// 1. No epoch duration set (accumulated funding not active)
-		if (fundingFee.epochDuration == 0) return 0;
-
-		uint256 unpaidEpochs = LibFundingRate.getEpochsSince(fundingFee, quote.lastFundingPaymentTimestamp);
-
-		if (unpaidEpochs == 0) return 0;
-
-		// Calculate epochs in the weighted average
-		uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdate(fundingFee);
-		uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
-
-		int256 beforeWeightedRate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
-		int256 currentRate = quote.positionType == PositionType.LONG ? fundingFee.currentLongRate : fundingFee.currentShortRate;
-		int256 currentFee = (beforeWeightedRate * int256(epochsBeforeLastUpdate)) + (currentRate * int256(epochsSinceLastUpdate));
-
-		// Subtract already paid amount
-		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (currentFee - quote.accumulatedPaidFunding)) / 1e18;
-
-		// Apply maximum funding rate cap
-		int256 maxFee = int256(quote.maxFundingRate) * int256(unpaidEpochs);
-
-		if (fee > 0) {
-			// Positive fee: cap at maxFee
-			fee = fee > maxFee ? maxFee : fee;
-		} else {
-			// Negative fee: cap at -maxFee
-			fee = fee < -maxFee ? -maxFee : fee;
-		}
-		// If fee == 0, no action needed
-	}
-
-	/**
-	 * @notice Charges accumulated funding fee for a position
-	 * @dev Transfers funds between parties based on calculated fee
-	 * @param quoteId The position ID to charge funding for
-	 */
-	function chargeAccumulatedFundingFee(uint256 quoteId) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
-		// Load the position
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-
-		// Calculate the unpaid funding fee
-		int256 fee = getAccumulatedFundingFee(quote);
-
-		quote.lastFundingPaymentTimestamp = block.timestamp;
-		updateAccumulatedPaidFunding(quote);
-
-		if (fee > 0) {
-			// Positive fee: Trader (PartyA) pays Market Maker (PartyB)
-			uint256 feeInUint = uint256(fee);
-			accountLayout.allocatedBalances[quote.partyA] -= feeInUint;
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += feeInUint;
-
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
-		} else if (fee < 0) {
-			// Negative fee: Market Maker (PartyB) pays Trader (PartyA)
-			uint256 feeInUint = uint256(-fee);
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] -= feeInUint;
-			accountLayout.allocatedBalances[quote.partyA] += feeInUint;
-
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
-		}
-	}
-
-	/**
-	 * @notice Updates the accumulated paid funding for a quote
-	 * @dev Updates the accumulated paid funding for a quote
-	 * @param quote The quote to update the accumulated paid funding for
-	 */
-	function updateAccumulatedPaidFunding(Quote storage quote) internal {
-		FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[quote.symbolId][quote.partyB];
-
-		if (fundingFee.epochDuration > 0) {
-			LibFundingRate.updateAccumulatedRates(fundingFee);
-			quote.accumulatedPaidFunding =
-				(quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate) *
-				int256(LibFundingRate.getEpochsSinceStart(fundingFee));
 		}
 	}
 }
