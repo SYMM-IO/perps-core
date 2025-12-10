@@ -85,7 +85,7 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 		emit LiquidatePositionsForCrossLiquidation(partyB, partyA, priceSig.quoteIds, liquidatedAmounts, closeIds);
 	}
 
-	function softPartyBLiquidation(address partyB, int256 marginDelta,uint256 penalty) external onlyRole(LibAccessibility.SOFT_LIQUIDATION_ROLE){
+	function softPartyBLiquidation(address partyB, int256 marginDelta,uint256 penalty) external onlyRole(LibAccessibility.SOFT_LIQUIDATOR_ROLE){
 		ClearingHouseFacetImpl.softPartyBLiquidation(partyB, penalty);
 		emit SoftPartyBLiquidation(partyB,marginDelta,penalty);
 	}
