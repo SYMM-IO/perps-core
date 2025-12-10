@@ -176,4 +176,13 @@ library ClearingHouseFacetImpl {
 
 		return (liquidatedAmounts, closeIds);
 	}
+
+	function softPartyBLiquidation(address partyB,uint256 penalty) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		require(accountLayout.masterAccountMode[partyB], "ClearingHouseFacet: partyB is not using master account mode");
+		if(penalty != 0){
+			accountLayout.partyBAllocatedBalances[partyB][address(0)] -= penalty;
+			accountLayout.balances[MAStorage.layout().penaltyCollector] += penalty;
+		}
+	}
 }

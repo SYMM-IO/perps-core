@@ -414,4 +414,16 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 		})
 	})
+	//
+	// describe("SoftLiquidation", () => {
+	// 	it("should fail to soft liquid without master mode", async  () => {
+	// 		// await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
+	// 		// await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
+	// 		await expect(context.controlFacet.connect(context.signers.admin).set)
+	// 	})
+	// })
 }
+
+// await expect(context.instantLayer.connect(context.signers.admin).setRevocationCooldown(next))
+// 					.to.emit(context.instantLayer, "RevocationCooldownUpdated")
+// 					.withArgs(old, next)
