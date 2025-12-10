@@ -269,8 +269,8 @@ library AccountFacetImpl {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
 		require(partyB != address(0), "AccountFacet: Zero address");
-		require(quoteLayout.partyAOpenPositions[msg.sender].length == quoteLayout.partyBOpenPositions[partyB][msg.sender].length,"AccountFacet : Have Open Positions with Other Party B");
-		require(quoteLayout.partyALockQuotesCount[msg.sender] == quoteLayout.partyBPendingQuotes[partyB][msg.sender].length,"AccountFacet : Have Locked Quotes with Other Party B");
+		require(quoteLayout.partyAOpenPositions[LibSigner.getSigner()].length == quoteLayout.partyBOpenPositions[partyB][LibSigner.getSigner()].length,"AccountFacet : Have Open Positions with Other Party B");
+		require(quoteLayout.partyALockQuotesCount[LibSigner.getSigner()] == quoteLayout.partyBPendingQuotes[partyB][LibSigner.getSigner()].length,"AccountFacet : Have Locked Quotes with Other Party B");
 		require(accountLayout.isPartyBBindable[partyB], "AccountFacet: Not Bindable");
 		BindState storage bindState = accountLayout.bindState[LibSigner.getSigner()];
 		require(bindState.status == BindStatus.NOT_BOUND, "AccountFacet: Invalid state");
