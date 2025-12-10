@@ -329,22 +329,19 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @return details Array of SubAccountDetail structs
 	 */
 	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details) {
-		address[] memory allAccounts = userToSubAccounts[owner].values();
-		uint256 total = allAccounts.length;
+		uint256 total = userToSubAccounts[owner].length();
 
-		// Return empty array if offset is out of bounds
 		if (offset >= total) {
 			return new SubAccountDetail[](0);
 		}
 
-		// Calculate how many results to return
 		uint256 remaining = total - offset;
 		uint256 resultSize = remaining < limit ? remaining : limit;
 
 		details = new SubAccountDetail[](resultSize);
 
 		for (uint256 i = 0; i < resultSize; i++) {
-			address accountAddr = allAccounts[offset + i];
+			address accountAddr = userToSubAccounts[owner].at(offset + i);
 			SubAccountData storage s = subAccounts[accountAddr];
 
 			details[i] = SubAccountDetail({
@@ -367,8 +364,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @return Array of virtual account addresses
 	 */
 	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory) {
-		address[] memory allAccounts = subAccountToVirtualAccounts[subAccount].values();
-		uint256 total = allAccounts.length;
+		uint256 total = subAccountToVirtualAccounts[subAccount].length();
 
 		if (offset >= total) {
 			return new address[](0);
@@ -379,7 +375,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		address[] memory paginatedAccounts = new address[](resultSize);
 		for (uint256 i = 0; i < resultSize; i++) {
-			paginatedAccounts[i] = allAccounts[offset + i];
+			paginatedAccounts[i] = subAccountToVirtualAccounts[subAccount].at(offset + i);
 		}
 		return paginatedAccounts;
 	}
@@ -399,8 +395,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				symbolId: v.symbolId,
 				metadata: v.metadata,
 				isExists: v.isExists,
-				isolationType: v.isolationType,
-				quoteIds: v.quoteIds.values()
+				isolationType: v.isolationType
 			});
 	}
 
@@ -411,13 +406,12 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param limit The maximum number of accounts to return
 	 * @return details Array of VirtualAccountDetail structs
 	 */
-	function getVirtualAccountsOfSubAccountDetailBatch( 
+	function getVirtualAccountsOfSubAccountDetailBatch(
 		address subAccount,
 		uint256 offset,
 		uint256 limit
 	) external view returns (VirtualAccountDetail[] memory details) {
-		address[] memory allAccounts = subAccountToVirtualAccounts[subAccount].values();
-		uint256 total = allAccounts.length;
+		uint256 total = subAccountToVirtualAccounts[subAccount].length();
 
 		// Return empty array if offset is out of bounds
 		if (offset >= total) {
@@ -431,7 +425,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		details = new VirtualAccountDetail[](resultSize);
 
 		for (uint256 i = 0; i < resultSize; i++) {
-			address accountAddr = allAccounts[offset + i];
+			address accountAddr = subAccountToVirtualAccounts[subAccount].at(offset + i);
 			VirtualAccountData storage v = virtualAccounts[accountAddr];
 
 			details[i] = VirtualAccountDetail({
@@ -440,8 +434,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				symbolId: v.symbolId,
 				metadata: v.metadata,
 				isExists: v.isExists,
-				isolationType: v.isolationType,
-				quoteIds: v.quoteIds.values()
+				isolationType: v.isolationType
 			});
 		}
 	}
@@ -454,8 +447,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @return Array of quote IDs
 	 */
 	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory) {
-		uint256[] memory allQuoteIds = virtualAccounts[account].quoteIds.values();
-		uint256 total = allQuoteIds.length;
+		uint256 total = virtualAccounts[account].quoteIds.length();
 
 		if (offset >= total) {
 			return new uint256[](0);
@@ -466,7 +458,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		uint256[] memory paginatedQuoteIds = new uint256[](resultSize);
 		for (uint256 i = 0; i < resultSize; i++) {
-			paginatedQuoteIds[i] = allQuoteIds[offset + i];
+			paginatedQuoteIds[i] = virtualAccounts[account].quoteIds.at(offset + i);
 		}
 		return paginatedQuoteIds;
 	}
@@ -546,8 +538,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				symbolId: v.symbolId,
 				metadata: v.metadata,
 				isExists: v.isExists,
-				isolationType: v.isolationType,
-				quoteIds: v.quoteIds.values()
+				isolationType: v.isolationType
 			});
 		}
 

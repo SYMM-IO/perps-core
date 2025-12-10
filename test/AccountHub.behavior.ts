@@ -1,21 +1,271 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
-import { expect, use } from "chai"
-import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
-import { ethers } from "hardhat"
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
+import { expect, use } from "chai";
+import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers";
+import { ethers } from "hardhat";
 
-import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
-import { initializeFixture } from "./Initialize.fixture"
-import { PositionType } from "./models/Enums"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest"
-import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { decimal } from "./utils/Common"
-import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils"
+
+
+import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types";
+import { initializeFixture } from "./Initialize.fixture";
+import { PositionType } from "./models/Enums";
+import { Hedger } from "./models/Hedger";
+import { RunContext } from "./models/RunContext";
+import { User } from "./models/User";
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest";
+import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest";
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest";
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest";
+import { decimal } from "./utils/Common";
+import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 export function shouldBehaveLikeAccountHub(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -1394,6 +1644,59 @@ export function shouldBehaveLikeAccountHub(): void {
 				it("should return globalNonce > 0 after account creation", async function () {
 					const nonce = await context.accountHub.globalNonce()
 					expect(nonce).to.be.greaterThan(0)
+				})
+			})
+
+			describe("Large Dataset Batch Retrieval", async () => {
+				it("should handle batch retrieval efficiently with optimized pagination", async function () {
+					this.timeout(60000) // 1 minute should be enough
+
+					const TOTAL_ACCOUNTS = 5000
+					const CREATION_BATCH_SIZE = 100
+
+					for (let i = 0; i < TOTAL_ACCOUNTS; i += CREATION_BATCH_SIZE) {
+						const batchData = []
+						const batchEnd = Math.min(i + CREATION_BATCH_SIZE, TOTAL_ACCOUNTS)
+
+						for (let j = i; j < batchEnd; j++) {
+							batchData.push(createSubAccountData(`ACCOUNT_${j}`, 0, `METADATA_${j}`))
+						}
+
+						await context.accountHub.connect(context.signers.user2).createSubAccounts(await context.accountManager.getAddress(), batchData)
+					}
+
+					const totalCount = await context.accountHub.getSubAccountsCountOfUser(context.signers.user2.address)
+					expect(totalCount).to.equal(TOTAL_ACCOUNTS)
+
+					// Test various batch sizes
+					const batch100 = await context.accountHub.getUserSubAccounts(context.signers.user2.address, 0, 100)
+					expect(batch100.length).to.equal(100)
+					expect(batch100[0].owner).to.equal(context.signers.user2.address)
+
+					const batch500 = await context.accountHub.getUserSubAccounts(context.signers.user2.address, 0, 500)
+					expect(batch500.length).to.equal(500)
+
+					// Test pagination through all accounts
+					let retrievedCount = 0
+					const pageSize = 100
+
+					for (let offset = 0; offset < TOTAL_ACCOUNTS; offset += pageSize) {
+						const batch = await context.accountHub.getUserSubAccounts(context.signers.user2.address, offset, pageSize)
+						retrievedCount += batch.length
+
+						// Verify first item in each batch
+						if (batch.length > 0) {
+							expect(batch[0].owner).to.equal(context.signers.user2.address)
+						}
+					}
+
+					expect(retrievedCount).to.equal(TOTAL_ACCOUNTS)
+
+					// Test offset functionality
+					const firstBatch = await context.accountHub.getUserSubAccounts(context.signers.user2.address, 0, 10)
+					const secondBatch = await context.accountHub.getUserSubAccounts(context.signers.user2.address, 10, 10)
+					expect(firstBatch[0].accountAddress).to.not.equal(secondBatch[0].accountAddress)
+
 				})
 			})
 		})

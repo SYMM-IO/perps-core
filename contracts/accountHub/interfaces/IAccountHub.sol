@@ -90,7 +90,6 @@ interface IAccountHub {
 		bool isExists;
 		bytes metadata;
 		VirtualAccountIsolationType isolationType;
-		uint256[] quoteIds;
 	}
 
 	// Account events
