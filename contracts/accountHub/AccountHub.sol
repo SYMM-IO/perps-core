@@ -32,6 +32,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant SIGNER_SETTER = keccak256("SIGNER_SETTER");
+	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
 
 	bytes4 private constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
 	bytes4 private constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
@@ -55,7 +56,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	address public affiliateHub;
 	address internal globalSigner;
 	uint256 public globalNonce;
-	address public instantLayer;
 
 	// ==================== Modifiers ====================
 
@@ -169,11 +169,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant returns (bytes[] memory) {
 		if (callDatas.length == 0) revert EmptyArray();
 
-		if (!_isOwnerOf(account, msg.sender)) {
-			if (msg.sender != instantLayer) {
-				address core = getRelatedCore(account);
-				if (!ISymmio(core).isCallFromInstantLayer()) revert NotOwner();
-			}
+		address signer = getSigner();
+		if (!_isOwnerOf(account, signer) && !hasRole(INSTANT_LAYER_ROLE, msg.sender)) {
+			revert NotOwner();
 		}
 
 		bytes[] memory results = new bytes[](callDatas.length);
@@ -253,15 +251,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	function setAffiliateHub(address _affiliateHub) external onlyRole(SETTER_ROLE) {
 		if (_affiliateHub == address(0)) revert ZeroAddress();
 		affiliateHub = _affiliateHub;
-	}
-
-	/**
-	 * @notice sets the instantLayer address
-	 * @param _instantLayer the instantLayer contract address (zero for disable)
-	 */
-	function setInstantLayer(address _instantLayer) external onlyRole(SETTER_ROLE) {
-		emit InstantLayerUpdated(instantLayer, _instantLayer);
-		instantLayer = _instantLayer;
 	}
 
 	/**

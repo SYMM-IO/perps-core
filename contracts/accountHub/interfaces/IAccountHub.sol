@@ -85,7 +85,6 @@ interface IAccountHub {
 	event AllocateForAccount(address indexed sender, address indexed account, uint256 amount);
 	event WithdrawFromAccount(address indexed sender, address indexed account, uint256 amount);
 	event Call(address indexed sender, address indexed account, bytes callData, bool success, bytes resultData);
-	event InstantLayerUpdated(address indexed oldInstantLayer, address indexed newInstantLayer);
 
 	// Account management
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
@@ -119,7 +118,6 @@ interface IAccountHub {
 	function ownerOf(address account) external view returns (address);
 	// Admin functions
 	function setSigner(address _signer) external;
-	function setInstantLayer(address _instantLayer) external;
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();
