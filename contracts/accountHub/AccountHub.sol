@@ -56,6 +56,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	address internal globalSigner;
 	uint256 public globalNonce;
 
+	// Per-subAccount nonce for virtual account creation
+	mapping(address => uint256) private subAccountVirtualNonces;
+
 	// ==================== Modifiers ====================
 
 	/**
@@ -218,17 +221,12 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 */
 	function _removeQuoteFromAccount(uint256 quoteId, address partyA) private {
 		VirtualAccountData storage vData = virtualAccounts[partyA];
-		SubAccountData storage sData = subAccounts[partyA];
 
 		if (vData.isExists) {
 			vData.quoteIds.remove(quoteId);
 			if (vData.quoteIds.length() == 0) {
 				_deleteVirtualAccount(partyA);
 			}
-		}
-
-		if (sData.isExists) {
-			sData.quoteIds.remove(quoteId);
 		}
 	}
 
@@ -319,8 +317,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				affiliate: s.affiliate,
 				symmioCore: s.symmioCore,
 				metadata: s.metadata,
-				isolationType: s.isolationType,
-				quoteIds: s.quoteIds.values()
+				isolationType: s.isolationType
 			});
 	}
 
@@ -331,7 +328,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param limit The maximum number of accounts to return
 	 * @return details Array of SubAccountDetail structs
 	 */
-	function getSubAccountsDetailBatch(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details) {
+	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details) {
 		address[] memory allAccounts = userToSubAccounts[owner].values();
 		uint256 total = allAccounts.length;
 
@@ -358,19 +355,33 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				affiliate: s.affiliate,
 				symmioCore: s.symmioCore,
 				metadata: s.metadata,
-				isolationType: s.isolationType,
-				quoteIds: s.quoteIds.values()
+				isolationType: s.isolationType
 			});
 		}
 	}
-
 	/**
-	 * @notice Gets all virtual account addresses for a sub-account
+	 * @notice Gets paginated virtual account addresses for a sub-account
 	 * @param subAccount The sub-account address
+	 * @param offset The starting index
+	 * @param limit The maximum number of accounts to return
 	 * @return Array of virtual account addresses
 	 */
-	function getVirtualAccountAddresses(address subAccount) external view returns (address[] memory) {
-		return subAccountToVirtualAccounts[subAccount].values();
+	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory) {
+		address[] memory allAccounts = subAccountToVirtualAccounts[subAccount].values();
+		uint256 total = allAccounts.length;
+
+		if (offset >= total) {
+			return new address[](0);
+		}
+
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
+
+		address[] memory paginatedAccounts = new address[](resultSize);
+		for (uint256 i = 0; i < resultSize; i++) {
+			paginatedAccounts[i] = allAccounts[offset + i];
+		}
+		return paginatedAccounts;
 	}
 
 	/**
@@ -400,7 +411,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param limit The maximum number of accounts to return
 	 * @return details Array of VirtualAccountDetail structs
 	 */
-	function getVirtualAccountsDetailBatch(
+	function getVirtualAccountsOfSubAccountDetailBatch( 
 		address subAccount,
 		uint256 offset,
 		uint256 limit
@@ -436,21 +447,28 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @notice Gets quote IDs for a sub-account
+	 * @notice Gets paginated quote IDs for a virtual account
 	 * @param account The account address
+	 * @param offset The starting index
+	 * @param limit The maximum number of quote IDs to return
 	 * @return Array of quote IDs
 	 */
-	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory) {
-		return subAccounts[account].quoteIds.values();
-	}
+	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory) {
+		uint256[] memory allQuoteIds = virtualAccounts[account].quoteIds.values();
+		uint256 total = allQuoteIds.length;
 
-	/**
-	 * @notice Gets quote IDs for a virtual account
-	 * @param account The account address
-	 * @return Array of quote IDs
-	 */
-	function getVirtualAccountQuoteIds(address account) external view returns (uint256[] memory) {
-		return virtualAccounts[account].quoteIds.values();
+		if (offset >= total) {
+			return new uint256[](0);
+		}
+
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
+
+		uint256[] memory paginatedQuoteIds = new uint256[](resultSize);
+		for (uint256 i = 0; i < resultSize; i++) {
+			paginatedQuoteIds[i] = allQuoteIds[offset + i];
+		}
+		return paginatedQuoteIds;
 	}
 
 	/**
@@ -458,7 +476,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param owner The owner address
 	 * @return The total number of sub-accounts
 	 */
-	function getSubAccountCount(address owner) external view returns (uint256) {
+	function getSubAccountsCountOfUser(address owner) external view returns (uint256) {
 		return userToSubAccounts[owner].length();
 	}
 
@@ -467,23 +485,41 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param subAccount The sub-account address
 	 * @return The total number of virtual accounts
 	 */
-	function getVirtualAccountCount(address subAccount) external view returns (uint256) {
+	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256) {
 		return subAccountToVirtualAccounts[subAccount].length();
 	}
 
 	/**
-	 * @notice Gets deleted virtual account addresses for a specific isolation type and symbol
+	 * @notice Gets the current virtual account nonce for a sub-account
+	 * @param subAccount The sub-account address
+	 * @return The current nonce value for virtual account creation
+	 */
+	function getSubAccountVirtualNonce(address subAccount) external view returns (uint256) {
+		return subAccountVirtualNonces[subAccount];
+	}
+
+	/**
+	 * @notice Predicts the address of the next virtual account that will be created for a sub-account
 	 * @param subAccount The sub-account address
 	 * @param isolationType The virtual account isolation type
 	 * @param symbolId The symbol ID (0 for position isolation)
-	 * @return Array of deleted virtual account addresses
+	 * @return The predicted address for the next virtual account (either reused or newly generated)
 	 */
-	function getDeletedVirtualAccountAddresses(
+	function predictNextVirtualAccountAddress(
 		address subAccount,
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId
-	) external view returns (address[] memory) {
-		return deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
+	) external view returns (address) {
+		// First check if a deleted virtual account exists for this combination
+		address[] storage pool = deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
+		if (pool.length > 0) {
+			// Return the address that would be reused (last element in the stack)
+			return pool[pool.length - 1];
+		}
+
+		// If no deleted account exists, generate and return a new virtual account address
+		uint256 nextNonce = subAccountVirtualNonces[subAccount] + 1;
+		return _generateVirtualAccountAddress(subAccount, nextNonce);
 	}
 
 	/**
@@ -516,21 +552,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		}
 
 		return details;
-	}
-
-	/**
-	 * @notice Gets the count of deleted virtual accounts for a specific type
-	 * @param subAccount The sub-account address
-	 * @param isolationType The virtual account isolation type
-	 * @param symbolId The symbol ID (0 for position isolation)
-	 * @return The total number of deleted virtual accounts
-	 */
-	function getDeletedVirtualAccountCount(
-		address subAccount,
-		VirtualAccountIsolationType isolationType,
-		uint256 symbolId
-	) external view returns (uint256) {
-		return deletedVirtualAccountsPool[subAccount][isolationType][symbolId].length;
 	}
 
 	// ==================== Internal Functions ====================
@@ -633,7 +654,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		SubAccountData storage parent = subAccounts[parentAccount];
 		if (!parent.isExists) revert InvalidParent();
 
-		uint256 nonce = ++globalNonce;
+		uint256 nonce = ++subAccountVirtualNonces[parentAccount];
 		virtualAccount = _generateVirtualAccountAddress(parentAccount, nonce);
 
 		VirtualAccountData storage v = virtualAccounts[virtualAccount];
@@ -843,7 +864,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		if (accountData.isolationType == SubAccountIsolationType.CUSTOM) {
 			_executeWithSigner(account, cd);
-			accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
 			return;
 		}
 

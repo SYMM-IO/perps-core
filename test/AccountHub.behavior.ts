@@ -18,7 +18,7 @@ import { decimal } from "./utils/Common"
 import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils"
 
 export function shouldBehaveLikeAccountHub(): void {
-	let context: RunContext, user: User, user2: User, hedger: Hedger
+	let context: RunContext, user: User, hedger: Hedger
 
 	const createSendQuoteCallData = async (quoteRequest = limitQuoteRequestBuilder().build()) => {
 		return context.partyAFacet.interface.encodeFunctionData("sendQuote", [
@@ -55,23 +55,23 @@ export function shouldBehaveLikeAccountHub(): void {
 	) {
 		await context.accountHub.connect(parentAccount).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
 		const accounts = await context.accountHub.getSubAccountAddresses(parentAccount)
-		const acc = accounts[accounts.length - 1]
+		const sAcc = accounts[accounts.length - 1]
 
 		await context.collateral.connect(parentAccount).approve(await context.accountFacet.getAddress(), depositAmount)
 		if (allocateToo) {
-			await context.accountFacet.connect(parentAccount).depositAndAllocateFor(acc, depositAmount)
+			await context.accountFacet.connect(parentAccount).depositAndAllocateFor(sAcc, depositAmount)
 		} else {
-			await context.accountFacet.connect(parentAccount).depositFor(acc, depositAmount)
+			await context.accountFacet.connect(parentAccount).depositFor(sAcc, depositAmount)
 		}
 
-		return acc
+		return sAcc
 	}
 
 	async function sendQuoteAndGetVirtualAccount(subAccount: string, quoteRequest = limitQuoteRequestBuilder().build()) {
 		const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 		await context.accountHub.connect(context.signers.user)._call(subAccount, [sendQuoteCallData])
 
-		const virtualAccountsAfter = await context.accountHub.getVirtualAccountAddresses(subAccount)
+		const virtualAccountsAfter = await context.accountHub.getVirtualAccountsOfSubAccount(subAccount, 0, 10)
 		return virtualAccountsAfter
 	}
 
@@ -90,7 +90,7 @@ export function shouldBehaveLikeAccountHub(): void {
 	}
 
 	async function cancelVirtualAccountQuote(virtualAccount: string) {
-		const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccount)
+		const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccount, 0, 10)
 		const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quotes[0]])
 		await context.accountHub.connect(context.signers.user)._call(virtualAccount, [encodedCancelQuote])
 	}
@@ -305,13 +305,13 @@ export function shouldBehaveLikeAccountHub(): void {
 					})
 
 					it("should create virtual account and send quote successfully", async () => {
-						const virtualAccountsBefore = await context.accountHub.getVirtualAccountCount(positionSubAccount)
+						const virtualAccountsBefore = await context.accountHub.getVirtualAccountsCountOfSubAccount(positionSubAccount)
 						expect(virtualAccountsBefore).to.equal(0)
 
 						const sendQuoteCallData = await createSendQuoteCallData()
 						await expect(context.accountHub.connect(context.signers.user)._call(positionSubAccount, [sendQuoteCallData])).to.not.be.reverted
 
-						const virtualAccountsAfter = await context.accountHub.getVirtualAccountCount(positionSubAccount)
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccountsCountOfSubAccount(positionSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
 					})
 
@@ -335,13 +335,13 @@ export function shouldBehaveLikeAccountHub(): void {
 					})
 
 					it("should create virtual account and send quote successfully", async () => {
-						const virtualAccountsBefore = await context.accountHub.getVirtualAccountCount(marketSubAccount)
+						const virtualAccountsBefore = await context.accountHub.getVirtualAccountsCountOfSubAccount(marketSubAccount)
 						expect(virtualAccountsBefore).to.equal(0)
 
 						const sendQuoteCallData = await createSendQuoteCallData()
 						await expect(context.accountHub.connect(context.signers.user)._call(marketSubAccount, [sendQuoteCallData])).to.not.be.reverted
 
-						const virtualAccountsAfter = await context.accountHub.getVirtualAccountCount(marketSubAccount)
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccountsCountOfSubAccount(marketSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
 					})
 
@@ -363,7 +363,7 @@ export function shouldBehaveLikeAccountHub(): void {
 						const sendQuoteCallData = await createSendQuoteCallData()
 						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
 
-						const virtualAccountsAfter = await context.accountHub.getVirtualAccountCount(marketSubAccount)
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccountsCountOfSubAccount(marketSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
 					})
 				})
@@ -377,7 +377,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					})
 
 					it("should create virtual account and send quote successfully", async () => {
-						const virtualAccountsBefore = await context.accountHub.getVirtualAccountCount(marketDirectionSubAccount)
+						const virtualAccountsBefore = await context.accountHub.getVirtualAccountsCountOfSubAccount(marketDirectionSubAccount)
 						expect(virtualAccountsBefore).to.equal(0)
 
 						const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
@@ -385,7 +385,7 @@ export function shouldBehaveLikeAccountHub(): void {
 
 						await expect(context.accountHub.connect(context.signers.user)._call(marketDirectionSubAccount, [sendQuoteCallData])).to.not.be.reverted
 
-						const virtualAccountsAfter = await context.accountHub.getVirtualAccountCount(marketDirectionSubAccount)
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccountsCountOfSubAccount(marketDirectionSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
 					})
 
@@ -423,7 +423,7 @@ export function shouldBehaveLikeAccountHub(): void {
 							await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
 						}
 
-						const virtualAccountsAfter = await context.accountHub.getVirtualAccountCount(marketDirectionSubAccount)
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccountsCountOfSubAccount(marketDirectionSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
 					})
 				})
@@ -441,7 +441,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					})
 
 					it("should not create virtual accounts for CUSTOM isolation", async () => {
-						const virtualAccountsBefore = await context.accountHub.getVirtualAccountCount(customSubAccount)
+						const virtualAccountsBefore = await context.accountHub.getVirtualAccountsCountOfSubAccount(customSubAccount)
 						expect(virtualAccountsBefore).to.equal(0)
 
 						const quoteRequest = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
@@ -451,7 +451,7 @@ export function shouldBehaveLikeAccountHub(): void {
 						await expect(context.accountHub.connect(context.signers.user)._call(customSubAccount, [sendQuoteCallData])).to.not.reverted
 
 						// Verify no virtual accounts were created
-						const virtualAccountsAfter = await context.accountHub.getVirtualAccountCount(customSubAccount)
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccountsCountOfSubAccount(customSubAccount)
 						expect(virtualAccountsAfter).to.equal(0)
 					})
 
@@ -462,73 +462,45 @@ export function shouldBehaveLikeAccountHub(): void {
 						await expect(context.accountHub.connect(context.signers.user)._call(customSubAccount, [sendQuoteCallData])).to.not.reverted
 
 						// Verify quote was tracked in sub-account
-						const quoteIds = await context.accountHub.getSubAccountQuoteIds(customSubAccount)
-						expect(quoteIds.length).to.equal(1)
+						const quote = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						expect(quote.partyA).to.equal(customSubAccount)
 					})
 
 					it("should allow multiple quotes with different symbols", async () => {
 						// Send quote with symbol 1
 						const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
-						const callData1 = await createSendQuoteCallData(quote1)
+						await sendQuoteAndGetVirtualAccount(customSubAccount, quote1)
 
-						await expect(context.accountHub.connect(context.signers.user)._call(customSubAccount, [callData1])).to.not.reverted
+						const q1 = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						expect(q1.partyA).to.equal(customSubAccount)
 
 						// Send quote with symbol 2
 						const quote2 = limitQuoteRequestBuilder().symbolId(2).positionType(PositionType.SHORT).build()
-						const callData2 = await createSendQuoteCallData(quote2)
+						await sendQuoteAndGetVirtualAccount(customSubAccount, quote2)
 
-						await expect(context.accountHub.connect(context.signers.user)._call(customSubAccount, [callData2])).to.not.reverted
-
-						// Verify both quotes were tracked
-						const quoteIds = await context.accountHub.getSubAccountQuoteIds(customSubAccount)
-						expect(quoteIds.length).to.equal(2)
+						const q2 = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						expect(q2.partyA).to.equal(customSubAccount)
 
 						// Verify no virtual accounts created
-						const virtualAccounts = await context.accountHub.getVirtualAccountCount(customSubAccount)
+						const virtualAccounts = await context.accountHub.getVirtualAccountsCountOfSubAccount(customSubAccount)
 						expect(virtualAccounts).to.equal(0)
 					})
 
 					it("should allow both LONG and SHORT positions on same symbol", async () => {
 						// Send LONG quote
 						const longQuote = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
-						const longCallData = await createSendQuoteCallData(longQuote)
+						await sendQuoteAndGetVirtualAccount(customSubAccount, longQuote)
 
-						await expect(context.accountHub.connect(context.signers.user)._call(customSubAccount, [longCallData])).to.not.reverted
+						const q1 = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						expect(q1.partyA).to.equal(customSubAccount)
 
 						// Send SHORT quote on same symbol
 						const shortQuote = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
-						const shortCallData = await createSendQuoteCallData(shortQuote)
-
-						await expect(context.accountHub.connect(context.signers.user)._call(customSubAccount, [shortCallData])).to.not.reverted
+						await sendQuoteAndGetVirtualAccount(customSubAccount, shortQuote)
 
 						// Verify both quotes were tracked
-						const quoteIds = await context.accountHub.getSubAccountQuoteIds(customSubAccount)
-						expect(quoteIds.length).to.equal(2)
-					})
-
-					it("should track quote IDs correctly", async () => {
-						const quoteIdsBefore = await context.accountHub.getSubAccountQuoteIds(customSubAccount)
-						expect(quoteIdsBefore.length).to.equal(0)
-
-						// Send first quote
-						const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
-
-						const callData1 = await createSendQuoteCallData(quote1)
-
-						await context.accountHub.connect(context.signers.user)._call(customSubAccount, [callData1])
-
-						let quoteIds = await context.accountHub.getSubAccountQuoteIds(customSubAccount)
-						expect(quoteIds.length).to.equal(1)
-
-						// Send second quote
-						const quote2 = limitQuoteRequestBuilder().symbolId(2).positionType(PositionType.SHORT).build()
-
-						const callData2 = await createSendQuoteCallData(quote2)
-
-						await context.accountHub.connect(context.signers.user)._call(customSubAccount, [callData2])
-
-						quoteIds = await context.accountHub.getSubAccountQuoteIds(customSubAccount)
-						expect(quoteIds.length).to.equal(2)
+						const q2 = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						expect(q2.partyA).to.equal(customSubAccount)
 					})
 
 					it("should not transfer funds internally for CUSTOM isolation", async () => {
@@ -555,7 +527,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					})
 
 					it("should create virtual account manually for CUSTOM isolation", async () => {
-						const virtualAccountsBefore = await context.accountHub.getVirtualAccountCount(customSubAccount)
+						const virtualAccountsBefore = await context.accountHub.getVirtualAccountsCountOfSubAccount(customSubAccount)
 						expect(virtualAccountsBefore).to.equal(0)
 
 						// Manually create a POSITION isolated virtual account
@@ -568,7 +540,7 @@ export function shouldBehaveLikeAccountHub(): void {
 							),
 						).to.not.reverted
 
-						const virtualAccountsAfter = await context.accountHub.getVirtualAccountCount(customSubAccount)
+						const virtualAccountsAfter = await context.accountHub.getVirtualAccountsCountOfSubAccount(customSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
 					})
 
@@ -605,7 +577,7 @@ export function shouldBehaveLikeAccountHub(): void {
 							2,
 						)
 
-						const virtualAccounts = await context.accountHub.getVirtualAccountCount(customSubAccount)
+						const virtualAccounts = await context.accountHub.getVirtualAccountsCountOfSubAccount(customSubAccount)
 						expect(virtualAccounts).to.equal(4)
 					})
 
@@ -618,7 +590,7 @@ export function shouldBehaveLikeAccountHub(): void {
 							1,
 						)
 
-						const virtualAccounts = await context.accountHub.getVirtualAccountAddresses(customSubAccount)
+						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						const virtualAccount = virtualAccounts[0]
 
 						// Transfer funds from sub-account to virtual account
@@ -637,7 +609,7 @@ export function shouldBehaveLikeAccountHub(): void {
 
 						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccount, [sendQuoteCallData])).to.not.reverted
 
-						const quoteIds = await context.accountHub.getVirtualAccountQuoteIds(virtualAccount)
+						const quoteIds = await context.accountHub.getVirtualAccountQuoteIds(virtualAccount, 0, 10)
 						expect(quoteIds.length).to.equal(1)
 					})
 
@@ -650,7 +622,7 @@ export function shouldBehaveLikeAccountHub(): void {
 							1,
 						)
 
-						const virtualAccounts = await context.accountHub.getVirtualAccountAddresses(customSubAccount)
+						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						const virtualAccount = virtualAccounts[0]
 
 						// Transfer funds
@@ -683,7 +655,7 @@ export function shouldBehaveLikeAccountHub(): void {
 							1, // symbolId 1
 						)
 
-						const virtualAccounts = await context.accountHub.getVirtualAccountAddresses(customSubAccount)
+						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						const virtualAccount = virtualAccounts[0]
 
 						// Transfer funds
@@ -747,7 +719,7 @@ export function shouldBehaveLikeAccountHub(): void {
 							2, // ETH
 						)
 
-						const virtualAccounts = await context.accountHub.getVirtualAccountAddresses(customSubAccount)
+						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						expect(virtualAccounts.length).to.equal(2)
 
 						const btcLongVirtual = virtualAccounts[0]
@@ -774,8 +746,8 @@ export function shouldBehaveLikeAccountHub(): void {
 						await expect(context.accountHub.connect(context.signers.user)._call(ethShortVirtual, [ethCallData])).to.not.reverted
 
 						// Verify quotes tracked separately
-						const btcQuotes = await context.accountHub.getVirtualAccountQuoteIds(btcLongVirtual)
-						const ethQuotes = await context.accountHub.getVirtualAccountQuoteIds(ethShortVirtual)
+						const btcQuotes = await context.accountHub.getVirtualAccountQuoteIds(btcLongVirtual, 0, 10)
+						const ethQuotes = await context.accountHub.getVirtualAccountQuoteIds(ethShortVirtual, 0, 10)
 
 						expect(btcQuotes.length).to.equal(1)
 						expect(ethQuotes.length).to.equal(1)
@@ -802,32 +774,18 @@ export function shouldBehaveLikeAccountHub(): void {
 				)
 			})
 
-			it("should remove quoteId from subAccount(CUSTOM) quoteIds", async () => {
-				await sendQuoteAndGetVirtualAccount(customSubAccountAddress)
-
-				const quotesBeforeClose = await context.accountHub.getSubAccountQuoteIds(customSubAccountAddress)
-				expect(quotesBeforeClose.length).to.equal(1)
-				const quoteId = quotesBeforeClose[0]
-
-				await openPositionForQuote(quoteId)
-				await closePositionForQuote(context.signers.user, quoteId, customSubAccountAddress)
-
-				const quotesAfterClose = await context.accountHub.getSubAccountQuoteIds(customSubAccountAddress)
-				expect(quotesAfterClose.length).to.equal(0)
-			})
-
 			it("should remove quoteId from virtualAccount quoteIds and remove virtualAccount", async () => {
 				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
 				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
 
-				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				expect(quotesBeforeClose.length).to.equal(1)
 				const quoteId = quotesBeforeClose[0]
 
 				await openPositionForQuote(quoteId)
 				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
 
-				const quotesAfterClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+				const quotesAfterClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				expect(quotesAfterClose.length).to.equal(0)
 
 				const virtualAccountData = await context.accountHub.getVirtualAccountDetail(virtualAccountAddress)
@@ -841,7 +799,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
 				const initialVirtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
 
-				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(initialVirtualAccountAddress)
+				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(initialVirtualAccountAddress, 0, 10)
 				expect(quotesBeforeClose.length).to.equal(1)
 				const quoteId = quotesBeforeClose[0]
 
@@ -856,7 +814,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				const reusedVirtualAccountAddress = reusedVirtualAccountAddresses[0]
 
 				expect(reusedVirtualAccountAddress).to.equal(initialVirtualAccountAddress)
-				expect(await context.accountHub.getVirtualAccountCount(positionSubAccountAddress)).to.equal(1)
+				expect(await context.accountHub.getVirtualAccountsCountOfSubAccount(positionSubAccountAddress)).to.equal(1)
 
 				const reusedAccountData = await context.accountHub.getVirtualAccountDetail(reusedVirtualAccountAddress)
 				expect(reusedAccountData.isExists).to.true
@@ -881,31 +839,16 @@ export function shouldBehaveLikeAccountHub(): void {
 				)
 			})
 
-			it("should remove quoteId from subAccount(CUSTOM) quoteIds", async () => {
-				await sendQuoteAndGetVirtualAccount(customSubAccountAddress)
-
-				const quotesBeforeClose = await context.accountHub.getSubAccountQuoteIds(customSubAccountAddress)
-				expect(quotesBeforeClose.length).to.equal(1)
-
-				const quoteId = quotesBeforeClose[0]
-
-				const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
-				await context.accountHub.connect(context.signers.user)._call(customSubAccountAddress, [encodedCancelQuote])
-
-				const quotesAfterClose = await context.accountHub.getSubAccountQuoteIds(customSubAccountAddress)
-				expect(quotesAfterClose.length).to.equal(0)
-			})
-
 			it("should remove quoteId from virtualAccount quoteIds and remove virtualAccount", async () => {
 				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
 				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
 
-				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				expect(quotesBeforeClose.length).to.equal(1)
 
 				await cancelVirtualAccountQuote(virtualAccountAddress)
 
-				const quotesAfterClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+				const quotesAfterClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				expect(quotesAfterClose.length).to.equal(0)
 
 				const virtualAccountData = await context.accountHub.getVirtualAccountDetail(virtualAccountAddress)
@@ -1147,7 +1090,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 
 				it("should call onVirtualAccountDeletion when position is closed", async () => {
-					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 					const quoteId = quotes[0]
 
 					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountDeletion)
@@ -1184,7 +1127,7 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					await sendQuoteAndGetVirtualAccount(marketAccount)
 
-					const virtualAccounts = await context.accountHub.getVirtualAccountAddresses(marketAccount)
+					const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(marketAccount, 0, 10)
 					const marketVirtualAccount = virtualAccounts[0]
 
 					await sendQuoteAndGetVirtualAccount(marketVirtualAccount)
@@ -1210,7 +1153,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				it.skip("should handle hook revert gracefully during deletion", async () => {
 					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountDeletion, true, "Hook rejected deletion")
 
-					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 					const quoteId = quotes[0]
 
 					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
@@ -1224,7 +1167,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				it.skip("should return the hook failure reason for virtual account deletion", async () => {
 					const revertMessage = "Deletion blocked: account has pending rewards"
 
-					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					const quotes = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 					const quoteId = quotes[0]
 
 					// Configure hook to revert AFTER virtual account is created
@@ -1308,14 +1251,14 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 			})
 
-			describe("getSubAccountsDetailBatch", async () => {
+			describe("getUserSubAccounts", async () => {
 				it("should return empty array if no sub-accounts exist", async function () {
-					const details = await context.accountHub.getSubAccountsDetailBatch(context.signers.others[0].address, 0, 10)
+					const details = await context.accountHub.getUserSubAccounts(context.signers.others[0].address, 0, 10)
 					expect(details.length).to.be.equal(0)
 				})
 
 				it("should return paginated sub-account details", async function () {
-					const details = await context.accountHub.getSubAccountsDetailBatch(context.signers.user.address, 0, 10)
+					const details = await context.accountHub.getUserSubAccounts(context.signers.user.address, 0, 10)
 
 					expect(details.length).to.be.greaterThanOrEqual(1)
 					expect(details[0].accountAddress).to.equal(subAccountAddress)
@@ -1325,9 +1268,9 @@ export function shouldBehaveLikeAccountHub(): void {
 					const secondSubAccountData = [createSubAccountData("SECOND_ACCOUNT", 0, "METADATA2")]
 					await createSubAccountAndDeposit(context.signers.user, secondSubAccountData, BALANCES.DEPOSIT_AMOUNT)
 
-					const allDetails = await context.accountHub.getSubAccountsDetailBatch(context.signers.user.address, 0, 10)
-					const firstOnly = await context.accountHub.getSubAccountsDetailBatch(context.signers.user.address, 0, 1)
-					const secondOnly = await context.accountHub.getSubAccountsDetailBatch(context.signers.user.address, 1, 1)
+					const allDetails = await context.accountHub.getUserSubAccounts(context.signers.user.address, 0, 10)
+					const firstOnly = await context.accountHub.getUserSubAccounts(context.signers.user.address, 0, 1)
+					const secondOnly = await context.accountHub.getUserSubAccounts(context.signers.user.address, 1, 1)
 
 					expect(allDetails.length).to.be.greaterThanOrEqual(2)
 					expect(firstOnly.length).to.equal(1)
@@ -1335,16 +1278,16 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 			})
 
-			describe("getVirtualAccountAddresses", async () => {
+			describe("getVirtualAccountsOfSubAccount", async () => {
 				it("should return empty array when no virtual accounts exist", async function () {
-					const addresses = await context.accountHub.getVirtualAccountAddresses(subAccountAddress)
+					const addresses = await context.accountHub.getVirtualAccountsOfSubAccount(subAccountAddress, 0, 10)
 					expect(addresses).to.be.an("array").that.is.empty
 				})
 
 				it("should return virtual account addresses after quote", async function () {
 					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress)
 
-					const addresses = await context.accountHub.getVirtualAccountAddresses(subAccountAddress)
+					const addresses = await context.accountHub.getVirtualAccountsOfSubAccount(subAccountAddress, 0, 10)
 					expect(addresses.length).to.be.greaterThanOrEqual(1)
 					expect(addresses).to.include(virtualAccounts[0])
 				})
@@ -1363,16 +1306,16 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 			})
 
-			describe("getVirtualAccountsDetailBatch", async () => {
+			describe("getVirtualAccountsOfSubAccountDetailBatch", async () => {
 				it("should return paginated virtual account details", async function () {
 					await sendQuoteAndGetVirtualAccount(subAccountAddress)
 
-					const details = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 10)
+					const details = await context.accountHub.getVirtualAccountsOfSubAccountDetailBatch(subAccountAddress, 0, 10)
 					expect(details.length).to.be.greaterThanOrEqual(1)
 				})
 
 				it("should return empty array if no virtual accounts exist", async function () {
-					const details = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 10)
+					const details = await context.accountHub.getVirtualAccountsOfSubAccountDetailBatch(subAccountAddress, 0, 10)
 					expect(details).to.be.an("array").that.is.empty
 				})
 
@@ -1381,9 +1324,9 @@ export function shouldBehaveLikeAccountHub(): void {
 					await sendQuoteAndGetVirtualAccount(subAccountAddress)
 					await sendQuoteAndGetVirtualAccount(subAccountAddress)
 
-					const allDetails = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 10)
-					const firstOnly = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 1)
-					const secondOnly = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 1, 1)
+					const allDetails = await context.accountHub.getVirtualAccountsOfSubAccountDetailBatch(subAccountAddress, 0, 10)
+					const firstOnly = await context.accountHub.getVirtualAccountsOfSubAccountDetailBatch(subAccountAddress, 0, 1)
+					const secondOnly = await context.accountHub.getVirtualAccountsOfSubAccountDetailBatch(subAccountAddress, 1, 1)
 
 					expect(allDetails.length).to.be.greaterThanOrEqual(2)
 					expect(firstOnly.length).to.equal(1)
@@ -1394,76 +1337,53 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should return correct details for each virtual account", async function () {
 					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress)
-					const details = await context.accountHub.getVirtualAccountsDetailBatch(subAccountAddress, 0, 10)
+					const details = await context.accountHub.getVirtualAccountsOfSubAccountDetailBatch(subAccountAddress, 0, 10)
 					expect(details[0].accountAddress).to.equal(virtualAccounts[0])
 					expect(details[0].parentAccount).to.equal(subAccountAddress)
 					expect(details[0].isExists).to.be.true
 				})
 			})
 
-			describe("getSubAccountQuoteIds", async () => {
-				it("should return empty array for sub-account with no quotes", async function () {
-					const quoteIds = await context.accountHub.getSubAccountQuoteIds(subAccountAddress)
-					expect(quoteIds).to.be.an("array").that.is.empty
-				})
-			})
-
-			describe("getVirtualAccountQuoteIds", async () => {
+			describe("sendQuoteAndGetVirtualAccount", async () => {
 				it("should return quote IDs for virtual account", async function () {
 					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress)
 					virtualAccountAddress = virtualAccounts[0]
 
-					const quoteIds = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress)
+					const quoteIds = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 					expect(quoteIds.length).to.be.greaterThanOrEqual(1)
 				})
 			})
 
-			describe("getSubAccountCount", async () => {
+			describe("getSubAccountsCountOfUser", async () => {
 				it("should return 0 for user with no sub-accounts", async function () {
-					const count = await context.accountHub.getSubAccountCount(context.signers.user2.address)
+					const count = await context.accountHub.getSubAccountsCountOfUser(context.signers.user2.address)
 					expect(count).to.equal(0)
 				})
 
 				it("should return correct count after creating sub-accounts", async function () {
-					const count = await context.accountHub.getSubAccountCount(context.signers.user.address)
+					const count = await context.accountHub.getSubAccountsCountOfUser(context.signers.user.address)
 					expect(count).to.be.greaterThanOrEqual(1)
 				})
 			})
 
-			describe("getVirtualAccountCount", async () => {
+			describe("getVirtualAccountsCountOfSubAccount", async () => {
 				it("should return 0 when no virtual accounts exist", async function () {
-					const count = await context.accountHub.getVirtualAccountCount(subAccountAddress)
+					const count = await context.accountHub.getVirtualAccountsCountOfSubAccount(subAccountAddress)
 					expect(count).to.equal(0)
 				})
 
 				it("should return correct count after sending quote", async function () {
 					await sendQuoteAndGetVirtualAccount(subAccountAddress)
 
-					const count = await context.accountHub.getVirtualAccountCount(subAccountAddress)
+					const count = await context.accountHub.getVirtualAccountsCountOfSubAccount(subAccountAddress)
 					expect(count).to.be.greaterThanOrEqual(1)
-				})
-			})
-
-			describe("getDeletedVirtualAccountAddresses", async () => {
-				it("should return empty array when no deleted virtual accounts", async function () {
-					// VirtualAccountIsolationType.POSITION = 0, symbolId = 1
-					const addresses = await context.accountHub.getDeletedVirtualAccountAddresses(subAccountAddress, 0, 1)
-					expect(addresses).to.be.an("array").that.is.empty
-				})
-			})
-
-			describe("getDeletedVirtualAccountCount", async () => {
-				it("should return 0 when no deleted virtual accounts", async function () {
-					// VirtualAccountIsolationType.POSITION = 0, symbolId = 1
-					const count = await context.accountHub.getDeletedVirtualAccountCount(subAccountAddress, 0, 1)
-					expect(count).to.equal(0)
 				})
 			})
 
 			describe("Public Constants and Variables", async () => {
 				it("should return MAX_NAME_LENGTH", async function () {
 					const maxLength = await context.accountHub.MAX_NAME_LENGTH()
-					expect(maxLength).to.be.greaterThan(0)
+					expect(maxLength).to.be.equal(100)
 				})
 
 				it("should return affiliateHub address", async function () {
@@ -1475,6 +1395,110 @@ export function shouldBehaveLikeAccountHub(): void {
 					const nonce = await context.accountHub.globalNonce()
 					expect(nonce).to.be.greaterThan(0)
 				})
+			})
+		})
+
+		describe("predictNextVirtualAccountAddress", async () => {
+			let positionSubAccountAddress: string
+
+			beforeEach(async () => {
+				positionSubAccountAddress = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("POSITION_ACCOUNT", 0)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+			})
+
+			it("should return new virtual account address when no deleted accounts exist", async () => {
+				// Get the current nonce for the sub-account
+				const currentNonce = await context.accountHub.getSubAccountVirtualNonce(positionSubAccountAddress)
+
+				// Predict the next virtual account address
+				const predictedAddress = await context.accountHub.predictNextVirtualAccountAddress(
+					positionSubAccountAddress,
+					0, // VirtualAccountIsolationType.POSITION
+					0, // symbolId (0 for position isolation)
+				)
+
+				// Verify the predicted address is not zero
+				expect(predictedAddress).to.not.equal(ZeroAddress)
+
+				// Create a virtual account by sending a quote
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest)
+
+				// Verify the actual created address matches the prediction
+				expect(virtualAccounts[0]).to.equal(predictedAddress)
+
+				// Verify nonce was incremented
+				const newNonce = await context.accountHub.getSubAccountVirtualNonce(positionSubAccountAddress)
+				expect(newNonce).to.equal(currentNonce + 1n)
+			})
+
+			it("should return deleted virtual account address when one exists", async () => {
+				// Create a virtual account
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest)
+				const initialVirtualAccount = virtualAccounts[0]
+
+				// Close the position to delete the virtual account
+				const quotes = await context.accountHub.getVirtualAccountQuoteIds(initialVirtualAccount, 0, 10)
+				const quoteId = quotes[0]
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, initialVirtualAccount)
+
+				// Verify the virtual account was deleted
+				const deletedAccountData = await context.accountHub.getVirtualAccountDetail(initialVirtualAccount)
+				expect(deletedAccountData.isExists).to.false
+
+				// Predict the next virtual account address
+				const predictedAddress = await context.accountHub.predictNextVirtualAccountAddress(
+					positionSubAccountAddress,
+					quoteRequest.positionType,
+					quoteRequest.symbolId,
+				)
+
+				// Verify the predicted address is the deleted account
+				expect(predictedAddress).to.equal(initialVirtualAccount)
+
+				// Create a new virtual account and verify it reuses the deleted one
+				const reusedVirtualAccounts = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest)
+				expect(reusedVirtualAccounts[0]).to.equal(initialVirtualAccount)
+			})
+
+			it("should handle different isolation types correctly", async () => {
+				// Create a MARKET isolation sub-account
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MARKET_ACCOUNT", 1)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				// Predict for MARKET isolation type
+				const predictedMarketAddress = await context.accountHub.predictNextVirtualAccountAddress(
+					marketSubAccount,
+					1, // VirtualAccountIsolationType.MARKET
+					1, // symbolId 1
+				)
+
+				expect(predictedMarketAddress).to.not.equal(ZeroAddress)
+
+				// Create virtual account with MARKET isolation
+				const quoteRequest = limitQuoteRequestBuilder().symbolId(1).build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount, quoteRequest)
+
+				// Verify the actual address matches prediction
+				expect(virtualAccounts[0]).to.equal(predictedMarketAddress)
+
+				// Predict for POSITION isolation type on the same sub-account
+				const predictedPositionAddress = await context.accountHub.predictNextVirtualAccountAddress(
+					marketSubAccount,
+					0, // VirtualAccountIsolationType.POSITION
+					0, // symbolId 0 for position
+				)
+
+				// The addresses should be different for different isolation types
+				expect(predictedPositionAddress).to.not.equal(predictedMarketAddress)
 			})
 		})
 	})
