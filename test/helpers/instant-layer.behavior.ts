@@ -391,6 +391,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			// Bind to Party B
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
 			await context.accountManager.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
 
 			// Whitelisting Symbol type
@@ -877,6 +879,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			// Bind to Party B
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
 			await context.accountManager.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
 
 			// Whitelisting Symbol type
@@ -1457,6 +1461,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner)
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
 
 			// Create sub-account with MARKET isolation (type 1) - allows multiple quotes with same symbol
 			const subAccountData = [
