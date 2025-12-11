@@ -187,4 +187,6 @@ interface IViewFacet {
 	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory);
 
 	function getEntityMetadata(address entity) external view returns (EntityMetadata memory);
+
+	function getPenaltyCollector() external view returns(address);
 }

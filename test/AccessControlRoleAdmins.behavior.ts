@@ -50,7 +50,16 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 					// outsider cannot add
 					await expect(
 						context.controlFacet.connect(outsider).addRoleAdmin(SETTER_ROLE, await secondaryAdmin.getAddress()),
-					).to.be.revertedWith("Accessibility: Must be role admin")
+					).to.be.revertedWith("Accessibility: Must has role")
+				})
+
+				it("Should revert when role admin (non-default) tries to add another admin", async function () {
+					// default admin delegates admin rights for role
+					await context.controlFacet.connect(admin).addRoleAdmin(SETTER_ROLE, await secondaryAdmin.getAddress())
+					// secondaryAdmin cannot further delegate
+					await expect(
+						context.controlFacet.connect(secondaryAdmin).addRoleAdmin(SETTER_ROLE, await operator.getAddress()),
+					).to.be.revertedWith("Accessibility: Must has role")
 				})
 
 				it("Should revert when admin address is zero", async function () {
@@ -81,17 +90,22 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 					// outsider cannot remove
 					await expect(
 						context.controlFacet.connect(outsider).removeRoleAdmin(SETTER_ROLE, await secondaryAdmin.getAddress()),
-					).to.be.revertedWith("Accessibility: Must be role admin")
+					).to.be.revertedWith("Accessibility: Must has role")
 				})
 
-				it("Should allow delegated admins to remove other delegated admins", async function () {
-					// admin removes another
+				it("Should block delegated admins from removing other delegated admins", async function () {
+					// delegated admin cannot remove another admin
 					await context.controlFacet.connect(admin).addRoleAdmin(SETTER_ROLE, await operator.getAddress())
 					await expect(
 						context.controlFacet.connect(secondaryAdmin).removeRoleAdmin(SETTER_ROLE, await operator.getAddress()),
-					)
-						.to.emit(context.controlFacet, "RoleAdminRemoved")
-						.withArgs(SETTER_ROLE, await operator.getAddress())
+					).to.be.revertedWith("Accessibility: Must has role")
+				})
+
+				it("Should block delegated admins from removing themselves", async function () {
+					// delegated admin cannot remove self
+					await expect(
+						context.controlFacet.connect(secondaryAdmin).removeRoleAdmin(SETTER_ROLE, await secondaryAdmin.getAddress()),
+					).to.be.revertedWith("Accessibility: Must has role")
 				})
 			})
 
@@ -126,11 +140,8 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 					).to.be.revertedWith("Accessibility: Must be role admin")
 				})
 
-				it("Should allow default admin to manage role even when removed from delegated list", async function () {
-					// delegated admin removes default admin address from list, fallback still works
-					await expect(
-						context.controlFacet.connect(secondaryAdmin).removeRoleAdmin(LIQUIDATOR_ROLE, await admin.getAddress()),
-					).to.not.reverted
+				it("Should always allow default admin to manage the role", async function () {
+					// default admin can grant regardless of delegated list state
 					await expect(context.controlFacet.connect(admin).grantRole(await operator.getAddress(), LIQUIDATOR_ROLE)).to.not.reverted
 					expect(await context.viewFacet.hasRole(await operator.getAddress(), LIQUIDATOR_ROLE)).to.equal(true)
 				})
