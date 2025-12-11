@@ -495,4 +495,9 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	function checkZeroAddress(address target) private pure {
 		require(target != address(0), "ControlFacet: Zero address");
 	}
+
+	function setPenaltyCollector(address penaltyCollector) external onlyRole(LibAccessibility.SETTER_ROLE){
+		MAStorage.layout().penaltyCollector = penaltyCollector;
+		emit SetPenaltyCollector(penaltyCollector);
+	}
 }

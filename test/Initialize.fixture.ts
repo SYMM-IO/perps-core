@@ -44,6 +44,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	await affiliateHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("APPROVER_ROLE")), context.signers.admin.address)
 
 	await affiliateHub.connect(context.signers.admin).setWhitelistedSymmioCore(diamond, true)
+	await affiliateHub.connect(context.signers.admin).setAccountHub(await accountHub.getAddress())
 
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("PAUSER_ROLE")), context.signers.admin.address)

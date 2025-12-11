@@ -17,4 +17,5 @@ interface IClearingHouseFacetEvents {
 		uint256[] liquidatedAmounts,
 		uint256[] closeIds
 	);
+	event SoftPartyBLiquidation(address partyB, int256 marginDelta, uint256 penalty);
 }

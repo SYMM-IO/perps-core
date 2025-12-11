@@ -8,4 +8,8 @@ interface IAccountManager {
 	event AddAccount(address indexed user, address indexed account, string name);
 
 	function setAccountHub(address _accountHub) external;
+
+	function getAccounts(address user, uint256 start, uint256 size) external view returns (address[] memory);
+
+	function getAccountsLength(address user) external view returns (uint256);
 }
