@@ -1921,8 +1921,8 @@ export function shouldBehaveLikeAccountHub(): void {
 					1, // symbolId
 				)
 
-				const virtualAccounts = await context.accountHub.getVirtualAccount(customSubAccount)
-				virtualAccount = virtualAccounts.accountAddress
+				const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
+				virtualAccount = virtualAccounts[0].accountAddress
 			})
 			describe("transferFromSubAccountToVirtualAccount", async () => {
 				it("should transfer balance from subaccount to virtual account", async () => {
