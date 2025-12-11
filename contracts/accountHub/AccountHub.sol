@@ -840,9 +840,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		SubAccountData storage accountData = subAccounts[account];
 
 		if (accountData.isolationType == SubAccountIsolationType.CUSTOM) {
-			bytes memory customResult = _executeWithSigner(account, cd);
-			accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
-			return customResult;
+			return _executeWithSigner(account, cd);
 		}
 
 		// Get or create virtual account based on sub-account isolation type (tries to reuse deleted ones first)
