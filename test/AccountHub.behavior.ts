@@ -1,21 +1,46 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
-import { expect, use } from "chai"
-import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
-import { ethers } from "hardhat"
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
+import { expect, use } from "chai";
+import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers";
+import { ethers } from "hardhat";
 
-import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
-import { initializeFixture } from "./Initialize.fixture"
-import { PositionType } from "./models/Enums"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest"
-import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { decimal } from "./utils/Common"
-import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils"
+
+
+import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types";
+import { initializeFixture } from "./Initialize.fixture";
+import { PositionType } from "./models/Enums";
+import { Hedger } from "./models/Hedger";
+import { RunContext } from "./models/RunContext";
+import { User } from "./models/User";
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest";
+import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest";
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest";
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest";
+import { decimal } from "./utils/Common";
+import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 export function shouldBehaveLikeAccountHub(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger
@@ -123,6 +148,7 @@ export function shouldBehaveLikeAccountHub(): void {
 		INITIAL_COLLATERAL: decimal(10000n),
 		DEPOSIT_AMOUNT: decimal(3000n),
 		SMALL_AMOUNT: decimal(25n),
+		TRANSFER_AMOUNT: decimal(500n),
 	}
 
 	describe("AccountHub", async function () {
@@ -141,7 +167,6 @@ export function shouldBehaveLikeAccountHub(): void {
 			await context.symbolControlFacet
 				.connect(context.signers.admin)
 				.addSymbol("ETHUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
-
 		})
 
 		describe("initialize", async () => {
@@ -919,6 +944,185 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 		})
 
+		describe("Transfer Methods", async () => {
+			let customSubAccount: string
+			let virtualAccount: string
+
+			beforeEach(async () => {
+				customSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("CUSTOM_ACCOUNT", 3, "CUSTOM")],
+					BALANCES.DEPOSIT_AMOUNT,
+					false,
+				)
+
+				await context.accountHub.connect(context.signers.user).createCustomVirtualAccount(
+					customSubAccount,
+					ethers.keccak256(toUtf8Bytes("VIRTUAL_1")),
+					0, // POSITION isolation
+					1, // symbolId
+				)
+
+				const virtualAccounts = await context.accountHub.getVirtualAccounts(customSubAccount)
+				virtualAccount = virtualAccounts[0]
+			})
+			describe("transferFromSubAccountToVirtualAccount", async () => {
+				it("should transfer balance from subaccount to virtual account", async () => {
+					// Check initial balances
+					const subAccountBalanceBefore = await context.viewFacet.balanceOf(customSubAccount)
+					const virtualAccountAllocatedBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
+
+					expect(subAccountBalanceBefore).to.equal(BALANCES.DEPOSIT_AMOUNT)
+					expect(virtualAccountAllocatedBalanceBefore).to.equal(0n)
+
+					// Transfer from subaccount to virtual account
+					await expect(
+						context.accountHub
+							.connect(context.signers.user)
+							.transferFromSubAccountToVirtualAccount(customSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT),
+					)
+						.to.emit(context.accountHub, "TransferFromSubAccountToVirtualAccount")
+						.withArgs(customSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT)
+
+					// Check balances after transfer
+					const subAccountBalanceAfter = await context.viewFacet.balanceOf(customSubAccount)
+					const virtualAccountAllocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
+
+					expect(subAccountBalanceAfter).to.equal(subAccountBalanceBefore - BALANCES.TRANSFER_AMOUNT)
+					expect(virtualAccountAllocatedBalanceAfter).to.equal(BALANCES.TRANSFER_AMOUNT)
+				})
+
+				it("should revert when transferring zero amount", async () => {
+					await expect(
+						context.accountHub.connect(context.signers.user).transferFromSubAccountToVirtualAccount(customSubAccount, virtualAccount, 0n),
+					).to.be.revertedWithCustomError(context.accountHub, "ZeroAmount")
+				})
+
+				it("should revert when caller is not the account owner", async () => {
+					await expect(
+						context.accountHub
+							.connect(context.signers.user2)
+							.transferFromSubAccountToVirtualAccount(customSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT),
+					).to.be.revertedWithCustomError(context.accountHub, "NotOwner")
+				})
+
+				it("should revert when virtual account is not a child of the subaccount", async () => {
+					// Create another subaccount
+					const anotherSubAccount = await createSubAccountAndDeposit(
+						context.signers.user,
+						[createSubAccountData("ANOTHER_ACCOUNT", 3, "ANOTHER")],
+						BALANCES.DEPOSIT_AMOUNT,
+						false,
+					)
+
+					await expect(
+						context.accountHub
+							.connect(context.signers.user)
+							.transferFromSubAccountToVirtualAccount(anotherSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT),
+					).to.be.revertedWithCustomError(context.accountHub, "InvalidParent")
+				})
+			})
+
+			describe("transferFromVirtualAccountToSubAccount", async () => {
+				beforeEach(async () => {
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.TRANSFER_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositFor(virtualAccount, BALANCES.TRANSFER_AMOUNT)
+				})
+
+				it("should transfer balance from virtual account to subaccount", async () => {
+					// Check initial balances
+					const subAccountAllocatedBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
+					const virtualAccountBalanceBefore = await context.viewFacet.balanceOf(virtualAccount)
+
+					// Virtual account should have balance from the deposit
+					expect(virtualAccountBalanceBefore).to.equal(BALANCES.TRANSFER_AMOUNT)
+
+					const transferAmount = decimal(200n)
+
+					// Transfer from virtual account to subaccount
+					await expect(
+						context.accountHub.connect(context.signers.user).transferFromVirtualAccountToSubAccount(virtualAccount, customSubAccount, transferAmount),
+					)
+						.to.emit(context.accountHub, "TransferFromVirtualAccountToSubAccount")
+						.withArgs(virtualAccount, customSubAccount, transferAmount)
+
+					// Check balances after transfer
+					const virtualAccountBalanceAfter = await context.viewFacet.balanceOf(virtualAccount)
+					expect(virtualAccountBalanceAfter).to.equal(BALANCES.TRANSFER_AMOUNT - transferAmount)
+
+					const subAccountAllocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
+					expect(subAccountAllocatedBalanceAfter).to.equal(subAccountAllocatedBalanceBefore + transferAmount)
+				})
+
+				it("should revert when transferring zero amount", async () => {
+					await expect(
+						context.accountHub.connect(context.signers.user).transferFromVirtualAccountToSubAccount(virtualAccount, customSubAccount, 0n),
+					).to.be.revertedWithCustomError(context.accountHub, "ZeroAmount")
+				})
+
+				it("should revert when caller is not the account owner", async () => {
+					await expect(
+						context.accountHub.connect(context.signers.user2).transferFromVirtualAccountToSubAccount(virtualAccount, customSubAccount, decimal(100n)),
+					).to.be.revertedWithCustomError(context.accountHub, "NotOwner")
+				})
+
+				it("should revert when virtual account is not a child of the subaccount", async () => {
+					// Create another subaccount
+					const anotherSubAccount = await createSubAccountAndDeposit(
+						context.signers.user,
+						[createSubAccountData("ANOTHER_ACCOUNT", 3, "ANOTHER")],
+						BALANCES.DEPOSIT_AMOUNT,
+						false,
+					)
+
+					await expect(
+						context.accountHub.connect(context.signers.user).transferFromVirtualAccountToSubAccount(virtualAccount, anotherSubAccount, decimal(100n)),
+					).to.be.revertedWithCustomError(context.accountHub, "InvalidParent")
+				})
+			})
+
+			describe("Round-trip transfer", async () => {
+				it("should correctly handle transfers in both directions", async () => {
+					const initialSubAccountBalance = await context.viewFacet.balanceOf(customSubAccount)
+					const initialVirtualAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
+
+					expect(initialSubAccountBalance).to.equal(BALANCES.DEPOSIT_AMOUNT)
+					expect(initialVirtualAccountAllocatedBalance).to.equal(0n)
+
+					// Step 1: Transfer from subaccount to virtual account
+					await context.accountHub
+						.connect(context.signers.user)
+						.transferFromSubAccountToVirtualAccount(customSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT)
+
+					let subAccountBalance = await context.viewFacet.balanceOf(customSubAccount)
+					let virtualAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
+
+					expect(subAccountBalance).to.equal(BALANCES.DEPOSIT_AMOUNT - BALANCES.TRANSFER_AMOUNT)
+					expect(virtualAccountAllocatedBalance).to.equal(BALANCES.TRANSFER_AMOUNT)
+
+					// Step 2: Deposit to virtual account to give it balance for reverse transfer
+					const deallocateCallData = context.accountFacet.interface.encodeFunctionData("zeroUpnlDeallocate", [BALANCES.TRANSFER_AMOUNT])
+					await context.accountHub.connect(context.signers.user)._call(virtualAccount, [deallocateCallData])
+
+					let virtualAccountBalance = await context.viewFacet.balanceOf(virtualAccount)
+					expect(virtualAccountBalance).to.equal(BALANCES.TRANSFER_AMOUNT)
+
+					// Step 3: Transfer from virtual account to subaccount
+					const transferBackAmount = decimal(200n)
+					await context.accountHub
+						.connect(context.signers.user)
+						.transferFromVirtualAccountToSubAccount(virtualAccount, customSubAccount, transferBackAmount)
+
+					virtualAccountBalance = await context.viewFacet.balanceOf(virtualAccount)
+					const subAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
+
+					expect(virtualAccountBalance).to.equal(BALANCES.TRANSFER_AMOUNT - transferBackAmount)
+					expect(subAccountAllocatedBalance).to.equal(transferBackAmount)
+					expect(await context.viewFacet.balanceOf(customSubAccount)).to.equal(BALANCES.DEPOSIT_AMOUNT - BALANCES.TRANSFER_AMOUNT)
+				})
+			})
+		})
+
 		describe("hooks", async () => {
 			let hookContract: MockAccountHubHook
 			let subAccountAddress: string
@@ -997,9 +1201,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
 					const encodedReason = errorSelector + encodedString.slice(2)
 
-					await expect(
-						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData),
-					)
+					await expect(context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData))
 						.to.be.revertedWithCustomError(context.accountHub, "HookFailed")
 						.withArgs(encodedReason)
 				})

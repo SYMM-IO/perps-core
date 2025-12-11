@@ -79,6 +79,10 @@ interface IAccountHub {
 	event VirtualAccountReused(address indexed account, address indexed parent);
 	event VirtualAccountDeleted(address indexed account, address indexed parent);
 
+	// Transfer events
+	event TransferFromSubAccountToVirtualAccount(address indexed subAccount, address indexed virtualAccount, uint256 amount);
+	event TransferFromVirtualAccountToSubAccount(address indexed virtualAccount, address indexed subAccount, uint256 amount);
+
 	// Legacy compatibility events
 	event EditAccountName(address indexed account, string name);
 	event DepositForAccount(address indexed sender, address indexed account, uint256 amount);

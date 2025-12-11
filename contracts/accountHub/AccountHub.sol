@@ -190,6 +190,48 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		}
 	}
 
+	/**
+	 * @notice Transfers balance from a sub-account to a virtual account
+	 * @param subAccount The sub-account address (source)
+	 * @param virtualAccount The virtual account address (destination)
+	 * @param amount The amount to transfer in 18 decimals
+	 */
+	function transferFromSubAccountToVirtualAccount(
+		address subAccount,
+		address virtualAccount,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		if (amount == 0) revert ZeroAmount();
+		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
+		if (!virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
+		if (virtualAccounts[virtualAccount].parentAccount != subAccount) revert InvalidParent();
+
+		_executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
+
+		emit TransferFromSubAccountToVirtualAccount(subAccount, virtualAccount, amount);
+	}
+
+	/**
+	 * @notice Transfers balance from a virtual account to a sub-account
+	 * @param virtualAccount The virtual account address (source)
+	 * @param subAccount The sub-account address (destination)
+	 * @param amount The amount to transfer in 18 decimals
+	 */
+	function transferFromVirtualAccountToSubAccount(
+		address virtualAccount,
+		address subAccount,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		if (amount == 0) revert ZeroAmount();
+		if (!virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
+		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
+		if (virtualAccounts[virtualAccount].parentAccount != subAccount) revert InvalidParent();
+
+		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, subAccount, amount));
+
+		emit TransferFromVirtualAccountToSubAccount(virtualAccount, subAccount, amount);
+	}
+
 	// ==================== Symmio Callback ====================
 
 	/**
