@@ -483,6 +483,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (delegate == owner) revert SelfDelegation();
 		if (expiry <= block.timestamp) revert DelegationExpired(expiry);
 		if (rh.deadline != 0 && block.timestamp > rh.deadline) revert DeadlineExpired(rh.deadline);
+		if (info.selectors.length == 0) revert InvalidDelegation();
 
 		// Verify and update nonce
 		uint256 expected = delegationNonces[delegator];
@@ -629,7 +630,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	function setRevocationCooldown(uint256 newCooldown) external onlyRole(SETTER_ROLE) {
 		// Adjust bounds to taste; 0 disallowed to keep the two-step invariant.
-		if (newCooldown < 1 minutes || newCooldown > 30 days) revert InvalidCallData();
+		if (newCooldown < 5 minutes || newCooldown > 30 days) revert InvalidCallData();
 		uint256 old = revocationCooldown;
 		revocationCooldown = newCooldown;
 		emit RevocationCooldownUpdated(old, newCooldown);
