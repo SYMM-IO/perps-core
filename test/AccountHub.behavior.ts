@@ -1,271 +1,21 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
-import { expect, use } from "chai";
-import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers";
-import { ethers } from "hardhat";
-
-
-
-import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types";
-import { initializeFixture } from "./Initialize.fixture";
-import { PositionType } from "./models/Enums";
-import { Hedger } from "./models/Hedger";
-import { RunContext } from "./models/RunContext";
-import { User } from "./models/User";
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest";
-import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest";
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest";
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest";
-import { decimal } from "./utils/Common";
-import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { expect, use } from "chai"
+import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
+import { ethers } from "hardhat"
+
+import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
+import { initializeFixture } from "./Initialize.fixture"
+import { PositionType } from "./models/Enums"
+import { Hedger } from "./models/Hedger"
+import { RunContext } from "./models/RunContext"
+import { User } from "./models/User"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest"
+import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { decimal } from "./utils/Common"
+import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils"
 
 export function shouldBehaveLikeAccountHub(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -1663,7 +1413,7 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					// Verify these are the same as what AccountHub returns
 					const hubAccounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
-					expect(accounts).to.deep.equal(hubAccounts)
+					expect(accounts.map(a => a.accountAddress)).to.deep.equal(hubAccounts)
 				})
 
 				it("should respect pagination with start and size", async function () {
@@ -1689,8 +1439,8 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(lastPage.length).to.equal(1)
 
 					// Verify no overlap between pages
-					expect(firstPage[0]).to.not.equal(secondPage[0])
-					expect(secondPage[0]).to.not.equal(lastPage[0])
+					expect(firstPage[0].accountAddress).to.not.equal(secondPage[0].accountAddress)
+					expect(secondPage[0].accountAddress).to.not.equal(lastPage[0].accountAddress)
 				})
 
 				it("should return empty array when start exceeds total accounts", async function () {
@@ -1781,16 +1531,12 @@ export function shouldBehaveLikeAccountHub(): void {
 					const firstBatch = await context.accountHub.getUserSubAccounts(context.signers.user2.address, 0, 10)
 					const secondBatch = await context.accountHub.getUserSubAccounts(context.signers.user2.address, 10, 10)
 					expect(firstBatch[0].accountAddress).to.not.equal(secondBatch[0].accountAddress)
-
 				})
 			})
 
 			describe("Large Dataset Virtual Accounts Batch Retrieval", async () => {
 				// Helper to create a CUSTOM sub-account without deposit (for virtual account creation tests)
-				async function createCustomSubAccountWithoutDeposit(
-					parentAccount: HardhatEthersSigner,
-					name: string,
-				): Promise<string> {
+				async function createCustomSubAccountWithoutDeposit(parentAccount: HardhatEthersSigner, name: string): Promise<string> {
 					const subAccountData = [createSubAccountData(name, 3)] // isolationType 3 = CUSTOM
 					await context.accountHub.connect(parentAccount).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
 					const accounts = await context.accountHub.getUserSubAccountsAddresses(parentAccount.address, 0, 100)
@@ -1815,12 +1561,9 @@ export function shouldBehaveLikeAccountHub(): void {
 							const isolationType = j % 4 // 0: POSITION, 1: MARKET, 2: MARKET_LONG, 3: MARKET_SHORT
 							const symbolId = (j % 10) + 1 // Symbols 1-10
 
-							await context.accountHub.connect(context.signers.user2).createCustomVirtualAccount(
-								customSubAccount,
-								ethers.keccak256(toUtf8Bytes(`VIRTUAL_${j}`)),
-								isolationType,
-								symbolId,
-							)
+							await context.accountHub
+								.connect(context.signers.user2)
+								.createCustomVirtualAccount(customSubAccount, ethers.keccak256(toUtf8Bytes(`VIRTUAL_${j}`)), isolationType, symbolId)
 						}
 					}
 
@@ -1895,11 +1638,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(emptyBatch.length).to.equal(0)
 
 					// Offset near end should return remaining accounts
-					const nearEndBatch = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(
-						customSubAccount,
-						TOTAL_VIRTUAL_ACCOUNTS - 50,
-						100,
-					)
+					const nearEndBatch = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(customSubAccount, TOTAL_VIRTUAL_ACCOUNTS - 50, 100)
 					expect(nearEndBatch.length).to.equal(50)
 
 					// Verify getSubAccountVirtualNonce
@@ -1924,12 +1663,9 @@ export function shouldBehaveLikeAccountHub(): void {
 						expectedIsolationTypes.push(isolationType)
 						expectedSymbolIds.push(symbolId)
 
-						await context.accountHub.connect(context.signers.user2).createCustomVirtualAccount(
-							customSubAccount,
-							ethers.keccak256(toUtf8Bytes(`VERIFY_${i}`)),
-							isolationType,
-							symbolId,
-						)
+						await context.accountHub
+							.connect(context.signers.user2)
+							.createCustomVirtualAccount(customSubAccount, ethers.keccak256(toUtf8Bytes(`VERIFY_${i}`)), isolationType, symbolId)
 					}
 
 					// Retrieve all and verify
@@ -1969,19 +1705,12 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(predictedAddress).to.not.equal(ZeroAddress)
 
 					// Create the predicted account
-					await context.accountHub.connect(context.signers.user2).createCustomVirtualAccount(
-						customSubAccount,
-						ethers.keccak256(toUtf8Bytes("PREDICTED")),
-						0,
-						TOTAL_VIRTUAL_ACCOUNTS + 1,
-					)
+					await context.accountHub
+						.connect(context.signers.user2)
+						.createCustomVirtualAccount(customSubAccount, ethers.keccak256(toUtf8Bytes("PREDICTED")), 0, TOTAL_VIRTUAL_ACCOUNTS + 1)
 
 					// Verify the actual address matches prediction
-					const allAddresses = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(
-						customSubAccount,
-						TOTAL_VIRTUAL_ACCOUNTS,
-						1,
-					)
+					const allAddresses = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(customSubAccount, TOTAL_VIRTUAL_ACCOUNTS, 1)
 					expect(allAddresses[0]).to.equal(predictedAddress)
 				})
 
@@ -2001,12 +1730,14 @@ export function shouldBehaveLikeAccountHub(): void {
 					// Create virtual accounts for each sub-account
 					for (let subIdx = 0; subIdx < NUM_SUB_ACCOUNTS; subIdx++) {
 						for (let virtIdx = 0; virtIdx < VIRTUAL_ACCOUNTS_PER_SUB; virtIdx++) {
-							await context.accountHub.connect(context.signers.user2).createCustomVirtualAccount(
-								subAccountAddresses[subIdx],
-								ethers.keccak256(toUtf8Bytes(`SUB_${subIdx}_VIRT_${virtIdx}`)),
-								virtIdx % 4,
-								(virtIdx % 5) + 1,
-							)
+							await context.accountHub
+								.connect(context.signers.user2)
+								.createCustomVirtualAccount(
+									subAccountAddresses[subIdx],
+									ethers.keccak256(toUtf8Bytes(`SUB_${subIdx}_VIRT_${virtIdx}`)),
+									virtIdx % 4,
+									(virtIdx % 5) + 1,
+								)
 						}
 					}
 

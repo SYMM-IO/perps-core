@@ -86,8 +86,13 @@ contract AccountManager is IAccountManager {
 		return accountHub;
 	}
 
-	function getAccounts(address user, uint256 start, uint256 size) external view returns (address[] memory) {
-		return IAccountHub(accountHub).getUserSubAccountsAddresses(user, start, size);
+	function getAccounts(address user, uint256 start, uint256 size) external view returns (IAccountHub.Account[] memory) {
+		IAccountHub.SubAccountDetail[] memory subAccounts = IAccountHub(accountHub).getUserSubAccounts(user, start, size);
+		IAccountHub.Account[] memory accounts = new IAccountHub.Account[](subAccounts.length);
+		for (uint256 i = 0; i < subAccounts.length; i++) {
+			accounts[i] = IAccountHub.Account({ accountAddress: subAccounts[i].accountAddress, name: subAccounts[i].name });
+		}
+		return accounts;
 	}
 
 	function getAccountsLength(address user) external view returns (uint256) {
