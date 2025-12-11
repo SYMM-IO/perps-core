@@ -31,7 +31,6 @@ contract MockAccountHubForAccountManager {
 	address public lastCreateAffiliate;
 
 	mapping(address => address) public relatedCores;
-	mapping(address => address[]) private userSubAccounts;
 
 	address[] private signerLog;
 	address[] private pendingCreateResult;
@@ -150,28 +149,6 @@ contract MockAccountHubForAccountManager {
 		signer = address(0);
 		lastCallAccount = address(0);
 		lastCreateAffiliate = address(0);
-	}
-
-	function setUserSubAccounts(address user, address[] memory accounts) external {
-		userSubAccounts[user] = accounts;
-	}
-
-	function getUserSubAccountsAddresses(address user, uint256 offset, uint256 limit) external view returns (address[] memory) {
-		uint256 total = userSubAccounts[user].length;
-		if (offset >= total) {
-			return new address[](0);
-		}
-		uint256 remaining = total - offset;
-		uint256 resultSize = remaining < limit ? remaining : limit;
-		address[] memory result = new address[](resultSize);
-		for (uint256 i = 0; i < resultSize; i++) {
-			result[i] = userSubAccounts[user][offset + i];
-		}
-		return result;
-	}
-
-	function getSubAccountsCountOfUser(address user) external view returns (uint256) {
-		return userSubAccounts[user].length;
 	}
 }
 

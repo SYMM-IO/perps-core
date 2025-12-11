@@ -1647,6 +1647,91 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 			})
 
+			describe("AccountManager.getAccounts", async () => {
+				it("should return empty array when user has no accounts", async function () {
+					const accounts = await context.accountManager.getAccounts(context.signers.user2.address, 0, 100)
+					expect(accounts.length).to.equal(0)
+				})
+
+				it("should return correct accounts for a user", async function () {
+					// beforeEach creates 1 account, create 2 more for total of 3
+					const subAccountData = [createSubAccountData("ACCOUNT_1", 0), createSubAccountData("ACCOUNT_2", 0)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+
+					const accounts = await context.accountManager.getAccounts(context.signers.user.address, 0, 100)
+					expect(accounts.length).to.equal(3)
+
+					// Verify these are the same as what AccountHub returns
+					const hubAccounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					expect(accounts).to.deep.equal(hubAccounts)
+				})
+
+				it("should respect pagination with start and size", async function () {
+					// beforeEach creates 1 account, create 4 more for total of 5
+					const subAccountData = [
+						createSubAccountData("PAGE_1", 0),
+						createSubAccountData("PAGE_2", 0),
+						createSubAccountData("PAGE_3", 0),
+						createSubAccountData("PAGE_4", 0),
+					]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+
+					// Get first 2 accounts
+					const firstPage = await context.accountManager.getAccounts(context.signers.user.address, 0, 2)
+					expect(firstPage.length).to.equal(2)
+
+					// Get accounts starting from index 2, size 2
+					const secondPage = await context.accountManager.getAccounts(context.signers.user.address, 2, 2)
+					expect(secondPage.length).to.equal(2)
+
+					// Get accounts starting from index 4, size 2 (only 1 remaining)
+					const lastPage = await context.accountManager.getAccounts(context.signers.user.address, 4, 2)
+					expect(lastPage.length).to.equal(1)
+
+					// Verify no overlap between pages
+					expect(firstPage[0]).to.not.equal(secondPage[0])
+					expect(secondPage[0]).to.not.equal(lastPage[0])
+				})
+
+				it("should return empty array when start exceeds total accounts", async function () {
+					// beforeEach already creates 1 account
+					const accounts = await context.accountManager.getAccounts(context.signers.user.address, 10, 100)
+					expect(accounts.length).to.equal(0)
+				})
+			})
+
+			describe("AccountManager.getAccountsLength", async () => {
+				it("should return 0 when user has no accounts", async function () {
+					const length = await context.accountManager.getAccountsLength(context.signers.user2.address)
+					expect(length).to.equal(0)
+				})
+
+				it("should return correct count of accounts", async function () {
+					// beforeEach creates 1 account, create 2 more for total of 3
+					const subAccountData = [createSubAccountData("LEN_1", 0), createSubAccountData("LEN_2", 0)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+
+					const length = await context.accountManager.getAccountsLength(context.signers.user.address)
+					expect(length).to.equal(3)
+				})
+
+				it("should return different counts for different users", async function () {
+					// beforeEach creates 1 account for user, create 1 more for total of 2
+					const userSubAccountData = [createSubAccountData("USER_1", 0)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), userSubAccountData)
+
+					// Create 1 account for user2
+					const user2SubAccountData = [createSubAccountData("USER2_1", 0)]
+					await context.accountHub.connect(context.signers.user2).createSubAccounts(await context.accountManager.getAddress(), user2SubAccountData)
+
+					const lengthUser1 = await context.accountManager.getAccountsLength(context.signers.user.address)
+					const lengthUser2 = await context.accountManager.getAccountsLength(context.signers.user2.address)
+
+					expect(lengthUser1).to.equal(2)
+					expect(lengthUser2).to.equal(1)
+				})
+			})
+
 			describe("Large Dataset Batch Retrieval", async () => {
 				it("should handle batch retrieval efficiently with optimized pagination", async function () {
 					this.timeout(60000) // 1 minute should be enough
