@@ -12,6 +12,7 @@ import "../../libraries/LibFundingRate.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../storages/SymbolStorage.sol";
+import "../../libraries/LibSigner.sol";
 
 /**
  * @title FundingRateFacetImpl
@@ -36,7 +37,7 @@ library FundingRateFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(quoteIds.length == rates.length && quoteIds.length > 0, "ChargeFundingFacet: Length not match");
 
-		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, msg.sender, partyA);
+		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, LibSigner.getSigner(), partyA);
 		int256 partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			upnlSig.upnlPartyA,
 			AccountStorage.layout().allocatedBalances[partyA],
@@ -52,7 +53,7 @@ library FundingRateFacetImpl {
 
 			// Validate quote ownership and status
 			require(quote.partyA == partyA, "ChargeFundingFacet: Invalid quote");
-			require(quote.partyB == msg.sender, "ChargeFundingFacet: Sender isn't partyB of quote");
+			require(quote.partyB == LibSigner.getSigner(), "ChargeFundingFacet: Sender isn't partyB of quote");
 			require(
 				quote.quoteStatus == QuoteStatus.OPENED ||
 					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
@@ -128,8 +129,8 @@ library FundingRateFacetImpl {
 			quote.lastFundingPaymentTimestamp = paidTimestamp;
 		}
 
-		if (accountLayout.bindState[partyA].partyB != msg.sender) {
-			LibMuonFundingRate.verifyPairUpnl(upnlSig, msg.sender, partyA);
+		if (accountLayout.bindState[partyA].partyB != LibSigner.getSigner()) {
+			LibMuonFundingRate.verifyPairUpnl(upnlSig, LibSigner.getSigner(), partyA);
 
 			// Ensure neither party becomes insolvent after funding payments
 			require(partyAAvailableBalance >= 0, "ChargeFundingFacet: PartyA will be insolvent");
@@ -137,7 +138,7 @@ library FundingRateFacetImpl {
 		}
 
 		// Increment nonces for replay protection
-		AccountStorage.layout().partyBNonces[msg.sender][partyA] += 1;
+		AccountStorage.layout().partyBNonces[LibSigner.getSigner()][partyA] += 1;
 		AccountStorage.layout().partyANonces[partyA] += 1;
 	}
 
@@ -201,7 +202,7 @@ library FundingRateFacetImpl {
 		);
 
 		for (uint256 i = 0; i < symbolIds.length; i++) {
-			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][msg.sender];
+			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][LibSigner.getSigner()];
 
 			require(fundingFee.epochDuration > 0, "FundingRateFacet: Epoch duration not set");
 			LibFundingRate.updateAccumulatedRates(fundingFee);
@@ -235,7 +236,7 @@ library FundingRateFacetImpl {
 
 		// Preserve existing short rates
 		for (uint256 i = 0; i < symbolIds.length; i++) {
-			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][msg.sender];
+			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][LibSigner.getSigner()];
 			require(marketPrices[i] > 0, "FundingRateFacet: Invalid market price");
 			// Convert back from price-adjusted to rate
 			if (marketPrices[i] > 0) {
@@ -256,7 +257,7 @@ library FundingRateFacetImpl {
 
 		// Preserve existing long rates
 		for (uint256 i = 0; i < symbolIds.length; i++) {
-			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][msg.sender];
+			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][LibSigner.getSigner()];
 			require(marketPrices[i] > 0, "FundingRateFacet: Invalid market price");
 			// Convert back from price-adjusted to rate
 			if (marketPrices[i] > 0) {

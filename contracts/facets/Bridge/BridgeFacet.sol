@@ -8,14 +8,15 @@ import "../../utils/Accessibility.sol";
 import "../../utils/Pausable.sol";
 import "./BridgeFacetImpl.sol";
 import "./IBridgeFacet.sol";
+import "../../libraries/LibSigner.sol";
 
 contract BridgeFacet is Accessibility, Pausable, IBridgeFacet {
 	/// @notice Transfers a specified amount to the designated bridge address.
 	/// @param amount The precise amount to be transferred, specified in decimal units.
 	/// @param bridgeAddress The address of the bridge to which the collateral will be transferred.
-	function transferToBridge(uint256 amount, address bridgeAddress) external whenNotAccountingPaused notSuspended(msg.sender) {
-		uint256 transactionId = BridgeFacetImpl.transferToBridge(msg.sender, amount, bridgeAddress);
-		emit TransferToBridge(msg.sender, amount, bridgeAddress, transactionId);
+	function transferToBridge(uint256 amount, address bridgeAddress) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
+		uint256 transactionId = BridgeFacetImpl.transferToBridge(LibSigner.getSigner(), amount, bridgeAddress);
+		emit TransferToBridge(LibSigner.getSigner(), amount, bridgeAddress, transactionId);
 	}
 
 	/// @notice Withdraws the received bridge value associated with a specific transaction ID.
@@ -49,9 +50,9 @@ contract BridgeFacet is Accessibility, Pausable, IBridgeFacet {
 
 	/// @notice Requests to cancel a bridge transaction.
 	/// @param transactionId The transaction ID of the bridge transaction to be cancelled.
-	function requestToCancelBridgeTransaction(uint256 transactionId) external whenNotAccountingPaused notSuspended(msg.sender) {
+	function requestToCancelBridgeTransaction(uint256 transactionId) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
 		BridgeFacetImpl.requestToCancelBridgeTransaction(transactionId);
-		emit RequestToCancelBridgeTransaction(msg.sender, transactionId);
+		emit RequestToCancelBridgeTransaction(LibSigner.getSigner(), transactionId);
 	}
 
 	/// @notice Accepts a cancelled bridge transaction.

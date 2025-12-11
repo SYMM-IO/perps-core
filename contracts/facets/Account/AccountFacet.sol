@@ -38,8 +38,8 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function _virtualDepositFor(address user, uint256 amount) internal {
 		AccountFacetImpl.virtualDepositFor(user, amount);
 		uint256 amountWithCollateralDecimal = (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18;
-		emit Deposit(LibSigner.getSigner(), user, amountWithCollateralDecimal); // For backward compatibility, will be removed in future
-		emit Deposit(LibSigner.getSigner(), user, amountWithCollateralDecimal, true);
+		emit Deposit(msg.sender, user, amountWithCollateralDecimal); // For backward compatibility, will be removed in future
+		emit Deposit(msg.sender, user, amountWithCollateralDecimal, true);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
@@ -58,7 +58,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
-		emit Deposit(LibSigner.getSigner(), user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
+		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
 		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
@@ -290,9 +290,9 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		uint256 amount,
 		address target,
 		address virtualProvider
-	) external whenNotExternalTransferPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {
-		uint256 id = AccountFacetImpl.virtualExternalTransfer(msg.sender, receiver, amount, target,virtualProvider);
-		emit InitiateVirtualExternalTransfer(id,msg.sender, receiver, amount,target,virtualProvider);
+	) external whenNotExternalTransferPaused notSuspended(LibSigner.getSigner()) notLiquidatedPartyA(LibSigner.getSigner()) {
+		uint256 id = AccountFacetImpl.virtualExternalTransfer(LibSigner.getSigner(), receiver, amount, target,virtualProvider);
+		emit InitiateVirtualExternalTransfer(id,LibSigner.getSigner(), receiver, amount,target,virtualProvider);
 	}
 
 	/**
@@ -311,7 +311,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	*      reverts if the transfer does not exist or the caller is not authorized per implementation rules.
 	* @param id The identifier of the virtual external transfer to cancel.
 	*/
-	function cancelVirtualExternalTransfer(uint256 id) external whenNotExternalTransferPaused {
+	function cancelVirtualExternalTransfer(uint256 id) external notSuspended(LibSigner.getSigner()) whenNotExternalTransferPaused {
 		AccountFacetImpl.cancelVirtualExternalTransfer(id);
 		emit CancelVirtualExternalTransfer(id);
 	}

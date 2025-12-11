@@ -118,7 +118,7 @@ library ForceActionsFacetImpl {
 		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 		if (partyBAvailableBalance >= 0) {
 			if (updatedPrices.length > 0) {
-				LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
+				LibSettlement.settleUpnl(settlementSig, updatedPrices, LibSigner.getSigner(), true);
 			}
 			LibQuoteClose.closeQuote(quote.id, quote.quantityToClose, closePrice);
 		} else if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
@@ -132,7 +132,7 @@ library ForceActionsFacetImpl {
 			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += available;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			if (updatedPrices.length > 0) {
-				LibSettlement.settleUpnl(settlementSig, updatedPrices, msg.sender, true);
+				LibSettlement.settleUpnl(settlementSig, updatedPrices, LibSigner.getSigner(), true);
 			}
 			LibQuoteClose.closeQuote(quote.id, quote.quantityToClose, closePrice);
 		} else {

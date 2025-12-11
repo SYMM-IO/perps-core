@@ -9,6 +9,7 @@ import "../storages/AccountStorage.sol";
 import "./LibQuote.sol";
 import "./LibAccount.sol";
 import "./SharedEvents.sol";
+import {LibSigner} from "./LibSigner.sol";
 
 library LibSettlement {
 	function settleUpnl(
@@ -30,7 +31,7 @@ library LibSettlement {
 		);
 
 		require(
-			isForceClose || quoteLayout.partyBOpenPositions[msg.sender][partyA].length > 0,
+			isForceClose || quoteLayout.partyBOpenPositions[LibSigner.getSigner()][partyA].length > 0,
 			"LibSettlement: Sender should have a position with partyA"
 		);
 		accountLayout.partyANonces[partyA] += 1;
@@ -89,13 +90,13 @@ library LibSettlement {
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
 			require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
 
-			if (!isForceClose && msg.sender != partyB) {
+			if (!isForceClose && LibSigner.getSigner() != partyB) {
 				require(
 					block.timestamp >=
-						MAStorage.layout().lastUpnlSettlementTimestamp[msg.sender][partyB][partyA] + MAStorage.layout().settlementCooldown,
+						MAStorage.layout().lastUpnlSettlementTimestamp[LibSigner.getSigner()][partyB][partyA] + MAStorage.layout().settlementCooldown,
 					"LibSettlement: Cooldown should be passed"
 				);
-				MAStorage.layout().lastUpnlSettlementTimestamp[msg.sender][partyB][partyA] = block.timestamp;
+				MAStorage.layout().lastUpnlSettlementTimestamp[LibSigner.getSigner()][partyB][partyA] = block.timestamp;
 			}
 			accountLayout.partyBNonces[partyB][partyA] += 1;
 
