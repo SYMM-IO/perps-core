@@ -272,10 +272,12 @@ export function shouldBehaveLikeAffiliateHub() {
                     expect(await context.viewFacet.getFeeCollector(affiliate)).to.equal(feeDistributor)
                     expect(await affiliateHub.globalNonce()).to.equal(nonceBefore + 1n)
 
+                    // AccountManager mapping stays in AffiliateHub
                     const manager = await affiliateHub.getAffiliateAccountManager(affiliate)
                     expect(manager).to.not.equal(ethers.ZeroAddress)
                     expect(manager).to.equal(affiliate)
-                    expect(await affiliateHub.hasRole(await affiliateHub.SIGNER_SETTER(), manager)).to.equal(true)
+                    // SIGNER_SETTER_ROLE is granted by AccountHub during deployment
+                    expect(await context.accountHub.hasRole(await context.accountHub.SIGNER_SETTER_ROLE(), manager)).to.equal(true)
                 })
 
                 it("cannot be called while the hub is paused", async function () {
@@ -799,23 +801,6 @@ export function shouldBehaveLikeAffiliateHub() {
                     await expect(
                         affiliateHub.connect(context.signers.user).setSymmioFeeReceiver(context.signers.symmioFeeReceiver.address),
                     ).to.be.revertedWith(`AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${await affiliateHub.SETTER_ROLE()}`)
-                })
-            })
-
-            describe("setAccountManagerImplementation", function () {
-                it("stores the new implementation bytecode hash", async function () {
-                    // new bytecode
-                    const newImplementation = ethers.randomBytes(32)
-                    await affiliateHub.connect(context.signers.admin).setAccountManagerImplementation(newImplementation)
-                    // verify storage
-                    expect(await affiliateHub.accountManagerImplementation()).to.equal(ethers.hexlify(newImplementation))
-                })
-
-                it("requires setter permissions", async function () {
-                    const newImplementation = ethers.randomBytes(32)
-                    await expect(affiliateHub.connect(context.signers.user).setAccountManagerImplementation(newImplementation)).to.be.revertedWith(
-                        `AccessControl: account ${context.signers.user.address.toLowerCase()} is missing role ${await affiliateHub.SETTER_ROLE()}`,
-                    )
                 })
             })
 

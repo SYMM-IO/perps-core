@@ -814,4 +814,8 @@ contract ViewFacet is IViewFacet {
 	function getEntityMetadata(address entity) external view returns (EntityMetadata memory) {
 		return MAStorage.layout().entitiesMetadata[entity];
 	}
+
+	function getPenaltyCollector() external view returns(address) {
+		return MAStorage.layout().penaltyCollector;
+	}
 }
