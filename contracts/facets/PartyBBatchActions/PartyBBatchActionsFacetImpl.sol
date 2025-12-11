@@ -14,6 +14,7 @@ import "../../storages/AccountStorage.sol";
 import "../../libraries/LibConnections.sol";
 
 import "../../interfaces/IPartiesEvents.sol";
+import {LibSigner} from "../../libraries/LibSigner.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -134,7 +135,7 @@ library PartyBBatchActionsFacetImpl {
 		address firstQuotePartyA = firstQuote.partyA;
 		address firstQuotePartyB = firstQuote.partyB;
 
-		if (accountLayout.bindState[firstQuote.partyA].partyB != msg.sender) {
+		if (accountLayout.bindState[firstQuote.partyA].partyB != msg.sender || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
 		}

@@ -12,6 +12,7 @@ import "../../libraries/LibFundingRate.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../storages/SymbolStorage.sol";
+import {LibSigner} from "../../libraries/LibSigner.sol";
 
 /**
  * @title FundingRateFacetImpl
@@ -128,7 +129,7 @@ library FundingRateFacetImpl {
 			quote.lastFundingPaymentTimestamp = paidTimestamp;
 		}
 
-		if (accountLayout.bindState[partyA].partyB != msg.sender) {
+		if (accountLayout.bindState[partyA].partyB != msg.sender || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			LibMuonFundingRate.verifyPairUpnl(upnlSig, msg.sender, partyA);
 
 			// Ensure neither party becomes insolvent after funding payments

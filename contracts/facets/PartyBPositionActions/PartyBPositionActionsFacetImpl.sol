@@ -9,6 +9,7 @@ import "../../libraries/LibSolvency.sol";
 import "../../libraries/LibPartyBPositionsActions.sol";
 import "../../libraries/LibQuoteClose.sol";
 import "../../libraries/LibConnections.sol";
+import {LibSigner} from "../../libraries/LibSigner.sol";
 
 library PartyBPositionActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -44,7 +45,7 @@ library PartyBPositionActionsFacetImpl {
 			LibConnections.addConnection(quote.partyA, quote.partyB);
 		}
 
-		if (accountLayout.bindState[quote.partyA].partyB != quote.partyB) {
+		if (accountLayout.bindState[quote.partyA].partyB != quote.partyB || !accountLayout.isPartyBBindable[quote.partyB]) {
 			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
 
 			uint256[] memory quoteIds = new uint256[](1);
@@ -68,7 +69,7 @@ library PartyBPositionActionsFacetImpl {
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		if (accountLayout.bindState[quote.partyA].partyB != msg.sender) {
+		if (accountLayout.bindState[quote.partyA].partyB != msg.sender || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
 			uint256[] memory quoteIds = new uint256[](1);
 			uint256[] memory filledAmounts = new uint256[](1);

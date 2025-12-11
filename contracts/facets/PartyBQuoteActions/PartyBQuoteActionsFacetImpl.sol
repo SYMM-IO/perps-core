@@ -9,6 +9,7 @@ import "../../libraries/LibQuote.sol";
 import "../../libraries/LibQuoteClose.sol";
 import "../../libraries/LibPartyBQuoteActions.sol";
 import "../../storages/AccountStorage.sol";
+import {LibSigner} from "../../libraries/LibSigner.sol";
 
 library PartyBQuoteActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -19,6 +20,7 @@ library PartyBQuoteActionsFacetImpl {
 
 		if (AccountStorage.layout().bindState[quote.partyA].partyB != address(0)) {
 			require(AccountStorage.layout().bindState[quote.partyA].partyB == msg.sender, "PartyBFacet: PartyB is not bounded to this partyA");
+			require(AccountStorage.layout().isPartyBBindable[LibSigner.getSigner()], "PartyBFacet: PartyB is not bindable");
 		} else {
 			LibMuonPartyB.verifyPartyBUpnl(upnlSig, msg.sender, quote.partyA);
 			int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, msg.sender, quote.partyA);
