@@ -3,10 +3,6 @@ pragma solidity ^0.8.18;
 
 import "../accountHub/interfaces/IAccountHub.sol";
 
-interface IAccountManagerSetter {
-	function setAccountHub(address _accountHub) external;
-}
-
 contract MockAffiliateHubForAccountManager {
 	mapping(address => address[]) private affiliateCores;
 
@@ -19,16 +15,13 @@ contract MockAffiliateHubForAccountManager {
 		require(cores.length > 0, "MockAffiliateHub: no cores configured");
 		return cores;
 	}
-
-	function callSetAccountHub(address manager, address newHub) external {
-		IAccountManagerSetter(manager).setAccountHub(newHub);
-	}
 }
 
 contract MockAccountHubForAccountManager {
 	address public signer;
 	address public lastCallAccount;
 	address public lastCreateAffiliate;
+	address public affiliateHub;
 
 	mapping(address => address) public relatedCores;
 
@@ -44,6 +37,10 @@ contract MockAccountHubForAccountManager {
 	function setSigner(address _signer) external {
 		signer = _signer;
 		signerLog.push(_signer);
+	}
+
+	function setAffiliateHub(address _affiliateHub) external {
+		affiliateHub = _affiliateHub;
 	}
 
 	function configureRelatedCore(address account, address core) external {
@@ -94,7 +91,7 @@ contract MockAccountHubForAccountManager {
 		return created;
 	}
 
-	function _call(address account, bytes[] memory callDatas) external {
+	function _call(address account, bytes[] memory callDatas) external returns (bytes[] memory) {
 		if (revertOnCall) {
 			revertOnCall = false;
 			revert("MockAccountHub: call reverted");
@@ -105,6 +102,8 @@ contract MockAccountHubForAccountManager {
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			lastCallData.push(callDatas[i]);
 		}
+
+		return callDatas;
 	}
 
 	function getRelatedCore(address account) external view returns (address) {

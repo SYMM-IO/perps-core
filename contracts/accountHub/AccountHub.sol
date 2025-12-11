@@ -16,6 +16,7 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
+import "./interfaces/IAccountManager.sol";
 
 /**
  * @title AccountHub
@@ -31,7 +32,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
-	bytes32 public constant SIGNER_SETTER = keccak256("SIGNER_SETTER");
+	bytes32 public constant SIGNER_SETTER_ROLE = keccak256("SIGNER_SETTER_ROLE");
+	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
+	bytes32 public constant DEPLOYER_ROLE = keccak256("DEPLOYER_ROLE");
 
 	bytes4 private constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
 	bytes4 private constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
@@ -39,6 +42,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
+	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
 
 	uint256 public constant MAX_NAME_LENGTH = 100;
 
@@ -55,6 +59,13 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	address public affiliateHub;
 	address internal globalSigner;
 	uint256 public globalNonce;
+
+	// Per-subAccount nonce for virtual account creation
+	mapping(address => uint256) private subAccountVirtualNonces;
+
+	// AccountManager deployment
+	bytes public accountManagerImplementation;
+	bytes32 internal initAccountManagerCodeHash;
 
 	// ==================== Modifiers ====================
 
@@ -85,10 +96,12 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @notice Initializes the AccountHub contract
 	 * @param _admin The default admin address
 	 * @param _affiliateHub The AffiliateHub contract address
+	 * @param _accountManagerImplementation The bytecode for account manager deployment
 	 */
-	function initialize(address _admin, address _affiliateHub) public initializer {
+	function initialize(address _admin, address _affiliateHub, bytes memory _accountManagerImplementation) public initializer {
 		if (_admin == address(0)) revert ZeroAddress();
 		if (_affiliateHub == address(0)) revert ZeroAddress();
+		if (_accountManagerImplementation.length == 0) revert EmptyArray();
 
 		__Pausable_init();
 		__AccessControl_init();
@@ -97,6 +110,8 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
 		affiliateHub = _affiliateHub;
+		accountManagerImplementation = _accountManagerImplementation;
+		initAccountManagerCodeHash = keccak256(abi.encodePacked(_accountManagerImplementation));
 	}
 
 	// ==================== Account Management ====================
@@ -165,8 +180,15 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param account The account address
 	 * @param callDatas Array of encoded function calls
 	 */
-	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant returns (bytes[] memory) {
 		if (callDatas.length == 0) revert EmptyArray();
+
+		address signer = getSigner();
+		if (!_isOwnerOf(account, signer) && !hasRole(INSTANT_LAYER_ROLE, msg.sender)) {
+			revert NotOwner();
+		}
+
+		bytes[] memory results = new bytes[](callDatas.length);
 
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			bytes calldata cd = callDatas[i];
@@ -176,18 +198,20 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				QuoteParams memory p = _decodeQuoteParams(cd);
 
 				if (virtualAccounts[account].isExists) {
-					_handleVirtualAccountSendQuote(account, cd, p);
-					return;
+					results[i] = _handleVirtualAccountSendQuote(account, cd, p);
+					return results;
 				}
 
 				if (subAccounts[account].isExists) {
-					_handleSubAccountSendQuote(account, cd, p);
-					return;
+					results[i] = _handleSubAccountSendQuote(account, cd, p);
+					return results;
 				}
 			}
 
-			_executeWithSigner(account, cd);
+			results[i] = _executeWithSigner(account, cd);
 		}
+
+		return results;
 	}
 
 	// ==================== Symmio Callback ====================
@@ -218,7 +242,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 */
 	function _removeQuoteFromAccount(uint256 quoteId, address partyA) private {
 		VirtualAccountData storage vData = virtualAccounts[partyA];
-		SubAccountData storage sData = subAccounts[partyA];
 
 		if (vData.isExists) {
 			vData.quoteIds.remove(quoteId);
@@ -226,13 +249,40 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				_deleteVirtualAccount(partyA);
 			}
 		}
-
-		if (sData.isExists) {
-			sData.quoteIds.remove(quoteId);
-		}
 	}
 
 	// ==================== Admin Functions ====================
+
+	/**
+	 * @notice Deploys an AccountManager for an affiliate
+	 * @dev Only callable by addresses with DEPLOYER_ROLE (typically AffiliateHub)
+	 * @param affiliate The affiliate address (used as the AccountManager address via CREATE2)
+	 * @param registrant The original registrant who requested the affiliate
+	 * @param name The affiliate name used for deterministic address generation
+	 * @return accountManager The deployed AccountManager address
+	 */
+	function deployAccountManager(
+		address affiliate,
+		address registrant,
+		string memory name
+	) external onlyRole(DEPLOYER_ROLE) whenNotPaused returns (address accountManager) {
+		accountManager = _deployAccountManager(registrant, name);
+		if (affiliate != accountManager) revert DeploymentFailed();
+
+		_grantRole(SIGNER_SETTER_ROLE, accountManager);
+
+		emit AccountManagerDeployed(affiliate, accountManager);
+	}
+
+	/**
+	 * @notice Generates the predicted AccountManager address for a registrant and name
+	 * @param registrant The registrant address
+	 * @param name The affiliate name
+	 * @return The predicted AccountManager address
+	 */
+	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address) {
+		return _generateAccountManagerAddress(registrant, name);
+	}
 
 	/**
 	 * @notice Sets the AffiliateHub contract address (only for emergency updates)
@@ -244,10 +294,20 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
+	 * @notice Updates the account manager implementation bytecode
+	 * @param implementation The new implementation bytecode
+	 */
+	function setAccountManagerImplementation(bytes memory implementation) external onlyRole(SETTER_ROLE) {
+		if (implementation.length == 0) revert EmptyArray();
+		accountManagerImplementation = implementation;
+		initAccountManagerCodeHash = keccak256(abi.encodePacked(accountManagerImplementation));
+	}
+
+	/**
 	 * @notice Sets the global signer address
 	 * @param _signer The new signer address
 	 */
-	function setSigner(address _signer) external onlyRole(SIGNER_SETTER) {
+	function setSigner(address _signer) external onlyRole(SIGNER_SETTER_ROLE) {
 		globalSigner = _signer;
 	}
 
@@ -294,80 +354,232 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @notice Gets all sub-accounts for an owner
-	 * @param owner The owner address
-	 * @return Array of sub-account addresses
+	 * @notice Resolves the owner of a sub account & virtual account & legacy account
+	 * @param account The account address to resolve
+	 * @return The resolved owner address
 	 */
-	function getSubAccounts(address owner) external view returns (address[] memory) {
-		return userToSubAccounts[owner].values();
+	function ownerOf(address account) external view returns (address) {
+		return _resolveAccountOwner(account);
 	}
 
 	/**
-	 * @notice Gets all virtual accounts for a sub-account
+	 * @notice Gets detailed information for a single sub-account
+	 * @param account The sub-account address
+	 * @return SubAccountDetail struct with account information
+	 */
+	function getSubAccount(address account) external view returns (SubAccountDetail memory) {
+		SubAccountData storage s = subAccounts[account];
+		return
+			SubAccountDetail({
+				accountAddress: account,
+				owner: s.owner,
+				name: s.name,
+				isExists: s.isExists,
+				affiliate: s.affiliate,
+				symmioCore: s.symmioCore,
+				metadata: s.metadata,
+				isolationType: s.isolationType
+			});
+	}
+
+	function getVirtualAccount(address account) external view returns (VirtualAccountDetail memory) {
+		VirtualAccountData storage v = virtualAccounts[account];
+		return
+			VirtualAccountDetail({
+				accountAddress: account,
+				parentAccount: v.parentAccount,
+				symbolId: v.symbolId,
+				metadata: v.metadata,
+				isExists: v.isExists,
+				isolationType: v.isolationType
+			});
+	}
+
+	function getUserSubAccountsAddresses(address owner, uint256 offset, uint256 limit) external view returns (address[] memory) {
+		uint256 total = userToSubAccounts[owner].length();
+		if (offset >= total) {
+			return new address[](0);
+		}
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
+		address[] memory paginatedAddresses = new address[](resultSize);
+		for (uint256 i = 0; i < resultSize; i++) {
+			paginatedAddresses[i] = userToSubAccounts[owner].at(offset + i);
+		}
+		return paginatedAddresses;
+	}
+
+	/**
+	 * @notice Gets paginated detailed information for sub-accounts of an owner
+	 * @param owner The owner address
+	 * @param offset The starting index
+	 * @param limit The maximum number of accounts to return
+	 * @return details Array of SubAccountDetail structs
+	 */
+	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details) {
+		uint256 total = userToSubAccounts[owner].length();
+
+		if (offset >= total) {
+			return new SubAccountDetail[](0);
+		}
+
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
+
+		details = new SubAccountDetail[](resultSize);
+
+		for (uint256 i = 0; i < resultSize; i++) {
+			address accountAddr = userToSubAccounts[owner].at(offset + i);
+			SubAccountData storage s = subAccounts[accountAddr];
+
+			details[i] = SubAccountDetail({
+				accountAddress: accountAddr,
+				owner: s.owner,
+				name: s.name,
+				isExists: s.isExists,
+				affiliate: s.affiliate,
+				symmioCore: s.symmioCore,
+				metadata: s.metadata,
+				isolationType: s.isolationType
+			});
+		}
+	}
+
+	/**
+	 * @notice Gets paginated virtual account addresses for a sub-account
 	 * @param subAccount The sub-account address
+	 * @param offset The starting index
+	 * @param limit The maximum number of accounts to return
 	 * @return Array of virtual account addresses
 	 */
-	function getVirtualAccounts(address subAccount) external view returns (address[] memory) {
-		return subAccountToVirtualAccounts[subAccount].values();
+	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory) {
+		uint256 total = subAccountToVirtualAccounts[subAccount].length();
+
+		if (offset >= total) {
+			return new address[](0);
+		}
+
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
+
+		address[] memory paginatedAccounts = new address[](resultSize);
+		for (uint256 i = 0; i < resultSize; i++) {
+			paginatedAccounts[i] = subAccountToVirtualAccounts[subAccount].at(offset + i);
+		}
+		return paginatedAccounts;
 	}
 
 	/**
-	 * @notice Gets sub-account data
-	 * @param account The account address
-	 * @return owner The owner address
-	 * @return isExists Whether the account exists
-	 * @return name The account name
-	 * @return affiliate The affiliate address
-	 * @return symmioCore The symmioCore address
-	 * @return metadata The metadata
-	 * @return isolationType The isolation type
+	 * @notice Gets paginated detailed information for virtual accounts of a sub-account
+	 * @param subAccount The sub-account address
+	 * @param offset The starting index
+	 * @param limit The maximum number of accounts to return
+	 * @return details Array of VirtualAccountDetail structs
 	 */
-	function getSubAccountData(
-		address account
-	)
-		external
-		view
-		returns (
-			address owner,
-			bool isExists,
-			string memory name,
-			address affiliate,
-			address symmioCore,
-			bytes memory metadata,
-			SubAccountIsolationType isolationType
-		)
-	{
-		SubAccountData storage s = subAccounts[account];
-		return (s.owner, s.isExists, s.name, s.affiliate, s.symmioCore, s.metadata, s.isolationType);
+	function getVirtualAccountsOfSubAccount(
+		address subAccount,
+		uint256 offset,
+		uint256 limit
+	) external view returns (VirtualAccountDetail[] memory details) {
+		uint256 total = subAccountToVirtualAccounts[subAccount].length();
+
+		if (offset >= total) {
+			return new VirtualAccountDetail[](0);
+		}
+
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
+
+		details = new VirtualAccountDetail[](resultSize);
+
+		for (uint256 i = 0; i < resultSize; i++) {
+			address accountAddr = subAccountToVirtualAccounts[subAccount].at(offset + i);
+			VirtualAccountData storage v = virtualAccounts[accountAddr];
+
+			details[i] = VirtualAccountDetail({
+				accountAddress: accountAddr,
+				parentAccount: v.parentAccount,
+				symbolId: v.symbolId,
+				metadata: v.metadata,
+				isExists: v.isExists,
+				isolationType: v.isolationType
+			});
+		}
 	}
 
 	/**
-	 * @notice Gets quote IDs for a sub-account
+	 * @notice Gets paginated quote IDs for a virtual account
 	 * @param account The account address
+	 * @param offset The starting index
+	 * @param limit The maximum number of quote IDs to return
 	 * @return Array of quote IDs
 	 */
-	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory) {
-		return subAccounts[account].quoteIds.values();
-	}
+	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory) {
+		uint256 total = virtualAccounts[account].quoteIds.length();
 
-	function getVirtualAccountData(
-		address account
-	)
-		external
-		view
-		returns (address parentAccount, bool isExists, uint256 symbolId, bytes memory metadata, VirtualAccountIsolationType isolationType)
-	{
-		VirtualAccountData storage s = virtualAccounts[account];
-		return (s.parentAccount, s.isExists, s.symbolId, s.metadata, s.isolationType);
+		if (offset >= total) {
+			return new uint256[](0);
+		}
+
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
+
+		uint256[] memory paginatedQuoteIds = new uint256[](resultSize);
+		for (uint256 i = 0; i < resultSize; i++) {
+			paginatedQuoteIds[i] = virtualAccounts[account].quoteIds.at(offset + i);
+		}
+		return paginatedQuoteIds;
 	}
 
 	/**
-	 * @notice Gets quote IDs for a sub-account
-	 * @param account The account address
-	 * @return Array of quote IDs
+	 * @notice Gets the total count of sub-accounts for an owner
+	 * @param owner The owner address
+	 * @return The total number of sub-accounts
 	 */
-	function getVirtualAccountQuoteIds(address account) external view returns (uint256[] memory) {
-		return virtualAccounts[account].quoteIds.values();
+	function getSubAccountsCountOfUser(address owner) external view returns (uint256) {
+		return userToSubAccounts[owner].length();
+	}
+
+	/**
+	 * @notice Gets the total count of virtual accounts for a sub-account
+	 * @param subAccount The sub-account address
+	 * @return The total number of virtual accounts
+	 */
+	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256) {
+		return subAccountToVirtualAccounts[subAccount].length();
+	}
+
+	/**
+	 * @notice Gets the current virtual account nonce for a sub-account
+	 * @param subAccount The sub-account address
+	 * @return The current nonce value for virtual account creation
+	 */
+	function getSubAccountVirtualNonce(address subAccount) external view returns (uint256) {
+		return subAccountVirtualNonces[subAccount];
+	}
+
+	/**
+	 * @notice Predicts the address of the next virtual account that will be created for a sub-account
+	 * @param subAccount The sub-account address
+	 * @param isolationType The virtual account isolation type
+	 * @param symbolId The symbol ID (0 for position isolation)
+	 * @return The predicted address for the next virtual account (either reused or newly generated)
+	 */
+	function predictNextVirtualAccountAddress(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) external view returns (address) {
+		// First check if a deleted virtual account exists for this combination
+		address[] storage pool = deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
+		if (pool.length > 0) {
+			// Return the address that would be reused (last element in the stack)
+			return pool[pool.length - 1];
+		}
+
+		// If no deleted account exists, generate and return a new virtual account address
+		uint256 nextNonce = subAccountVirtualNonces[subAccount] + 1;
+		return _generateVirtualAccountAddress(subAccount, nextNonce);
 	}
 
 	// ==================== Internal Functions ====================
@@ -470,7 +682,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		SubAccountData storage parent = subAccounts[parentAccount];
 		if (!parent.isExists) revert InvalidParent();
 
-		uint256 nonce = ++globalNonce;
+		uint256 nonce = ++subAccountVirtualNonces[parentAccount];
 		virtualAccount = _generateVirtualAccountAddress(parentAccount, nonce);
 
 		VirtualAccountData storage v = virtualAccounts[virtualAccount];
@@ -645,7 +857,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	/**
 	 * @dev Handles sendQuote for virtual accounts
 	 */
-	function _handleVirtualAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private {
+	function _handleVirtualAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private returns (bytes memory) {
 		VirtualAccountData storage accountData = virtualAccounts[account];
 		VirtualAccountIsolationType isolationType = accountData.isolationType;
 
@@ -668,20 +880,19 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		address core = getRelatedCore(accountData.parentAccount);
 		_transferBalanceForSendQuote(core, accountData.parentAccount, account, p);
 
-		_executeWithSigner(account, cd);
+		bytes memory result = _executeWithSigner(account, cd);
 		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
+		return result;
 	}
 
 	/**
 	 * @dev Handles sendQuote for sub-accounts
 	 */
-	function _handleSubAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private {
+	function _handleSubAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private returns (bytes memory) {
 		SubAccountData storage accountData = subAccounts[account];
 
 		if (accountData.isolationType == SubAccountIsolationType.CUSTOM) {
-			_executeWithSigner(account, cd);
-			accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
-			return;
+			return _executeWithSigner(account, cd);
 		}
 
 		// Get or create virtual account based on sub-account isolation type (tries to reuse deleted ones first)
@@ -705,8 +916,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_transferBalanceForSendQuote(core, account, virtualAccount, p);
 
 		// send quote from virtual account
-		_executeWithSigner(virtualAccount, cd);
+		bytes memory result = _executeWithSigner(virtualAccount, cd);
 		virtualAccounts[virtualAccount].quoteIds.add(ISymmio(getRelatedCore(virtualAccount)).getNextQuoteId());
+		return result;
 	}
 
 	/**
@@ -727,7 +939,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	/**
 	 * @dev Executes a call with signer set
 	 */
-	function _executeWithSigner(address account, bytes memory callData) private {
+	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
 		address signer = getSigner();
 		address core = getRelatedCore(account);
 
@@ -742,36 +954,44 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		}
 
 		emit Call(signer, account, callData, true, result);
+		return result;
 	}
 
 	/**
 	 * @dev Checks if user is owner of account
 	 */
 	function _isOwnerOf(address account, address user) private view returns (bool) {
-		if (subAccounts[account].owner == user) {
-			return true;
-		}
-
-		address parent = virtualAccounts[account].parentAccount;
-		if (parent != address(0)) {
-			return _isOwnerOf(parent, user);
-		}
-
-		return _checkLegacyOwnership(account, user);
+		return _resolveAccountOwner(account) == user;
 	}
 
 	/**
-	 * @dev Checks legacy multi-account ownership
+	 * @dev Resolves the owner for sub accounts or legacy accounts
 	 */
-	function _checkLegacyOwnership(address account, address user) private view returns (bool) {
-		address[] memory legacyAccounts = IAffiliateHub(affiliateHub).getLegacyMultiAccounts();
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (owner == user) {
-				return true;
+	function _resolveAccountOwner(address account) private view returns (address) {
+		address owner = subAccounts[account].owner;
+		if (owner != address(0)) {
+			return owner;
+		}
+
+		// sub accounts
+		address parent = virtualAccounts[account].parentAccount;
+		if (parent != address(0)) {
+			address parentOwner = subAccounts[parent].owner;
+			if (parentOwner != address(0)) {
+				return parentOwner;
 			}
 		}
-		return false;
+
+		// multi accounts
+		address[] memory legacyAccounts = IAffiliateHub(affiliateHub).getLegacyMultiAccounts();
+		for (uint256 i = 0; i < legacyAccounts.length; i++) {
+			address legacyOwner = IMultiAccount(legacyAccounts[i]).owners(account);
+			if (legacyOwner != address(0)) {
+				return legacyOwner;
+			}
+		}
+
+		return address(0);
 	}
 
 	/**
@@ -850,5 +1070,29 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		ISymmio.Fee memory fee = ISymmio(core).getFee(p.affiliate, p.symbolId);
 		ISymmio(core).internalTransfer(transferTarget, p.cva + p.lf + p.partyAmm + (p.quantity * tradingPrice * fee.openFee) / 1e36);
 		ISymmio(core).setSigner(address(0));
+	}
+
+	/**
+	 * @dev Deploys account manager contract
+	 */
+	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
+		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
+
+		assembly {
+			accountManager := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
+		}
+
+		if (accountManager == address(0)) revert DeploymentFailed();
+	}
+
+	/**
+	 * @dev Generates deterministic account manager address
+	 */
+	function _generateAccountManagerAddress(address user, string memory name) private view returns (address) {
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
+		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
+		bytes32 initCodeHash = keccak256(bytecode);
+		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
 	}
 }

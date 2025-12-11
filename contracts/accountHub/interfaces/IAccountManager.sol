@@ -4,8 +4,14 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import "./IAccountHub.sol";
+
 interface IAccountManager {
 	event AddAccount(address indexed user, address indexed account, string name);
 
-	function setAccountHub(address _accountHub) external;
+	function getAccountHub() external view returns (address);
+
+	function getAccounts(address user, uint256 start, uint256 size) external view returns (IAccountHub.Account[] memory);
+
+	function getAccountsLength(address user) external view returns (uint256);
 }

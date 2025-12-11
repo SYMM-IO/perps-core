@@ -45,6 +45,7 @@ library MAStorage {
 		mapping(address => EntityMetadata) entitiesMetadata;
 		uint256 maxPartyAConnectionLimit; // Party A Max number of Allowed party B
 		address signer;
+		address penaltyCollector;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -126,4 +126,6 @@ interface IControlFacet is IControlEvents {
 	function setMinWithdrawCooldown(uint256 cooldown) external;
 
 	function setSigner(address signer) external;
+
+	function setPenaltyCollector(address penaltyCollector) external;
 }

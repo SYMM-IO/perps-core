@@ -117,7 +117,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
 		})
 
-		describe.skip("InstantLayer", async function () {
+		describe("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
 		})
 

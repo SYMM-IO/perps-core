@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import "./interfaces/IAffiliateHub.sol";
-import "./interfaces/IAccountManager.sol";
+import "./interfaces/IAccountHub.sol";
 import "./interfaces/ISymmio.sol";
 
 /**
@@ -30,13 +30,10 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
-	bytes32 public constant SIGNER_SETTER = keccak256("SIGNER_SETTER");
 	bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
 
 	uint256 private constant SHARE_PRECISION = 1e18;
 	uint256 private constant MAX_NAME_LENGTH = 100;
-
-	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
 
 	// ==================== State Variables ====================
 
@@ -49,8 +46,6 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	address public symmioFeeReceiver;
 	address public accountHub;
 	uint256 public globalNonce;
-	bytes public accountManagerImplementation;
-	bytes32 internal initAccountManagerCodeHash;
 
 	// ==================== Modifiers ====================
 
@@ -83,12 +78,10 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @notice Initializes the AffiliateHub contract
 	 * @param _admin The default admin address
 	 * @param _symmioFeeReceiver The address to receive Symmio fees
-	 * @param _accountManagerImplementation The bytecode for account manager deployment
 	 */
-	function initialize(address _admin, address _symmioFeeReceiver, bytes memory _accountManagerImplementation) public initializer {
+	function initialize(address _admin, address _symmioFeeReceiver) public initializer {
 		if (_admin == address(0)) revert ZeroAddress();
 		if (_symmioFeeReceiver == address(0)) revert ZeroAddress();
-		if (_accountManagerImplementation.length == 0) revert EmptyArray();
 
 		__Pausable_init();
 		__AccessControl_init();
@@ -97,8 +90,6 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
 		symmioFeeReceiver = _symmioFeeReceiver;
-		accountManagerImplementation = _accountManagerImplementation;
-		initAccountManagerCodeHash = keccak256(abi.encodePacked(accountManagerImplementation));
 	}
 
 	// ==================== Affiliate Management ====================
@@ -109,7 +100,8 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @return affiliateAddress The generated affiliate address
 	 */
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
-		affiliateAddress = _generateAccountManagerAddress(msg.sender, reg.name);
+		if (accountHub == address(0)) revert AccountHubNotSet();
+		affiliateAddress = IAccountHub(accountHub).generateAccountManagerAddress(msg.sender, reg.name);
 
 		if (affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
 		if (reg.admin == address(0)) revert ZeroAddress();
@@ -164,17 +156,16 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 */
 	function approveAffiliate(address affiliate) external onlyRole(APPROVER_ROLE) whenNotPaused {
 		if (affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
+		if (accountHub == address(0)) revert AccountHubNotSet();
 
-		address accountManager = _deployAccountManager(affiliates[affiliate].registrant, affiliates[affiliate].name);
-		if (affiliate != accountManager) revert DeploymentFailed();
+		// Deploy AccountManager via AccountHub (which also grants SIGNER_SETTER_ROLE)
+		address accountManager = IAccountHub(accountHub).deployAccountManager(
+			affiliate,
+			affiliates[affiliate].registrant,
+			affiliates[affiliate].name
+		);
+
 		address feeDistributor = _generateFeeDistributorAddress(affiliate, ++globalNonce);
-
-		grantRole(SIGNER_SETTER, accountManager);
-
-		// Set AccountHub reference on the AccountManager if available
-		if (accountHub != address(0)) {
-			IAccountManager(accountManager).setAccountHub(accountHub);
-		}
 
 		affiliates[affiliate].state = AffiliateState.ACTIVE;
 		affiliates[affiliate].accountManager = accountManager;
@@ -195,7 +186,10 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param affiliate The affiliate address
 	 * @param newAdmin The proposed new admin address
 	 */
-	function proposeAdminTransfer(address affiliate, address newAdmin) external whenNotPaused onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
+	function proposeAdminTransfer(
+		address affiliate,
+		address newAdmin
+	) external whenNotPaused onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
 		if (newAdmin == address(0)) revert ZeroAddress();
 
 		affiliates[affiliate].pendingAdmin = newAdmin;
@@ -410,12 +404,11 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 * @param selector The function selector to hook
 	 * @param hook The hook contract address
 	 */
-	function setHook(address affiliate, bytes4 selector, address hook)
-		external
-		whenNotPaused
-		onlyAffiliateAdmin(affiliate)
-		onlyIfAffiliateIsActive(affiliate)
-	{
+	function setHook(
+		address affiliate,
+		bytes4 selector,
+		address hook
+	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		affiliates[affiliate].hooks[selector] = hook;
 		emit HookSet(affiliate, selector, hook);
 	}
@@ -462,16 +455,6 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		symmioFeeReceiver = receiver;
 
 		emit SymmioFeeReceiverUpdated(oldReceiver, receiver);
-	}
-
-	/**
-	 * @notice Updates the account manager implementation bytecode
-	 * @param implementation The new implementation bytecode
-	 */
-	function setAccountManagerImplementation(bytes memory implementation) external onlyRole(SETTER_ROLE) {
-		if (implementation.length == 0) revert EmptyArray();
-		accountManagerImplementation = implementation;
-		initAccountManagerCodeHash = keccak256(abi.encodePacked(accountManagerImplementation));
 	}
 
 	/**
@@ -621,31 +604,6 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 		uint8 decimals = IERC20Metadata(ISymmio(symmio).getCollateral()).decimals();
 		uint256 balance = ISymmio(symmio).balanceOf(affiliates[affiliate].feeDetails.feeDistributor);
 		return balance / (10 ** (18 - decimals));
-	}
-
-	/**
-	 * @dev Deploys account manager contract
-	 */
-	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
-		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
-
-		accountManager;
-		assembly {
-			accountManager := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
-		}
-
-		if (accountManager == address(0)) revert DeploymentFailed();
-	}
-
-	/**
-	 * @dev Generates deterministic account manager address
-	 */
-	function _generateAccountManagerAddress(address user, string memory name) private view returns (address) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
-		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
-		bytes32 initCodeHash = keccak256(bytecode);
-		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
 	}
 
 	/**
