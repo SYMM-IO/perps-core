@@ -29,7 +29,6 @@ interface IAccountHub {
 		bytes metadata;
 		address affiliate;
 		address symmioCore;
-		EnumerableSet.UintSet quoteIds;
 		SubAccountIsolationType isolationType;
 	}
 
@@ -73,6 +72,26 @@ interface IAccountHub {
 		address affiliate;
 	}
 
+	struct SubAccountDetail {
+		address accountAddress;
+		address owner;
+		string name;
+		bool isExists;
+		address affiliate;
+		address symmioCore;
+		bytes metadata;
+		SubAccountIsolationType isolationType;
+	}
+
+	struct VirtualAccountDetail {
+		address accountAddress;
+		address parentAccount;
+		uint256 symbolId;
+		bool isExists;
+		bytes metadata;
+		VirtualAccountIsolationType isolationType;
+	}
+
 	// Account events
 	event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
 	event VirtualAccountCreated(address indexed account, address indexed parent);
@@ -86,37 +105,44 @@ interface IAccountHub {
 	event WithdrawFromAccount(address indexed sender, address indexed account, uint256 amount);
 	event Call(address indexed sender, address indexed account, bytes callData, bool success, bytes resultData);
 
+	// AccountManager events
+	event AccountManagerDeployed(address indexed affiliate, address indexed accountManager);
+
 	// Account management
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
 	function editAccountName(address account, string memory name) external;
-	function _call(address account, bytes[] memory _callDatas) external;
+	function _call(address account, bytes[] calldata _callDatas) external returns (bytes[] memory);
 
 	// Symmio callback
 	function onClosePosition(uint256 quoteId, uint256 _filledAmount, uint256 _closedPrice, address partyA, address _partyB) external;
 
 	// View functions
+	function affiliateHub() external view returns (address);
+	function accountManagerImplementation() external view returns (bytes memory);
 	function getSigner() external view returns (address);
 	function getRelatedCore(address account) external view returns (address);
-	function getSubAccounts(address owner) external view returns (address[] memory);
-	function getVirtualAccounts(address subAccount) external view returns (address[] memory);
-	function getSubAccountData(
-		address account
-	)
-		external
-		view
-		returns (
-			address owner,
-			bool isExists,
-			string memory name,
-			address affiliate,
-			address symmioCore,
-			bytes memory metadata,
-			SubAccountIsolationType isolationType
-		);
-
-	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory);
-	// Admin functions
+	function ownerOf(address account) external view returns (address);
+	function getSubAccountVirtualNonce(address subAccount) external view returns (uint256);
+	function predictNextVirtualAccountAddress(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) external view returns (address);
 	function setSigner(address _signer) external;
+	function getSubAccount(address account) external view returns (SubAccountDetail memory);
+	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details);
+	function getUserSubAccountsAddresses(address owner, uint256 offset, uint256 limit) external view returns (address[] memory);
+	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory);
+	function getVirtualAccount(address account) external view returns (VirtualAccountDetail memory);
+	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (VirtualAccountDetail[] memory details);
+	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory);
+	function getSubAccountsCountOfUser(address owner) external view returns (uint256);
+	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256);
+
+	// AccountManager management
+	function deployAccountManager(address affiliate, address registrant, string memory name) external returns (address accountManager);
+	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address);
+	function setAccountManagerImplementation(bytes memory implementation) external;
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();
@@ -143,4 +169,5 @@ interface IAccountHub {
 	error OnlyCustomIsolationCanCreateManually();
 	error HookFailed(bytes reason);
 	error InvalidSelector();
+	error DeploymentFailed();
 }

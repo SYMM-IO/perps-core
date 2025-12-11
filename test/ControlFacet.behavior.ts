@@ -733,6 +733,14 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("setPenaltyCollector", () => {
+
+		it("should set penalty collector correctly", async () => {
+			await expect(context.controlFacet.setPenaltyCollector(context.signers.admin)).to.not.reverted
+			expect(await context.viewFacet.getPenaltyCollector()).to.equal(context.signers.admin.address)
+		})
+	})
+
 	describe("SetPartyBBindable", () => {
 
 		beforeEach(async function () {

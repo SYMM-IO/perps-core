@@ -66,7 +66,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Adds an account as admin for a specific role.
 	/// @param role The role whose admin is being updated.
 	/// @param admin The account to add as admin.
-	function addRoleAdmin(bytes32 role, address admin) external onlyRoleAdmin(role) {
+	function addRoleAdmin(bytes32 role, address admin) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		checkZeroAddress(admin);
 		GlobalAppStorage.layout().roleAdmins[role][admin] = true;
 		emit RoleAdminAdded(role, admin);
@@ -75,7 +75,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Removes an account from the admins for a specific role.
 	/// @param role The role whose admin is being updated.
 	/// @param admin The account to remove as admin.
-	function removeRoleAdmin(bytes32 role, address admin) external onlyRoleAdmin(role) {
+	function removeRoleAdmin(bytes32 role, address admin) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
 		checkZeroAddress(admin);
 		GlobalAppStorage.layout().roleAdmins[role][admin] = false;
 		emit RoleAdminRemoved(role, admin);
@@ -494,6 +494,11 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	function checkZeroAddress(address target) private pure {
 		require(target != address(0), "ControlFacet: Zero address");
+	}
+
+	function setPenaltyCollector(address penaltyCollector) external onlyRole(LibAccessibility.SETTER_ROLE){
+		MAStorage.layout().penaltyCollector = penaltyCollector;
+		emit SetPenaltyCollector(penaltyCollector);
 	}
 
 	function setPartyBBindable(address partyB) external onlyRole(LibAccessibility.BINDABLE_SETTER_ROLE) {

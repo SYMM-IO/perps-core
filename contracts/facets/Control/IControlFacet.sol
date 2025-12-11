@@ -127,6 +127,8 @@ interface IControlFacet is IControlEvents {
 
 	function setSigner(address signer) external;
 
+	function setPenaltyCollector(address penaltyCollector) external;
+
 	function setPartyBBindable(address partyB) external;
 
 	function unsetPartyBBindable(address partyB) external;

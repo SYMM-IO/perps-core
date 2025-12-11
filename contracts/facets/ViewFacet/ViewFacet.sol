@@ -815,6 +815,10 @@ contract ViewFacet is IViewFacet {
 		return MAStorage.layout().entitiesMetadata[entity];
 	}
 
+	function getPenaltyCollector() external view returns(address) {
+		return MAStorage.layout().penaltyCollector;
+	}
+
 	function getPartyALockedQuotesCount(address user) external view returns(uint256){
 		return QuoteStorage.layout().partyALockQuotesCount[user];
 	}

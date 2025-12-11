@@ -41,37 +41,9 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuar
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { IAccountHub } from "../accountHub/interfaces/IAccountHub.sol";
 
 /* ════════════════════════════ EXTERNAL INTERFACES ════════════════════════════ */
-
-/**
- * @notice Interface for MultiAccount contract that manages multiple trading accounts.
- * @dev    MultiAccount contracts must implement these methods to be compatible with InstantLayer.
- */
-interface IMultiAccount {
-	/**
-	 * @notice Execute multiple operations on behalf of an account
-	 * @param account The account to execute operations for
-	 * @param _callDatas Array of encoded function calls to execute
-	 */
-	function _call(address account, bytes[] calldata _callDatas) external;
-
-	/**
-	 * @notice Verify if a signature is valid for a specific account
-	 * @param account The account to verify the signature for
-	 * @param hash The message hash that was signed
-	 * @param signature The signature to verify
-	 * @return True if the signature is valid, false otherwise
-	 */
-	function isValidSignatureOfAccount(address account, bytes32 hash, bytes calldata signature) external view returns (bool);
-
-	/**
-	 * @notice Get the owner address of a specific account
-	 * @param account The account to query
-	 * @return The owner address of the account
-	 */
-	function owners(address account) external view returns (address);
-}
 
 /**
  * @notice Interface for SymmioPartyB contract that handles PartyB operations.
@@ -112,7 +84,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/* ════════════════════════ EIP-712 TYPE HASHES ════════════════════════ */
 
 	/// @notice EIP-712 type hash for Account struct
-	bytes32 public constant ACCOUNT_TYPEHASH = keccak256("Account(address multiAccount,address addr)");
+	bytes32 public constant ACCOUNT_TYPEHASH = keccak256("Account(address addr,bool isPartyB)");
 
 	/// @notice EIP-712 type hash for ReplayAttackHeader struct
 	bytes32 public constant REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
@@ -127,7 +99,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				"Account signerAccount,",
 				"ReplayAttackHeader replayAttackHeader",
 				")",
-				"Account(address multiAccount,address addr)",
+				"Account(address addr,bool isPartyB)",
 				"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
 			)
 		);
@@ -136,14 +108,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	bytes32 public constant DELEGATION_INFO_TYPEHASH =
 		keccak256(
 			"DelegationInfo(Account account,address delegatedSigner,bytes4[] selectors,uint256 expiryTimestamp)"
-			"Account(address multiAccount,address addr)"
+			"Account(address addr,bool isPartyB)"
 		);
 
 	/// @notice EIP-712 type hash for SignedDelegation struct
 	bytes32 public constant SIGNED_DELEGATION_TYPEHASH =
 		keccak256(
 			"SignedDelegation(DelegationInfo delegationInfo,ReplayAttackHeader replayAttackHeader)"
-			"Account(address multiAccount,address addr)"
+			"Account(address addr,bool isPartyB)"
 			"DelegationInfo(Account account,address delegatedSigner,bytes4[] selectors,uint256 expiryTimestamp)"
 			"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
 		);
@@ -164,9 +136,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @dev    PartyB contracts must be registered before they can execute operations
 	mapping(address => bool) public registeredPartyBs;
 
-	/// @notice Registry of authorized MultiAccount contracts
-	/// @dev    MultiAccount contracts must be registered before they can manage accounts
-	mapping(address => bool) public registeredMultiAccounts;
+	/// @notice Configured AccountHub contract
+	address public accountHub;
 
 	/// @notice Tracking of executed operation hashes to prevent replay attacks
 	/// @dev    Each operation can only be executed once
@@ -196,13 +167,13 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/**
 	 * @notice Represents an account context for operations.
-	 * @dev    Used to identify which MultiAccount contract manages a specific trading account.
-	 * @param multiAccount Address of the MultiAccount contract (0x0 for PartyB operations)
+	 * @dev    isPartyB decides between AccountHub and PartyB.
 	 * @param addr         The actual account address (PartyA account or PartyB address)
+	 * @param isPartyB     Whether this operation targets a PartyB or not
 	 */
 	struct Account {
-		address multiAccount;
 		address addr;
+		bool isPartyB;
 	}
 
 	/**
@@ -315,13 +286,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param partyB Address of the unregistered PartyB
 	event PartyBUnregistered(address indexed partyB);
 
-	/// @notice Emitted when a MultiAccount contract is registered
-	/// @param multiAccount Address of the newly registered MultiAccount
-	event MultiAccountRegistered(address indexed multiAccount);
-
-	/// @notice Emitted when a MultiAccount contract is removed from registry
-	/// @param multiAccount Address of the unregistered MultiAccount
-	event MultiAccountUnregistered(address indexed multiAccount);
+	/// @notice Emitted when the configured AccountHub is updated
+	/// @param oldAccountHub old AccountHub
+	/// @param newAccountHub new AccountHub
+	event AccountHubUpdated(address indexed oldAccountHub, address indexed newAccountHub);
 
 	/// @notice Emitted when delegation permission is granted
 	/// @param delegator Address granting the delegation
@@ -390,9 +358,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice CallData is too short (minimum 4 bytes for selector)
 	error CallDataLengthMismatch();
 
-	/// @notice MultiAccount contract is not registered
-	/// @param multiAccount The unregistered MultiAccount address
-	error UnregisteredMultiAccount(address multiAccount);
+	/// @notice AccountHub address is invalid
+	/// @param accountHub Provided AccountHub address
+	error UnregisteredAccountHub(address accountHub);
+	error AccountHubNotSet();
 
 	/// @notice PartyB contract is not registered
 	/// @param partyB The unregistered PartyB address
@@ -425,9 +394,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/// @notice Caller is not the owner of the specified account
 	/// @param sender The address that attempted the operation
-	/// @param multiAccount The MultiAccount contract address
 	/// @param account The actual account address
-	error NotOwnerOfAccount(address sender, address multiAccount, address account);
+	error NotOwnerOfAccount(address sender, address account);
 
 	/// @notice Template has no operations
 	error EmptyTemplate();
@@ -485,10 +453,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		DelegationInfo calldata info = signedDelegation.delegationInfo;
 		ReplayAttackHeader calldata rh = signedDelegation.replayAttackHeader;
 
-		if (!registeredMultiAccounts[info.account.multiAccount]) revert UnregisteredMultiAccount(info.account.multiAccount);
+		if (info.account.isPartyB) revert InvalidDelegation();
 
 		address delegator = info.account.addr;
-		address owner = IMultiAccount(info.account.multiAccount).owners(delegator);
+		address owner = _getAccountOwner(delegator);
 		address delegate = info.delegatedSigner;
 		uint256 expiry = info.expiryTimestamp;
 		bytes4[] calldata selectors = info.selectors;
@@ -497,6 +465,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (delegate == owner) revert SelfDelegation();
 		if (expiry <= block.timestamp) revert DelegationExpired(expiry);
 		if (rh.deadline != 0 && block.timestamp > rh.deadline) revert DeadlineExpired(rh.deadline);
+		if (info.selectors.length == 0) revert InvalidDelegation();
 
 		// Verify and update nonce
 		uint256 expected = delegationNonces[delegator];
@@ -537,6 +506,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @param info Delegation information including delegate address and permissions
 	 */
 	function grantDelegation(DelegationInfo calldata info) external onlyOwner(info.account) {
+		if (info.account.isPartyB) revert InvalidDelegation();
 		if (info.delegatedSigner == msg.sender) revert SelfDelegation();
 		if (info.expiryTimestamp <= block.timestamp) revert DelegationExpired(info.expiryTimestamp);
 
@@ -581,30 +551,13 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	}
 
 	/**
-	 * @notice Register multiple MultiAccount contracts.
-	 * @dev    MultiAccount contracts must be registered before they can manage accounts.
-	 * @param multiAccounts Array of MultiAccount contract addresses to register
-	 *
-	 * Requirements:
-	 * - Caller must have SETTER_ROLE
+	 * @notice Set the AccountHub contract address.
+	 * @param _accountHub Address of the AccountHub contract.
 	 */
-	function registerMultiAccounts(address[] calldata multiAccounts) external onlyRole(SETTER_ROLE) {
-		for (uint256 i = 0; i < multiAccounts.length; i++) {
-			registeredMultiAccounts[multiAccounts[i]] = true;
-			emit MultiAccountRegistered(multiAccounts[i]);
-		}
-	}
-
-	/**
-	 * @notice Remove a MultiAccount contract from the registry.
-	 * @param multiAccount Address of the MultiAccount contract to unregister
-	 *
-	 * Requirements:
-	 * - Caller must have SETTER_ROLE
-	 */
-	function unregisterMultiAccount(address multiAccount) external onlyRole(SETTER_ROLE) {
-		registeredMultiAccounts[multiAccount] = false;
-		emit MultiAccountUnregistered(multiAccount);
+	function setAccountHub(address _accountHub) external onlyRole(SETTER_ROLE) {
+		if (_accountHub == address(0)) revert UnregisteredAccountHub(_accountHub);
+		emit AccountHubUpdated(accountHub, _accountHub);
+		accountHub = _accountHub;
 	}
 
 	/* ══════════════════════ TEMPLATE MANAGEMENT ══════════════════════ */
@@ -659,7 +612,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 */
 	function setRevocationCooldown(uint256 newCooldown) external onlyRole(SETTER_ROLE) {
 		// Adjust bounds to taste; 0 disallowed to keep the two-step invariant.
-		if (newCooldown < 1 minutes || newCooldown > 30 days) revert InvalidCallData();
+		if (newCooldown < 5 minutes || newCooldown > 30 days) revert InvalidCallData();
 		uint256 old = revocationCooldown;
 		revocationCooldown = newCooldown;
 		emit RevocationCooldownUpdated(old, newCooldown);
@@ -675,7 +628,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bool callerIsDelegate = (msg.sender == delegate);
 		bool callerIsAdmin = hasRole(REVOKER_ROLE, msg.sender);
 		if (!(callerIsOwner || callerIsDelegate || callerIsAdmin)) {
-			revert NotOwnerOfAccount(msg.sender, account.multiAccount, account.addr);
+			revert NotOwnerOfAccount(msg.sender, account.addr);
 		}
 
 		for (uint256 i = 0; i < selectors.length; ++i) {
@@ -815,7 +768,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * Verification Steps:
 	 * 1. Check deadline hasn't expired
 	 * 2. Validate calldata minimum length
-	 * 3. Verify contract registration (PartyB or MultiAccount)
+	 * 3. Verify contract registration (PartyB or AccountHub)
 	 * 4. Check delegation if signer != owner
 	 * 5. Verify EIP-712 signature
 	 * 6. Prevent replay attacks
@@ -836,15 +789,13 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		address signer = signedOp.signer;
 
 		// Validate registration and delegation
-		if (signedOp.signerAccount.multiAccount == address(0)) {
+		if (signedOp.signerAccount.isPartyB) {
 			// PartyB operation
 			if (signer != signedOp.signerAccount.addr) revert MismatchSignerAndAccount(signer, signedOp.signerAccount.addr);
 			if (!isPartyBRegistered(signer)) revert UnregisteredPartyB(signer);
 		} else {
-			// PartyA operation through MultiAccount
-			if (!isMultiAccountRegistered(signedOp.signerAccount.multiAccount)) revert UnregisteredMultiAccount(signedOp.signerAccount.multiAccount);
-
-			address accountOwner = IMultiAccount(signedOp.signerAccount.multiAccount).owners(signedOp.signerAccount.addr);
+			// PartyA operation through AccountHub
+			address accountOwner = _getAccountOwner(signedOp.signerAccount.addr);
 
 			// Check delegation if signer is not the owner
 			if (accountOwner != signer) {
@@ -853,7 +804,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				assembly ("memory-safe") {
 					selector := calldataload(callData.offset) // Extract first 4 bytes
 				}
-				if (!isDelegationActive(signedOp.signerAccount, signedOp.signer, selector)) {
+				IAccountHub.VirtualAccountDetail memory virtualAccount = IAccountHub(accountHub).getVirtualAccount(signedOp.signerAccount.addr);
+				address delegator = signedOp.signerAccount.addr;
+				if (virtualAccount.isExists) delegator = virtualAccount.parentAccount;
+				if (!isDelegationActive(delegator, signedOp.signer, selector)) {
 					revert InvalidDelegation();
 				}
 			}
@@ -891,14 +845,13 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = callData;
 
-		if (signedOp.signerAccount.multiAccount == address(0)) {
+		if (signedOp.signerAccount.isPartyB) {
 			// Route to PartyB
 			(success, result) = signedOp.signer.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
 		} else {
-			// Route to MultiAccount
-			(success, result) = signedOp.signerAccount.multiAccount.call(
-				abi.encodeWithSelector(IMultiAccount._call.selector, signedOp.signerAccount.addr, callDatas)
-			);
+			// Route to AccountHub
+			if (accountHub == address(0)) revert AccountHubNotSet();
+			(success, result) = accountHub.call(abi.encodeWithSelector(IAccountHub._call.selector, signedOp.signerAccount.addr, callDatas));
 		}
 
 		// Decode nested result array
@@ -974,24 +927,15 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	}
 
 	/**
-	 * @notice Check if an address is a registered MultiAccount contract.
-	 * @param addr Address to check
-	 * @return True if registered, false otherwise
-	 */
-	function isMultiAccountRegistered(address addr) public view returns (bool) {
-		return registeredMultiAccounts[addr];
-	}
-
-	/**
 	 * @notice Check if a delegation is currently active.
-	 * @param delegator Account that granted delegation
+	 * @param delegator Address that granted delegation
 	 * @param delegate  Address that received delegation
 	 * @param selector  Function selector to check
 	 * @return True if delegation is active, false otherwise
 	 */
-	function isDelegationActive(Account calldata delegator, address delegate, bytes4 selector) public view returns (bool) {
-		uint256 expiry = delegations[delegator.addr][delegate][selector];
-		uint256 eta = pendingRevocationEta[delegator.addr][delegate][selector];
+	function isDelegationActive(address delegator, address delegate, bytes4 selector) public view returns (bool) {
+		uint256 expiry = delegations[delegator][delegate][selector];
+		uint256 eta = pendingRevocationEta[delegator][delegate][selector];
 		return expiry > block.timestamp && (eta == 0 || eta > block.timestamp);
 	}
 
@@ -1015,7 +959,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			bytes4[] calldata sels = selectors[i];
 			bool anyActive = false;
 			for (uint256 j = 0; j < sels.length; j++) {
-				if (isDelegationActive(_delegator, delegates[i], sels[j])) {
+				if (isDelegationActive(_delegator.addr, delegates[i], sels[j])) {
 					anyActive = true;
 					break;
 				}
@@ -1033,7 +977,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Count active selectors for this delegate
 			uint256 c = 0;
 			for (uint256 j = 0; j < sels.length; j++) {
-				if (isDelegationActive(_delegator, delegates[i], sels[j])) {
+				if (isDelegationActive(_delegator.addr, delegates[i], sels[j])) {
 					c++;
 				}
 			}
@@ -1046,7 +990,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 			for (uint256 j = 0; j < sels.length; j++) {
 				bytes4 sel = sels[j];
-				if (isDelegationActive(_delegator, delegates[i], sel)) {
+				if (isDelegationActive(_delegator.addr, delegates[i], sel)) {
 					activeSels[idx++] = sel;
 					uint256 exp = delegations[_delegator.addr][delegates[i]][sel];
 					if (exp < minExpiry) minExpiry = exp; // Track earliest expiry
@@ -1161,7 +1105,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @dev Hash an Account struct according to EIP-712.
 	 */
 	function _hashAccount(Account memory a) internal pure returns (bytes32) {
-		return keccak256(abi.encode(ACCOUNT_TYPEHASH, a.multiAccount, a.addr));
+		return keccak256(abi.encode(ACCOUNT_TYPEHASH, a.addr, a.isPartyB));
 	}
 
 	/**
@@ -1171,20 +1115,24 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		return keccak256(abi.encode(REPLAY_HEADER_TYPEHASH, r.nonce, r.deadline, r.salt));
 	}
 
+	function _getAccountOwner(address account) private view returns (address) {
+		if (accountHub == address(0)) revert AccountHubNotSet();
+		return IAccountHub(accountHub).ownerOf(account);
+	}
+
 	function _isAccountOwner(Account memory account) internal view returns (bool) {
-		if (!registeredMultiAccounts[account.multiAccount]) revert UnregisteredMultiAccount(account.multiAccount);
-		return IMultiAccount(account.multiAccount).owners(account.addr) == msg.sender;
+		return _getAccountOwner(account.addr) == msg.sender;
 	}
 
 	/* ═══════════════════════════ MODIFIERS ═══════════════════════════ */
 
 	/**
 	 * @notice Restrict function access to the owner of a specific account.
-	 * @dev    Verifies caller owns the account through the MultiAccount contract.
-	 * @param account Account information including MultiAccount and address
+	 * @dev    Verifies caller owns the account through the AccountHub contract.
+	 * @param account Account information including AccountHub and address
 	 */
 	modifier onlyOwner(Account memory account) {
-		if (!_isAccountOwner(account)) revert NotOwnerOfAccount(msg.sender, account.multiAccount, account.addr);
+		if (!_isAccountOwner(account)) revert NotOwnerOfAccount(msg.sender, account.addr);
 		_;
 	}
 }
