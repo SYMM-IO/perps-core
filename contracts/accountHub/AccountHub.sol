@@ -292,22 +292,12 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @notice Gets all sub-account addresses for an owner
-	 * @param owner The owner address
-	 * @return Array of sub-account addresses
-	 */
-	function getSubAccountAddresses(address owner) external view returns (address[] memory) {
-		return userToSubAccounts[owner].values();
-	}
-
-	/**
 	 * @notice Gets detailed information for a single sub-account
 	 * @param account The sub-account address
 	 * @return SubAccountDetail struct with account information
 	 */
-	function getSubAccountDetail(address account) external view returns (SubAccountDetail memory) {
+	function getSubAccount(address account) external view returns (SubAccountDetail memory) {
 		SubAccountData storage s = subAccounts[account];
-
 		return
 			SubAccountDetail({
 				accountAddress: account,
@@ -319,6 +309,33 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				metadata: s.metadata,
 				isolationType: s.isolationType
 			});
+	}
+
+	function getVirtualAccount(address account) external view returns (VirtualAccountDetail memory) {
+		VirtualAccountData storage v = virtualAccounts[account];
+		return
+			VirtualAccountDetail({
+				accountAddress: account,
+				parentAccount: v.parentAccount,
+				symbolId: v.symbolId,
+				metadata: v.metadata,
+				isExists: v.isExists,
+				isolationType: v.isolationType
+			});
+	}
+
+	function getUserSubAccountsAddresses(address owner, uint256 offset, uint256 limit) external view returns (address[] memory) {
+		uint256 total = userToSubAccounts[owner].length();
+		if (offset >= total) {
+			return new address[](0);
+		}
+		uint256 remaining = total - offset;
+		uint256 resultSize = remaining < limit ? remaining : limit;
+		address[] memory paginatedAddresses = new address[](resultSize);
+		for (uint256 i = 0; i < resultSize; i++) {
+			paginatedAddresses[i] = userToSubAccounts[owner].at(offset + i);
+		}
+		return paginatedAddresses;
 	}
 
 	/**
@@ -356,6 +373,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			});
 		}
 	}
+
 	/**
 	 * @notice Gets paginated virtual account addresses for a sub-account
 	 * @param subAccount The sub-account address
@@ -363,7 +381,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param limit The maximum number of accounts to return
 	 * @return Array of virtual account addresses
 	 */
-	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory) {
+	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory) {
 		uint256 total = subAccountToVirtualAccounts[subAccount].length();
 
 		if (offset >= total) {
@@ -381,44 +399,23 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @notice Gets detailed information for a single virtual account
-	 * @param account The virtual account address
-	 * @return VirtualAccountDetail struct with account information
-	 */
-	function getVirtualAccountDetail(address account) external view returns (VirtualAccountDetail memory) {
-		VirtualAccountData storage v = virtualAccounts[account];
-
-		return
-			VirtualAccountDetail({
-				accountAddress: account,
-				parentAccount: v.parentAccount,
-				symbolId: v.symbolId,
-				metadata: v.metadata,
-				isExists: v.isExists,
-				isolationType: v.isolationType
-			});
-	}
-
-	/**
 	 * @notice Gets paginated detailed information for virtual accounts of a sub-account
 	 * @param subAccount The sub-account address
 	 * @param offset The starting index
 	 * @param limit The maximum number of accounts to return
 	 * @return details Array of VirtualAccountDetail structs
 	 */
-	function getVirtualAccountsOfSubAccountDetailBatch(
+	function getVirtualAccountsOfSubAccount(
 		address subAccount,
 		uint256 offset,
 		uint256 limit
 	) external view returns (VirtualAccountDetail[] memory details) {
 		uint256 total = subAccountToVirtualAccounts[subAccount].length();
 
-		// Return empty array if offset is out of bounds
 		if (offset >= total) {
 			return new VirtualAccountDetail[](0);
 		}
 
-		// Calculate how many results to return
 		uint256 remaining = total - offset;
 		uint256 resultSize = remaining < limit ? remaining : limit;
 
@@ -512,37 +509,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		// If no deleted account exists, generate and return a new virtual account address
 		uint256 nextNonce = subAccountVirtualNonces[subAccount] + 1;
 		return _generateVirtualAccountAddress(subAccount, nextNonce);
-	}
-
-	/**
-	 * @notice Gets detailed information for deleted virtual accounts of a specific type
-	 * @param subAccount The sub-account address
-	 * @param isolationType The virtual account isolation type
-	 * @param symbolId The symbol ID (0 for position isolation)
-	 * @return Array of VirtualAccountDetail structs for deleted accounts
-	 */
-	function getDeletedVirtualAccountsDetail(
-		address subAccount,
-		VirtualAccountIsolationType isolationType,
-		uint256 symbolId
-	) external view returns (VirtualAccountDetail[] memory) {
-		address[] memory deletedAccounts = deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
-		VirtualAccountDetail[] memory details = new VirtualAccountDetail[](deletedAccounts.length);
-
-		for (uint256 i = 0; i < deletedAccounts.length; i++) {
-			VirtualAccountData storage v = virtualAccounts[deletedAccounts[i]];
-
-			details[i] = VirtualAccountDetail({
-				accountAddress: deletedAccounts[i],
-				parentAccount: v.parentAccount,
-				symbolId: v.symbolId,
-				metadata: v.metadata,
-				isExists: v.isExists,
-				isolationType: v.isolationType
-			});
-		}
-
-		return details;
 	}
 
 	// ==================== Internal Functions ====================

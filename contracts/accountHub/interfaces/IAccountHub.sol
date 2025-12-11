@@ -123,20 +123,15 @@ interface IAccountHub {
 		uint256 symbolId
 	) external view returns (address);
 	function setSigner(address _signer) external;
-	function getSubAccountAddresses(address owner) external view returns (address[] memory);
-	function getSubAccountDetail(address account) external view returns (SubAccountDetail memory);
+	function getSubAccount(address account) external view returns (SubAccountDetail memory);
 	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details);
-	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory);
-	function getVirtualAccountDetail(address account) external view returns (VirtualAccountDetail memory);
-	function getVirtualAccountsOfSubAccountDetailBatch(address subAccount, uint256 offset, uint256 limit) external view returns (VirtualAccountDetail[] memory details);
+	function getUserSubAccountsAddresses(address owner, uint256 offset, uint256 limit) external view returns (address[] memory);
+	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory);
+	function getVirtualAccount(address account) external view returns (VirtualAccountDetail memory);
+	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (VirtualAccountDetail[] memory details);
 	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory);
 	function getSubAccountsCountOfUser(address owner) external view returns (uint256);
 	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256);
-	function getDeletedVirtualAccountsDetail(
-		address subAccount,
-		VirtualAccountIsolationType isolationType,
-		uint256 symbolId
-	) external view returns (VirtualAccountDetail[] memory);
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();
