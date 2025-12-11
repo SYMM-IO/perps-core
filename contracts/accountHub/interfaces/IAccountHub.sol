@@ -29,7 +29,6 @@ interface IAccountHub {
 		bytes metadata;
 		address affiliate;
 		address symmioCore;
-		EnumerableSet.UintSet quoteIds;
 		SubAccountIsolationType isolationType;
 	}
 
@@ -73,6 +72,26 @@ interface IAccountHub {
 		address affiliate;
 	}
 
+	struct SubAccountDetail {
+		address accountAddress;
+		address owner;
+		string name;
+		bool isExists;
+		address affiliate;
+		address symmioCore;
+		bytes metadata;
+		SubAccountIsolationType isolationType;
+	}
+
+	struct VirtualAccountDetail {
+		address accountAddress;
+		address parentAccount;
+		uint256 symbolId;
+		bool isExists;
+		bytes metadata;
+		VirtualAccountIsolationType isolationType;
+	}
+
 	// Account events
 	event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
 	event VirtualAccountCreated(address indexed account, address indexed parent);
@@ -97,26 +116,22 @@ interface IAccountHub {
 	// View functions
 	function getSigner() external view returns (address);
 	function getRelatedCore(address account) external view returns (address);
-	function getSubAccounts(address owner) external view returns (address[] memory);
-	function getVirtualAccounts(address subAccount) external view returns (address[] memory);
-	function getSubAccountData(
-		address account
-	)
-		external
-		view
-		returns (
-			address owner,
-			bool isExists,
-			string memory name,
-			address affiliate,
-			address symmioCore,
-			bytes memory metadata,
-			SubAccountIsolationType isolationType
-		);
-
-	function getSubAccountQuoteIds(address account) external view returns (uint256[] memory);
-	// Admin functions
+	function getSubAccountVirtualNonce(address subAccount) external view returns (uint256);
+	function predictNextVirtualAccountAddress(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) external view returns (address);
 	function setSigner(address _signer) external;
+	function getSubAccount(address account) external view returns (SubAccountDetail memory);
+	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details);
+	function getUserSubAccountsAddresses(address owner, uint256 offset, uint256 limit) external view returns (address[] memory);
+	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory);
+	function getVirtualAccount(address account) external view returns (VirtualAccountDetail memory);
+	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (VirtualAccountDetail[] memory details);
+	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory);
+	function getSubAccountsCountOfUser(address owner) external view returns (uint256);
+	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256);
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();

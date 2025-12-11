@@ -93,4 +93,12 @@ contract AccountManager is IAccountManager {
 	function getAccountHub() external view returns (address) {
 		return accountHub;
 	}
+
+	function getAccounts(address user, uint256 start, uint256 size) external view returns (address[] memory) {
+		return IAccountHub(accountHub).getUserSubAccountsAddresses(user, start, size);
+	}
+
+	function getAccountsLength(address user) external view returns (uint256) {
+		return IAccountHub(accountHub).getSubAccountsCountOfUser(user);
+	}
 }
