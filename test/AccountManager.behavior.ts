@@ -18,17 +18,18 @@ async function accountManagerFixture() {
 	const symmioCore = await SymmioCore.deploy()
 	await symmioCore.setCollateral(await token.getAddress())
 
-	const AccountHubMock = await ethers.getContractFactory("MockAccountHubForAccountManager")
-	const accountHubMock = await AccountHubMock.deploy()
-
 	const AffiliateHubMock = await ethers.getContractFactory("MockAffiliateHubForAccountManager")
 	const affiliateHubMock = await AffiliateHubMock.deploy()
 
+	const AccountHubMock = await ethers.getContractFactory("MockAccountHubForAccountManager")
+	const accountHubMock = await AccountHubMock.deploy()
+	// Set affiliateHub on accountHubMock so AccountManager can access it
+	await accountHubMock.setAffiliateHub(await affiliateHubMock.getAddress())
+
 	const AccountManager = await ethers.getContractFactory("AccountManager")
-	const accountManager = await AccountManager.deploy(await affiliateHubMock.getAddress())
+	const accountManager = await AccountManager.deploy(await accountHubMock.getAddress())
 
 	await affiliateHubMock.setAffiliateCores(await accountManager.getAddress(), [await symmioCore.getAddress()])
-	await affiliateHubMock.callSetAccountHub(await accountManager.getAddress(), await accountHubMock.getAddress())
 
 	return {
 		token,
@@ -43,33 +44,9 @@ async function accountManagerFixture() {
 export function shouldBehaveLikeAccountManager(): void {
 	describe("AccountManager", function () {
 		describe("constructor", function () {
-			it("stores the affiliate hub reference", async function () {
+			it("stores the account hub reference", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				expect(await context.accountManager.getAffiliateHub()).to.equal(await context.affiliateHubMock.getAddress())
-			})
-		})
-
-		describe("setAccountHub", function () {
-			it("can only be called through the affiliate hub", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const newHub = await (await (await ethers.getContractFactory("MockAccountHubForAccountManager")).deploy()).getAddress()
-
-				await expect(context.affiliateHubMock.callSetAccountHub(await context.accountManager.getAddress(), newHub)).to.not.be.reverted
-				expect(await context.accountManager.getAccountHub()).to.equal(newHub)
-			})
-
-			it("rejects zero addresses", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				await expect(
-					context.affiliateHubMock.callSetAccountHub(await context.accountManager.getAddress(), ethers.ZeroAddress),
-				).to.be.revertedWith("AccountManager: Zero address")
-			})
-
-			it("blocks calls from non-affiliate hub senders", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				await expect(
-					context.accountManager.connect(context.signers.user).setAccountHub(await context.accountHubMock.getAddress()),
-				).to.be.revertedWith("AccountManager: Only affiliates hub")
+				expect(await context.accountManager.getAccountHub()).to.equal(await context.accountHubMock.getAddress())
 			})
 		})
 
@@ -303,9 +280,8 @@ export function shouldBehaveLikeAccountManager(): void {
 		})
 
 		describe("view helpers", function () {
-			it("exposes affiliate and account hub addresses", async function () {
+			it("exposes account hub address", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				expect(await context.accountManager.getAffiliateHub()).to.equal(await context.affiliateHubMock.getAddress())
 				expect(await context.accountManager.getAccountHub()).to.equal(await context.accountHubMock.getAddress())
 			})
 		})

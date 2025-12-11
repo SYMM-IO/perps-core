@@ -5,6 +5,7 @@ import { DEPLOYMENT_LOG_FILE } from "./constants"
 // Contract configuration
 const CONTRACT_CONFIG = {
 	NAME: "AccountHub",
+	ACCOUNT_MANAGER_NAME: "AccountManager",
 	INITIALIZER: "initialize",
 } as const
 
@@ -25,8 +26,11 @@ task("deploy:accountHub", "Deploys the AccountHub")
 		const [deployer] = await ethers.getSigners()
 		console.log("Deploying contracts with the account:", deployer.address)
 
+		// Get AccountManager bytecode
+		const accountManagerBytecode = await getAccountManagerBytecode(ethers)
+
 		// Deploy AccountHub as upgradeable proxy
-		const contract = await deployAccountHub(admin, affiliateHubAddress, ethers, upgrades)
+		const contract = await deployAccountHub(admin, affiliateHubAddress, accountManagerBytecode, ethers, upgrades)
 
 		const addresses = {
 			proxy: await contract.getAddress(),
@@ -37,7 +41,7 @@ task("deploy:accountHub", "Deploys the AccountHub")
 
 		// Log deployment data if requested
 		if (logData) {
-			await logDeploymentData(addresses, admin, affiliateHubAddress)
+			await logDeploymentData(addresses, admin, affiliateHubAddress, accountManagerBytecode)
 		}
 
 		// Return contract instance
@@ -45,13 +49,27 @@ task("deploy:accountHub", "Deploys the AccountHub")
 	})
 
 /**
+ * Gets the AccountManager contract bytecode
+ */
+async function getAccountManagerBytecode(ethers: any): Promise<string> {
+	const accountManager = await ethers.getContractFactory(CONTRACT_CONFIG.ACCOUNT_MANAGER_NAME)
+	return accountManager.bytecode
+}
+
+/**
  * Deploys the AccountHub upgradeable contract
  */
-async function deployAccountHub(admin: string, affiliateHubAddress: string, ethers: any, upgrades: any) {
-	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, { admin, affiliateHubAddress })
+async function deployAccountHub(admin: string, affiliateHubAddress: string, accountManagerBytecode: string, ethers: any, upgrades: any) {
+	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, {
+		admin,
+		affiliateHubAddress,
+		accountManagerBytecode: `${accountManagerBytecode.slice(0, 10)}...`,
+	})
 
 	const Factory = await ethers.getContractFactory(CONTRACT_CONFIG.NAME)
-	const contract = await upgrades.deployProxy(Factory, [admin, affiliateHubAddress], { initializer: CONTRACT_CONFIG.INITIALIZER })
+	const contract = await upgrades.deployProxy(Factory, [admin, affiliateHubAddress, accountManagerBytecode], {
+		initializer: CONTRACT_CONFIG.INITIALIZER,
+	})
 	await contract.waitForDeployment()
 
 	return contract
@@ -60,10 +78,10 @@ async function deployAccountHub(admin: string, affiliateHubAddress: string, ethe
 /**
  * Logs deployment data to the deployment log file
  */
-async function logDeploymentData(addresses: any, admin: string, affiliateHubAddress: string): Promise<void> {
+async function logDeploymentData(addresses: any, admin: string, affiliateHubAddress: string, accountManagerBytecode: string): Promise<void> {
 	try {
 		const deployedData = readExistingDeployments()
-		const newEntries = createDeploymentEntries(addresses, admin, affiliateHubAddress)
+		const newEntries = createDeploymentEntries(addresses, admin, affiliateHubAddress, accountManagerBytecode)
 		const updatedData = [...deployedData, ...newEntries]
 
 		writeData(DEPLOYMENT_LOG_FILE, updatedData)
@@ -89,12 +107,12 @@ function readExistingDeployments(): any[] {
 /**
  * Creates deployment log entries for all deployed contracts
  */
-function createDeploymentEntries(addresses: any, admin: string, affiliateHubAddress: string): any[] {
+function createDeploymentEntries(addresses: any, admin: string, affiliateHubAddress: string, accountManagerBytecode: string): any[] {
 	return [
 		{
 			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.PROXY}`,
 			address: addresses.proxy,
-			constructorArguments: [admin, affiliateHubAddress],
+			constructorArguments: [admin, affiliateHubAddress, accountManagerBytecode],
 		},
 		{
 			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.ADMIN}`,

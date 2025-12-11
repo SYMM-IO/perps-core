@@ -41,27 +41,9 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuar
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { IAccountHub } from "../accountHub/interfaces/IAccountHub.sol";
 
 /* ════════════════════════════ EXTERNAL INTERFACES ════════════════════════════ */
-
-/**
- * @notice Interface for AccountHub contract managing sub-accounts and virtual accounts.
- */
-interface IAccountHub {
-	/**
-	 * @notice Execute multiple operations on behalf of an account
-	 * @param account The account to execute operations for
-	 * @param _callDatas Array of encoded function calls to execute
-	 */
-	function _call(address account, bytes[] calldata _callDatas) external returns (bytes[] memory);
-
-	/**
-	 * @notice Get the owner address of a specific account
-	 * @param account The account to query
-	 * @return The owner address of the account
-	 */
-	function ownerOf(address account) external view returns (address);
-}
 
 /**
  * @notice Interface for SymmioPartyB contract that handles PartyB operations.
@@ -822,7 +804,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				assembly ("memory-safe") {
 					selector := calldataload(callData.offset) // Extract first 4 bytes
 				}
-				if (!isDelegationActive(signedOp.signerAccount, signedOp.signer, selector)) {
+				IAccountHub.VirtualAccountDetail memory virtualAccount = IAccountHub(accountHub).getVirtualAccount(signedOp.signerAccount.addr);
+				address delegator = signedOp.signerAccount.addr;
+				if (virtualAccount.isExists) delegator = virtualAccount.parentAccount;
+				if (!isDelegationActive(delegator, signedOp.signer, selector)) {
 					revert InvalidDelegation();
 				}
 			}
@@ -943,14 +928,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/**
 	 * @notice Check if a delegation is currently active.
-	 * @param delegator Account that granted delegation
+	 * @param delegator Address that granted delegation
 	 * @param delegate  Address that received delegation
 	 * @param selector  Function selector to check
 	 * @return True if delegation is active, false otherwise
 	 */
-	function isDelegationActive(Account calldata delegator, address delegate, bytes4 selector) public view returns (bool) {
-		uint256 expiry = delegations[delegator.addr][delegate][selector];
-		uint256 eta = pendingRevocationEta[delegator.addr][delegate][selector];
+	function isDelegationActive(address delegator, address delegate, bytes4 selector) public view returns (bool) {
+		uint256 expiry = delegations[delegator][delegate][selector];
+		uint256 eta = pendingRevocationEta[delegator][delegate][selector];
 		return expiry > block.timestamp && (eta == 0 || eta > block.timestamp);
 	}
 
@@ -974,7 +959,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			bytes4[] calldata sels = selectors[i];
 			bool anyActive = false;
 			for (uint256 j = 0; j < sels.length; j++) {
-				if (isDelegationActive(_delegator, delegates[i], sels[j])) {
+				if (isDelegationActive(_delegator.addr, delegates[i], sels[j])) {
 					anyActive = true;
 					break;
 				}
@@ -992,7 +977,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Count active selectors for this delegate
 			uint256 c = 0;
 			for (uint256 j = 0; j < sels.length; j++) {
-				if (isDelegationActive(_delegator, delegates[i], sels[j])) {
+				if (isDelegationActive(_delegator.addr, delegates[i], sels[j])) {
 					c++;
 				}
 			}
@@ -1005,7 +990,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 			for (uint256 j = 0; j < sels.length; j++) {
 				bytes4 sel = sels[j];
-				if (isDelegationActive(_delegator, delegates[i], sel)) {
+				if (isDelegationActive(_delegator.addr, delegates[i], sel)) {
 					activeSels[idx++] = sel;
 					uint256 exp = delegations[_delegator.addr][delegates[i]][sel];
 					if (exp < minExpiry) minExpiry = exp; // Track earliest expiry

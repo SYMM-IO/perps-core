@@ -16,6 +16,7 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
+import "./interfaces/IAccountManager.sol";
 
 /**
  * @title AccountHub
@@ -31,8 +32,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
-	bytes32 public constant SIGNER_SETTER = keccak256("SIGNER_SETTER");
+	bytes32 public constant SIGNER_SETTER_ROLE = keccak256("SIGNER_SETTER_ROLE");
 	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
+	bytes32 public constant DEPLOYER_ROLE = keccak256("DEPLOYER_ROLE");
 
 	bytes4 private constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
 	bytes4 private constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
@@ -40,6 +42,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
+	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
 
 	uint256 public constant MAX_NAME_LENGTH = 100;
 
@@ -59,6 +62,10 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 	// Per-subAccount nonce for virtual account creation
 	mapping(address => uint256) private subAccountVirtualNonces;
+
+	// AccountManager deployment
+	bytes public accountManagerImplementation;
+	bytes32 internal initAccountManagerCodeHash;
 
 	// ==================== Modifiers ====================
 
@@ -89,10 +96,12 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @notice Initializes the AccountHub contract
 	 * @param _admin The default admin address
 	 * @param _affiliateHub The AffiliateHub contract address
+	 * @param _accountManagerImplementation The bytecode for account manager deployment
 	 */
-	function initialize(address _admin, address _affiliateHub) public initializer {
+	function initialize(address _admin, address _affiliateHub, bytes memory _accountManagerImplementation) public initializer {
 		if (_admin == address(0)) revert ZeroAddress();
 		if (_affiliateHub == address(0)) revert ZeroAddress();
+		if (_accountManagerImplementation.length == 0) revert EmptyArray();
 
 		__Pausable_init();
 		__AccessControl_init();
@@ -101,6 +110,8 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
 		affiliateHub = _affiliateHub;
+		accountManagerImplementation = _accountManagerImplementation;
+		initAccountManagerCodeHash = keccak256(abi.encodePacked(_accountManagerImplementation));
 	}
 
 	// ==================== Account Management ====================
@@ -243,6 +254,37 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	// ==================== Admin Functions ====================
 
 	/**
+	 * @notice Deploys an AccountManager for an affiliate
+	 * @dev Only callable by addresses with DEPLOYER_ROLE (typically AffiliateHub)
+	 * @param affiliate The affiliate address (used as the AccountManager address via CREATE2)
+	 * @param registrant The original registrant who requested the affiliate
+	 * @param name The affiliate name used for deterministic address generation
+	 * @return accountManager The deployed AccountManager address
+	 */
+	function deployAccountManager(
+		address affiliate,
+		address registrant,
+		string memory name
+	) external onlyRole(DEPLOYER_ROLE) whenNotPaused returns (address accountManager) {
+		accountManager = _deployAccountManager(registrant, name);
+		if (affiliate != accountManager) revert DeploymentFailed();
+
+		_grantRole(SIGNER_SETTER_ROLE, accountManager);
+
+		emit AccountManagerDeployed(affiliate, accountManager);
+	}
+
+	/**
+	 * @notice Generates the predicted AccountManager address for a registrant and name
+	 * @param registrant The registrant address
+	 * @param name The affiliate name
+	 * @return The predicted AccountManager address
+	 */
+	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address) {
+		return _generateAccountManagerAddress(registrant, name);
+	}
+
+	/**
 	 * @notice Sets the AffiliateHub contract address (only for emergency updates)
 	 * @param _affiliateHub The new AffiliateHub address
 	 */
@@ -252,10 +294,20 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
+	 * @notice Updates the account manager implementation bytecode
+	 * @param implementation The new implementation bytecode
+	 */
+	function setAccountManagerImplementation(bytes memory implementation) external onlyRole(SETTER_ROLE) {
+		if (implementation.length == 0) revert EmptyArray();
+		accountManagerImplementation = implementation;
+		initAccountManagerCodeHash = keccak256(abi.encodePacked(accountManagerImplementation));
+	}
+
+	/**
 	 * @notice Sets the global signer address
 	 * @param _signer The new signer address
 	 */
-	function setSigner(address _signer) external onlyRole(SIGNER_SETTER) {
+	function setSigner(address _signer) external onlyRole(SIGNER_SETTER_ROLE) {
 		globalSigner = _signer;
 	}
 
@@ -840,9 +892,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		SubAccountData storage accountData = subAccounts[account];
 
 		if (accountData.isolationType == SubAccountIsolationType.CUSTOM) {
-			bytes memory customResult = _executeWithSigner(account, cd);
-			accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
-			return customResult;
+			return _executeWithSigner(account, cd);
 		}
 
 		// Get or create virtual account based on sub-account isolation type (tries to reuse deleted ones first)
@@ -1020,5 +1070,29 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		ISymmio.Fee memory fee = ISymmio(core).getFee(p.affiliate, p.symbolId);
 		ISymmio(core).internalTransfer(transferTarget, p.cva + p.lf + p.partyAmm + (p.quantity * tradingPrice * fee.openFee) / 1e36);
 		ISymmio(core).setSigner(address(0));
+	}
+
+	/**
+	 * @dev Deploys account manager contract
+	 */
+	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
+		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
+
+		assembly {
+			accountManager := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
+		}
+
+		if (accountManager == address(0)) revert DeploymentFailed();
+	}
+
+	/**
+	 * @dev Generates deterministic account manager address
+	 */
+	function _generateAccountManagerAddress(address user, string memory name) private view returns (address) {
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
+		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
+		bytes32 initCodeHash = keccak256(bytecode);
+		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
 	}
 }

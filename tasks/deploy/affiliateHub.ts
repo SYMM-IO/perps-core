@@ -5,7 +5,6 @@ import { DEPLOYMENT_LOG_FILE } from "./constants"
 // Contract configuration
 const CONTRACT_CONFIG = {
 	NAME: "AffiliateHub",
-	ACCOUNT_MANAGER_NAME: "AccountManager",
 	INITIALIZER: "initialize",
 } as const
 
@@ -26,11 +25,8 @@ task("deploy:affiliateHub", "Deploys the AffiliateHub")
 		const [deployer] = await ethers.getSigners()
 		console.log("Deploying contracts with the account:", deployer.address)
 
-		// Get AccountManager bytecode
-		const accountManagerBytecode = await getAccountManagerBytecode(ethers)
-
 		// Deploy AffiliateHub as upgradeable proxy
-		const contract = await deployAffiliateHub(admin, symmioFeeReceiver, accountManagerBytecode, ethers, upgrades)
+		const contract = await deployAffiliateHub(admin, symmioFeeReceiver, ethers, upgrades)
 
 		const addresses = {
 			proxy: await contract.getAddress(),
@@ -41,7 +37,7 @@ task("deploy:affiliateHub", "Deploys the AffiliateHub")
 
 		// Log deployment data if requested
 		if (logData) {
-			await logDeploymentData(addresses, admin, symmioFeeReceiver, accountManagerBytecode)
+			await logDeploymentData(addresses, admin, symmioFeeReceiver)
 		}
 
 		// Return contract instance
@@ -49,39 +45,30 @@ task("deploy:affiliateHub", "Deploys the AffiliateHub")
 	})
 
 /**
- * Gets the AccountManager contract bytecode
- */
-async function getAccountManagerBytecode(ethers: any): Promise<string> {
-	const accountManager = await ethers.getContractFactory(CONTRACT_CONFIG.ACCOUNT_MANAGER_NAME)
-	return accountManager.bytecode
-}
-
-/**
  * Deploys the AffiliateHub upgradeable contract
  */
-async function deployAffiliateHub(admin: string, symmioFeeReceiver: string, accountManagerBytecode: string, ethers: any, upgrades: any) {
+async function deployAffiliateHub(admin: string, symmioFeeReceiver: string, ethers: any, upgrades: any) {
 	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, {
 		admin,
 		symmioFeeReceiver,
-		accountManagerBytecode: `${accountManagerBytecode.slice(0, 10)}...`,
 	})
 
 	const Factory = await ethers.getContractFactory("AffiliateHub")
-	const contract = await upgrades.deployProxy(Factory, [admin, symmioFeeReceiver, accountManagerBytecode], {
+	const contract = await upgrades.deployProxy(Factory, [admin, symmioFeeReceiver], {
 		initializer: CONTRACT_CONFIG.INITIALIZER,
 	})
 	await contract.waitForDeployment()
 
 	return contract
-} 
+}
 
 /**
  * Logs deployment data to the deployment log file
  */
-async function logDeploymentData(addresses: any, admin: string, symmioFeeReceiver: string, accountManagerBytecode: string): Promise<void> {
+async function logDeploymentData(addresses: any, admin: string, symmioFeeReceiver: string): Promise<void> {
 	try {
 		const deployedData = readExistingDeployments()
-		const newEntries = createDeploymentEntries(addresses, admin, symmioFeeReceiver, accountManagerBytecode)
+		const newEntries = createDeploymentEntries(addresses, admin, symmioFeeReceiver)
 		const updatedData = [...deployedData, ...newEntries]
 
 		writeData(DEPLOYMENT_LOG_FILE, updatedData)
@@ -107,12 +94,12 @@ function readExistingDeployments(): any[] {
 /**
  * Creates deployment log entries for all deployed contracts
  */
-function createDeploymentEntries(addresses: any, admin: string, symmioFeeReceiver: string, accountManagerBytecode: string): any[] {
+function createDeploymentEntries(addresses: any, admin: string, symmioFeeReceiver: string): any[] {
 	return [
 		{
 			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.PROXY}`,
 			address: addresses.proxy,
-			constructorArguments: [admin, symmioFeeReceiver, accountManagerBytecode],
+			constructorArguments: [admin, symmioFeeReceiver],
 		},
 		{
 			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.ADMIN}`,

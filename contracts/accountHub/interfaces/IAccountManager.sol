@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 interface IAccountManager {
 	event AddAccount(address indexed user, address indexed account, string name);
 
-	function setAccountHub(address _accountHub) external;
+	function getAccountHub() external view returns (address);
 
 	function getAccounts(address user, uint256 start, uint256 size) external view returns (address[] memory);
 

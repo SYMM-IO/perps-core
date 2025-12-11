@@ -1461,6 +1461,245 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 	})
 
+	describe("Virtual Account Delegation Support", () => {
+		let accounts: any[]
+		let subAccountAddress: string
+		let virtualAccountAddress: string
+		let quoteCallDataLocal: string
+
+		beforeEach(async () => {
+			const { instantLayer, partyAFacet, accountFacet, partyBQuoteActionsFacet } = context
+
+			// Setup InstantLayer
+			await context.instantLayer.registerPartyBs([context.symmioPartyB])
+			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
+			await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
+			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
+			await context.symmioPartyB.setSigner(partyB1.getSigner)
+
+			// Create sub-account with MARKET isolation (type 1) - allows multiple quotes with same symbol
+			const subAccountData = [
+				{
+					name: "VIRTUAL_DELEGATION_TEST",
+					metadata: ethers.keccak256(toUtf8Bytes("metadata")),
+					symmioCore: context.diamond,
+					isolationType: 1, // MARKET isolation - allows multiple quotes per virtual account
+				},
+			]
+			await context.accountHub.connect(partyA1.getSigner).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+			accounts = await context.accountHub.getUserSubAccountsAddresses(partyA1.address, 0, 100)
+			subAccountAddress = accounts[0]
+
+			// Deposit for sub-account (need balance for transfers, NOT allocatedBalance)
+			await context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)
+			await context.collateral.connect(partyA1.getSigner).mint(subAccountAddress, decimal(5000n))
+			await context.accountFacet.connect(partyA1.getSigner).depositFor(subAccountAddress, decimal(3000n))
+
+			// Bind sub-account to PartyB
+			await context.accountHub.connect(partyA1.getSigner)._call(subAccountAddress, [bindToPartyBCallData])
+
+			// Whitelist symbol type
+			await context.symbolControlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
+
+			// Create quote calldata
+			quoteCallDataLocal = partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+				requestSendQuote.partyBWhiteList,
+				requestSendQuote.symbolId,
+				requestSendQuote.positionType,
+				requestSendQuote.orderType,
+				requestSendQuote.price,
+				requestSendQuote.quantity,
+				requestSendQuote.cva,
+				requestSendQuote.lf,
+				requestSendQuote.partyAmm,
+				requestSendQuote.partyBmm,
+				requestSendQuote.maxFundingRate,
+				await requestSendQuote.deadline,
+				requestSendQuote.affiliate,
+				await requestSendQuote.upnlSig,
+			])
+
+			// Create a virtual account by sending a quote from the sub-account
+			await context.accountHub.connect(partyA1.getSigner)._call(subAccountAddress, [quoteCallDataLocal])
+
+			// Get the created virtual account address
+			const virtualAccounts = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(subAccountAddress, 0, 10)
+			virtualAccountAddress = virtualAccounts[0]
+
+			// Grant delegation on the PARENT sub-account (not the virtual account)
+			const selectorQuote = quoteCallDataLocal.slice(0, 10)
+			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
+				account: {
+					addr: subAccountAddress, // Delegation is granted on the parent sub-account
+					isPartyB: false,
+				},
+				delegatedSigner: context.signers.admin.address,
+				selectors: [selectorQuote],
+				expiryTimestamp: await getBlockTimestamp(3600n),
+			})
+		})
+
+		it("should allow delegate to execute operations on virtual account using parent's delegation", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Transfer more funds to the virtual account for the new quote (internal transfer from sub-account)
+			const internalTransferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccountAddress, decimal(500n)])
+			await context.accountHub.connect(partyA1.getSigner)._call(subAccountAddress, [internalTransferCallData])
+
+			// Create operation targeting the VIRTUAL account but signed by the delegate
+			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
+				signer: context.signers.admin.address, // delegate (granted delegation on parent)
+				callData: quoteCallDataLocal,
+				signerAccount: {
+					addr: virtualAccountAddress, // targeting the virtual account
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig = await context.signers.admin.signTypedData(domain, types, opSendQuoteOnVirtual)
+
+			// This should succeed because:
+			// 1. The signer (admin) is a delegate
+			// 2. The virtual account's parent (subAccountAddress) has delegation granted to admin
+			// 3. The InstantLayer now checks delegation against the parent account for virtual accounts
+			await expect(context.instantLayer.executeBatch([opSendQuoteOnVirtual], [sig])).not.to.be.reverted
+
+			// Verify a new quote was created
+			const quoteIds = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+			expect(quoteIds.length).to.equal(2) // Original quote + new quote
+		})
+
+		it("should reject operation on virtual account when delegate lacks parent's delegation", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Create operation targeting the virtual account with a non-delegated signer
+			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
+				signer: context.signers.user2.address, // NOT delegated on parent
+				callData: quoteCallDataLocal,
+				signerAccount: {
+					addr: virtualAccountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig = await context.signers.user2.signTypedData(domain, types, opSendQuoteOnVirtual)
+
+			// Should fail because user2 doesn't have delegation on the parent account
+			await expect(context.instantLayer.executeBatch([opSendQuoteOnVirtual], [sig])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"InvalidDelegation",
+			)
+		})
+
+		it("should allow owner to execute on virtual account directly without delegation check", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Transfer more funds to the virtual account for the new quote (internal transfer from sub-account)
+			const internalTransferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccountAddress, decimal(500n)])
+			await context.accountHub.connect(partyA1.getSigner)._call(subAccountAddress, [internalTransferCallData])
+
+			// Create operation where signer is the owner of the parent account
+			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address, // owner of the sub-account (parent of virtual account)
+				callData: quoteCallDataLocal,
+				signerAccount: {
+					addr: virtualAccountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig = await context.signers.user.signTypedData(domain, types, opSendQuoteOnVirtual)
+
+			// Should succeed because signer is the owner (no delegation check needed)
+			await expect(context.instantLayer.executeBatch([opSendQuoteOnVirtual], [sig])).not.to.be.reverted
+		})
+
+		it("should correctly identify parent account for delegation check on virtual accounts", async () => {
+			// Verify the virtual account exists and has the correct parent
+			const virtualAccountDetail = await context.accountHub.getVirtualAccount(virtualAccountAddress)
+			expect(virtualAccountDetail.isExists).to.be.true
+			expect(virtualAccountDetail.parentAccount).to.equal(subAccountAddress)
+
+			// Verify isDelegationActive works with parent address
+			const selectorQuote = quoteCallDataLocal.slice(0, 10) as `0x${string}`
+			const isActive = await context.instantLayer.isDelegationActive(subAccountAddress, context.signers.admin.address, selectorQuote)
+			expect(isActive).to.be.true
+
+			// Verify isDelegationActive returns false for virtual account address directly
+			// (because delegation was granted on parent, not virtual)
+			const isActiveOnVirtual = await context.instantLayer.isDelegationActive(
+				virtualAccountAddress,
+				context.signers.admin.address,
+				selectorQuote,
+			)
+			expect(isActiveOnVirtual).to.be.false
+		})
+
+		it("should handle delegation revocation on parent affecting virtual account operations", async () => {
+			const selectorQuote = quoteCallDataLocal.slice(0, 10) as `0x${string}`
+
+			// Set revocation cooldown (minimum 5 minutes = 300 seconds)
+			await context.instantLayer.connect(context.signers.admin).setRevocationCooldown(300)
+
+			// Initiate revocation
+			await context.instantLayer.connect(partyA1.getSigner).initiateRevokeDelegation(
+				{ addr: subAccountAddress, isPartyB: false },
+				context.signers.admin.address,
+				[selectorQuote],
+			)
+
+			// Move time past cooldown (300 seconds + 1)
+			await time.increase(301)
+
+			// Finalize revocation
+			await context.instantLayer.finalizeRevokeDelegation(
+				{ addr: subAccountAddress, isPartyB: false },
+				context.signers.admin.address,
+				[selectorQuote],
+			)
+
+			// Get a fresh deadline AFTER time increase
+			const freshDeadline = await getBlockTimestamp(300n)
+
+			// Now try to execute on virtual account - should fail
+			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
+				signer: context.signers.admin.address,
+				callData: quoteCallDataLocal,
+				signerAccount: {
+					addr: virtualAccountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: freshDeadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig = await context.signers.admin.signTypedData(domain, types, opSendQuoteOnVirtual)
+
+			await expect(context.instantLayer.executeBatch([opSendQuoteOnVirtual], [sig])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"InvalidDelegation",
+			)
+		})
+	})
+
 	describe("revoke Delegation", () => {
 		let delegatorAcct: InstantLayer.AccountStruct
 		let delegateAddr: string

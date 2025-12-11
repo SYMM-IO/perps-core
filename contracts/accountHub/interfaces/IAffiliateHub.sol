@@ -122,7 +122,6 @@ interface IAffiliateHub {
 
 	// Admin functions
 	function setSymmioFeeReceiver(address receiver) external;
-	function setAccountManagerImplementation(bytes memory implementation) external;
 	function setWhitelistedSymmioCore(address core, bool status) external;
 
 	// ==================== Custom Errors ====================
@@ -140,4 +139,5 @@ interface IAffiliateHub {
 	error Unauthorized();
 	error InvalidState();
 	error InvalidNameLength();
+	error AccountHubNotSet();
 }

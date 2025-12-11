@@ -49,8 +49,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("PAUSER_ROLE")), context.signers.admin.address)
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE")), context.signers.admin.address)
-	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SIGNER_SETTER")), context.signers.admin.address)
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")), await instantLayer.getAddress())
+	// Grant AffiliateHub DEPLOYER_ROLE on AccountHub so it can deploy AccountManagers
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("DEPLOYER_ROLE")), await affiliateHub.getAddress())
 
 	const MockMultiAccount = await ethers.getContractFactory("MockMultiAccount")
 	const multiAccountMock = await MockMultiAccount.deploy(diamond)
@@ -103,7 +104,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	await affiliateHub.connect(context.signers.admin).approveAffiliate(affiliateAddress)
 	await affiliateHub.connect(context.signers.admin).approveAffiliate(affiliate2Address)
 
-	// Set up account managers
+	// Set up account managers (stored in AffiliateHub)
 	const accManagerAddress = await affiliateHub.getAffiliateAccountManager(affiliateAddress)
 	const accManager2Address = await affiliateHub.getAffiliateAccountManager(affiliate2Address)
 	context.accountManager = await ethers.getContractAt("AccountManager", accManagerAddress)
