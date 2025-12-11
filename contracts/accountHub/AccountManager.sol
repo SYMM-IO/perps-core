@@ -13,11 +13,10 @@ import "./interfaces/ISymmio.sol";
 contract AccountManager is IAccountManager {
 	using SafeERC20 for IERC20;
 
-	address public affiliateHub;
 	address public accountHub;
 
 	modifier onlyHub() {
-		require(msg.sender == affiliateHub, "AccountManager: Only affiliates hub");
+		require(msg.sender == accountHub, "AccountManager: Only account hub");
 		_;
 	}
 
@@ -27,16 +26,13 @@ contract AccountManager is IAccountManager {
 		IAccountHub(accountHub).setSigner(address(0));
 	}
 
-	constructor(address _affiliateHub) {
-		affiliateHub = _affiliateHub;
-	}
-
-	function setAccountHub(address _accountHub) external onlyHub {
+	constructor(address _accountHub) {
 		require(_accountHub != address(0), "AccountManager: Zero address");
 		accountHub = _accountHub;
 	}
 
 	function addAccount(string memory name) external withSigner returns (address[] memory subAccountAddress) {
+		address affiliateHub = IAccountHub(accountHub).affiliateHub();
 		address[] memory cores = IAffiliateHub(affiliateHub).getAffiliateSymmioCores(address(this));
 
 		IAccountHub.SubAccountCreationData memory acc = IAccountHub.SubAccountCreationData({
@@ -86,16 +82,17 @@ contract AccountManager is IAccountManager {
 		IAccountHub(accountHub)._call(account, callDatas);
 	}
 
-	function getAffiliateHub() external view returns (address) {
-		return affiliateHub;
-	}
-
 	function getAccountHub() external view returns (address) {
 		return accountHub;
 	}
 
-	function getAccounts(address user, uint256 start, uint256 size) external view returns (address[] memory) {
-		return IAccountHub(accountHub).getUserSubAccountsAddresses(user, start, size);
+	function getAccounts(address user, uint256 start, uint256 size) external view returns (IAccountHub.Account[] memory) {
+		IAccountHub.SubAccountDetail[] memory subAccounts = IAccountHub(accountHub).getUserSubAccounts(user, start, size);
+		IAccountHub.Account[] memory accounts = new IAccountHub.Account[](subAccounts.length);
+		for (uint256 i = 0; i < subAccounts.length; i++) {
+			accounts[i] = IAccountHub.Account({ accountAddress: subAccounts[i].accountAddress, name: subAccounts[i].name });
+		}
+		return accounts;
 	}
 
 	function getAccountsLength(address user) external view returns (uint256) {

@@ -105,6 +105,9 @@ interface IAccountHub {
 	event WithdrawFromAccount(address indexed sender, address indexed account, uint256 amount);
 	event Call(address indexed sender, address indexed account, bytes callData, bool success, bytes resultData);
 
+	// AccountManager events
+	event AccountManagerDeployed(address indexed affiliate, address indexed accountManager);
+
 	// Account management
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
 	function editAccountName(address account, string memory name) external;
@@ -114,6 +117,8 @@ interface IAccountHub {
 	function onClosePosition(uint256 quoteId, uint256 _filledAmount, uint256 _closedPrice, address partyA, address _partyB) external;
 
 	// View functions
+	function affiliateHub() external view returns (address);
+	function accountManagerImplementation() external view returns (bytes memory);
 	function getSigner() external view returns (address);
 	function getRelatedCore(address account) external view returns (address);
 	function ownerOf(address account) external view returns (address);
@@ -133,6 +138,11 @@ interface IAccountHub {
 	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory);
 	function getSubAccountsCountOfUser(address owner) external view returns (uint256);
 	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256);
+
+	// AccountManager management
+	function deployAccountManager(address affiliate, address registrant, string memory name) external returns (address accountManager);
+	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address);
+	function setAccountManagerImplementation(bytes memory implementation) external;
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();
@@ -159,4 +169,5 @@ interface IAccountHub {
 	error OnlyCustomIsolationCanCreateManually();
 	error HookFailed(bytes reason);
 	error InvalidSelector();
+	error DeploymentFailed();
 }
