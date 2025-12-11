@@ -108,7 +108,7 @@ interface IAccountHub {
 	// Account management
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
 	function editAccountName(address account, string memory name) external;
-	function _call(address account, bytes[] memory _callDatas) external;
+	function _call(address account, bytes[] calldata _callDatas) external returns (bytes[] memory);
 
 	// Symmio callback
 	function onClosePosition(uint256 quoteId, uint256 _filledAmount, uint256 _closedPrice, address partyA, address _partyB) external;
@@ -116,6 +116,7 @@ interface IAccountHub {
 	// View functions
 	function getSigner() external view returns (address);
 	function getRelatedCore(address account) external view returns (address);
+	function ownerOf(address account) external view returns (address);
 	function getSubAccountVirtualNonce(address subAccount) external view returns (uint256);
 	function predictNextVirtualAccountAddress(
 		address subAccount,

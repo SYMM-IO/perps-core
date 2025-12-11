@@ -125,6 +125,8 @@ interface ISymmio {
 
 	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory);
 
+	function isCallFromInstantLayer() external view returns (bool);
+
 	function setFeeCollector(address affiliate, address feeCollector) external;
 
 	function getNextQuoteId() external returns (uint256);

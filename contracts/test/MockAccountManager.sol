@@ -94,7 +94,7 @@ contract MockAccountHubForAccountManager {
 		return created;
 	}
 
-	function _call(address account, bytes[] memory callDatas) external {
+	function _call(address account, bytes[] memory callDatas) external returns (bytes[] memory) {
 		if (revertOnCall) {
 			revertOnCall = false;
 			revert("MockAccountHub: call reverted");
@@ -105,6 +105,8 @@ contract MockAccountHubForAccountManager {
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			lastCallData.push(callDatas[i]);
 		}
+
+		return callDatas;
 	}
 
 	function getRelatedCore(address account) external view returns (address) {

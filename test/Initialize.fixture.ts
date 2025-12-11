@@ -50,6 +50,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("PAUSER_ROLE")), context.signers.admin.address)
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE")), context.signers.admin.address)
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SIGNER_SETTER")), context.signers.admin.address)
+	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")), await instantLayer.getAddress())
 
 	const MockMultiAccount = await ethers.getContractFactory("MockMultiAccount")
 	const multiAccountMock = await MockMultiAccount.deploy(diamond)
@@ -111,6 +112,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	context.affiliateHub = affiliateHub
 	context.symmioPartyB = symmioPartyB
 	context.instantLayer = instantLayer
+
+	// set AccountHub for InstantLayer
+	await instantLayer.setAccountHub(await accountHub.getAddress())
 
 	// Grant roles to admin
 	const rolesToGrant = [
