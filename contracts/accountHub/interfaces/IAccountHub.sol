@@ -99,7 +99,7 @@ interface IAccountHub {
 	event VirtualAccountDeleted(address indexed account, address indexed parent);
 
 	// Transfer events
-	event AddMargin(address indexed subAccount, address indexed virtualAccount, uint256 amount);
+	event AddMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
 	event RemoveMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
 
 	// Legacy compatibility events
@@ -149,7 +149,7 @@ interface IAccountHub {
 	function setAccountManagerImplementation(bytes memory implementation) external;
 
 	function addMargin(address virtualAccount, uint256 amount) external;
-	function removeMargin(address virtualAccount, uint256 amount) external;
+	function removeMargin(address virtualAccount, uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();

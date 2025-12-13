@@ -1,21 +1,246 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
-import { expect, use } from "chai"
-import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
-import { ethers } from "hardhat"
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
+import { expect, use } from "chai";
+import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers";
+import { ethers } from "hardhat";
 
-import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
-import { initializeFixture } from "./Initialize.fixture"
-import { PositionType } from "./models/Enums"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest"
-import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { decimal } from "./utils/Common"
-import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils"
+
+
+import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types";
+import { initializeFixture } from "./Initialize.fixture";
+import { PositionType } from "./models/Enums";
+import { Hedger } from "./models/Hedger";
+import { RunContext } from "./models/RunContext";
+import { User } from "./models/User";
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest";
+import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest";
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest";
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest";
+import { decimal } from "./utils/Common";
+import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 export function shouldBehaveLikeAccountHub(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -1911,7 +2136,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					// Transfer from subaccount to virtual account
 					await expect(context.accountHub.connect(context.signers.user).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT))
 						.to.emit(context.accountHub, "AddMargin")
-						.withArgs(customSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT)
+						.withArgs(virtualAccount, customSubAccount, BALANCES.TRANSFER_AMOUNT)
 
 					// Check balances after transfer
 					const subAccountBalanceAfter = await context.viewFacet.balanceOf(customSubAccount)
@@ -1936,44 +2161,41 @@ export function shouldBehaveLikeAccountHub(): void {
 
 			describe("removeMargin", async () => {
 				beforeEach(async () => {
-					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.TRANSFER_AMOUNT)
-					await context.accountFacet.connect(context.signers.user).depositFor(virtualAccount, BALANCES.TRANSFER_AMOUNT)
+					await context.accountHub.connect(context.signers.user).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT)
 				})
 
 				it("should transfer balance from virtual account to subaccount", async () => {
 					// Check initial balances
 					const subAccountAllocatedBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
-					const virtualAccountBalanceBefore = await context.viewFacet.balanceOf(virtualAccount)
+					const virtualAccountAllocatedBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
 
 					// Virtual account should have balance from the deposit
-					expect(virtualAccountBalanceBefore).to.equal(BALANCES.TRANSFER_AMOUNT)
-
-					const transferAmount = decimal(200n)
+					expect(virtualAccountAllocatedBalanceBefore).to.equal(BALANCES.TRANSFER_AMOUNT)
 
 					// Transfer from virtual account to subaccount
 					await expect(
-						context.accountHub.connect(context.signers.user).removeMargin(virtualAccount, transferAmount),
+						context.accountHub.connect(context.signers.user).removeMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT, await getDummySingleUpnlSig()),
 					)
 						.to.emit(context.accountHub, "RemoveMargin")
-						.withArgs(virtualAccount, customSubAccount, transferAmount)
+						.withArgs(virtualAccount, customSubAccount, BALANCES.TRANSFER_AMOUNT)
 
 					// Check balances after transfer
-					const virtualAccountBalanceAfter = await context.viewFacet.balanceOf(virtualAccount)
-					expect(virtualAccountBalanceAfter).to.equal(BALANCES.TRANSFER_AMOUNT - transferAmount)
+					const virtualAccountAllocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
+					expect(virtualAccountAllocatedBalanceAfter).to.equal(0)
 
 					const subAccountAllocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
-					expect(subAccountAllocatedBalanceAfter).to.equal(subAccountAllocatedBalanceBefore + transferAmount)
+					expect(subAccountAllocatedBalanceAfter).to.equal(subAccountAllocatedBalanceBefore + BALANCES.TRANSFER_AMOUNT)
 				})
 
 				it("should revert when transferring zero amount", async () => {
 					await expect(
-						context.accountHub.connect(context.signers.user).removeMargin(virtualAccount, 0n),
+						context.accountHub.connect(context.signers.user).removeMargin(virtualAccount, 0n, await getDummySingleUpnlSig()),
 					).to.be.revertedWithCustomError(context.accountHub, "ZeroAmount")
 				})
 
 				it("should revert when caller is not the account owner", async () => {
 					await expect(
-						context.accountHub.connect(context.signers.user2).removeMargin(virtualAccount, decimal(100n)),
+						context.accountHub.connect(context.signers.user2).removeMargin(virtualAccount, decimal(100n), await getDummySingleUpnlSig()),
 					).to.be.revertedWithCustomError(context.accountHub, "NotOwner")
 				})
 			})
@@ -1997,25 +2219,14 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(subAccountBalance).to.equal(BALANCES.DEPOSIT_AMOUNT - BALANCES.TRANSFER_AMOUNT)
 					expect(virtualAccountAllocatedBalance).to.equal(BALANCES.TRANSFER_AMOUNT)
 
-					// Step 2: Deposit to virtual account to give it balance for reverse transfer
-					const deallocateCallData = context.accountFacet.interface.encodeFunctionData("zeroUpnlDeallocate", [BALANCES.TRANSFER_AMOUNT])
-					await context.accountHub.connect(context.signers.user)._call(virtualAccount, [deallocateCallData])
+					// Step 2: Transfer from virtual account to subaccount
+					await context.accountHub.connect(context.signers.user).removeMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT, await getDummySingleUpnlSig())
 
-					let virtualAccountBalance = await context.viewFacet.balanceOf(virtualAccount)
-					expect(virtualAccountBalance).to.equal(BALANCES.TRANSFER_AMOUNT)
-
-					// Step 3: Transfer from virtual account to subaccount
-					const transferBackAmount = decimal(200n)
-					await context.accountHub
-						.connect(context.signers.user)
-						.removeMargin(virtualAccount, transferBackAmount)
-
-					virtualAccountBalance = await context.viewFacet.balanceOf(virtualAccount)
+					virtualAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
 					const subAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
 
-					expect(virtualAccountBalance).to.equal(BALANCES.TRANSFER_AMOUNT - transferBackAmount)
-					expect(subAccountAllocatedBalance).to.equal(transferBackAmount)
-					expect(await context.viewFacet.balanceOf(customSubAccount)).to.equal(BALANCES.DEPOSIT_AMOUNT - BALANCES.TRANSFER_AMOUNT)
+					expect(virtualAccountAllocatedBalance).to.equal(0)
+					expect(subAccountAllocatedBalance).to.equal(BALANCES.TRANSFER_AMOUNT)
 				})
 			})
 		})

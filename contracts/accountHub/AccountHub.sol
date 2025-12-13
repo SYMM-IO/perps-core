@@ -226,7 +226,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		_executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
 
-		emit AddMargin(parent, virtualAccount, amount);
+		emit AddMargin(virtualAccount, parent, amount);
 	}
 
 	/**
@@ -234,11 +234,16 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	 * @param virtualAccount The virtual account address (source)
 	 * @param amount The amount to transfer in 18 decimals
 	 */
-	function removeMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
+	function removeMargin(
+		address virtualAccount,
+		uint256 amount,
+		ISymmio.SingleUpnlSig memory upnlSig
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 		if (!virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
 		address parent = virtualAccounts[virtualAccount].parentAccount;
 
+		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.deallocate.selector, amount, upnlSig));
 		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parent, amount));
 
 		emit RemoveMargin(virtualAccount, parent, amount);
