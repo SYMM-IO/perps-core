@@ -187,5 +187,244 @@ export function shouldBehaveLikeHooks(): void {
       expect(systemCloseCalls).to.equal(0n)
     })
   })
+
+  describe("onFeeCharged callback", () => {
+    it("Should call onFeeCharged with OPEN fee type on openPosition", async function () {
+      const MockHook = await ethers.getContractFactory("MockHook")
+      const affiliateHook = await MockHook.deploy()
+      await affiliateHook.waitForDeployment()
+      const systemHook = await MockHook.deploy()
+      await systemHook.waitForDeployment()
+
+      // Configure hooks
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+      await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+      // Prepare a LONG quote
+      await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+      await hedger.lockQuote(1)
+
+      const openPrice = decimal(1n)
+      const filledAmount = await getQuoteQuantity(context, 1n)
+
+      // Open position
+      await expect(
+        hedger.openPosition(
+          1,
+          limitOpenRequestBuilder()
+            .filledAmount(filledAmount)
+            .openPrice(openPrice)
+            .price(decimal(1n, 17))
+            .build(),
+        ),
+      ).to.not.reverted
+
+      // Verify affiliate hook received the fee callback
+      const [feeQuoteId, feeAmount, feePartyA, feePartyB, feeSymbolId, feeAffiliate, feeType, feeCalls] =
+        await affiliateHook.getLastOpenFeeCall()
+      expect(feeQuoteId).to.equal(1n)
+      expect(feeAmount).to.be.gt(0n) // Fee should be greater than 0
+      const q = await context.viewFacetQuote.getQuote(1)
+      expect(feePartyA).to.equal(q.partyA)
+      expect(feePartyB).to.equal(q.partyB)
+      expect(feeSymbolId).to.equal(q.symbolId)
+      expect(feeAffiliate).to.equal(context.accountManager)
+      expect(feeType).to.equal(0n) // TradingFeeType.OPEN = 0
+      expect(feeCalls).to.equal(1n)
+
+      // Verify system hook also received the fee callback
+      const [, , , , , , , systemFeeCalls] = await systemHook.getLastOpenFeeCall()
+      expect(systemFeeCalls).to.equal(1n)
+    })
+
+    it("Should call onFeeCharged with CLOSE fee type on closePosition", async function () {
+      const MockHook = await ethers.getContractFactory("MockHook")
+      const affiliateHook = await MockHook.deploy()
+      await affiliateHook.waitForDeployment()
+      const systemHook = await MockHook.deploy()
+      await systemHook.waitForDeployment()
+
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+      await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+      // Open a position first
+      await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+      await hedger.lockQuote(1)
+      const openPrice = decimal(1n)
+      const filledAmount = await getQuoteQuantity(context, 1n)
+      await hedger.openPosition(
+        1,
+        limitOpenRequestBuilder().filledAmount(filledAmount).openPrice(openPrice).price(decimal(1n, 17)).build(),
+      )
+
+      // Request close and fill
+      await user.requestToClosePosition(1)
+
+      const closeFilled = filledAmount
+      const closePrice = decimal(1n)
+      await expect(
+        hedger.fillCloseRequest(
+          1,
+          limitFillCloseRequestBuilder().filledAmount(closeFilled).closedPrice(closePrice).price(decimal(1n)).build(),
+        ),
+      ).to.not.reverted
+
+      // Verify affiliate hook received the close fee callback
+      const [feeQuoteId, feeAmount, feePartyA, feePartyB, feeSymbolId, feeAffiliate, feeType, feeCalls] =
+        await affiliateHook.getLastCloseFeeCall()
+      expect(feeQuoteId).to.equal(1n)
+      expect(feeAmount).to.be.gt(0n) // Fee should be greater than 0
+      const q = await context.viewFacetQuote.getQuote(1)
+      expect(feePartyA).to.equal(q.partyA)
+      expect(feePartyB).to.equal(q.partyB)
+      expect(feeSymbolId).to.equal(q.symbolId)
+      expect(feeAffiliate).to.equal(context.accountManager)
+      expect(feeType).to.equal(1n) // TradingFeeType.CLOSE = 1
+      expect(feeCalls).to.equal(1n)
+
+      // Verify system hook also received the close fee callback
+      const [, , , , , , , systemFeeCalls] = await systemHook.getLastCloseFeeCall()
+      expect(systemFeeCalls).to.equal(1n)
+    })
+
+    it("Should swallow onFeeCharged revert on open and not affect transaction", async function () {
+      const MockHook = await ethers.getContractFactory("MockHook")
+      const affiliateHook = await MockHook.deploy()
+      await affiliateHook.waitForDeployment()
+      const systemHook = await MockHook.deploy()
+      await systemHook.waitForDeployment()
+
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+      await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+      // Prepare a LONG quote
+      await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+      await hedger.lockQuote(1)
+
+      const openPrice = decimal(1n)
+      const filledAmount = await getQuoteQuantity(context, 1n)
+
+      // Make affiliate hook revert on fee callback
+      await affiliateHook.setRevertOnOpenFee(true, "affiliate open fee revert")
+
+      // Open position should still succeed
+      await expect(
+        hedger.openPosition(
+          1,
+          limitOpenRequestBuilder()
+            .filledAmount(filledAmount)
+            .openPrice(openPrice)
+            .price(decimal(1n, 17))
+            .build(),
+        ),
+      ).to.not.reverted
+
+      // Affiliate hook fee call should have reverted (count = 0)
+      const [, , , , , , , affiliateFeeCalls] = await affiliateHook.getLastOpenFeeCall()
+      expect(affiliateFeeCalls).to.equal(0n)
+
+      // System hook should still have received the callback
+      const [, , , , , , , systemFeeCalls] = await systemHook.getLastOpenFeeCall()
+      expect(systemFeeCalls).to.equal(1n)
+    })
+
+    it("Should swallow onFeeCharged revert on close and not affect transaction", async function () {
+      const MockHook = await ethers.getContractFactory("MockHook")
+      const affiliateHook = await MockHook.deploy()
+      await affiliateHook.waitForDeployment()
+      const systemHook = await MockHook.deploy()
+      await systemHook.waitForDeployment()
+
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+      await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+      // Open a position first
+      await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+      await hedger.lockQuote(1)
+      const openPrice = decimal(1n)
+      const filledAmount = await getQuoteQuantity(context, 1n)
+      await hedger.openPosition(
+        1,
+        limitOpenRequestBuilder().filledAmount(filledAmount).openPrice(openPrice).price(decimal(1n, 17)).build(),
+      )
+
+      // Request close
+      await user.requestToClosePosition(1)
+
+      // Make system hook revert on close fee callback
+      await systemHook.setRevertOnCloseFee(true, "system close fee revert")
+
+      const closeFilled = filledAmount
+      const closePrice = decimal(1n)
+
+      // Close should still succeed
+      await expect(
+        hedger.fillCloseRequest(
+          1,
+          limitFillCloseRequestBuilder().filledAmount(closeFilled).closedPrice(closePrice).price(decimal(1n)).build(),
+        ),
+      ).to.not.reverted
+
+      // System hook fee call should have reverted (count = 0)
+      const [, , , , , , , systemFeeCalls] = await systemHook.getLastCloseFeeCall()
+      expect(systemFeeCalls).to.equal(0n)
+
+      // Affiliate hook should still have received the callback
+      const [, , , , , , , affiliateFeeCalls] = await affiliateHook.getLastCloseFeeCall()
+      expect(affiliateFeeCalls).to.equal(1n)
+    })
+
+    it("Should pass correct fee amount matching TradingFeeCharged event", async function () {
+      const MockHook = await ethers.getContractFactory("MockHook")
+      const affiliateHook = await MockHook.deploy()
+      await affiliateHook.waitForDeployment()
+
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+
+      // Prepare and open a position
+      await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+      await hedger.lockQuote(1)
+
+      const openPrice = decimal(1n)
+      const filledAmount = await getQuoteQuantity(context, 1n)
+
+      // Open position
+      await hedger.openPosition(
+        1,
+        limitOpenRequestBuilder()
+          .filledAmount(filledAmount)
+          .openPrice(openPrice)
+          .price(decimal(1n, 17))
+          .build(),
+      )
+
+      // Get the quote to calculate expected fee
+      const q = await context.viewFacetQuote.getQuote(1)
+      const expectedOpenFee = (filledAmount * q.openedPrice * q.tradingFee) / BigInt(1e36)
+
+      // Verify hook received correct fee amount (within 1% tolerance due to price adjustments)
+      const [, feeAmount] = await affiliateHook.getLastOpenFeeCall()
+      const openFeeDiff = feeAmount > expectedOpenFee ? feeAmount - expectedOpenFee : expectedOpenFee - feeAmount
+      const openFeeTolerance = expectedOpenFee / 100n // 1% tolerance
+      expect(openFeeDiff).to.be.lte(openFeeTolerance)
+
+      // Now test close fee
+      await user.requestToClosePosition(1)
+      const closeFilled = filledAmount
+      const closePrice = decimal(1n)
+      await hedger.fillCloseRequest(
+        1,
+        limitFillCloseRequestBuilder().filledAmount(closeFilled).closedPrice(closePrice).price(decimal(1n)).build(),
+      )
+
+      const expectedCloseFee = (closeFilled * closePrice * q.closeFee) / BigInt(1e36)
+
+      // Verify hook received correct close fee amount (within 1% tolerance)
+      const [, closeFeeAmount] = await affiliateHook.getLastCloseFeeCall()
+      const closeFeeDiff = closeFeeAmount > expectedCloseFee ? closeFeeAmount - expectedCloseFee : expectedCloseFee - closeFeeAmount
+      const closeFeeTolerance = expectedCloseFee / 100n // 1% tolerance
+      expect(closeFeeDiff).to.be.lte(closeFeeTolerance)
+    })
+  })
 }
 
