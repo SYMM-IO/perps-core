@@ -71,8 +71,8 @@ library PartyAFacetImpl {
 		}
 
 		Fee memory fee;
-		if (appLayout.customAffiliateFee[affiliate][msg.sender][symbolId].isSet) {
-			fee = appLayout.customAffiliateFee[affiliate][msg.sender][symbolId];
+		if (appLayout.customAffiliateFee[affiliate][LibSigner.getSigner()][symbolId].isSet) {
+			fee = appLayout.customAffiliateFee[affiliate][LibSigner.getSigner()][symbolId];
 		} else {
 			if (appLayout.affiliateFee[affiliate][symbolId].isSet) {
 				fee = appLayout.affiliateFee[affiliate][symbolId];

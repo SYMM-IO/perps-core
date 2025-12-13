@@ -11,6 +11,7 @@ import "../../storages/MAStorage.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "../../storages/WithdrawStorage.sol";
+import "../../libraries/LibSigner.sol";
 
 
 library BridgeFacetImpl {
@@ -134,7 +135,7 @@ library BridgeFacetImpl {
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
 		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];
 
-		require(msg.sender == bridgeTransaction.user, "BridgeFacet: Sender is not the transaction's user");
+		require(LibSigner.getSigner() == bridgeTransaction.user, "BridgeFacet: Sender is not the transaction's user");
 		require(bridgeTransaction.status == BridgeTransactionStatus.RECEIVED, "BridgeFacet: Invalid status");
 
 		bridgeTransaction.status = BridgeTransactionStatus.CANCEL_REQUESTED;

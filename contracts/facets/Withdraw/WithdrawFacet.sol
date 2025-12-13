@@ -38,9 +38,9 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param speedUp Whether to request a speed-up for this withdrawal.
 	 * @param data Additional provider-specific metadata.
 	 */
-	function initiateWithdraw(WithdrawReceiverPart[] memory parts,bool speedUp, bytes memory data) external notSuspended(msg.sender) nonReentrant {
+	function initiateWithdraw(WithdrawReceiverPart[] memory parts,bool speedUp, bytes memory data) external notSuspended(LibSigner.getSigner()) nonReentrant {
 		uint256 requestId = WithdrawFacetImpl.initiateWithdraw(parts,speedUp, data);
-		emit WithdrawInitiated(requestId, msg.sender, parts, speedUp, data);
+		emit WithdrawInitiated(requestId, LibSigner.getSigner(), parts, speedUp, data);
 	}
 
 	/**
@@ -98,7 +98,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 */
 	function finalizeWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
 		WithdrawFacetImpl.finalizeWithdrawRequest(user,requestId);
-		emit WithdrawFinalized(requestId, msg.sender);
+		emit WithdrawFinalized(requestId, LibSigner.getSigner());
 	}
 
 	/**
@@ -114,9 +114,9 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 *
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function requestCancelWithdraw(uint256 requestId) external notSuspended(msg.sender) nonReentrant {
+	function requestCancelWithdraw(uint256 requestId) external notSuspended(LibSigner.getSigner()) nonReentrant {
 		WithdrawFacetImpl.requestCancelWithdraw(requestId);
-		emit WithdrawCancelRequested(requestId, msg.sender);
+		emit WithdrawCancelRequested(requestId, LibSigner.getSigner());
 	}
 
 	/**
@@ -134,9 +134,9 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 *
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function forceCancelWithdraw(uint256 requestId) external notSuspended(msg.sender) nonReentrant {
+	function forceCancelWithdraw(uint256 requestId) external notSuspended(LibSigner.getSigner()) nonReentrant {
 		WithdrawFacetImpl.forceCancelWithdraw(requestId);
-		emit WithdrawCancelled(requestId, msg.sender);
+		emit WithdrawCancelled(requestId, LibSigner.getSigner());
 	}
 
 	/**

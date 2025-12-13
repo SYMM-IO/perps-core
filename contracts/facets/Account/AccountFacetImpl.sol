@@ -253,7 +253,7 @@ library AccountFacetImpl {
 
 		ExternalTransferReq storage externalTransferReq = accountLayout.externalTransfers[id];
 
-		require(externalTransferReq.sender == msg.sender, "AccountFacet: Invalid Sender");
+		require(externalTransferReq.sender == LibSigner.getSigner(), "AccountFacet: Invalid Sender");
 		require(externalTransferReq.status == ExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
 
 		uint256 amountWith18Decimals = (externalTransferReq.amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());

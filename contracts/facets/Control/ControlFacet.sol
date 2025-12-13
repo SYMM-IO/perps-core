@@ -163,7 +163,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the open and close trading fees for an specific affiliate.
 	function setAffiliateFee(address affiliate, uint256 symbolId, uint256 openFee, uint256 closeFee) external {
 		require(
-			LibAccessibility.hasRole(msg.sender, LibAccessibility.AFFILIATE_MANAGER_ROLE) || msg.sender == affiliate,
+			LibAccessibility.hasRole(LibSigner.getSigner(), LibAccessibility.AFFILIATE_MANAGER_ROLE) || LibSigner.getSigner() == affiliate,
 			"ControlFacet: Not authorized"
 		);
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
@@ -189,7 +189,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param closeFee The open trading fee.
 	function setCustomAffiliateFee(address affiliate,address user, uint256 symbolId, uint256 openFee, uint256 closeFee) external {
 		require(
-			LibAccessibility.hasRole(msg.sender, LibAccessibility.AFFILIATE_MANAGER_ROLE) || msg.sender == affiliate,
+			LibAccessibility.hasRole(LibSigner.getSigner(), LibAccessibility.AFFILIATE_MANAGER_ROLE) || LibSigner.getSigner() == affiliate,
 			"ControlFacet: Not authorized"
 		);
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
