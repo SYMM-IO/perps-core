@@ -1,5 +1,10 @@
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs"
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 import { expect, use } from "chai"
+import { AbiCoder, encodeBytes32String, InterfaceAbi, ZeroAddress, AddressLike, toUtf8Bytes, EthersError, BytesLike, TypedDataDomain } from "ethers"
+import { ethers, network } from "hardhat"
+
+import { InstantLayer } from "../../src/types"
 import { initializeFixture } from "../Initialize.fixture"
 import { PositionType, QuoteStatus } from "../models/Enums"
 import { Hedger } from "../models/Hedger"
@@ -8,26 +13,9 @@ import { User } from "../models/User"
 import { limitOpenRequestBuilder, OpenRequest } from "../models/requestModels/OpenRequest"
 import { limitQuoteRequestBuilder, QuoteRequest } from "../models/requestModels/QuoteRequest"
 import { decimal, getBlockTimestamp } from "../utils/Common"
-import { ethers, network } from "hardhat"
-import {
-	AbiCoder,
-	encodeBytes32String,
-	InterfaceAbi,
-	ZeroAddress,
-	AddressLike,
-	toUtf8Bytes,
-	EthersError,
-	BytesLike,
-	TypedDataDomain,
-} from "ethers"
-import { InstantLayer, MultiAccount, SymmioPartyB, SymmioPartyA } from "../../src/types"
-
 // import { IMultiAccount } from "../../src/types/contracts/interfaces"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
-import { IMultiAccount } from "../../src/types/contracts/multiAccount/MultiAccount"
 import { cloneTypes, DELEGATE_TYPES } from "./instantLayerEIP712Types"
-
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs"
 
 export function shouldBehaveLikeInstantLayer(): void {
 	let context: RunContext, partyA1: User, partyA2: User, partyB1: Hedger, partyB2: Hedger
@@ -137,6 +125,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			chainId: (await ethers.provider.getNetwork()).chainId,
 			verifyingContract: await context.instantLayer.getAddress(),
 		}
+
+		await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
 	})
 
 	async function signOperation(
@@ -193,30 +183,27 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 	})
 
-	describe("Registering MultiAccount Batch", async function () {
+	describe("Configuring AccountHub", async function () {
 		it("Should be failed when Sender not Setter Role ", async () => {
-			await expect(context.instantLayer.connect(context.signers.hedger).registerMultiAccounts([partyB1.address])).to.be.reverted
+			await expect(context.instantLayer.connect(context.signers.hedger).setAccountHub(partyB1.address)).to.be.reverted
 		})
 
-		it("Should Add the multiAccount addresses batch to Whitelisted mapping", async () => {
-			expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(false)
-			expect(await context.instantLayer.registeredMultiAccounts(partyA2.address)).to.be.equal(false)
-			await expect(context.instantLayer.registerMultiAccounts([partyA1.address, partyA2.address])).not.to.be.reverted
-
-			expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(true)
-			expect(await context.instantLayer.registeredMultiAccounts(partyA2.address)).to.be.equal(true)
+		it("Should update the accountHub address", async () => {
+			const hub1 = await context.accountHub.getAddress()
+			await expect(context.instantLayer.setAccountHub(hub1)).not.to.be.reverted
+			expect(await context.instantLayer.accountHub()).to.equal(hub1)
 		})
 	})
 
-	describe("Unregistering MultiAccount", async function () {
+	describe("Unregistering AccountHub", async function () {
 		it("Should be failed when Sender not Setter Role ", async () => {
-			await expect(context.instantLayer.connect(partyA1.getSigner).unregisterMultiAccount(partyA1.address)).to.be.reverted
+			await expect(context.instantLayer.connect(partyA1.getSigner).setAccountHub(ZeroAddress)).to.be.reverted
 		})
 
-		it("Should Remove the multiAccount address from Whitelisted mapping", async () => {
-			await expect(context.instantLayer.unregisterMultiAccount(partyA1.address)).not.to.be.reverted
-
-			expect(await context.instantLayer.registeredMultiAccounts(partyA1.address)).to.be.equal(false)
+		it("Should allow clearing the accountHub when caller has role", async () => {
+			const hub1 = await context.accountHub.getAddress()
+			await expect(context.instantLayer.setAccountHub(hub1)).not.to.be.reverted
+			await expect(context.instantLayer.setAccountHub(ZeroAddress)).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredAccountHub")
 		})
 	})
 
@@ -355,7 +342,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		let opSendQuoteSignature2: BytesLike
 		let opLockSignature: BytesLike
 		let opOpenSignature: BytesLike
-		let accounts: IMultiAccount.AccountStructOutput[]
+		let accounts: any[]
 
 		// Domain must match the executor's EIP712(name,version)
 		let sendQuoteParamsOnly
@@ -376,17 +363,15 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
 			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
-			await context.instantLayer.registerMultiAccounts([context.accountManager]) // Admin with SETTER Role
+			await context.instantLayer.setAccountHub(await context.accountHub.getAddress()) // Admin with SETTER Role
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
 
 			await expect(context.accountManager.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
 			accounts = await context.accountManager.getAccounts(partyA1.address, 0, 100)
-
 			await expect(context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)).not.reverted
 			// await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("TRUSTED_ROLE")), partyA1.address)
 			// await expect(context.symmioPartyB.connect(partyA1.getSigner)._approve(context.collateral, decimal(30n))).not.to.be.reverted // for symmoio contract
-
 			await expect(context.collateral.connect(partyA1.getSigner).mint(accounts[0].accountAddress, decimal(30n))).to.not.reverted
 			await context.accountFacet.connect(partyA1.getSigner).depositFor(accounts[0].accountAddress, decimal(20n))
 			await context.accountFacet.connect(partyA1.getSigner).internalTransfer(accounts[0].accountAddress, decimal(1000n))
@@ -397,8 +382,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const selectorOpen = openQuoteCallData.slice(0, 10)
 			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
 				account: {
-					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
+					isPartyB: false,
 				},
 				delegatedSigner: context.signers.admin.address,
 				selectors: [selectorQuote],
@@ -430,8 +415,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: context.signers.admin.address,
 				callData: quoteCallData,
 				signerAccount: {
-					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
+					isPartyB: false,
 				},
 				replayAttackHeader: {
 					nonce: 1n,
@@ -444,8 +429,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: partyA1.address, // it should work for contracts as well as EOAs
 				callData: quoteCallData,
 				signerAccount: {
-					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
+					isPartyB: false,
 				},
 				replayAttackHeader: {
 					nonce: 2n,
@@ -458,8 +443,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: await context.symmioPartyB.getAddress(),
 				callData: lockQuoteCallData,
 				signerAccount: {
-					multiAccount: ZeroAddress,
 					addr: await context.symmioPartyB.getAddress(),
+					isPartyB: true,
 				},
 				replayAttackHeader: {
 					nonce: 1n,
@@ -472,8 +457,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: await context.symmioPartyB.getAddress(),
 				callData: openQuoteCallData,
 				signerAccount: {
-					multiAccount: ZeroAddress,
 					addr: await context.symmioPartyB.getAddress(),
+					isPartyB: true,
 				},
 				replayAttackHeader: {
 					nonce: 2n,
@@ -602,23 +587,17 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		it("should Register Symmio PartyB when sending as PartyB", async function () {
-			const op = { ...opLockB1, signerAccount: { multiAccount: ZeroAddress, addr: partyB2.address }, signer: partyB2.address }
+			const op = { ...opLockB1, signerAccount: { addr: partyB2.address, isPartyB: true }, signer: partyB2.address }
 			const sig = await context.signers.hedger.signTypedData(domain, types, op)
 			await expect(context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredPartyB")
 		})
 
-		it("reverts UnregisteredMultiAccount when Multiaccount not whitelisted", async () => {
-			// unregister first
-			await context.instantLayer.unregisterMultiAccount(context.multiAccount)
-			const sig = await signOperation(context.signers.admin, domain, types, opSendQuoteA1)
-			await expect(context.instantLayer.executeBatch([opSendQuoteA1], [sig])).to.be.revertedWithCustomError(
-				context.instantLayer,
-				"UnregisteredMultiAccount",
-			)
+		it("reverts when AccountHub is not configured", async () => {
+			await expect(context.instantLayer.setAccountHub(ZeroAddress)).to.be.revertedWithCustomError(context.instantLayer, "UnregisteredAccountHub")
 		})
 
 		it("should be signed with valid signer for partyB", async function () {
-			// const op = { ...opLockB1, signerAccount: { multiAccount: ZeroAddress, addr: partyB2.address }, signer: partyB2.address }
+			// const op = { ...opLockB1, signerAccount: { addr: partyB2.address, isPartyB: true }, signer: partyB2.address }
 			const sig = await context.signers.hedger2.signTypedData(domain, types, opLockB1)
 			await expect(context.instantLayer.executeBatch([opLockB1], [sig])).to.be.revertedWithCustomError(context.instantLayer, "InvalidSignature")
 		})
@@ -649,8 +628,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const deadline = now + 600n // 10 mins future
 
 			const acc = {
-				multiAccount: await context.multiAccount.getAddress(), // adjust to your onlyOwner policy
 				addr: accounts[0].accountAddress, // account being delegated for
+				isPartyB: false,
 			}
 
 			const nonceBefore: bigint = 1n
@@ -682,7 +661,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		it("reverts MismatchSignerAndAccount for PartyB path when signer != signerAccount.addr", async () => {
-			const bad = { ...opLockB1, signerAccount: { multiAccount: ZeroAddress, addr: partyB2.address } }
+			const bad = { ...opLockB1, signerAccount: { addr: partyB2.address, isPartyB: true } }
 			const sig = await context.signers.hedger.signTypedData(domain, types, bad)
 			await expect(context.instantLayer.executeBatch([bad], [sig]))
 				.to.be.revertedWithCustomError(context.instantLayer, "MismatchSignerAndAccount")
@@ -691,7 +670,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		it("should allow Sending Intents in a single batch", async function () {
 			const { instantLayer, partyAFacet, partyBQuoteActionsFacet, partyBPositionActionsFacet } = context
-			const multiAccount = context.accountManager
 
 			opSendQuoteSignature1 = await context.signers.admin.signTypedData(domain, types, opSendQuoteA1)
 			opSendQuoteSignature2 = await context.signers.user.signTypedData(domain, types, opSendQuoteA2)
@@ -782,7 +760,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			const sig = await signOperation(context.signers.admin, domain, types, op1)
 			await expect(context.instantLayer.executeBatch([op1], [sig])).to.be.revertedWithCustomError(context.instantLayer, "InvalidNonce")
-			
+
 			const op2: InstantLayer.SignedOperationStruct = {
 				...opSendQuoteA1,
 				replayAttackHeader: {
@@ -862,7 +840,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		let opSendQuoteSignature2: BytesLike
 		let opLockSignature: BytesLike
 		let opOpenSignature: BytesLike
-		let accounts: IMultiAccount.AccountStructOutput[]
+		let accounts: any[]
 
 		beforeEach(async function () {
 			const deadline = await getBlockTimestamp(300n)
@@ -870,7 +848,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
 			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
-			await context.instantLayer.registerMultiAccounts([context.accountManager]) // Admin with SETTER Role
+			await context.instantLayer.setAccountHub(await context.accountHub.getAddress()) // Admin with SETTER Role
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
 
@@ -890,8 +868,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const selectorQuote = quoteCallData.slice(0, 10)
 			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
 				account: {
-					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
+					isPartyB: false,
 				},
 				delegatedSigner: context.signers.admin.address,
 				selectors: [selectorQuote],
@@ -912,8 +890,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: context.signers.admin.address,
 				callData: quoteCallData,
 				signerAccount: {
-					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
+					isPartyB: false,
 				},
 				replayAttackHeader: {
 					nonce: 1n,
@@ -926,8 +904,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: partyA1.address,
 				callData: quoteCallData,
 				signerAccount: {
-					multiAccount: await context.accountManager.getAddress(),
 					addr: accounts[0].accountAddress,
+					isPartyB: false,
 				},
 				replayAttackHeader: {
 					nonce: 2n,
@@ -940,8 +918,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: await context.symmioPartyB.getAddress(),
 				callData: lockQuoteCallDataTemplate,
 				signerAccount: {
-					multiAccount: ZeroAddress,
 					addr: await context.symmioPartyB.getAddress(),
+					isPartyB: true,
 				},
 				replayAttackHeader: {
 					nonce: 1n,
@@ -954,8 +932,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 				signer: await context.symmioPartyB.getAddress(),
 				callData: openQuoteCallDataTemplate,
 				signerAccount: {
-					multiAccount: ZeroAddress,
 					addr: await context.symmioPartyB.getAddress(),
+					isPartyB: true,
 				},
 				replayAttackHeader: {
 					nonce: 2n, // second nonce for the the same signer
@@ -1277,10 +1255,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sigCallDatas: string[] = [opSendQuoteSignature1, opSendQuoteSignature2, opLockSignature, opOpenSignature]
 
 			const { instantLayer, symmioPartyB } = context
-			const multiAccount = context.accountManager
+			const accountHubAddr = await context.accountHub.getAddress()
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([symmioPartyB])
-			await context.instantLayer.registerMultiAccounts([multiAccount])
+			await context.instantLayer.setAccountHub(accountHubAddr)
 			await context.symmioPartyB.setSigner(partyB1.getSigner)
 			// await context.symmioPartyB.setMulticastWhitelist(context.common.diamondAddress, true)
 
@@ -1397,11 +1375,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 	})
 
 	describe("grantBatchDelegationBySig", () => {
-		let accounts: IMultiAccount.AccountStructOutput[]
+		let accounts: any[]
 		beforeEach(async () => {
 			await expect(context.accountManager.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
 			accounts = await context.accountManager.getAccounts(partyA1.address, 0, 100)
-			await context.instantLayer.registerMultiAccounts([context.accountManager]) // Admin with SETTER Role
+			await context.instantLayer.setAccountHub(await context.accountHub.getAddress()) // Admin with SETTER Role
 		})
 
 		function ifaceSelectors(...fragments: string[]): string[] {
@@ -1413,8 +1391,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 		it("grants batch delegations and bumps nonce", async () => {
 			// --- Arrange
 			const acc = {
-				multiAccount: await context.accountManager.getAddress(), // adjust to your onlyOwner policy
 				addr: accounts[0].accountAddress, // account being delegated for
+				isPartyB: false,
 			}
 
 			const selectors = quoteCallData.slice(0, 10)
@@ -1464,6 +1442,237 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 	})
 
+	describe("Virtual Account Delegation Support", () => {
+		let accounts: any[]
+		let subAccountAddress: string
+		let virtualAccountAddress: string
+		let quoteCallDataLocal: string
+
+		beforeEach(async () => {
+			const { instantLayer, partyAFacet, accountFacet, partyBQuoteActionsFacet } = context
+
+			// Setup InstantLayer
+			await context.instantLayer.registerPartyBs([context.symmioPartyB])
+			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
+			await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
+			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
+			await context.symmioPartyB.setSigner(partyB1.getSigner)
+
+			// Create sub-account with MARKET isolation (type 1) - allows multiple quotes with same symbol
+			const subAccountData = [
+				{
+					name: "VIRTUAL_DELEGATION_TEST",
+					metadata: ethers.keccak256(toUtf8Bytes("metadata")),
+					symmioCore: context.diamond,
+					isolationType: 1, // MARKET isolation - allows multiple quotes per virtual account
+				},
+			]
+			await context.accountHub.connect(partyA1.getSigner).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+			accounts = await context.accountHub.getUserSubAccountsAddresses(partyA1.address, 0, 100)
+			subAccountAddress = accounts[0]
+
+			// Deposit for sub-account (need balance for transfers, NOT allocatedBalance)
+			await context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)
+			await context.collateral.connect(partyA1.getSigner).mint(subAccountAddress, decimal(5000n))
+			await context.accountFacet.connect(partyA1.getSigner).depositFor(subAccountAddress, decimal(3000n))
+
+			// Bind sub-account to PartyB
+			await context.accountHub.connect(partyA1.getSigner)._call(subAccountAddress, [bindToPartyBCallData])
+
+			// Whitelist symbol type
+			await context.symbolControlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
+
+			// Create quote calldata
+			quoteCallDataLocal = partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+				requestSendQuote.partyBWhiteList,
+				requestSendQuote.symbolId,
+				requestSendQuote.positionType,
+				requestSendQuote.orderType,
+				requestSendQuote.price,
+				requestSendQuote.quantity,
+				requestSendQuote.cva,
+				requestSendQuote.lf,
+				requestSendQuote.partyAmm,
+				requestSendQuote.partyBmm,
+				requestSendQuote.maxFundingRate,
+				await requestSendQuote.deadline,
+				requestSendQuote.affiliate,
+				await requestSendQuote.upnlSig,
+			])
+
+			// Create a virtual account by sending a quote from the sub-account
+			await context.accountHub.connect(partyA1.getSigner)._call(subAccountAddress, [quoteCallDataLocal])
+
+			// Get the created virtual account address
+			const virtualAccounts = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(subAccountAddress, 0, 10)
+			virtualAccountAddress = virtualAccounts[0]
+
+			// Grant delegation on the PARENT sub-account (not the virtual account)
+			const selectorQuote = quoteCallDataLocal.slice(0, 10)
+			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
+				account: {
+					addr: subAccountAddress, // Delegation is granted on the parent sub-account
+					isPartyB: false,
+				},
+				delegatedSigner: context.signers.admin.address,
+				selectors: [selectorQuote],
+				expiryTimestamp: await getBlockTimestamp(3600n),
+			})
+		})
+
+		it("should allow delegate to execute operations on virtual account using parent's delegation", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Transfer more funds to the virtual account for the new quote (internal transfer from sub-account)
+			const internalTransferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccountAddress, decimal(500n)])
+			await context.accountHub.connect(partyA1.getSigner)._call(subAccountAddress, [internalTransferCallData])
+
+			// Create operation targeting the VIRTUAL account but signed by the delegate
+			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
+				signer: context.signers.admin.address, // delegate (granted delegation on parent)
+				callData: quoteCallDataLocal,
+				signerAccount: {
+					addr: virtualAccountAddress, // targeting the virtual account
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig = await context.signers.admin.signTypedData(domain, types, opSendQuoteOnVirtual)
+
+			// This should succeed because:
+			// 1. The signer (admin) is a delegate
+			// 2. The virtual account's parent (subAccountAddress) has delegation granted to admin
+			// 3. The InstantLayer now checks delegation against the parent account for virtual accounts
+			await expect(context.instantLayer.executeBatch([opSendQuoteOnVirtual], [sig])).not.to.be.reverted
+
+			// Verify a new quote was created
+			const quoteIds = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+			expect(quoteIds.length).to.equal(2) // Original quote + new quote
+		})
+
+		it("should reject operation on virtual account when delegate lacks parent's delegation", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Create operation targeting the virtual account with a non-delegated signer
+			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
+				signer: context.signers.user2.address, // NOT delegated on parent
+				callData: quoteCallDataLocal,
+				signerAccount: {
+					addr: virtualAccountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig = await context.signers.user2.signTypedData(domain, types, opSendQuoteOnVirtual)
+
+			// Should fail because user2 doesn't have delegation on the parent account
+			await expect(context.instantLayer.executeBatch([opSendQuoteOnVirtual], [sig])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"InvalidDelegation",
+			)
+		})
+
+		it("should allow owner to execute on virtual account directly without delegation check", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Transfer more funds to the virtual account for the new quote (internal transfer from sub-account)
+			const internalTransferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccountAddress, decimal(500n)])
+			await context.accountHub.connect(partyA1.getSigner)._call(subAccountAddress, [internalTransferCallData])
+
+			// Create operation where signer is the owner of the parent account
+			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address, // owner of the sub-account (parent of virtual account)
+				callData: quoteCallDataLocal,
+				signerAccount: {
+					addr: virtualAccountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig = await context.signers.user.signTypedData(domain, types, opSendQuoteOnVirtual)
+
+			// Should succeed because signer is the owner (no delegation check needed)
+			await expect(context.instantLayer.executeBatch([opSendQuoteOnVirtual], [sig])).not.to.be.reverted
+		})
+
+		it("should correctly identify parent account for delegation check on virtual accounts", async () => {
+			// Verify the virtual account exists and has the correct parent
+			const virtualAccountDetail = await context.accountHub.getVirtualAccount(virtualAccountAddress)
+			expect(virtualAccountDetail.isExists).to.be.true
+			expect(virtualAccountDetail.parentAccount).to.equal(subAccountAddress)
+
+			// Verify isDelegationActive works with parent address
+			const selectorQuote = quoteCallDataLocal.slice(0, 10) as `0x${string}`
+			const isActive = await context.instantLayer.isDelegationActive(subAccountAddress, context.signers.admin.address, selectorQuote)
+			expect(isActive).to.be.true
+
+			// Verify isDelegationActive returns false for virtual account address directly
+			// (because delegation was granted on parent, not virtual)
+			const isActiveOnVirtual = await context.instantLayer.isDelegationActive(virtualAccountAddress, context.signers.admin.address, selectorQuote)
+			expect(isActiveOnVirtual).to.be.false
+		})
+
+		it("should handle delegation revocation on parent affecting virtual account operations", async () => {
+			const selectorQuote = quoteCallDataLocal.slice(0, 10) as `0x${string}`
+
+			// Set revocation cooldown (minimum 5 minutes = 300 seconds)
+			await context.instantLayer.connect(context.signers.admin).setRevocationCooldown(300)
+
+			// Initiate revocation
+			await context.instantLayer
+				.connect(partyA1.getSigner)
+				.initiateRevokeDelegation({ addr: subAccountAddress, isPartyB: false }, context.signers.admin.address, [selectorQuote])
+
+			// Move time past cooldown (300 seconds + 1)
+			await time.increase(301)
+
+			// Finalize revocation
+			await context.instantLayer.finalizeRevokeDelegation({ addr: subAccountAddress, isPartyB: false }, context.signers.admin.address, [
+				selectorQuote,
+			])
+
+			// Get a fresh deadline AFTER time increase
+			const freshDeadline = await getBlockTimestamp(300n)
+
+			// Now try to execute on virtual account - should fail
+			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
+				signer: context.signers.admin.address,
+				callData: quoteCallDataLocal,
+				signerAccount: {
+					addr: virtualAccountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline: freshDeadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig = await context.signers.admin.signTypedData(domain, types, opSendQuoteOnVirtual)
+
+			await expect(context.instantLayer.executeBatch([opSendQuoteOnVirtual], [sig])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"InvalidDelegation",
+			)
+		})
+	})
+
 	describe("revoke Delegation", () => {
 		let delegatorAcct: InstantLayer.AccountStruct
 		let delegateAddr: string
@@ -1484,11 +1693,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await expect(context.accountManager.connect(partyA1.getSigner).addAccount("testAccount")).not.to.reverted // here the party A Role is an EOA to create an Party A address
 
 			delegatorAcct = {
-				multiAccount: await context.accountManager.getAddress(),
 				addr: (await context.accountManager.getAccounts(partyA1.address, 0, 1))[0].accountAddress,
+				isPartyB: false,
 			}
 
-			context.instantLayer.registerMultiAccounts([await context.accountManager.getAddress()])
+			await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
 			// choose two real selectors you already used
 			selA = context.partyAFacet.interface.getFunction("sendQuoteWithAffiliate").selector as `0x${string}`
 			selB = context.partyBQuoteActionsFacet.interface.getFunction("lockQuote").selector as `0x${string}`
@@ -1568,7 +1777,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			it("random caller (not owner/delegate/revoker) is rejected", async () => {
 				await expect(context.instantLayer.connect(partyB1.getSigner).initiateRevokeDelegation(delegatorAcct, delegateAddr, [selA]))
 					.to.be.revertedWithCustomError(context.instantLayer, "NotOwnerOfAccount")
-					.withArgs(partyB1.address, delegatorAcct.multiAccount, delegatorAcct.addr)
+					.withArgs(partyB1.address, delegatorAcct.addr)
 			})
 		})
 

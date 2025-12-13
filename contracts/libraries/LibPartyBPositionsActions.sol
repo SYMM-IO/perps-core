@@ -179,14 +179,39 @@ library LibPartyBPositionsActions {
 		quote.quoteStatus = QuoteStatus.OPENED;
 		LibQuote.addToOpenPositions(quoteId);
 
-		address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-		address systemHook = accountLayout.affiliateHooks[address(0)];
+		uint256 openFee = (filledAmount * quote.openedPrice * quote.tradingFee) / 1e36;
+		{
+			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
+			address systemHook = accountLayout.affiliateHooks[address(0)];
 
-		if (affiliateHook != address(0)) {
-			try ISymmioHook(affiliateHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch {}
-		}
-		if (systemHook != address(0)) {
-			try ISymmioHook(systemHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch {}
+			if (affiliateHook != address(0)) {
+				try ISymmioHook(affiliateHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch {}
+				try
+					ISymmioHook(affiliateHook).onFeeCharged(
+						quoteId,
+						openFee,
+						quote.partyA,
+						quote.partyB,
+						quote.symbolId,
+						quote.affiliate,
+						ISymmioHook.TradingFeeType.OPEN
+					)
+				{} catch {}
+			}
+			if (systemHook != address(0)) {
+				try ISymmioHook(systemHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch {}
+				try
+					ISymmioHook(systemHook).onFeeCharged(
+						quoteId,
+						openFee,
+						quote.partyA,
+						quote.partyB,
+						quote.symbolId,
+						quote.affiliate,
+						ISymmioHook.TradingFeeType.OPEN
+					)
+				{} catch {}
+			}
 		}
 
 		emit SharedEvents.TradeVolumeRecorded(
@@ -200,7 +225,7 @@ library LibPartyBPositionsActions {
 		);
 		emit SharedEvents.TradingFeeCharged(
 			quote.id,
-			(filledAmount * quote.openedPrice * quote.tradingFee) / 1e36,
+			openFee,
 			quote.partyA,
 			quote.partyB,
 			quote.symbolId,
