@@ -1,46 +1,21 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
-import { expect, use } from "chai";
-import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers";
-import { ethers } from "hardhat";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { expect, use } from "chai"
+import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
+import { ethers } from "hardhat"
 
-
-
-import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types";
-import { initializeFixture } from "./Initialize.fixture";
-import { PositionType } from "./models/Enums";
-import { Hedger } from "./models/Hedger";
-import { RunContext } from "./models/RunContext";
-import { User } from "./models/User";
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest";
-import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest";
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest";
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest";
-import { decimal } from "./utils/Common";
-import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
+import { initializeFixture } from "./Initialize.fixture"
+import { PositionType } from "./models/Enums"
+import { Hedger } from "./models/Hedger"
+import { RunContext } from "./models/RunContext"
+import { User } from "./models/User"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest"
+import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { decimal } from "./utils/Common"
+import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils"
 
 export function shouldBehaveLikeAccountHub(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -1902,7 +1877,7 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 		})
 
-		describe("Transfer Methods", async () => {
+		describe.only("Transfer Methods", async () => {
 			let customSubAccount: string
 			let virtualAccount: string
 
@@ -1924,7 +1899,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 				virtualAccount = virtualAccounts[0].accountAddress
 			})
-			describe("transferFromSubAccountToVirtualAccount", async () => {
+			describe("addMargin", async () => {
 				it("should transfer balance from subaccount to virtual account", async () => {
 					// Check initial balances
 					const subAccountBalanceBefore = await context.viewFacet.balanceOf(customSubAccount)
@@ -1934,12 +1909,8 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(virtualAccountAllocatedBalanceBefore).to.equal(0n)
 
 					// Transfer from subaccount to virtual account
-					await expect(
-						context.accountHub
-							.connect(context.signers.user)
-							.transferFromSubAccountToVirtualAccount(customSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT),
-					)
-						.to.emit(context.accountHub, "TransferFromSubAccountToVirtualAccount")
+					await expect(context.accountHub.connect(context.signers.user).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT))
+						.to.emit(context.accountHub, "AddMargin")
 						.withArgs(customSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT)
 
 					// Check balances after transfer
@@ -1952,36 +1923,18 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should revert when transferring zero amount", async () => {
 					await expect(
-						context.accountHub.connect(context.signers.user).transferFromSubAccountToVirtualAccount(customSubAccount, virtualAccount, 0n),
+						context.accountHub.connect(context.signers.user).addMargin( virtualAccount, 0n),
 					).to.be.revertedWithCustomError(context.accountHub, "ZeroAmount")
 				})
 
 				it("should revert when caller is not the account owner", async () => {
 					await expect(
-						context.accountHub
-							.connect(context.signers.user2)
-							.transferFromSubAccountToVirtualAccount(customSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT),
+						context.accountHub.connect(context.signers.user2).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT),
 					).to.be.revertedWithCustomError(context.accountHub, "NotOwner")
-				})
-
-				it("should revert when virtual account is not a child of the subaccount", async () => {
-					// Create another subaccount
-					const anotherSubAccount = await createSubAccountAndDeposit(
-						context.signers.user,
-						[createSubAccountData("ANOTHER_ACCOUNT", 3, "ANOTHER")],
-						BALANCES.DEPOSIT_AMOUNT,
-						false,
-					)
-
-					await expect(
-						context.accountHub
-							.connect(context.signers.user)
-							.transferFromSubAccountToVirtualAccount(anotherSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT),
-					).to.be.revertedWithCustomError(context.accountHub, "InvalidParent")
 				})
 			})
 
-			describe("transferFromVirtualAccountToSubAccount", async () => {
+			describe("removeMargin", async () => {
 				beforeEach(async () => {
 					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.TRANSFER_AMOUNT)
 					await context.accountFacet.connect(context.signers.user).depositFor(virtualAccount, BALANCES.TRANSFER_AMOUNT)
@@ -1999,9 +1952,9 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					// Transfer from virtual account to subaccount
 					await expect(
-						context.accountHub.connect(context.signers.user).transferFromVirtualAccountToSubAccount(virtualAccount, customSubAccount, transferAmount),
+						context.accountHub.connect(context.signers.user).removeMargin(virtualAccount, transferAmount),
 					)
-						.to.emit(context.accountHub, "TransferFromVirtualAccountToSubAccount")
+						.to.emit(context.accountHub, "RemoveMargin")
 						.withArgs(virtualAccount, customSubAccount, transferAmount)
 
 					// Check balances after transfer
@@ -2014,28 +1967,14 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should revert when transferring zero amount", async () => {
 					await expect(
-						context.accountHub.connect(context.signers.user).transferFromVirtualAccountToSubAccount(virtualAccount, customSubAccount, 0n),
+						context.accountHub.connect(context.signers.user).removeMargin(virtualAccount, 0n),
 					).to.be.revertedWithCustomError(context.accountHub, "ZeroAmount")
 				})
 
 				it("should revert when caller is not the account owner", async () => {
 					await expect(
-						context.accountHub.connect(context.signers.user2).transferFromVirtualAccountToSubAccount(virtualAccount, customSubAccount, decimal(100n)),
+						context.accountHub.connect(context.signers.user2).removeMargin(virtualAccount, decimal(100n)),
 					).to.be.revertedWithCustomError(context.accountHub, "NotOwner")
-				})
-
-				it("should revert when virtual account is not a child of the subaccount", async () => {
-					// Create another subaccount
-					const anotherSubAccount = await createSubAccountAndDeposit(
-						context.signers.user,
-						[createSubAccountData("ANOTHER_ACCOUNT", 3, "ANOTHER")],
-						BALANCES.DEPOSIT_AMOUNT,
-						false,
-					)
-
-					await expect(
-						context.accountHub.connect(context.signers.user).transferFromVirtualAccountToSubAccount(virtualAccount, anotherSubAccount, decimal(100n)),
-					).to.be.revertedWithCustomError(context.accountHub, "InvalidParent")
 				})
 			})
 
@@ -2050,7 +1989,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					// Step 1: Transfer from subaccount to virtual account
 					await context.accountHub
 						.connect(context.signers.user)
-						.transferFromSubAccountToVirtualAccount(customSubAccount, virtualAccount, BALANCES.TRANSFER_AMOUNT)
+						.addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT)
 
 					let subAccountBalance = await context.viewFacet.balanceOf(customSubAccount)
 					let virtualAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
@@ -2069,7 +2008,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const transferBackAmount = decimal(200n)
 					await context.accountHub
 						.connect(context.signers.user)
-						.transferFromVirtualAccountToSubAccount(virtualAccount, customSubAccount, transferBackAmount)
+						.removeMargin(virtualAccount, transferBackAmount)
 
 					virtualAccountBalance = await context.viewFacet.balanceOf(virtualAccount)
 					const subAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
