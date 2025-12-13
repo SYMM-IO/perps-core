@@ -162,14 +162,15 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Sets the open and close trading fees for an specific affiliate.
 	function setAffiliateFee(address affiliate, uint256 symbolId, uint256 openFee, uint256 closeFee) external {
-		require(
-			LibAccessibility.hasRole(msg.sender, LibAccessibility.AFFILIATE_MANAGER_ROLE) || msg.sender == affiliate,
-			"ControlFacet: Not authorized"
-		);
+		address signer = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(signer, LibAccessibility.AFFILIATE_MANAGER_ROLE) || signer == affiliate, "ControlFacet: Not authorized");
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
-		require(openFee >= appLayout.minAffiliateFee && closeFee >= appLayout.minAffiliateFee, "ControlFacet: Not allowed to set fee less than threshold");
+		require(
+			openFee >= appLayout.minAffiliateFee && closeFee >= appLayout.minAffiliateFee,
+			"ControlFacet: Not allowed to set fee less than threshold"
+		);
 		emit SetAffiliateFee(
 			affiliate,
 			symbolId,
@@ -187,15 +188,16 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param symbolId The id of symbol.
 	/// @param openFee The open trading fee.
 	/// @param closeFee The open trading fee.
-	function setCustomAffiliateFee(address affiliate,address user, uint256 symbolId, uint256 openFee, uint256 closeFee) external {
-		require(
-			LibAccessibility.hasRole(msg.sender, LibAccessibility.AFFILIATE_MANAGER_ROLE) || msg.sender == affiliate,
-			"ControlFacet: Not authorized"
-		);
+	function setCustomAffiliateFee(address affiliate, address user, uint256 symbolId, uint256 openFee, uint256 closeFee) external {
+		address signer = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(signer, LibAccessibility.AFFILIATE_MANAGER_ROLE) || signer == affiliate, "ControlFacet: Not authorized");
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
-		require(openFee >= appLayout.minAffiliateFee && closeFee >= appLayout.minAffiliateFee, "ControlFacet: Not allowed to set fee less than threshold");
+		require(
+			openFee >= appLayout.minAffiliateFee && closeFee >= appLayout.minAffiliateFee,
+			"ControlFacet: Not allowed to set fee less than threshold"
+		);
 		emit SetCustomAffiliateFee(
 			affiliate,
 			user,
@@ -212,7 +214,10 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param affiliate The address of affiliate.
 	/// @param openFee The open trading fee.
 	/// @param closeFee The close trading fee.
-	function setDefaultAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external onlyRole(LibAccessibility.SETTER_ROLE) {
+	function setDefaultAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external {
+		address signer = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(signer, LibAccessibility.AFFILIATE_MANAGER_ROLE) || signer == affiliate, "ControlFacet: Not authorized");
+		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 		require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
 		emit SetDefaultAffiliateFee(
 			affiliate,
@@ -496,7 +501,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		require(target != address(0), "ControlFacet: Zero address");
 	}
 
-	function setPenaltyCollector(address penaltyCollector) external onlyRole(LibAccessibility.SETTER_ROLE){
+	function setPenaltyCollector(address penaltyCollector) external onlyRole(LibAccessibility.SETTER_ROLE) {
 		MAStorage.layout().penaltyCollector = penaltyCollector;
 		emit SetPenaltyCollector(penaltyCollector);
 	}

@@ -111,6 +111,9 @@ interface ISymmio {
 
 	function allocate(uint256 amount) external;
 
+	function deallocate(uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
+
+
 	function getCollateral() external view returns (address);
 
 	function balanceOf(address user) external view returns (uint256);

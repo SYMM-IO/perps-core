@@ -14,8 +14,8 @@ import "../../libraries/muon/LibMuonAccount.sol";
 import "../../libraries/LibAccount.sol";
 import "../../interfaces/IExternalTransferRelayer.sol";
 import "../../libraries/LibSigner.sol";
-import {WithdrawStorage} from "../../storages/WithdrawStorage.sol";
-import {IVirtualProvider} from "../../interfaces/IVirtualProvider.sol";
+import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
+import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
 
 library AccountFacetImpl {
 	using SafeERC20 for IERC20;
@@ -34,13 +34,14 @@ library AccountFacetImpl {
 	function withdraw(address user, uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		address signer = LibSigner.getSigner();
 		require(appLayout.deprecateOldWithdrawalPaused == false, "This Withdrawal has been deprecated use new one;");
 		require(
-			block.timestamp >= accountLayout.withdrawCooldown[LibSigner.getSigner()] + MAStorage.layout().deallocateCooldown,
+			block.timestamp >= accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateCooldown,
 			"AccountFacet: Cooldown hasn't reached"
 		);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
-		accountLayout.balances[LibSigner.getSigner()] -= amountWith18Decimals;
+		accountLayout.balances[signer] -= amountWith18Decimals;
 		IERC20(appLayout.collateral).safeTransfer(user, amount);
 	}
 
@@ -73,116 +74,122 @@ library AccountFacetImpl {
 
 	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
 		require(
-			block.timestamp >= accountLayout.withdrawCooldown[LibSigner.getSigner()] + MAStorage.layout().deallocateDebounceTime,
+			block.timestamp >= accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateDebounceTime,
 			"AccountFacet: Too many deallocate in a short window"
 		);
-		require(accountLayout.allocatedBalances[LibSigner.getSigner()] >= amount, "AccountFacet: Insufficient allocated Balance");
-		LibMuonAccount.verifyPartyAUpnl(upnlSig, LibSigner.getSigner());
-		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, LibSigner.getSigner());
+		require(accountLayout.allocatedBalances[signer] >= amount, "AccountFacet: Insufficient allocated Balance");
+		LibMuonAccount.verifyPartyAUpnl(upnlSig, signer);
+		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: partyA will be liquidatable");
 
-		accountLayout.allocatedBalances[LibSigner.getSigner()] -= amount;
-		accountLayout.balances[LibSigner.getSigner()] += amount;
-		accountLayout.withdrawCooldown[LibSigner.getSigner()] = block.timestamp;
+		accountLayout.allocatedBalances[signer] -= amount;
+		accountLayout.balances[signer] += amount;
+		accountLayout.withdrawCooldown[signer] = block.timestamp;
 	}
 
 	function zeroUpnlDeallocate(uint256 amount, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		address signer = LibSigner.getSigner();
 
-		require(accountLayout.allocatedBalances[LibSigner.getSigner()] >= amount, "AccountFacet: Insufficient allocated Balance");
+		require(accountLayout.allocatedBalances[signer] >= amount, "AccountFacet: Insufficient allocated Balance");
 		require(
 			quoteLayout.partyAPendingQuotes[partyA].length + quoteLayout.partyAOpenPositions[partyA].length == 0,
 			"AccountFacet: PartyA has Open/Pending position"
 		);
 
-		accountLayout.allocatedBalances[LibSigner.getSigner()] -= amount;
-		accountLayout.balances[LibSigner.getSigner()] += amount;
+		accountLayout.allocatedBalances[signer] -= amount;
+		accountLayout.balances[signer] += amount;
 	}
 
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		require(!maLayout.partyBLiquidationStatus[LibSigner.getSigner()][origin], "PartyBFacet: PartyB isn't solvent");
-		require(!maLayout.partyBLiquidationStatus[LibSigner.getSigner()][recipient], "PartyBFacet: PartyB isn't solvent");
+		address signer = LibSigner.getSigner();
+		require(!maLayout.partyBLiquidationStatus[signer][origin], "PartyBFacet: PartyB isn't solvent");
+		require(!maLayout.partyBLiquidationStatus[signer][recipient], "PartyBFacet: PartyB isn't solvent");
 		require(!maLayout.liquidationStatus[origin], "PartyBFacet: Origin isn't solvent");
 		require(!maLayout.liquidationStatus[recipient], "PartyBFacet: Recipient isn't solvent");
-		require(!accountLayout.crossLiquidationDetails[LibSigner.getSigner()].inProgress, "PartyBFacet: PartyB isn't solvent");
+		require(!accountLayout.crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB isn't solvent");
 
 		// deallocate from origin
-		require(accountLayout.partyBAllocatedBalances[LibSigner.getSigner()][origin] >= amount, "PartyBFacet: Insufficient locked balance");
-		LibMuonAccount.verifyPartyBUpnl(upnlSig, LibSigner.getSigner(), origin);
-		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, LibSigner.getSigner(), origin);
+		require(accountLayout.partyBAllocatedBalances[signer][origin] >= amount, "PartyBFacet: Insufficient locked balance");
+		LibMuonAccount.verifyPartyBUpnl(upnlSig, signer, origin);
+		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, origin);
 		require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "PartyBFacet: Will be liquidatable");
 
-		accountLayout.partyBAllocatedBalances[LibSigner.getSigner()][origin] -= amount;
+		accountLayout.partyBAllocatedBalances[signer][origin] -= amount;
 		// allocate for recipient
-		accountLayout.partyBAllocatedBalances[LibSigner.getSigner()][recipient] += amount;
+		accountLayout.partyBAllocatedBalances[signer][recipient] += amount;
 	}
 
 	function internalTransfer(address user, uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
 
 		require(
 			accountLayout.allocatedBalances[user] + amount <= GlobalAppStorage.layout().balanceLimitPerUser,
 			"AccountFacet: Allocated balance limit reached"
 		);
-		require(accountLayout.balances[LibSigner.getSigner()] >= amount, "AccountFacet: Insufficient balance");
-		accountLayout.balances[LibSigner.getSigner()] -= amount;
+		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
+		accountLayout.balances[signer] -= amount;
 		accountLayout.allocatedBalances[user] += amount;
 	}
 
 	function allocateForPartyB(uint256 amount, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
 
-		require(accountLayout.balances[LibSigner.getSigner()] >= amount, "AccountFacet: Insufficient balance");
-		require(!MAStorage.layout().partyBLiquidationStatus[LibSigner.getSigner()][partyA], "AccountFacet: PartyB isn't solvent");
-		require(!accountLayout.crossLiquidationDetails[LibSigner.getSigner()].inProgress, "AccountFacet: PartyB isn't solvent");
+		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
+		require(!MAStorage.layout().partyBLiquidationStatus[signer][partyA], "AccountFacet: PartyB isn't solvent");
+		require(!accountLayout.crossLiquidationDetails[signer].inProgress, "AccountFacet: PartyB isn't solvent");
 
-		accountLayout.balances[LibSigner.getSigner()] -= amount;
-		accountLayout.partyBAllocatedBalances[LibSigner.getSigner()][partyA] += amount;
+		accountLayout.balances[signer] -= amount;
+		accountLayout.partyBAllocatedBalances[signer][partyA] += amount;
 	}
 
 	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		require(accountLayout.partyBAllocatedBalances[LibSigner.getSigner()][partyA] >= amount, "AccountFacet: Insufficient allocated balance");
-		LibMuonAccount.verifyPartyBUpnl(upnlSig, LibSigner.getSigner(), partyA);
-		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, LibSigner.getSigner(), partyA);
+		address signer = LibSigner.getSigner();
+		require(accountLayout.partyBAllocatedBalances[signer][partyA] >= amount, "AccountFacet: Insufficient allocated balance");
+		LibMuonAccount.verifyPartyBUpnl(upnlSig, signer, partyA);
+		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, partyA);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: Will be liquidatable");
 
-		accountLayout.partyBAllocatedBalances[LibSigner.getSigner()][partyA] -= amount;
-		accountLayout.balances[LibSigner.getSigner()] += amount;
-		accountLayout.withdrawCooldown[LibSigner.getSigner()] = block.timestamp;
+		accountLayout.partyBAllocatedBalances[signer][partyA] -= amount;
+		accountLayout.balances[signer] += amount;
+		accountLayout.withdrawCooldown[signer] = block.timestamp;
 	}
 
 	function depositToReserveVault(uint256 amount, address partyB) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		require(amount <= accountLayout.balances[LibSigner.getSigner()], "AccountFacet: Insufficient balance");
+		address signer = LibSigner.getSigner();
+		require(amount <= accountLayout.balances[signer], "AccountFacet: Insufficient balance");
 		require(MAStorage.layout().partyBStatus[partyB], "AccountFacet: Should be partyB");
-		accountLayout.balances[LibSigner.getSigner()] -= amount;
+		accountLayout.balances[signer] -= amount;
 		accountLayout.reserveVault[partyB] += amount;
 	}
 
 	function withdrawFromReserveVault(uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		require(amount > 0 && amount <= accountLayout.reserveVault[LibSigner.getSigner()], "AccountFacet: Insufficient balance");
-		accountLayout.reserveVault[LibSigner.getSigner()] -= amount;
-		accountLayout.balances[LibSigner.getSigner()] += amount;
-		accountLayout.withdrawCooldown[LibSigner.getSigner()] = block.timestamp;
+		address signer = LibSigner.getSigner();
+		require(amount > 0 && amount <= accountLayout.reserveVault[signer], "AccountFacet: Insufficient balance");
+		accountLayout.reserveVault[signer] -= amount;
+		accountLayout.balances[signer] += amount;
+		accountLayout.withdrawCooldown[signer] = block.timestamp;
 	}
 
 	function activateMasterAccountMode() internal {
-		require(
-			GlobalAppStorage.layout().masterAccountActivationMode,
-			"AccountFacet: Master account activation disabled"
-		);
+		require(GlobalAppStorage.layout().masterAccountActivationMode, "AccountFacet: Master account activation disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		require(!accountLayout.masterAccountMode[LibSigner.getSigner()], "AccountFacet: Master account mode is active");
-		accountLayout.masterAccountMode[LibSigner.getSigner()] = true;
+		address signer = LibSigner.getSigner();
+		require(!accountLayout.masterAccountMode[signer], "AccountFacet: Master account mode is active");
+		accountLayout.masterAccountMode[signer] = true;
 	}
 
 	function externalTransfer(address sender, address receiver, uint256 amount, address target) internal {
@@ -197,13 +204,22 @@ library AccountFacetImpl {
 
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		accountLayout.balances[sender] -= amountWith18Decimals;
-		require(IERC20(appLayout.collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= amount, "AccountFacet: Insufficient contract balance");
+		require(
+			IERC20(appLayout.collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= amount,
+			"AccountFacet: Insufficient contract balance"
+		);
 		IERC20(appLayout.collateral).safeTransfer(relayer, amount);
 
 		IExternalTransferRelayer(relayer).onTransfer(appLayout.collateral, sender, receiver, amount, target);
 	}
 
-	function virtualExternalTransfer(address sender, address receiver, uint256 amount, address target, address virtualProvider) internal returns (uint256){
+	function virtualExternalTransfer(
+		address sender,
+		address receiver,
+		uint256 amount,
+		address target,
+		address virtualProvider
+	) internal returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
@@ -253,7 +269,7 @@ library AccountFacetImpl {
 
 		ExternalTransferReq storage externalTransferReq = accountLayout.externalTransfers[id];
 
-		require(externalTransferReq.sender == msg.sender, "AccountFacet: Invalid Sender");
+		require(externalTransferReq.sender == LibSigner.getSigner(), "AccountFacet: Invalid Sender");
 		require(externalTransferReq.status == ExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
 
 		uint256 amountWith18Decimals = (externalTransferReq.amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
@@ -314,8 +330,9 @@ library AccountFacetImpl {
 	}
 
 	function activateInstantActionMode() internal {
-		require(AccountStorage.layout().bindState[LibSigner.getSigner()].status == BindStatus.BOUND, "AccountFacet: Invalid state");
-		AccountStorage.layout().instantActionsMode[LibSigner.getSigner()] = true;
+		address signer = LibSigner.getSigner();
+		require(AccountStorage.layout().bindState[signer].status == BindStatus.BOUND, "AccountFacet: Invalid state");
+		AccountStorage.layout().instantActionsMode[signer] = true;
 	}
 
 	function proposeToDeactivateInstantActionMode() internal {
@@ -325,14 +342,15 @@ library AccountFacetImpl {
 
 	function deactivateInstantActionMode() internal {
 		AccountStorage.Layout storage layout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
 
-		if (layout.instantActionsModeDeactivateTime[LibSigner.getSigner()] == 0) revert("Instant Action Deactivation not proposed yet");
+		if (layout.instantActionsModeDeactivateTime[signer] == 0) revert("Instant Action Deactivation not proposed yet");
 
-		if (layout.instantActionsModeDeactivateTime[LibSigner.getSigner()] > block.timestamp) {
+		if (layout.instantActionsModeDeactivateTime[signer] > block.timestamp) {
 			revert("Instant Actions Mode Deactivate Timeout not passed");
 		}
 
-		layout.instantActionsMode[LibSigner.getSigner()] = false;
-		layout.instantActionsModeDeactivateTime[LibSigner.getSigner()] = 0;
+		layout.instantActionsMode[signer] = false;
+		layout.instantActionsModeDeactivateTime[signer] = 0;
 	}
 }

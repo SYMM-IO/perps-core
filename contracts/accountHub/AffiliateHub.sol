@@ -40,6 +40,7 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	mapping(address => bool) private whitelistedSymmioCores;
 	mapping(address => AffiliateData) private affiliates;
 	mapping(address => PendingFeeUpdate) public pendingFeeUpdates;
+	mapping(address => mapping(bytes4 => mapping(address => bool))) private operators;
 
 	EnumerableSet.AddressSet private legacyMultiAccounts;
 
@@ -431,6 +432,49 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 */
 	function getHook(address affiliate, bytes4 selector) external view returns (address) {
 		return affiliates[affiliate].hooks[selector];
+	}
+
+	// ==================== Operator Management ====================
+
+	function setOperator(
+		address affiliate,
+		bytes4 selector,
+		address operator,
+		bool status
+	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+		if (operator == address(0)) revert ZeroAddress();
+		operators[affiliate][selector][operator] = status;
+		emit OperatorSet(affiliate, selector, operator, status);
+	}
+
+	function isOperator(address affiliate, bytes4 selector, address operator) external view returns (bool) {
+		return operators[affiliate][selector][operator];
+	}
+
+	// ==================== Affiliate Delegated Calls ====================
+
+	function callAsAffiliate(
+		address affiliate,
+		address symmio,
+		bytes calldata callData
+	) external whenNotPaused nonReentrant onlyIfAffiliateIsActive(affiliate) returns (bytes memory result) {
+		if (callData.length < 4) revert InvalidCallData();
+
+		bytes4 selector = bytes4(callData[:4]);
+		if (affiliates[affiliate].admin != msg.sender && !operators[affiliate][selector][msg.sender]) revert Unauthorized();
+		if (!affiliates[affiliate].symmioCores.contains(symmio)) revert SymmioCoreNotAllowed();
+
+		ISymmio(symmio).setSigner(affiliate);
+		(bool success, bytes memory returned) = symmio.call(callData);
+		ISymmio(symmio).setSigner(address(0));
+
+		if (!success) {
+			assembly {
+				revert(add(returned, 32), mload(returned))
+			}
+		}
+
+		return returned;
 	}
 
 	// ==================== Admin Functions ====================

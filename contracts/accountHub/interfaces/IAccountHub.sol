@@ -99,8 +99,8 @@ interface IAccountHub {
 	event VirtualAccountDeleted(address indexed account, address indexed parent);
 
 	// Transfer events
-	event TransferFromSubAccountToVirtualAccount(address indexed subAccount, address indexed virtualAccount, uint256 amount);
-	event TransferFromVirtualAccountToSubAccount(address indexed virtualAccount, address indexed subAccount, uint256 amount);
+	event AddMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
+	event RemoveMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
 
 	// Legacy compatibility events
 	event EditAccountName(address indexed account, string name);
@@ -147,6 +147,9 @@ interface IAccountHub {
 	function deployAccountManager(address affiliate, address registrant, string memory name) external returns (address accountManager);
 	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address);
 	function setAccountManagerImplementation(bytes memory implementation) external;
+
+	function addMargin(address virtualAccount, uint256 amount) external;
+	function removeMargin(address virtualAccount, uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();

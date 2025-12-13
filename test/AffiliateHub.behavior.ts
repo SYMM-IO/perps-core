@@ -761,6 +761,96 @@ export function shouldBehaveLikeAffiliateHub() {
             })
         })
 
+        describe("Operators", function () {
+            let affiliate: string
+
+            beforeEach(async function () {
+                affiliate = (await activateAffiliate()).affiliate
+            })
+
+            it("lets affiliate admin manage operators per selector", async function () {
+                const operator = context.signers.others[0]
+                const selector = context.controlFacet.interface.getFunction("setDefaultAffiliateFee").selector
+
+                await expect(affiliateHub.connect(context.signers.user).setOperator(affiliate, selector, operator.address, true))
+                    .to.emit(affiliateHub, "OperatorSet")
+                    .withArgs(affiliate, selector, operator.address, true)
+
+                expect(await affiliateHub.isOperator(affiliate, selector, operator.address)).to.equal(true)
+
+                await expect(affiliateHub.connect(context.signers.user).setOperator(affiliate, selector, operator.address, false))
+                    .to.emit(affiliateHub, "OperatorSet")
+                    .withArgs(affiliate, selector, operator.address, false)
+
+                expect(await affiliateHub.isOperator(affiliate, selector, operator.address)).to.equal(false)
+            })
+
+            it("blocks non-admin operator management and inactive affiliates", async function () {
+                const operator = context.signers.others[0]
+                const selector = context.controlFacet.interface.getFunction("setDefaultAffiliateFee").selector
+
+                await expect(affiliateHub.connect(context.signers.user2).setOperator(affiliate, selector, operator.address, true)).to.be.revertedWithCustomError(
+                    affiliateHub,
+                    "NotAdmin",
+                )
+
+                await affiliateHub.connect(context.signers.user).pauseAffiliate(affiliate)
+                await expect(affiliateHub.connect(context.signers.user).setOperator(affiliate, selector, operator.address, true)).to.be.revertedWithCustomError(
+                    affiliateHub,
+                    "AffiliateNotActive",
+                )
+            })
+
+            it("allows an approved operator to call core methods as the affiliate", async function () {
+                const operator = context.signers.others[0]
+                const selector = context.controlFacet.interface.getFunction("setDefaultAffiliateFee").selector
+                await affiliateHub.connect(context.signers.user).setOperator(affiliate, selector, operator.address, true)
+
+                const openFee = ethers.parseEther("0.01")
+                const closeFee = ethers.parseEther("0.02")
+                const callData = context.controlFacet.interface.encodeFunctionData("setDefaultAffiliateFee", [affiliate, openFee, closeFee])
+
+                await affiliateHub.connect(operator).callAsAffiliate(affiliate, context.diamond, callData)
+
+                const fee = await context.viewFacet.getDefaultAffiliateFee(affiliate)
+                expect(fee.openFee).to.equal(openFee)
+                expect(fee.closeFee).to.equal(closeFee)
+                expect(fee.isSet).to.equal(true)
+            })
+
+            it("rejects unauthorized calls and enforces ACTIVE affiliates", async function () {
+                const operator = context.signers.others[0]
+                const openFee = ethers.parseEther("0.01")
+                const closeFee = ethers.parseEther("0.02")
+                const callData = context.controlFacet.interface.encodeFunctionData("setDefaultAffiliateFee", [affiliate, openFee, closeFee])
+
+                await expect(affiliateHub.connect(operator).callAsAffiliate(affiliate, context.diamond, callData)).to.be.revertedWithCustomError(
+                    affiliateHub,
+                    "Unauthorized",
+                )
+
+                const selector = context.controlFacet.interface.getFunction("setDefaultAffiliateFee").selector
+                await affiliateHub.connect(context.signers.user).setOperator(affiliate, selector, operator.address, true)
+                await affiliateHub.connect(context.signers.user).pauseAffiliate(affiliate)
+
+                await expect(affiliateHub.connect(operator).callAsAffiliate(affiliate, context.diamond, callData)).to.be.revertedWithCustomError(
+                    affiliateHub,
+                    "AffiliateNotActive",
+                )
+            })
+
+            it("rejects invalid call data", async function () {
+                const operator = context.signers.others[0]
+                const selector = context.controlFacet.interface.getFunction("setDefaultAffiliateFee").selector
+                await affiliateHub.connect(context.signers.user).setOperator(affiliate, selector, operator.address, true)
+
+                await expect(affiliateHub.connect(operator).callAsAffiliate(affiliate, context.diamond, "0x")).to.be.revertedWithCustomError(
+                    affiliateHub,
+                    "InvalidCallData",
+                )
+            })
+        })
+
         describe("Configuration", function () {
             beforeEach(async function () {
                 // give admin the setter role
