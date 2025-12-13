@@ -83,8 +83,8 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 			emit SettleUpnl(
 				settleSig.quotesSettlementsData,
 				updatedPrices,
-				msg.sender,
-				AccountStorage.layout().allocatedBalances[msg.sender],
+				quote.partyA,
+				AccountStorage.layout().allocatedBalances[quote.partyA],
 				newPartyBsAllocatedBalances
 			);
 			emit ForceClosePosition(quoteId, quote.partyA, quote.partyB, filledAmount, closePrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);

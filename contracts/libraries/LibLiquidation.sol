@@ -9,6 +9,7 @@ import "../storages/MAStorage.sol";
 import "../libraries/SharedEvents.sol";
 import "./LibAccount.sol";
 import "./LibQuote.sol";
+import {LibSigner} from "./LibSigner.sol";
 
 library LibLiquidation {
 	using LockedValuesOps for LockedValues;
@@ -90,8 +91,8 @@ library LibLiquidation {
 
 		// Transfer liquidator share to the liquidator
 		if (liquidatorShare > 0) {
-			accountLayout.allocatedBalances[msg.sender] += liquidatorShare;
-			emit SharedEvents.BalanceChangePartyA(msg.sender, liquidatorShare, SharedEvents.BalanceChangeType.LF_IN);
+			accountLayout.allocatedBalances[LibSigner.getSigner()] += liquidatorShare;
+			emit SharedEvents.BalanceChangePartyA(LibSigner.getSigner(), liquidatorShare, SharedEvents.BalanceChangeType.LF_IN);
 		}
 	}
 }

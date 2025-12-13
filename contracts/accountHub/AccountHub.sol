@@ -16,7 +16,6 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
-import "./interfaces/IAccountManager.sol";
 
 /**
  * @title AccountHub
@@ -216,44 +215,37 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 	/**
 	 * @notice Transfers balance from a sub-account to a virtual account
-	 * @param subAccount The sub-account address (source)
 	 * @param virtualAccount The virtual account address (destination)
 	 * @param amount The amount to transfer in 18 decimals
 	 */
-	function transferFromSubAccountToVirtualAccount(
-		address subAccount,
-		address virtualAccount,
-		uint256 amount
-	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
-		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
 		if (!virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
-		if (virtualAccounts[virtualAccount].parentAccount != subAccount) revert InvalidParent();
+		address parent = virtualAccounts[virtualAccount].parentAccount;
 
-		_executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
+		_executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
 
-		emit TransferFromSubAccountToVirtualAccount(subAccount, virtualAccount, amount);
+		emit AddMargin(virtualAccount, parent, amount);
 	}
 
 	/**
 	 * @notice Transfers balance from a virtual account to a sub-account
 	 * @param virtualAccount The virtual account address (source)
-	 * @param subAccount The sub-account address (destination)
 	 * @param amount The amount to transfer in 18 decimals
 	 */
-	function transferFromVirtualAccountToSubAccount(
+	function removeMargin(
 		address virtualAccount,
-		address subAccount,
-		uint256 amount
-	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		uint256 amount,
+		ISymmio.SingleUpnlSig memory upnlSig
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 		if (!virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
-		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
-		if (virtualAccounts[virtualAccount].parentAccount != subAccount) revert InvalidParent();
+		address parent = virtualAccounts[virtualAccount].parentAccount;
 
-		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, subAccount, amount));
+		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.deallocate.selector, amount, upnlSig));
+		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parent, amount));
 
-		emit TransferFromVirtualAccountToSubAccount(virtualAccount, subAccount, amount);
+		emit RemoveMargin(virtualAccount, parent, amount);
 	}
 
 	// ==================== Symmio Callback ====================
@@ -660,7 +652,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_callHook(
 			affiliate,
 			IAccountHubHook.onAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onAccountCreation.selector, sender, subAccountAddress)
+			abi.encodeWithSelector(IAccountHubHook.onAccountCreation.selector, sender, subAccountAddress, data.metadata)
 		);
 
 		emit SubAccountCreated(subAccountAddress, sender, affiliate, data.name);
@@ -704,7 +696,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_callHook(
 			parent.affiliate,
 			IAccountHubHook.onVirtualAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount)
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount, v.metadata)
 		);
 
 		emit VirtualAccountReused(reusedAccount, parentAccount);
@@ -739,7 +731,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_callHook(
 			parent.affiliate,
 			IAccountHubHook.onVirtualAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount)
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount,metadata)
 		);
 
 		emit VirtualAccountCreated(virtualAccount, parentAccount);

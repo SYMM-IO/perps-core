@@ -12,12 +12,12 @@ import "../libraries/LibSigner.sol";
 
 abstract contract Accessibility {
 	modifier onlyPartyB() {
-		require(MAStorage.layout().partyBStatus[msg.sender], "Accessibility: Should be partyB");
+		require(MAStorage.layout().partyBStatus[LibSigner.getSigner()], "Accessibility: Should be partyB");
 		_;
 	}
 
 	modifier notPartyB() {
-		require(!MAStorage.layout().partyBStatus[msg.sender], "Accessibility: Shouldn't be partyB");
+		require(!MAStorage.layout().partyBStatus[LibSigner.getSigner()], "Accessibility: Shouldn't be partyB");
 		_;
 	}
 
