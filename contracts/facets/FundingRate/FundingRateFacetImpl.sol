@@ -35,9 +35,10 @@ library FundingRateFacetImpl {
 	function chargeFundingRate(address partyA, uint256[] memory quoteIds, int256[] memory rates, PairUpnlSig memory upnlSig) internal {
 		// Verify the signature contains valid unrealized PnL data
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
 		require(quoteIds.length == rates.length && quoteIds.length > 0, "ChargeFundingFacet: Length not match");
 
-		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, LibSigner.getSigner(), partyA);
+		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, signer, partyA);
 		int256 partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			upnlSig.upnlPartyA,
 			AccountStorage.layout().allocatedBalances[partyA],
@@ -53,7 +54,7 @@ library FundingRateFacetImpl {
 
 			// Validate quote ownership and status
 			require(quote.partyA == partyA, "ChargeFundingFacet: Invalid quote");
-			require(quote.partyB == LibSigner.getSigner(), "ChargeFundingFacet: Sender isn't partyB of quote");
+			require(quote.partyB == signer, "ChargeFundingFacet: Sender isn't partyB of quote");
 			require(
 				quote.quoteStatus == QuoteStatus.OPENED ||
 					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
@@ -129,8 +130,8 @@ library FundingRateFacetImpl {
 			quote.lastFundingPaymentTimestamp = paidTimestamp;
 		}
 
-		if (accountLayout.bindState[partyA].partyB != LibSigner.getSigner()) {
-			LibMuonFundingRate.verifyPairUpnl(upnlSig, LibSigner.getSigner(), partyA);
+		if (accountLayout.bindState[partyA].partyB != signer) {
+			LibMuonFundingRate.verifyPairUpnl(upnlSig, signer, partyA);
 
 			// Ensure neither party becomes insolvent after funding payments
 			require(partyAAvailableBalance >= 0, "ChargeFundingFacet: PartyA will be insolvent");
@@ -138,7 +139,7 @@ library FundingRateFacetImpl {
 		}
 
 		// Increment nonces for replay protection
-		AccountStorage.layout().partyBNonces[LibSigner.getSigner()][partyA] += 1;
+		AccountStorage.layout().partyBNonces[signer][partyA] += 1;
 		AccountStorage.layout().partyANonces[partyA] += 1;
 	}
 

@@ -15,8 +15,9 @@ contract BridgeFacet is Accessibility, Pausable, IBridgeFacet {
 	/// @param amount The precise amount to be transferred, specified in decimal units.
 	/// @param bridgeAddress The address of the bridge to which the collateral will be transferred.
 	function transferToBridge(uint256 amount, address bridgeAddress) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
-		uint256 transactionId = BridgeFacetImpl.transferToBridge(LibSigner.getSigner(), amount, bridgeAddress);
-		emit TransferToBridge(LibSigner.getSigner(), amount, bridgeAddress, transactionId);
+		address signer = LibSigner.getSigner();
+		uint256 transactionId = BridgeFacetImpl.transferToBridge(signer, amount, bridgeAddress);
+		emit TransferToBridge(signer, amount, bridgeAddress, transactionId);
 	}
 
 	/// @notice Withdraws the received bridge value associated with a specific transaction ID.

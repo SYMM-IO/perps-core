@@ -35,9 +35,10 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		int256[] memory shortFees,
 		int256[] memory marketPrices
 	) external whenNotPartyBActionsPaused onlyPartyB {
+		address signer = LibSigner.getSigner();
 		FundingRateFacetImpl.setFundingFee(symbolIds, longFees, shortFees, marketPrices);
-		emit SetLongFundingFee(symbolIds, longFees, marketPrices, LibSigner.getSigner());
-		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, LibSigner.getSigner());
+		emit SetLongFundingFee(symbolIds, longFees, marketPrices, signer);
+		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, signer);
 	}
 
 	/// @notice Set funding rates for a given Symbols.
@@ -68,8 +69,9 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 	/// @param symbolIds An array of symbol ids.
 	/// @param durations An array of durations for funding fees.
 	function setEpochDurations(uint256[] memory symbolIds, uint256[] memory durations) external whenNotPartyBActionsPaused onlyPartyB {
-		FundingRateFacetImpl.setEpochDuration(symbolIds, durations, LibSigner.getSigner());
-		emit SetEpochDuration(symbolIds, durations, LibSigner.getSigner());
+		address signer = LibSigner.getSigner();
+		FundingRateFacetImpl.setEpochDuration(symbolIds, durations, signer);
+		emit SetEpochDuration(symbolIds, durations, signer);
 	}
 
 	function updateAccumulatedFundingFee(
