@@ -1859,6 +1859,75 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 		})
 	})
+
+	describe("Target contract routing", () => {
+		let accountAddress: string
+		let mockTarget: any
+		let targetAddress: string
+		let deadline: bigint
+
+		beforeEach(async () => {
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			mockTarget = await MockInstantTarget.deploy()
+			targetAddress = await mockTarget.getAddress()
+			await context.instantLayer.setTargetWhitelist(targetAddress, true)
+
+			await context.accountManager.connect(partyA1.getSigner).addAccount("targetRoute")
+			const accounts = await context.accountManager.getAccounts(partyA1.address, 0, 10)
+			accountAddress = accounts[accounts.length - 1].accountAddress
+
+			deadline = await getBlockTimestamp(300n)
+		})
+
+		const buildTargetOp = (target: string, signer: string): InstantLayer.SignedOperationStruct => {
+			return {
+				signer,
+				target,
+				callData: mockTarget.interface.encodeFunctionData("store", [123n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+		}
+
+		it("executes whitelisted target call and updates target state", async () => {
+			// happy path on direct target
+			const op = buildTargetOp(targetAddress, partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			expect(await mockTarget.lastValue()).to.equal(123n)
+		})
+
+		it("reverts when target is not whitelisted", async () => {
+			// target must be explicitly whitelisted
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			const unlisted = await MockInstantTarget.deploy()
+			const op = buildTargetOp(await unlisted.getAddress(), partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig]))
+				.to.be.revertedWithCustomError(context.instantLayer, "UnwhitelistedTarget")
+				.withArgs(await unlisted.getAddress())
+		})
+
+		it("bubbles target revert inside OperationFailed", async () => {
+			// revert from target should handle by instant layer
+			await mockTarget.setShouldRevert(true, "xxx")
+			const op = buildTargetOp(targetAddress, partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig]))
+				.to.be.revertedWithCustomError(context.instantLayer, "OperationFailed")
+				.withArgs(0, anyValue)
+		})
+	})
 }
 function now() {
 	throw new Error("Function not implemented.")
