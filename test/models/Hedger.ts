@@ -1,21 +1,21 @@
-import {setBalance} from "@nomicfoundation/hardhat-network-helpers"
-import {BigNumberish, ethers} from "ethers"
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
+import { setBalance } from "@nomicfoundation/hardhat-network-helpers"
+import { BigNumberish, ethers } from "ethers"
 
-import {decimal, serializeToJson, unDecimal} from "../utils/Common"
-import {logger} from "../utils/LoggerUtils"
-import {getPrice} from "../utils/PriceUtils"
-import {getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlSig} from "../utils/SignatureUtils"
-import {PositionType} from "./Enums"
-import {RunContext} from "./RunContext"
-import {EmergencyCloseRequest, emergencyCloseRequestBuilder} from "./requestModels/EmergencyCloseRequest"
-import {FillCloseRequest, limitFillCloseRequestBuilder} from "./requestModels/FillCloseRequest"
-import {limitOpenRequestBuilder, OpenRequest} from "./requestModels/OpenRequest"
-import {runTx} from "../utils/TxUtils"
-import {PairUpnlSigStructOutput} from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
-import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
-import {QuoteStructOutput, SingleUpnlSigStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
-import {SettlementSigStructOutput} from "../../src/types/contracts/facets/Settlement/SettlementFacet"
+import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
+import { SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/SettlementFacet"
+import { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/contracts/interfaces/ISymmio"
+import { decimal, serializeToJson, unDecimal } from "../utils/Common"
+import { logger } from "../utils/LoggerUtils"
+import { getPrice } from "../utils/PriceUtils"
+import { getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
+import { runTx } from "../utils/TxUtils"
+import { PositionType } from "./Enums"
+import { RunContext } from "./RunContext"
 import { PartyEntity } from "./partyEntitiy"
+import { EmergencyCloseRequest, emergencyCloseRequestBuilder } from "./requestModels/EmergencyCloseRequest"
+import { FillCloseRequest, limitFillCloseRequestBuilder } from "./requestModels/FillCloseRequest"
+import { limitOpenRequestBuilder, OpenRequest } from "./requestModels/OpenRequest"
 
 export class Hedger extends PartyEntity {
 	constructor(context: RunContext, signer: SignerWithAddress) {
@@ -46,7 +46,14 @@ export class Hedger extends PartyEntity {
 		if (allocateCoefficient != null) {
 			const quote = await this.context.viewFacetQuote.getQuote(id)
 			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
-			await runTx(this.context.accountFacet.connect(this.signer).allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA))
+			await runTx(
+				this.context.accountFacet
+					.connect(this.signer)
+					.allocateForPartyB(
+						unDecimal(notional * BigInt(allocateCoefficient)),
+						await this.context.viewFacet.isInMasterAccountMode(this.address) ? ethers.ZeroAddress : quote.partyA,
+					),
+			)
 		}
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).lockQuote(id, await getDummySingleUpnlSig(upnl)))
 	}

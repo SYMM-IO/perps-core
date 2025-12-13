@@ -7,13 +7,12 @@ pragma solidity >=0.8.18;
 import "../storages/MAStorage.sol";
 import "../storages/AccountStorage.sol";
 import "../storages/QuoteStorage.sol";
+import "../storages/SymbolStorage.sol";
 import "./LibQuoteClose.sol";
 import "./LibAccount.sol";
 import "./LibSolvency.sol";
 import "./muon/LibMuonForceActions.sol";
 import "./LibLiquidation.sol";
-
-import "../facets/ForceActions/IForceActionsFacet.sol";
 
 library LibForceActions {
 	function verifyAndGetClosePrice(uint256 quoteId, HighLowPriceSig memory sig) internal view returns (uint256 closePrice) {
@@ -26,11 +25,17 @@ library LibForceActions {
 		uint256 sigAveragePrice = sig.averagePrice;
 
 		if (positionType == PositionType.LONG) {
-			require (sig.highest >= requestedClosePrice + (requestedClosePrice * forceCloseGapRatio) / 1e18, "PartyAFacet: Requested close price not reached");
+			require(
+				sig.highest >= requestedClosePrice + (requestedClosePrice * forceCloseGapRatio) / 1e18,
+				"PartyAFacet: Requested close price not reached"
+			);
 			closePrice = requestedClosePrice + (requestedClosePrice * forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sigAveragePrice ? closePrice : sigAveragePrice;
 		} else {
-			require (sig.lowest <= requestedClosePrice - (requestedClosePrice * forceCloseGapRatio) / 1e18, "PartyAFacet: Requested close price not reached");
+			require(
+				sig.lowest <= requestedClosePrice - (requestedClosePrice * forceCloseGapRatio) / 1e18,
+				"PartyAFacet: Requested close price not reached"
+			);
 			closePrice = requestedClosePrice - (requestedClosePrice * forceClosePricePenalty) / 1e18;
 			closePrice = closePrice > sigAveragePrice ? sigAveragePrice : closePrice;
 		}
@@ -45,8 +50,8 @@ library LibForceActions {
 		uint256 quoteId,
 		uint256 closePrice,
 		uint256 reservedBalance,
-		int256 sig_upnlPartyB,
-		uint256 sig_currentPrice
+		int256 sigUpnlPartyB,
+		uint256 sigCurrentPrice
 	) internal returns (int256 upnlPartyB) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
@@ -56,11 +61,13 @@ library LibForceActions {
 		accountLayout.reserveVault[quote.partyB] = 0;
 		accountLayout.partyBAllocatedBalances[partyB][partyA] += reservedBalance;
 		emit SharedEvents.BalanceChangePartyB(partyB, partyA, reservedBalance, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-		int256 diff = (int256(quote.quantityToClose) * (int256(closePrice) - int256(sig_currentPrice))) / 1e18;
+
+		// diff = PnL increment for partyB from moving currentPrice -> closePrice
+		int256 diff = (int256(quote.quantityToClose) * (int256(closePrice) - int256(sigCurrentPrice))) / 1e18;
 		if (quote.positionType == PositionType.LONG) {
 			diff = diff * -1;
 		}
-		upnlPartyB = sig_upnlPartyB + diff;
+		upnlPartyB = sigUpnlPartyB + diff;
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlPartyB, block.timestamp);
 	}
 
@@ -72,9 +79,9 @@ library LibForceActions {
 
 		require(quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyAFacet: Invalid state");
 
-		require(highLowPrice.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline, "PartyBFacet: Close request is expired");
+		require(highLowPrice.endTime + maLayout.forceCloseSecondCooldown <= quote.deadline, "PartyAFacet: Close request is expired");
 
-		require(quote.orderType == OrderType.LIMIT, "PartyBFacet: Quote's order type should be LIMIT");
+		require(quote.orderType == OrderType.LIMIT, "PartyAFacet: Quote's order type should be LIMIT");
 
 		require(highLowPrice.startTime >= quote.statusModifyTimestamp + maLayout.forceCloseFirstCooldown, "PartyAFacet: Cooldown not reached");
 
@@ -117,13 +124,7 @@ library LibForceActions {
 		);
 	}
 
-	function solveUsingAllocatedBalances(
-		uint256 quoteId,
-		uint256 closePrice,
-		int256 partyBAvailableBalance,
-		uint256 reservedBalance,
-		bool isMasterAccount
-	) internal returns (bool solved) {
+	function closeQuote(uint256 quoteId, uint256 closePrice, int256 partyBAvailableBalance, uint256 reservedBalance) internal returns (bool succeed) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		address partyA = quote.partyA;
@@ -131,15 +132,11 @@ library LibForceActions {
 
 		if (partyBAvailableBalance >= 0) {
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
-			solved = true;
+			succeed = true;
 		} else if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
 			uint256 available = uint256(-partyBAvailableBalance);
 
-			if (isMasterAccount) {
-				accountLayout.partyBAllocatedBalances[partyB][address(0)] -= available;
-			} else {
-				accountLayout.reserveVault[partyB] -= available;
-			}
+			accountLayout.reserveVault[partyB] -= available;
 
 			accountLayout.partyBAllocatedBalances[partyB][partyA] += available;
 			emit SharedEvents.BalanceChangePartyB(partyB, partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
@@ -147,7 +144,7 @@ library LibForceActions {
 			accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
 
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
-			solved = true;
+			succeed = true;
 		}
 	}
 }

@@ -184,8 +184,9 @@ library LibAccount {
 	function partyBAllocationBucket(address partyB, address partyA) internal view returns (address bucket) {
 		if (AccountStorage.layout().masterAccountMode[partyB]) {
 			bucket = address(0);
+		} else {
+			bucket = partyA;
 		}
-		bucket = partyA;
 	}
 
 	/**
@@ -202,5 +203,13 @@ library LibAccount {
 	 */
 	function partyBPendingLockedBalances(Quote storage quote) internal view returns (LockedValues storage) {
 		return AccountStorage.layout().partyBPendingLockedBalances[quote.partyB][partyBAllocationBucket(quote.partyB, quote.partyA)];
+	}
+
+	/**
+	 * @notice returns allocated balances for Party B in any mode
+	 * @param quote The quote for which to return the allocated balance.
+	 */
+	function getPartyBAllocatedBalances(Quote storage quote) internal view returns (uint256) {
+		return AccountStorage.layout().partyBAllocatedBalances[quote.partyB][partyBAllocationBucket(quote.partyB, quote.partyA)];
 	}
 }

@@ -1,5 +1,5 @@
 import { expect } from "chai"
-import { QuoteStructOutput } from "../../../src/types/contracts/interfaces/ISymmio"
+
 import { decimal, getBlockTimestamp, getCloseTradingFeeForQuotes, unDecimal } from "../../utils/Common"
 import { logger } from "../../utils/LoggerUtils"
 import { expectToBeApproximately } from "../../utils/SafeMath"
@@ -8,6 +8,7 @@ import { Hedger } from "../Hedger"
 import { RunContext } from "../RunContext"
 import { BalanceInfo, User } from "../User"
 import { TransactionValidator } from "./TransactionValidator"
+import { QuoteStructOutput } from "../../../src/types/contracts/interfaces/ISymmio"
 
 export type ForceClosePositionValidatorBeforeArg = {
 	user: User
@@ -104,13 +105,11 @@ export class ForceClosePositionValidator implements TransactionValidator {
 
 		expect(newBalanceInfoPartyA.totalPendingLockedPartyA.toString()).to.equal(oldBalanceInfoPartyA.totalPendingLockedPartyA.toString())
 
-
 		expect(BigInt(newBalanceInfoPartyA.allocatedBalances)).to.be.approximately(
 			BigInt(oldBalanceInfoPartyA.allocatedBalances) - (await getCloseTradingFeeForQuotes(context, [arg.quoteId])) + profit,
 			newBalanceInfoPartyA.allocatedBalances / 1000n,
 		)
 
-		
 		// check partyB liquidation
 		if (isPartyBLiquidated) {
 			const partyBBalanceInfo = await arg.hedger.getBalanceInfo(await arg.user.getAddress())

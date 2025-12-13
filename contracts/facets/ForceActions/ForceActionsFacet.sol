@@ -9,6 +9,7 @@ import "../../utils/Pausable.sol";
 import "../../interfaces/IPartiesEvents.sol";
 import "./IForceActionsFacet.sol";
 import "./ForceActionsFacetImpl.sol";
+import "../../facets/Settlement/SettlementFacetEvents.sol";
 
 contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceActionsFacet, SettlementFacetEvents {
 	/**
@@ -27,30 +28,6 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	function forceCancelCloseRequest(uint256 quoteId) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		ForceActionsFacetImpl.forceCancelCloseRequest(quoteId);
 		emit ForceCancelCloseRequest(quoteId, QuoteStatus.OPENED, QuoteStorage.layout().closeIds[quoteId]);
-	}
-
-	function forceClose(uint256 quoteId, HighLowPriceSig memory highLowPriceSig) private {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote memory quote = quoteLayout.quotes[quoteId];
-		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
-		address partyA = quote.partyA;
-		address partyB = quote.partyB;
-
-		(uint256 closePrice, int256 upnlPartyB, bool isPartyBLiquidated) = ForceActionsFacetImpl.forceClose(quoteId, highLowPriceSig);
-		if (!isPartyBLiquidated) {
-			emit ForceClosePosition(
-				quoteId,
-				quote.partyA,
-				quote.partyB,
-				quote.quantityToClose,
-				closePrice,
-				quote.quoteStatus,
-				quoteLayout.closeIds[quoteId]
-			);
-		} else {
-			newPartyBsAllocatedBalances[0] = AccountStorage.layout().partyBAllocatedBalances[quote.partyB][partyA];
-			emit LiquidatePartyB(msg.sender, partyB, partyA, newPartyBsAllocatedBalances[0], upnlPartyB);
-		}
 	}
 
 	/**
@@ -97,20 +74,19 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	function initializeMasterAccountForceClose(
 		uint256 quoteId,
 		HighLowPriceSig memory sig
-	) external notLiquidated(quoteId) whenNotPartyAActionsPaused returns (uint256 forceCloseId) {
-		forceCloseId = ForceActionsFacetImpl.forceCloseMasterAccountInit(quoteId, sig);
-		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, forceCloseId, sig.timestamp);
+	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
+		forceCloseInit(quoteId, sig);
 	}
 
 	function settleUpnlMasterAccount(
-		uint256 forceCloseId,
+		uint256 quoteId,
 		MasterAccountSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
 	) external whenNotPartyAActionsPaused {
 		address partyB = settlementSig.partyB;
 
 		(uint256[] memory _newPartyAsAllocatedBalances, address[] memory _partyAs) = ForceActionsFacetImpl.settleUpnlMasterAccount(
-			forceCloseId,
+			quoteId,
 			settlementSig,
 			updatedPrices
 		);
@@ -123,24 +99,73 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 			_partyAs,
 			_newPartyAsAllocatedBalances,
 			AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)],
-			forceCloseId
+			quoteId
 		);
 	}
 
-	function finalizeMasterAccountForceClose(uint256 forceCloseId) external {
-		Quote storage quote = QuoteStorage.layout().quotes[forceCloseId];
+	function finalizeMasterAccountForceClose(uint256 quoteId) external {
+		forceCloseFinalize(quoteId);
+	}
 
-		ForceActionsFacetImpl.finalizeMasterAccountForceClose(forceCloseId);
+	function ForceCloseAndSettlePositionsMasterAccount(
+		uint256 quoteId,
+		HighLowPriceSig memory sig
+	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
+		forceCloseInit(quoteId, sig);
+		forceCloseFinalize(quoteId);
+	}
+
+	/* private	 functions */
+
+	/* description: initiates the force close process for a master account mode party B */
+	// @param		quoteId  The ID of the quote for which the position should be forced to close.
+	// @param		sig  The Muon signature.	
+	function forceCloseInit(uint256 quoteId, HighLowPriceSig memory sig) private {
+		uint256 closePrice = ForceActionsFacetImpl.forceCloseMasterAccountInit(quoteId, sig);
+		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, closePrice, sig.timestamp);
+	}
+
+	/* description: finalizes the force close process for a master account mode party B */
+	// @param		quoteId  The ID of the quote for which the position should be forced to close.
+	function forceCloseFinalize(uint256 quoteId) private {
+		bool succeed = ForceActionsFacetImpl.finalizeMasterAccountForceClose(quoteId);
+		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
 		emit ForceClosePositionMasterAccount(
-			forceCloseId,
+			quoteId,
 			quote.partyA,
 			quote.partyB,
 			quote.quantityToClose,
-			AccountStorage.layout().forceCloseDetails[forceCloseId].closePrice,
+			AccountStorage.layout().forceCloseDetails[quoteId].closePrice,
 			quote.quoteStatus,
-			QuoteStorage.layout().closeIds[forceCloseId]
+			QuoteStorage.layout().closeIds[quoteId],
+			succeed
 		);
 	}
 
-	// function forceClosePosition(uint256 quoteId, HighLowPriceSig memory sig) external notLiquidated(quoteId) whenNotPartyAActionsPaused {}
+	/* description: forces the closure of the position associated with the specified quote */
+	// @param		quoteId  The ID of the quote for which the position should be forced to close.
+	// @param		sig  The Muon signature.
+	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) private {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		Quote memory quote = quoteLayout.quotes[quoteId];
+		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
+		address partyA = quote.partyA;
+		address partyB = quote.partyB;
+
+		(uint256 closePrice, int256 upnlPartyB, bool succeed) = ForceActionsFacetImpl.forceClose(quoteId, sig);
+		if (succeed) {
+			emit ForceClosePosition(
+				quoteId,
+				quote.partyA,
+				quote.partyB,
+				quote.quantityToClose,
+				closePrice,
+				QuoteStorage.layout().quotes[quoteId].quoteStatus,
+				quoteLayout.closeIds[quoteId]
+			);
+		} else {
+			newPartyBsAllocatedBalances[0] = AccountStorage.layout().partyBAllocatedBalances[quote.partyB][partyA];
+			emit LiquidatePartyB(msg.sender, partyB, partyA, newPartyBsAllocatedBalances[0], upnlPartyB);
+		}
+	}
 }

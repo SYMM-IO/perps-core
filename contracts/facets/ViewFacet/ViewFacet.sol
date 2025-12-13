@@ -17,7 +17,6 @@ import "../../storages/MuonStorage.sol";
 import "../../storages/BridgeStorage.sol";
 import "../../libraries/LibAccessibility.sol";
 import "./IViewFacet.sol";
-
 contract ViewFacet is IViewFacet {
 	using LockedValuesOps for LockedValues;
 
@@ -125,7 +124,7 @@ contract ViewFacet is IViewFacet {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address allocationBucket = LibAccount.partyBAllocationBucket(partyB, partyA);
 		return (
-			accountLayout.partyBAllocatedBalances[partyB][partyA],
+			accountLayout.partyBAllocatedBalances[partyB][allocationBucket],
 			accountLayout.partyBLockedBalances[partyB][allocationBucket].cva,
 			accountLayout.partyBLockedBalances[partyB][allocationBucket].lf,
 			accountLayout.partyBLockedBalances[partyB][allocationBucket].partyAmm,
@@ -154,6 +153,15 @@ contract ViewFacet is IViewFacet {
 	 */
 	function allocatedBalanceOfPartyB(address partyB, address partyA) external view returns (uint256) {
 		return AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
+	}
+
+	/**
+	 * @notice Returns the allocated balance of Party B for a specific Party A.
+	 * @param partyB The address of Party B.
+	 * @return The allocated balance of Party B for Party A.
+	 */
+	function allocatedBalanceOfPartyBInMasterAccount(address partyB) external view returns (uint256) {
+		return AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)];
 	}
 
 	/**
@@ -412,7 +420,7 @@ contract ViewFacet is IViewFacet {
 	 * @param forceCloseId The ID of force close
 	 * @return  forceCloseStruct The force close structure
 	 */
-	function getForceCloseStruct(uint256 forceCloseId) external view returns (ForceCloseDetail memory forceCloseStruct) {
+	function forceCloseDetails(uint256 forceCloseId) external view returns (ForceCloseDetail memory forceCloseStruct) {
 		forceCloseStruct = AccountStorage.layout().forceCloseDetails[forceCloseId];
 	}
 

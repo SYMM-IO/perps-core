@@ -26,6 +26,7 @@ library LibQuoteClose {
 	 * @param closedPrice The price at which the quote is closed.
 	 */
 	function closeQuote(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) public {
+		
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
@@ -73,12 +74,12 @@ library LibQuoteClose {
 
 		if (hasMadeProfit) {
 			require(
-				accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] >= pnl,
+				LibAccount.getPartyBAllocatedBalances(quote) >= pnl,
 				"LibQuote: PartyA should first exit its positions that are incurring losses"
 			);
 			accountLayout.allocatedBalances[quote.partyA] += pnl;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] -= pnl;
+			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationBucket(quote.partyB,quote.partyA)] -= pnl;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		} else {
 			require(
@@ -87,7 +88,7 @@ library LibQuoteClose {
 			);
 			accountLayout.allocatedBalances[quote.partyA] -= pnl;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += pnl;
+			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationBucket(quote.partyB,quote.partyA)] += pnl;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 

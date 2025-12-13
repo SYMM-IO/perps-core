@@ -76,11 +76,24 @@ export enum WithdrawStatus {
 	COMPLETED,
 	CANCEL_REQUESTED,
 	CANCELLED,
-	SUSPENDED
+	SUSPENDED,
 }
 
 export enum ExternalTransferStatus {
 	PENDING,
 	COMPLETED,
-	CANCELED
+	CANCELED,
+}
+
+export enum UPNLSettlementState {
+	NONE,
+	REALIZED,
+	REALIZED_MASTER_ACCOUNT,
+}
+
+export enum PartyBForceCloseState {
+	NONE,
+	INSOLVENT,
+	SOLVED,
+	LIQUIDATED,
 }

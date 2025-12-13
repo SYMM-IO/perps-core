@@ -7,96 +7,86 @@ pragma solidity >=0.8.18;
 import "./ForceActionsFacetEvents.sol";
 
 /// @title ForceActionsFacet Interface
-/// @notice Exposes PartyA-driven “force actions” for quotes and positions when
-///         PartyB is unresponsive or subject to liquidation logic.
-/// @dev The implementation lives in ForceActionsFacet + ForceActionsFacetImpl.
+/// @notice Defines the user-side (PartyA) force-action workflows that apply when
+///         PartyB becomes unresponsive or when solvency logic requires the system
+///         to close or cancel quotes/positions.
+/// @dev The logic is implemented in ForceActionsFacet + ForceActionsFacetImpl.
 
 interface IForceActionsFacet is ForceActionsFacetEvents {
 	/**
-	 * @notice Forces the cancellation of a quote when PartyB is not responsive
-	 *         for at least the configured forceCancelCooldown.
+	 * @notice Force-cancels a quote when PartyB is unresponsive past the
+	 *         forceCancelCooldown.
 	 *
-	 * @dev
-	 * - Only applicable to quotes in CANCEL_PENDING state.
-	 * - Checks:
-	 *   - quote.quoteStatus == QuoteStatus.CANCEL_PENDING
-	 *   - block.timestamp > quote.statusModifyTimestamp + forceCancelCooldown
-	 * - Effects:
-	 *   - Sets quote.quoteStatus = QuoteStatus.CANCELED.
-	 *   - Updates statusModifyTimestamp.
-	 *   - Releases pending locked balances for PartyA and PartyB.
-	 *   - Refunds the open trading fee to PartyA’s allocated balance.
-	 *   - Removes the quote from pending quotes.
+	 * @dev Requirements:
+	 * - Quote must be in CANCEL_PENDING state.
+	 * - Current time must exceed:
+	 *     quote.statusModifyTimestamp + forceCancelCooldown
 	 *
-	 * @param quoteId The ID of the quote to be forcibly canceled.
+	 * Effects:
+	 * - Sets quoteStatus = CANCELED.
+	 * - Updates statusModifyTimestamp.
+	 * - Releases PartyA and PartyB pending locked balances.
+	 * - Returns the open-trading fee to PartyA’s allocated balance.
+	 * - Removes the quote from the pending-quotes list.
+	 *
+	 * @param quoteId The ID of the quote to cancel.
 	 */
 	function forceCancelQuote(uint256 quoteId) external;
 
 	/**
-	 * @notice Forces the cancellation of a close request on a quote when PartyB
-	 *         is not responsive for at least the configured
-	 *         forceCancelCloseCooldown.
+	 * @notice Force-cancels a pending close request when PartyB is unresponsive
+	 *         past the forceCancelCloseCooldown.
 	 *
-	 * @dev
-	 * - Only applicable to quotes in CANCEL_CLOSE_PENDING state.
-	 * - Checks:
-	 *   - quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING
-	 *   - block.timestamp > quote.statusModifyTimestamp + forceCancelCloseCooldown
-	 * - Effects:
-	 *   - Sets quote.quoteStatus = QuoteStatus.OPENED.
-	 *   - Resets requestedClosePrice and quantityToClose to zero.
+	 * @dev Requirements:
+	 * - Quote must be in CANCEL_CLOSE_PENDING.
+	 * - Current time must exceed:
+	 *     quote.statusModifyTimestamp + forceCancelCloseCooldown
 	 *
-	 * @param quoteId The ID of the quote whose close request will be canceled.
+	 * Effects:
+	 * - Sets quoteStatus = OPENED.
+	 * - Resets requestedClosePrice and quantityToClose.
+	 *
+	 * @param quoteId The ID of the quote whose close request should be canceled.
 	 */
 	function forceCancelCloseRequest(uint256 quoteId) external;
 
 	/**
-	 * @notice Forces the closure of the open position associated with a quote
-	 *         when off-chain conditions and Muon price data justify a force close.
+	 * @notice Forces the closure of an open position when Muon high-/low-price
+	 *         data validates a force-close condition.
 	 *
-	 * @dev
-	 * - Only valid in “normal” mode (non-master-account). Reverts if
-	 *   masterAccountMode[partyB] == true.
-	 * - Uses the Muon high/low price signature to:
-	 *   - Verify the price band for the quote (verifyPrice).
-	 *   - Compute a valid closePrice within that band
-	 *     (verifyAndGetClosePrice).
-	 * - Computes post-close available balances using:
-	 *   LibForceActions.getAvailableBalancesAfterClose.
-	 *   If PartyA’s available balance would be negative, it reverts:
-	 *   ForceCloseErrors.PartyAWillBeInsolvent().
-	 * - Attempts to solve the close from PartyB’s allocated + reserved
-	 *   balances via solveUsingAllocatedBalances.
-	 * - If not solvent, liquidates PartyB for this quote using
-	 *   LibForceActions.liquidatePartyB.
+	 * @dev Valid only in normal mode (PartyB must NOT be in master-account mode).
 	 *
-	 * @param quoteId The ID of the quote whose position will be forcibly closed.
-	 * @param sig Muon high/low price signature and uPNL data for PartyA/PartyB.
+	 * Flow:
+	 * - verifyPrice(sig) checks Muon price band for safety.
+	 * - closePrice = verifyAndGetClosePrice(sig) computes a valid execution price.
+	 * - getAvailableBalancesAfterClose calculates the resulting balances if closed.
+	 *   Reverts if PartyA would become insolvent.
+	 * - solveUsingAllocatedBalances attempts to settle using PartyB’s allocated
+	 *   + reserved balances.
+	 * - If insufficient, PartyB is liquidated for this quote.
+	 *
+	 * @param quoteId The ID of the quote whose position is being forcibly closed.
+	 * @param sig Muon price band signature + uPNL information.
 	 */
 	function forceClosePosition(uint256 quoteId, HighLowPriceSig memory sig) external;
 
 	/**
-	 * @notice First realizes PnL via settlement, then forces the closure of
-	 *         the position associated with the specified quote in normal mode.
+	 * @notice Realizes PnL via settlement, then performs a force-close on the
+	 *         corresponding quote.
 	 *
-	 * @dev
-	 * 1. Settlement phase:
-	 *    - Verifies settleSig via Muon:
-	 *      LibMuonSettlement.verifySettlement(settleSig, partyA).
-	 *    - Realizes uPNL and updates balances via:
-	 *      LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, true).
-	 *    - Marks forceCloseDetails[quoteId].settlementState as
-	 *      UPNLSettlementState.REALIZED.
+	 * @dev Phase 1 — Settlement:
+	 * - Verifies settlementSig via LibMuonSettlement.verifySettlement.
+	 * - Realizes uPNL and updates balances using LibSettlement.settleUpnl.
+	 * - Marks settlementState = UPNLSettlementState.REALIZED.
 	 *
-	 * 2. Force-close phase:
-	 *    - Delegates to the same logic as forceClosePosition, using sig.
-	 *    - Applies full force-close flow and potential PartyB liquidation.
+	 * Phase 2 — Force Close:
+	 * - Executes the same rules and logic as forceClosePosition().
+	 * - May liquidate PartyB if insolvent.
 	 *
-	 * @param quoteId The ID of the quote to settle and then forcibly close.
-	 * @param sig Muon high/low price signature used for the force-close phase.
-	 * @param settleSig Settlement data including quoteIds, uPNLs and prices.
-	 * @param updatedPrices New prices to be used for settlement of the given
-	 *                      quotes in settleSig.
+	 * @param quoteId The quote to settle and then force-close.
+	 * @param sig High/low price data used during the force-close phase.
+	 * @param settleSig Settlement details including uPNLs and price snapshots.
+	 * @param updatedPrices Prices applied during the settlement step.
 	 */
 	function settleAndForceClosePosition(
 		uint256 quoteId,
@@ -106,60 +96,50 @@ interface IForceActionsFacet is ForceActionsFacetEvents {
 	) external;
 
 	/**
-	 * @notice Initializes a force-close flow for a quote where PartyB operates
-	 *         in master account mode. This prepares the system to later settle
-	 *         master-account uPNL and finalize the force close.
+	 * @notice Begins a force-close workflow for a quote owned by a PartyB that
+	 *         operates in master-account mode.
 	 *
-	 * @dev
-	 * - Only valid when masterAccountMode[partyB] == true. Otherwise:
-	 *   ForceCloseErrors.MasterAccountModeInactive().
-	 * - Uses Muon high/low price signature to:
-	 *   - Validate price band (verifyPrice).
-	 *   - Determine closePrice (verifyAndGetClosePrice).
-	 * - Computes post-close available balances:
-	 *   LibForceActions.getAvailableBalancesAfterClose.
-	 *   If PartyA’s available balance would be negative, reverts:
-	 *   ForceCloseErrors.PartyAWillBeInsolvent().
-	 * - Stores a ForceCloseDetail for quoteId:
+	 * @dev Requirements:
+	 * - masterAccountMode[partyB] must be true.
+	 *
+	 * Flow:
+	 * - verifyPrice(sig) validates the Muon price band.
+	 * - closePrice = verifyAndGetClosePrice(sig) determines the execution price.
+	 * - getAvailableBalancesAfterClose computes solvency after close.
+	 *   Reverts if PartyA would become insolvent.
+	 *
+	 * Effects:
+	 * - Saves ForceCloseDetail:
 	 *   - timestamp
 	 *   - partyBAvailableAfterClose
 	 *   - closePrice
 	 *   - inProgress = true
 	 *
-	 * @param quoteId The ID of the quote whose position is being prepared for
-	 *                force close under master account mode.
-	 * @param sig Muon high/low price signature and uPNL data.
-	 * @return forceCloseId The identifier used for subsequent master-account
-	 *                       settlement and finalization. In practice this maps
-	 *                       to the same key used in forceCloseDetails.
+	 * @param quoteId The quote to prepare for force-close.
+	 * @param sig Muon price band + uPNL information.
 	 */
-	function initializeMasterAccountForceClose(
-		uint256 quoteId,
-		HighLowPriceSig memory sig
-	) external returns (uint256 forceCloseId);
+	function initializeMasterAccountForceClose(uint256 quoteId, HighLowPriceSig memory sig)
+		external;
 
 	/**
-	 * @notice Realizes uPNL for all relevant PartyA accounts as part of a
-	 *         master account force-close flow.
+	 * @notice Realizes uPNL for all PartyA accounts connected to a master-account
+	 *         force-close workflow.
 	 *
-	 * @dev
-	 * - Requires that a force-close flow for forceCloseId is already in
-	 *   progress (initialized via initializeMasterAccountForceClose).
-	 *   If not:
-	 *   ForceCloseErrors.InvalidState().
-	 * - Verifies the master-account settlement signature via:
-	 *   LibMuonCrossSettlement.verifyMasterAccountSettlement(settlementSig).
-	 * - Realizes uPNL and updates per-PartyA allocated balances via:
-	 *   LibSettlement.settleUpnlMasterAccount(settlementSig, updatedPrices, true).
-	 * - Updates forceCloseDetails[forceCloseId]:
-	 *   - settlementState = UPNLSettlementState.REALIZED_MASTER_ACCOUNT
-	 *   - timestamp = block.timestamp
+	 * @dev Requirements:
+	 * - The workflow must already be initialized (inProgress = true).
 	 *
-	 * @param forceCloseId The identifier of the master-account force-close flow,
-	 *                     as returned by initializeMasterAccountForceClose.
-	 * @param settlementSig Settlement data for master account, including per-PartyA
-	 *                      uPNLs and quote pricing.
-	 * @param updatedPrices New prices to be applied for the quotes in settlementSig.
+	 * Flow:
+	 * - verifyMasterAccountSettlement(settlementSig) validates Muon signature.
+	 * - settleUpnlMasterAccount(...) realizes per-PartyA uPNLs and updates
+	 *   allocated balances.
+	 *
+	 * Effects:
+	 * - Updates settlementState = UPNLSettlementState.REALIZED_MASTER_ACCOUNT.
+	 * - Updates timestamp.
+	 *
+	 * @param forceCloseId Same as quoteId for the force-close workflow.
+	 * @param settlementSig Master-account settlement data (uPNLs + pricing).
+	 * @param updatedPrices Prices applied during master-account settlement.
 	 */
 	function settleUpnlMasterAccount(
 		uint256 forceCloseId,
@@ -168,81 +148,24 @@ interface IForceActionsFacet is ForceActionsFacetEvents {
 	) external;
 
 	/**
-	 * @notice Finalizes a master account force-close flow after the corresponding
-	 *         master-account uPNL has been realized.
+	 * @notice Finalizes a master-account force-close after its uPNL settlement
+	 *         has been completed.
 	 *
-	 * @dev
-	 * - Only valid when masterAccountMode[partyB] == true for the PartyB of
-	 *   the quote identified by forceCloseId. Otherwise:
-	 *   ForceCloseErrors.MasterAccountModeInactive().
-	 * - Reads ForceCloseDetail for forceCloseId and calls the internal
-	 *   _forceClose with:
-	 *   - the stored closePrice
+	 * @dev Requirements:
+	 * - masterAccountMode[partyB] must still be true.
+	 *
+	 * Flow:
+	 * - Reads ForceCloseDetail for forceCloseId.
+	 * - Calls internal force-close execution using:
+	 *   - stored closePrice
 	 *   - partyBAvailableAfterClose
-	 *   - PartyB’s allocated balance at address(0) (master account bucket)
-	 *   - zero uPNL inputs (liquidation path is disabled in master-account mode)
-	 *   - isMasterAccount = true
-	 * - Marks the force-close as solved or leaves it marked according to
-	 *   _forceClose result.
+	 *   - PartyB’s master-account allocated balance (address(0))
+	 *   - zero uPNL inputs (no liquidation path in master-account mode)
 	 *
-	 * @param forceCloseId The identifier of the master-account force-close flow
-	 *                     to finalize.
+	 * Effects:
+	 * - Marks the workflow as solved or insolvent based on outcome.
+	 *
+	 * @param forceCloseId Same as quoteId for the force-close workflow.
 	 */
 	function finalizeMasterAccountForceClose(uint256 forceCloseId) external;
-}
-
-/// @notice Shared custom errors for the ForceActions facet and its libraries.
-/// @dev These are defined in a separate library so they can be imported and
-///      reused by multiple facets / libraries without circular dependencies.
-library ForceCloseErrors {
-	// -----------------------------------------------------------------------------
-	// Custom errors
-	// -----------------------------------------------------------------------------
-
-	/// @notice Thrown when a quote or force-close detail is in an invalid state
-	///         for the attempted action (e.g., wrong quoteStatus, or the
-	///         force-close flow is not marked as in-progress).
-	error InvalidState();
-
-	/// @notice Thrown when a cooldown period has not yet elapsed.
-	/// Covers checks related to:
-	/// - forceCancelCooldown
-	/// - forceCancelCloseCooldown
-	error CooldownNotReached();
-
-	/// @notice Thrown when a force close request has exceeded its allowed time
-	///         window and is considered expired.
-	error CloseRequestExpired();
-
-	/// @notice Thrown when a quote's order type is not LIMIT as required by
-	///         the force-close logic.
-	error InvalidOrderType();
-
-	/// @notice Thrown when the supplied average price is outside the permitted
-	///         high/low bounds encoded in the Muon signature.
-	error InvalidAveragePrice();
-
-	/// @notice Thrown when the requested close price has not been reached within
-	///         the required gap ratio threshold derived from risk parameters.
-	error RequestedClosePriceNotReached();
-
-	/// @notice Thrown when the signature period for a force close is too short,
-	///         i.e. the high/low time window does not satisfy configured limits.
-	error InvalidSignaturePeriod();
-
-	/// @notice Thrown when applying the force-close would make PartyA’s available
-	///         balance negative (i.e. PartyA would become insolvent).
-	error PartyAWillBeInsolvent();
-
-	/// @notice Thrown when an action that requires PartyB to be in master account
-	///         mode is called while masterAccountMode[partyB] == false.
-	error MasterAccountModeInactive();
-
-	/// @notice Thrown when an action references a quote that does not belong to
-	///         the expected PartyB or otherwise fails identity validation.
-	error InvalidQuote();
-
-	/// @notice Thrown when an action that is only valid in normal mode is called
-	///         while PartyB’s masterAccountMode is enabled.
-	error MasterAccountModeEnabled();
 }

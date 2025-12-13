@@ -10,8 +10,8 @@ import { decimal } from "./utils/Common"
 import { getDummyCrossLiquidationSig, getDummyPriceSig } from "./utils/SignatureUtils"
 import { ethers } from "hardhat"
 import { toUtf8Bytes, ZeroAddress } from "ethers"
-import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
 
 export function shouldBehaveLikeClearingHouseFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
