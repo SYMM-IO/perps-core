@@ -16,7 +16,6 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
-import "./interfaces/IAccountManager.sol";
 
 /**
  * @title AccountHub
