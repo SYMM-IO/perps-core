@@ -16,6 +16,7 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	"ForceActionsFacet": ["LibQuoteClose"],
 	"ViewFacetSymbol": ["LibQuoteFunding"],
 	"FundingRateFacet": ["LibQuoteFunding"],
+	"LiquidationFacet": ["LibQuoteFunding"]
 }
 
 task("deploy:diamond", "Deploys the Diamond contract")

@@ -1,4 +1,4 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture"
@@ -56,6 +56,12 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		// Quote5 -> locked
 		await user.sendQuote()
 		await hedger.lockQuote(5)
+
+		await context.pauseControlFacet.enableNewFundingFee()
+		await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [500])
+		await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+		console.log("Funding Fee Amount : ", await context.viewFacetSymbol.getFundingFeesOfPartyB(1,hedger.address))
+
 	})
 
 	const expectConnected = async (partyA: string, partyB: string, expected: boolean) => {

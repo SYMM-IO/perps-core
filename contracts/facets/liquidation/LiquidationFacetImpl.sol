@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../libraries/muon/LibMuonLiquidation.sol";
 import "../../libraries/LibAccount.sol";
 import "../../libraries/LibQuote.sol";
+import "../../libraries/LibQuoteFunding.sol";
 import "../../libraries/LibLiquidation.sol";
 import "../../libraries/LibConnections.sol";
 import "../../libraries/SharedEvents.sol";
@@ -15,6 +16,7 @@ import "../../storages/QuoteStorage.sol";
 import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../interfaces/ISymmioHook.sol";
+
 
 library LiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -220,6 +222,9 @@ library LiquidationFacetImpl {
 			quoteLayout.partyAPositionsCount[partyA] -= 1;
 			quoteLayout.partyBPositionsCount[quote.partyB][partyA] -= 1;
 			quoteLayout.partyBPositionsCount[quote.partyB][address(0)] -= 1;
+
+			int256 accumulatedFundingFee = LibQuoteFunding.getAccumulatedFundingFee(quote.id);
+			accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl -= accumulatedFundingFee;
 
 			if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
 				int256 settleAmount = accountLayout.settlementStates[partyA][quote.partyB].expectedAmount;
