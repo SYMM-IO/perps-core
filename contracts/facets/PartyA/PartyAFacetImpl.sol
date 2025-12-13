@@ -53,7 +53,6 @@ library PartyAFacetImpl {
 		require(deadline >= block.timestamp, "PartyAFacet: Low deadline");
 
 		LockedValues memory lockedValues = LockedValues(cva, lf, partyAmm, partyBmm);
-		uint256 tradingPrice = orderType == OrderType.LIMIT ? price : upnlSig.price;
 		require(
 			lockedValues.lf >= (symbolLayout.symbols[symbolId].minAcceptablePortionLF * lockedValues.totalForPartyA()) / 1e18,
 			"PartyAFacet: LF is not enough"
@@ -86,12 +85,15 @@ library PartyAFacetImpl {
 			}
 		}
 
-		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
-		require(availableBalance > 0, "PartyAFacet: Available balance is lower than zero");
-		require(
-			uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * fee.openFee) / 1e36),
-			"PartyAFacet: insufficient available balance"
-		);
+		{
+			int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
+			require(availableBalance > 0, "PartyAFacet: Available balance is lower than zero");
+			uint256 tradingPrice = orderType == OrderType.LIMIT ? price : upnlSig.price;
+			require(
+				uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * fee.openFee) / 1e36),
+				"PartyAFacet: insufficient available balance"
+			);
+		}
 		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
 
 		// lock funds the in middle of way
