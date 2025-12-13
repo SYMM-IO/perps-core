@@ -216,44 +216,37 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 	/**
 	 * @notice Transfers balance from a sub-account to a virtual account
-	 * @param subAccount The sub-account address (source)
 	 * @param virtualAccount The virtual account address (destination)
 	 * @param amount The amount to transfer in 18 decimals
 	 */
-	function transferFromSubAccountToVirtualAccount(
-		address subAccount,
-		address virtualAccount,
-		uint256 amount
-	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
-		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
 		if (!virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
-		if (virtualAccounts[virtualAccount].parentAccount != subAccount) revert InvalidParent();
+		address parent = virtualAccounts[virtualAccount].parentAccount;
 
-		_executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
+		_executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
 
-		emit TransferFromSubAccountToVirtualAccount(subAccount, virtualAccount, amount);
+		emit AddMargin(virtualAccount, parent, amount);
 	}
 
 	/**
 	 * @notice Transfers balance from a virtual account to a sub-account
 	 * @param virtualAccount The virtual account address (source)
-	 * @param subAccount The sub-account address (destination)
 	 * @param amount The amount to transfer in 18 decimals
 	 */
-	function transferFromVirtualAccountToSubAccount(
+	function removeMargin(
 		address virtualAccount,
-		address subAccount,
-		uint256 amount
-	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		uint256 amount,
+		ISymmio.SingleUpnlSig memory upnlSig
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 		if (!virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
-		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
-		if (virtualAccounts[virtualAccount].parentAccount != subAccount) revert InvalidParent();
+		address parent = virtualAccounts[virtualAccount].parentAccount;
 
-		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, subAccount, amount));
+		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.deallocate.selector, amount, upnlSig));
+		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parent, amount));
 
-		emit TransferFromVirtualAccountToSubAccount(virtualAccount, subAccount, amount);
+		emit RemoveMargin(virtualAccount, parent, amount);
 	}
 
 	// ==================== Symmio Callback ====================
