@@ -41,7 +41,7 @@ library PartyBQuoteActionsFacetImpl {
 		} else {
 			quote.statusModifyTimestamp = block.timestamp;
 			quote.quoteStatus = QuoteStatus.PENDING;
-			LibAccount.partyBPendingLockedBalances(quote).subQuote(quote);
+			LibAccount.partyBPendingLockedBalances(quote.partyB, quote.partyA).subQuote(quote);
 			LibQuote.removeFromPartyBPendingQuotes(quote);
 			quote.partyB = address(0);
 			return QuoteStatus.PENDING;
@@ -56,7 +56,7 @@ library PartyBQuoteActionsFacetImpl {
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.CANCELED;
 		accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-		LibAccount.partyBPendingLockedBalances(quote).subQuote(quote);
+		LibAccount.partyBPendingLockedBalances(quote.partyB, quote.partyA).subQuote(quote);
 
 		// send trading Fee back to partyA
 		uint256 fee = LibQuote.getOpenTradingFee(quoteId);

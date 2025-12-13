@@ -55,7 +55,7 @@ library LibQuoteClose {
 		);
 
 		accountLayout.lockedBalances[quote.partyA].subQuote(quote).add(lockedValues);
-		LibAccount.partyBLockedBalances(quote).subQuote(quote).add(lockedValues);
+		LibAccount.partyBLockedBalances(quote.partyB, quote.partyA).subQuote(quote).add(lockedValues);
 		quote.lockedValues = lockedValues;
 
 		if (LibQuote.quoteOpenAmount(quote) == quote.quantityToClose) {
@@ -74,7 +74,7 @@ library LibQuoteClose {
 
 		if (hasMadeProfit) {
 			require(
-				LibAccount.getPartyBAllocatedBalances(quote) >= pnl,
+				LibAccount.getPartyBAllocatedBalances(quote.partyB, quote.partyA) >= pnl,
 				"LibQuote: PartyA should first exit its positions that are incurring losses"
 			);
 			accountLayout.allocatedBalances[quote.partyA] += pnl;
@@ -209,7 +209,7 @@ library LibQuoteClose {
 
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
-				LibAccount.partyBPendingLockedBalances(quote).subQuote(quote);
+				LibAccount.partyBPendingLockedBalances(quote.partyB, quote.partyA).subQuote(quote);
 				LibQuote.removeFromPartyBPendingQuotes(quote);
 			}
 			quote.quoteStatus = QuoteStatus.EXPIRED;

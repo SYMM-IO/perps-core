@@ -191,26 +191,28 @@ library LibAccount {
 
 	/**
 	 * @notice returns locked balances for Party B for a specific quote.
-	 * @param quote The quote for which to return the locked balance.
+	 * @param partyB The Party B address.
 	 */
-	function partyBLockedBalances(Quote storage quote) internal view returns (LockedValues storage) {
-		return AccountStorage.layout().partyBLockedBalances[quote.partyB][partyBAllocationBucket(quote.partyB, quote.partyA)];
+	function partyBLockedBalances(address partyB, address partyA) internal view returns (LockedValues storage) {
+		return AccountStorage.layout().partyBLockedBalances[partyB][partyBAllocationBucket(partyB, partyA)];
 	}
 
 	/**
 	 * @notice returns pending locked balances for Party B for a specific quote.
-	 * @param quote The quote for which to return the locked balance.
+	 * @param partyB The Party B address.
+	 * @param partyA The Party A address.
 	 */
-	function partyBPendingLockedBalances(Quote storage quote) internal view returns (LockedValues storage) {
-		return AccountStorage.layout().partyBPendingLockedBalances[quote.partyB][partyBAllocationBucket(quote.partyB, quote.partyA)];
+	function partyBPendingLockedBalances(address partyB, address partyA) internal view returns (LockedValues storage) {
+		return AccountStorage.layout().partyBPendingLockedBalances[partyB][partyBAllocationBucket(partyB, partyA)];
 	}
 
 	/**
 	 * @notice returns allocated balances for Party B in any mode
-	 * @param quote The quote for which to return the allocated balance.
+	 * @param partyB The Party B address.
+	 * @param partyA The Party A address.
 	 */
-	function getPartyBAllocatedBalances(Quote storage quote) internal view returns (uint256) {
-		return AccountStorage.layout().partyBAllocatedBalances[quote.partyB][partyBAllocationBucket(quote.partyB, quote.partyA)];
+	function getPartyBAllocatedBalances(address partyB, address partyA) internal view returns (uint256) {
+		return AccountStorage.layout().partyBAllocatedBalances[partyB][partyBAllocationBucket(partyB, partyA)];
 	}
 
 	/**
@@ -220,11 +222,11 @@ library LibAccount {
 	 */
 	function updatePartyBNonce(address partyB, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		accountLayout.partyBNonces[partyB][accountLayout.masterAccountMode[partyB]?address(0):partyA]++;
+		accountLayout.partyBNonces[partyB][accountLayout.masterAccountMode[partyB] ? address(0) : partyA]++;
 	}
 
 	function getPartyBNonce(address partyB, address partyA) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		return accountLayout.partyBNonces[partyB][accountLayout.masterAccountMode[partyB]?address(0):partyA];
+		return accountLayout.partyBNonces[partyB][accountLayout.masterAccountMode[partyB] ? address(0) : partyA];
 	}
 }
