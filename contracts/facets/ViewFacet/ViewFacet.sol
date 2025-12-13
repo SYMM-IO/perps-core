@@ -218,10 +218,10 @@ contract ViewFacet is IViewFacet {
 	 * @notice Returns the nonce of Party B for a specific Party A.
 	 * @param partyB The address of Party B.
 	 * @param partyA The address of Party A.
-	 * @return The nonce of Party B for Party A.
+	 * @return The nonce of Party B for Party A in normal mode or master account mode.
 	 */
 	function nonceOfPartyB(address partyB, address partyA) external view returns (uint256) {
-		return AccountStorage.layout().partyBNonces[partyB][partyA];
+		return AccountStorage.layout().partyBNonces[partyB][AccountStorage.layout().masterAccountMode[partyB]?address(0):partyA];
 	}
 
 	/**

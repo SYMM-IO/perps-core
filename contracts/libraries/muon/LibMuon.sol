@@ -9,6 +9,7 @@ import "../../storages/MuonStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../interfaces/IMuonSignatureVerifier.sol";
+import "../LibAccount.sol";
 
 library LibMuon {
 	using ECDSA for bytes32;
@@ -45,7 +46,7 @@ library LibMuon {
 				address(this),
 				partyB,
 				partyA,
-				AccountStorage.layout().partyBNonces[partyB][partyA],
+				LibAccount.getPartyBNonce(partyB, partyA),
 				upnlSig.upnl,
 				upnlSig.timestamp,
 				getChainId()

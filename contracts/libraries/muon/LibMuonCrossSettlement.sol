@@ -12,17 +12,17 @@ library LibMuonCrossSettlement {
 	function verifyMasterAccountSettlement(MasterAccountSettlementSig memory settleSig) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		QuoteStorage.Layout storage quotes = QuoteStorage.layout();
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
 		// == ) ==
-		bytes memory encodedData;
-		uint256[] memory partyBNonces = new uint256[](settleSig.quotesSettlementsData.length);
 		uint256[] memory partyANonces = new uint256[](settleSig.quotesSettlementsData.length);
+		bytes memory encodedData;
 		address partyA;
+
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			partyA = quotes.quotes[settleSig.quotesSettlementsData[i].quoteId].partyA;
-			partyBNonces[i] = AccountStorage.layout().partyBNonces[settleSig.partyB][partyA];
-			partyANonces[i] = AccountStorage.layout().partyANonces[partyA];
+			partyANonces[i] = accountLayout.partyANonces[partyA];
 			encodedData = abi.encodePacked(
 				encodedData, // Append the previously encoded data
 				settleSig.quotesSettlementsData[i].quoteId,
@@ -35,7 +35,7 @@ library LibMuonCrossSettlement {
 				settleSig.reqId,
 				address(this),
 				"verifyCrossSettlement",
-				partyBNonces,
+				accountLayout.partyBNonces[settleSig.partyB][address(0)], // Get Party B nonce for Master Account Mode
 				partyANonces,
 				encodedData,
 				settleSig.partyB,

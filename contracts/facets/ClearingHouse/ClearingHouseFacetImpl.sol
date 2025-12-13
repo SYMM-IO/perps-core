@@ -149,7 +149,7 @@ library ClearingHouseFacetImpl {
 			LibQuote.removeFromOpenPositions(quote.id);
 			quoteLayout.partyAPositionsCount[partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
-			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1;
+			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1; // total positions for partyB in master account mode	
 
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
@@ -162,10 +162,11 @@ library ClearingHouseFacetImpl {
 				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, quote.partyB) {} catch {}
 			}
 			if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
-				accountLayout.partyBNonces[partyB][partyA] += 1;
+				LibAccount.updatePartyBNonce(partyB, partyA);
 			}
 		}
 
+		// If no more positions left for partyB in master account mode, clear locked balances and cross liquidation status
 		if (quoteLayout.partyBPositionsCount[partyB][address(0)] == 0) {
 			accountLayout.partyBLockedBalances[partyB][address(0)].makeZero();
 			accountLayout.partyBPendingLockedBalances[partyB][address(0)].makeZero();

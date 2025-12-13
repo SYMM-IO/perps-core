@@ -96,7 +96,7 @@ library LibSettlement {
 				);
 				MAStorage.layout().lastUpnlSettlementTimestamp[msg.sender][partyB][partyA] = block.timestamp;
 			}
-			accountLayout.partyBNonces[partyB][partyA] += 1;
+			LibAccount.updatePartyBNonce(partyB, partyA);
 
 			int256 settlementAmount = settleAmounts[i];
 
@@ -198,10 +198,12 @@ library LibSettlement {
 				"LibSettlement: PartyA is insolvent"
 			);
 
-			//Nonce update
-			accountLayout.partyBNonces[partyB][partyA] += 1;
+			// Party A nonce update
 			accountLayout.partyANonces[partyA] += 1;
 		}
+
+		// Party B nonce update for Master Account Mode once
+		accountLayout.partyBNonces[partyB][address(0)] += 1;
 
 		// Process settlements
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {

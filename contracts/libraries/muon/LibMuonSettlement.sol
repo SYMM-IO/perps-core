@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "./LibMuon.sol";
+import "../LibAccount.sol";
 
 library LibMuonSettlement {
 	function verifySettlement(SettlementSig memory settleSig, address partyA) internal view {
@@ -17,7 +18,10 @@ library LibMuonSettlement {
 		bytes memory encodedData;
 		uint256[] memory nonces = new uint256[](settleSig.quotesSettlementsData.length);
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
-			nonces[i] = AccountStorage.layout().partyBNonces[QuoteStorage.layout().quotes[settleSig.quotesSettlementsData[i].quoteId].partyB][partyA];
+
+			// Get Party B nonce for Standard Account Mode or Master Account Mode
+			nonces[i] = LibAccount.getPartyBNonce(QuoteStorage.layout().quotes[settleSig.quotesSettlementsData[i].quoteId].partyB, partyA);
+			
 			encodedData = abi.encodePacked(
 				encodedData, // Append the previously encoded data
 				settleSig.quotesSettlementsData[i].quoteId,

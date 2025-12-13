@@ -168,7 +168,7 @@ library LiquidationFacetImpl {
 			quote.quoteStatus = QuoteStatus.LIQUIDATED;
 			quote.statusModifyTimestamp = block.timestamp;
 
-			accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
+			LibAccount.updatePartyBNonce(quote.partyB, partyA);
 
 			(bool hasMadeProfit, uint256 amount) = LibQuote.getValueOfQuoteForPartyA(
 				accountLayout.symbolsPrices[partyA][quote.symbolId].price,
@@ -453,7 +453,7 @@ library LiquidationFacetImpl {
 		if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
 			maLayout.partyBLiquidationStatus[partyB][partyA] = false;
 			maLayout.partyBLiquidationTimestamp[partyB][partyA] = 0;
-			accountLayout.partyBNonces[partyB][partyA] += 1;
+			LibAccount.updatePartyBNonce(partyB, partyA);
 		}
 		return (liquidatedAmounts, closeIds, averageClosedPrices);
 	}

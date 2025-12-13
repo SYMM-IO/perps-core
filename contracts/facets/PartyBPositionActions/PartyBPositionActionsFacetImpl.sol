@@ -36,7 +36,7 @@ library PartyBPositionActionsFacetImpl {
 		);
 
 		accountLayout.partyANonces[quote.partyA] += 1;
-		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
+		LibAccount.updatePartyBNonce(quote.partyB, quote.partyA);
 
 		currentId = LibPartyBPositionsActions.openPosition(quoteId, filledAmount, openedPrice);
 
@@ -89,7 +89,7 @@ library PartyBPositionActionsFacetImpl {
 				quote.partyA
 			);
 		}
-		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
+		LibAccount.updatePartyBNonce(quote.partyB, quote.partyA);
 		accountLayout.partyANonces[quote.partyA] += 1;
 		LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmount, closedPrice);
 	}
@@ -127,7 +127,7 @@ library PartyBPositionActionsFacetImpl {
 			"PartyBFacet: PartyB should be solvent"
 		);
 
-		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
+		LibAccount.updatePartyBNonce(quote.partyB, quote.partyA);
 		accountLayout.partyANonces[quote.partyA] += 1;
 		LibQuoteClose.closeQuote(quote.id, filledAmount, upnlSig.price);
 	}

@@ -11,6 +11,7 @@ import "./LibMuon.sol";
 library LibMuonForceActions {
 	function verifyHighLowPrice(HighLowPriceSig memory sig, address partyB, address partyA, uint256 symbolId) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+
 		// == SignatureCheck( ==
 		require(block.timestamp <= sig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
 		// == ) ==
@@ -21,7 +22,7 @@ library LibMuonForceActions {
 				address(this),
 				partyB,
 				partyA,
-				AccountStorage.layout().partyBNonces[partyB][partyA],
+				LibAccount.getPartyBNonce(partyB, partyA), // Master Account Mode nonce
 				AccountStorage.layout().partyANonces[partyA],
 				sig.upnlPartyB,
 				sig.upnlPartyA,

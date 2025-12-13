@@ -141,7 +141,7 @@ library LibForceActions {
 			accountLayout.partyBAllocatedBalances[partyB][partyA] += available;
 			emit SharedEvents.BalanceChangePartyB(partyB, partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
-			accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
+			LibAccount.updatePartyBNonce(partyB, partyA);
 
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			succeed = true;

@@ -137,7 +137,7 @@ library FundingRateFacetImpl {
 		}
 
 		// Increment nonces for replay protection
-		AccountStorage.layout().partyBNonces[msg.sender][partyA] += 1;
+		LibAccount.updatePartyBNonce(msg.sender, partyA);
 		AccountStorage.layout().partyANonces[partyA] += 1;
 	}
 

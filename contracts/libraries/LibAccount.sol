@@ -212,4 +212,19 @@ library LibAccount {
 	function getPartyBAllocatedBalances(Quote storage quote) internal view returns (uint256) {
 		return AccountStorage.layout().partyBAllocatedBalances[quote.partyB][partyBAllocationBucket(quote.partyB, quote.partyA)];
 	}
+
+	/**
+	 * @notice Increments Party B nonce for a specific Party A or master account mode.
+	 * @param partyB PartyB address
+	 * @param partyA PartyA address
+	 */
+	function updatePartyBNonce(address partyB, address partyA) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		accountLayout.partyBNonces[partyB][accountLayout.masterAccountMode[partyB]?address(0):partyA]++;
+	}
+
+	function getPartyBNonce(address partyB, address partyA) internal view returns (uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		return accountLayout.partyBNonces[partyB][accountLayout.masterAccountMode[partyB]?address(0):partyA];
+	}
 }
