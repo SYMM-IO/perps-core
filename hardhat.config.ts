@@ -1,13 +1,16 @@
-import "@nomicfoundation/hardhat-chai-matchers"
-import "@nomicfoundation/hardhat-toolbox"
-import "@openzeppelin/hardhat-upgrades"
-import { config as dotenvConfig } from "dotenv"
-import type { HardhatUserConfig } from "hardhat/config"
-import { resolve } from "path"
-import "solidity-docgen"
-import "hardhat-contract-sizer"
+import "@nomicfoundation/hardhat-chai-matchers";
+import "@nomicfoundation/hardhat-toolbox";
+import "@openzeppelin/hardhat-upgrades";
+import { config as dotenvConfig } from "dotenv";
+import "hardhat-contract-sizer";
+import type { HardhatUserConfig } from "hardhat/config";
+import { resolve } from "path";
+import "solidity-docgen";
 
-import "./tasks/deploy"
+
+
+import "./tasks/deploy";
+
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env"
 dotenvConfig({ path: resolve(__dirname, dotenvConfigPath) })
@@ -61,7 +64,7 @@ const config: HardhatUserConfig = {
 			accounts: [privateKey],
 		},
 		base: {
-			url: "https://base.llamarpc.com",
+			url: "https://api.zan.top/base-mainnet",
 			accounts: [privateKey],
 		},
 		polygon: {
@@ -98,20 +101,7 @@ const config: HardhatUserConfig = {
 		},
 	},
 	etherscan: {
-		apiKey: {
-			arbitrumOne: arbitrumApiKey,
-			iota: iotaApiKey,
-			mode: modeApiKey,
-			// mode2: modeApiKey,
-			blast: blastApiKey,
-			bsc: bnbApiKey,
-			base: baseApiKey,
-			polygon: polygonApiKey,
-			// mantle: mantleAPIKey,
-			mantle: mantle2APIKey,
-			zkEvm: zkEvmApiKey,
-			opbnb: opBnbApiKey,
-		},
+		apiKey:baseApiKey ,
 		customChains: [
 			{
 				network: "base",
