@@ -1,246 +1,21 @@
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
-import { expect, use } from "chai";
-import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers";
-import { ethers } from "hardhat";
-
-
-
-import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types";
-import { initializeFixture } from "./Initialize.fixture";
-import { PositionType } from "./models/Enums";
-import { Hedger } from "./models/Hedger";
-import { RunContext } from "./models/RunContext";
-import { User } from "./models/User";
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest";
-import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest";
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest";
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest";
-import { decimal } from "./utils/Common";
-import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { expect, use } from "chai"
+import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
+import { ethers } from "hardhat"
+
+import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
+import { initializeFixture } from "./Initialize.fixture"
+import { PositionType } from "./models/Enums"
+import { Hedger } from "./models/Hedger"
+import { RunContext } from "./models/RunContext"
+import { User } from "./models/User"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest"
+import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { decimal } from "./utils/Common"
+import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
 
 export function shouldBehaveLikeAccountHub(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -2102,7 +1877,7 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 		})
 
-		describe.only("Transfer Methods", async () => {
+		describe("Transfer Methods", async () => {
 			let customSubAccount: string
 			let virtualAccount: string
 
@@ -2147,9 +1922,10 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 
 				it("should revert when transferring zero amount", async () => {
-					await expect(
-						context.accountHub.connect(context.signers.user).addMargin( virtualAccount, 0n),
-					).to.be.revertedWithCustomError(context.accountHub, "ZeroAmount")
+					await expect(context.accountHub.connect(context.signers.user).addMargin(virtualAccount, 0n)).to.be.revertedWithCustomError(
+						context.accountHub,
+						"ZeroAmount",
+					)
 				})
 
 				it("should revert when caller is not the account owner", async () => {
@@ -2209,9 +1985,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(initialVirtualAccountAllocatedBalance).to.equal(0n)
 
 					// Step 1: Transfer from subaccount to virtual account
-					await context.accountHub
-						.connect(context.signers.user)
-						.addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT)
+					await context.accountHub.connect(context.signers.user).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT)
 
 					let subAccountBalance = await context.viewFacet.balanceOf(customSubAccount)
 					let virtualAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
