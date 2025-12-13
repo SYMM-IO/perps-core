@@ -660,7 +660,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_callHook(
 			affiliate,
 			IAccountHubHook.onAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onAccountCreation.selector, sender, subAccountAddress)
+			abi.encodeWithSelector(IAccountHubHook.onAccountCreation.selector, sender, subAccountAddress, data.metadata)
 		);
 
 		emit SubAccountCreated(subAccountAddress, sender, affiliate, data.name);
@@ -704,7 +704,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_callHook(
 			parent.affiliate,
 			IAccountHubHook.onVirtualAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount)
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount, v.metadata)
 		);
 
 		emit VirtualAccountReused(reusedAccount, parentAccount);
@@ -739,7 +739,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_callHook(
 			parent.affiliate,
 			IAccountHubHook.onVirtualAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount)
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount,metadata)
 		);
 
 		emit VirtualAccountCreated(virtualAccount, parentAccount);
