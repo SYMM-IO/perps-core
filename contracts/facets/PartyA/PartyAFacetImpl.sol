@@ -42,17 +42,17 @@ library PartyAFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		address signer = LibSigner.getSigner();
 
-		require(!LibAccessibility.hasRole(LibSigner.getSigner(), LibAccessibility.LIQUIDATOR_ROLE), "PartyAFacet: Liquidator can't be partyA");
+		require(!LibAccessibility.hasRole(signer, LibAccessibility.LIQUIDATOR_ROLE), "PartyAFacet: Liquidator can't be partyA");
 		require(
-			quoteLayout.partyAPendingQuotes[LibSigner.getSigner()].length < maLayout.pendingQuotesValidLength,
+			quoteLayout.partyAPendingQuotes[signer].length < maLayout.pendingQuotesValidLength,
 			"PartyAFacet: Number of pending quotes out of range"
 		);
 		require(symbolLayout.symbols[symbolId].isValid, "PartyAFacet: Symbol is not valid");
 		require(deadline >= block.timestamp, "PartyAFacet: Low deadline");
 
 		LockedValues memory lockedValues = LockedValues(cva, lf, partyAmm, partyBmm);
-		uint256 tradingPrice = orderType == OrderType.LIMIT ? price : upnlSig.price;
 		require(
 			lockedValues.lf >= (symbolLayout.symbols[symbolId].minAcceptablePortionLF * lockedValues.totalForPartyA()) / 1e18,
 			"PartyAFacet: LF is not enough"
@@ -60,20 +60,20 @@ library PartyAFacetImpl {
 
 		require(lockedValues.totalForPartyA() >= symbolLayout.symbols[symbolId].minAcceptableQuoteValue, "PartyAFacet: Quote value is low");
 		for (uint8 i = 0; i < partyBsWhiteList.length; i++) {
-			require(partyBsWhiteList[i] != LibSigner.getSigner(), "PartyAFacet: Sender isn't allowed in partyBWhiteList");
+			require(partyBsWhiteList[i] != signer, "PartyAFacet: Sender isn't allowed in partyBWhiteList");
 		}
 
-		address boundedPartyB = accountLayout.bindState[LibSigner.getSigner()].partyB;
+		address boundedPartyB = accountLayout.bindState[signer].partyB;
 		if (boundedPartyB != address(0)) {
 			require(accountLayout.isPartyBBindable[boundedPartyB], "PartyAFacet: Bound Party B is not Bindable");
 			require(partyBsWhiteList.length == 1 && partyBsWhiteList[0] == boundedPartyB, "PartyAFacet: PartyA is bound to a different PartyB");
 		} else {
-			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, LibSigner.getSigner(), symbolId);
+			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId);
 		}
 
 		Fee memory fee;
-		if (appLayout.customAffiliateFee[affiliate][msg.sender][symbolId].isSet) {
-			fee = appLayout.customAffiliateFee[affiliate][msg.sender][symbolId];
+		if (appLayout.customAffiliateFee[affiliate][signer][symbolId].isSet) {
+			fee = appLayout.customAffiliateFee[affiliate][signer][symbolId];
 		} else {
 			if (appLayout.affiliateFee[affiliate][symbolId].isSet) {
 				fee = appLayout.affiliateFee[affiliate][symbolId];
@@ -86,16 +86,19 @@ library PartyAFacetImpl {
 			}
 		}
 
-		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, LibSigner.getSigner());
-		require(availableBalance > 0, "PartyAFacet: Available balance is lower than zero");
-		require(
-			uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * fee.openFee) / 1e36),
-			"PartyAFacet: insufficient available balance"
-		);
+		{
+			int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
+			require(availableBalance > 0, "PartyAFacet: Available balance is lower than zero");
+			uint256 tradingPrice = orderType == OrderType.LIMIT ? price : upnlSig.price;
+			require(
+				uint256(availableBalance) >= lockedValues.totalForPartyA() + ((quantity * tradingPrice * fee.openFee) / 1e36),
+				"PartyAFacet: insufficient available balance"
+			);
+		}
 		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
 
 		// lock funds the in middle of way
-		accountLayout.pendingLockedBalances[LibSigner.getSigner()].add(lockedValues);
+		accountLayout.pendingLockedBalances[signer].add(lockedValues);
 		uint256 currentId = ++quoteLayout.lastId;
 
 		// create quote.
@@ -114,7 +117,7 @@ library PartyAFacetImpl {
 			lockedValues: lockedValues,
 			initialLockedValues: lockedValues,
 			maxFundingRate: maxFundingRate,
-			partyA: LibSigner.getSigner(),
+			partyA: signer,
 			partyB: address(0),
 			quoteStatus: QuoteStatus.PENDING,
 			avgClosedPrice: 0,
@@ -131,13 +134,13 @@ library PartyAFacetImpl {
 			closeFee: fee.closeFee,
 			data: data
 		});
-		quoteLayout.quoteIdsOf[LibSigner.getSigner()].push(currentId);
-		quoteLayout.partyAPendingQuotes[LibSigner.getSigner()].push(currentId);
+		quoteLayout.quoteIdsOf[signer].push(currentId);
+		quoteLayout.partyAPendingQuotes[signer].push(currentId);
 		quoteLayout.quotes[currentId] = quote;
 
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
-		accountLayout.allocatedBalances[LibSigner.getSigner()] -= feeAmount;
-		emit SharedEvents.BalanceChangePartyA(LibSigner.getSigner(), feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
+		accountLayout.allocatedBalances[signer] -= feeAmount;
+		emit SharedEvents.BalanceChangePartyA(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 	}
 
 	function requestToCancelQuote(uint256 quoteId) internal returns (QuoteStatus result) {

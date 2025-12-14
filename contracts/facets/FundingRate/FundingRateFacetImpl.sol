@@ -12,7 +12,7 @@ import "../../libraries/LibFundingRate.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "../../storages/SymbolStorage.sol";
-import {LibSigner} from "../../libraries/LibSigner.sol";
+import "../../libraries/LibSigner.sol";
 
 /**
  * @title FundingRateFacetImpl
@@ -35,9 +35,10 @@ library FundingRateFacetImpl {
 	function chargeFundingRate(address partyA, uint256[] memory quoteIds, int256[] memory rates, PairUpnlSig memory upnlSig) internal {
 		// Verify the signature contains valid unrealized PnL data
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
 		require(quoteIds.length == rates.length && quoteIds.length > 0, "ChargeFundingFacet: Length not match");
 
-		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, msg.sender, partyA);
+		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, signer, partyA);
 		int256 partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			upnlSig.upnlPartyA,
 			AccountStorage.layout().allocatedBalances[partyA],
@@ -53,7 +54,7 @@ library FundingRateFacetImpl {
 
 			// Validate quote ownership and status
 			require(quote.partyA == partyA, "ChargeFundingFacet: Invalid quote");
-			require(quote.partyB == msg.sender, "ChargeFundingFacet: Sender isn't partyB of quote");
+			require(quote.partyB == signer, "ChargeFundingFacet: Sender isn't partyB of quote");
 			require(
 				quote.quoteStatus == QuoteStatus.OPENED ||
 					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
@@ -129,8 +130,13 @@ library FundingRateFacetImpl {
 			quote.lastFundingPaymentTimestamp = paidTimestamp;
 		}
 
+<<<<<<< contracts/facets/FundingRate/FundingRateFacetImpl.sol
 		if (accountLayout.bindState[partyA].partyB != msg.sender || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			LibMuonFundingRate.verifyPairUpnl(upnlSig, msg.sender, partyA);
+=======
+		if (accountLayout.bindState[partyA].partyB != signer) {
+			LibMuonFundingRate.verifyPairUpnl(upnlSig, signer, partyA);
+>>>>>>> contracts/facets/FundingRate/FundingRateFacetImpl.sol
 
 			// Ensure neither party becomes insolvent after funding payments
 			require(partyAAvailableBalance >= 0, "ChargeFundingFacet: PartyA will be insolvent");
@@ -138,7 +144,7 @@ library FundingRateFacetImpl {
 		}
 
 		// Increment nonces for replay protection
-		AccountStorage.layout().partyBNonces[msg.sender][partyA] += 1;
+		AccountStorage.layout().partyBNonces[signer][partyA] += 1;
 		AccountStorage.layout().partyANonces[partyA] += 1;
 	}
 
@@ -202,7 +208,7 @@ library FundingRateFacetImpl {
 		);
 
 		for (uint256 i = 0; i < symbolIds.length; i++) {
-			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][msg.sender];
+			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][LibSigner.getSigner()];
 
 			require(fundingFee.epochDuration > 0, "FundingRateFacet: Epoch duration not set");
 			LibFundingRate.updateAccumulatedRates(fundingFee);
@@ -236,7 +242,7 @@ library FundingRateFacetImpl {
 
 		// Preserve existing short rates
 		for (uint256 i = 0; i < symbolIds.length; i++) {
-			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][msg.sender];
+			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][LibSigner.getSigner()];
 			require(marketPrices[i] > 0, "FundingRateFacet: Invalid market price");
 			// Convert back from price-adjusted to rate
 			if (marketPrices[i] > 0) {
@@ -257,7 +263,7 @@ library FundingRateFacetImpl {
 
 		// Preserve existing long rates
 		for (uint256 i = 0; i < symbolIds.length; i++) {
-			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][msg.sender];
+			FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[symbolIds[i]][LibSigner.getSigner()];
 			require(marketPrices[i] > 0, "FundingRateFacet: Invalid market price");
 			// Convert back from price-adjusted to rate
 			if (marketPrices[i] > 0) {

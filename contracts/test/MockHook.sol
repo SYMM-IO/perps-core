@@ -12,22 +12,41 @@ contract MockHook is ISymmioHook {
 		address partyB;
 	}
 
+	struct FeeCallData {
+		uint256 quoteId;
+		uint256 amount;
+		address partyA;
+		address partyB;
+		uint256 symbolId;
+		address affiliate;
+		TradingFeeType feeType;
+	}
+
 	// Last captured inputs
 	CallData private _lastOpenCall;
 	CallData private _lastCloseCall;
+	FeeCallData private _lastOpenFeeCall;
+	FeeCallData private _lastCloseFeeCall;
 
 	// Call counters
 	uint256 public openCallCount;
 	uint256 public closeCallCount;
+	uint256 public openFeeCallCount;
+	uint256 public closeFeeCallCount;
 
 	// Configurable behavior
 	bool public shouldRevertOnOpen;
 	bool public shouldRevertOnClose;
+	bool public shouldRevertOnOpenFee;
+	bool public shouldRevertOnCloseFee;
 	string public revertMessageOnOpen;
 	string public revertMessageOnClose;
+	string public revertMessageOnOpenFee;
+	string public revertMessageOnCloseFee;
 
 	event OnOpenPosition(uint256 quoteId, uint256 amount, uint256 price, address partyA, address partyB);
 	event OnClosePosition(uint256 quoteId, uint256 amount, uint256 price, address partyA, address partyB);
+	event OnFeeCharged(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, TradingFeeType feeType);
 
 	function setRevertOnOpen(bool shouldRevert, string memory message) external {
 		shouldRevertOnOpen = shouldRevert;
@@ -37,6 +56,16 @@ contract MockHook is ISymmioHook {
 	function setRevertOnClose(bool shouldRevert, string memory message) external {
 		shouldRevertOnClose = shouldRevert;
 		revertMessageOnClose = message;
+	}
+
+	function setRevertOnOpenFee(bool shouldRevert, string memory message) external {
+		shouldRevertOnOpenFee = shouldRevert;
+		revertMessageOnOpenFee = message;
+	}
+
+	function setRevertOnCloseFee(bool shouldRevert, string memory message) external {
+		shouldRevertOnCloseFee = shouldRevert;
+		revertMessageOnCloseFee = message;
 	}
 
 	function onOpenPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, address partyA, address partyB) external override {
@@ -63,6 +92,49 @@ contract MockHook is ISymmioHook {
 		return;
 	}
 
+	function onFeeCharged(
+		uint256 quoteId,
+		uint256 amount,
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		address affiliate,
+		TradingFeeType feeType
+	) external override {
+		if (feeType == TradingFeeType.OPEN) {
+			if (shouldRevertOnOpenFee) {
+				string memory msg_ = bytes(revertMessageOnOpenFee).length > 0 ? revertMessageOnOpenFee : "MockHook: revert on open fee";
+				revert(msg_);
+			}
+			openFeeCallCount += 1;
+			_lastOpenFeeCall = FeeCallData({
+				quoteId: quoteId,
+				amount: amount,
+				partyA: partyA,
+				partyB: partyB,
+				symbolId: symbolId,
+				affiliate: affiliate,
+				feeType: feeType
+			});
+		} else {
+			if (shouldRevertOnCloseFee) {
+				string memory msg_ = bytes(revertMessageOnCloseFee).length > 0 ? revertMessageOnCloseFee : "MockHook: revert on close fee";
+				revert(msg_);
+			}
+			closeFeeCallCount += 1;
+			_lastCloseFeeCall = FeeCallData({
+				quoteId: quoteId,
+				amount: amount,
+				partyA: partyA,
+				partyB: partyB,
+				symbolId: symbolId,
+				affiliate: affiliate,
+				feeType: feeType
+			});
+		}
+		emit OnFeeCharged(quoteId, amount, partyA, partyB, symbolId, affiliate, feeType);
+	}
+
 	// Getters for test assertions
 	function getLastOpenCall()
 		external
@@ -80,5 +152,41 @@ contract MockHook is ISymmioHook {
 	{
 		CallData memory c = _lastCloseCall;
 		return (c.quoteId, c.amount, c.price, c.partyA, c.partyB, closeCallCount);
+	}
+
+	function getLastOpenFeeCall()
+		external
+		view
+		returns (
+			uint256 quoteId,
+			uint256 amount,
+			address partyA,
+			address partyB,
+			uint256 symbolId,
+			address affiliate,
+			TradingFeeType feeType,
+			uint256 callCount
+		)
+	{
+		FeeCallData memory c = _lastOpenFeeCall;
+		return (c.quoteId, c.amount, c.partyA, c.partyB, c.symbolId, c.affiliate, c.feeType, openFeeCallCount);
+	}
+
+	function getLastCloseFeeCall()
+		external
+		view
+		returns (
+			uint256 quoteId,
+			uint256 amount,
+			address partyA,
+			address partyB,
+			uint256 symbolId,
+			address affiliate,
+			TradingFeeType feeType,
+			uint256 callCount
+		)
+	{
+		FeeCallData memory c = _lastCloseFeeCall;
+		return (c.quoteId, c.amount, c.partyA, c.partyB, c.symbolId, c.affiliate, c.feeType, closeFeeCallCount);
 	}
 }

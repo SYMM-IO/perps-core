@@ -68,7 +68,7 @@ library PartyBBatchActionsFacetImpl {
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			uint256 quoteId = quoteIds[i];
 			Quote storage quote = quoteLayout.quotes[quoteId];
-			require(quote.partyB == msg.sender, "PartyBFacet: Sender should be the partyB");
+			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender should be the partyB");
 			require(firstQuote.partyA == quote.partyA, "PartyBFacet: All positions should belong to one partyA");
 			uint256 newId = LibPartyBPositionsActions.openPosition(quoteId, filledAmounts[i], openedPrices[i]);
 			if (quote.quoteStatus == QuoteStatus.OPENED) {
@@ -135,7 +135,7 @@ library PartyBBatchActionsFacetImpl {
 		address firstQuotePartyA = firstQuote.partyA;
 		address firstQuotePartyB = firstQuote.partyB;
 
-		if (accountLayout.bindState[firstQuote.partyA].partyB != msg.sender || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
+		if (accountLayout.bindState[firstQuote.partyA].partyB != LibSigner.getSigner()|| !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
 		}
@@ -187,7 +187,7 @@ library PartyBBatchActionsFacetImpl {
 				closeIds[i] = 0; // not used in ADL
 			} else {
 				// Normal close request flow
-				require(quote.partyB == msg.sender, "PartyBFacet: Sender should be the partyB");
+				require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender should be the partyB");
 				LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);
 				quoteStatuses[i] = quote.quoteStatus;
 				closeIds[i] = quoteLayout.closeIds[quoteId];

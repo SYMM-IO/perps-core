@@ -103,6 +103,18 @@ interface ISymmio {
 		bytes data;
 	}
 
+	struct BindState {
+		BindStatus status;
+		address partyB;
+		uint256 modifyTimestamp;
+	}
+
+	enum BindStatus {
+		NOT_BOUND,
+		BOUND,
+		PENDING_UNBIND
+	}
+
 	function depositFor(address user, uint256 amount) external;
 
 	function depositAndAllocateFor(address user, uint256 amount) external;
@@ -110,6 +122,8 @@ interface ISymmio {
 	function withdrawTo(address user, uint256 amount) external;
 
 	function allocate(uint256 amount) external;
+
+	function deallocate(uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
 
 	function getCollateral() external view returns (address);
 
@@ -134,4 +148,8 @@ interface ISymmio {
 	function registerAffiliate(address affiliate) external;
 
 	function getFee(address affiliate, uint256 symbolId) external returns (Fee memory);
+
+	function bindToPartyB(address partyB) external;
+
+	function getBindState(address user) external view returns (BindState memory);
 }

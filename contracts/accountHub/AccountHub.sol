@@ -16,7 +16,6 @@ import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
-import "./interfaces/IAccountManager.sol";
 
 /**
  * @title AccountHub
@@ -212,6 +211,41 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		}
 
 		return results;
+	}
+
+	/**
+	 * @notice Transfers balance from a sub-account to a virtual account
+	 * @param virtualAccount The virtual account address (destination)
+	 * @param amount The amount to transfer in 18 decimals
+	 */
+	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
+		if (amount == 0) revert ZeroAmount();
+		if (!virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
+		address parent = virtualAccounts[virtualAccount].parentAccount;
+
+		_executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
+
+		emit AddMargin(virtualAccount, parent, amount);
+	}
+
+	/**
+	 * @notice Transfers balance from a virtual account to a sub-account
+	 * @param virtualAccount The virtual account address (source)
+	 * @param amount The amount to transfer in 18 decimals
+	 */
+	function removeMargin(
+		address virtualAccount,
+		uint256 amount,
+		ISymmio.SingleUpnlSig memory upnlSig
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
+		if (amount == 0) revert ZeroAmount();
+		if (!virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
+		address parent = virtualAccounts[virtualAccount].parentAccount;
+
+		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.deallocate.selector, amount, upnlSig));
+		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parent, amount));
+
+		emit RemoveMargin(virtualAccount, parent, amount);
 	}
 
 	// ==================== Symmio Callback ====================
@@ -618,7 +652,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_callHook(
 			affiliate,
 			IAccountHubHook.onAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onAccountCreation.selector, sender, subAccountAddress)
+			abi.encodeWithSelector(IAccountHubHook.onAccountCreation.selector, sender, subAccountAddress, data.metadata)
 		);
 
 		emit SubAccountCreated(subAccountAddress, sender, affiliate, data.name);
@@ -662,7 +696,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_callHook(
 			parent.affiliate,
 			IAccountHubHook.onVirtualAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount)
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount, v.metadata)
 		);
 
 		emit VirtualAccountReused(reusedAccount, parentAccount);
@@ -694,10 +728,19 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		subAccountToVirtualAccounts[parentAccount].add(virtualAccount);
 
+		ISymmio symmio = ISymmio(parent.symmioCore);
+
+		ISymmio.BindState memory bindState = symmio.getBindState(parentAccount);
+		if (bindState.status == ISymmio.BindStatus.BOUND) {
+			symmio.setSigner(virtualAccount);
+			symmio.bindToPartyB(bindState.partyB);
+			symmio.setSigner(address(0));
+		}
+
 		_callHook(
 			parent.affiliate,
 			IAccountHubHook.onVirtualAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount)
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount, metadata)
 		);
 
 		emit VirtualAccountCreated(virtualAccount, parentAccount);

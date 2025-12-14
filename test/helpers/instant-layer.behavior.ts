@@ -359,6 +359,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		beforeEach(async function () {
 			const deadline = await getBlockTimestamp(300n)
+			const symmioAddress = context.diamond
 
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
@@ -415,6 +416,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteA1 = {
 				signer: context.signers.admin.address,
+				target: symmioAddress,
 				callData: quoteCallData,
 				signerAccount: {
 					addr: accounts[0].accountAddress,
@@ -429,6 +431,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteA2 = {
 				signer: partyA1.address, // it should work for contracts as well as EOAs
+				target: symmioAddress,
 				callData: quoteCallData,
 				signerAccount: {
 					addr: accounts[0].accountAddress,
@@ -443,6 +446,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opLockB1 = {
 				signer: await context.symmioPartyB.getAddress(),
+				target: symmioAddress,
 				callData: lockQuoteCallData,
 				signerAccount: {
 					addr: await context.symmioPartyB.getAddress(),
@@ -457,6 +461,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opOpenQuoteB1 = {
 				signer: await context.symmioPartyB.getAddress(),
+				target: symmioAddress,
 				callData: openQuoteCallData,
 				signerAccount: {
 					addr: await context.symmioPartyB.getAddress(),
@@ -846,6 +851,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		beforeEach(async function () {
 			const deadline = await getBlockTimestamp(300n)
+			const symmioAddress = context.diamond
 
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
@@ -892,6 +898,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteA1 = {
 				signer: context.signers.admin.address,
+				target: symmioAddress,
 				callData: quoteCallData,
 				signerAccount: {
 					addr: accounts[0].accountAddress,
@@ -906,6 +913,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteA2 = {
 				signer: partyA1.address,
+				target: symmioAddress,
 				callData: quoteCallData,
 				signerAccount: {
 					addr: accounts[0].accountAddress,
@@ -920,6 +928,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opLockB1 = {
 				signer: await context.symmioPartyB.getAddress(),
+				target: symmioAddress,
 				callData: lockQuoteCallDataTemplate,
 				signerAccount: {
 					addr: await context.symmioPartyB.getAddress(),
@@ -934,6 +943,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opOpenQuoteB1 = {
 				signer: await context.symmioPartyB.getAddress(),
+				target: symmioAddress,
 				callData: openQuoteCallDataTemplate,
 				signerAccount: {
 					addr: await context.symmioPartyB.getAddress(),
@@ -1451,9 +1461,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 		let subAccountAddress: string
 		let virtualAccountAddress: string
 		let quoteCallDataLocal: string
+		let symmioAddress: string
 
 		beforeEach(async () => {
 			const { instantLayer, partyAFacet, accountFacet, partyBQuoteActionsFacet } = context
+			symmioAddress = context.diamond
 
 			// Setup InstantLayer
 			await context.instantLayer.registerPartyBs([context.symmioPartyB])
@@ -1536,6 +1548,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Create operation targeting the VIRTUAL account but signed by the delegate
 			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
 				signer: context.signers.admin.address, // delegate (granted delegation on parent)
+				target: symmioAddress,
 				callData: quoteCallDataLocal,
 				signerAccount: {
 					addr: virtualAccountAddress, // targeting the virtual account
@@ -1567,6 +1580,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Create operation targeting the virtual account with a non-delegated signer
 			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
 				signer: context.signers.user2.address, // NOT delegated on parent
+				target: symmioAddress,
 				callData: quoteCallDataLocal,
 				signerAccount: {
 					addr: virtualAccountAddress,
@@ -1598,6 +1612,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Create operation where signer is the owner of the parent account
 			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
 				signer: partyA1.address, // owner of the sub-account (parent of virtual account)
+				target: symmioAddress,
 				callData: quoteCallDataLocal,
 				signerAccount: {
 					addr: virtualAccountAddress,
@@ -1658,6 +1673,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Now try to execute on virtual account - should fail
 			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
 				signer: context.signers.admin.address,
+				target: symmioAddress,
 				callData: quoteCallDataLocal,
 				signerAccount: {
 					addr: virtualAccountAddress,
@@ -1847,6 +1863,569 @@ export function shouldBehaveLikeInstantLayer(): void {
 				expect(aExp).to.equal(0n)
 				expect(bExp).to.be.greaterThan(0n)
 			})
+		})
+	})
+
+	describe("Target contract routing", () => {
+		let accountAddress: string
+		let mockTarget: any
+		let targetAddress: string
+		let deadline: bigint
+
+		beforeEach(async () => {
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			mockTarget = await MockInstantTarget.deploy()
+			targetAddress = await mockTarget.getAddress()
+			await context.instantLayer.setTargetWhitelist(targetAddress, true)
+
+			await context.accountManager.connect(partyA1.getSigner).addAccount("targetRoute")
+			const accounts = await context.accountManager.getAccounts(partyA1.address, 0, 10)
+			accountAddress = accounts[accounts.length - 1].accountAddress
+
+			deadline = await getBlockTimestamp(300n)
+		})
+
+		const buildTargetOp = (target: string, signer: string): InstantLayer.SignedOperationStruct => {
+			return {
+				signer,
+				target,
+				callData: mockTarget.interface.encodeFunctionData("store", [123n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+		}
+
+		it("executes whitelisted target call and updates target state", async () => {
+			// happy path on direct target
+			const op = buildTargetOp(targetAddress, partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			expect(await mockTarget.lastValue()).to.equal(123n)
+		})
+
+		it("reverts when target is not whitelisted", async () => {
+			// target must be explicitly whitelisted
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			const unlisted = await MockInstantTarget.deploy()
+			const op = buildTargetOp(await unlisted.getAddress(), partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig]))
+				.to.be.revertedWithCustomError(context.instantLayer, "TargetNotWhitelisted")
+				.withArgs(await unlisted.getAddress())
+		})
+
+		it("bubbles target revert inside OperationFailed", async () => {
+			// revert from target should handle by instant layer
+			await mockTarget.setShouldRevert(true, "xxx")
+			const op = buildTargetOp(targetAddress, partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig]))
+				.to.be.revertedWithCustomError(context.instantLayer, "OperationFailed")
+				.withArgs(0, anyValue)
+		})
+
+		it("allows delegated signer to execute on whitelisted external target", async () => {
+			// Grant delegation for the external target's function selector
+			const storeSelector = mockTarget.interface.getFunction("store").selector as `0x${string}`
+			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
+				account: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				delegatedSigner: context.signers.admin.address,
+				selectors: [storeSelector],
+				expiryTimestamp: await getBlockTimestamp(3600n),
+			})
+
+			// Build operation with delegated signer
+			const op = buildTargetOp(targetAddress, context.signers.admin.address)
+			const sig = await context.signers.admin.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			expect(await mockTarget.lastValue()).to.equal(123n)
+		})
+
+		it("rejects delegated signer without proper selector grant for external target", async () => {
+			// Grant delegation for a DIFFERENT selector
+			const wrongSelector = "0x12345678" as `0x${string}`
+			await context.instantLayer.connect(partyA1.getSigner).grantDelegation({
+				account: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				delegatedSigner: context.signers.admin.address,
+				selectors: [wrongSelector],
+				expiryTimestamp: await getBlockTimestamp(3600n),
+			})
+
+			const op = buildTargetOp(targetAddress, context.signers.admin.address)
+			const sig = await context.signers.admin.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(context.instantLayer, "InvalidDelegation")
+		})
+
+		it("ignores return value from external target (result is empty)", async () => {
+			// External targets return bytes32 but it should be ignored per contract logic
+			const op = buildTargetOp(targetAddress, partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			// Should succeed and update target state
+			await expect(context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			expect(await mockTarget.lastValue()).to.equal(123n)
+		})
+	})
+
+	describe("Target whitelist management", () => {
+		it("SETTER_ROLE can whitelist a new target", async () => {
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			const newTarget = await MockInstantTarget.deploy()
+			const newTargetAddr = await newTarget.getAddress()
+
+			expect(await context.instantLayer.whitelistedTargets(newTargetAddr)).to.be.false
+
+			await expect(context.instantLayer.setTargetWhitelist(newTargetAddr, true))
+				.to.emit(context.instantLayer, "TargetWhitelistUpdated")
+				.withArgs(newTargetAddr, true)
+
+			expect(await context.instantLayer.whitelistedTargets(newTargetAddr)).to.be.true
+		})
+
+		it("SETTER_ROLE can remove a target from whitelist", async () => {
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			const newTarget = await MockInstantTarget.deploy()
+			const newTargetAddr = await newTarget.getAddress()
+
+			await context.instantLayer.setTargetWhitelist(newTargetAddr, true)
+			expect(await context.instantLayer.whitelistedTargets(newTargetAddr)).to.be.true
+
+			await expect(context.instantLayer.setTargetWhitelist(newTargetAddr, false))
+				.to.emit(context.instantLayer, "TargetWhitelistUpdated")
+				.withArgs(newTargetAddr, false)
+
+			expect(await context.instantLayer.whitelistedTargets(newTargetAddr)).to.be.false
+		})
+
+		it("non-SETTER_ROLE cannot whitelist targets", async () => {
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			const newTarget = await MockInstantTarget.deploy()
+			const newTargetAddr = await newTarget.getAddress()
+
+			await expect(context.instantLayer.connect(partyA1.getSigner).setTargetWhitelist(newTargetAddr, true)).to.be.reverted
+		})
+
+		it("reverts when trying to whitelist zero address", async () => {
+			await expect(context.instantLayer.setTargetWhitelist(ZeroAddress, true)).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"InvalidCallData",
+			)
+		})
+
+		it("symmio is whitelisted by default in constructor", async () => {
+			expect(await context.instantLayer.whitelistedTargets(context.diamond)).to.be.true
+		})
+
+		it("accountHub is auto-whitelisted when set", async () => {
+			const hubAddr = await context.accountHub.getAddress()
+			await context.instantLayer.setAccountHub(hubAddr)
+			expect(await context.instantLayer.whitelistedTargets(hubAddr)).to.be.true
+		})
+	})
+
+	describe("Mixed target types in batch execution", () => {
+		let accountAddress: string
+		let mockTarget: any
+		let targetAddress: string
+
+		beforeEach(async () => {
+			// Setup mock external target
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			mockTarget = await MockInstantTarget.deploy()
+			targetAddress = await mockTarget.getAddress()
+			await context.instantLayer.setTargetWhitelist(targetAddress, true)
+
+			// Setup account
+			await context.accountManager.connect(partyA1.getSigner).addAccount("mixedBatch")
+			const accounts = await context.accountManager.getAccounts(partyA1.address, 0, 10)
+			accountAddress = accounts[accounts.length - 1].accountAddress
+
+			// Setup for Symmio operations
+			await context.instantLayer.registerPartyBs([context.symmioPartyB])
+			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
+			await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
+			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
+			await context.symmioPartyB.setSigner(partyB1.getSigner)
+
+			// Fund the account
+			await context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)
+			await context.collateral.connect(partyA1.getSigner).mint(accountAddress, decimal(30n))
+			await context.accountFacet.connect(partyA1.getSigner).depositFor(accountAddress, decimal(20n))
+			await context.accountFacet.connect(partyA1.getSigner).internalTransfer(accountAddress, decimal(1000n))
+
+			// Bind to PartyB
+			await context.accountManager.connect(partyA1.getSigner)._call(accountAddress, [bindToPartyBCallData])
+
+			// Whitelist symbol type
+			await context.symbolControlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
+		})
+
+		it("executes batch with both Symmio and external target operations", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Operation 1: External target call
+			const externalOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: targetAddress,
+				callData: mockTarget.interface.encodeFunctionData("store", [456n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			// Operation 2: Symmio sendQuote operation
+			const symmioOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: context.diamond,
+				callData: quoteCallData,
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig1 = await partyA1.getSigner.signTypedData(domain, types, externalOp)
+			const sig2 = await partyA1.getSigner.signTypedData(domain, types, symmioOp)
+
+			await expect(context.instantLayer.executeBatch([externalOp, symmioOp], [sig1, sig2])).not.to.be.reverted
+
+			// Verify both operations succeeded
+			expect(await mockTarget.lastValue()).to.equal(456n)
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+		})
+
+		it("executes batch with PartyB and external target operations", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// First create a quote that can be locked
+			const quoteOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: context.diamond,
+				callData: quoteCallData,
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+			const quoteSig = await partyA1.getSigner.signTypedData(domain, types, quoteOp)
+			await context.instantLayer.executeBatch([quoteOp], [quoteSig])
+
+			// Now test mixed batch with PartyB + external target
+			const lockQuoteCallDataLocal = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [
+				1,
+				await getDummySingleUpnlSig(10n),
+			])
+
+			const partyBOp: InstantLayer.SignedOperationStruct = {
+				signer: await context.symmioPartyB.getAddress(),
+				target: context.diamond,
+				callData: lockQuoteCallDataLocal,
+				signerAccount: {
+					addr: await context.symmioPartyB.getAddress(),
+					isPartyB: true,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const externalOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: targetAddress,
+				callData: mockTarget.interface.encodeFunctionData("store", [789n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig1 = await partyB1.getSigner.signTypedData(domain, types, partyBOp)
+			const sig2 = await partyA1.getSigner.signTypedData(domain, types, externalOp)
+
+			await expect(context.instantLayer.executeBatch([partyBOp, externalOp], [sig1, sig2])).not.to.be.reverted
+
+			// Verify both operations succeeded
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
+			expect(await mockTarget.lastValue()).to.equal(789n)
+		})
+
+		it("fails entire batch if external target operation fails", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Set external target to revert
+			await mockTarget.setShouldRevert(true, "external revert")
+
+			const externalOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: targetAddress,
+				callData: mockTarget.interface.encodeFunctionData("store", [123n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const symmioOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: context.diamond,
+				callData: quoteCallData,
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig1 = await partyA1.getSigner.signTypedData(domain, types, externalOp)
+			const sig2 = await partyA1.getSigner.signTypedData(domain, types, symmioOp)
+
+			// External target is first, should fail whole batch
+			await expect(context.instantLayer.executeBatch([externalOp, symmioOp], [sig1, sig2]))
+				.to.be.revertedWithCustomError(context.instantLayer, "OperationFailed")
+				.withArgs(0, anyValue)
+		})
+	})
+
+	describe("Template execution with external targets", () => {
+		let accountAddress: string
+		let mockTarget: any
+		let targetAddress: string
+
+		beforeEach(async () => {
+			// Setup mock external target
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			mockTarget = await MockInstantTarget.deploy()
+			targetAddress = await mockTarget.getAddress()
+			await context.instantLayer.setTargetWhitelist(targetAddress, true)
+
+			// Setup account
+			await context.accountManager.connect(partyA1.getSigner).addAccount("templateExternal")
+			const accounts = await context.accountManager.getAccounts(partyA1.address, 0, 10)
+			accountAddress = accounts[accounts.length - 1].accountAddress
+
+			// Setup for Symmio operations
+			await context.instantLayer.registerPartyBs([context.symmioPartyB])
+			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
+			await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
+			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
+			await context.symmioPartyB.setSigner(partyB1.getSigner)
+
+			// Fund the account
+			await context.collateral.connect(partyA1.getSigner).approve(context.diamond, ethers.MaxUint256)
+			await context.collateral.connect(partyA1.getSigner).mint(accountAddress, decimal(30n))
+			await context.accountFacet.connect(partyA1.getSigner).depositFor(accountAddress, decimal(20n))
+			await context.accountFacet.connect(partyA1.getSigner).internalTransfer(accountAddress, decimal(1000n))
+
+			// Bind to PartyB
+			await context.accountManager.connect(partyA1.getSigner)._call(accountAddress, [bindToPartyBCallData])
+
+			// Whitelist symbol type
+			await context.symbolControlFacet.whitelistSymbolType(context.symmioPartyB.getAddress(), 1)
+		})
+
+		it("executes template with external target operations", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Create a simple template with two external target operations
+			await context.instantLayer.addTemplate("externalOnly", [
+				{ insertionPoints: [], sourceIndices: [] },
+				{ insertionPoints: [], sourceIndices: [] },
+			])
+			const templateId = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			const op1: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: targetAddress,
+				callData: mockTarget.interface.encodeFunctionData("store", [111n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const op2: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: targetAddress,
+				callData: mockTarget.interface.encodeFunctionData("store", [222n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig1 = await partyA1.getSigner.signTypedData(domain, types, op1)
+			const sig2 = await partyA1.getSigner.signTypedData(domain, types, op2)
+
+			await expect(context.instantLayer.executeTemplate(templateId, [op1, op2], [sig1, sig2]))
+				.to.emit(context.instantLayer, "OperationsExecuted")
+				.withArgs(templateId, context.signers.admin.address)
+
+			// Last value should be from op2
+			expect(await mockTarget.lastValue()).to.equal(222n)
+		})
+
+		it("executes template mixing Symmio and external target operations", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Create template with mixed operations
+			await context.instantLayer.addTemplate("mixedTemplate", [
+				{ insertionPoints: [], sourceIndices: [] }, // external target
+				{ insertionPoints: [], sourceIndices: [] }, // symmio
+			])
+			const templateId = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			const externalOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: targetAddress,
+				callData: mockTarget.interface.encodeFunctionData("store", [333n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const symmioOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: context.diamond,
+				callData: quoteCallData,
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig1 = await partyA1.getSigner.signTypedData(domain, types, externalOp)
+			const sig2 = await partyA1.getSigner.signTypedData(domain, types, symmioOp)
+
+			await expect(context.instantLayer.executeTemplate(templateId, [externalOp, symmioOp], [sig1, sig2])).not.to.be.reverted
+
+			// Verify both operations succeeded
+			expect(await mockTarget.lastValue()).to.equal(333n)
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+		})
+
+		it("result injection from external target is not supported (result ignored)", async () => {
+			const deadline = await getBlockTimestamp(300n)
+
+			// Create template that tries to inject from external target result
+			// This should fail because external target results are set to empty bytes
+			await context.instantLayer.addTemplate("injectFromExternal", [
+				{ insertionPoints: [], sourceIndices: [] }, // external target (returns bytes32 but ignored)
+				{ insertionPoints: [0], sourceIndices: [0] }, // tries to inject from op0
+			])
+			const templateId = (await context.instantLayer.getNextTemplateId()) - 1n
+
+			const externalOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: targetAddress,
+				callData: mockTarget.interface.encodeFunctionData("store", [444n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const symmioOp: InstantLayer.SignedOperationStruct = {
+				signer: partyA1.address,
+				target: context.diamond,
+				callData: quoteCallData,
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 1n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+
+			const sig1 = await partyA1.getSigner.signTypedData(domain, types, externalOp)
+			const sig2 = await partyA1.getSigner.signTypedData(domain, types, symmioOp)
+
+			// Should revert because external target result is set to empty
+			await expect(context.instantLayer.executeTemplate(templateId, [externalOp, symmioOp], [sig1, sig2])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"MissingSourceResult",
+			)
 		})
 	})
 }

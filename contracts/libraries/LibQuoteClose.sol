@@ -130,14 +130,38 @@ library LibQuoteClose {
 			quote.quantityToClose = 0; // for CANCEL_CLOSE_PENDING status
 		}
 
-		address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-		address systemHook = accountLayout.affiliateHooks[address(0)];
+		{
+			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
+			address systemHook = accountLayout.affiliateHooks[address(0)];
 
-		if (affiliateHook != address(0)) {
-			try ISymmioHook(affiliateHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
-		}
-		if (systemHook != address(0)) {
-			try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
+			if (affiliateHook != address(0)) {
+				try ISymmioHook(affiliateHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
+				try
+					ISymmioHook(affiliateHook).onFeeCharged(
+						quote.id,
+						fee,
+						quote.partyA,
+						quote.partyB,
+						quote.symbolId,
+						quote.affiliate,
+						ISymmioHook.TradingFeeType.CLOSE
+					)
+				{} catch {}
+			}
+			if (systemHook != address(0)) {
+				try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
+				try
+					ISymmioHook(systemHook).onFeeCharged(
+						quote.id,
+						fee,
+						quote.partyA,
+						quote.partyB,
+						quote.symbolId,
+						quote.affiliate,
+						ISymmioHook.TradingFeeType.CLOSE
+					)
+				{} catch {}
+			}
 		}
 
 		emit SharedEvents.TradeVolumeRecorded(

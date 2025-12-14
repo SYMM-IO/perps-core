@@ -31,7 +31,7 @@ contract PartyBQuoteActionsFacet is Accessibility, Pausable, IPartyBQuoteActions
 		if (res == QuoteStatus.EXPIRED) {
 			emit ExpireQuoteOpen(res, quoteId);
 		} else if (res == QuoteStatus.PENDING) {
-			emit UnlockQuote(msg.sender, quoteId, QuoteStatus.PENDING);
+			emit UnlockQuote(LibSigner.getSigner(), quoteId, QuoteStatus.PENDING);
 		}
 	}
 

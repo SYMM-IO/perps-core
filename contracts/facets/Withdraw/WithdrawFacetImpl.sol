@@ -11,6 +11,7 @@ import "../../storages/AccountStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
 import "../../storages/MAStorage.sol";
 import "../../storages/WithdrawStorage.sol";
+import "../../libraries/LibSigner.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
 import { IExpressProvider } from "../../interfaces/IExpressProvider.sol";
 
@@ -48,7 +49,7 @@ library WithdrawFacetImpl {
 
 		if (speedUp) {
 			require(
-				withdrawLayout.speedUpWhitelist[msg.sender],
+				withdrawLayout.speedUpWhitelist[LibSigner.getSigner()],
 				"WithdrawFacet : Not allowed to speed up withdraw"
 			);
 		}
@@ -113,7 +114,7 @@ library WithdrawFacetImpl {
 		uint256 totalAmountWith18 = _to18Decimals(totalAmount, collateralDecimals);
 
 		require(
-			accountLayout.balances[msg.sender] >= totalAmountWith18,
+			accountLayout.balances[LibSigner.getSigner()] >= totalAmountWith18,
 			"WithdrawFacet : Insufficient balance"
 		);
 
@@ -125,9 +126,9 @@ library WithdrawFacetImpl {
 		);
 
 		withdrawLayout.withdrawLockedBalance += (totalAmount - totalVirtualAmount);
-		accountLayout.balances[msg.sender] -= totalAmountWith18;
+		accountLayout.balances[LibSigner.getSigner()] -= totalAmountWith18;
 
-		uint256 currentId = ++withdrawLayout.lastWithdrawRequestId[msg.sender];
+		uint256 currentId = ++withdrawLayout.lastWithdrawRequestId[LibSigner.getSigner()];
 
 		// Final provider selection
 		address provider;
@@ -147,7 +148,7 @@ library WithdrawFacetImpl {
 
 		WithdrawRequest memory withdrawRequest = WithdrawRequest({
 			id: currentId,
-			user: msg.sender,
+			user: LibSigner.getSigner(),
 			parts: parts,
 			timestamp: block.timestamp,
 			cooldownEndTime: block.timestamp + withdrawLayout.withdrawCooldownPeriod,
@@ -161,7 +162,7 @@ library WithdrawFacetImpl {
 			totalVirtualAmount: totalVirtualAmount
 		});
 
-		withdrawLayout.withdrawRequests[msg.sender][currentId] = withdrawRequest;
+		withdrawLayout.withdrawRequests[LibSigner.getSigner()][currentId] = withdrawRequest;
 
 		// Provider callbacks
 		if (hasExpress) {
@@ -235,7 +236,7 @@ library WithdrawFacetImpl {
 		withdrawRequest.status = WithdrawStatus.COMPLETED;
 
 		// Keep legacy event behavior
-		emit Withdraw(msg.sender, withdrawRequest.user, withdrawRequest.totalAmount);
+		emit Withdraw(LibSigner.getSigner(), withdrawRequest.user, withdrawRequest.totalAmount);
 	}
 
 	function acceptWithdrawRequest(address user, uint256 requestId) internal {
@@ -281,7 +282,7 @@ library WithdrawFacetImpl {
 	function requestCancelWithdraw(uint256 requestId) internal {
 
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(
-			msg.sender,
+			LibSigner.getSigner(),
 			requestId
 		);
 
@@ -313,7 +314,7 @@ library WithdrawFacetImpl {
 	function forceCancelWithdraw(uint256 requestId) internal {
 
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(
-			msg.sender,
+			LibSigner.getSigner(),
 			requestId
 		);
 

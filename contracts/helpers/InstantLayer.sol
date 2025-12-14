@@ -95,6 +95,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			abi.encodePacked(
 				"SignedOperation(",
 				"address signer,",
+				"address target,",
 				"bytes callData,",
 				"Account signerAccount,",
 				"ReplayAttackHeader replayAttackHeader",
@@ -135,6 +136,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Registry of authorized PartyB contracts
 	/// @dev    PartyB contracts must be registered before they can execute operations
 	mapping(address => bool) public registeredPartyBs;
+
+	/// @notice Registry of whitelisted call targets
+	mapping(address => bool) public whitelistedTargets;
 
 	/// @notice Configured AccountHub contract
 	address public accountHub;
@@ -193,12 +197,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @notice Represents a signed operation ready for execution.
 	 * @dev    This structure is signed via EIP-712 for secure off-chain authorization.
 	 * @param signer             Address that signed this operation (may be delegated)
+	 * @param target             Contract to execute the call against
 	 * @param callData           Encoded function call to execute
 	 * @param signerAccount      Account context for the operation
 	 * @param replayAttackHeader Anti-replay protection parameters
 	 */
 	struct SignedOperation {
 		address signer;
+		address target;
 		bytes callData;
 		Account signerAccount;
 		ReplayAttackHeader replayAttackHeader;
@@ -291,6 +297,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param newAccountHub new AccountHub
 	event AccountHubUpdated(address indexed oldAccountHub, address indexed newAccountHub);
 
+	/// @notice Emitted when target whitelist status changes
+	/// @param target Target contract address
+	/// @param allowed Whether the target is whitelisted
+	event TargetWhitelistUpdated(address indexed target, bool allowed);
+
 	/// @notice Emitted when delegation permission is granted
 	/// @param delegator Address granting the delegation
 	/// @param delegate Address receiving delegation permission
@@ -371,6 +382,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param hash The operation hash that was already used
 	error OperationAlreadyExecuted(bytes32 hash);
 
+	/// @notice Target contract is not whitelisted
+	/// @param target The target address
+	error TargetNotWhitelisted(address target);
+
 	/// @notice Delegation hash has already been executed
 	/// @param hash The delegation hash that was already used
 	error DelegationAlreadyExecuted(bytes32 hash);
@@ -438,6 +453,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 		revocationCooldown = 10 minutes;
 		emit RevocationCooldownUpdated(0, revocationCooldown);
+
+		whitelistedTargets[_symmio] = true;
+		emit TargetWhitelistUpdated(_symmio, true);
 	}
 
 	/* ═════════════════════ DELEGATION MANAGEMENT ═════════════════════ */
@@ -557,7 +575,21 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	function setAccountHub(address _accountHub) external onlyRole(SETTER_ROLE) {
 		if (_accountHub == address(0)) revert UnregisteredAccountHub(_accountHub);
 		emit AccountHubUpdated(accountHub, _accountHub);
+		whitelistedTargets[accountHub] = false;
 		accountHub = _accountHub;
+		whitelistedTargets[_accountHub] = true;
+		emit TargetWhitelistUpdated(_accountHub, true);
+	}
+
+	/**
+	 * @notice Whitelist or remove whitelist for a target contract.
+	 * @param target  Target contract address.
+	 * @param allowed True to whitelist, false to remove.
+	 */
+	function setTargetWhitelist(address target, bool allowed) external onlyRole(SETTER_ROLE) {
+		if (target == address(0)) revert InvalidCallData();
+		whitelistedTargets[target] = allowed;
+		emit TargetWhitelistUpdated(target, allowed);
 	}
 
 	/* ══════════════════════ TEMPLATE MANAGEMENT ══════════════════════ */
@@ -785,6 +817,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Validate calldata has at least selector
 		if (signedOp.callData.length < 4) revert CallDataLengthMismatch();
 
+		if (!whitelistedTargets[signedOp.target]) revert TargetNotWhitelisted(signedOp.target);
+
 		bytes32 hash = getOperationHash(signedOp);
 		address signer = signedOp.signer;
 
@@ -845,17 +879,24 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = callData;
 
+		bool decodeNestedResult;
+
 		if (signedOp.signerAccount.isPartyB) {
 			// Route to PartyB
 			(success, result) = signedOp.signer.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
-		} else {
+		} else if (signedOp.target == address(symmio)) {
 			// Route to AccountHub
 			if (accountHub == address(0)) revert AccountHubNotSet();
 			(success, result) = accountHub.call(abi.encodeWithSelector(IAccountHub._call.selector, signedOp.signerAccount.addr, callDatas));
+			decodeNestedResult = true;
+		} else {
+			// Route to a whitelisted target
+			(success, result) = signedOp.target.call(callData);
+			if (success) result = ""; // ignore result
 		}
 
 		// Decode nested result array
-		if (success && result.length > 0) {
+		if (decodeNestedResult && success && result.length > 0) {
 			bytes[] memory arr = abi.decode(result, (bytes[]));
 			result = arr[0];
 		}
@@ -1053,6 +1094,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				abi.encode(
 					SIGNED_OPERATION_TYPEHASH,
 					signedOp.signer,
+					signedOp.target,
 					keccak256(signedOp.callData),
 					_hashAccount(signedOp.signerAccount),
 					_hashReplay(signedOp.replayAttackHeader)

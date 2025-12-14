@@ -22,7 +22,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		PairUpnlSig memory upnlSig
 	) external whenNotPartyBActionsPaused notLiquidatedPartyA(partyA) {
 		FundingRateFacetImpl.chargeFundingRate(partyA, quoteIds, rates, upnlSig);
-		emit ChargeFundingRate(msg.sender, partyA, quoteIds, rates);
+		emit ChargeFundingRate(LibSigner.getSigner(), partyA, quoteIds, rates);
 	}
 
 	/// @notice Set funding rates for a given Symbols.
@@ -35,9 +35,10 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		int256[] memory shortFees,
 		int256[] memory marketPrices
 	) external whenNotPartyBActionsPaused onlyPartyB {
+		address signer = LibSigner.getSigner();
 		FundingRateFacetImpl.setFundingFee(symbolIds, longFees, shortFees, marketPrices);
-		emit SetLongFundingFee(symbolIds, longFees, marketPrices, msg.sender);
-		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, msg.sender);
+		emit SetLongFundingFee(symbolIds, longFees, marketPrices, signer);
+		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, signer);
 	}
 
 	/// @notice Set funding rates for a given Symbols.
@@ -49,7 +50,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		int256[] memory marketPrices
 	) external whenNotPartyBActionsPaused onlyPartyB {
 		FundingRateFacetImpl.setLongFundingFee(symbolIds, longFees, marketPrices);
-		emit SetLongFundingFee(symbolIds, longFees, marketPrices, msg.sender);
+		emit SetLongFundingFee(symbolIds, longFees, marketPrices, LibSigner.getSigner());
 	}
 
 	/// @notice Set funding rates for a given Symbols.
@@ -61,15 +62,16 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		int256[] memory marketPrices
 	) external whenNotPartyBActionsPaused onlyPartyB {
 		FundingRateFacetImpl.setShortFundingFee(symbolIds, shortFees, marketPrices);
-		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, msg.sender);
+		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, LibSigner.getSigner());
 	}
 
 	/// @notice Set epoch durations for funding rates for a given Symbols.
 	/// @param symbolIds An array of symbol ids.
 	/// @param durations An array of durations for funding fees.
 	function setEpochDurations(uint256[] memory symbolIds, uint256[] memory durations) external whenNotPartyBActionsPaused onlyPartyB {
-		FundingRateFacetImpl.setEpochDuration(symbolIds, durations, msg.sender);
-		emit SetEpochDuration(symbolIds, durations, msg.sender);
+		address signer = LibSigner.getSigner();
+		FundingRateFacetImpl.setEpochDuration(symbolIds, durations, signer);
+		emit SetEpochDuration(symbolIds, durations, signer);
 	}
 
 	function updateAccumulatedFundingFee(
@@ -79,7 +81,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		int256[] memory marketPrices
 	) external whenNotPartyBActionsPaused onlyPartyB {
 		FundingRateFacetImpl.updateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices);
-		emit UpdateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices, msg.sender);
+		emit UpdateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices, LibSigner.getSigner());
 	}
 
 	/// @notice Charges funding rates for a given Party A position.
@@ -94,6 +96,6 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		PairUpnlSig memory upnlSig
 	) external whenNotPartyBActionsPaused notLiquidatedPartyA(partyA) notLiquidatedPartyB(partyB, partyA) onlyPartyB {
 		FundingRateFacetImpl.chargeAccumulatedFundingFee(partyA, partyB, quoteIds, upnlSig);
-		emit ChargeAccumulatedFundingFee(partyA, partyB, quoteIds, msg.sender);
+		emit ChargeAccumulatedFundingFee(partyA, partyB, quoteIds, LibSigner.getSigner());
 	}
 }
