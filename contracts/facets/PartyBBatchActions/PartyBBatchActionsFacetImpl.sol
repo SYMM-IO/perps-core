@@ -135,7 +135,7 @@ library PartyBBatchActionsFacetImpl {
 		address firstQuotePartyA = firstQuote.partyA;
 		address firstQuotePartyB = firstQuote.partyB;
 
-		if (accountLayout.bindState[firstQuote.partyA].partyB != LibSigner.getSigner()) {
+		if (accountLayout.bindState[firstQuote.partyA].partyB != LibSigner.getSigner()|| !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
 		}

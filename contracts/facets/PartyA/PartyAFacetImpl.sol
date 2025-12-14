@@ -65,6 +65,7 @@ library PartyAFacetImpl {
 
 		address boundedPartyB = accountLayout.bindState[signer].partyB;
 		if (boundedPartyB != address(0)) {
+			require(accountLayout.isPartyBBindable[boundedPartyB], "PartyAFacet: Bound Party B is not Bindable");
 			require(partyBsWhiteList.length == 1 && partyBsWhiteList[0] == boundedPartyB, "PartyAFacet: PartyA is bound to a different PartyB");
 		} else {
 			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId);

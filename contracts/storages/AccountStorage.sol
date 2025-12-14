@@ -166,6 +166,7 @@ library AccountStorage {
 		mapping(uint256 => ForceCloseDetail) forceCloseDetails; // quoteId => Force close status
 		uint256 lastExternalTransferId;
 		mapping(uint256 => ExternalTransferReq) externalTransfers;
+		mapping(address => bool) isPartyBBindable;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

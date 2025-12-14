@@ -212,6 +212,10 @@ library LibQuoteClose {
 				LibAccount.partyBPendingLockedBalances(quote.partyB, quote.partyA).subQuote(quote);
 				LibQuote.removeFromPartyBPendingQuotes(quote);
 			}
+
+			if(quote.quoteStatus == QuoteStatus.LOCKED)
+				quoteLayout.partyALockQuotesCount[quote.partyA]--;
+
 			quote.quoteStatus = QuoteStatus.EXPIRED;
 			result = QuoteStatus.EXPIRED;
 

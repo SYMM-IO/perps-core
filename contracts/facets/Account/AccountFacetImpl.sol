@@ -281,13 +281,20 @@ library AccountFacetImpl {
 	}
 
 	function bindToPartyB(address partyB) internal {
-		// FIXME: check to have no open or locked position with other partyB
-		// FIXME: enable party BINDING
-		// FIXME: Check if bind no muon verify
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		address signer = LibSigner.getSigner();
 		require(partyB != address(0), "AccountFacet: Zero address");
-
-		BindState storage bindState = accountLayout.bindState[LibSigner.getSigner()];
+		require(
+			quoteLayout.partyAOpenPositions[signer].length == quoteLayout.partyBOpenPositions[partyB][signer].length,
+			"AccountFacet : Have Open Positions with Other Party B"
+		);
+		require(
+			quoteLayout.partyALockQuotesCount[signer] == quoteLayout.partyBPendingQuotes[partyB][signer].length,
+			"AccountFacet : Have Locked Quotes with Other Party B"
+		);
+		require(accountLayout.isPartyBBindable[partyB], "AccountFacet: Not Bindable");
+		BindState storage bindState = accountLayout.bindState[signer];
 		require(bindState.status == BindStatus.NOT_BOUND, "AccountFacet: Invalid state");
 
 		bindState.partyB = partyB;

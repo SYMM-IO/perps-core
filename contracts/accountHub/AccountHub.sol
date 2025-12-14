@@ -728,10 +728,19 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		subAccountToVirtualAccounts[parentAccount].add(virtualAccount);
 
+		ISymmio symmio = ISymmio(parent.symmioCore);
+
+		ISymmio.BindState memory bindState = symmio.getBindState(parentAccount);
+		if (bindState.status == ISymmio.BindStatus.BOUND) {
+			symmio.setSigner(virtualAccount);
+			symmio.bindToPartyB(bindState.partyB);
+			symmio.setSigner(address(0));
+		}
+
 		_callHook(
 			parent.affiliate,
 			IAccountHubHook.onVirtualAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount,metadata)
+			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount, metadata)
 		);
 
 		emit VirtualAccountCreated(virtualAccount, parentAccount);
