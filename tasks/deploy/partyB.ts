@@ -3,10 +3,10 @@ import {readData, writeData} from "../utils/fs"
 import {DEPLOYMENT_LOG_FILE} from "./constants"
 
 task("deploy:symmioPartyB", "Deploys the SymmioPartyB")
-	.addParam("symmioAddress", "The address of the Symmio contract")
+	.addParam("symmioaddress", "The address of the Symmio contract")
 	.addParam("admin", "The admin address")
 	.addOptionalParam("logData", "Write the deployed addresses to a data file", true, types.boolean)
-	.setAction(async ({symmioAddress, admin, logData}, {ethers, upgrades, run}) => {
+	.setAction(async ({symmioaddress, admin, logData}, {ethers, upgrades, run}) => {
 		console.log("Running deploy:symmioPartyB")
 
 		const [deployer] = await ethers.getSigners()
@@ -15,7 +15,7 @@ task("deploy:symmioPartyB", "Deploys the SymmioPartyB")
 
 		// Deploy SymmioPartyB as upgradeable
 		const SymmioPartyBFactory = await ethers.getContractFactory("SymmioPartyB")
-		const symmioPartyB = await upgrades.deployProxy(SymmioPartyBFactory, [admin, symmioAddress], {initializer: "initialize"})
+		const symmioPartyB = await upgrades.deployProxy(SymmioPartyBFactory, [admin, symmioaddress], {initializer: "initialize"})
 		await symmioPartyB.waitForDeployment()
 
 		const addresses = {
@@ -39,7 +39,7 @@ task("deploy:symmioPartyB", "Deploys the SymmioPartyB")
 				{
 					name: "SymmioPartyBProxy",
 					address: await symmioPartyB.getAddress(),
-					constructorArguments: [admin, symmioAddress],
+					constructorArguments: [admin, symmioaddress],
 				},
 				{
 					name: "SymmioPartyBAdmin",

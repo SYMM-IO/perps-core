@@ -17,12 +17,12 @@ export async function initializeFixture(): Promise<RunContext> {
 	const admin = process.env.ADMIN_PUBLIC_KEY || (await (await ethers.getSigners())[0].getAddress())
 
 	const symmioPartyB = await run("deploy:symmioPartyB", {
-		symmioAddress: await diamond.getAddress(),
+		symmioaddress: await diamond.getAddress(),
 		admin: admin,
 	})
 
 	const instantLayer = await run("deploy:InstantLayer", {
-		symmioAddress: await diamond.getAddress(),
+		symmioaddress: await diamond.getAddress(),
 		admin: admin,
 	})
 
@@ -30,13 +30,13 @@ export async function initializeFixture(): Promise<RunContext> {
 
 	const affiliateHub: AffiliateHub = await run("deploy:affiliateHub", {
 		admin: context.signers.admin.address,
-		symmioFeeReceiver: context.signers.symmioFeeReceiver.address,
+		symmiofeereceiver: context.signers.symmioFeeReceiver.address,
 		logData: false,
 	})
 
 	const accountHub: AccountHub = await run("deploy:accountHub", {
 		admin: context.signers.admin.address,
-		affiliateHubAddress: await affiliateHub.getAddress(),
+		affiliatehubaddress: await affiliateHub.getAddress(),
 		logData: false,
 	})
 
