@@ -36,4 +36,6 @@ interface IViewFacetSymbol {
 	function getFundingFeesOfPartyB(uint256 symbolId, address partyB) external view returns (FundingFee memory);
 
 	function getAccumulatedFundingFees(uint256[] memory quoteIds) external view returns (int256[] memory fees);
+
+	function getSumAccumulatedFundingFees(uint256[] memory quoteIds) external view returns (int256 sum);
 }

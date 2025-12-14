@@ -172,42 +172,36 @@ library LiquidationFacetImpl {
 				quote
 			);
 
-			if (!accountLayout.settlementStates[partyA][quote.partyB].pending) {
-				accountLayout.settlementStates[partyA][quote.partyB].pending = true;
-				accountLayout.liquidationDetails[partyA].involvedPartyBCounts += 1;
-			}
-			if (accountLayout.liquidationDetails[partyA].liquidationType == LiquidationType.NORMAL) {
-				accountLayout.settlementStates[partyA][quote.partyB].cva += quote.lockedValues.cva;
+			int256 accumulatedFundingFee = LibQuoteFunding.getAccumulatedFundingFee(quote.id);
+			int256 pnlWithFunding = (hasMadeProfit ? int256(amount) : -int256(amount)) - accumulatedFundingFee;
+			SettlementState storage settlementState = accountLayout.settlementStates[partyA][quote.partyB];
+			LiquidationDetail storage liquidationDetail = accountLayout.liquidationDetails[partyA];
 
-				if (hasMadeProfit) {
-					accountLayout.settlementStates[partyA][quote.partyB].actualAmount += int256(amount);
+			if (!settlementState.pending) {
+				settlementState.pending = true;
+				liquidationDetail.involvedPartyBCounts += 1;
+			}
+			if (liquidationDetail.liquidationType == LiquidationType.NORMAL) {
+				settlementState.cva += quote.lockedValues.cva;
+
+				settlementState.actualAmount += pnlWithFunding;
+				settlementState.expectedAmount = settlementState.actualAmount;
+			} else if (liquidationDetail.liquidationType == LiquidationType.LATE) {
+				settlementState.cva += quote.lockedValues.cva -
+					((quote.lockedValues.cva * liquidationDetail.deficit) / accountLayout.lockedBalances[partyA].cva);
+
+				settlementState.actualAmount += pnlWithFunding;
+				settlementState.expectedAmount = settlementState.actualAmount;
+			} else if (liquidationDetail.liquidationType == LiquidationType.OVERDUE) {
+				if (pnlWithFunding >= 0) {
+					settlementState.actualAmount += pnlWithFunding;
+					settlementState.expectedAmount += pnlWithFunding;
 				} else {
-					accountLayout.settlementStates[partyA][quote.partyB].actualAmount -= int256(amount);
-				}
-				accountLayout.settlementStates[partyA][quote.partyB].expectedAmount = accountLayout
-				.settlementStates[partyA][quote.partyB].actualAmount;
-			} else if (accountLayout.liquidationDetails[partyA].liquidationType == LiquidationType.LATE) {
-				accountLayout.settlementStates[partyA][quote.partyB].cva +=
-					quote.lockedValues.cva -
-					((quote.lockedValues.cva * accountLayout.liquidationDetails[partyA].deficit) / accountLayout.lockedBalances[partyA].cva);
-				if (hasMadeProfit) {
-					accountLayout.settlementStates[partyA][quote.partyB].actualAmount += int256(amount);
-				} else {
-					accountLayout.settlementStates[partyA][quote.partyB].actualAmount -= int256(amount);
-				}
-				accountLayout.settlementStates[partyA][quote.partyB].expectedAmount = accountLayout
-				.settlementStates[partyA][quote.partyB].actualAmount;
-			} else if (accountLayout.liquidationDetails[partyA].liquidationType == LiquidationType.OVERDUE) {
-				if (hasMadeProfit) {
-					accountLayout.settlementStates[partyA][quote.partyB].actualAmount += int256(amount);
-					accountLayout.settlementStates[partyA][quote.partyB].expectedAmount += int256(amount);
-				} else {
-					accountLayout.settlementStates[partyA][quote.partyB].actualAmount -= int256(
-						amount -
-							((amount * accountLayout.liquidationDetails[partyA].deficit) /
-								uint256(-accountLayout.liquidationDetails[partyA].totalUnrealizedLoss))
-					);
-					accountLayout.settlementStates[partyA][quote.partyB].expectedAmount -= int256(amount);
+					uint256 lossAmount = uint256(-pnlWithFunding);
+					uint256 adjustedLoss = lossAmount -
+						((lossAmount * liquidationDetail.deficit) / uint256(-liquidationDetail.totalUnrealizedLoss));
+					settlementState.actualAmount -= int256(adjustedLoss);
+					settlementState.expectedAmount -= int256(lossAmount);
 				}
 			}
 			accountLayout.partyBLockedBalances[quote.partyB][partyA].subQuote(quote);
@@ -223,10 +217,7 @@ library LiquidationFacetImpl {
 			quoteLayout.partyBPositionsCount[quote.partyB][partyA] -= 1;
 			quoteLayout.partyBPositionsCount[quote.partyB][address(0)] -= 1;
 
-			int256 accumulatedFundingFee = LibQuoteFunding.getAccumulatedFundingFee(quote.id);
-			accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl -= accumulatedFundingFee;
-
-			if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
+		if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
 				int256 settleAmount = accountLayout.settlementStates[partyA][quote.partyB].expectedAmount;
 				if (settleAmount < 0) {
 					accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += settleAmount;
