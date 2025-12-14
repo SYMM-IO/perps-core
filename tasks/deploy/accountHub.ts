@@ -1,7 +1,7 @@
 import { task, types } from "hardhat/config"
 
 import { readData, writeData } from "../utils/fs"
-import { DEPLOYMENT_LOG_FILE } from "./constants"
+import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -85,7 +85,7 @@ async function logDeploymentData(addresses: any, admin: string, affiliateHubAddr
 		const newEntries = createDeploymentEntries(addresses, admin, affiliateHubAddress, accountManagerBytecode)
 		const updatedData = [...deployedData, ...newEntries]
 
-		writeData(DEPLOYMENT_LOG_FILE, updatedData)
+		writeData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE, updatedData)
 		console.log("Deployed addresses written to JSON file")
 	} catch (err) {
 		console.error(`Failed to log deployment data: ${err}`)
@@ -98,7 +98,7 @@ async function logDeploymentData(addresses: any, admin: string, affiliateHubAddr
  */
 function readExistingDeployments(): any[] {
 	try {
-		return readData(DEPLOYMENT_LOG_FILE)
+		return readData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE)
 	} catch (err) {
 		console.warn(`Could not read existing JSON file: ${err}. Starting with empty data.`)
 		return []
@@ -114,16 +114,6 @@ function createDeploymentEntries(addresses: any, admin: string, affiliateHubAddr
 			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.PROXY}`,
 			address: addresses.proxy,
 			constructorArguments: [admin, affiliateHubAddress, accountManagerBytecode],
-		},
-		{
-			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.ADMIN}`,
-			address: addresses.admin,
-			constructorArguments: [],
-		},
-		{
-			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.IMPLEMENTATION}`,
-			address: addresses.implementation,
-			constructorArguments: [],
 		},
 	]
 }
