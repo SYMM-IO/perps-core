@@ -505,4 +505,20 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().penaltyCollector = penaltyCollector;
 		emit SetPenaltyCollector(penaltyCollector);
 	}
+
+	function setPartyBBindable(address partyB) external onlyRole(LibAccessibility.BINDABLE_SETTER_ROLE) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
+		require(!accountLayout.isPartyBBindable[partyB], "ControlFacet: Already bindable");
+		accountLayout.isPartyBBindable[partyB] = true;
+		emit SetPartyBBindable(partyB);
+	}
+
+	function unsetPartyBBindable(address partyB) external onlyRole(LibAccessibility.BINDABLE_SETTER_ROLE) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
+		require(accountLayout.isPartyBBindable[partyB], "ControlFacet: Not bindable");
+		accountLayout.isPartyBBindable[partyB] = false;
+		emit UnsetPartyBBindable(partyB);
+	}
 }

@@ -6,6 +6,7 @@ import { keccak256 } from "js-sha3"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 import { ethers } from "hardhat"
 import { ZeroAddress } from "ethers"
+import { toUtf8Bytes } from "ethers";
 
 const DISPUTE_ROLE = `0x${keccak256("DISPUTE_ROLE")}`
 const PARTY_B_MANAGER_ROLE = `0x${keccak256("PARTY_B_MANAGER_ROLE")}`
@@ -739,6 +740,50 @@ export function shouldBehaveLikeControlFacet(): void {
 			expect(await context.viewFacet.getPenaltyCollector()).to.equal(context.signers.admin.address)
 		})
 	})
+
+	describe("SetPartyBBindable", () => {
+
+		beforeEach(async function () {
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+		})
+
+		it("should fail to set non party B bindable", async () => {
+			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.user.address))
+				.to.revertedWith("ControlFacet: Address is not PartyB")
+		})
+
+		it("should fail to unset non party B bindable", async () => {
+			await expect(context.controlFacet.connect(context.signers.admin).unsetPartyBBindable(context.signers.user.address))
+				.to.revertedWith("ControlFacet: Address is not PartyB")
+		})
+
+		it("should fail to unset unbindable party B bindable", async () => {
+			await expect(context.controlFacet.connect(context.signers.admin).unsetPartyBBindable(context.signers.hedger.address))
+				.to.revertedWith("ControlFacet: Not bindable")
+		})
+
+		it("should fail to set bindable party B bindable", async () => {
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address))
+				.to.revertedWith("ControlFacet: Already bindable")
+		})
+
+		it("should set party B bindable correctly", async () => {
+			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address))
+				.not.reverted
+			expect(await context.viewFacet.isBindable(context.signers.hedger.address)).to.be.true
+		})
+
+		it("should unset party B bindable correctly", async () => {
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+			await expect(context.controlFacet.connect(context.signers.admin).unsetPartyBBindable(context.signers.hedger.address))
+				.not.reverted
+			expect(await context.viewFacet.isBindable(context.signers.hedger.address)).to.be.false
+		})
+
+	})
+
+
 
 
 }

@@ -49,5 +49,6 @@ library LibPartyBQuoteActions {
 		// lock funds for partyB
 		accountLayout.partyBPendingLockedBalances[signer][quote.partyA].addQuote(quote);
 		quoteLayout.partyBPendingQuotes[signer][quote.partyA].push(quote.id);
+		quoteLayout.partyALockQuotesCount[quote.partyA]++;
 	}
 }

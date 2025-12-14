@@ -104,8 +104,8 @@ library LibQuote {
 
 		lastOpenPositionIndex = quoteLayout.partyBPositionsCount[quote.partyB][quote.partyA] - 1;
 		quoteLayout.partyBOpenPositions[quote.partyB][quote.partyA][indexOfPartyBPosition] = quoteLayout.partyBOpenPositions[quote.partyB][
-			quote.partyA
-		][lastOpenPositionIndex];
+						quote.partyA
+			][lastOpenPositionIndex];
 		quoteLayout.partyBPositionsIndex[quoteLayout.partyBOpenPositions[quote.partyB][quote.partyA][lastOpenPositionIndex]] = indexOfPartyBPosition;
 		quoteLayout.partyBOpenPositions[quote.partyB][quote.partyA].pop();
 

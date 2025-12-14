@@ -52,7 +52,7 @@ library LibConnections {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address[] storage connections = accountLayout.connectedPartyBs[partyA];
 
-		if (accountLayout.bindState[partyA].status == BindStatus.BOUND || connections.length == 0) {
+		if ((accountLayout.bindState[partyA].status == BindStatus.BOUND && accountLayout.isPartyBBindable[accountLayout.bindState[partyA].partyB]) || connections.length == 0) {
 			return true;
 		}
 

@@ -189,4 +189,8 @@ interface IViewFacet {
 	function getEntityMetadata(address entity) external view returns (EntityMetadata memory);
 
 	function getPenaltyCollector() external view returns(address);
+
+	function getPartyALockedQuotesCount(address user) external view returns(uint256);
+
+	function isBindable(address partyB) external view returns(bool);
 }

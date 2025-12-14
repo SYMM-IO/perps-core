@@ -9,6 +9,7 @@ import "../../libraries/LibQuote.sol";
 import "../../libraries/LibQuoteClose.sol";
 import "../../libraries/LibPartyBQuoteActions.sol";
 import "../../storages/AccountStorage.sol";
+import {LibSigner} from "../../libraries/LibSigner.sol";
 
 library PartyBQuoteActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -20,6 +21,7 @@ library PartyBQuoteActionsFacetImpl {
 
 		if (AccountStorage.layout().bindState[quote.partyA].partyB != address(0)) {
 			require(AccountStorage.layout().bindState[quote.partyA].partyB == signer, "PartyBFacet: PartyB is not bounded to this partyA");
+			require(AccountStorage.layout().isPartyBBindable[signer], "PartyBFacet: PartyB is not bindable");
 		} else {
 			LibMuonPartyB.verifyPartyBUpnl(upnlSig, signer, quote.partyA);
 			int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, quote.partyA);
@@ -44,6 +46,7 @@ library PartyBQuoteActionsFacetImpl {
 			quote.quoteStatus = QuoteStatus.PENDING;
 			accountLayout.partyBPendingLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
 			LibQuote.removeFromPartyBPendingQuotes(quote);
+			quoteLayout.partyALockQuotesCount[quote.partyA]--;
 			quote.partyB = address(0);
 			return QuoteStatus.PENDING;
 		}
@@ -65,6 +68,7 @@ library PartyBQuoteActionsFacetImpl {
 		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 
 		LibQuote.removeFromPendingQuotes(quote);
+		QuoteStorage.layout().partyALockQuotesCount[quote.partyA]--;
 
 		address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 		address systemHook = accountLayout.affiliateHooks[address(0)];

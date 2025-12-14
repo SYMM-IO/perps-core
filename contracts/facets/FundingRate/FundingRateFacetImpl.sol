@@ -130,9 +130,8 @@ library FundingRateFacetImpl {
 			quote.lastFundingPaymentTimestamp = paidTimestamp;
 		}
 
-		if (accountLayout.bindState[partyA].partyB != signer) {
+		if (accountLayout.bindState[partyA].partyB != signer || !accountLayout.isPartyBBindable[signer]) {
 			LibMuonFundingRate.verifyPairUpnl(upnlSig, signer, partyA);
-
 			// Ensure neither party becomes insolvent after funding payments
 			require(partyAAvailableBalance >= 0, "ChargeFundingFacet: PartyA will be insolvent");
 			require(partyBAvailableBalance >= 0, "ChargeFundingFacet: PartyB will be insolvent");

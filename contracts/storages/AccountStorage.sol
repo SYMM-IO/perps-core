@@ -136,6 +136,7 @@ library AccountStorage {
 		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
 		uint256 lastExternalTransferId;
 		mapping(uint256 => ExternalTransferReq) externalTransfers;
+		mapping(address => bool) isPartyBBindable;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

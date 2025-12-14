@@ -70,6 +70,7 @@ library LibPartyBPositionsActions {
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
 			accountLayout.partyBPendingLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
 			quote.lockedValues.mul(openedPrice).div(quote.requestedOpenPrice);
+			quoteLayout.partyALockQuotesCount[quote.partyA]--;
 
 			// check locked values
 			require(
