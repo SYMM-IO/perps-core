@@ -71,7 +71,7 @@ export function shouldBehaveLikeSettlement(): void {
 	})
 
 	it("Should fail when partyA is liquidated", async function () {
-		await user.liquidateAndSetSymbolPrices([1n], [decimal(10000000n)])
+		await user.liquidateAndSetSymbolPrices([1n], [decimal(10000000n)] , [1n,3n,4n,5n])
 		await expect(hedger.settleUpnl(await user.getAddress(), [])).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 	})
 
