@@ -13,7 +13,6 @@ import { User } from "../models/User"
 import { limitOpenRequestBuilder, OpenRequest } from "../models/requestModels/OpenRequest"
 import { limitQuoteRequestBuilder, QuoteRequest } from "../models/requestModels/QuoteRequest"
 import { decimal, getBlockTimestamp } from "../utils/Common"
-// import { IMultiAccount } from "../../src/types/contracts/interfaces"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
 import { cloneTypes, DELEGATE_TYPES } from "./instantLayerEIP712Types"
 
@@ -96,7 +95,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 			requestOpenQuote.openPrice,
 			await getDummyPairUpnlAndPriceSig(10n),
 		])
-
 		bindToPartyBCallData = accountFacet.interface.encodeFunctionData("bindToPartyB", [await context.symmioPartyB.getAddress()])
 
 		ops = [
@@ -127,6 +125,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 		}
 
 		await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
+
+		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+		await context.controlFacet.connect(context.signers.admin).registerPartyB(await context.symmioPartyB.getAddress())
+		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
 	})
 
 	async function signOperation(
@@ -363,7 +365,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
-			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
 			await context.instantLayer.setAccountHub(await context.accountHub.getAddress()) // Admin with SETTER Role
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
@@ -392,8 +393,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			// Bind to Party B
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
 			await context.accountManager.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
 
 			// Whitelisting Symbol type
@@ -855,7 +854,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
-			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
 			await context.instantLayer.setAccountHub(await context.accountHub.getAddress()) // Admin with SETTER Role
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner) // Admin with SETTER Role
@@ -885,8 +883,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			// Bind to Party B
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
 			await context.accountManager.connect(partyA1.getSigner)._call(accounts[0].accountAddress, [bindToPartyBCallData])
 
 			// Whitelisting Symbol type
@@ -1469,12 +1465,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Setup InstantLayer
 			await context.instantLayer.registerPartyBs([context.symmioPartyB])
-			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
 			await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner)
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
 
 			// Create sub-account with MARKET isolation (type 1) - allows multiple quotes with same symbol
 			const subAccountData = [
@@ -2024,10 +2017,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		it("reverts when trying to whitelist zero address", async () => {
-			await expect(context.instantLayer.setTargetWhitelist(ZeroAddress, true)).to.be.revertedWithCustomError(
-				context.instantLayer,
-				"InvalidCallData",
-			)
+			await expect(context.instantLayer.setTargetWhitelist(ZeroAddress, true)).to.be.revertedWithCustomError(context.instantLayer, "InvalidCallData")
 		})
 
 		it("symmio is whitelisted by default in constructor", async () => {
@@ -2060,7 +2050,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Setup for Symmio operations
 			await context.instantLayer.registerPartyBs([context.symmioPartyB])
-			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
 			await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner)
@@ -2146,10 +2135,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await context.instantLayer.executeBatch([quoteOp], [quoteSig])
 
 			// Now test mixed batch with PartyB + external target
-			const lockQuoteCallDataLocal = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [
-				1,
-				await getDummySingleUpnlSig(10n),
-			])
+			const lockQuoteCallDataLocal = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [1, await getDummySingleUpnlSig(10n)])
 
 			const partyBOp: InstantLayer.SignedOperationStruct = {
 				signer: await context.symmioPartyB.getAddress(),
@@ -2257,7 +2243,6 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Setup for Symmio operations
 			await context.instantLayer.registerPartyBs([context.symmioPartyB])
-			await context.controlFacet.registerPartyB(await context.symmioPartyB.getAddress())
 			await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
 			await context.symmioPartyB.grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), await context.signers.admin.getAddress())
 			await context.symmioPartyB.setSigner(partyB1.getSigner)
