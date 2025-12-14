@@ -359,6 +359,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		beforeEach(async function () {
 			const deadline = await getBlockTimestamp(300n)
+			const symmioAddress = context.diamond
 
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
@@ -413,6 +414,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteA1 = {
 				signer: context.signers.admin.address,
+				target: symmioAddress,
 				callData: quoteCallData,
 				signerAccount: {
 					addr: accounts[0].accountAddress,
@@ -427,6 +429,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteA2 = {
 				signer: partyA1.address, // it should work for contracts as well as EOAs
+				target: symmioAddress,
 				callData: quoteCallData,
 				signerAccount: {
 					addr: accounts[0].accountAddress,
@@ -441,6 +444,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opLockB1 = {
 				signer: await context.symmioPartyB.getAddress(),
+				target: symmioAddress,
 				callData: lockQuoteCallData,
 				signerAccount: {
 					addr: await context.symmioPartyB.getAddress(),
@@ -455,6 +459,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opOpenQuoteB1 = {
 				signer: await context.symmioPartyB.getAddress(),
+				target: symmioAddress,
 				callData: openQuoteCallData,
 				signerAccount: {
 					addr: await context.symmioPartyB.getAddress(),
@@ -844,6 +849,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		beforeEach(async function () {
 			const deadline = await getBlockTimestamp(300n)
+			const symmioAddress = context.diamond
 
 			// Granting Roles
 			await context.instantLayer.registerPartyBs([context.symmioPartyB]) // Admin with SETTER Role
@@ -888,6 +894,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteA1 = {
 				signer: context.signers.admin.address,
+				target: symmioAddress,
 				callData: quoteCallData,
 				signerAccount: {
 					addr: accounts[0].accountAddress,
@@ -902,6 +909,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opSendQuoteA2 = {
 				signer: partyA1.address,
+				target: symmioAddress,
 				callData: quoteCallData,
 				signerAccount: {
 					addr: accounts[0].accountAddress,
@@ -916,6 +924,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opLockB1 = {
 				signer: await context.symmioPartyB.getAddress(),
+				target: symmioAddress,
 				callData: lockQuoteCallDataTemplate,
 				signerAccount: {
 					addr: await context.symmioPartyB.getAddress(),
@@ -930,6 +939,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			opOpenQuoteB1 = {
 				signer: await context.symmioPartyB.getAddress(),
+				target: symmioAddress,
 				callData: openQuoteCallDataTemplate,
 				signerAccount: {
 					addr: await context.symmioPartyB.getAddress(),
@@ -1447,9 +1457,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 		let subAccountAddress: string
 		let virtualAccountAddress: string
 		let quoteCallDataLocal: string
+		let symmioAddress: string
 
 		beforeEach(async () => {
 			const { instantLayer, partyAFacet, accountFacet, partyBQuoteActionsFacet } = context
+			symmioAddress = context.diamond
 
 			// Setup InstantLayer
 			await context.instantLayer.registerPartyBs([context.symmioPartyB])
@@ -1530,6 +1542,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Create operation targeting the VIRTUAL account but signed by the delegate
 			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
 				signer: context.signers.admin.address, // delegate (granted delegation on parent)
+				target: symmioAddress,
 				callData: quoteCallDataLocal,
 				signerAccount: {
 					addr: virtualAccountAddress, // targeting the virtual account
@@ -1561,6 +1574,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Create operation targeting the virtual account with a non-delegated signer
 			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
 				signer: context.signers.user2.address, // NOT delegated on parent
+				target: symmioAddress,
 				callData: quoteCallDataLocal,
 				signerAccount: {
 					addr: virtualAccountAddress,
@@ -1592,6 +1606,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Create operation where signer is the owner of the parent account
 			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
 				signer: partyA1.address, // owner of the sub-account (parent of virtual account)
+				target: symmioAddress,
 				callData: quoteCallDataLocal,
 				signerAccount: {
 					addr: virtualAccountAddress,
@@ -1652,6 +1667,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Now try to execute on virtual account - should fail
 			const opSendQuoteOnVirtual: InstantLayer.SignedOperationStruct = {
 				signer: context.signers.admin.address,
+				target: symmioAddress,
 				callData: quoteCallDataLocal,
 				signerAccount: {
 					addr: virtualAccountAddress,
@@ -1841,6 +1857,75 @@ export function shouldBehaveLikeInstantLayer(): void {
 				expect(aExp).to.equal(0n)
 				expect(bExp).to.be.greaterThan(0n)
 			})
+		})
+	})
+
+	describe("Target contract routing", () => {
+		let accountAddress: string
+		let mockTarget: any
+		let targetAddress: string
+		let deadline: bigint
+
+		beforeEach(async () => {
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			mockTarget = await MockInstantTarget.deploy()
+			targetAddress = await mockTarget.getAddress()
+			await context.instantLayer.setTargetWhitelist(targetAddress, true)
+
+			await context.accountManager.connect(partyA1.getSigner).addAccount("targetRoute")
+			const accounts = await context.accountManager.getAccounts(partyA1.address, 0, 10)
+			accountAddress = accounts[accounts.length - 1].accountAddress
+
+			deadline = await getBlockTimestamp(300n)
+		})
+
+		const buildTargetOp = (target: string, signer: string): InstantLayer.SignedOperationStruct => {
+			return {
+				signer,
+				target,
+				callData: mockTarget.interface.encodeFunctionData("store", [123n]),
+				signerAccount: {
+					addr: accountAddress,
+					isPartyB: false,
+				},
+				replayAttackHeader: {
+					nonce: 0n,
+					deadline,
+					salt: ethers.hexlify(ethers.randomBytes(32)),
+				},
+			}
+		}
+
+		it("executes whitelisted target call and updates target state", async () => {
+			// happy path on direct target
+			const op = buildTargetOp(targetAddress, partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			expect(await mockTarget.lastValue()).to.equal(123n)
+		})
+
+		it("reverts when target is not whitelisted", async () => {
+			// target must be explicitly whitelisted
+			const MockInstantTarget = await ethers.getContractFactory("MockInstantTarget")
+			const unlisted = await MockInstantTarget.deploy()
+			const op = buildTargetOp(await unlisted.getAddress(), partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig]))
+				.to.be.revertedWithCustomError(context.instantLayer, "UnwhitelistedTarget")
+				.withArgs(await unlisted.getAddress())
+		})
+
+		it("bubbles target revert inside OperationFailed", async () => {
+			// revert from target should handle by instant layer
+			await mockTarget.setShouldRevert(true, "xxx")
+			const op = buildTargetOp(targetAddress, partyA1.address)
+			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
+
+			await expect(context.instantLayer.executeBatch([op], [sig]))
+				.to.be.revertedWithCustomError(context.instantLayer, "OperationFailed")
+				.withArgs(0, anyValue)
 		})
 	})
 }
