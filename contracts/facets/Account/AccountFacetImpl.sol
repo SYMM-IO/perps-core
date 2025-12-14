@@ -283,12 +283,18 @@ library AccountFacetImpl {
 	function bindToPartyB(address partyB) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-
+		address signer = LibSigner.getSigner();
 		require(partyB != address(0), "AccountFacet: Zero address");
-		require(quoteLayout.partyAOpenPositions[LibSigner.getSigner()].length == quoteLayout.partyBOpenPositions[partyB][LibSigner.getSigner()].length,"AccountFacet : Have Open Positions with Other Party B");
-		require(quoteLayout.partyALockQuotesCount[LibSigner.getSigner()] == quoteLayout.partyBPendingQuotes[partyB][LibSigner.getSigner()].length,"AccountFacet : Have Locked Quotes with Other Party B");
+		require(
+			quoteLayout.partyAOpenPositions[signer].length == quoteLayout.partyBOpenPositions[partyB][signer].length,
+			"AccountFacet : Have Open Positions with Other Party B"
+		);
+		require(
+			quoteLayout.partyALockQuotesCount[signer] == quoteLayout.partyBPendingQuotes[partyB][signer].length,
+			"AccountFacet : Have Locked Quotes with Other Party B"
+		);
 		require(accountLayout.isPartyBBindable[partyB], "AccountFacet: Not Bindable");
-		BindState storage bindState = accountLayout.bindState[LibSigner.getSigner()];
+		BindState storage bindState = accountLayout.bindState[signer];
 		require(bindState.status == BindStatus.NOT_BOUND, "AccountFacet: Invalid state");
 
 		bindState.partyB = partyB;
