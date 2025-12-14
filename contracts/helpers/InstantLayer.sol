@@ -384,7 +384,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/// @notice Target contract is not whitelisted
 	/// @param target The target address
-	error UnwhitelistedTarget(address target);
+	error TargetNotWhitelisted(address target);
 
 	/// @notice Delegation hash has already been executed
 	/// @param hash The delegation hash that was already used
@@ -817,7 +817,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Validate calldata has at least selector
 		if (signedOp.callData.length < 4) revert CallDataLengthMismatch();
 
-		if (!whitelistedTargets[signedOp.target]) revert UnwhitelistedTarget(signedOp.target);
+		if (!whitelistedTargets[signedOp.target]) revert TargetNotWhitelisted(signedOp.target);
 
 		bytes32 hash = getOperationHash(signedOp);
 		address signer = signedOp.signer;

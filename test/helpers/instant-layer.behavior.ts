@@ -1913,7 +1913,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig = await partyA1.getSigner.signTypedData(domain, types, op)
 
 			await expect(context.instantLayer.executeBatch([op], [sig]))
-				.to.be.revertedWithCustomError(context.instantLayer, "UnwhitelistedTarget")
+				.to.be.revertedWithCustomError(context.instantLayer, "TargetNotWhitelisted")
 				.withArgs(await unlisted.getAddress())
 		})
 
