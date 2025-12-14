@@ -1,4 +1,5 @@
 import { task, types } from "hardhat/config"
+
 import { readData, writeData } from "../utils/fs"
 import { DEPLOYMENT_LOG_FILE } from "./constants"
 
@@ -18,9 +19,9 @@ const ENTRY_TYPES = {
 
 task("deploy:accountHub", "Deploys the AccountHub")
 	.addParam("admin", "The admin address")
-	.addParam("affiliateHubAddress", "The address of the affiliateHub contract")
+	.addParam("affiliatehubaddress", "The address of the affiliateHub contract")
 	.addOptionalParam("logData", "Write the deployed addresses to a data file", true, types.boolean)
-	.setAction(async ({ admin, affiliateHubAddress, logData }, { ethers, upgrades }) => {
+	.setAction(async ({ admin, affiliatehubaddress, logData }, { ethers, upgrades }) => {
 		console.log("Running deploy:accountHub")
 
 		const [deployer] = await ethers.getSigners()
@@ -30,7 +31,7 @@ task("deploy:accountHub", "Deploys the AccountHub")
 		const accountManagerBytecode = await getAccountManagerBytecode(ethers)
 
 		// Deploy AccountHub as upgradeable proxy
-		const contract = await deployAccountHub(admin, affiliateHubAddress, accountManagerBytecode, ethers, upgrades)
+		const contract = await deployAccountHub(admin, affiliatehubaddress, accountManagerBytecode, ethers, upgrades)
 
 		const addresses = {
 			proxy: await contract.getAddress(),
@@ -41,7 +42,7 @@ task("deploy:accountHub", "Deploys the AccountHub")
 
 		// Log deployment data if requested
 		if (logData) {
-			await logDeploymentData(addresses, admin, affiliateHubAddress, accountManagerBytecode)
+			await logDeploymentData(addresses, admin, affiliatehubaddress, accountManagerBytecode)
 		}
 
 		// Return contract instance

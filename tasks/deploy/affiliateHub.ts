@@ -1,4 +1,5 @@
 import { task, types } from "hardhat/config"
+
 import { readData, writeData } from "../utils/fs"
 import { DEPLOYMENT_LOG_FILE } from "./constants"
 
@@ -17,16 +18,16 @@ const ENTRY_TYPES = {
 
 task("deploy:affiliateHub", "Deploys the AffiliateHub")
 	.addParam("admin", "The admin address")
-	.addParam("symmioFeeReceiver", "The address of the symmio fee receiver")
+	.addParam("symmiofeereceiver", "The address of the symmio fee receiver")
 	.addOptionalParam("logData", "Write the deployed addresses to a data file", true, types.boolean)
-	.setAction(async ({ admin, symmioFeeReceiver, logData }, { ethers, upgrades }) => {
+	.setAction(async ({ admin, symmiofeereceiver, logData }, { ethers, upgrades }) => {
 		console.log("Running deploy:affiliateHub")
 
 		const [deployer] = await ethers.getSigners()
 		console.log("Deploying contracts with the account:", deployer.address)
-
+		0xa023389ebfea9af998fb1c2b23c7498591e44b62
 		// Deploy AffiliateHub as upgradeable proxy
-		const contract = await deployAffiliateHub(admin, symmioFeeReceiver, ethers, upgrades)
+		const contract = await deployAffiliateHub(admin, symmiofeereceiver, ethers, upgrades)
 
 		const addresses = {
 			proxy: await contract.getAddress(),
@@ -37,7 +38,7 @@ task("deploy:affiliateHub", "Deploys the AffiliateHub")
 
 		// Log deployment data if requested
 		if (logData) {
-			await logDeploymentData(addresses, admin, symmioFeeReceiver)
+			await logDeploymentData(addresses, admin, symmiofeereceiver)
 		}
 
 		// Return contract instance
