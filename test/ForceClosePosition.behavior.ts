@@ -414,6 +414,56 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				expect(avgClosePrice).to.be.equal(expectedAvgClosedPrice)
 			})
 		})
+
+		describe("Reserve vault assisted force close", function () {
+			it("marks partyB liquidated when reserve is empty and loss is large", async function () {
+				const sigTimes = await prepareSigTimes(100n)
+				const hedgerAddress = await hedger.getAddress()
+				const partyAAddress = await user.getAddress()
+
+				const liquidatingSig = await getDummyHighLowPriceSig(
+					sigTimes[0],
+					sigTimes[1],
+					decimal(1n),
+					decimal(12n),
+					decimal(5n),
+					decimal(10n),
+					quote1LongOpened.symbolId,
+					-decimal(5000n),
+					decimal(5000n),
+				)
+
+				await user.forceClosePosition(quote1LongOpened.id, liquidatingSig)
+
+				expect(await context.viewFacet.isPartyBLiquidated(hedgerAddress, partyAAddress)).to.equal(true)
+			})
+
+			it("uses reserve vault to keep partyB solvent during force close", async function () {
+				const sigTimes = await prepareSigTimes(100n)
+				const hedgerAddress = await hedger.getAddress()
+				const partyAAddress = await user.getAddress()
+
+				await context.accountFacet.connect(hedger.getSigner).depositToReserveVault(decimal(1000n), hedgerAddress)
+
+				const solventSig = await getDummyHighLowPriceSig(
+					sigTimes[0],
+					sigTimes[1],
+					decimal(1n),
+					decimal(12n),
+					decimal(5n),
+					decimal(10n),
+					quote1LongOpened.symbolId,
+					-decimal(400n),
+					decimal(1500n),
+				)
+
+				await user.forceClosePosition(quote1LongOpened.id, solventSig)
+
+				const quoteAfter = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+				expect(await context.viewFacet.isPartyBLiquidated(hedgerAddress, partyAAddress)).to.equal(false)
+				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			})
+		})
 	})
 
 	describe("Master Account Mode", async function () {

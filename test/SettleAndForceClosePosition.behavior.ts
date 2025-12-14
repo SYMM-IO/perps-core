@@ -29,7 +29,7 @@ import {
 } from "./utils/SignatureUtils"
 
 export function shouldBehaveLikeSettleAndForceClosePosition(): void {
-	let user: User, hedger: Hedger, hedger2: Hedger
+	let user: User, hedger: Hedger, hedger2: Hedger, user2: User
 	let context: RunContext
 	let quote1LongOpened: QuoteStructOutput, quote2ShortOpened: QuoteStructOutput
 	let quantityShort: bigint
@@ -236,86 +236,250 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			await expect(await context.forceActionsFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)).not.to.reverted
 		})
 
-		describe("Settlement guards", function () {
-			it("Should revert settleUpnlMasterAccount when partyB is in cross liquidation process", async function () {
-				// Put partyB into cross liquidation "inProgress"
-				await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
-				await context.clearingHouseFacet
-					.connect(context.signers.liquidator)
-					.liquidateCrossPartyB(await hedger.getAddress(), await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")))
+		describe("Non-happy paths", function () {
+			describe("Settlement guards", function () {
+				it("Should revert settleUpnlMasterAccount when partyB is in cross liquidation process", async function () {
+					// Put partyB into cross liquidation "inProgress"
+					await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidateCrossPartyB(await hedger.getAddress(), await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")))
 
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
-					"LibSettlement: PartyB is in cross liquidation process",
-				)
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
+						"LibSettlement: PartyB is in cross liquidation process",
+					)
+				})
+
+				it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
+					const sigEmpty = await getDummyCrossSettlementSig([0n], 0n, await hedger.getAddress(), [await user.getAddress()], [])
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigEmpty, [])).to.be.revertedWith(
+						"LibSettlement: Invalid length",
+					)
+
+					const sigOne = await getDummyCrossSettlementSig(
+						[0n],
+						0n,
+						await hedger.getAddress(),
+						[await user.getAddress()],
+						[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
+					)
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigOne, [updatePrice, updatePrice])).to.be.revertedWith(
+						"LibSettlement: Invalid length",
+					)
+				})
+
+				it("Should revert when signature partyB does not match quote.partyB", async function () {
+					await context.accountFacet.connect(hedger2.getSigner).activateMasterAccountMode()
+
+					// Wrong partyB inside sig (use any other address)
+					const wrongPartyB = await hedger2.getAddress()
+
+					const sig = await getDummyCrossSettlementSig(
+						[0n],
+						0n,
+						wrongPartyB, // <-- wrong
+						[await user.getAddress()],
+						[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
+					)
+
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
+						"LibSettlement, Invalid quote",
+					)
+				})
 			})
 
-			it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
-				const sigEmpty = await getDummyCrossSettlementSig([0n], 0n, await hedger.getAddress(), [await user.getAddress()], [])
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigEmpty, [])).to.be.revertedWith(
-					"LibSettlement: Invalid length",
-				)
+			describe("Update Price", function () {
+				it("Should revert when updatedPrice is out of allowed range", async function () {
+					// Choose a currentPrice that is below openedPrice (so branch openedPrice > currentPrice)
+					const currentPrice = quote2ShortOpened.openedPrice - decimal(1n)
+					const sig = await getDummyCrossSettlementSig(
+						[0n],
+						0n,
+						await hedger.getAddress(),
+						[await user.getAddress()],
+						[
+							{
+								quoteId: quote2ShortOpened.id,
+								currentPrice: decimal(7n),
+							} as MasterAccountQuoteSettlementDataStructOutput,
+						],
+					)
+					// invalid: updatedPrice < currentPrice
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [currentPrice])).to.be.revertedWith(
+						"LibSettlement: Updated price is out of range",
+					)
 
-				const sigOne = await getDummyCrossSettlementSig(
-					[0n],
-					0n,
-					await hedger.getAddress(),
-					[await user.getAddress()],
-					[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
-				)
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigOne, [updatePrice, updatePrice])).to.be.revertedWith(
-					"LibSettlement: Invalid length",
-				)
+					// invalid: updatedPrice >= openedPrice
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [quote2ShortOpened.openedPrice])).to.be.revertedWith(
+						"LibSettlement: Updated price is out of range",
+					)
+				})
 			})
 
-			it("Should revert when signature partyB does not match quote.partyB", async function () {
-				await context.accountFacet.connect(hedger2.getSigner).activateMasterAccountMode()
+			describe("Solvency Checks", function () {
+				it("Should revert when PartyA is insolvent", async function () {
+					const partyA = await user.getAddress()
 
-				// Wrong partyB inside sig (use any other address)
-				const wrongPartyB = await hedger2.getAddress()
+					// Make PartyA insolvent: easiest is to set allocated very low then use a very negative uPnL in sig.
+					// If your dummy sig helper interprets upnlPartyAs as int256, pass a big negative.
+					const insolventUpnlA = BigInt("-999999999999999999999999999999")
 
-				const sig = await getDummyCrossSettlementSig(
-					[0n],
-					0n,
-					wrongPartyB, // <-- wrong
-					[await user.getAddress()],
-					[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
-				)
+					const sigInsolventA = await getDummyCrossSettlementSig(
+						[insolventUpnlA],
+						0n,
+						await hedger.getAddress(),
+						[partyA],
+						[
+							{
+								quoteId: quote2ShortOpened.id,
+								currentPrice: decimal(7n),
+							} as MasterAccountQuoteSettlementDataStructOutput,
+						],
+					)
 
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
-					"LibSettlement, Invalid quote",
-				)
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigInsolventA, [updatePrice])).to.be.revertedWith(
+						"LibSettlement: PartyA is insolvent",
+					)
+				})
 			})
 		})
 
-		describe("Update Price", function () {
-			it("Should revert when updatedPrice is out of allowed range", async function () {
-				// Choose a currentPrice that is below openedPrice (so branch openedPrice > currentPrice)
-				const currentPrice = quote2ShortOpened.openedPrice - decimal(1n)
-				const sig = await getDummyCrossSettlementSig(
-					[0n],
+		describe("Happy paths", function () {
+			it("settles multiple quotes across two partyAs in master account mode", async function () {
+				user2 = new User(context, context.signers.user2)
+				await user2.setup()
+				await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+				const extraQuoteUser2 = await context.viewFacetQuote.getQuote(
+					await user2.sendQuote(
+						limitQuoteRequestBuilder()
+							.quantity(decimal(50n))
+							.deadline((await getBlockTimestamp()) + 1000n)
+							.build(),
+					),
+				)
+				await hedger.lockQuote(extraQuoteUser2.id)
+				await hedger.openPosition(
+					extraQuoteUser2.id,
+					limitOpenRequestBuilder()
+						.filledAmount(extraQuoteUser2.quantity)
+						.openPrice(extraQuoteUser2.requestedOpenPrice)
+						.build(),
+				)
+
+				const quote1 = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+				const quote2 = await context.viewFacetQuote.getQuote(quote2ShortOpened.id)
+				const quote3 = await context.viewFacetQuote.getQuote(extraQuoteUser2.id)
+
+				const updatePrice1 = decimal(11n, 17) // price up for long
+				const updatePrice2 = decimal(9n, 17) // price down for short
+				const updatePrice3 = decimal(12n, 17) // price up for user2 long
+
+				const settlementSigMulti = await getDummyCrossSettlementSig(
+					[0n, 0n],
 					0n,
 					await hedger.getAddress(),
-					[await user.getAddress()],
+					[await user.getAddress(), await user2.getAddress()],
 					[
-						{
-							quoteId: quote2ShortOpened.id,
-							currentPrice: decimal(7n),
-						} as MasterAccountQuoteSettlementDataStructOutput,
+						{ quoteId: quote1LongOpened.id, currentPrice: updatePrice1 } as MasterAccountQuoteSettlementDataStructOutput,
+						{ quoteId: quote2ShortOpened.id, currentPrice: updatePrice2 } as MasterAccountQuoteSettlementDataStructOutput,
+						{ quoteId: extraQuoteUser2.id, currentPrice: updatePrice3 } as MasterAccountQuoteSettlementDataStructOutput,
 					],
 				)
-				// invalid: updatedPrice < currentPrice
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [currentPrice])).to.be.revertedWith(
-					"LibSettlement: Updated price is out of range",
-				)
 
-				// invalid: updatedPrice >= openedPrice
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [quote2ShortOpened.openedPrice])).to.be.revertedWith(
-					"LibSettlement: Updated price is out of range",
-				)
+				const masterBalanceBefore = await hedger.getBalanceInfo(ethers.ZeroAddress)
+				const partyABalanceBefore = await user.getBalanceInfo()
+				const partyABalanceBefore2 = await user2.getBalanceInfo()
+
+				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigMulti, [updatePrice1, updatePrice2, updatePrice3])).not.to
+					.be.reverted
+
+				const masterBalanceAfter = await hedger.getBalanceInfo(ethers.ZeroAddress)
+				const partyABalanceAfter = await user.getBalanceInfo()
+				const partyABalanceAfter2 = await user2.getBalanceInfo()
+
+				const expectedSettle1 = unDecimal((updatePrice1 - quote1.openedPrice) * quote1.quantity)
+				const expectedSettle2 = unDecimal((quote2.openedPrice - updatePrice2) * quote2.quantity)
+				const expectedSettle3 = unDecimal((updatePrice3 - quote3.openedPrice) * quote3.quantity)
+				const totalPayout = expectedSettle1 + expectedSettle2 + expectedSettle3
+
+				expect(partyABalanceAfter.allocatedBalances - partyABalanceBefore.allocatedBalances).to.equal(expectedSettle1 + expectedSettle2)
+				expect(partyABalanceAfter2.allocatedBalances - partyABalanceBefore2.allocatedBalances).to.equal(expectedSettle3)
+				expect(masterBalanceBefore.allocatedBalances - masterBalanceAfter.allocatedBalances).to.equal(totalPayout)
+
+				expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).openedPrice).to.equal(updatePrice1)
+				expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.equal(updatePrice2)
+				expect((await context.viewFacetQuote.getQuote(extraQuoteUser2.id)).openedPrice).to.equal(updatePrice3)
 			})
-		})
 
-		it("Should settle and forceClose the quote in master account mode", async function () {
+			it("increments partyA and master partyB nonces on settleUpnlMasterAccount", async function () {
+				const partyA = await user.getAddress()
+				const partyB = await hedger.getAddress()
+
+				const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+				const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).not.to.be.reverted
+
+				const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+				const afterNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+				expect(afterNonceA).to.equal(beforeNonceA + 1n)
+				expect(afterNonceB).to.equal(beforeNonceB + 1n)
+			})
+
+			it("locks CVA and LF in a single bucket across multiple partyAs", async function () {
+				user2 = new User(context, context.signers.user2)
+				await user2.setup()
+				await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+				await hedger.setBalances(decimal(2000n), decimal(2000n))
+
+				const quoteUser1 = await context.viewFacetQuote.getQuote(
+					await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.quantity(decimal(60n))
+							.deadline((await getBlockTimestamp()) + 1000n)
+							.build(),
+					),
+				)
+				const quoteUser2 = await context.viewFacetQuote.getQuote(
+					await user2.sendQuote(
+						limitQuoteRequestBuilder()
+							.quantity(decimal(80n))
+							.deadline((await getBlockTimestamp()) + 1000n)
+							.build(),
+					),
+				)
+
+				await hedger.lockQuote(quoteUser1.id, 0n, decimal(1n))
+				await hedger.openPosition(
+					quoteUser1.id,
+					limitOpenRequestBuilder().filledAmount(quoteUser1.quantity).openPrice(quoteUser1.requestedOpenPrice).build(),
+				)
+
+				await hedger.lockQuote(quoteUser2.id, 0n, decimal(1n))
+				await hedger.openPosition(
+					quoteUser2.id,
+					limitOpenRequestBuilder().filledAmount(quoteUser2.quantity).openPrice(quoteUser2.requestedOpenPrice).build(),
+				)
+
+				const lockedCvaTotal = quoteUser1.lockedValues.cva + quoteUser2.lockedValues.cva
+				const lockedLfTotal = quoteUser1.lockedValues.lf + quoteUser2.lockedValues.lf
+
+				const balanceForUser1 = await hedger.getBalanceInfo(await user.getAddress())
+				const balanceForUser2 = await hedger.getBalanceInfo(await user2.getAddress())
+				const balanceMaster = await hedger.getBalanceInfo(ethers.ZeroAddress)
+
+				expect(balanceForUser1.lockedCva).to.equal(balanceForUser2.lockedCva)
+				expect(balanceForUser1.lockedLf).to.equal(balanceForUser2.lockedLf)
+				expect(balanceForUser1.lockedCva).to.equal(balanceMaster.lockedCva)
+				expect(balanceForUser1.lockedLf).to.equal(balanceMaster.lockedLf)
+				expect(balanceMaster.lockedCva >= lockedCvaTotal).to.equal(true)
+				expect(balanceMaster.lockedLf >= lockedLfTotal).to.equal(true)
+			})
+
+			it("Should settle and forceClose the quote in master account mode", async function () {
 			const balanceInfoMasterB = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const balanceInfoUserBefore = await user.getBalanceInfo()
 
@@ -333,6 +497,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			// force close
 			await expect(context.forceActionsFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)).not.to.be.reverted
 			expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
+		})
 		})
 	})
 }
