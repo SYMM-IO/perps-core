@@ -1,6 +1,7 @@
 import { task, types } from "hardhat/config"
+
 import { readData, writeData } from "../utils/fs"
-import { DEPLOYMENT_LOG_FILE } from "./constants"
+import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -18,9 +19,9 @@ const ENTRY_TYPES = {
 
 task("deploy:accountHub", "Deploys the AccountHub")
 	.addParam("admin", "The admin address")
-	.addParam("affiliateHubAddress", "The address of the affiliateHub contract")
+	.addParam("affiliatehubaddress", "The address of the affiliateHub contract")
 	.addOptionalParam("logData", "Write the deployed addresses to a data file", true, types.boolean)
-	.setAction(async ({ admin, affiliateHubAddress, logData }, { ethers, upgrades }) => {
+	.setAction(async ({ admin, affiliatehubaddress, logData }, { ethers, upgrades }) => {
 		console.log("Running deploy:accountHub")
 
 		const [deployer] = await ethers.getSigners()
@@ -30,7 +31,7 @@ task("deploy:accountHub", "Deploys the AccountHub")
 		const accountManagerBytecode = await getAccountManagerBytecode(ethers)
 
 		// Deploy AccountHub as upgradeable proxy
-		const contract = await deployAccountHub(admin, affiliateHubAddress, accountManagerBytecode, ethers, upgrades)
+		const contract = await deployAccountHub(admin, affiliatehubaddress, accountManagerBytecode, ethers, upgrades)
 
 		const addresses = {
 			proxy: await contract.getAddress(),
@@ -41,7 +42,7 @@ task("deploy:accountHub", "Deploys the AccountHub")
 
 		// Log deployment data if requested
 		if (logData) {
-			await logDeploymentData(addresses, admin, affiliateHubAddress, accountManagerBytecode)
+			await logDeploymentData(addresses, admin, affiliatehubaddress, accountManagerBytecode)
 		}
 
 		// Return contract instance
@@ -84,7 +85,7 @@ async function logDeploymentData(addresses: any, admin: string, affiliateHubAddr
 		const newEntries = createDeploymentEntries(addresses, admin, affiliateHubAddress, accountManagerBytecode)
 		const updatedData = [...deployedData, ...newEntries]
 
-		writeData(DEPLOYMENT_LOG_FILE, updatedData)
+		writeData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE, updatedData)
 		console.log("Deployed addresses written to JSON file")
 	} catch (err) {
 		console.error(`Failed to log deployment data: ${err}`)
@@ -97,7 +98,7 @@ async function logDeploymentData(addresses: any, admin: string, affiliateHubAddr
  */
 function readExistingDeployments(): any[] {
 	try {
-		return readData(DEPLOYMENT_LOG_FILE)
+		return readData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE)
 	} catch (err) {
 		console.warn(`Could not read existing JSON file: ${err}. Starting with empty data.`)
 		return []
@@ -113,16 +114,6 @@ function createDeploymentEntries(addresses: any, admin: string, affiliateHubAddr
 			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.PROXY}`,
 			address: addresses.proxy,
 			constructorArguments: [admin, affiliateHubAddress, accountManagerBytecode],
-		},
-		{
-			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.ADMIN}`,
-			address: addresses.admin,
-			constructorArguments: [],
-		},
-		{
-			name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.IMPLEMENTATION}`,
-			address: addresses.implementation,
-			constructorArguments: [],
 		},
 	]
 }
