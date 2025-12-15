@@ -21,3 +21,6 @@ export const FacetNames = [
 ]
 
 export const DEPLOYMENT_LOG_FILE = "deployed.json"
+export const ACCOUNTHUB_DEPLOYMENT_LOG_FILE = "accounthub.json"
+export const AFFILIATEHUB_DEPLOYMENT_FILE = "affiliatehub.json"
+export const INSTANTLAYER_DEPLOYMENT_FILE = "instantlayer.json"
