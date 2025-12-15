@@ -51,7 +51,7 @@ export class Hedger extends PartyEntity {
 					.connect(this.signer)
 					.allocateForPartyB(
 						unDecimal(notional * BigInt(allocateCoefficient)),
-						await this.context.viewFacet.isInMasterAccountMode(this.address) ? ethers.ZeroAddress : quote.partyA,
+						(await this.context.viewFacet.isInMasterAccountMode(this.address)) ? ethers.ZeroAddress : quote.partyA,
 					),
 			)
 		}
@@ -92,6 +92,27 @@ export class Hedger extends PartyEntity {
 
 	public async getBalanceInfo(partyA: string): Promise<BalanceInfo> {
 		const b = await this.context.viewFacet.balanceInfoOfPartyB(await this.getAddress(), partyA)
+
+		return {
+			allocatedBalances: b[0],
+			lockedCva: b[1],
+			lockedLf: b[2],
+			lockedMmPartyA: b[3],
+			lockedMmPartyB: b[4],
+			totalLockedPartyA: b[1] + b[2] + b[3],
+			totalLockedPartyB: b[1] + b[2] + b[4],
+			pendingLockedCva: b[5],
+			pendingLockedLf: b[6],
+			pendingLockedMmPartyA: b[7],
+			pendingLockedMmPartyB: b[8],
+			totalPendingLockedPartyA: b[5] + b[6] + b[7],
+			totalPendingLockedPartyB: b[5] + b[6] + b[8],
+		}
+	}
+
+	public async getBalanceInfoMasterAccount(): Promise<BalanceInfo> {
+		const b = await this.context.viewFacet.balanceInfoOfPartyBMasterAccount(await this.getAddress())
+
 		return {
 			allocatedBalances: b[0],
 			lockedCva: b[1],

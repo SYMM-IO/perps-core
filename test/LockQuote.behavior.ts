@@ -13,9 +13,10 @@ import { decimal, pausePartyB } from "./utils/Common"
 import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
 import { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
 import { ethers, toUtf8Bytes } from "ethers";
+import { bigint } from "hardhat/internal/core/params/argumentTypes"
 
 export function shouldBehaveLikeLockQuote(): void {
-	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
+	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger, user2: User
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -132,6 +133,50 @@ export function shouldBehaveLikeLockQuote(): void {
 			await expect(hedger2.lockQuote(1, decimal(-1000n))).to.be.revertedWith("PartyBFacet: Available balance is lower than zero")
 		})
 	})
+
+	describe("Master account shared buckets", function () {
+		let quoteUser1: QuoteStruct, quoteUser2: QuoteStruct
+
+		beforeEach(async function () {
+			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
+			await context.accountFacet.connect(hedger.getSigner).activateMasterAccountMode()
+
+			user2 = new User(context, context.signers.user2)
+			await user2.setup()
+			await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+			quoteUser1 = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().quantity(decimal(80n)).build()))
+			quoteUser2 = await context.viewFacetQuote.getQuote(await user2.sendQuote(limitQuoteRequestBuilder().quantity(decimal(120n)).build()))
+
+			await hedger.lockQuote(quoteUser1.id)
+			await hedger.lockQuote(quoteUser2.id)
+		})
+
+		it("locks quotes into the shared master bucket instead of partyA buckets", async function () {
+			const masterBucket = await hedger.getBalanceInfoMasterAccount()
+			const partyABucket1 = await hedger.getBalanceInfo(await user.getAddress())
+			const partyABucket2 = await hedger.getBalanceInfo(await user2.getAddress())
+
+			let totalCVA = BigInt(quoteUser1.lockedValues.cva) + BigInt(quoteUser2.lockedValues.cva)
+			let totalLF = BigInt(quoteUser1.lockedValues.lf) + BigInt(quoteUser2.lockedValues.lf)
+			let totalMMPartyB = BigInt(quoteUser1.lockedValues.partyBmm) + BigInt(quoteUser2.lockedValues.partyBmm)
+			let totalLockedMaster = masterBucket.pendingLockedCva + masterBucket.pendingLockedLf + masterBucket.pendingLockedMmPartyB
+
+
+			expect(masterBucket.pendingLockedCva).to.equal(totalCVA)
+			expect(masterBucket.pendingLockedLf).to.equal(totalLF)
+			expect(masterBucket.pendingLockedMmPartyB).to.equal(totalMMPartyB)
+			expect(masterBucket.totalPendingLockedPartyB).to.equal(totalLockedMaster)
+
+			expect(partyABucket1.pendingLockedCva).to.equal(0)
+			expect(partyABucket1.pendingLockedLf).to.equal(0)
+			expect(partyABucket1.pendingLockedMmPartyB).to.equal(0)
+			expect(partyABucket2.pendingLockedCva).to.equal(0)
+			expect(partyABucket2.pendingLockedLf).to.equal(0)
+			expect(partyABucket2.pendingLockedMmPartyB).to.equal(0)
+		})
+	})
+
 	describe("Unlock Quote", async function () {
 		beforeEach(async function () {
 			await hedger.lockQuote(1)

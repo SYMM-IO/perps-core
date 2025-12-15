@@ -122,17 +122,40 @@ contract ViewFacet is IViewFacet {
 		address partyA
 	) external view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address allocationBucket = LibAccount.partyBAllocationBucket(partyB, partyA);
 		return (
-			accountLayout.partyBAllocatedBalances[partyB][allocationBucket],
-			accountLayout.partyBLockedBalances[partyB][allocationBucket].cva,
-			accountLayout.partyBLockedBalances[partyB][allocationBucket].lf,
-			accountLayout.partyBLockedBalances[partyB][allocationBucket].partyAmm,
-			accountLayout.partyBLockedBalances[partyB][allocationBucket].partyBmm,
-			accountLayout.partyBPendingLockedBalances[partyB][allocationBucket].cva,
-			accountLayout.partyBPendingLockedBalances[partyB][allocationBucket].lf,
-			accountLayout.partyBPendingLockedBalances[partyB][allocationBucket].partyAmm,
-			accountLayout.partyBPendingLockedBalances[partyB][allocationBucket].partyBmm
+			accountLayout.partyBAllocatedBalances[partyB][partyA],
+			accountLayout.partyBLockedBalances[partyB][partyA].cva,
+			accountLayout.partyBLockedBalances[partyB][partyA].lf,
+			accountLayout.partyBLockedBalances[partyB][partyA].partyAmm,
+			accountLayout.partyBLockedBalances[partyB][partyA].partyBmm,
+			accountLayout.partyBPendingLockedBalances[partyB][partyA].cva,
+			accountLayout.partyBPendingLockedBalances[partyB][partyA].lf,
+			accountLayout.partyBPendingLockedBalances[partyB][partyA].partyAmm,
+			accountLayout.partyBPendingLockedBalances[partyB][partyA].partyBmm
+		);
+	}
+
+	/**
+	 * @notice Returns balance information of Party B in master account mode.
+	 * @param partyB The address of Party B.
+	 * @return allocatedBalances The allocated balances of Party B.
+	 * @return lockedBalances The locked balances of Party B.
+	 * @return pendingLockedBalances The pending locked balances of Party B.
+	 */
+	function balanceInfoOfPartyBMasterAccount(
+		address partyB
+	) external view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		return (
+			accountLayout.partyBAllocatedBalances[partyB][address(0)],
+			accountLayout.partyBLockedBalances[partyB][address(0)].cva,
+			accountLayout.partyBLockedBalances[partyB][address(0)].lf,
+			accountLayout.partyBLockedBalances[partyB][address(0)].partyAmm,
+			accountLayout.partyBLockedBalances[partyB][address(0)].partyBmm,
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].cva,
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].lf,
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].partyAmm,
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].partyBmm
 		);
 	}
 
