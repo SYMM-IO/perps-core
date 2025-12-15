@@ -506,7 +506,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 			await user.requestToClosePosition(id)
 			let request: FillCloseRequest = limitFillCloseRequestBuilder().build()
 			await context.partyBPositionActionsFacet
-							.connect(b.getSigner)
+							.connect(b.signer)
 							.fillCloseRequest(
 								id,
 								filled ==100n?request.filledAmount:filled,

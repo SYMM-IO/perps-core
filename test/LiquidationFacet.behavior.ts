@@ -190,7 +190,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			// Deallocate 399n so that it has 100n as allocated balance
-			await context.accountFacet.connect(user2.getSigner).deallocate(decimal(399n), await getDummySingleUpnlSig())
+			await context.accountFacet.connect(user2.signer).deallocate(decimal(399n), await getDummySingleUpnlSig())
 			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user2.address)
 			const allocatedBalance = (await user2.getBalanceInfo()).allocatedBalances
 			const quote = await context.viewFacetQuote.getQuote(4)
@@ -255,7 +255,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			// Deallocate 399n so that it has 100n as allocated balance
-			await context.accountFacet.connect(user2.getSigner).deallocate(decimal(399n), await getDummySingleUpnlSig())
+			await context.accountFacet.connect(user2.signer).deallocate(decimal(399n), await getDummySingleUpnlSig())
 			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user2.address)
 			const allocatedBalance = (await user2.getBalanceInfo()).allocatedBalances
 			const quote = await context.viewFacetQuote.getQuote(4)
@@ -329,7 +329,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			// Deallocate 312 so that it has enough for locking and allocating balance
-			await context.accountFacet.connect(user3.getSigner).deallocate(decimal(312n), await getDummySingleUpnlSig())
+			await context.accountFacet.connect(user3.signer).deallocate(decimal(312n), await getDummySingleUpnlSig())
 
 			// We have a Long Limit Position for User 2 at index 4
 			// Tweak the price to get different UPNL in order to make the position liquid
@@ -376,7 +376,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 		it("Should change the insurance vault correctly in deferred liquidation", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
-			await context.accountFacet.connect(user2.getSigner).deallocate(decimal(399n), await getDummySingleUpnlSig())
+			await context.accountFacet.connect(user2.signer).deallocate(decimal(399n), await getDummySingleUpnlSig())
 			// 100n as allocated balance
 
 			// Tweak the price to get different UPNL in order to make the position liquid

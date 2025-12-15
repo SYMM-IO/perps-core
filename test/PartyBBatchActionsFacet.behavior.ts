@@ -46,7 +46,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		await partyB.lockQuote(lastID)
 		const q = await context.viewFacetQuote.getQuote(lastID)
 		const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])
-		await context.partyBBatchActionsFacet.connect(partyB.getSigner).openPositions([lastID], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
+		await context.partyBBatchActionsFacet.connect(partyB.signer).openPositions([lastID], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
 		return lastID
 	}
 
@@ -55,7 +55,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		await user.requestToClosePosition(id, limitCloseRequestBuilder().build())
 		const q = await context.viewFacetQuote.getQuote(id)
 		const upnlSig = await getDummyPairUpnlAndPricesSig([q.openedPrice], [id])
-		await context.partyBBatchActionsFacet.connect(partyB.getSigner).fillCloseRequests([id], [filled], [q.openedPrice], upnlSig)
+		await context.partyBBatchActionsFacet.connect(partyB.signer).fillCloseRequests([id], [filled], [q.openedPrice], upnlSig)
 	}
 
 	const expectConnected = async (partyBAddr: string, expected: boolean) => {
