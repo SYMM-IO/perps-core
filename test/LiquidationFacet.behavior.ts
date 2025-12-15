@@ -22,6 +22,7 @@ import { increase } from "@nomicfoundation/hardhat-network-helpers/dist/src/help
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
+	const getFundingFee = async () => await context.viewFacetSymbol.getSumAccumulatedFundingFees([1])
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -169,7 +170,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 		it("Should change the insurance vault correctly", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
-			const fundingFee = await context.viewFacetSymbol.getSumAccumulatedFundingFees([1])
+			const fundingFee = await getFundingFee()
 			const price = decimal(572n, 16)
 			await user.liquidateAndSetSymbolPrices([1n], [price],[1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
@@ -365,7 +366,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 		it("Should change the insurance vault correctly in deferred liquidation", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
-			const fundingFee = await context.viewFacetSymbol.getSumAccumulatedFundingFees([1])
+			const fundingFee = await getFundingFee()
 			const price = decimal(572n, 16)
 			await user.deferredLiquidateAndSetSymbolPrices([1n], [price], [1n])
 			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(decimal(1n)-fundingFee)
@@ -438,7 +439,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			describe("Settle liquidation", async function () {
 				beforeEach(async function () {
-					this.fundingFee = await context.viewFacetSymbol.getSumAccumulatedFundingFees([1])
+					this.fundingFee = await getFundingFee()
 					await user.liquidatePendingPositions()
 					await user.liquidatePositions([1])
 				})
@@ -449,7 +450,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 					const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
 					const userBalance = await user.getBalanceInfo()
 
-					const upnl = unDecimal((decimal(1n) - price) * decimal(100n)) - this.fundingFee
+					const fundingFee = this.fundingFee as bigint
+					const upnl = unDecimal((decimal(1n) - price) * decimal(100n)) - fundingFee
 					const available = userBalance.allocatedBalances - userBalance.lockedCva - userBalance.lockedLf + upnl
 					const diff = userBalance.lockedLf - (-available)
 					const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
@@ -479,7 +481,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				await user.liquidatePendingPositions()
 				await user.liquidatePositions([1])
 				await user.settleLiquidation()
-				const fundingFee = (await context.viewFacetSymbol.getAccumulatedFundingFees([1]))[0]
+				const fundingFee = await getFundingFee()
 				expect((await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances).to.be.equal(partyBAfter - fundingFee)
 				let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 				expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(decimal(0n))
@@ -504,7 +506,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		const price = decimal(572n, 16)
 		beforeEach(async function () {
 			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
-			this.fundingFee = await context.viewFacetSymbol.getSumAccumulatedFundingFees([1])
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(100n))
 			this.signature1 = await user.deferredLiquidateAndSetSymbolPrices([1n], [price],[1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
@@ -534,6 +535,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 		describe("Settle liquidation deferred", async function () {
 			beforeEach(async function () {
+				this.fundingFee = await getFundingFee()
 				await user.liquidatePendingPositions()
 				await user.liquidatePositions([1])
 			})
@@ -542,18 +544,18 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				let userAddress = context.signers.user.getAddress()
 				let hedgerAddress = context.signers.hedger.getAddress()
 
-				const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
-				const userBalance = await user.getBalanceInfo()
-				const upnl = unDecimal((decimal(1n) - price) * decimal(100n)) - this.fundingFee
-				const available = userBalance.allocatedBalances - userBalance.lockedCva - userBalance.lockedLf + upnl
-				const diff = userBalance.lockedLf - (-available)
-				const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
+					const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
+					const userBalance = await user.getBalanceInfo()
+					const fundingFee = this.fundingFee as bigint
+					const upnl = unDecimal((decimal(1n) - price) * decimal(100n)) - fundingFee
+					const available = userBalance.allocatedBalances - userBalance.lockedCva - userBalance.lockedLf + upnl
+					const diff = userBalance.lockedLf - (-available)
+					const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
 
-				await user.settleLiquidation()
-				expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.be.equal(partyBAfter)
-				let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
-				const fundingFee = (await context.viewFacetSymbol.getAccumulatedFundingFees([1]))[0]
-				expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(diff - fundingFee)
+					await user.settleLiquidation()
+					expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.be.equal(partyBAfter)
+					let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
+				expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(diff)
 			})
 		})
 	})
@@ -575,7 +577,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await user.liquidatePendingPositions()
 			await user.liquidatePositions([1])
 			await user.settleLiquidation()
-			const fundingFee = await context.viewFacetSymbol.getSumAccumulatedFundingFees([1])
 			expect((await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances).to.be.equal(partyBAfter)
 			let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 			expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(decimal(0n))
