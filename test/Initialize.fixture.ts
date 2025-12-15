@@ -1,9 +1,10 @@
+import { toUtf8Bytes } from "ethers"
 import { ethers, run } from "hardhat"
+
+import { AccountHub, AffiliateHub } from "../src/types"
+import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types"
 import { createRunContext, RunContext } from "./models/RunContext"
 import { decimal } from "./utils/Common"
-import { AccountHub, AffiliateHub } from "../src/types"
-import { toUtf8Bytes } from "ethers"
-import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types";
 
 export async function initializeFixture(): Promise<RunContext> {
 	const collateral = await run("deploy:stablecoin")
@@ -21,7 +22,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	})
 
 	const instantLayer = await run("deploy:InstantLayer", {
-		symmioAddress: await diamond.getAddress(),
+		symmioaddress: await diamond.getAddress(),
 		admin: admin,
 	})
 
@@ -29,13 +30,13 @@ export async function initializeFixture(): Promise<RunContext> {
 
 	const affiliateHub: AffiliateHub = await run("deploy:affiliateHub", {
 		admin: context.signers.admin.address,
-		symmioFeeReceiver: context.signers.symmioFeeReceiver.address,
+		symmiofeereceiver: context.signers.symmioFeeReceiver.address,
 		logData: false,
 	})
 
 	const accountHub: AccountHub = await run("deploy:accountHub", {
 		admin: context.signers.admin.address,
-		affiliateHubAddress: await affiliateHub.getAddress(),
+		affiliatehubaddress: await affiliateHub.getAddress(),
 		logData: false,
 	})
 
@@ -158,7 +159,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE")))
-
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
 	await context.controlFacet.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 
 	// // Set Muon configuration with sufficient validity time for tests
@@ -272,6 +275,6 @@ export async function initializeVirtualFixture(): Promise<{
 	return {
 		source,
 		target,
-		provider
+		provider,
 	}
 }

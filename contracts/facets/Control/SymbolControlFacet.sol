@@ -177,14 +177,14 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 
 	/// @notice Whitelists a symbol type for a party B.
 	function whitelistSymbolType(address partyB, uint256 symbolType) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = true;
 		emit WhitelistSymbolType(partyB, symbolType);
 	}
 
 	/// @notice Whitelists symbols for a party B.
 	function whitelistSymbols(address partyB, uint256[] calldata symbolIds) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			uint256 id = symbolIds[i];
@@ -197,14 +197,14 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 
 	/// @notice Removes a symbol type from the whitelist for a party B.
 	function removeSymbolTypeFromWhitelist(address partyB, uint256 symbolType) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = false;
 		emit RemoveSymbolTypeFromWhitelist(partyB, symbolType);
 	}
 
 	/// @notice Removes symbols from the whitelist for a party B.
 	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
@@ -215,7 +215,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 
 	/// @notice Blacklists symbols for a party B.
 	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			uint256 id = symbolIds[i];
@@ -228,7 +228,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 
 	/// @notice Removes symbols from the blacklist for a party B.
 	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external {
-		symbolListingAuthorizationCheck(msg.sender, partyB);
+		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			accountLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;

@@ -84,6 +84,9 @@ interface IAffiliateHub {
 	event HookSet(address indexed affiliate, bytes4 indexed selector, address hook);
 	event HookRemoved(address indexed affiliate, bytes4 indexed selector);
 
+	// Operator events
+	event OperatorSet(address indexed affiliate, bytes4 indexed selector, address indexed operator, bool status);
+
 	event WhitelistedSymmioCoreSet(address indexed core, bool status);
 
 	// Affiliate management
@@ -110,6 +113,13 @@ interface IAffiliateHub {
 	function setHook(address affiliate, bytes4 selector, address hook) external;
 	function removeHook(address affiliate, bytes4 selector) external;
 	function getHook(address affiliate, bytes4 selector) external view returns (address);
+
+	// Operator management
+	function setOperator(address affiliate, bytes4 selector, address operator, bool status) external;
+	function isOperator(address affiliate, bytes4 selector, address operator) external view returns (bool);
+
+	// Affiliate delegated calls
+	function callAsAffiliate(address affiliate, address symmio, bytes calldata callData) external returns (bytes memory result);
 
 	// View functions
 	function getAffiliateState(address affiliate) external view returns (AffiliateState);
@@ -140,4 +150,6 @@ interface IAffiliateHub {
 	error InvalidState();
 	error InvalidNameLength();
 	error AccountHubNotSet();
+	error InvalidCallData();
+	error SymmioCoreNotAllowed();
 }

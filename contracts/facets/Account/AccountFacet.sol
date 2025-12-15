@@ -19,17 +19,17 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address signer = LibSigner.getSigner();
 		AccountFacetImpl.deposit(signer, amount);
 		emit Deposit(signer, signer, amount);
-        emit Deposit(signer, signer, amount, false);
-
-    }
+		emit Deposit(signer, signer, amount, false);
+	}
 
 	/// @notice Allows either Party A or Party B to deposit collateral on behalf of another user.
 	/// @param user The recipient address for the deposit.
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
 	function depositFor(address user, uint256 amount) external whenNotAccountingPaused {
+		address signer = LibSigner.getSigner();
 		AccountFacetImpl.deposit(user, amount);
-		emit Deposit(LibSigner.getSigner(), user, amount);
-		emit Deposit(LibSigner.getSigner(), user, amount, false);
+		emit Deposit(signer, user, amount);
+		emit Deposit(signer, user, amount, false);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
@@ -38,8 +38,8 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function _virtualDepositFor(address user, uint256 amount) internal {
 		AccountFacetImpl.virtualDepositFor(user, amount);
 		uint256 amountWithCollateralDecimal = (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18;
-		emit Deposit(LibSigner.getSigner(), user, amountWithCollateralDecimal); // For backward compatibility, will be removed in future
-		emit Deposit(LibSigner.getSigner(), user, amountWithCollateralDecimal, true);
+		emit Deposit(msg.sender, user, amountWithCollateralDecimal); // For backward compatibility, will be removed in future
+		emit Deposit(msg.sender, user, amountWithCollateralDecimal, true);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
@@ -58,7 +58,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
-		emit Deposit(LibSigner.getSigner(), user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
+		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
 		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
@@ -127,18 +127,19 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
 		AccountFacetImpl.allocate(signer, amountWith18Decimals);
 		emit Deposit(signer, signer, amount);
-        emit Deposit(signer, signer, amount, false);
-        emit AllocatePartyA(signer, amountWith18Decimals, AccountStorage.layout().allocatedBalances[signer]);
+		emit Deposit(signer, signer, amount, false);
+		emit AllocatePartyA(signer, amountWith18Decimals, AccountStorage.layout().allocatedBalances[signer]);
 		emit SharedEvents.BalanceChangePartyA(signer, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	function depositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(user) notSuspended(user) {
+		address signer = LibSigner.getSigner();
 		AccountFacetImpl.deposit(user, amount);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
 		AccountFacetImpl.allocate(user, amountWith18Decimals);
-		emit Deposit(LibSigner.getSigner(), user, amount);
-        emit Deposit(LibSigner.getSigner(), user, amount, false);
-        emit AllocatePartyA(user, amountWith18Decimals, AccountStorage.layout().allocatedBalances[LibSigner.getSigner()]);
+		emit Deposit(signer, user, amount);
+		emit Deposit(signer, user, amount, false);
+		emit AllocatePartyA(user, amountWith18Decimals, AccountStorage.layout().allocatedBalances[user]);
 		emit SharedEvents.BalanceChangePartyA(user, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
@@ -187,9 +188,10 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		uint256 amount,
 		address partyA
 	) public whenNotPartyBActionsPaused notLiquidatedPartyB(LibSigner.getSigner(), partyA) onlyPartyB {
+		address signer = LibSigner.getSigner();
 		AccountFacetImpl.allocateForPartyB(amount, partyA);
-		emit AllocateForPartyB(LibSigner.getSigner(), partyA, amount, AccountStorage.layout().partyBAllocatedBalances[LibSigner.getSigner()][partyA]);
-		emit SharedEvents.BalanceChangePartyB(LibSigner.getSigner(), partyA, amount, SharedEvents.BalanceChangeType.ALLOCATE);
+		emit AllocateForPartyB(signer, partyA, amount, AccountStorage.layout().partyBAllocatedBalances[signer][partyA]);
+		emit SharedEvents.BalanceChangePartyB(signer, partyA, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows Party B to deallocate a specified amount of collateral
@@ -209,14 +211,10 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		notLiquidatedPartyA(partyA)
 		onlyPartyB
 	{
+		address signer = LibSigner.getSigner();
 		AccountFacetImpl.deallocateForPartyB(amount, partyA, upnlSig);
-		emit DeallocateForPartyB(
-			LibSigner.getSigner(),
-			partyA,
-			amount,
-			AccountStorage.layout().partyBAllocatedBalances[LibSigner.getSigner()][partyA]
-		);
-		emit SharedEvents.BalanceChangePartyB(LibSigner.getSigner(), partyA, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
+		emit DeallocateForPartyB(signer, partyA, amount, AccountStorage.layout().partyBAllocatedBalances[signer][partyA]);
+		emit SharedEvents.BalanceChangePartyB(signer, partyA, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Allows transferring the allocation of partyB from one party A to another.
@@ -225,16 +223,17 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param recipient The address of the party A who will receive the transferred allocation.
 	/// @param upnlSig The Muon signature for SingleUpnlSig.
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) external whenNotPartyBActionsPaused {
+		address signer = LibSigner.getSigner();
 		AccountFacetImpl.transferAllocation(amount, origin, recipient, upnlSig);
 		emit TransferAllocation(
 			amount,
 			origin,
-			AccountStorage.layout().partyBAllocatedBalances[LibSigner.getSigner()][origin],
+			AccountStorage.layout().partyBAllocatedBalances[signer][origin],
 			recipient,
-			AccountStorage.layout().partyBAllocatedBalances[LibSigner.getSigner()][recipient]
+			AccountStorage.layout().partyBAllocatedBalances[signer][recipient]
 		);
-		emit SharedEvents.BalanceChangePartyB(LibSigner.getSigner(), origin, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
-		emit SharedEvents.BalanceChangePartyB(LibSigner.getSigner(), recipient, amount, SharedEvents.BalanceChangeType.ALLOCATE);
+		emit SharedEvents.BalanceChangePartyB(signer, origin, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
+		emit SharedEvents.BalanceChangePartyB(signer, recipient, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows transferring the balance of partyB to emergency reserve vault.
@@ -273,12 +272,13 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		uint256 amount,
 		address target
 	) external whenNotExternalTransferPaused notSuspended(LibSigner.getSigner()) notLiquidatedPartyA(LibSigner.getSigner()) {
-		AccountFacetImpl.externalTransfer(LibSigner.getSigner(), receiver, amount, target);
-		emit ExternalTransfer(LibSigner.getSigner(), receiver, amount, target);
+		address signer = LibSigner.getSigner();
+		AccountFacetImpl.externalTransfer(signer, receiver, amount, target);
+		emit ExternalTransfer(signer, receiver, amount, target);
 	}
 
 	/**
-     * @notice Transfers virtual collateral fund from sender's available balance in this Symmio Diamond to another Symmio Diamond
+	 * @notice Transfers virtual collateral fund from sender's available balance in this Symmio Diamond to another Symmio Diamond
 	 * @dev sender must not be suspended/liquidated for the operation to succeed
 	 * @param receiver The address of the recipient user in the target contract
 	 * @param amount The amount to transfer, specified in collateral decimals
@@ -290,28 +290,30 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		uint256 amount,
 		address target,
 		address virtualProvider
-	) external whenNotExternalTransferPaused notSuspended(msg.sender) notLiquidatedPartyA(msg.sender) {
-		uint256 id = AccountFacetImpl.virtualExternalTransfer(msg.sender, receiver, amount, target,virtualProvider);
-		emit InitiateVirtualExternalTransfer(id,msg.sender, receiver, amount,target,virtualProvider);
+	) external whenNotExternalTransferPaused notSuspended(LibSigner.getSigner()) notLiquidatedPartyA(LibSigner.getSigner()) {
+		address signer = LibSigner.getSigner();
+		uint256 id = AccountFacetImpl.virtualExternalTransfer(signer, receiver, amount, target, virtualProvider);
+		emit InitiateVirtualExternalTransfer(id, signer, receiver, amount, target, virtualProvider);
 	}
 
 	/**
-	* @notice Accepts a virtual external transfer that was previously initiated
-	* @dev Can be called by the receiver of the virtual external transfer when not paused
-	* @param id The ID of the virtual external transfer to accept
-	*/
+	 * @notice Accepts a virtual external transfer that was previously initiated
+	 * @dev Can be called by the receiver of the virtual external transfer when not paused
+	 * @param id The ID of the virtual external transfer to accept
+	 */
 	function acceptVirtualExternalTransfer(uint256 id) external whenNotExternalTransferPaused {
 		AccountFacetImpl.acceptVirtualExternalTransfer(id);
 		emit AcceptVirtualExternalTransfer(id);
 	}
+
 	/**
-	* @notice Cancels a previously initiated virtual external transfer.
-	* @dev Delegates cancellation logic to AccountFacetImpl.cancelVirtualExternalTransfer(id).
-	*      Emits {CancelVirtualExternalTransfer}. Callable only when external transfers are not paused;
-	*      reverts if the transfer does not exist or the caller is not authorized per implementation rules.
-	* @param id The identifier of the virtual external transfer to cancel.
-	*/
-	function cancelVirtualExternalTransfer(uint256 id) external whenNotExternalTransferPaused {
+	 * @notice Cancels a previously initiated virtual external transfer.
+	 * @dev Delegates cancellation logic to AccountFacetImpl.cancelVirtualExternalTransfer(id).
+	 *      Emits {CancelVirtualExternalTransfer}. Callable only when external transfers are not paused;
+	 *      reverts if the transfer does not exist or the caller is not authorized per implementation rules.
+	 * @param id The identifier of the virtual external transfer to cancel.
+	 */
+	function cancelVirtualExternalTransfer(uint256 id) external notSuspended(LibSigner.getSigner()) whenNotExternalTransferPaused {
 		AccountFacetImpl.cancelVirtualExternalTransfer(id);
 		emit CancelVirtualExternalTransfer(id);
 	}

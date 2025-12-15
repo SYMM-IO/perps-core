@@ -8,3 +8,4 @@ import "./verify"
 import "./instantLayer"
 import "./accountHub"
 import "./affiliateHub"
+import "./deployAll";

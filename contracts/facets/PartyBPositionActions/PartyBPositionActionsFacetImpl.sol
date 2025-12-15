@@ -26,7 +26,7 @@ library PartyBPositionActionsFacetImpl {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
 		require(accountLayout.suspendedAddresses[quote.partyA] == false, "PartyBFacet: PartyA is suspended");
-		require(!accountLayout.suspendedAddresses[msg.sender], "PartyBFacet: Sender is Suspended");
+		require(!accountLayout.suspendedAddresses[LibSigner.getSigner()], "PartyBFacet: Sender is Suspended");
 		require(!appLayout.partyBEmergencyStatus[quote.partyB], "PartyBFacet: PartyB is in emergency mode");
 		require(!appLayout.emergencyMode, "PartyBFacet: System is in emergency mode");
 
@@ -69,7 +69,7 @@ library PartyBPositionActionsFacetImpl {
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		if (accountLayout.bindState[quote.partyA].partyB != msg.sender || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
+		if (accountLayout.bindState[quote.partyA].partyB != LibSigner.getSigner() || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
 			uint256[] memory quoteIds = new uint256[](1);
 			uint256[] memory filledAmounts = new uint256[](1);
