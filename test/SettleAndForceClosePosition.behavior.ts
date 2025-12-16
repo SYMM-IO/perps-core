@@ -156,7 +156,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 			const balanceInfoBBefore = await hedger.getBalanceInfo(await user.getAddress())
 
-			await context.settlementFacet.connect(hedger.getSigner).settleUpnl(settlementSig, [updatePrice], await user.getAddress())
+			await context.settlementFacet.connect(hedger.signer).settleUpnl(settlementSig, [updatePrice], await user.getAddress())
 			expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(updatePrice)
 
 			const balanceInfoBAfter = await hedger.getBalanceInfo(await user.getAddress())
@@ -170,7 +170,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 		beforeEach(async function () {
 			// switch hedger to master account mode
 			await context.controlFacet.setMasterAccountActivationMode(true)
-			await context.accountFacet.connect(hedger.getSigner).activateMasterAccountMode()
+			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
 
 			// prepare quotes and positions
 
@@ -244,9 +244,47 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(await hedger.getAddress(), await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")))
 
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
-					"LibSettlement: PartyB is in cross liquidation process",
-				)
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
+						"LibSettlement: PartyB is in cross liquidation process",
+					)
+				})
+
+				it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
+					const sigEmpty = await getDummyCrossSettlementSig([0n], 0n, await hedger.getAddress(), [await user.getAddress()], [])
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigEmpty, [])).to.be.revertedWith(
+						"LibSettlement: Invalid length",
+					)
+
+					const sigOne = await getDummyCrossSettlementSig(
+						[0n],
+						0n,
+						await hedger.getAddress(),
+						[await user.getAddress()],
+						[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
+					)
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigOne, [updatePrice, updatePrice])).to.be.revertedWith(
+						"LibSettlement: Invalid length",
+					)
+				})
+
+				it("Should revert when signature partyB does not match quote.partyB", async function () {
+					await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
+
+					// Wrong partyB inside sig (use any other address)
+					const wrongPartyB = await hedger2.getAddress()
+
+					const sig = await getDummyCrossSettlementSig(
+						[0n],
+						0n,
+						wrongPartyB, // <-- wrong
+						[await user.getAddress()],
+						[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
+					)
+
+					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
+						"LibSettlement, Invalid quote",
+					)
+				})
 			})
 
 			it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
@@ -268,7 +306,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			})
 
 			it("Should revert when signature partyB does not match quote.partyB", async function () {
-				await context.accountFacet.connect(hedger2.getSigner).activateMasterAccountMode()
+				await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
 
 				// Wrong partyB inside sig (use any other address)
 				const wrongPartyB = await hedger2.getAddress()
