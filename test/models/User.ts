@@ -289,10 +289,11 @@ export class User extends PartyEntity {
 	public async liquidateAndSetSymbolPrices(
 		symbolIds: bigint[],
 		prices: bigint[],
+		quoteIds: bigint[],
 		liquidator: SignerWithAddress = this.context.signers.liquidator,
 	): Promise<LiquidationSigStruct> {
-		const upnl = await this.getUpnl(getPriceFetcher(symbolIds, prices))
-		const totalUnrealizedLoss = await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices))
+		const upnl = await this.getUpnl(getPriceFetcher(symbolIds, prices)) - (await this.context.viewFacetSymbol.getSumAccumulatedFundingFees(quoteIds))
+		const totalUnrealizedLoss = await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices)) - (await this.context.viewFacetSymbol.getSumAccumulatedFundingFees(quoteIds))
 		const allocatedBalance = (await this.getBalanceInfo()).allocatedBalances
 		const sign = await getDummyLiquidationSig("0x10", upnl, symbolIds, prices, totalUnrealizedLoss, allocatedBalance)
 		await this.context.liquidationFacet.connect(liquidator).liquidatePartyA(this.getAddress(), sign)
@@ -303,9 +304,10 @@ export class User extends PartyEntity {
 	public async deferredLiquidateAndSetSymbolPrices(
 		symbolIds: bigint[],
 		prices: bigint[],
+		quoteIds: bigint[],
 		liquidator: SignerWithAddress = this.context.signers.liquidator,
 	): Promise<LiquidationSigStruct> {
-		const upnl = await this.getUpnl(getPriceFetcher(symbolIds, prices))
+		const upnl = await this.getUpnl(getPriceFetcher(symbolIds, prices)) - (await this.context.viewFacetSymbol.getSumAccumulatedFundingFees(quoteIds))
 		const totalUnrealizedLoss = await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices))
 		const allocatedBalance = (await this.getBalanceInfo()).allocatedBalances
 		const sign = await getDummyLiquidationSig("0x10", upnl, symbolIds, prices, totalUnrealizedLoss, allocatedBalance)

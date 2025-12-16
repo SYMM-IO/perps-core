@@ -45,6 +45,8 @@ export function shouldBehaveLikeFundingRate(): void {
 		await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate("30000000").build())
 		await hedger.lockQuote(4)
 		await hedger.openPosition(4)
+
+		await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
 	})
 
 	it("Should fail on different length", async function () {

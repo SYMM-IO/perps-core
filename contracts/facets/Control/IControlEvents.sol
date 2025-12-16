@@ -123,4 +123,6 @@ interface IControlEvents {
 	event SetPenaltyCollector(address penaltyCollector);
 	event SetPartyBBindable(address partyB);
 	event UnsetPartyBBindable(address partyB);
+	event DeprecateOldFundingFee();
+	event EnableNewFundingFee();
 }

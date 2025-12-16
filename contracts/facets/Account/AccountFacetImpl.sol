@@ -28,6 +28,10 @@ library AccountFacetImpl {
 	}
 
 	function virtualDepositFor(address user, uint256 amount) internal {
+		require(
+			GlobalAppStorage.layout().virtualProviders[msg.sender],
+			"AccountFacet : msg.sender not registered as virtual provider"
+		);
 		AccountStorage.layout().balances[user] += amount;
 	}
 

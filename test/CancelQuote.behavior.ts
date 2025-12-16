@@ -53,7 +53,7 @@ export function shouldBehaveLikeCancelQuote(): void {
 		await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
 		await hedger.lockQuote(2)
 		await hedger.openPosition(2)
-		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)])
+		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)],[2n])
 		await expect(user.requestToCancelQuote(1)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 	})
 

@@ -113,16 +113,16 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 		})
 
-		it("Should fail to virtual deposit when calling without role", async function () {
+		it("Should fail to virtual deposit when calling from non-registered provider", async function () {
 			await expect(context.accountFacet.connect(context.signers.user).virtualDepositFor(await user.getAddress(), decimal(1n))).to.be.revertedWith(
-				"Accessibility: Must has role",
+				"AccountFacet : msg.sender not registered as virtual provider",
 			)
 		})
 
 		it("Should virtual deposit for user", async function () {
 			await context.controlFacet
 				.connect(context.signers.admin)
-				.grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE")))
+				.registerVirtualProvider(context.signers.admin.address)
 
 			const userAddress = await user.getAddress()
 			const depositAmount = decimal(1n)
@@ -843,12 +843,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await mockProvider2.waitForDeployment()
 			providerAddress2 = await mockProvider2.getAddress()
 
-			await context.controlFacet.connect(context.signers.admin).grantRole(providerAddress, ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).grantRole(providerAddress2, ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE")))
-
-			await mockProvider.connect(context.signers.admin).virtualDepositFor(context.diamond,context.signers.user.address, depositAmount)
-
 			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(providerAddress)
+			await mockProvider.connect(context.signers.admin).virtualDepositFor(context.diamond,context.signers.user.address, depositAmount)
 		})
 
 		it("Should virtual external transfer correctly", async function () {
