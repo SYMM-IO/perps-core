@@ -134,4 +134,16 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		appLayout.deprecateOldWithdrawalPaused = true;
 		emit DeprecateOldWithdrawalPaused();
 	}
+
+	function deprecateOldFundingFee() external onlyRole(LibAccessibility.SETTER_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		appLayout.iterativeFundingDeprecationFlag = true;
+		emit DeprecateOldFundingFee();
+	}
+
+	function enableNewFundingFee() external onlyRole(LibAccessibility.SETTER_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		appLayout.accumulativeFundingRateActivationFlag = true;
+		emit EnableNewFundingFee();
+	}
 }

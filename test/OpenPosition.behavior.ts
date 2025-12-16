@@ -61,7 +61,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 	it("Should fail on liquidated quote", async function () {
 		await hedger2.openPosition(2)
 		await hedger2.lockQuote(3)
-		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)])
+		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)] , [2n])
 		await expect(hedger2.openPosition(3)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 	})
 
@@ -506,7 +506,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 			await user.requestToClosePosition(id)
 			let request: FillCloseRequest = limitFillCloseRequestBuilder().build()
 			await context.partyBPositionActionsFacet
-							.connect(b.getSigner)
+							.connect(b.signer)
 							.fillCloseRequest(
 								id,
 								filled ==100n?request.filledAmount:filled,

@@ -625,12 +625,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should fail to initiate withdraw by a non-registered provider", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -648,12 +647,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should initiate withdraw correctly", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -831,12 +829,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should finalize withdraw", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -904,12 +901,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should request to cancel withdraw", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -956,12 +952,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should fail to force cancel withdraw before cooldown", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -985,12 +980,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should fail to force cancel withdraw with wrong request Id", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -1014,12 +1008,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should fail to force cancel withdraw with invalid status", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -1040,12 +1033,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should force cancel withdraw after cooldown", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();

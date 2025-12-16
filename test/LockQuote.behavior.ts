@@ -72,7 +72,7 @@ export function shouldBehaveLikeLockQuote(): void {
 		it("Should fail on liquidated partyA", async function () {
 			await hedger.lockQuote(2)
 			await hedger.openPosition(2)
-			await user.liquidateAndSetSymbolPrices([1n], [decimal(200n)])
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(200n)],[2n])
 			await expect(hedger.lockQuote(1)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 		})
 

@@ -45,7 +45,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
 	/// @param user The recipient address for the deposit.
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
-	function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
+	function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused {
 		_virtualDepositFor(user, amount);
 	}
 
@@ -55,7 +55,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function virtualDepositAndAllocateFor(
 		address user,
 		uint256 amount
-	) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
+	) external whenNotAccountingPaused {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
 		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);

@@ -20,7 +20,7 @@ import { getBlockTimestamp } from "./Common"
 export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUpnlSigStruct> {
 	return {
 		reqId: "0x",
-		timestamp: await getBlockTimestamp(200n),
+		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {
@@ -62,7 +62,7 @@ export async function getDummyLiquidationSig(
 export async function getDummySingleUpnlAndPriceSig(price: bigint = 1n, upnl: bigint = 0n): Promise<SingleUpnlAndPriceSigStruct> {
 	return {
 		reqId: "0x",
-		timestamp: await getBlockTimestamp(200n),
+		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {

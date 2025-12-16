@@ -36,6 +36,8 @@ library GlobalAppStorage {
 		uint256 minAffiliateFee;
 		mapping(address => mapping(address => mapping(uint256 => Fee))) customAffiliateFee; // affiliate => user => symbolId => fee
 		mapping(bytes32 => mapping(address => bool)) roleAdmins; // role => user => admin or not bool
+		bool iterativeFundingDeprecationFlag;
+		bool accumulativeFundingRateActivationFlag;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
