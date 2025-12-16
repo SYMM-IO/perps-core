@@ -307,10 +307,6 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				const penalty = await context.viewFacet.forceClosePricePenalty()
 				const quote = await context.viewFacetQuote.getQuote(1)
 
-				console.log("quote.avgClosedPrice", quote.avgClosedPrice)
-				console.log("quote.closedAmount", quote.closedAmount)
-				console.log("quote.quantityToClose", quote.quantityToClose)
-
 				const expectedClosePrice = calculateExpectedClosePriceForForceClose(quote, penalty, true)
 				const expectedAvgClosedPrice = calculateExpectedAvgPriceForForceClose(quote, expectedClosePrice)
 
@@ -443,7 +439,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				const hedgerAddress = await hedger.getAddress()
 				const partyAAddress = await user.getAddress()
 
-				await context.accountFacet.connect(hedger.getSigner).depositToReserveVault(decimal(1000n), hedgerAddress)
+				await context.accountFacet.connect(hedger.signer).depositToReserveVault(decimal(1000n), hedgerAddress)
 
 				const solventSig = await getDummyHighLowPriceSig(
 					sigTimes[0],
@@ -501,7 +497,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			let settlementSig: any
 			beforeEach(async function () {
 				await context.controlFacet.setMasterAccountActivationMode(true)
-				await context.accountFacet.connect(hedger.getSigner).activateMasterAccountMode()
+				await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
 
 				await hedger.lockQuote(quote1LongOpened.id)
 				await hedger.openPosition(quote1LongOpened.id)
@@ -600,7 +596,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					})
 
 					it("Should revert when quote status is not OPENED/CLOSE_PENDING/CANCEL_CLOSE_PENDING", async function () {
-						await context.accountFacet.connect(hedger2.getSigner).activateMasterAccountMode()
+						await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
 
 						await user.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
 
