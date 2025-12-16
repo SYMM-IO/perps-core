@@ -1461,7 +1461,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				await ctx.context.instantLayer.grantBatchDelegationBySig(signedDelegation, sig)
 
 				// Trying same delegation again should fail
-				await expect(ctx.context.instantLayer.grantBatchDelegationBySig(signedDelegation, sig)).to.be.reverted
+				await expect(ctx.context.instantLayer.grantBatchDelegationBySig(signedDelegation, sig)).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidNonce",
+				)
 			})
 		})
 
