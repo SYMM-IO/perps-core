@@ -434,6 +434,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	error MissingSourceResult();
 	error BadSourceResultLength(bytes res, uint256 length);
+	error PartyBAlreadyRegistered(address partyB);
+	error EmptyArray();
+	error PartyBNotRegistered(address partyB);
 
 	/* ════════════════════════════ CONSTRUCTOR ════════════════════════════ */
 
@@ -547,7 +550,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 *         Registration also grants OPERATOR_ROLE to the PartyB.
 	 */
 	function registerPartyBs(address[] calldata partyBs) external onlyRole(SETTER_ROLE) {
+		if (partyBs.length == 0) revert EmptyArray();
 		for (uint256 i = 0; i < partyBs.length; i++) {
+			if (registeredPartyBs[partyBs[i]]) revert PartyBAlreadyRegistered(partyBs[i]);
 			registeredPartyBs[partyBs[i]] = true;
 			_grantRole(OPERATOR_ROLE, partyBs[i]);
 			emit PartyBRegistered(partyBs[i]);
@@ -563,6 +568,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * - Caller must have SETTER_ROLE
 	 */
 	function unregisterPartyB(address partyB) external onlyRole(SETTER_ROLE) {
+		if (!registeredPartyBs[partyB]) revert PartyBNotRegistered(partyB);
 		registeredPartyBs[partyB] = false;
 		_revokeRole(OPERATOR_ROLE, partyB);
 		emit PartyBUnregistered(partyB);

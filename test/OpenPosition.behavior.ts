@@ -62,12 +62,12 @@ export function shouldBehaveLikeOpenPosition(): void {
 			await expect(hedger.openPosition(1)).to.be.revertedWith("Pausable: PartyB actions paused")
 		})
 
-		it("Should fail on liquidated quote", async function () {
-			await hedger2.openPosition(2)
-			await hedger2.lockQuote(3)
-			await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)])
-			await expect(hedger2.openPosition(3)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
-		})
+	it("Should fail on liquidated quote", async function () {
+		await hedger2.openPosition(2)
+		await hedger2.lockQuote(3)
+		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)] , [2n])
+		await expect(hedger2.openPosition(3)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
+	})
 
 		it("Should fail on invalid fill amount", async function () {
 			// more than quantity
@@ -497,31 +497,32 @@ export function shouldBehaveLikeOpenPosition(): void {
 				await user.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
 			})
 
-			const openWith = async (b: Hedger) => {
-				await user.sendQuote(
-					limitQuoteRequestBuilder()
-						.partyBWhiteList([await b.getAddress()])
-						.build(),
-				)
-				// lock and open
-				const id = await context.viewFacetQuote.getNextQuoteId() // or use running index you keep in your harness
-				await b.lockQuote(id)
-				await b.openPosition(id)
-				return id
-			}
-			const requestAndFillClose = async (id: bigint, b: Hedger, filled: bigint) => {
-				// Party A requests close (LIMIT close; price is irrelevant with dummy oracle)
-				await user.requestToClosePosition(id)
-				let request: FillCloseRequest = limitFillCloseRequestBuilder().build()
-				await context.partyBPositionActionsFacet
-					.connect(b.getSigner)
-					.fillCloseRequest(
-						id,
-						filled == 100n ? request.filledAmount : filled,
-						request.closedPrice,
-						await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
-					)
-			}
+		const openWith = async (b: Hedger) => {
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await b.getAddress()])
+					.build(),
+			)
+			// lock and open
+			const id = await context.viewFacetQuote.getNextQuoteId() // or use running index you keep in your harness
+			await b.lockQuote(id)
+			await b.openPosition(id)
+			return id
+		}
+		const requestAndFillClose = async (id: bigint, b: Hedger, filled: bigint) => {
+			// Party A requests close (LIMIT close; price is irrelevant with dummy oracle)
+			await user.requestToClosePosition(id)
+			let request: FillCloseRequest = limitFillCloseRequestBuilder().build()
+			await context.partyBPositionActionsFacet
+							.connect(b.signer)
+							.fillCloseRequest(
+								id,
+								filled ==100n?request.filledAmount:filled,
+								request.closedPrice,
+								await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
+							)
+			
+		}
 
 			const expectConnected = async (partyBAddr: string, expected: boolean) => {
 				const isConn = await context.viewFacetSymbol.isConnectedPartyB(context.signers.user.address, partyBAddr)

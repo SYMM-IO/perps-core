@@ -850,4 +850,13 @@ contract ViewFacet is IViewFacet {
 	function isBindable(address partyB) external view returns(bool){
 		return AccountStorage.layout().isPartyBBindable[partyB];
 	}
+
+	function getIterativeFundingDeprecationFlag() external view returns(bool iterativeFundingDeprecationFlag){
+
+		return GlobalAppStorage.layout().iterativeFundingDeprecationFlag;
+	}
+
+	function getAccumulativeFundingRateActivationFlag() external view returns(bool accumulativeFundingRateActivationFlag){
+		return GlobalAppStorage.layout().accumulativeFundingRateActivationFlag;
+	}
 }

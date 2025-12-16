@@ -46,4 +46,6 @@ interface IPauseControlFacet is IControlEvents {
 	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external;
 
 	function deprecateOldWithdrawal() external;
+
+	function deprecateOldFundingFee() external;
 }

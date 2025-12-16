@@ -1,25 +1,24 @@
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { RunContext } from "./RunContext"
-import { ethers } from "hardhat"
 import { BytesLike } from "ethers"
+import { ethers } from "hardhat"
 
+import { RunContext } from "./RunContext"
 
 export class PartyEntity {
 	constructor(
 		protected context: RunContext,
-		protected signer: SignerWithAddress,
+		protected _signer: SignerWithAddress,
 	) {}
 
-
-	public get getSigner() {
-		return this.signer
+	public get signer() {
+		return this._signer
 	}
 
 	public get address() {
-		return this.signer.address
+		return this._signer.address
 	}
 
 	public async sign(hash: BytesLike): Promise<string> {
-		return await this.getSigner.signMessage(ethers.getBytes(hash))
+		return await this.signer.signMessage(ethers.getBytes(hash))
 	}
 }
