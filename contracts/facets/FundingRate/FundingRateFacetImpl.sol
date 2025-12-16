@@ -33,7 +33,7 @@ library FundingRateFacetImpl {
 	 * @param upnlSig Signature containing unrealized PnL for solvency checks
 	 */
 	function chargeFundingRate(address partyA, uint256[] memory quoteIds, int256[] memory rates, PairUpnlSig memory upnlSig) internal {
-		require(!GlobalAppStorage.layout().oldFundingFeeDeprecated, "FundingRateFacet: Old Funding Fee Deprecated");
+		require(!GlobalAppStorage.layout().iterativeFundingDeprecationFlag, "FundingRateFacet: Old Funding Fee Deprecated");
 
 		// Verify the signature contains valid unrealized PnL data
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -152,7 +152,7 @@ library FundingRateFacetImpl {
 	 * @param partyB Market maker address
 	 */
 	function setEpochDuration(uint256[] memory symbolIds, uint256[] memory durations, address partyB) internal {
-		require(GlobalAppStorage.layout().newFundingFeeEnabled, "FundingRateFacet: New System Not Enabled");
+		require(GlobalAppStorage.layout().accumulativeFundingRateActivationFlag, "FundingRateFacet: New System Not Enabled");
 		require(symbolIds.length == durations.length, "FundingRateFacet: Invalid length");
 
 		for (uint256 i = 0; i < symbolIds.length; i++) {
@@ -225,7 +225,7 @@ library FundingRateFacetImpl {
 	 * @notice Sets funding fees for both long and short positions
 	 */
 	function setFundingFee(uint256[] memory symbolIds, int256[] memory longRates, int256[] memory shortRates, int256[] memory marketPrices) internal {
-		require(GlobalAppStorage.layout().newFundingFeeEnabled, "FundingRateFacet: New System Not Enabled");
+		require(GlobalAppStorage.layout().accumulativeFundingRateActivationFlag, "FundingRateFacet: New System Not Enabled");
 		updateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices);
 	}
 
@@ -234,7 +234,7 @@ library FundingRateFacetImpl {
 	 * @dev Preserves existing short fees while updating long fees
 	 */
 	function setLongFundingFee(uint256[] memory symbolIds, int256[] memory longRates, int256[] memory marketPrices) internal {
-		require(GlobalAppStorage.layout().newFundingFeeEnabled, "FundingRateFacet: New System Not Enabled");
+		require(GlobalAppStorage.layout().accumulativeFundingRateActivationFlag, "FundingRateFacet: New System Not Enabled");
 		require(symbolIds.length == longRates.length && symbolIds.length == marketPrices.length, "FundingRateFacet: Invalid length");
 
 		int256[] memory shortRates = new int256[](longRates.length);
@@ -256,7 +256,8 @@ library FundingRateFacetImpl {
 	 * @dev Preserves existing long fees while updating short fees
 	 */
 	function setShortFundingFee(uint256[] memory symbolIds, int256[] memory shortRates, int256[] memory marketPrices) internal {
-		require(GlobalAppStorage.layout().newFundingFeeEnabled, "FundingRateFacet: New System Not Enabled");
+		require(symbolIds.length == shortRates.length && symbolIds.length == marketPrices.length, "FundingRateFacet: Invalid length");
+		require(GlobalAppStorage.layout().accumulativeFundingRateActivationFlag, "FundingRateFacet: New System Not Enabled");
 		int256[] memory longRates = new int256[](shortRates.length);
 
 		// Preserve existing long rates
@@ -280,7 +281,7 @@ library FundingRateFacetImpl {
 	 * @param upnlSig Unrealized PnL signature for solvency checks
 	 */
 	function chargeAccumulatedFundingFee(address partyA, address partyB, uint256[] memory quoteIds, PairUpnlSig memory upnlSig) internal {
-		require(GlobalAppStorage.layout().newFundingFeeEnabled, "FundingRateFacet: New System Not Enabled");
+		require(GlobalAppStorage.layout().accumulativeFundingRateActivationFlag, "FundingRateFacet: New System Not Enabled");
 		LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA);
 
 		// Apply accumulated funding to each position

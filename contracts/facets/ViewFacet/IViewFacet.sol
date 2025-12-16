@@ -193,4 +193,8 @@ interface IViewFacet {
 	function getPartyALockedQuotesCount(address user) external view returns(uint256);
 
 	function isBindable(address partyB) external view returns(bool);
+
+	function getIterativeFundingDeprecationFlag() external view returns(bool iterativeFundingDeprecationFlag);
+
+	function getAccumulativeFundingRateActivationFlag() external view returns(bool accumulativeFundingRateActivationFlag);
 }
