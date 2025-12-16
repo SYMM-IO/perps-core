@@ -349,8 +349,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await hedger.setup()
 			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
 
-			console.log(await context.viewFacetQuote.getNextQuoteId())
-
 			const quoteId = await user.sendQuote()
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
 
