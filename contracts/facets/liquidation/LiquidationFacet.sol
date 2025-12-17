@@ -158,7 +158,7 @@ contract LiquidationFacet is Pausable, Accessibility, ILiquidationFacet {
 		notLiquidatedPartyB(partyB, partyA)
 		notCrossLiquidatedPartyB(partyB)
 		notLiquidatedPartyA(partyA)
-		onlyRole(LibAccessibility.LIQUIDATOR_ROLE)
+		onlyRole(LibAccessibility.PARTYB_LIQUIDATOR_ROLE)
 	{
 		emit LiquidatePartyB(msg.sender, partyB, partyA, AccountStorage.layout().partyBAllocatedBalances[partyB][partyA], upnlSig.upnl);
 		LiquidationFacetImpl.liquidatePartyB(partyB, partyA, upnlSig);
@@ -174,7 +174,7 @@ contract LiquidationFacet is Pausable, Accessibility, ILiquidationFacet {
 		address partyB,
 		address partyA,
 		QuotePriceSig memory priceSig
-	) external whenNotLiquidationPaused onlyRole(LibAccessibility.LIQUIDATOR_ROLE) {
+	) external whenNotLiquidationPaused onlyRole(LibAccessibility.PARTYB_LIQUIDATOR_ROLE) {
 		(uint256[] memory liquidatedAmounts, uint256[] memory closeIds, uint256[] memory averageClosedPrices) = LiquidationFacetImpl.liquidatePositionsPartyB(partyB, partyA, priceSig);
 		emit LiquidatePositionsPartyB(msg.sender, partyB, partyA, priceSig.quoteIds, liquidatedAmounts, closeIds);
 		emit LiquidatePositionsPartyB(msg.sender, partyB, partyA, priceSig.quoteIds, liquidatedAmounts, closeIds, averageClosedPrices);

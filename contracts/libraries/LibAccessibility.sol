@@ -30,6 +30,7 @@ library LibAccessibility {
 	bytes32 public constant SUSPENDER_ROLE = keccak256("SUSPENDER_ROLE");
 	bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
 	bytes32 public constant SOFT_LIQUIDATOR_ROLE = keccak256("SOFT_LIQUIDATOR_ROLE");
+	bytes32 public constant PARTYB_LIQUIDATOR_ROLE = keccak256("PARTYB_LIQUIDATOR_ROLE");
 	bytes32 public constant CLEARING_HOUSE_ROLE = keccak256("CLEARING_HOUSE_ROLE");
 	bytes32 public constant VIRTUAL_DEPOSITOR_ROLE = keccak256("VIRTUAL_DEPOSITOR_ROLE");
 	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
