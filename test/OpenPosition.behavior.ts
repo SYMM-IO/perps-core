@@ -62,12 +62,12 @@ export function shouldBehaveLikeOpenPosition(): void {
 			await expect(hedger.openPosition(1)).to.be.revertedWith("Pausable: PartyB actions paused")
 		})
 
-	it("Should fail on liquidated quote", async function () {
-		await hedger2.openPosition(2)
-		await hedger2.lockQuote(3)
-		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)] , [2n])
-		await expect(hedger2.openPosition(3)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
-	})
+		it("Should fail on liquidated quote", async function () {
+			await hedger2.openPosition(2)
+			await hedger2.lockQuote(3)
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)], [2n])
+			await expect(hedger2.openPosition(3)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
+		})
 
 		it("Should fail on invalid fill amount", async function () {
 			// more than quantity
@@ -497,32 +497,31 @@ export function shouldBehaveLikeOpenPosition(): void {
 				await user.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
 			})
 
-		const openWith = async (b: Hedger) => {
-			await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.partyBWhiteList([await b.getAddress()])
-					.build(),
-			)
-			// lock and open
-			const id = await context.viewFacetQuote.getNextQuoteId() // or use running index you keep in your harness
-			await b.lockQuote(id)
-			await b.openPosition(id)
-			return id
-		}
-		const requestAndFillClose = async (id: bigint, b: Hedger, filled: bigint) => {
-			// Party A requests close (LIMIT close; price is irrelevant with dummy oracle)
-			await user.requestToClosePosition(id)
-			let request: FillCloseRequest = limitFillCloseRequestBuilder().build()
-			await context.partyBPositionActionsFacet
-							.connect(b.signer)
-							.fillCloseRequest(
-								id,
-								filled ==100n?request.filledAmount:filled,
-								request.closedPrice,
-								await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
-							)
-			
-		}
+			const openWith = async (b: Hedger) => {
+				await user.sendQuote(
+					limitQuoteRequestBuilder()
+						.partyBWhiteList([await b.getAddress()])
+						.build(),
+				)
+				// lock and open
+				const id = await context.viewFacetQuote.getNextQuoteId() // or use running index you keep in your harness
+				await b.lockQuote(id)
+				await b.openPosition(id)
+				return id
+			}
+			const requestAndFillClose = async (id: bigint, b: Hedger, filled: bigint) => {
+				// Party A requests close (LIMIT close; price is irrelevant with dummy oracle)
+				await user.requestToClosePosition(id)
+				let request: FillCloseRequest = limitFillCloseRequestBuilder().build()
+				await context.partyBPositionActionsFacet
+					.connect(b.signer)
+					.fillCloseRequest(
+						id,
+						filled == 100n ? request.filledAmount : filled,
+						request.closedPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
+					)
+			}
 
 			const expectConnected = async (partyBAddr: string, expected: boolean) => {
 				const isConn = await context.viewFacetSymbol.isConnectedPartyB(context.signers.user.address, partyBAddr)
@@ -600,7 +599,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 		beforeEach(async function () {
 			// Activate master account mode for both hedgers
 			await context.controlFacet.setMasterAccountActivationMode(true)
-			await context.accountFacet.connect(hedger.getSigner).activateMasterAccountMode()
+			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
 
 			// Lock both quotes
 			await hedger.lockQuote(quoteUser1.id)
@@ -626,13 +625,13 @@ export function shouldBehaveLikeOpenPosition(): void {
 			expect(masterBucket.pendingLockedMmPartyB).to.equal(0)
 
 			const partyABucket1 = await hedger.getBalanceInfo(await user.getAddress())
-			const partyABucket2 = await hedger.getBalanceInfo(await user2.getAddress())
-			expect(partyABucket1.lockedCva).to.equal(0)
-			expect(partyABucket1.lockedLf).to.equal(0)
-			expect(partyABucket1.lockedMmPartyB).to.equal(0)
-			expect(partyABucket2.lockedCva).to.equal(0)
-			expect(partyABucket2.lockedLf).to.equal(0)
-			expect(partyABucket2.lockedMmPartyB).to.equal(0)
+
+			expect(partyABucket1.lockedCva).to.equal(quoteUser1.lockedValues.cva + quoteUser2.lockedValues.cva)
+			expect(partyABucket1.lockedLf).to.equal(quoteUser1.lockedValues.lf + quoteUser2.lockedValues.lf)
+			expect(partyABucket1.lockedMmPartyB).to.equal(quoteUser1.lockedValues.partyBmm + quoteUser2.lockedValues.partyBmm)
+			expect(partyABucket1.pendingLockedCva).to.equal(0)
+			expect(partyABucket1.pendingLockedLf).to.equal(0)
+			expect(partyABucket1.pendingLockedMmPartyB).to.equal(0)
 		})
 	})
 }

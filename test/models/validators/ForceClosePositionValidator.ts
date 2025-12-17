@@ -103,6 +103,7 @@ export class ForceClosePositionValidator implements TransactionValidator {
 		const newBalanceInfoPartyA = await arg.user.getBalanceInfo()
 		const oldBalanceInfoPartyA = arg.beforeOutput.balanceInfoPartyA
 
+		
 		expect(newBalanceInfoPartyA.totalPendingLockedPartyA.toString()).to.equal(oldBalanceInfoPartyA.totalPendingLockedPartyA.toString())
 
 		expect(BigInt(newBalanceInfoPartyA.allocatedBalances)).to.be.approximately(

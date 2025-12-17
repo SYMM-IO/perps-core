@@ -285,7 +285,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 						"LibSettlement, Invalid quote",
 					)
 				})
-			})
+			
 
 			it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
 				const sigEmpty = await getDummyCrossSettlementSig([0n], 0n, await hedger.getAddress(), [await user.getAddress()], [])
@@ -451,14 +451,17 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
 			const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+			const beforeNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
 
 			await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).not.to.be.reverted
 
 			const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
 			const afterNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+			const afterNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
 
 			expect(afterNonceA).to.equal(beforeNonceA + 1n)
 			expect(afterNonceB).to.equal(beforeNonceB + 1n)
+			expect(afterNonceBPartyA).to.equal(beforeNonceBPartyA + 1n)
 		})
 
 		it("Should settle and forceClose the quote in master account mode", async function () {

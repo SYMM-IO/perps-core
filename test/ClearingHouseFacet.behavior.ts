@@ -423,8 +423,8 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			let quoteUser1: QuoteStructOutput, quoteUser2: QuoteStructOutput
 
 			beforeEach(async () => {
-				context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
-				await context.accountFacet.connect(hedger2.getSigner).activateMasterAccountMode()
+				await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
+				await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
 
 				// second partyA
 				await user2.setBalances(decimal(2000n), decimal(1000n), decimal(500n))

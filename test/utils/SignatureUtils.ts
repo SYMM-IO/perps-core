@@ -7,11 +7,11 @@ import { SingleUpnlAndPriceSigStruct } from "../../src/types/contracts/facets/Pa
 import { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
 import { QuotePriceSigStruct } from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
 import {
-	CrossQuoteSettlementDataStructOutput,
-	CrossSettlementSigStructOutput,
 	DeferredLiquidationSigStruct,
 	MasterAccountQuoteSettlementDataStruct,
+	MasterAccountQuoteSettlementDataStructOutput,
 	MasterAccountSettlementSigStruct,
+	MasterAccountSettlementSigStructOutput,
 	PairUpnlAndPriceSigStruct,
 	SingleUpnlSigStruct,
 } from "../../src/types/contracts/interfaces/ISymmio"
@@ -134,8 +134,8 @@ export async function getDummyCrossSettlementSig(
 	upnlPartyB: bigint = 0n,
 	partyB: string = "0x",
 	partyAs: string[] = [],
-	quotesSettlementsData: CrossQuoteSettlementDataStructOutput[] = [],
-): Promise<CrossSettlementSigStructOutput> {
+	quotesSettlementsData: MasterAccountQuoteSettlementDataStructOutput[] = [],
+): Promise<MasterAccountSettlementSigStructOutput> {
 	return {
 		reqId: "0x",
 		timestamp: BigInt(await getBlockTimestamp()),
