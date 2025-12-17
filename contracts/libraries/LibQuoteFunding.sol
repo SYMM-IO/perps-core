@@ -76,14 +76,14 @@ library LibQuoteFunding {
 			// Positive fee: Trader (PartyA) pays Market Maker (PartyB)
 			uint256 feeInUint = uint256(fee);
 			accountLayout.allocatedBalances[quote.partyA] -= feeInUint;
-			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationBucket(quote.partyB, quote.partyA)] += feeInUint;
+			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationKey(quote.partyB, quote.partyA)] += feeInUint;
 
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
 		} else if (fee < 0) {
 			// Negative fee: Market Maker (PartyB) pays Trader (PartyA)
 			uint256 feeInUint = uint256(-fee);
-			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationBucket(quote.partyB, quote.partyA)] -= feeInUint;
+			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationKey(quote.partyB, quote.partyA)] -= feeInUint;
 			accountLayout.allocatedBalances[quote.partyA] += feeInUint;
 
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);

@@ -139,6 +139,7 @@ library ClearingHouseFacetImpl {
 			quote.statusModifyTimestamp = block.timestamp;
 
 			accountLayout.lockedBalances[partyA].subQuote(quote);
+			LibAccount.subFromPartyBLockedBalances(partyB, partyA, quote);
 
 			uint256 liquidationPrice = priceSig.prices[i];
 			quote.avgClosedPrice =

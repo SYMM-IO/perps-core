@@ -5,11 +5,10 @@
 pragma solidity >=0.8.18;
 
 import "../storages/AccountStorage.sol";
+import "../storages/QuoteStorage.sol";
 
 library LibAccount {
 	using LockedValuesOps for LockedValues;
-
-	/* getters */
 
 	/**
 	 * @notice Calculates the total locked balances of Party A.
@@ -29,7 +28,7 @@ library LibAccount {
 	 */
 	function partyBTotalLockedBalances(address partyB, address partyA) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address bucketKey = partyBAllocationBucket(partyB, partyA);
+		address bucketKey = partyBAllocationKey(partyB, partyA);
 		return
 			accountLayout.partyBPendingLockedBalances[partyB][bucketKey].totalForPartyB() +
 			accountLayout.partyBLockedBalances[partyB][bucketKey].totalForPartyB();
@@ -108,7 +107,7 @@ library LibAccount {
 	 */
 	function partyBAvailableForQuote(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address bucketKey = partyBAllocationBucket(partyB, partyA);
+		address bucketKey = partyBAllocationKey(partyB, partyA);
 		int256 available;
 		if (upnl >= 0) {
 			available =
@@ -142,7 +141,7 @@ library LibAccount {
 	 */
 	function partyBAvailableBalance(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address bucketKey = partyBAllocationBucket(partyB, partyA);
+		address bucketKey = partyBAllocationKey(partyB, partyA);
 		int256 available;
 		if (upnl >= 0) {
 			available =
@@ -169,7 +168,7 @@ library LibAccount {
 	 */
 	function partyBAvailableBalanceForLiquidation(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address bucketKey = partyBAllocationBucket(partyB, partyA);
+		address bucketKey = partyBAllocationKey(partyB, partyA);
 		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) -
 			int256(accountLayout.partyBLockedBalances[partyB][bucketKey].cva + accountLayout.partyBLockedBalances[partyB][bucketKey].lf);
 		return a + upnl;
@@ -181,7 +180,7 @@ library LibAccount {
 	 * @param partyA The address of Party A.
 	 * @return bucket Party B allocation mapping key.
 	 */
-	function partyBAllocationBucket(address partyB, address partyA) internal view returns (address bucket) {
+	function partyBAllocationKey(address partyB, address partyA) internal view returns (address bucket) {
 		if (AccountStorage.layout().masterAccountMode[partyB]) {
 			bucket = address(0);
 		} else {
@@ -190,43 +189,126 @@ library LibAccount {
 	}
 
 	/**
-	 * @notice returns locked balances for Party B for a specific quote.
-	 * @param partyB The Party B address.
+	 * @notice Adds a new quote locked balance to Party B's pending locked balances. In master account mode, adds to both master and specific Party A balances.
+	 * @param partyB The address of Party B.
+	 * @param partyA The address of Party A.
+	 * @param quote The quote whose locked values are to be added.
 	 */
-	function partyBLockedBalances(address partyB, address partyA) internal view returns (LockedValues storage) {
-		return AccountStorage.layout().partyBLockedBalances[partyB][partyBAllocationBucket(partyB, partyA)];
+	function addToPartyBLockedBalances(address partyB, address partyA, Quote storage quote) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		if (accountLayout.masterAccountMode[partyB]) {
+			if (partyA != address(0)) {
+				accountLayout.partyBLockedBalances[partyB][partyA].addQuote(quote);
+			}
+			accountLayout.partyBLockedBalances[partyB][address(0)].addQuote(quote);
+		} else {
+			accountLayout.partyBLockedBalances[partyB][partyA].addQuote(quote);
+		}
 	}
 
 	/**
-	 * @notice returns pending locked balances for Party B for a specific quote.
-	 * @param partyB The Party B address.
-	 * @param partyA The Party A address.
+	 * @notice Subtracts a quote's locked balance from Party B's locked balances. In master account mode, subtracts from both master and specific Party A balances.
+	 * @param partyB The address of Party B.
+	 * @param partyA The address of Party A.
+	 * @param quote The quote whose locked values are to be subtracted.
 	 */
-	function partyBPendingLockedBalances(address partyB, address partyA) internal view returns (LockedValues storage) {
-		return AccountStorage.layout().partyBPendingLockedBalances[partyB][partyBAllocationBucket(partyB, partyA)];
+	function subFromPartyBLockedBalances(address partyB, address partyA, Quote storage quote) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		if (accountLayout.masterAccountMode[partyB]) {
+			if (partyA != address(0)) {
+				accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote);
+			}
+			if (accountLayout.partyBLockedBalances[partyB][address(0)].totalForPartyB() > 0) {
+				accountLayout.partyBLockedBalances[partyB][address(0)].subQuote(quote);
+			}
+		} else {
+			accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote);
+		}
 	}
 
 	/**
-	 * @notice returns allocated balances for Party B in any mode
-	 * @param partyB The Party B address.
-	 * @param partyA The Party A address.
+	 * @notice Replaces a quote's locked balance in Party B's locked balances with new locked values. In master account mode, updates both master and specific Party A balances.
+	 * @param partyB The address of Party B.
+	 * @param partyA The address of Party A.
+	 * @param quote The quote whose locked values are to be replaced.
+	 * @param newLockedValues The new locked values to set.
 	 */
-	function getPartyBAllocatedBalances(address partyB, address partyA) internal view returns (uint256) {
-		return AccountStorage.layout().partyBAllocatedBalances[partyB][partyBAllocationBucket(partyB, partyA)];
+	function replacePartyBLockedBalances(address partyB, address partyA, Quote storage quote, LockedValues memory newLockedValues) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		if (accountLayout.masterAccountMode[partyB]) {
+			if (partyA != address(0)) {
+				accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote).add(newLockedValues);
+			}
+			if (accountLayout.partyBLockedBalances[partyB][address(0)].totalForPartyB() > 0) {
+				accountLayout.partyBLockedBalances[partyB][address(0)].subQuote(quote).add(newLockedValues);
+			}
+		} else {
+			accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote).add(newLockedValues);
+		}
 	}
 
 	/**
-	 * @notice Increments Party B nonce for a specific Party A or master account mode.
+	 * @notice Adds a new quote locked balance to Party B's pending locked balances. In master account mode, adds to both master and specific Party A balances.
+	 * @param partyB The address of Party B.
+	 * @param partyA The address of Party A.
+	 * @param quote The quote whose locked values are to be added.
+	 */
+	function addToPartyBPendingLockedBalances(address partyB, address partyA, Quote storage quote) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		if (accountLayout.masterAccountMode[partyB]) {
+			if (partyA != address(0)) {
+				accountLayout.partyBPendingLockedBalances[partyB][partyA].addQuote(quote);
+			}
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].addQuote(quote);
+		} else {
+			accountLayout.partyBPendingLockedBalances[partyB][partyA].addQuote(quote);
+		}
+	}
+
+	/**
+	 * @notice Subtracts a quote's locked balance from Party B's pending locked balances. In master account mode, subtracts from both master and specific Party A balances.
+	 * @param partyB The address of Party B.
+	 * @param partyA The address of Party A.
+	 * @param quote The quote whose locked values are to be subtracted.
+	 */
+	function subFromPartyBPendingLockedBalances(address partyB, address partyA, Quote storage quote) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		if (accountLayout.masterAccountMode[partyB]) {
+			if (partyA != address(0)) {
+				accountLayout.partyBPendingLockedBalances[partyB][partyA].subQuote(quote);
+			}
+			if (accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() > 0) {
+				accountLayout.partyBPendingLockedBalances[partyB][address(0)].subQuote(quote);
+			}
+		} else {
+			accountLayout.partyBPendingLockedBalances[partyB][partyA].subQuote(quote);
+		}
+	}
+
+	/**
+	 * @notice Increments Party B nonce for a specific Party A. In master account mode, increments both master nonce and specific Party A nonce.
 	 * @param partyB PartyB address
 	 * @param partyA PartyA address
 	 */
 	function updatePartyBNonce(address partyB, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		accountLayout.partyBNonces[partyB][accountLayout.masterAccountMode[partyB] ? address(0) : partyA]++;
+		bool isMasterAccountMode = accountLayout.masterAccountMode[partyB];
+		accountLayout.partyBNonces[partyB][isMasterAccountMode ? address(0) : partyA]++;
+		if (isMasterAccountMode) {
+			accountLayout.partyBNonces[partyB][partyA]++;
+		}
 	}
 
-	function getPartyBNonce(address partyB, address partyA) internal view returns (uint256) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		return accountLayout.partyBNonces[partyB][accountLayout.masterAccountMode[partyB] ? address(0) : partyA];
+	/**
+	 * @notice returns Party B nonce for standard account mode or master account mode.
+	 * @param partyB The Party B address.
+	 * @param partyA The Party A address.
+	 * @return nonce The Party B nonce in none master account mode or zero if master account mode.
+	 */
+	function getPartyBSignatureNonce(address partyB, address partyA) internal view returns (uint256) {
+		if (AccountStorage.layout().masterAccountMode[partyB]) {
+			return 0;
+		}
+		return AccountStorage.layout().partyBNonces[partyB][partyA];
 	}
 }

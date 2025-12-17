@@ -55,7 +55,7 @@ library LibQuoteClose {
 		);
 
 		accountLayout.lockedBalances[quote.partyA].subQuote(quote).add(lockedValues);
-		LibAccount.partyBLockedBalances(quote.partyB, quote.partyA).subQuote(quote).add(lockedValues);
+		LibAccount.replacePartyBLockedBalances(quote.partyB, quote.partyA, quote, lockedValues);
 		quote.lockedValues = lockedValues;
 
 		if (LibQuote.quoteOpenAmount(quote) == quote.quantityToClose) {
@@ -74,12 +74,12 @@ library LibQuoteClose {
 
 		if (hasMadeProfit) {
 			require(
-				LibAccount.getPartyBAllocatedBalances(quote.partyB, quote.partyA) >= pnl,
+				accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationKey(quote.partyB, quote.partyA)] >= pnl,
 				"LibQuote: PartyA should first exit its positions that are incurring losses"
 			);
 			accountLayout.allocatedBalances[quote.partyA] += pnl;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationBucket(quote.partyB,quote.partyA)] -= pnl;
+			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationKey(quote.partyB,quote.partyA)] -= pnl;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		} else {
 			require(
@@ -88,7 +88,7 @@ library LibQuoteClose {
 			);
 			accountLayout.allocatedBalances[quote.partyA] -= pnl;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationBucket(quote.partyB,quote.partyA)] += pnl;
+			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationKey(quote.partyB,quote.partyA)] += pnl;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 
@@ -209,7 +209,7 @@ library LibQuoteClose {
 
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
-				LibAccount.partyBPendingLockedBalances(quote.partyB, quote.partyA).subQuote(quote);
+				LibAccount.subFromPartyBPendingLockedBalances(quote.partyB, quote.partyA, quote);
 				LibQuote.removeFromPartyBPendingQuotes(quote);
 			}
 

@@ -69,7 +69,7 @@ library LibPartyBPositionsActions {
 
 		if (quote.quantity == filledAmount) {
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-			LibAccount.partyBPendingLockedBalances(quote.partyB, quote.partyA).subQuote(quote);
+			LibAccount.subFromPartyBPendingLockedBalances(quote.partyB, quote.partyA, quote);
 			quote.lockedValues.mul(openedPrice).div(quote.requestedOpenPrice);
 			quoteLayout.partyALockQuotesCount[quote.partyA]--;
 
@@ -107,7 +107,7 @@ library LibPartyBPositionsActions {
 			require(
 				newStatus == QuoteStatus.CANCELED ||
 					(quote.lockedValues.totalForPartyA() - filledLockedValues.totalForPartyA()) >=
-					SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue,
+						SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue,
 				"PartyBFacet: Quote value is low"
 			);
 
@@ -156,11 +156,12 @@ library LibPartyBPositionsActions {
 
 				// part of quote has been filled and part of it has been canceled
 				accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-				LibAccount.partyBPendingLockedBalances(quote.partyB, quote.partyA).subQuote(quote);
 			} else {
 				accountLayout.pendingLockedBalances[quote.partyA].sub(filledLockedValues);
-				LibAccount.partyBPendingLockedBalances(quote.partyB, quote.partyA).subQuote(quote);
 			}
+			// update partyB pending locked balances
+			LibAccount.subFromPartyBPendingLockedBalances(quote.partyB, quote.partyA, quote);
+
 			newQuote.lockedValues = quote.lockedValues.sub(filledLockedValues);
 			newQuote.initialLockedValues = newQuote.lockedValues;
 			quote.quantity = filledAmount;
@@ -168,7 +169,7 @@ library LibPartyBPositionsActions {
 		}
 		// lock with amount of filledAmount
 		accountLayout.lockedBalances[quote.partyA].addQuote(quote);
-		LibAccount.partyBLockedBalances(quote.partyB, quote.partyA).addQuote(quote);
+		LibAccount.addToPartyBLockedBalances(quote.partyB, quote.partyA, quote);
 
 		// check leverage (is in 18 decimals)
 		require(

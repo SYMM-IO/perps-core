@@ -201,6 +201,7 @@ library LibSettlement {
 
 			// Party A nonce update
 			accountLayout.partyANonces[partyA] += 1;
+			accountLayout.partyBNonces[partyB][partyA] += 1;
 		}
 
 		// Party B nonce update for Master Account Mode once
