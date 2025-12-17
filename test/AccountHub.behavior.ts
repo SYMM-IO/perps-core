@@ -860,6 +860,89 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 		})
 
+		describe("Fund return to parent balance on virtual account deletion", async () => {
+			let positionSubAccountAddress: string
+
+			beforeEach(async () => {
+				positionSubAccountAddress = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("EXAMPLE_NAME", 0)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+			})
+
+			it("Should transfer funds to parent balance (not allocatedBalance) when virtual account is deleted", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesBeforeClose.length).to.equal(1)
+				const quoteId = quotesBeforeClose[0]
+
+				// Get parent's balance and allocatedBalance before closing
+				const parentBalanceBefore = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				const parentAllocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(positionSubAccountAddress)
+
+				// Open and close the position
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+				// Virtual account should be deleted
+				const virtualAccountData = await context.accountHub.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.false
+
+				// Funds should return to parent's BALANCE, not allocatedBalance
+				const parentBalanceAfter = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				const parentAllocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(positionSubAccountAddress)
+
+				// Parent's balance should increase (funds returned from virtual account)
+				expect(parentBalanceAfter).to.be.gt(parentBalanceBefore)
+
+				// Parent's allocatedBalance should remain unchanged (funds don't go to allocatedBalance)
+				expect(parentAllocatedAfter).to.equal(parentAllocatedBefore)
+			})
+
+			it("Should allow immediate creation of new virtual account with returned funds", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const initialVirtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(initialVirtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				// Open and close to return funds to parent
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, initialVirtualAccountAddress)
+
+				// Parent should have balance (not allocatedBalance), so can immediately create new virtual account
+				const parentBalance = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				expect(parentBalance).to.be.gt(0n)
+
+				// Should be able to create a new virtual account immediately without needing to deallocate
+				const newQuoteRequest = limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()
+				const newVirtualAddresses = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, newQuoteRequest)
+				expect(newVirtualAddresses.length).to.equal(1)
+
+				const newVirtualAccountData = await context.accountHub.getVirtualAccount(newVirtualAddresses[0])
+				expect(newVirtualAccountData.isExists).to.true
+			})
+
+			it("Should set withdrawCooldown on parent when funds are returned", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				// Open and close to return funds
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+				// Parent's withdrawCooldown should be set
+				const cooldown = await context.viewFacet.withdrawCooldownOf(positionSubAccountAddress)
+				expect(cooldown).to.be.gt(0n)
+			})
+		})
+
 		describe("pause/unpause", async () => {
 			let subAccountAddress: string
 

@@ -107,6 +107,7 @@ library AccountFacetImpl {
 
 		accountLayout.allocatedBalances[signer] -= amount;
 		accountLayout.balances[signer] += amount;
+		accountLayout.withdrawCooldown[signer] = block.timestamp;
 	}
 
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) internal {
@@ -142,6 +143,16 @@ library AccountFacetImpl {
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
 		accountLayout.balances[signer] -= amount;
 		accountLayout.allocatedBalances[user] += amount;
+	}
+
+	function internalTransferToBalance(address user, uint256 amount) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+
+		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
+		accountLayout.balances[signer] -= amount;
+		accountLayout.balances[user] += amount;
+		accountLayout.withdrawCooldown[user] = block.timestamp;
 	}
 
 	function allocateForPartyB(uint256 amount, address partyA) internal {

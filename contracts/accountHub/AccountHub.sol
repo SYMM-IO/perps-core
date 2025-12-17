@@ -965,7 +965,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @dev Deallocates and transfers balance from virtual account
+	 * @dev Deallocates and transfers balance from virtual account to parent account's balance
+	 * @dev Uses internalTransferToBalance to transfer directly to parent's balance (not allocatedBalance)
+	 * @dev This allows the parent to immediately use the funds for new virtual accounts
 	 */
 	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
@@ -975,7 +977,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		uint256 balance = ISymmio(core).balanceOf(account);
 		if (balance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parentAccount, balance));
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance));
 		}
 	}
 

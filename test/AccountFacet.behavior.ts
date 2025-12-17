@@ -505,12 +505,73 @@ export function shouldBehaveLikeAccountFacet(): void {
 			).to.be.revertedWith("Pausable: Accounting paused")
 		})
 
-		it("Should fail when partyA has Open/Pending Positions", async function () {
+		it("Should fail when partyA has pending quote", async function () {
 			await user.sendQuote()
 			const deallocateAmount = decimal(250n)
 			await expect(
 				context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(deallocateAmount)
 			).to.be.revertedWith("AccountFacet: PartyA has Open/Pending position")
+		})
+
+		it("Should fail when partyA has open position", async function () {
+			// Setup hedger
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL)
+
+			// Send quote and open position
+			await user.sendQuote()
+			await hedger.lockQuote(1n)
+			await hedger.openPosition(1n)
+
+			const deallocateAmount = decimal(50n)
+			await expect(
+				context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(deallocateAmount)
+			).to.be.revertedWith("AccountFacet: PartyA has Open/Pending position")
+		})
+
+		it("Should fail when partyA has locked quote", async function () {
+			// Setup hedger
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL)
+
+			// Send quote and lock it (but don't open)
+			await user.sendQuote()
+			await hedger.lockQuote(1n)
+
+			const deallocateAmount = decimal(50n)
+			await expect(
+				context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(deallocateAmount)
+			).to.be.revertedWith("AccountFacet: PartyA has Open/Pending position")
+		})
+
+		it("Should succeed after all positions are closed", async function () {
+			const userAddress = await context.signers.user.getAddress()
+
+			// Setup hedger
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL)
+
+			// Send quote, open position
+			await user.sendQuote()
+			await hedger.lockQuote(1n)
+			await hedger.openPosition(1n)
+
+			// User requests to close, hedger fills the close request
+			await user.requestToClosePosition(1n)
+			await hedger.fillCloseRequest(1n)
+
+			// Now zeroUpnlDeallocate should succeed
+			const deallocateAmount = decimal(50n)
+			await expect(
+				context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(deallocateAmount)
+			).to.not.be.reverted
+
+			// Verify balances updated correctly
+			const balance = await context.viewFacet.balanceOf(userAddress)
+			expect(balance).to.be.gt(0n)
 		})
 
 		it("Should ZeroUpnlDeallocate", async function () {
@@ -523,6 +584,73 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			expect(await context.viewFacet.balanceOf(userAddress)).to.equal(expectedBalance)
 			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(expectedAllocated)
+		})
+
+		it("Should set withdrawCooldown when deallocating", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const deallocateAmount = BALANCES.DEALLOCATE_AMOUNT
+
+			// Check cooldown before
+			const cooldownBefore = await context.viewFacet.withdrawCooldownOf(userAddress)
+
+			await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(deallocateAmount)
+
+			// Check cooldown after - should be set to current block timestamp
+			const cooldownAfter = await context.viewFacet.withdrawCooldownOf(userAddress)
+			expect(cooldownAfter).to.be.gt(cooldownBefore)
+		})
+
+		it("Should emit DeallocatePartyA event", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const deallocateAmount = BALANCES.DEALLOCATE_AMOUNT
+			const expectedAllocated = BALANCES.INITIAL_COLLATERAL - deallocateAmount
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(deallocateAmount)
+			)
+				.to.emit(context.accountFacet, "DeallocatePartyA")
+				.withArgs(userAddress, deallocateAmount, expectedAllocated)
+		})
+
+		it("Should fail when global pause is active", async function () {
+			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEALLOCATE_AMOUNT)
+			).to.be.revertedWith("Pausable: Global paused")
+		})
+
+		it("Should allow multiple deallocations in sequence", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const firstDeallocate = BALANCES.DEALLOCATE_AMOUNT
+			const secondDeallocate = BALANCES.DEALLOCATE_AMOUNT
+
+			// First deallocation
+			await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(firstDeallocate)
+
+			const balanceAfterFirst = await context.viewFacet.balanceOf(userAddress)
+			const allocatedAfterFirst = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+
+			expect(balanceAfterFirst).to.equal(firstDeallocate)
+			expect(allocatedAfterFirst).to.equal(BALANCES.INITIAL_COLLATERAL - firstDeallocate)
+
+			// Second deallocation
+			await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(secondDeallocate)
+
+			const balanceAfterSecond = await context.viewFacet.balanceOf(userAddress)
+			const allocatedAfterSecond = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+
+			expect(balanceAfterSecond).to.equal(firstDeallocate + secondDeallocate)
+			expect(allocatedAfterSecond).to.equal(BALANCES.INITIAL_COLLATERAL - firstDeallocate - secondDeallocate)
+		})
+
+		it("Should deallocate entire allocated balance", async function () {
+			const userAddress = await context.signers.user.getAddress()
+
+			await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.INITIAL_COLLATERAL)
+
+			expect(await context.viewFacet.balanceOf(userAddress)).to.equal(BALANCES.INITIAL_COLLATERAL)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(0n)
 		})
 	})
 
@@ -575,6 +703,113 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)).to.be.revertedWith(
 				"Pausable: Global paused",
 			)
+		})
+	})
+
+	describe("InternalTransferToBalance", async function () {
+		const INTERNAL_TRANSFER_TO_BALANCE_ROLE = ethers.keccak256(toUtf8Bytes("INTERNAL_TRANSFER_TO_BALANCE_ROLE"))
+
+		beforeEach(async () => {
+			context = await loadFixture(initializeFixture)
+
+			user = new User(context, context.signers.user)
+			await user.setup()
+			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.DEPOSIT_AMOUNT)
+
+			user2 = new User(context, context.signers.user2)
+			await user2.setup()
+			await user2.setBalances(BALANCES.INITIAL_COLLATERAL)
+		})
+
+		it("Should fail when caller does not have INTERNAL_TRANSFER_TO_BALANCE_ROLE", async () => {
+			await expect(
+				context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)
+			).to.be.revertedWith("Accessibility: Must has role")
+		})
+
+		it("Should transfer to balance (not allocatedBalance) when caller has role", async () => {
+			// Grant role to user
+			await context.controlFacet.connect(context.signers.admin).grantRole(
+				await context.signers.user.getAddress(),
+				INTERNAL_TRANSFER_TO_BALANCE_ROLE
+			)
+
+			const user2Address = await user2.getAddress()
+			const userAddress = await user.getAddress()
+
+			const initialUser2Balance = await context.viewFacet.balanceOf(user2Address)
+			const initialUserBalance = await context.viewFacet.balanceOf(userAddress)
+
+			await context.accountFacet.connect(context.signers.user).internalTransferToBalance(user2Address, BALANCES.TRANSFER_AMOUNT)
+
+			// Funds should go to balance, NOT allocatedBalance
+			expect(await context.viewFacet.balanceOf(user2Address)).to.equal(initialUser2Balance + BALANCES.TRANSFER_AMOUNT)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(user2Address)).to.equal(0n)
+
+			// Sender's balance should decrease
+			expect(await context.viewFacet.balanceOf(userAddress)).to.equal(initialUserBalance - BALANCES.TRANSFER_AMOUNT)
+		})
+
+		it("Should set withdrawCooldown on recipient", async () => {
+			// Grant role to user
+			await context.controlFacet.connect(context.signers.admin).grantRole(
+				await context.signers.user.getAddress(),
+				INTERNAL_TRANSFER_TO_BALANCE_ROLE
+			)
+
+			const user2Address = await user2.getAddress()
+
+			await context.accountFacet.connect(context.signers.user).internalTransferToBalance(user2Address, BALANCES.TRANSFER_AMOUNT)
+
+			// Check that withdrawCooldown was set (recipient can't withdraw immediately with old withdraw)
+			const cooldown = await context.viewFacet.withdrawCooldownOf(user2Address)
+			expect(cooldown).to.be.gt(0n)
+		})
+
+		it("Should emit InternalTransferToBalance event", async () => {
+			// Grant role to user
+			await context.controlFacet.connect(context.signers.admin).grantRole(
+				await context.signers.user.getAddress(),
+				INTERNAL_TRANSFER_TO_BALANCE_ROLE
+			)
+
+			const user2Address = await user2.getAddress()
+			const userAddress = await user.getAddress()
+			const expectedNewBalance = BALANCES.TRANSFER_AMOUNT // user2 starts with 0 balance
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).internalTransferToBalance(user2Address, BALANCES.TRANSFER_AMOUNT)
+			)
+				.to.emit(context.accountFacet, "InternalTransferToBalance")
+				.withArgs(userAddress, user2Address, expectedNewBalance, BALANCES.TRANSFER_AMOUNT)
+		})
+
+		it("Should fail when sender has insufficient balance", async () => {
+			// Grant role to user
+			await context.controlFacet.connect(context.signers.admin).grantRole(
+				await context.signers.user.getAddress(),
+				INTERNAL_TRANSFER_TO_BALANCE_ROLE
+			)
+
+			const user2Address = await user2.getAddress()
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).internalTransferToBalance(user2Address, BALANCES.LARGE_AMOUNT)
+			).to.be.revertedWith("AccountFacet: Insufficient balance")
+		})
+
+		it("Should fail when internal transfers are paused", async () => {
+			// Grant role to user
+			await context.controlFacet.connect(context.signers.admin).grantRole(
+				await context.signers.user.getAddress(),
+				INTERNAL_TRANSFER_TO_BALANCE_ROLE
+			)
+
+			await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
+
+			await expect(
+				context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)
+			).to.be.revertedWith("Pausable: Internal transfer paused")
 		})
 	})
 
