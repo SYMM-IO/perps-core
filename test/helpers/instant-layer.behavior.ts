@@ -133,9 +133,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 		await partyA2.setBalances(decimal(100000n), decimal(5000n))
 
 		await context.controlFacet.grantRole(context.instantLayer, ROLES.INSTANT_LAYER_ROLE)
-		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ROLES.BINDABLE_SETTER_ROLE)
+		// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 		await context.controlFacet.connect(context.signers.admin).registerPartyB(await context.symmioPartyB.getAddress())
-		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
+		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress(), true)
 
 		await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
 

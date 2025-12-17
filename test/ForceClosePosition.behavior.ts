@@ -1,6 +1,6 @@
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 import { expect } from "chai"
-import { ZeroAddress } from "ethers"
+import { toUtf8Bytes, ZeroAddress } from "ethers"
 import { ethers } from "hardhat"
 
 import { initializeFixture } from "./Initialize.fixture"
@@ -59,6 +59,9 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		// Quote4 LONG sent
 		quote4LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 
+		await context.controlFacet
+			.connect(context.signers.admin)
+			.grantRole(await context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")))
 		await context.controlFacet.setForceCloseMinSigPeriod(10)
 		await context.controlFacet.setForceCloseGapRatio((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).symbolId, decimal(1n, 17))
 	})

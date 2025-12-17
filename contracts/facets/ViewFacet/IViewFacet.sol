@@ -74,7 +74,7 @@ interface IViewFacet {
 
 	function getDefaultFeeCollector() external view returns (address);
 
-	function getMasterAccountActivationMode() external view returns (bool);
+	function getMasterAccountEnabled() external view returns (bool);
 
 	function isPartyALiquidated(address partyA) external view returns (bool);
 
@@ -153,8 +153,6 @@ interface IViewFacet {
 	function getBindState(address user) external view returns (BindState memory);
 
 	function getAffiliateHook(address affiliate) external view returns (address hook);
-
-	function getDefaultAffiliateFee(address affiliate) external view returns (Fee memory);
 
 	function getAffiliateFee(address affiliate, uint256 symbolId) external view returns (Fee memory);
 

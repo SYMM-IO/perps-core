@@ -371,10 +371,10 @@ contract ViewFacet is IViewFacet {
 
 	/**
 	 * @notice Indicates whether Party B accounts are allowed to activate master account mode.
-	 * @return True if activation is globally enabled, false otherwise.
+	 * @return True if master account functionality is globally enabled, false otherwise.
 	 */
-	function getMasterAccountActivationMode() external view returns (bool) {
-		return GlobalAppStorage.layout().masterAccountActivationMode;
+	function getMasterAccountEnabled() external view returns (bool) {
+		return GlobalAppStorage.layout().masterAccountEnabled;
 	}
 
 	/**
@@ -695,15 +695,6 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Retrieves the default affiliate fee of an affiliate.
-	 * @param affiliate The address of the affiliate.
-	 * @return fee The default affiliate fee of the affiliate.
-	 */
-	function getDefaultAffiliateFee(address affiliate) external view returns (Fee memory) {
-		return GlobalAppStorage.layout().defaultAffiliateFee[affiliate];
-	}
-
-	/**
 	 * @notice Retrieves the custom affiliate fee of an affiliate for specific user and symbol.
 	 * @param affiliate The address of the affiliate.
 	 * @param user The address of the user.
@@ -757,8 +748,9 @@ contract ViewFacet is IViewFacet {
 		if (GlobalAppStorage.layout().affiliateFee[affiliate][symbolId].isSet) {
 			fee = GlobalAppStorage.layout().affiliateFee[affiliate][symbolId];
 		} else {
-			fee = GlobalAppStorage.layout().defaultAffiliateFee[affiliate];
-			if (!fee.isSet) {
+			if (GlobalAppStorage.layout().affiliateFee[affiliate][0].isSet) {
+				fee = GlobalAppStorage.layout().affiliateFee[affiliate][0];
+			} else {
 				uint256 symbolTradingFee = SymbolStorage.layout().symbols[symbolId].tradingFee;
 				fee = Fee(symbolTradingFee, symbolTradingFee, true);
 			}
@@ -840,7 +832,7 @@ contract ViewFacet is IViewFacet {
 	}
 
 	function getPenaltyCollector() external view returns(address) {
-		return MAStorage.layout().penaltyCollector;
+		return MAStorage.layout().softLiquidationPenaltyCollector;
 	}
 
 	function getPartyALockedQuotesCount(address user) external view returns(uint256){

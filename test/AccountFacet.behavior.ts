@@ -1078,8 +1078,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await user.sendQuote()
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
 
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(hedger.address)
+			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(hedger.address, true)
 		})
 
 		it("Should fail when user suspended", async () => {
@@ -1123,7 +1123,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail to bind to a non-bindable party B", async () => {
-			await context.controlFacet.connect(context.signers.admin).unsetPartyBBindable(context.signers.hedger.address)
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, false)
 			await expect(
 				context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			).to.be.revertedWith("AccountFacet: Not Bindable")
@@ -1158,8 +1158,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 			user = new User(context, context.signers.user)
 			await user.setup()
 
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 		})
 
 		it("Should fail when user suspended", async () => {
@@ -1214,8 +1214,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 			user = new User(context, context.signers.user)
 			await user.setup()
 
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 		})
 
 		it("Should fail when user suspended", async () => {
@@ -1262,8 +1262,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 			context = await loadFixture(initializeFixture)
 			user = new User(context, context.signers.user)
 			await user.setup()
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 
 			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await context.controlFacet.connect(context.signers.admin).setUnbindCooldown(LIMITS.UNBIND_COOLDOWN)
@@ -1320,12 +1320,12 @@ export function shouldBehaveLikeAccountFacet(): void {
 	describe("Master account activation gating", () => {
 		it("should revert when master account activation is disabled", async () => {
 			await expect(context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()).to.be.revertedWith(
-				"AccountFacet: Master account activation disabled",
+				"AccountFacet: Master account disabled",
 			)
 		})
 
 		it("should allow master account activation after enabled by admin", async () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
+			await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
 			await expect(context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode())
 				.to.emit(context.accountFacet, "ActivateMasterAccountMode")
 				.withArgs(context.signers.hedger.address)

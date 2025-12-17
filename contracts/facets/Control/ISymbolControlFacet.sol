@@ -20,17 +20,6 @@ interface ISymbolControlFacet is IControlEvents {
 
 	function addSymbols(Symbol[] memory symbols) external;
 
-	function addSymbolWithType(
-		string memory name,
-		uint256 minAcceptableQuoteValue,
-		uint256 minAcceptablePortionLF,
-		uint256 tradingFee,
-		uint256 maxLeverage,
-		uint256 fundingRateEpochDuration,
-		uint256 fundingRateWindowTime,
-		uint256 symbolType
-	) external;
-
 	function addSymbolsWithType(SymbolWithType[] memory symbolsWithType) external;
 
 	function setSymbolFundingState(uint256 symbolId, uint256 fundingRateEpochDuration, uint256 fundingRateWindowTime) external;
