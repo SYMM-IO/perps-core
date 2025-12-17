@@ -30,10 +30,12 @@ library LibAccessibility {
 	bytes32 public constant SUSPENDER_ROLE = keccak256("SUSPENDER_ROLE");
 	bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
 	bytes32 public constant SOFT_LIQUIDATOR_ROLE = keccak256("SOFT_LIQUIDATOR_ROLE");
+	bytes32 public constant PARTYB_LIQUIDATOR_ROLE = keccak256("PARTYB_LIQUIDATOR_ROLE");
 	bytes32 public constant CLEARING_HOUSE_ROLE = keccak256("CLEARING_HOUSE_ROLE");
 	bytes32 public constant VIRTUAL_DEPOSITOR_ROLE = keccak256("VIRTUAL_DEPOSITOR_ROLE");
 	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
 	bytes32 public constant MIGRATION_ROLE = keccak256("MIGRATION_ROLE");
+	bytes32 public constant INTERNAL_TRANSFER_TO_BALANCE_ROLE = keccak256("INTERNAL_TRANSFER_TO_BALANCE_ROLE");
 
 	/**
 	 * @notice Checks if a user has a specific role.

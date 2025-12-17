@@ -130,6 +130,7 @@ export async function initializeFixture(): Promise<RunContext> {
 		"LIQUIDATOR_ROLE",
 		"DEALLOCATE_COOLDOWN_SETTER_ROLE",
 		"INSTANT_LAYER_ROLE",
+		"PARTYB_LIQUIDATOR_ROLE",
 		"PROTOCOL_CONFIG_ROLE",
 		"FEE_ADMIN_ROLE",
 		"COOLDOWN_ADMIN_ROLE",
@@ -152,7 +153,13 @@ export async function initializeFixture(): Promise<RunContext> {
 		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
+		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
 		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("INTERNAL_TRANSFER_TO_BALANCE_ROLE")))
 
 	// Configure system
 	await context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress())
