@@ -6,7 +6,9 @@ pragma solidity >=0.8.18;
 
 import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
+import "../../storages/QuoteStorage.sol";
 import "./LibMuon.sol";
+import "../LibAccount.sol";
 
 library LibMuonCrossSettlement {
 	function verifyMasterAccountSettlement(MasterAccountSettlementSig memory settleSig) internal view {
@@ -35,7 +37,7 @@ library LibMuonCrossSettlement {
 				settleSig.reqId,
 				address(this),
 				"verifyCrossSettlement",
-				accountLayout.partyBNonces[settleSig.partyB][address(0)], // Get Party B nonce for Master Account Mode
+				accountLayout.partyBNonces[settleSig.partyB][address(0)], // always uses party B nonce in Master Account Mode
 				partyANonces,
 				encodedData,
 				settleSig.partyB,

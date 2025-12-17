@@ -7,10 +7,11 @@ pragma solidity >=0.8.18;
 import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "./LibMuon.sol";
+import "../LibAccount.sol";
 
 library LibMuonLiquidation {
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA);
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // This call is from normal liquidation where we always use standard account mode nonce. 
 	}
 
 	function verifyLiquidationSig(LiquidationSig memory liquidationSig, address partyA) internal view {
@@ -89,6 +90,7 @@ library LibMuonLiquidation {
 				address(this),
 				"verifyCrossLiquidation",
 				partyB,
+				LibAccount.getPartyBSignatureNonce(partyB, address(0), true), // this is for clearing house which we are always in master account mode
 				liquidationSig.upnl,
 				liquidationSig.timestamp,
 				liquidationSig.liquidationBlockNumber,

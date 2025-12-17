@@ -22,7 +22,7 @@ library LibMuonForceActions {
 				address(this),
 				partyB,
 				partyA,
-				LibAccount.getPartyBNonce(partyB, partyA), // Master Account Mode nonce
+				LibAccount.getPartyBSignatureNonce(partyB, partyA, false),
 				AccountStorage.layout().partyANonces[partyA],
 				sig.upnlPartyB,
 				sig.upnlPartyA,

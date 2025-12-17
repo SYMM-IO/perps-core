@@ -35,6 +35,16 @@ library LibMuon {
 
 	// Used in PartyB/Account/Liquidation
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
+		verifyPartyBUpnl(upnlSig, partyB, partyA, false);
+	}
+
+	// Used in Account (deallocate/clearing house) to enforce master account nonce usage
+	function verifyPartyBUpnl(
+		SingleUpnlSig memory upnlSig,
+		address partyB,
+		address partyA,
+		bool useMasterNonce
+	) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
@@ -46,7 +56,7 @@ library LibMuon {
 				address(this),
 				partyB,
 				partyA,
-				LibAccount.getPartyBNonce(partyB, partyA),
+				LibAccount.getPartyBSignatureNonce(partyB, partyA, useMasterNonce),
 				upnlSig.upnl,
 				upnlSig.timestamp,
 				getChainId()

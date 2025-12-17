@@ -119,8 +119,11 @@ library AccountFacetImpl {
 		require(!maLayout.liquidationStatus[recipient], "PartyBFacet: Recipient isn't solvent");
 		require(!accountLayout.crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB isn't solvent");
 
+		// Not to be in master account mode
+		require(!accountLayout.masterAccountMode[signer], "PartyBFacet: Master account mode is active");
+
 		// deallocate from origin
-		require(accountLayout.partyBAllocatedBalances[signer][origin] >= amount, "PartyBFacet: Insufficient locked balance");
+		require(accountLayout.partyBAllocatedBalances[signer][origin] >= amount, "PartyBFacet: Insufficient allocated balance");
 		LibMuonAccount.verifyPartyBUpnl(upnlSig, signer, origin);
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, origin);
 		require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");

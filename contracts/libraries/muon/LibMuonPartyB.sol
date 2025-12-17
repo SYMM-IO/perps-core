@@ -22,7 +22,7 @@ library LibMuonPartyB {
 				address(this),
 				partyB,
 				partyA,
-				LibAccount.getPartyBNonce(partyB, partyA),
+				LibAccount.getPartyBSignatureNonce(partyB, partyA,false),
 				AccountStorage.layout().partyANonces[partyA],
 				upnlSig.upnlPartyB,
 				upnlSig.upnlPartyA,
@@ -36,6 +36,7 @@ library LibMuonPartyB {
 	}
 
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA);
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // Here the nonce should be zero in master account mode as it is called while opening, closing or locking quotes.
+		
 	}
 }

@@ -30,6 +30,6 @@ library LibMuonAccount {
 	}
 
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA);
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA, true); // Here the nonce is always from master account mode nonce if enabled
 	}
 }

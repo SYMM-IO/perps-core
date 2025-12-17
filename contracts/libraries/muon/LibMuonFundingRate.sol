@@ -22,7 +22,7 @@ library LibMuonFundingRate {
 				address(this),
 				partyB,
 				partyA,
-				LibAccount.getPartyBNonce(partyB, partyA),
+				LibAccount.getPartyBSignatureNonce(partyB, partyA, false),
 				AccountStorage.layout().partyANonces[partyA],
 				upnlSig.upnlPartyB,
 				upnlSig.upnlPartyA,

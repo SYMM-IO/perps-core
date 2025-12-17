@@ -303,12 +303,14 @@ library LibAccount {
 	 * @notice returns Party B nonce for standard account mode or master account mode.
 	 * @param partyB The Party B address.
 	 * @param partyA The Party A address.
-	 * @return nonce The Party B nonce in none master account mode or zero if master account mode.
+	 * @param useMasterNonce Flag to return the actual master account nonce when in master account mode.
+	 * @return nonce The Party B nonce in non-master account mode or either zero/actual master nonce when in master account mode.
 	 */
-	function getPartyBSignatureNonce(address partyB, address partyA) internal view returns (uint256) {
-		if (AccountStorage.layout().masterAccountMode[partyB]) {
-			return 0;
+	function getPartyBSignatureNonce(address partyB, address partyA, bool useMasterNonce) internal view returns (uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		if (accountLayout.masterAccountMode[partyB]) {
+			return useMasterNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
 		}
-		return AccountStorage.layout().partyBNonces[partyB][partyA];
+		return accountLayout.partyBNonces[partyB][partyA];
 	}
 }
