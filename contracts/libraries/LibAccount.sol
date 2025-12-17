@@ -293,8 +293,11 @@ library LibAccount {
 	function updatePartyBNonce(address partyB, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		bool isMasterAccountMode = accountLayout.masterAccountMode[partyB];
-		accountLayout.partyBNonces[partyB][isMasterAccountMode ? address(0) : partyA]++;
 		if (isMasterAccountMode) {
+			accountLayout.partyBNonces[partyB][partyA]++;
+			accountLayout.partyBNonces[partyB][address(0)]++;
+		}
+		else {
 			accountLayout.partyBNonces[partyB][partyA]++;
 		}
 	}

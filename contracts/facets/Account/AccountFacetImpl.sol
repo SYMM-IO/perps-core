@@ -120,7 +120,7 @@ library AccountFacetImpl {
 		require(!maLayout.liquidationStatus[recipient], "PartyBFacet: Recipient isn't solvent");
 		require(!accountLayout.crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB isn't solvent");
 
-		// Not to be in master account mode
+		// Not to be in master account mode as when the MA is activated there is no point on transferAllocation
 		require(!accountLayout.masterAccountMode[signer], "PartyBFacet: Master account mode is active");
 
 		// deallocate from origin
