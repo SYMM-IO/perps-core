@@ -1,7 +1,6 @@
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 import { expect } from "chai"
 import { ethers, toUtf8Bytes } from "ethers"
-import { bigint } from "hardhat/internal/core/params/argumentTypes"
 
 import { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
 import { initializeFixture } from "./Initialize.fixture"
