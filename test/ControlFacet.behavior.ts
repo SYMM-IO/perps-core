@@ -511,52 +511,6 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
-	describe("addSymbolWithType", () => {
-		it("Should addSymbolWithType successfully", async function () {
-			const windowTime = BigInt(28800)
-			const period = BigInt(900)
-			const baseUnit = BigInt(4000000000000000)
-			const quoteUnit = BigInt(1000000000000000)
-			const minQty = BigInt("100000000000000000000")
-			const maxQty = BigInt("60000000000000000000")
-			const symbolType = 2
-
-			await expect(
-				context.symbolControlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.not.be.reverted
-			expect((await context.viewFacetSymbol.getSymbol(2)).name).to.be.equal("ETHUSDT")
-			expect((await context.viewFacetSymbol.getSymbolWithType(2)).symbolType).to.be.equal(symbolType)
-		})
-
-		it("Should not addSymbolWithType if windowTime be high", async function () {
-			const windowTime = BigInt(800)
-			const period = BigInt(900)
-			const baseUnit = BigInt(4000000000000000)
-			const quoteUnit = BigInt(1000000000000000)
-			const minQty = BigInt("100000000000000000000")
-			const maxQty = BigInt("60000000000000000000")
-			const symbolType = 1
-
-			await expect(
-				context.symbolControlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.be.revertedWith("SymbolControlFacet: High window time")
-		})
-
-		it("Should not addSymbolWithType if tradingFee be high", async function () {
-			const windowTime = BigInt(28800)
-			const period = BigInt(900)
-			const baseUnit = BigInt(4000000000000000)
-			const quoteUnit = BigInt("100000000000000000000")
-			const minQty = BigInt("100000000000000000000")
-			const maxQty = BigInt("60000000000000000000")
-			const symbolType = 1
-
-			await expect(
-				context.symbolControlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.be.revertedWith("SymbolControlFacet: High default fee")
-		})
-	})
-
 	describe("addSymbolsWithType", () => {
 		it("Should addSymbolsWithType successfully", async function () {
 			const symbolsWithType = [

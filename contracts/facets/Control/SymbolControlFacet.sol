@@ -54,30 +54,6 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 		);
 	}
 
-	/// @notice Adds a new trading symbol with its category type (e.g., crypto, forex, commodities) in a single transaction.
-	/// @param name The human-readable name of the trading symbol (e.g., "BTCUSD").
-	/// @param minAcceptableQuoteValue The minimum notional value (in collateral units) required for a quote on this symbol.
-	/// @param minAcceptablePortionLF The minimum portion of the position that must be reserved for liquidation fees (in 1e18 precision).
-	/// @param tradingFee The base trading fee percentage (in 1e18 precision) charged when opening/closing positions.
-	/// @param maxLeverage The maximum leverage multiplier allowed for positions on this symbol.
-	/// @param fundingRateEpochDuration The time interval in seconds between funding rate calculations.
-	/// @param fundingRateWindowTime The time window in seconds during which funding rate can be applied.
-	/// @param symbolType The category identifier for this symbol type (used for Party B whitelisting by category).
-	function addSymbolWithType(
-		string memory name,
-		uint256 minAcceptableQuoteValue,
-		uint256 minAcceptablePortionLF,
-		uint256 tradingFee,
-		uint256 maxLeverage,
-		uint256 fundingRateEpochDuration,
-		uint256 fundingRateWindowTime,
-		uint256 symbolType
-	) public onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
-		addSymbol(name, minAcceptableQuoteValue, minAcceptablePortionLF, tradingFee, maxLeverage, fundingRateEpochDuration, fundingRateWindowTime);
-		uint256 id = SymbolStorage.layout().lastId;
-		setSymbolTypeInternal(id, symbolType);
-	}
-
 	/// @notice Batch adds multiple trading symbols with their category types in a single transaction for gas efficiency.
 	/// @param symbolsWithType Array of SymbolWithType structs containing symbol parameters and their category types.
 	function addSymbolsWithType(SymbolWithType[] memory symbolsWithType) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
