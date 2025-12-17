@@ -499,7 +499,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			let updatePrice: bigint
 			let settlementSig: any
 			beforeEach(async function () {
-				await context.controlFacet.setMasterAccountActivationMode(true)
+				await context.controlFacet.setMasterAccountEnabled(true)
 				await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
 
 				await hedger.lockQuote(quote1LongOpened.id)

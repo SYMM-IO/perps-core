@@ -169,7 +169,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 	describe("Master Account", async function () {
 		beforeEach(async function () {
 			// switch hedger to master account mode
-			await context.controlFacet.setMasterAccountActivationMode(true)
+			await context.controlFacet.setMasterAccountEnabled(true)
 			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
 
 			// prepare quotes and positions

@@ -125,7 +125,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeWithdrawFacet()
 		})
 
-		describe.skip("AccountHub", async function () {
+		describe("AccountHub", async function () {
 			shouldBehaveLikeAccountHub()
 		})
 

@@ -137,7 +137,7 @@ export function shouldBehaveLikeLockQuote(): void {
 		let quoteUser1: QuoteStruct, quoteUser2: QuoteStruct
 
 		beforeEach(async function () {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
+			await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
 			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
 
 			user2 = new User(context, context.signers.user2)

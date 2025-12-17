@@ -276,7 +276,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 			await context.controlFacet
 				.connect(context.signers.admin)
 				.grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address,true)
 			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await expect(
 				hedger.openPosition(
@@ -598,7 +598,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 	describe("Master account shared buckets", function () {
 		beforeEach(async function () {
 			// Activate master account mode for both hedgers
-			await context.controlFacet.setMasterAccountActivationMode(true)
+			await context.controlFacet.setMasterAccountEnabled(true)
 			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
 
 			// Refresh PartyA balances to support larger quotes
