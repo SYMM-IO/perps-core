@@ -408,7 +408,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		describe("Test normal branch", async function () {
 			const price = decimal(57198n, 14)
 			beforeEach(async function () {
-				await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
 				await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(100n))
 				this.signature1 = await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 				const liquidationState = await user.getLiquidatedStateOfPartyA()
@@ -505,7 +504,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	describe("Test normal branch deferred", async function () {
 		const price = decimal(572n, 16)
 		beforeEach(async function () {
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(100n))
 			this.signature1 = await user.deferredLiquidateAndSetSymbolPrices([1n], [price],[1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()

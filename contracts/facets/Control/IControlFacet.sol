@@ -89,13 +89,22 @@ interface IControlFacet is IControlEvents {
 
 	function setCallFromInstantLayer(bool callFromInstantLayer) external;
 
-	function setCustomAffiliateFee(address affiliate,address user, uint256 symbolId, uint256 openFee, uint256 closeFee) external;
+	function setCustomAffiliateFee(
+		address affiliate,
+		address[] calldata users,
+		uint256[] calldata symbolIds,
+		uint256[] calldata openFees,
+		uint256[] calldata closeFees
+	) external;
 
-	function setAffiliateFee(address affiliate, uint256 symbolId, uint256 openFee, uint256 closeFee) external;
+	function setAffiliateFee(
+		address affiliate,
+		uint256[] calldata symbolIds,
+		uint256[] calldata openFees,
+		uint256[] calldata closeFees
+	) external;
 
 	function setMinAffiliateFee(uint256 minAffiliateFee) external;
-
-	function setDefaultAffiliateFee(address affiliate, uint256 openFee, uint256 closeFee) external;
 
 	function setDefaultFeeCollector(address feeCollector) external;
 
@@ -119,18 +128,14 @@ interface IControlFacet is IControlEvents {
 
 	function unregisterExpressProvider(address provider) external;
 
-	function setSpeedUpUser(address user) external;
-
-	function unsetSpeedUpUser(address user) external;
+	function setSpeedUpUser(address user, bool speedUp) external;
 
 	function setMinWithdrawCooldown(uint256 cooldown) external;
 
 	function setSigner(address signer) external;
 
-	function setPenaltyCollector(address penaltyCollector) external;
+	function setSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector) external;
 
-	function setPartyBBindable(address partyB) external;
-
-	function unsetPartyBBindable(address partyB) external;
+	function setPartyBBindable(address partyB, bool bindable) external;
 
 }

@@ -189,7 +189,7 @@ library AccountFacetImpl {
 	}
 
 	function activateMasterAccountMode() internal {
-		require(GlobalAppStorage.layout().masterAccountActivationMode, "AccountFacet: Master account activation disabled");
+		require(GlobalAppStorage.layout().masterAccountEnabled, "AccountFacet: Master account disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(!accountLayout.masterAccountMode[signer], "AccountFacet: Master account mode is active");

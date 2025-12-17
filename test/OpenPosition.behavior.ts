@@ -267,8 +267,8 @@ export function shouldBehaveLikeOpenPosition(): void {
 	it("Should skip check sig when bind", async function () {
 		await user.requestToCancelQuote(2)
 		await hedger2.acceptCancelRequest(2)
-		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+		// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
+		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 		await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 		await expect(
 			hedger.openPosition(
