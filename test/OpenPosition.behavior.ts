@@ -601,6 +601,14 @@ export function shouldBehaveLikeOpenPosition(): void {
 			await context.controlFacet.setMasterAccountActivationMode(true)
 			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
 
+			// Refresh PartyA balances to support larger quotes
+			await user.setBalances(decimal(3000n), decimal(1500n), decimal(1200n))
+			await user2.setBalances(decimal(3000n), decimal(1500n), decimal(1200n))
+
+			// Fresh quotes from distinct partyAs
+			quoteUser1 = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().quantity(decimal(80n)).build()))
+			quoteUser2 = await context.viewFacetQuote.getQuote(await user2.sendQuote(limitQuoteRequestBuilder().quantity(decimal(120n)).build()))
+
 			// Lock both quotes
 			await hedger.lockQuote(quoteUser1.id)
 			await hedger.lockQuote(quoteUser2.id)
@@ -626,12 +634,47 @@ export function shouldBehaveLikeOpenPosition(): void {
 
 			const partyABucket1 = await hedger.getBalanceInfo(await user.getAddress())
 
-			expect(partyABucket1.lockedCva).to.equal(quoteUser1.lockedValues.cva + quoteUser2.lockedValues.cva)
-			expect(partyABucket1.lockedLf).to.equal(quoteUser1.lockedValues.lf + quoteUser2.lockedValues.lf)
-			expect(partyABucket1.lockedMmPartyB).to.equal(quoteUser1.lockedValues.partyBmm + quoteUser2.lockedValues.partyBmm)
+			expect(partyABucket1.lockedCva).to.equal(quoteUser1.lockedValues.cva)
+			expect(partyABucket1.lockedLf).to.equal(quoteUser1.lockedValues.lf)
+			expect(partyABucket1.lockedMmPartyB).to.equal(quoteUser1.lockedValues.partyBmm)
 			expect(partyABucket1.pendingLockedCva).to.equal(0)
 			expect(partyABucket1.pendingLockedLf).to.equal(0)
 			expect(partyABucket1.pendingLockedMmPartyB).to.equal(0)
+
+			const partyABucket2 = await hedger.getBalanceInfo(await user2.getAddress())
+			expect(partyABucket2.lockedCva).to.equal(quoteUser2.lockedValues.cva)
+			expect(partyABucket2.lockedLf).to.equal(quoteUser2.lockedValues.lf)
+			expect(partyABucket2.lockedMmPartyB).to.equal(quoteUser2.lockedValues.partyBmm)
+			expect(partyABucket2.pendingLockedCva).to.equal(0)
+			expect(partyABucket2.pendingLockedLf).to.equal(0)
+			expect(partyABucket2.pendingLockedMmPartyB).to.equal(0)
+		})
+
+		it("bumps both per-partyA and master nonces when opening in master mode", async function () {
+			const partyB = await hedger.getAddress()
+			const partyA1 = await user.getAddress()
+			const partyA2 = await user2.getAddress()
+
+			const beforeShared = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+			const beforeA1 = await context.viewFacet.nonceOfPartyB(partyB, partyA1)
+			const beforeA2 = await context.viewFacet.nonceOfPartyB(partyB, partyA2)
+
+			await hedger.openPosition(
+				quoteUser1.id,
+				limitOpenRequestBuilder().filledAmount(quoteUser1.quantity).openPrice(quoteUser1.requestedOpenPrice).build(),
+			)
+			await hedger.openPosition(
+				quoteUser2.id,
+				limitOpenRequestBuilder().filledAmount(quoteUser2.quantity).openPrice(quoteUser2.requestedOpenPrice).build(),
+			)
+
+			const afterShared = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+			const afterA1 = await context.viewFacet.nonceOfPartyB(partyB, partyA1)
+			const afterA2 = await context.viewFacet.nonceOfPartyB(partyB, partyA2)
+
+			expect(afterShared).to.equal(beforeShared + 2n)
+			expect(afterA1).to.equal(beforeA1 + 1n)
+			expect(afterA2).to.equal(beforeA2 + 1n)
 		})
 	})
 }
