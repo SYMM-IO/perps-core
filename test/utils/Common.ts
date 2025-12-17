@@ -1,10 +1,10 @@
-import {time} from "@nomicfoundation/hardhat-network-helpers"
+import {time} from "../helpers/network-helpers"
 import {JsonSerializer} from "typescript-json-serializer"
 
 import {OrderType, QuoteStatus} from "../models/Enums"
 import {RunContext} from "../models/RunContext"
 import {safeDiv} from "./SafeMath"
-import {network} from "hardhat"
+import {network} from "../helpers/hardhat-connection"
 import {QuoteStructOutput, SymbolStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
 
 const defaultSerializer = new JsonSerializer()
@@ -20,10 +20,9 @@ export function unDecimal(value: bigint, decimal: number = 18): bigint {
 }
 
 export async function getBlockTimestamp(additional: bigint = 0n): Promise<bigint> {
-	if (network.name === "hardhat") {
-		return BigInt(await time.latest()) + 1n + additional
-	}
-	return 1722859307n
+	const latest = await time.latest()
+	const latestBigInt = typeof latest === "bigint" ? latest : BigInt(latest)
+	return latestBigInt + 1n + additional
 }
 
 export async function getQuoteQuantity(context: RunContext, quoteId: bigint): Promise<bigint> {

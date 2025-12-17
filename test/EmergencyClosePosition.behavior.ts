@@ -1,4 +1,4 @@
-import {loadFixture} from "@nomicfoundation/hardhat-network-helpers"
+import {loadFixture} from "./helpers/network-helpers"
 import {expect} from "chai"
 
 import {initializeFixture} from "./Initialize.fixture"

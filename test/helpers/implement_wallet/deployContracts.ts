@@ -1,8 +1,9 @@
 // scripts/deploy-and-dump.ts
 import fs from "fs"
 import path from "path"
+import { pathToFileURL } from "url"
 import { initializeFixture } from "../../../test/Initialize.fixture"
-import { ethers, network } from "hardhat"
+import { ethers, network } from "../hardhat-connection"
 import { User } from "../../models/User"
 import { decimal } from "../../utils/Common"
 // ^ you already use this in tests; it deploys everything and returns the context
@@ -30,7 +31,9 @@ async function main() {
 	console.log("Wrote", outFile, "\n", addrs)
 }
 
-main().catch(e => {
-	console.error(e)
-	process.exit(1)
-})
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+	main().catch(e => {
+		console.error(e)
+		process.exit(1)
+	})
+}

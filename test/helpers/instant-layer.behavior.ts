@@ -1,8 +1,8 @@
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs"
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
+import { loadFixture, time } from "./network-helpers"
 import { expect } from "chai"
 import { ZeroAddress, toUtf8Bytes, TypedDataDomain } from "ethers"
-import { ethers, network } from "hardhat"
+import { ethers } from "./hardhat-connection"
 
 import { InstantLayer } from "../../src/types"
 import { initializeFixture } from "../Initialize.fixture"
@@ -105,8 +105,7 @@ function createSignedOperation(
 }
 
 async function increaseTime(seconds: number): Promise<void> {
-	await network.provider.send("evm_increaseTime", [seconds])
-	await network.provider.send("evm_mine")
+	await time.increase(seconds)
 }
 
 // ════════════════════════════════════════════════════════════════════════════════

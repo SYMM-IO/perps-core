@@ -1,12 +1,14 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture } from "./helpers/network-helpers"
 import { RunContext } from "./models/RunContext"
 import { initializeFixture } from "./Initialize.fixture"
 import { expect } from "chai"
-import { keccak256 } from "js-sha3"
+import sha3 from "js-sha3"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { ethers } from "hardhat"
+import { ethers } from "./helpers/hardhat-connection"
 import { ZeroAddress } from "ethers"
 import { toUtf8Bytes } from "ethers";
+
+const { keccak256 } = sha3
 
 const DISPUTE_ROLE = `0x${keccak256("DISPUTE_ROLE")}`
 const PARTY_B_MANAGER_ROLE = `0x${keccak256("PARTY_B_MANAGER_ROLE")}`

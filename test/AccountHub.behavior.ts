@@ -1,8 +1,8 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers"
 import { expect, use } from "chai"
 import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
-import { ethers } from "hardhat"
+import { ethers } from "./helpers/hardhat-connection"
 
 import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
 import { initializeFixture } from "./Initialize.fixture"

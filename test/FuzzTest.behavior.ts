@@ -1,4 +1,4 @@
-import {ethers} from "hardhat"
+import {ethers} from "./helpers/hardhat-connection"
 import {interval} from "rxjs"
 import {Hedger} from "./models/Hedger"
 import {HedgerController} from "./models/HedgerController"
@@ -8,7 +8,6 @@ import {User} from "./models/User"
 import {UserController} from "./models/UserController"
 import {decimal} from "./utils/Common"
 import fsPromise from "fs/promises"
-import {BigNumber} from "ethers"
 import {QuoteCheckpoint} from "./models/quoteCheckpoint"
 
 export function shouldBehaveLikeFuzzTest(): void {
@@ -32,7 +31,7 @@ export function shouldBehaveLikeFuzzTest(): void {
 		const hedger = new Hedger(context, hSigner)
 		await hedger.setup()
 		await hedger.setNativeBalance(100n ** 18n)
-		await hedger.setBalances(BigNumber.from("10").pow(`50`), BigNumber.from("10").pow(`50`))
+		await hedger.setBalances(10n ** 50n, 10n ** 50n)
 		await hedger.register()
 		const hedgerController = new HedgerController(manager, hedger, checkpoint)
 

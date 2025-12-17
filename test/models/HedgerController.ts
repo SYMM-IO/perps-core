@@ -33,7 +33,7 @@ import {LockQuoteValidator, LockQuoteValidatorBeforeOutput} from "./validators/L
 import {OpenPositionValidator, OpenPositionValidatorBeforeOutput} from "./validators/OpenPositionValidator"
 import {UnlockQuoteValidator, UnlockQuoteValidatorBeforeOutput} from "./validators/UnlockQuoteValidator"
 import {QuoteCheckpoint} from "./quoteCheckpoint"
-import {ethers} from "hardhat"
+import {ethers} from "../helpers/hardhat-connection"
 import {QuoteStructOutput, SymbolStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
 
 export class HedgerController {

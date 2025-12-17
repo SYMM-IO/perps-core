@@ -5,7 +5,7 @@ import { SingleUpnlAndPriceSigStruct } from "../../../src/types/contracts/facets
 import { decimal, getBlockTimestamp } from "../../utils/Common"
 import { getDummySingleUpnlAndPriceSig } from "../../utils/SignatureUtils"
 import { OrderType, PositionType } from "../Enums"
-import { ethers } from "hardhat"
+import { ethers } from "../../helpers/hardhat-connection"
 
 const data = ethers.AbiCoder.defaultAbiCoder().encode(["string"], ["hello-world"])
 
