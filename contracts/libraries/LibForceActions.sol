@@ -9,6 +9,7 @@ import "../storages/AccountStorage.sol";
 import "../storages/QuoteStorage.sol";
 import "../storages/SymbolStorage.sol";
 import "./LibQuoteClose.sol";
+import "./LibQuote.sol";
 import "./LibAccount.sol";
 import "./LibSolvency.sol";
 import "./muon/LibMuonForceActions.sol";
@@ -127,24 +128,26 @@ library LibForceActions {
 	function closeQuote(uint256 quoteId, uint256 closePrice, int256 partyBAvailableBalance, uint256 reservedBalance) internal returns (bool succeed) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		address partyA = quote.partyA;
-		address partyB = quote.partyB;
 
 		if (partyBAvailableBalance >= 0) {
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
-			succeed = true;
-		} else if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
+			return true;
+		}
+
+		address partyB = quote.partyB;
+
+		if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
 			uint256 available = uint256(-partyBAvailableBalance);
 
 			accountLayout.reserveVault[partyB] -= available;
 
-			accountLayout.partyBAllocatedBalances[partyB][partyA] += available;
-			emit SharedEvents.BalanceChangePartyB(partyB, partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			accountLayout.partyBAllocatedBalances[partyB][quote.partyA] += available;
+			emit SharedEvents.BalanceChangePartyB(partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
-			LibAccount.updatePartyBNonce(partyB, partyA);
+			LibAccount.updatePartyBNonce(partyB, quote.partyA);
 
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
-			succeed = true;
+			return true;
 		}
 	}
 }
