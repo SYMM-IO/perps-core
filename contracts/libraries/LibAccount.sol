@@ -196,13 +196,11 @@ library LibAccount {
 	 */
 	function addToPartyBLockedBalances(address partyB, address partyA, Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		accountLayout.partyBLockedBalances[partyB][partyA].addQuote(quote);
+
 		if (accountLayout.masterAccountMode[partyB]) {
-			if (partyA != address(0)) {
-				accountLayout.partyBLockedBalances[partyB][partyA].addQuote(quote);
-			}
 			accountLayout.partyBLockedBalances[partyB][address(0)].addQuote(quote);
-		} else {
-			accountLayout.partyBLockedBalances[partyB][partyA].addQuote(quote);
 		}
 	}
 
@@ -214,15 +212,11 @@ library LibAccount {
 	 */
 	function subFromPartyBLockedBalances(address partyB, address partyA, Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote);
+
 		if (accountLayout.masterAccountMode[partyB]) {
-			if (partyA != address(0)) {
-				accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote);
-			}
-			if (accountLayout.partyBLockedBalances[partyB][address(0)].totalForPartyB() > 0) {
-				accountLayout.partyBLockedBalances[partyB][address(0)].subQuote(quote);
-			}
-		} else {
-			accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote);
+			accountLayout.partyBLockedBalances[partyB][address(0)].subQuote(quote);
 		}
 	}
 
@@ -235,15 +229,11 @@ library LibAccount {
 	 */
 	function replacePartyBLockedBalances(address partyB, address partyA, Quote storage quote, LockedValues memory newLockedValues) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote).add(newLockedValues);
+
 		if (accountLayout.masterAccountMode[partyB]) {
-			if (partyA != address(0)) {
-				accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote).add(newLockedValues);
-			}
-			if (accountLayout.partyBLockedBalances[partyB][address(0)].totalForPartyB() > 0) {
-				accountLayout.partyBLockedBalances[partyB][address(0)].subQuote(quote).add(newLockedValues);
-			}
-		} else {
-			accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote).add(newLockedValues);
+			accountLayout.partyBLockedBalances[partyB][address(0)].subQuote(quote).add(newLockedValues);
 		}
 	}
 
@@ -255,13 +245,11 @@ library LibAccount {
 	 */
 	function addToPartyBPendingLockedBalances(address partyB, address partyA, Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		accountLayout.partyBPendingLockedBalances[partyB][partyA].addQuote(quote);
+
 		if (accountLayout.masterAccountMode[partyB]) {
-			if (partyA != address(0)) {
-				accountLayout.partyBPendingLockedBalances[partyB][partyA].addQuote(quote);
-			}
 			accountLayout.partyBPendingLockedBalances[partyB][address(0)].addQuote(quote);
-		} else {
-			accountLayout.partyBPendingLockedBalances[partyB][partyA].addQuote(quote);
 		}
 	}
 
@@ -273,15 +261,11 @@ library LibAccount {
 	 */
 	function subFromPartyBPendingLockedBalances(address partyB, address partyA, Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		accountLayout.partyBPendingLockedBalances[partyB][partyA].subQuote(quote);
+
 		if (accountLayout.masterAccountMode[partyB]) {
-			if (partyA != address(0)) {
-				accountLayout.partyBPendingLockedBalances[partyB][partyA].subQuote(quote);
-			}
-			if (accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() > 0) {
-				accountLayout.partyBPendingLockedBalances[partyB][address(0)].subQuote(quote);
-			}
-		} else {
-			accountLayout.partyBPendingLockedBalances[partyB][partyA].subQuote(quote);
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].subQuote(quote);
 		}
 	}
 
@@ -296,8 +280,7 @@ library LibAccount {
 		if (isMasterAccountMode) {
 			accountLayout.partyBNonces[partyB][partyA]++;
 			accountLayout.partyBNonces[partyB][address(0)]++;
-		}
-		else {
+		} else {
 			accountLayout.partyBNonces[partyB][partyA]++;
 		}
 	}
