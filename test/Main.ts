@@ -125,10 +125,9 @@ describe("UnitTests", function () {
 			shouldBehaveLikeWithdrawFacet()
 		})
 
-		// TODO fix this. dont work with hardhat3 (?)
-		// describe("AccountHub", async function () {
-		// 	shouldBehaveLikeAccountHub()
-		// })
+		describe("AccountHub", async function () {
+			shouldBehaveLikeAccountHub()
+		})
 
 		describe("AffiliateHub", async function () {
 			shouldBehaveLikeAffiliateHub()

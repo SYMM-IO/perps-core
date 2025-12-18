@@ -152,8 +152,9 @@ export function shouldBehaveLikeAccountHub(): void {
 		})
 
 		describe("createSubAccounts", async () => {
-			const subAccountData = [createSubAccountData("EXAMPLE_NAME", 0, "EXAMPLE")]
+			const buildExampleSubAccountData = (): IAccountHub.SubAccountCreationDataStruct[] => [createSubAccountData("EXAMPLE_NAME", 0, "EXAMPLE")]
 			it("should create subAccount successfully", async () => {
+				const subAccountData = buildExampleSubAccountData()
 				const oldNonce = await context.accountHub.globalNonce()
 				let newNonce = oldNonce
 				await expect(context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)).to
@@ -198,12 +199,14 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 
 			it("should failed when affiliate not whitelisted provided symmioCore", async () => {
+				const subAccountData = buildExampleSubAccountData()
 				await expect(
 					context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData),
 				).to.revertedWithCustomError(context.accountHub, "NotSymmioCore")
 			})
 
 			it("should failed when provided affiliate not active", async () => {
+				const subAccountData = buildExampleSubAccountData()
 				await expect(
 					context.accountHub.connect(context.signers.user).createSubAccounts(context.signers.others[0].address, subAccountData),
 				).to.revertedWithCustomError(context.accountHub, "AffiliateNotActive")
@@ -1002,7 +1005,7 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 
 			describe("onVirtualAccountCreation hook", async () => {
-				const subAccountData = [createSubAccountData("CUSTOM_ACCOUNT", 3)]
+				const buildCustomSubAccountData = () => [createSubAccountData("CUSTOM_ACCOUNT", 3)]
 
 				it("should call onVirtualAccountCreation when virtual account is auto-created", async () => {
 					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountCreation)
@@ -1015,6 +1018,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 
 				it("should call onVirtualAccountCreation when manually creating virtual account", async () => {
+					const subAccountData = buildCustomSubAccountData()
 					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
 					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
 					customSubAccountAddress = accounts[accounts.length - 1]
@@ -1035,6 +1039,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 
 				it("should call hook for each virtual account created", async () => {
+					const subAccountData = buildCustomSubAccountData()
 					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
 
 					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)

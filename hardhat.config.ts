@@ -148,7 +148,7 @@ export default defineConfig({
 		sources: "./contracts",
 		tests: {
 			mocha: "./test",
-			solidity: "./contracts/dev",
+			solidity: "./contracts/test",
 		},
 	},
 
