@@ -1,4 +1,6 @@
-import { task, types } from "hardhat/config"
+import { task } from "hardhat/config"
+import { HardhatRuntimeEnvironment } from "hardhat/types"
+import { ArgumentType } from "hardhat/types/arguments"
 
 import { readData, writeData } from "../utils/fs"
 import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants"
@@ -13,35 +15,40 @@ const ENTRY_TYPES = {
 	CONTRACT: "Contract",
 } as const
 
-task("deploy:InstantLayer", "Deploys the InstantLayer contract")
-	.addParam("symmioaddress", "The address of the Symmio contract")
-	.addParam("admin", "The admin address")
-	.addOptionalParam("logData", "Write the deployed addresses to a data file", true, types.boolean)
-	.setAction(async ({ symmioaddress, admin, logData }, { ethers, upgrades, run }) => {
-		console.log("Running deploy:InstantLayer")
+export async function deployInstantLayer(
+	hre: HardhatRuntimeEnvironment,
+	{ symmioaddress = "", admin = "", logData = true }: { symmioaddress?: string; admin?: string; logData?: boolean } = {},
+) {
+	const { ethers } = hre
+	console.log("Running deploy:InstantLayer")
 
-		const [deployer] = await ethers.getSigners()
+	const [deployer] = await ethers.getSigners()
+	console.log("Deploying contracts with the account:", deployer.address)
 
-		console.log("Deploying contracts with the account:", deployer.address)
+	// Deploy InstantLayer
+	const instantLayer = await deployInstantLayerContract(symmioaddress, admin, ethers, deployer)
 
-		// Deploy InstantLayer
-		const instantLayer = await deployInstantLayer(symmioaddress, admin, ethers, deployer)
-
-		const address = await instantLayer.getAddress()
-		console.log("InstantLayer deployed:", address)
+	const address = await instantLayer.getAddress()
+	console.log("InstantLayer deployed:", address)
 
 		// Log deployment data if requested
-		if (logData) {
-			await logDeploymentData(address, symmioaddress, admin)
-		}
+	if (logData) {
+		await logDeploymentData(address, symmioaddress, admin)
+	}
 
-		return instantLayer
-	})
+	return instantLayer
+}
+
+task("deploy:InstantLayer", "Deploys the InstantLayer contract")
+	.addOption({ name: "symmioaddress", description: "The address of the Symmio contract", defaultValue: "" })
+	.addOption({ name: "admin", description: "The admin address", defaultValue: "" })
+	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
+	.setAction(async (taskArgs, hre) => deployInstantLayer(hre, taskArgs))
 
 /**
  * Deploys the InstantLayer contract
  */
-async function deployInstantLayer(symmioAddress: string, admin: string, ethers: any, deployer: any) {
+async function deployInstantLayerContract(symmioAddress: string, admin: string, ethers: any, deployer: any) {
 	console.log(`Deploying ${CONTRACT_CONFIG.NAME} with:`, {
 		symmioAddress,
 		admin,

@@ -1,14 +1,20 @@
 import { toUtf8Bytes } from "ethers"
-import { ethers, run } from "hardhat"
+import { ethers, hre } from "./helpers/hardhat-connection"
 
 import { AccountHub, AffiliateHub } from "../src/types"
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types"
 import { createRunContext, RunContext } from "./models/RunContext"
 import { decimal } from "./utils/Common"
+import { deployStablecoin } from "../tasks/deploy/stablecoin"
+import { deployDiamond } from "../tasks/deploy/diamond"
+import { deploySymmioPartyB } from "../tasks/deploy/partyB"
+import { deployInstantLayer } from "../tasks/deploy/instantLayer"
+import { deployAffiliateHub } from "../tasks/deploy/affiliateHub"
+import { deployAccountHub } from "../tasks/deploy/accountHub"
 
 export async function initializeFixture(): Promise<RunContext> {
-	const collateral = await run("deploy:stablecoin")
-	const diamond = await run("deploy:diamond", {
+	const collateral = await deployStablecoin(hre, { logData: false })
+	const diamond = await deployDiamond(hre, {
 		logData: false,
 		genABI: false,
 		reportGas: true,
@@ -16,25 +22,25 @@ export async function initializeFixture(): Promise<RunContext> {
 
 	const admin = process.env.ADMIN_PUBLIC_KEY || (await (await ethers.getSigners())[0].getAddress())
 
-	const symmioPartyB = await run("deploy:symmioPartyB", {
+	const symmioPartyB = await deploySymmioPartyB(hre, {
 		symmioAddress: await diamond.getAddress(),
 		admin: admin,
 	})
 
-	const instantLayer = await run("deploy:InstantLayer", {
+	const instantLayer = await deployInstantLayer(hre, {
 		symmioaddress: await diamond.getAddress(),
 		admin: admin,
 	})
 
 	const context = await createRunContext(await diamond.getAddress(), await collateral.getAddress(), true)
 
-	const affiliateHub: AffiliateHub = await run("deploy:affiliateHub", {
+	const affiliateHub: AffiliateHub = await deployAffiliateHub(hre, {
 		admin: context.signers.admin.address,
 		symmiofeereceiver: context.signers.symmioFeeReceiver.address,
 		logData: false,
 	})
 
-	const accountHub: AccountHub = await run("deploy:accountHub", {
+	const accountHub: AccountHub = await deployAccountHub(hre, {
 		admin: context.signers.admin.address,
 		affiliatehubaddress: await affiliateHub.getAddress(),
 		logData: false,
@@ -214,7 +220,7 @@ export async function initializeExternalTransferRelayerFixture(): Promise<{
 	const relayer = (await relayerFactory.deploy(await source.signers.admin.getAddress())) as unknown as SymmioExternalTransferRelayer
 	await relayer.waitForDeployment()
 
-	const targetDiamond = await run("deploy:diamond", {
+	const targetDiamond = await deployDiamond(hre, {
 		logData: false,
 		genABI: false,
 		reportGas: true,
@@ -253,7 +259,7 @@ export async function initializeVirtualFixture(): Promise<{
 }> {
 	const source = await initializeFixture()
 
-	const targetDiamond = await run("deploy:diamond", {
+	const targetDiamond = await deployDiamond(hre, {
 		logData: false,
 		genABI: false,
 		reportGas: true,

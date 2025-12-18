@@ -1,4 +1,4 @@
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, time } from "./helpers/network-helpers";
 import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture"
@@ -18,7 +18,6 @@ import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/Signature
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { ethers, toUtf8Bytes } from "ethers"
 import { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
-import { increase } from "@nomicfoundation/hardhat-network-helpers/dist/src/helpers/time";
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
@@ -72,7 +71,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		await user.sendQuote()
 		await hedger.lockQuote(5)
 
-		await increase(550)
+		await time.increase(550)
 		await context.controlFacet.setMuonConfig(1000n , 1000n)
 
 	})

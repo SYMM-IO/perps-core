@@ -1,11 +1,14 @@
 import { task } from "hardhat/config"
+import { ArgumentType } from "hardhat/types/arguments"
+import { deployProxy, erc1967 } from "../../utils/upgrades-shim"
 
 task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
-	.addParam("symmioAddress", "The address of the Symmio contract")
-	.addParam("admin", "The admin address")
-	.addParam("symmioShare", "The symmio share")
-	.addParam("symmioShareReceiver", "The symmio share receiver")
-	.setAction(async ({ symmioAddress, admin, symmioShareReceiver, symmioShare }, { ethers, upgrades, run }) => {
+	.addOption({ name: "symmioAddress", description: "The address of the Symmio contract", defaultValue: "" })
+	.addOption({ name: "admin", description: "The admin address", defaultValue: "" })
+	.addOption({ name: "symmioShare", description: "The symmio share", defaultValue: "0" })
+	.addOption({ name: "symmioShareReceiver", description: "The symmio share receiver", defaultValue: "" })
+	.setAction(async ({ symmioAddress, admin, symmioShareReceiver, symmioShare }, hre) => {
+		const { ethers } = hre
 		console.log("Running deploy:feeDistributor")
 
 		const [deployer] = await ethers.getSigners()
@@ -14,16 +17,16 @@ task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
 
 		// Deploy SymmioFeeDistributor as upgradeable
 		const factory = await ethers.getContractFactory("SymmioFeeDistributor")
-		const contract = await upgrades.deployProxy(factory, [admin, symmioAddress, symmioShareReceiver, symmioShare], {
+		const contract = await deployProxy(hre, factory, [admin, symmioAddress, symmioShareReceiver, symmioShare], {
 			initializer: "initialize",
 			kind: "transparent",
+			admin,
 		})
-		await contract.waitForDeployment()
 
 		const addresses = {
 			proxy: await contract.getAddress(),
-			admin: await upgrades.erc1967.getAdminAddress(await contract.getAddress()),
-			implementation: await upgrades.erc1967.getImplementationAddress(await contract.getAddress()),
+			admin: await erc1967(hre).getAdminAddress(await contract.getAddress()),
+			implementation: await erc1967(hre).getImplementationAddress(await contract.getAddress()),
 		}
 		console.log("SymmioFeeDistributor deployed to", addresses)
 

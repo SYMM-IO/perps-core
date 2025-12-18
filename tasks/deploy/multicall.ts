@@ -1,10 +1,11 @@
-import {task, types} from "hardhat/config"
+import {task} from "hardhat/config"
+import { ArgumentType } from "hardhat/types/arguments"
 import {readData, writeData} from "../utils/fs"
 import {DEPLOYMENT_LOG_FILE} from "./constants"
 import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
 
 task("deploy:multicall", "Deploys the Multicall")
-	.addOptionalParam("logData", "Write the deployed addresses to a data file", true, types.boolean)
+	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async ({logData}, {ethers, run}) => {
 		console.log("Running deploy:multicall")
 

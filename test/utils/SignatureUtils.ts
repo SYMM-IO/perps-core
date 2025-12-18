@@ -4,7 +4,7 @@ import { getBlockTimestamp } from "./Common"
 import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
 import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
 import { DeferredLiquidationSigStruct, PairUpnlAndPriceSigStruct, SingleUpnlSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
-import { ethers } from "hardhat"
+import { ethers } from "../helpers/hardhat-connection"
 import { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
 import { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
 

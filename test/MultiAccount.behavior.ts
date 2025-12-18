@@ -1,7 +1,8 @@
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { AbiCoder, BigNumberish } from "ethers"
-import { ethers, upgrades } from "hardhat"
+import { ethers, hre } from "./helpers/hardhat-connection"
+import { deployProxy } from "../utils/upgrades-shim"
 import { PairUpnlAndPriceSigStruct } from "../src/types/contracts/interfaces/ISymmio"
 import { initializeFixture } from "./Initialize.fixture"
 import { PositionType, QuoteStatus } from "./models/Enums"
@@ -84,11 +85,11 @@ export function shouldBehaveLikeMultiAccount() {
 
 		const Factory = await ethers.getContractFactory("MultiAccount")
 
-		const SymmioPartyBDeploy = await upgrades.deployProxy(SymmioPartyB, [await context.signers.admin.getAddress(), symmioAddress], {
+		const SymmioPartyBDeploy = await deployProxy(hre, SymmioPartyB, [await context.signers.admin.getAddress(), symmioAddress], {
 			initializer: "initialize",
 		})
 
-		const MultiAccount = await upgrades.deployProxy(Factory, [await context.signers.admin.getAddress(), symmioAddress, SymmioPartyA.bytecode], {
+		const MultiAccount = await deployProxy(hre, Factory, [await context.signers.admin.getAddress(), symmioAddress, SymmioPartyA.bytecode], {
 			initializer: "initialize",
 		})
 

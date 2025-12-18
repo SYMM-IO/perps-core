@@ -1,4 +1,4 @@
-import {setBalance} from "@nomicfoundation/hardhat-network-helpers"
+import {setBalance} from "../helpers/network-helpers"
 import {BigNumberish, ethers} from "ethers"
 
 import {decimal, serializeToJson, unDecimal} from "../utils/Common"
