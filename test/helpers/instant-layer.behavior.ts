@@ -1805,6 +1805,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					metadata: ethers.keccak256(toUtf8Bytes("metadata")),
 					symmioCore: ctx.context.diamond,
 					isolationType: 1,
+					singleVAMode: false,
 				},
 			]
 			await ctx.context.accountHub.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), subAccountData)
