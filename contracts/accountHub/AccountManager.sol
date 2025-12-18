@@ -39,7 +39,8 @@ contract AccountManager is IAccountManager {
 			name: name,
 			metadata: hex"",
 			symmioCore: cores[0],
-			isolationType: IAccountHub.SubAccountIsolationType.CUSTOM
+			isolationType: IAccountHub.SubAccountIsolationType.CUSTOM,
+			singleVAMode: false
 		});
 
 		IAccountHub.SubAccountCreationData[] memory arr = new IAccountHub.SubAccountCreationData[](1);

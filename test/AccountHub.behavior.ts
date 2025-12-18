@@ -38,12 +38,13 @@ export function shouldBehaveLikeAccountHub(): void {
 		])
 	}
 
-	function createSubAccountData(name: string, isolationType: number, metadata: string = "0x"): IAccountHub.SubAccountCreationDataStruct {
+	function createSubAccountData(name: string, isolationType: number, metadata: string = "0x", singleVAMode: boolean = false): IAccountHub.SubAccountCreationDataStruct {
 		return {
 			name,
 			metadata: ethers.keccak256(toUtf8Bytes(metadata)),
 			symmioCore: context.diamond,
 			isolationType,
+			singleVAMode,
 		}
 	}
 
@@ -315,6 +316,313 @@ export function shouldBehaveLikeAccountHub(): void {
 				await expect(
 					context.accountHub.connect(context.signers.user).editAccountName(context.signers.others[0], newAccountName),
 				).to.revertedWithCustomError(context.accountHub, "NotOwner")
+			})
+		})
+
+		describe("setSingleVAMode", async () => {
+			describe("basic functionality", async () => {
+				it("should allow enabling singleVAMode on MARKET isolation sub-account", async () => {
+					const subAccountData = [createSubAccountData("MARKET_ACCOUNT", 1, "MARKET", false)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const marketSubAccount = accounts[accounts.length - 1]
+
+					// Initially singleVAMode should be false
+					let subAccountDetail = await context.accountHub.getSubAccount(marketSubAccount)
+					expect(subAccountDetail.singleVAMode).to.be.false
+
+					// Enable singleVAMode
+					await expect(context.accountHub.connect(context.signers.user).setSingleVAMode(marketSubAccount, true))
+						.to.emit(context.accountHub, "SingleVAModeChanged")
+						.withArgs(marketSubAccount, true)
+
+					// Verify it's enabled
+					subAccountDetail = await context.accountHub.getSubAccount(marketSubAccount)
+					expect(subAccountDetail.singleVAMode).to.be.true
+				})
+
+				it("should allow enabling singleVAMode on MARKET_DIRECTION isolation sub-account", async () => {
+					const subAccountData = [createSubAccountData("MARKET_DIR_ACCOUNT", 2, "MARKET_DIR", false)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const marketDirSubAccount = accounts[accounts.length - 1]
+
+					await expect(context.accountHub.connect(context.signers.user).setSingleVAMode(marketDirSubAccount, true))
+						.to.emit(context.accountHub, "SingleVAModeChanged")
+						.withArgs(marketDirSubAccount, true)
+
+					const subAccountDetail = await context.accountHub.getSubAccount(marketDirSubAccount)
+					expect(subAccountDetail.singleVAMode).to.be.true
+				})
+
+				it("should allow disabling singleVAMode", async () => {
+					const subAccountData = [createSubAccountData("MARKET_ACCOUNT", 1, "MARKET", true)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const marketSubAccount = accounts[accounts.length - 1]
+
+					// Initially singleVAMode should be true (set during creation)
+					let subAccountDetail = await context.accountHub.getSubAccount(marketSubAccount)
+					expect(subAccountDetail.singleVAMode).to.be.true
+
+					// Disable singleVAMode
+					await expect(context.accountHub.connect(context.signers.user).setSingleVAMode(marketSubAccount, false))
+						.to.emit(context.accountHub, "SingleVAModeChanged")
+						.withArgs(marketSubAccount, false)
+
+					subAccountDetail = await context.accountHub.getSubAccount(marketSubAccount)
+					expect(subAccountDetail.singleVAMode).to.be.false
+				})
+
+				it("should create sub-account with singleVAMode enabled", async () => {
+					const subAccountData = [createSubAccountData("MARKET_SINGLE_VA", 1, "MARKET", true)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const marketSubAccount = accounts[accounts.length - 1]
+
+					const subAccountDetail = await context.accountHub.getSubAccount(marketSubAccount)
+					expect(subAccountDetail.singleVAMode).to.be.true
+					expect(subAccountDetail.isolationType).to.equal(1) // MARKET
+				})
+			})
+
+			describe("validation", async () => {
+				it("should revert when enabling singleVAMode on POSITION isolation sub-account", async () => {
+					const subAccountData = [createSubAccountData("POSITION_ACCOUNT", 0, "POSITION", false)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const positionSubAccount = accounts[accounts.length - 1]
+
+					await expect(
+						context.accountHub.connect(context.signers.user).setSingleVAMode(positionSubAccount, true)
+					).to.revertedWithCustomError(context.accountHub, "SingleVAModeNotApplicable")
+				})
+
+				it("should revert when enabling singleVAMode on CUSTOM isolation sub-account", async () => {
+					const subAccountData = [createSubAccountData("CUSTOM_ACCOUNT", 3, "CUSTOM", false)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const customSubAccount = accounts[accounts.length - 1]
+
+					await expect(
+						context.accountHub.connect(context.signers.user).setSingleVAMode(customSubAccount, true)
+					).to.revertedWithCustomError(context.accountHub, "SingleVAModeNotApplicable")
+				})
+
+				it("should revert when creating POSITION sub-account with singleVAMode enabled", async () => {
+					const subAccountData = [createSubAccountData("POSITION_SINGLE", 0, "POSITION", true)]
+					await expect(
+						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+					).to.revertedWithCustomError(context.accountHub, "SingleVAModeNotApplicable")
+				})
+
+				it("should revert when creating CUSTOM sub-account with singleVAMode enabled", async () => {
+					const subAccountData = [createSubAccountData("CUSTOM_SINGLE", 3, "CUSTOM", true)]
+					await expect(
+						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+					).to.revertedWithCustomError(context.accountHub, "SingleVAModeNotApplicable")
+				})
+
+				it("should revert when non-owner tries to set singleVAMode", async () => {
+					const subAccountData = [createSubAccountData("MARKET_ACCOUNT", 1, "MARKET", false)]
+					await context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const marketSubAccount = accounts[accounts.length - 1]
+
+					await expect(
+						context.accountHub.connect(context.signers.others[0]).setSingleVAMode(marketSubAccount, true)
+					).to.revertedWithCustomError(context.accountHub, "NotOwner")
+				})
+
+				it("should revert when sub-account does not exist", async () => {
+					await expect(
+						context.accountHub.connect(context.signers.user).setSingleVAMode(context.signers.others[0].address, true)
+					).to.revertedWithCustomError(context.accountHub, "NotOwner")
+				})
+
+				it("should revert when changing singleVAMode with active virtual accounts", async () => {
+					// Create MARKET sub-account without singleVAMode
+					const subAccountData = [createSubAccountData("MARKET_ACCOUNT", 1, "MARKET", false)]
+					const marketSubAccount = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+
+					// Send a quote to create a virtual account (sendQuoteAndGetVirtualAccount handles funding)
+					const quoteRequest = limitQuoteRequestBuilder().build()
+					await sendQuoteAndGetVirtualAccount(marketSubAccount, quoteRequest)
+
+					// Verify VA was created
+					const vaCount = await context.accountHub.getVirtualAccountsCountOfSubAccount(marketSubAccount)
+					expect(vaCount).to.equal(1)
+
+					// Try to enable singleVAMode - should fail
+					await expect(
+						context.accountHub.connect(context.signers.user).setSingleVAMode(marketSubAccount, true)
+					).to.revertedWithCustomError(context.accountHub, "HasActiveVirtualAccounts")
+				})
+			})
+
+			describe("singleVAMode behavior with MARKET isolation", async () => {
+				let marketSubAccount: string
+
+				beforeEach(async () => {
+					// Create MARKET sub-account with singleVAMode enabled
+					const subAccountData = [createSubAccountData("SINGLE_VA_MARKET", 1, "MARKET", true)]
+					marketSubAccount = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+				})
+
+				it("should reuse the same VA for multiple quotes on the same symbol", async () => {
+					// Send first quote (sendQuoteAndGetVirtualAccount handles funding)
+					const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+					const virtualAccounts1 = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+
+					expect(virtualAccounts1.length).to.equal(1)
+					const firstVA = virtualAccounts1[0]
+
+					// Check activeVAByKey
+					const activeVA = await context.accountHub.getActiveVAByKey(marketSubAccount, 1, 1) // MARKET=1, symbolId=1
+					expect(activeVA).to.equal(firstVA)
+
+					// Fund the VA again for another quote (add margin to existing VA)
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+					await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(firstVA, decimal(500n))
+
+					// Send second quote for same symbol 1 (singleVAMode should reuse existing VA)
+					const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+					const callData2 = await createSendQuoteCallData(quote2)
+					await context.accountHub.connect(context.signers.user)._call(marketSubAccount, [callData2])
+
+					// Should still have only 1 VA
+					const virtualAccounts2 = await context.accountHub.getVirtualAccountsOfSubAccount(marketSubAccount, 0, 10)
+					expect(virtualAccounts2.length).to.equal(1)
+					expect(virtualAccounts2[0].accountAddress).to.equal(firstVA)
+
+					// VA should have 2 quotes
+					const quoteIds = await context.accountHub.getVirtualAccountQuoteIds(firstVA, 0, 10)
+					expect(quoteIds.length).to.equal(2)
+				})
+
+				it("should create separate VAs for different symbols", async () => {
+					// Send quote for symbol 1
+					const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+					const virtualAccounts1 = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+
+					expect(virtualAccounts1.length).to.equal(1)
+					const va1 = virtualAccounts1[0]
+
+					// Fund sub-account again for second VA
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositFor(marketSubAccount, BALANCES.DEPOSIT_AMOUNT)
+
+					// Send quote for symbol 2 (should create new VA since different symbol)
+					const quote2 = limitQuoteRequestBuilder().symbolId(2).positionType(PositionType.LONG).build()
+					const virtualAccounts2After = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote2)
+
+					// Should have 2 VAs now
+					expect(virtualAccounts2After.length).to.equal(2)
+
+					// Check both VAs are tracked in activeVAByKey
+					const activeVA1 = await context.accountHub.getActiveVAByKey(marketSubAccount, 1, 1) // MARKET=1, symbolId=1
+					const activeVA2 = await context.accountHub.getActiveVAByKey(marketSubAccount, 1, 2) // MARKET=1, symbolId=2
+					expect(activeVA1).to.equal(va1)
+					expect(activeVA2).to.not.equal(ZeroAddress)
+					expect(activeVA1).to.not.equal(activeVA2)
+				})
+			})
+
+			describe("singleVAMode behavior with MARKET_DIRECTION isolation", async () => {
+				let marketDirSubAccount: string
+
+				beforeEach(async () => {
+					// Create MARKET_DIRECTION sub-account with singleVAMode enabled
+					const subAccountData = [createSubAccountData("SINGLE_VA_MARKET_DIR", 2, "MARKET_DIR", true)]
+					marketDirSubAccount = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+				})
+
+				it("should reuse the same VA for multiple quotes on the same symbol and direction", async () => {
+					// Send first LONG quote for symbol 1
+					const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+					const virtualAccounts1 = await sendQuoteAndGetVirtualAccount(marketDirSubAccount, quote1)
+
+					expect(virtualAccounts1.length).to.equal(1)
+					const longVA = virtualAccounts1[0]
+
+					// Check activeVAByKey for MARKET_LONG (type 2)
+					const activeLongVA = await context.accountHub.getActiveVAByKey(marketDirSubAccount, 2, 1) // MARKET_LONG=2, symbolId=1
+					expect(activeLongVA).to.equal(longVA)
+
+					// Fund the VA again for another quote
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+					await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(longVA, decimal(500n))
+
+					// Send second LONG quote for same symbol (singleVAMode should reuse existing VA)
+					const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+					const callData2 = await createSendQuoteCallData(quote2)
+					await context.accountHub.connect(context.signers.user)._call(marketDirSubAccount, [callData2])
+
+					// Should still have only 1 VA
+					const virtualAccounts2 = await context.accountHub.getVirtualAccountsOfSubAccount(marketDirSubAccount, 0, 10)
+					expect(virtualAccounts2.length).to.equal(1)
+					expect(virtualAccounts2[0].accountAddress).to.equal(longVA)
+				})
+
+				it("should create separate VAs for different directions on the same symbol", async () => {
+					// Send LONG quote for symbol 1
+					const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+					const virtualAccounts1 = await sendQuoteAndGetVirtualAccount(marketDirSubAccount, quote1)
+
+					expect(virtualAccounts1.length).to.equal(1)
+					const longVA = virtualAccounts1[0]
+
+					// Fund sub-account again for second VA
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositFor(marketDirSubAccount, BALANCES.DEPOSIT_AMOUNT)
+
+					// Send SHORT quote for same symbol (different direction should create new VA)
+					const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+					const virtualAccounts2After = await sendQuoteAndGetVirtualAccount(marketDirSubAccount, quote2)
+
+					// Should have 2 VAs now (one LONG, one SHORT)
+					expect(virtualAccounts2After.length).to.equal(2)
+
+					// Check both directions are tracked
+					const activeLongVA = await context.accountHub.getActiveVAByKey(marketDirSubAccount, 2, 1) // MARKET_LONG=2
+					const activeShortVA = await context.accountHub.getActiveVAByKey(marketDirSubAccount, 3, 1) // MARKET_SHORT=3
+					expect(activeLongVA).to.equal(longVA)
+					expect(activeShortVA).to.not.equal(ZeroAddress)
+					expect(activeLongVA).to.not.equal(activeShortVA)
+				})
+			})
+
+			describe("singleVAMode disabled behavior (default)", async () => {
+				let marketSubAccount: string
+
+				beforeEach(async () => {
+					// Create MARKET sub-account WITHOUT singleVAMode
+					const subAccountData = [createSubAccountData("MULTI_VA_MARKET", 1, "MARKET", false)]
+					marketSubAccount = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+				})
+
+				it("should create new VA for each quote even on the same symbol when singleVAMode is disabled", async () => {
+					// Send first quote for symbol 1
+					const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+					const virtualAccounts1 = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+
+					expect(virtualAccounts1.length).to.equal(1)
+
+					// Fund sub-account again for second VA
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositFor(marketSubAccount, BALANCES.DEPOSIT_AMOUNT)
+
+					// Send another quote for same symbol (without singleVAMode, should create new VA)
+					const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+					const virtualAccounts2 = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote2)
+
+					// Should have 2 VAs (no reuse when singleVAMode is disabled)
+					expect(virtualAccounts2.length).to.equal(2)
+
+					// activeVAByKey should be empty when singleVAMode is disabled
+					const activeVA = await context.accountHub.getActiveVAByKey(marketSubAccount, 1, 1)
+					expect(activeVA).to.equal(ZeroAddress)
+				})
 			})
 		})
 

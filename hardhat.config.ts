@@ -105,7 +105,7 @@ const config: HardhatUserConfig = {
 
 	networks: {
 		hardhat: {
-			allowUnlimitedContractSize: false,
+			allowUnlimitedContractSize: true,
 		},
 		docker: {
 			url: hardhatDockerUrl,
