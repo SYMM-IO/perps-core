@@ -1,6 +1,8 @@
 import {loadFixture, time} from "./helpers/network-helpers"
 
 import {initializeFixture} from "./Initialize.fixture"
+import {ethers} from "./helpers/hardhat-connection"
+import {toUtf8Bytes} from "ethers"
 import {PositionType, QuoteStatus} from "./models/Enums"
 import {Hedger} from "./models/Hedger"
 import {RunContext} from "./models/RunContext"
