@@ -1841,6 +1841,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 				await ctx.requestSendQuote.upnlSig,
 			])
 
+			// Pre-fund the VA before sending quote (since automatic transfer was removed)
+			// MARKET isolation (1) -> VirtualAccountIsolationType.MARKET (1)
+			const predictedVA = await ctx.context.accountHub.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
+			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, decimal(500n))
+			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositAndAllocateFor(predictedVA, decimal(500n))
+
 			// Create virtual account by sending a quote
 			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [quoteCallDataLocal])
 

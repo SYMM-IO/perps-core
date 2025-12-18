@@ -68,11 +68,62 @@ export function shouldBehaveLikeAccountHub(): void {
 	}
 
 	async function sendQuoteAndGetVirtualAccount(subAccount: string, quoteRequest = limitQuoteRequestBuilder().build()) {
+		const subAccountData = await context.accountHub.getSubAccount(subAccount)
+		const isolationType = subAccountData.isolationType
+
+		// For non-CUSTOM isolation, we need to fund the VA before sendQuote
+		if (isolationType !== 3n) {
+			// 3 = CUSTOM
+			// Determine the virtual account isolation type
+			let vaIsolationType: number
+			if (isolationType === 0n) {
+				// POSITION
+				vaIsolationType = 0 // VirtualAccountIsolationType.POSITION
+			} else if (isolationType === 1n) {
+				// MARKET
+				vaIsolationType = 1 // VirtualAccountIsolationType.MARKET
+			} else {
+				// MARKET_DIRECTION (2)
+				vaIsolationType = quoteRequest.positionType === PositionType.LONG ? 2 : 3 // MARKET_LONG or MARKET_SHORT
+			}
+
+			// Predict the VA address
+			const predictedVA = await context.accountHub.predictNextVirtualAccountAddress(subAccount, vaIsolationType, quoteRequest.symbolId)
+
+			// Fund the predicted VA address with enough margin
+			const marginNeeded = decimal(500n) // cva + lf + partyAmm + buffer for fees
+			await context.collateral.connect(context.signers.user).mint(context.signers.user.address, marginNeeded)
+			await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), marginNeeded)
+			await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(predictedVA, marginNeeded)
+		}
+
 		const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 		await context.accountHub.connect(context.signers.user)._call(subAccount, [sendQuoteCallData])
 
 		const virtualAccountsAfter = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(subAccount, 0, 10)
 		return virtualAccountsAfter
+	}
+
+	async function preFundVirtualAccount(subAccount: string, quoteRequest = limitQuoteRequestBuilder().build()) {
+		const subAccountData = await context.accountHub.getSubAccount(subAccount)
+		const isolationType = subAccountData.isolationType
+
+		if (isolationType === 3n) return // CUSTOM doesn't create VA
+
+		let vaIsolationType: number
+		if (isolationType === 0n) {
+			vaIsolationType = 0
+		} else if (isolationType === 1n) {
+			vaIsolationType = 1
+		} else {
+			vaIsolationType = quoteRequest.positionType === PositionType.LONG ? 2 : 3
+		}
+
+		const predictedVA = await context.accountHub.predictNextVirtualAccountAddress(subAccount, vaIsolationType, quoteRequest.symbolId)
+		const marginNeeded = decimal(500n)
+		await context.collateral.connect(context.signers.user).mint(context.signers.user.address, marginNeeded)
+		await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), marginNeeded)
+		await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(predictedVA, marginNeeded)
 	}
 
 	async function openPositionForQuote(quoteId: bigint) {
@@ -309,6 +360,9 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccountsBefore = await context.accountHub.getVirtualAccountsCountOfSubAccount(positionSubAccount)
 						expect(virtualAccountsBefore).to.equal(0)
 
+						// Pre-fund the VA before sending quote
+						await preFundVirtualAccount(positionSubAccount)
+
 						const sendQuoteCallData = await createSendQuoteCallData()
 						await expect(context.accountHub.connect(context.signers.user)._call(positionSubAccount, [sendQuoteCallData])).to.not.be.reverted
 
@@ -339,6 +393,9 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccountsBefore = await context.accountHub.getVirtualAccountsCountOfSubAccount(marketSubAccount)
 						expect(virtualAccountsBefore).to.equal(0)
 
+						// Pre-fund the VA before sending quote
+						await preFundVirtualAccount(marketSubAccount)
+
 						const sendQuoteCallData = await createSendQuoteCallData()
 						await expect(context.accountHub.connect(context.signers.user)._call(marketSubAccount, [sendQuoteCallData])).to.not.be.reverted
 
@@ -361,6 +418,11 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					it("should allow multiple quotes with same symbol", async () => {
 						const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount)
+
+						// Add more funds to VA for the second quote
+						await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(200n))
+						await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(virtualAccounts[0], decimal(200n))
+
 						const sendQuoteCallData = await createSendQuoteCallData()
 						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
 
@@ -382,6 +444,10 @@ export function shouldBehaveLikeAccountHub(): void {
 						expect(virtualAccountsBefore).to.equal(0)
 
 						const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+
+						// Pre-fund the VA before sending quote
+						await preFundVirtualAccount(marketDirectionSubAccount, quoteRequest)
+
 						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 
 						await expect(context.accountHub.connect(context.signers.user)._call(marketDirectionSubAccount, [sendQuoteCallData])).to.not.be.reverted
@@ -594,8 +660,8 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						const virtualAccount = virtualAccounts[0].accountAddress
 
-						// Transfer funds from sub-account to virtual account
-						const transferAmount = decimal(100n)
+						// Transfer funds from sub-account to virtual account (cva + lf + partyAmm + fees)
+						const transferAmount = decimal(500n)
 						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, transferAmount])
 
 						await expect(context.accountHub.connect(context.signers.user)._call(customSubAccount, [transferCallData])).to.not.reverted
@@ -626,8 +692,8 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						const virtualAccount = virtualAccounts[0].accountAddress
 
-						// Transfer funds
-						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, decimal(100n)])
+						// Transfer funds (cva + lf + partyAmm + fees)
+						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, decimal(500n)])
 						await context.accountHub.connect(context.signers.user)._call(customSubAccount, [transferCallData])
 
 						// Try to send SHORT quote - should fail
@@ -659,8 +725,8 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						const virtualAccount = virtualAccounts[0].accountAddress
 
-						// Transfer funds
-						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, decimal(100n)])
+						// Transfer funds (cva + lf + partyAmm + fees)
+						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, decimal(500n)])
 						await context.accountHub.connect(context.signers.user)._call(customSubAccount, [transferCallData])
 
 						// Try to send quote for symbol 2 - should fail
@@ -726,9 +792,9 @@ export function shouldBehaveLikeAccountHub(): void {
 						const btcLongVirtual = virtualAccounts[0].accountAddress
 						const ethShortVirtual = virtualAccounts[1].accountAddress
 
-						// Transfer funds to both
-						const transferToBtc = context.accountFacet.interface.encodeFunctionData("internalTransfer", [btcLongVirtual, decimal(50n)])
-						const transferToEth = context.accountFacet.interface.encodeFunctionData("internalTransfer", [ethShortVirtual, decimal(50n)])
+						// Transfer funds to both (cva + lf + partyAmm + fees)
+						const transferToBtc = context.accountFacet.interface.encodeFunctionData("internalTransfer", [btcLongVirtual, decimal(500n)])
+						const transferToEth = context.accountFacet.interface.encodeFunctionData("internalTransfer", [ethShortVirtual, decimal(500n)])
 
 						await context.accountHub.connect(context.signers.user)._call(customSubAccount, [transferToBtc, transferToEth])
 

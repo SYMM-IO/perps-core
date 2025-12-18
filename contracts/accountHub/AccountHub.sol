@@ -10,7 +10,6 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-
 import "./interfaces/IAccountHub.sol";
 import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
@@ -920,9 +919,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			revert SymbolNotAllowedForThisAccount();
 		}
 
-		address core = getRelatedCore(accountData.parentAccount);
-		_transferBalanceForSendQuote(core, accountData.parentAccount, account, p);
-
 		bytes memory result = _executeWithSigner(account, cd);
 		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
 		return result;
@@ -954,9 +950,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 			virtualAccount = _getOrCreateVirtualAccount(account, hex"", vType, p.symbolId);
 		}
-
-		address core = getRelatedCore(account);
-		_transferBalanceForSendQuote(core, account, virtualAccount, p);
 
 		// send quote from virtual account
 		bytes memory result = _executeWithSigner(virtualAccount, cd);
@@ -1104,17 +1097,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 					)
 				)
 			);
-	}
-
-	/**
-	 * @dev Helper to handle internal transfer and quote execution
-	 */
-	function _transferBalanceForSendQuote(address core, address signerAccount, address transferTarget, QuoteParams memory p) private {
-		ISymmio(core).setSigner(signerAccount);
-		uint256 tradingPrice = p.OrderType == ISymmio.OrderType.LIMIT ? p.price : p.sig.price;
-		ISymmio.Fee memory fee = ISymmio(core).getFee(p.affiliate, p.symbolId);
-		ISymmio(core).internalTransfer(transferTarget, p.cva + p.lf + p.partyAmm + (p.quantity * tradingPrice * fee.openFee) / 1e36);
-		ISymmio(core).setSigner(address(0));
 	}
 
 	/**
