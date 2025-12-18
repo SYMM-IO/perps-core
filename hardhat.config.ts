@@ -25,7 +25,7 @@ const createNetworkConfig = (url: string) => ({
 
 const localEdrConfig = {
 	type: "edr-simulated" as const,
-	allowUnlimitedContractSize: false,
+	allowUnlimitedContractSize: true,
 	blockGasLimit: 30000000,
 	gas: 30000000,
 	hardfork: "shanghai",
@@ -36,7 +36,7 @@ export default defineConfig({
 	plugins: [hardhatToolboxMochaEthers],
 
 	solidity: {
-		version: "0.8.21",
+		version: "0.8.18",
 		settings: {
 			metadata: { 
 				bytecodeHash: "none",
@@ -55,8 +55,6 @@ export default defineConfig({
 		docker: {
 			type: "http",
 			url: hardhatDockerUrl || "http://127.0.0.1:8545",
-			allowUnlimitedContractSize: false,
-			blockGasLimit: 30000000,
 			accounts: privateKeyList,
 		},
 		bsc: createNetworkConfig("https://binance.llamarpc.com"),
@@ -74,34 +72,16 @@ export default defineConfig({
 		8453: {
 			name: "base",
 			blockExplorers: {
-				default: {
+				etherscan: {
 					apiUrl: "https://api.basescan.org/api",
 					url: "https://basescan.org",
-				},
-			},
-		},
-		1101: {
-			name: "zkEvm",
-			blockExplorers: {
-				default: {
-					apiUrl: "https://api-zkevm.polygonscan.com/api",
-					url: "https://zkevm.polygonscan.com",
-				},
-			},
-		},
-		204: {
-			name: "opbnb",
-			blockExplorers: {
-				default: {
-					apiUrl: "https://api-opbnb.bscscan.com/api",
-					url: "https://opbnb.bscscan.com",
 				},
 			},
 		},
 		8822: {
 			name: "iota",
 			blockExplorers: {
-				default: {
+				etherscan: {
 					apiUrl: "https://explorer.evm.iota.org/api",
 					url: "https://explorer.evm.iota.org",
 				},
@@ -110,7 +90,7 @@ export default defineConfig({
 		34443: {
 			name: "mode",
 			blockExplorers: {
-				default: {
+				etherscan: {
 					apiUrl: "https://api.routescan.io/v2/network/mainnet/evm/34443/etherscan",
 					url: "https://modescan.io",
 				},
@@ -119,7 +99,7 @@ export default defineConfig({
 		81457: {
 			name: "blast",
 			blockExplorers: {
-				default: {
+				etherscan: {
 					apiUrl: "https://api.blastscan.io/api",
 					url: "https://blastscan.io",
 				},
@@ -128,7 +108,7 @@ export default defineConfig({
 		5000: {
 			name: "mantle",
 			blockExplorers: {
-				default: {
+				etherscan: {
 					apiUrl: "https://api.mantlescan.xyz/api",
 					url: "https://mantlescan.xyz",
 				},
@@ -154,11 +134,6 @@ export default defineConfig({
 
 	typechain: {
 		outDir: "src/types",
-		target: "ethers-v6",
-	},
-
-	mocha: {
-		timeout: 100000000,
 	},
 
 	test: {

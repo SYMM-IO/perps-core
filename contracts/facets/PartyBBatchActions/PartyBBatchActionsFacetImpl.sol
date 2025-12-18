@@ -19,6 +19,30 @@ import {LibSigner} from "../../libraries/LibSigner.sol";
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	// NOTE: Solidity v0.8.18 doesn't support emitting events via qualified identifiers
+	// like `emit IPartiesEvents.OpenPosition(...)`. To keep event signatures consistent
+	// with `IPartiesEvents`, we redeclare the required events here and emit them unqualified.
+	event AcceptCancelRequest(uint256 quoteId, QuoteStatus quoteStatus);
+	event SendQuote(
+		address partyA,
+		uint256 quoteId,
+		address[] partyBsWhiteList,
+		uint256 symbolId,
+		PositionType positionType,
+		OrderType orderType,
+		uint256 price,
+		uint256 marketPrice,
+		uint256 quantity,
+		uint256 cva,
+		uint256 lf,
+		uint256 partyAmm,
+		uint256 partyBmm,
+		uint256 tradingFee,
+		uint256 deadline
+	);
+	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice); // for backward compatibility
+	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
+
 	function openPositions(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -76,12 +100,12 @@ library PartyBBatchActionsFacetImpl {
 			}
 			// Emitting events here in the impl is against our standards in these contracts,
 			// but given that this contract is getting too large and we can't return the ids, we are allowing it here.
-			emit IPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
-			emit IPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
+			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
+			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
 			if (newId != 0) {
 				Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-					emit IPartiesEvents.SendQuote(
+					emit SendQuote(
 						newQuote.partyA,
 						newQuote.id,
 						newQuote.partyBsWhiteList,
@@ -99,7 +123,7 @@ library PartyBBatchActionsFacetImpl {
 						newQuote.deadline
 					);
 				} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
-					emit IPartiesEvents.AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
+					emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
 				}
 			}
 		}
