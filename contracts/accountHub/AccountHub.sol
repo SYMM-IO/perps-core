@@ -228,6 +228,32 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
+	 * @notice Transfers balance from a sub-account to a predicted virtual account address
+	 * @dev Use this to pre-fund a virtual account before it's created by sendQuote
+	 * @param subAccount The sub-account address (source of funds)
+	 * @param isolationType The isolation type of the virtual account to be created
+	 * @param symbolId The symbol ID for the virtual account
+	 * @param amount The amount to transfer in 18 decimals
+	 */
+	function addMarginToNextVA(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		if (amount == 0) revert ZeroAmount();
+		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
+
+		// Predict the next VA address
+		address predictedVA = this.predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
+
+		// Transfer from sub-account to predicted VA
+		_executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
+
+		emit AddMargin(predictedVA, subAccount, amount);
+	}
+
+	/**
 	 * @notice Transfers balance from a virtual account to a sub-account
 	 * @param virtualAccount The virtual account address (source)
 	 * @param amount The amount to transfer in 18 decimals

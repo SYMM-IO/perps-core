@@ -67,41 +67,50 @@ export function shouldBehaveLikeAccountHub(): void {
 		return sAcc
 	}
 
-	async function sendQuoteAndGetVirtualAccount(subAccount: string, quoteRequest = limitQuoteRequestBuilder().build()) {
-		const subAccountData = await context.accountHub.getSubAccount(subAccount)
-		const isolationType = subAccountData.isolationType
+	async function sendQuoteAndGetVirtualAccount(account: string, quoteRequest = limitQuoteRequestBuilder().build()) {
+		// Check if this is a virtual account or a sub-account
+		const virtualAccountData = await context.accountHub.getVirtualAccount(account)
 
-		// For non-CUSTOM isolation, we need to fund the VA before sendQuote
-		if (isolationType !== 3n) {
-			// 3 = CUSTOM
-			// Determine the virtual account isolation type
-			let vaIsolationType: number
-			if (isolationType === 0n) {
-				// POSITION
-				vaIsolationType = 0 // VirtualAccountIsolationType.POSITION
-			} else if (isolationType === 1n) {
-				// MARKET
-				vaIsolationType = 1 // VirtualAccountIsolationType.MARKET
-			} else {
-				// MARKET_DIRECTION (2)
-				vaIsolationType = quoteRequest.positionType === PositionType.LONG ? 2 : 3 // MARKET_LONG or MARKET_SHORT
+		if (virtualAccountData.isExists) {
+			// It's an existing VA - fund it directly using addMargin
+			const marginNeeded = decimal(500n)
+			await context.accountHub.connect(context.signers.user).addMargin(account, marginNeeded)
+		} else {
+			// It's a sub-account
+			const subAccountData = await context.accountHub.getSubAccount(account)
+			const isolationType = subAccountData.isolationType
+
+			// For non-CUSTOM isolation, we need to fund the VA before sendQuote using addMarginToNextVA
+			if (isolationType !== 3n) {
+				// 3 = CUSTOM
+				// Determine the virtual account isolation type
+				let vaIsolationType: number
+				if (isolationType === 0n) {
+					// POSITION
+					vaIsolationType = 0 // VirtualAccountIsolationType.POSITION
+				} else if (isolationType === 1n) {
+					// MARKET
+					vaIsolationType = 1 // VirtualAccountIsolationType.MARKET
+				} else {
+					// MARKET_DIRECTION (2)
+					vaIsolationType = quoteRequest.positionType === PositionType.LONG ? 2 : 3 // MARKET_LONG or MARKET_SHORT
+				}
+
+				// Fund the predicted VA address with enough margin using the new addMarginToNextVA method
+				const marginNeeded = decimal(500n) // cva + lf + partyAmm + buffer for fees
+				await context.accountHub.connect(context.signers.user).addMarginToNextVA(account, vaIsolationType, quoteRequest.symbolId, marginNeeded)
 			}
-
-			// Predict the VA address
-			const predictedVA = await context.accountHub.predictNextVirtualAccountAddress(subAccount, vaIsolationType, quoteRequest.symbolId)
-
-			// Fund the predicted VA address with enough margin
-			const marginNeeded = decimal(500n) // cva + lf + partyAmm + buffer for fees
-			await context.collateral.connect(context.signers.user).mint(context.signers.user.address, marginNeeded)
-			await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), marginNeeded)
-			await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(predictedVA, marginNeeded)
 		}
 
 		const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
-		await context.accountHub.connect(context.signers.user)._call(subAccount, [sendQuoteCallData])
+		await context.accountHub.connect(context.signers.user)._call(account, [sendQuoteCallData])
 
-		const virtualAccountsAfter = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(subAccount, 0, 10)
-		return virtualAccountsAfter
+		// If it was a sub-account, return its VAs; if it was a VA, return empty
+		if (!virtualAccountData.isExists) {
+			const virtualAccountsAfter = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(account, 0, 10)
+			return virtualAccountsAfter
+		}
+		return []
 	}
 
 	async function preFundVirtualAccount(subAccount: string, quoteRequest = limitQuoteRequestBuilder().build()) {
@@ -119,11 +128,9 @@ export function shouldBehaveLikeAccountHub(): void {
 			vaIsolationType = quoteRequest.positionType === PositionType.LONG ? 2 : 3
 		}
 
-		const predictedVA = await context.accountHub.predictNextVirtualAccountAddress(subAccount, vaIsolationType, quoteRequest.symbolId)
+		// Use the new addMarginToNextVA method to pre-fund the VA
 		const marginNeeded = decimal(500n)
-		await context.collateral.connect(context.signers.user).mint(context.signers.user.address, marginNeeded)
-		await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), marginNeeded)
-		await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(predictedVA, marginNeeded)
+		await context.accountHub.connect(context.signers.user).addMarginToNextVA(subAccount, vaIsolationType, quoteRequest.symbolId, marginNeeded)
 	}
 
 	async function openPositionForQuote(quoteId: bigint) {
