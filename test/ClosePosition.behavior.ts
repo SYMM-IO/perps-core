@@ -485,8 +485,8 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		it("Should skip check sig when bind", async function () {
 			let closePrice = decimal(11n, 17)
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await expect(
 				hedger.fillCloseRequest(

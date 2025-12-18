@@ -13,6 +13,7 @@ interface IAccountEvents {
 	event AllocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance);
 	event DeallocatePartyA(address user, uint256 amount, uint256 newAllocatedBalance);
 	event InternalTransfer(address sender, address user, uint256 userNewAllocatedBalance, uint256 amount);
+	event InternalTransferToBalance(address sender, address user, uint256 userNewBalance, uint256 amount);
 	event AllocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance);
 	event DeallocateForPartyB(address partyB, address partyA, uint256 amount, uint256 newAllocatedBalance);
 	event TransferAllocation(

@@ -127,7 +127,6 @@ export async function initializeFixture(): Promise<RunContext> {
 	// Grant roles to admin
 	const rolesToGrant = [
 		"SYMBOL_MANAGER_ROLE",
-		"SETTER_ROLE",
 		"PAUSER_ROLE",
 		"PARTY_B_MANAGER_ROLE",
 		"SUSPENDER_ROLE",
@@ -137,13 +136,24 @@ export async function initializeFixture(): Promise<RunContext> {
 		"LIQUIDATOR_ROLE",
 		"DEALLOCATE_COOLDOWN_SETTER_ROLE",
 		"INSTANT_LAYER_ROLE",
+		"PARTYB_LIQUIDATOR_ROLE",
+		"PROTOCOL_CONFIG_ROLE",
+		"FEE_ADMIN_ROLE",
+		"COOLDOWN_ADMIN_ROLE",
+		"PROVIDER_ADMIN_ROLE",
+		"INTEGRATION_ADMIN_ROLE",
+		"BRIDGE_MANAGER_ROLE",
+		"SIGNER_ADMIN_ROLE",
+		"EMERGENCY_ADMIN_ROLE",
+		"UNSUSPENDER_ROLE",
+		"MIGRATION_ROLE",
 	]
 
 	for (const role of rolesToGrant) {
 		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, ethers.keccak256(toUtf8Bytes(role)))
 	}
 
-	// Grant liquidator roles
+	// Grant liquidator roles (PARTYB_LIQUIDATOR_ROLE is now merged into LIQUIDATOR_ROLE)
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE")))
@@ -152,7 +162,10 @@ export async function initializeFixture(): Promise<RunContext> {
 		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
-		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("SIGNER_SETTER_ROLE")))
+		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("INTERNAL_TRANSFER_TO_BALANCE_ROLE")))
 
 	// Configure system
 	await context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress())
@@ -167,7 +180,8 @@ export async function initializeFixture(): Promise<RunContext> {
 		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")))
+	// BINDABLE_SETTER_ROLE merged into PARTY_B_MANAGER_ROLE - no need to grant separately
 	await context.controlFacet.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 
 	// // Set Muon configuration with sufficient validity time for tests
@@ -217,13 +231,13 @@ export async function initializeExternalTransferRelayerFixture(): Promise<{
 
 	await target.controlFacet.connect(target.signers.admin).setAdmin(adminAddress)
 
-	const setterRole = ethers.keccak256(toUtf8Bytes("SETTER_ROLE"))
 	const pauserRole = ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))
 	const unpauserRole = ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE"))
+	const protocolConfigRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_CONFIG_ROLE"))
 
-	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, setterRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, pauserRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, unpauserRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolConfigRole)
 
 	await target.controlFacet.connect(target.signers.admin).setCollateral(await source.collateral.getAddress())
 	await target.controlFacet.connect(target.signers.admin).setBalanceLimitPerUser(decimal(10000n))
@@ -260,14 +274,16 @@ export async function initializeVirtualFixture(): Promise<{
 
 	await target.controlFacet.connect(target.signers.admin).setAdmin(adminAddress)
 
-	const setterRole = ethers.keccak256(toUtf8Bytes("SETTER_ROLE"))
 	const pauserRole = ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))
 	const unpauserRole = ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE"))
 	const virtualRole = ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE"))
+	const protocolConfigRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_CONFIG_ROLE"))
+	const providerAdminRole = ethers.keccak256(toUtf8Bytes("PROVIDER_ADMIN_ROLE"))
 
-	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, setterRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, pauserRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, unpauserRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolConfigRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, providerAdminRole)
 
 	await target.controlFacet.connect(target.signers.admin).setCollateral(await source.collateral.getAddress())
 	await target.controlFacet.connect(target.signers.admin).setBalanceLimitPerUser(decimal(10000n))

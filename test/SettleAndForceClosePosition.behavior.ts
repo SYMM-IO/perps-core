@@ -39,12 +39,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 		// Quote2 SHORT opened
 		quote2ShortOpened = await context.viewFacetQuote.getQuote(
-			await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.positionType(PositionType.SHORT)
-					.quantity(decimal(75n))
-					.build()
-			)
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).quantity(decimal(75n)).build()),
 		)
 		await hedger.lockQuote(quote2ShortOpened.id)
 		await hedger.openPosition(quote2ShortOpened.id, limitOpenRequestBuilder().filledAmount(decimal(75n)).build())
@@ -65,6 +60,9 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				.deadline((await getBlockTimestamp()) + 1000n)
 				.build(),
 		)
+		await context.controlFacet
+			.connect(context.signers.admin)
+			.grantRole(await context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")))
 		await context.controlFacet.setForceCloseMinSigPeriod(10)
 		await context.controlFacet.setForceCloseGapRatio((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).symbolId, decimal(1n, 17))
 
@@ -86,26 +84,30 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 	it("Should settle and forceClose the quote", async function () {
 		const sigTimes = await prepareSigTimes(100n)
 		const highLowSig = await getDummyHighLowPriceSig(
-			sigTimes[0],  // startTime
-			sigTimes[1],  // endTime
-			0n,           // lowest
-			decimal(8n),  // highest
-			decimal(6n),   // currentPrice
-			decimal(5n),   // averagePrice
+			sigTimes[0], // startTime
+			sigTimes[1], // endTime
+			0n, // lowest
+			decimal(8n), // highest
+			decimal(6n), // currentPrice
+			decimal(5n), // averagePrice
 			quote1LongOpened.symbolId, // symbolId
 			decimal(150n), // upnlPartyB
-			0n             // upnlPartyA
+			0n, // upnlPartyA
 		)
-		const settlementSig = await getDummySettlementSig(0n, [150n], [
-			{
-				quoteId: quote2ShortOpened.id,
-				currentPrice: decimal(7n),
-				partyBUpnlIndex: 0n
-			} as QuoteSettlementDataStructOutput,
-		])
-		await expect(
-			user.settleAndForceClosePosition(quote1LongOpened.id, highLowSig, settlementSig, [])
-		).to.be.revertedWith("LibQuote: PartyA should first exit its positions that are incurring losses")
+		const settlementSig = await getDummySettlementSig(
+			0n,
+			[150n],
+			[
+				{
+					quoteId: quote2ShortOpened.id,
+					currentPrice: decimal(7n),
+					partyBUpnlIndex: 0n,
+				} as QuoteSettlementDataStructOutput,
+			],
+		)
+		await expect(user.settleAndForceClosePosition(quote1LongOpened.id, highLowSig, settlementSig, [])).to.be.revertedWith(
+			"LibQuote: PartyA should first exit its positions that are incurring losses",
+		)
 
 		await user.settleAndForceClosePosition(quote1LongOpened.id, highLowSig, settlementSig, [decimal(5n)])
 

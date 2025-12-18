@@ -24,7 +24,9 @@ import {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
 export function shouldBehaveLikeForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
 	let context: RunContext
-	let quote1LongOpened: QuoteStructOutput, quote2ShortOpened: QuoteStructOutput, quote3JustSent: QuoteStructOutput,
+	let quote1LongOpened: QuoteStructOutput,
+		quote2ShortOpened: QuoteStructOutput,
+		quote3JustSent: QuoteStructOutput,
 		quote4LongOpened: QuoteStructOutput
 
 	beforeEach(async function () {
@@ -50,7 +52,9 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		await hedger.openPosition(quote1LongOpened.id)
 
 		// Quote2 SHORT opened
-		quote2ShortOpened = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()),
+		)
 		await hedger.lockQuote(quote2ShortOpened.id)
 		await hedger.openPosition(quote2ShortOpened.id)
 
@@ -87,6 +91,9 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				.build(),
 		)
 
+		await context.controlFacet
+			.connect(context.signers.admin)
+			.grantRole(await context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")))
 		await context.controlFacet.setForceCloseMinSigPeriod(10)
 		await context.controlFacet.setForceCloseGapRatio((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).symbolId, decimal(1n, 17))
 
@@ -148,13 +155,13 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		let dummySig = await getDummyHighLowPriceSig(
 			sigTimes[0], // startTime
 			sigTimes[1], // endTime
-			decimal(0n),  // lowest
-			BigInt(quote1LongOpened.requestedClosePrice) + unDecimal(BigInt(quote1LongOpened.requestedClosePrice) * BigInt(gapRatio1)) - decimal(1n),  // highest
-			decimal(0n),  // currentPrice
-			decimal(0n),  // averagePrice
-			0n,           // symbolId
-			0n,           // upnlPartyB
-			0n            // upnlPartyA
+			decimal(0n), // lowest
+			BigInt(quote1LongOpened.requestedClosePrice) + unDecimal(BigInt(quote1LongOpened.requestedClosePrice) * BigInt(gapRatio1)) - decimal(1n), // highest
+			decimal(0n), // currentPrice
+			decimal(0n), // averagePrice
+			0n, // symbolId
+			0n, // upnlPartyB
+			0n, // upnlPartyA
 		)
 		await expect(user.forceClosePosition(quote1LongOpened.id, dummySig)).to.be.revertedWith("PartyAFacet: Requested close price not reached")
 
@@ -162,13 +169,13 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		dummySig = await getDummyHighLowPriceSig(
 			sigTimes[0], // startTime
 			sigTimes[1], // endTime
-			BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) + decimal(1n),  // lowest
+			BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) + decimal(1n), // lowest
 			decimal(10n), // highest
-			decimal(7n),  // currentPrice
-			decimal(8n),  // averagePrice
-			0n,           // symbolId
-			0n,           // upnlPartyB
-			0n            // upnlPartyA
+			decimal(7n), // currentPrice
+			decimal(8n), // averagePrice
+			0n, // symbolId
+			0n, // upnlPartyB
+			0n, // upnlPartyA
 		)
 		await expect(user.forceClosePosition(quote2ShortOpened.id, dummySig)).to.be.revertedWith("PartyAFacet: Requested close price not reached")
 	})
@@ -179,13 +186,13 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		const dummySig = await getDummyHighLowPriceSig(
 			sigTimes[0], // startTime
 			sigTimes[1], // endTime
-			BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n),  // lowest
+			BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n), // lowest
 			decimal(1n), // highest
-			decimal(1n),  // currentPrice
-			decimal(1n),  // averagePrice
-			0n,           // symbolId
-			0n,           // upnlPartyB
-			0n            // upnlPartyA
+			decimal(1n), // currentPrice
+			decimal(1n), // averagePrice
+			0n, // symbolId
+			0n, // upnlPartyB
+			0n, // upnlPartyA
 		)
 		await expect(user.forceClosePosition(quote2ShortOpened.id, dummySig)).to.be.revertedWith("PartyAFacet: Invalid signature period")
 	})
@@ -194,31 +201,31 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		const sigTimes = await prepareSigTimes()
 		const quantity = decimal(100n)
 
-		let userAvailable = (this.user_allocated
-			- (await getTotalLockedValuesForQuoteIds(context, [1n, 4n], false))
-			- (await getTradingFeeForQuotes(context, [1n, 2n, 3n, 4n]))
-			- (unDecimal(quantity * (decimal(1n) - decimal(1n))))
-			+ (decimal(1n))
-		) * (-1n)
+		let userAvailable =
+			(this.user_allocated -
+				(await getTotalLockedValuesForQuoteIds(context, [1n, 4n], false)) -
+				(await getTradingFeeForQuotes(context, [1n, 2n, 3n, 4n])) -
+				unDecimal(quantity * (decimal(1n) - decimal(1n))) +
+				decimal(1n)) *
+			-1n
 
 		const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 		const dummySig = await getDummyHighLowPriceSig(
-			sigTimes[0],  // startTime
-			sigTimes[1],  // endTime
-			BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n),  // lowest
-			decimal(1n),  // highest
-			decimal(1n),   // currentPrice
-			decimal(1n),   // averagePrice
-			0n,            // symbolId
-			0n,            // upnlPartyB
-			userAvailable  // upnlPartyA
+			sigTimes[0], // startTime
+			sigTimes[1], // endTime
+			BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n), // lowest
+			decimal(1n), // highest
+			decimal(1n), // currentPrice
+			decimal(1n), // averagePrice
+			0n, // symbolId
+			0n, // upnlPartyB
+			userAvailable, // upnlPartyA
 		)
 
 		await expect(user.forceClosePosition(quote2ShortOpened.id, dummySig)).to.be.revertedWith("PartyAFacet: PartyA will be insolvent")
 	})
 
 	describe("When partyB will be insolvent", async function () {
-
 		it("Should liquidate partyB when partyB will be insolvent", async function () {
 			const sigTimes = await prepareSigTimes()
 			const userAddress = await context.signers.user.getAddress()
@@ -226,15 +233,15 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 			const dummySig = await getDummyHighLowPriceSig(
-				sigTimes[0],   // startTime
-				sigTimes[1],   // endTime
-				0n,            // lowest
-				decimal(10n),  // highest
-				decimal(7n),   // currentPrice
-				decimal(8n),   // averagePrice
-				0n,            // symbolId
-				0n,            // upnlPartyB
-				0n             // upnlPartyA
+				sigTimes[0], // startTime
+				sigTimes[1], // endTime
+				0n, // lowest
+				decimal(10n), // highest
+				decimal(7n), // currentPrice
+				decimal(8n), // averagePrice
+				0n, // symbolId
+				0n, // upnlPartyB
+				0n, // upnlPartyA
 			)
 			await user.forceClosePosition(quote2ShortOpened.id, dummySig)
 
@@ -262,15 +269,15 @@ export function shouldBehaveLikeForceClosePosition(): void {
 		const sigTimes = await prepareSigTimes(100n)
 		const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 		const dummySig = await getDummyHighLowPriceSig(
-			sigTimes[0],  // startTime
-			sigTimes[1],  // endTime
-			BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n),  // lowest
-			decimal(3n),  // highest
-			decimal(2n),   // currentPrice
-			decimal(2n),   // averagePrice
+			sigTimes[0], // startTime
+			sigTimes[1], // endTime
+			BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n), // lowest
+			decimal(3n), // highest
+			decimal(2n), // currentPrice
+			decimal(2n), // averagePrice
 			quote2ShortOpened.symbolId, // symbolId
-			0n,            // upnlPartyB
-			0n             // upnlPartyA
+			0n, // upnlPartyB
+			0n, // upnlPartyA
 		)
 
 		await user.forceClosePosition(quote2ShortOpened.id, dummySig)
@@ -306,13 +313,15 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			let dummySig = await getDummyHighLowPriceSig(
 				sigTimes[0], // startTime
 				sigTimes[1], // endTime
-				decimal(1n),  // lowest
-				BigInt(quote1LongOpened.requestedClosePrice) + unDecimal(BigInt(quote1LongOpened.requestedClosePrice) * BigInt(gapRatio)) + decimal(1n) / BigInt(10 ** 2),  // highest
-				decimal(1n),  // currentPrice
-				decimal(1n),  // averagePrice
-				0n,           // symbolId
-				0n,           // upnlPartyB
-				0n            // upnlPartyA
+				decimal(1n), // lowest
+				BigInt(quote1LongOpened.requestedClosePrice) +
+					unDecimal(BigInt(quote1LongOpened.requestedClosePrice) * BigInt(gapRatio)) +
+					decimal(1n) / BigInt(10 ** 2), // highest
+				decimal(1n), // currentPrice
+				decimal(1n), // averagePrice
+				0n, // symbolId
+				0n, // upnlPartyB
+				0n, // upnlPartyA
 			)
 
 			await user.forceClosePosition(quote1LongOpened.id, dummySig)
@@ -333,13 +342,13 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			let dummySig = await getDummyHighLowPriceSig(
 				sigTimes[0], // startTime
 				sigTimes[1], // endTime
-				decimal(1n),  // lowest
-				BigInt(quote1LongOpened.requestedClosePrice) + unDecimal(BigInt(quote1LongOpened.requestedClosePrice) * BigInt(gapRatio)) + decimal(5n),  // highest
-				decimal(3n),  // currentPrice
-				decimal(4n),  // averagePrice
-				0n,           // symbolId
-				0n,           // upnlPartyB
-				0n            // upnlPartyA
+				decimal(1n), // lowest
+				BigInt(quote1LongOpened.requestedClosePrice) + unDecimal(BigInt(quote1LongOpened.requestedClosePrice) * BigInt(gapRatio)) + decimal(5n), // highest
+				decimal(3n), // currentPrice
+				decimal(4n), // averagePrice
+				0n, // symbolId
+				0n, // upnlPartyB
+				0n, // upnlPartyA
 			)
 			await user.forceClosePosition(quote1LongOpened.id, dummySig)
 
@@ -360,7 +369,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				decimal(0n),
 				decimal(1n) / 6n,
 				decimal(1n),
-				decimal(1n) / 6n / 2n
+				decimal(1n) / 6n / 2n,
 			)
 
 			await user.forceClosePosition(2, dummySig)
@@ -368,7 +377,6 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			const avgClosePrice = BigInt((await context.viewFacetQuote.getQuote(2)).avgClosedPrice)
 
 			expect(avgClosePrice).to.be.equal(decimal(1n) / 6n / 2n) // sig.averagePrice
-
 		})
 		it("closePrice is lower than or equal to avg price", async function () {
 			const sigTimes = await prepareSigTimes()
@@ -383,15 +391,15 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 			const gapRatio = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
 			const dummySig = await getDummyHighLowPriceSig(
-				sigTimes[0],  // startTime
-				sigTimes[1],  // endTime
-				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio)) - decimal(1n),  // lowest
-				decimal(1n),  // highest
-				decimal(1n),  // currentPrice
-				decimal(1n),  // averagePrice
+				sigTimes[0], // startTime
+				sigTimes[1], // endTime
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio)) - decimal(1n), // lowest
+				decimal(1n), // highest
+				decimal(1n), // currentPrice
+				decimal(1n), // averagePrice
 				quote2ShortOpened.symbolId, // symbolId
-				0n,           // upnlPartyB
-				0n            // upnlPartyA
+				0n, // upnlPartyB
+				0n, // upnlPartyA
 			)
 
 			await user.forceClosePosition(2, dummySig)

@@ -67,12 +67,70 @@ export function shouldBehaveLikeAccountHub(): void {
 		return sAcc
 	}
 
-	async function sendQuoteAndGetVirtualAccount(subAccount: string, quoteRequest = limitQuoteRequestBuilder().build()) {
-		const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
-		await context.accountHub.connect(context.signers.user)._call(subAccount, [sendQuoteCallData])
+	async function sendQuoteAndGetVirtualAccount(account: string, quoteRequest = limitQuoteRequestBuilder().build()) {
+		// Check if this is a virtual account or a sub-account
+		const virtualAccountData = await context.accountHub.getVirtualAccount(account)
 
-		const virtualAccountsAfter = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(subAccount, 0, 10)
-		return virtualAccountsAfter
+		if (virtualAccountData.isExists) {
+			// It's an existing VA - fund it directly using addMargin
+			const marginNeeded = decimal(500n)
+			await context.accountHub.connect(context.signers.user).addMargin(account, marginNeeded)
+		} else {
+			// It's a sub-account
+			const subAccountData = await context.accountHub.getSubAccount(account)
+			const isolationType = subAccountData.isolationType
+
+			// For non-CUSTOM isolation, we need to fund the VA before sendQuote using addMarginToNextVA
+			if (isolationType !== 3n) {
+				// 3 = CUSTOM
+				// Determine the virtual account isolation type
+				let vaIsolationType: number
+				if (isolationType === 0n) {
+					// POSITION
+					vaIsolationType = 0 // VirtualAccountIsolationType.POSITION
+				} else if (isolationType === 1n) {
+					// MARKET
+					vaIsolationType = 1 // VirtualAccountIsolationType.MARKET
+				} else {
+					// MARKET_DIRECTION (2)
+					vaIsolationType = quoteRequest.positionType === PositionType.LONG ? 2 : 3 // MARKET_LONG or MARKET_SHORT
+				}
+
+				// Fund the predicted VA address with enough margin using the new addMarginToNextVA method
+				const marginNeeded = decimal(500n) // cva + lf + partyAmm + buffer for fees
+				await context.accountHub.connect(context.signers.user).addMarginToNextVA(account, vaIsolationType, quoteRequest.symbolId, marginNeeded)
+			}
+		}
+
+		const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+		await context.accountHub.connect(context.signers.user)._call(account, [sendQuoteCallData])
+
+		// If it was a sub-account, return its VAs; if it was a VA, return empty
+		if (!virtualAccountData.isExists) {
+			const virtualAccountsAfter = await context.accountHub.getVirtualAccountsAddressesOfSubAccount(account, 0, 10)
+			return virtualAccountsAfter
+		}
+		return []
+	}
+
+	async function preFundVirtualAccount(subAccount: string, quoteRequest = limitQuoteRequestBuilder().build()) {
+		const subAccountData = await context.accountHub.getSubAccount(subAccount)
+		const isolationType = subAccountData.isolationType
+
+		if (isolationType === 3n) return // CUSTOM doesn't create VA
+
+		let vaIsolationType: number
+		if (isolationType === 0n) {
+			vaIsolationType = 0
+		} else if (isolationType === 1n) {
+			vaIsolationType = 1
+		} else {
+			vaIsolationType = quoteRequest.positionType === PositionType.LONG ? 2 : 3
+		}
+
+		// Use the new addMarginToNextVA method to pre-fund the VA
+		const marginNeeded = decimal(500n)
+		await context.accountHub.connect(context.signers.user).addMarginToNextVA(subAccount, vaIsolationType, quoteRequest.symbolId, marginNeeded)
 	}
 
 	async function openPositionForQuote(quoteId: bigint) {
@@ -312,6 +370,9 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccountsBefore = await context.accountHub.getVirtualAccountsCountOfSubAccount(positionSubAccount)
 						expect(virtualAccountsBefore).to.equal(0)
 
+						// Pre-fund the VA before sending quote
+						await preFundVirtualAccount(positionSubAccount)
+
 						const sendQuoteCallData = await createSendQuoteCallData()
 						await expect(context.accountHub.connect(context.signers.user)._call(positionSubAccount, [sendQuoteCallData])).to.not.be.reverted
 
@@ -342,6 +403,9 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccountsBefore = await context.accountHub.getVirtualAccountsCountOfSubAccount(marketSubAccount)
 						expect(virtualAccountsBefore).to.equal(0)
 
+						// Pre-fund the VA before sending quote
+						await preFundVirtualAccount(marketSubAccount)
+
 						const sendQuoteCallData = await createSendQuoteCallData()
 						await expect(context.accountHub.connect(context.signers.user)._call(marketSubAccount, [sendQuoteCallData])).to.not.be.reverted
 
@@ -364,6 +428,11 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					it("should allow multiple quotes with same symbol", async () => {
 						const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount)
+
+						// Add more funds to VA for the second quote
+						await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(200n))
+						await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(virtualAccounts[0], decimal(200n))
+
 						const sendQuoteCallData = await createSendQuoteCallData()
 						await expect(context.accountHub.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
 
@@ -385,6 +454,10 @@ export function shouldBehaveLikeAccountHub(): void {
 						expect(virtualAccountsBefore).to.equal(0)
 
 						const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+
+						// Pre-fund the VA before sending quote
+						await preFundVirtualAccount(marketDirectionSubAccount, quoteRequest)
+
 						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 
 						await expect(context.accountHub.connect(context.signers.user)._call(marketDirectionSubAccount, [sendQuoteCallData])).to.not.be.reverted
@@ -597,8 +670,8 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						const virtualAccount = virtualAccounts[0].accountAddress
 
-						// Transfer funds from sub-account to virtual account
-						const transferAmount = decimal(100n)
+						// Transfer funds from sub-account to virtual account (cva + lf + partyAmm + fees)
+						const transferAmount = decimal(500n)
 						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, transferAmount])
 
 						await expect(context.accountHub.connect(context.signers.user)._call(customSubAccount, [transferCallData])).to.not.reverted
@@ -629,8 +702,8 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						const virtualAccount = virtualAccounts[0].accountAddress
 
-						// Transfer funds
-						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, decimal(100n)])
+						// Transfer funds (cva + lf + partyAmm + fees)
+						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, decimal(500n)])
 						await context.accountHub.connect(context.signers.user)._call(customSubAccount, [transferCallData])
 
 						// Try to send SHORT quote - should fail
@@ -662,8 +735,8 @@ export function shouldBehaveLikeAccountHub(): void {
 						const virtualAccounts = await context.accountHub.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
 						const virtualAccount = virtualAccounts[0].accountAddress
 
-						// Transfer funds
-						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, decimal(100n)])
+						// Transfer funds (cva + lf + partyAmm + fees)
+						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, decimal(500n)])
 						await context.accountHub.connect(context.signers.user)._call(customSubAccount, [transferCallData])
 
 						// Try to send quote for symbol 2 - should fail
@@ -729,9 +802,9 @@ export function shouldBehaveLikeAccountHub(): void {
 						const btcLongVirtual = virtualAccounts[0].accountAddress
 						const ethShortVirtual = virtualAccounts[1].accountAddress
 
-						// Transfer funds to both
-						const transferToBtc = context.accountFacet.interface.encodeFunctionData("internalTransfer", [btcLongVirtual, decimal(50n)])
-						const transferToEth = context.accountFacet.interface.encodeFunctionData("internalTransfer", [ethShortVirtual, decimal(50n)])
+						// Transfer funds to both (cva + lf + partyAmm + fees)
+						const transferToBtc = context.accountFacet.interface.encodeFunctionData("internalTransfer", [btcLongVirtual, decimal(500n)])
+						const transferToEth = context.accountFacet.interface.encodeFunctionData("internalTransfer", [ethShortVirtual, decimal(500n)])
 
 						await context.accountHub.connect(context.signers.user)._call(customSubAccount, [transferToBtc, transferToEth])
 
@@ -860,6 +933,89 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
 				expect(allocatedBalance).to.equal(0n)
+			})
+		})
+
+		describe("Fund return to parent balance on virtual account deletion", async () => {
+			let positionSubAccountAddress: string
+
+			beforeEach(async () => {
+				positionSubAccountAddress = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("EXAMPLE_NAME", 0)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+			})
+
+			it("Should transfer funds to parent balance (not allocatedBalance) when virtual account is deleted", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesBeforeClose.length).to.equal(1)
+				const quoteId = quotesBeforeClose[0]
+
+				// Get parent's balance and allocatedBalance before closing
+				const parentBalanceBefore = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				const parentAllocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(positionSubAccountAddress)
+
+				// Open and close the position
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+				// Virtual account should be deleted
+				const virtualAccountData = await context.accountHub.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.false
+
+				// Funds should return to parent's BALANCE, not allocatedBalance
+				const parentBalanceAfter = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				const parentAllocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(positionSubAccountAddress)
+
+				// Parent's balance should increase (funds returned from virtual account)
+				expect(parentBalanceAfter).to.be.gt(parentBalanceBefore)
+
+				// Parent's allocatedBalance should remain unchanged (funds don't go to allocatedBalance)
+				expect(parentAllocatedAfter).to.equal(parentAllocatedBefore)
+			})
+
+			it("Should allow immediate creation of new virtual account with returned funds", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const initialVirtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(initialVirtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				// Open and close to return funds to parent
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, initialVirtualAccountAddress)
+
+				// Parent should have balance (not allocatedBalance), so can immediately create new virtual account
+				const parentBalance = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				expect(parentBalance).to.be.gt(0n)
+
+				// Should be able to create a new virtual account immediately without needing to deallocate
+				const newQuoteRequest = limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()
+				const newVirtualAddresses = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, newQuoteRequest)
+				expect(newVirtualAddresses.length).to.equal(1)
+
+				const newVirtualAccountData = await context.accountHub.getVirtualAccount(newVirtualAddresses[0])
+				expect(newVirtualAccountData.isExists).to.true
+			})
+
+			it("Should set withdrawCooldown on parent when funds are returned", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				// Open and close to return funds
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+				// Parent's withdrawCooldown should be set
+				const cooldown = await context.viewFacet.withdrawCooldownOf(positionSubAccountAddress)
+				expect(cooldown).to.be.gt(0n)
 			})
 		})
 

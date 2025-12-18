@@ -14,10 +14,16 @@ const DISPUTE_ROLE = `0x${keccak256("DISPUTE_ROLE")}`
 const PARTY_B_MANAGER_ROLE = `0x${keccak256("PARTY_B_MANAGER_ROLE")}`
 const AFFILIATE_MANAGER_ROLE = `0x${keccak256("AFFILIATE_MANAGER_ROLE")}`
 const SYMBOL_MANAGER_ROLE = `0x${keccak256("SYMBOL_MANAGER_ROLE")}`
-const SETTER_ROLE = `0x${keccak256("SETTER_ROLE")}`
 const SUSPENDER_ROLE = `0x${keccak256("SUSPENDER_ROLE")}`
 const PAUSER_ROLE = `0x${keccak256("PAUSER_ROLE")}`
 const UNPAUSER_ROLE = `0x${keccak256("UNPAUSER_ROLE")}`
+// New V2 roles
+const FEE_ADMIN_ROLE = `0x${keccak256("FEE_ADMIN_ROLE")}`
+const COOLDOWN_ADMIN_ROLE = `0x${keccak256("COOLDOWN_ADMIN_ROLE")}`
+const EMERGENCY_ADMIN_ROLE = `0x${keccak256("EMERGENCY_ADMIN_ROLE")}`
+const UNSUSPENDER_ROLE = `0x${keccak256("UNSUSPENDER_ROLE")}`
+const INTEGRATION_ADMIN_ROLE = `0x${keccak256("INTEGRATION_ADMIN_ROLE")}`
+const MIGRATION_ROLE = `0x${keccak256("MIGRATION_ROLE")}`
 
 export function shouldBehaveLikeControlFacet(): void {
 	let context: RunContext
@@ -39,11 +45,17 @@ export function shouldBehaveLikeControlFacet(): void {
 		await context.controlFacet.connect(owner).setAdmin(await owner.getAddress())
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PARTY_B_MANAGER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), SYMBOL_MANAGER_ROLE)
-		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), SETTER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PAUSER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), SUSPENDER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), UNPAUSER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), AFFILIATE_MANAGER_ROLE)
+		// New V2 roles
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), FEE_ADMIN_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), COOLDOWN_ADMIN_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), EMERGENCY_ADMIN_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), UNSUSPENDER_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), INTEGRATION_ADMIN_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), MIGRATION_ROLE)
 	})
 
 	describe("transferOwnership", () => {
@@ -235,7 +247,9 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 
 		it("Should not setSymbolFundingState if windowTime be high", async function () {
-			await expect(context.symbolControlFacet.connect(owner).setSymbolFundingState(1, 910, 28900)).to.revertedWith("SymbolControlFacet: High window time")
+			await expect(context.symbolControlFacet.connect(owner).setSymbolFundingState(1, 910, 28900)).to.revertedWith(
+				"SymbolControlFacet: High window time",
+			)
 		})
 
 		it("Should not setSymbolFundingState if invalid symbol id", async function () {
@@ -276,8 +290,9 @@ export function shouldBehaveLikeControlFacet(): void {
 
 	describe("setSymbolAcceptableValues", () => {
 		it("Should setSymbolAcceptableValues successfully", async function () {
-			await expect(context.symbolControlFacet.connect(owner).setSymbolAcceptableValues(1, BigInt("200000000000000000000"), BigInt("300000000000000000000")))
-				.to.not.be.reverted
+			await expect(
+				context.symbolControlFacet.connect(owner).setSymbolAcceptableValues(1, BigInt("200000000000000000000"), BigInt("300000000000000000000")),
+			).to.not.be.reverted
 			expect((await context.viewFacetSymbol.getSymbol(1)).minAcceptablePortionLF).to.equal(BigInt("300000000000000000000"))
 			expect((await context.viewFacetSymbol.getSymbol(1)).minAcceptableQuoteValue).to.equal(BigInt("200000000000000000000"))
 		})
@@ -497,52 +512,6 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
-	describe("addSymbolWithType", () => {
-		it("Should addSymbolWithType successfully", async function () {
-			const windowTime = BigInt(28800)
-			const period = BigInt(900)
-			const baseUnit = BigInt(4000000000000000)
-			const quoteUnit = BigInt(1000000000000000)
-			const minQty = BigInt("100000000000000000000")
-			const maxQty = BigInt("60000000000000000000")
-			const symbolType = 2
-
-			await expect(
-				context.symbolControlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.not.be.reverted
-			expect((await context.viewFacetSymbol.getSymbol(2)).name).to.be.equal("ETHUSDT")
-			expect((await context.viewFacetSymbol.getSymbolWithType(2)).symbolType).to.be.equal(symbolType)
-		})
-
-		it("Should not addSymbolWithType if windowTime be high", async function () {
-			const windowTime = BigInt(800)
-			const period = BigInt(900)
-			const baseUnit = BigInt(4000000000000000)
-			const quoteUnit = BigInt(1000000000000000)
-			const minQty = BigInt("100000000000000000000")
-			const maxQty = BigInt("60000000000000000000")
-			const symbolType = 1
-
-			await expect(
-				context.symbolControlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.be.revertedWith("SymbolControlFacet: High window time")
-		})
-
-		it("Should not addSymbolWithType if tradingFee be high", async function () {
-			const windowTime = BigInt(28800)
-			const period = BigInt(900)
-			const baseUnit = BigInt(4000000000000000)
-			const quoteUnit = BigInt("100000000000000000000")
-			const minQty = BigInt("100000000000000000000")
-			const maxQty = BigInt("60000000000000000000")
-			const symbolType = 1
-
-			await expect(
-				context.symbolControlFacet.connect(owner).addSymbolWithType("ETHUSDT", maxQty, baseUnit, quoteUnit, minQty, windowTime, period, symbolType),
-			).to.be.revertedWith("SymbolControlFacet: High default fee")
-		})
-	})
-
 	describe("addSymbolsWithType", () => {
 		it("Should addSymbolsWithType successfully", async function () {
 			const symbolsWithType = [
@@ -598,7 +567,9 @@ export function shouldBehaveLikeControlFacet(): void {
 				},
 			]
 
-			await expect(context.symbolControlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("SymbolControlFacet: High window time")
+			await expect(context.symbolControlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith(
+				"SymbolControlFacet: High window time",
+			)
 		})
 
 		it("Should not addSymbolsWithType if tradingFee be high", async function () {
@@ -617,20 +588,34 @@ export function shouldBehaveLikeControlFacet(): void {
 				},
 			]
 
-			await expect(context.symbolControlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith("SymbolControlFacet: High default fee")
+			await expect(context.symbolControlFacet.connect(owner).addSymbolsWithType(symbolsWithType)).to.be.revertedWith(
+				"SymbolControlFacet: High default fee",
+			)
 		})
 	})
 
 	describe("setAffiliateFee", () => {
 		it("should failed when the provided address as affiliate is not affiliate", async () => {
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(1e18), BigInt(1e18))).to.revertedWith(
-				"ControlFacet: Invalid affiliate",
-			)
+			await expect(
+				context.controlFacet.setAffiliateFee(
+					context.signers.hedger.address,
+					[1],
+					[BigInt(1e18)],
+					[BigInt(1e18)]
+				)
+			).to.revertedWith("ControlFacet: Invalid affiliate")
 		})
 
 		it("should set fee for affiliate successfully", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(1e18), BigInt(1e18))).to.not.reverted
+			await expect(
+				context.controlFacet.setAffiliateFee(
+					context.signers.hedger.address,
+					[1],
+					[BigInt(1e18)],
+					[BigInt(1e18)]
+				)
+			).to.not.reverted
 
 			const fee = await context.viewFacet.getAffiliateFee(context.signers.hedger, 1)
 
@@ -638,96 +623,220 @@ export function shouldBehaveLikeControlFacet(): void {
 			expect(fee.closeFee).to.equal(BigInt(1e18))
 		})
 
+		it("should set fees for multiple affiliates successfully", async () => {
+			await context.controlFacet.registerAffiliate(context.signers.hedger)
+			await context.controlFacet.registerAffiliate(context.signers.hedger2)
+			await expect(
+				context.controlFacet.setAffiliateFee(context.signers.hedger.address, [1], [BigInt(1e18)], [BigInt(1e18)]),
+			).to.not.reverted
+			await expect(
+				context.controlFacet.setAffiliateFee(context.signers.hedger2.address, [2], [BigInt(5e17)], [BigInt(5e17)]),
+			).to.not.reverted
+
+			const fee1 = await context.viewFacet.getAffiliateFee(context.signers.hedger, 1)
+			const fee2 = await context.viewFacet.getAffiliateFee(context.signers.hedger2, 2)
+
+			expect(fee1.openFee).to.equal(BigInt(1e18))
+			expect(fee1.closeFee).to.equal(BigInt(1e18))
+			expect(fee2.openFee).to.equal(BigInt(5e17))
+			expect(fee2.closeFee).to.equal(BigInt(5e17))
+		})
+
+		it("should fail if array lengths mismatch", async () => {
+			await context.controlFacet.registerAffiliate(context.signers.hedger)
+			await expect(
+				context.controlFacet.setAffiliateFee(
+					context.signers.hedger.address,
+					[1, 2],
+					[BigInt(1e18)],
+					[BigInt(1e18)]
+				)
+			).to.revertedWith("ControlFacet: Invalid array length")
+		})
+
+		it("should fail if empty array", async () => {
+			await expect(
+				context.controlFacet.setAffiliateFee(context.signers.hedger.address, [], [], [])
+			).to.revertedWith("ControlFacet: Invalid array length")
+		})
+
 		it("should failed if fee is high", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(2e18), BigInt(1e18))).to.revertedWith(
-				"ControlFacet: High fee",
-			)
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(1e18), BigInt(2e18))).to.revertedWith(
-				"ControlFacet: High fee",
-			)
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(2e18), BigInt(2e18))).to.revertedWith(
-				"ControlFacet: High fee",
-			)
+			await expect(
+				context.controlFacet.setAffiliateFee(
+					context.signers.hedger.address,
+					[1],
+					[BigInt(2e18)],
+					[BigInt(1e18)]
+				)
+			).to.revertedWith("ControlFacet: High fee")
+			await expect(
+				context.controlFacet.setAffiliateFee(
+					context.signers.hedger.address,
+					[1],
+					[BigInt(1e18)],
+					[BigInt(2e18)]
+				)
+			).to.revertedWith("ControlFacet: High fee")
+			await expect(
+				context.controlFacet.setAffiliateFee(
+					context.signers.hedger.address,
+					[1],
+					[BigInt(2e18)],
+					[BigInt(2e18)]
+				)
+			).to.revertedWith("ControlFacet: High fee")
 		})
 		it("should fail if fee is less than threshold", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
 			await context.controlFacet.setMinAffiliateFee(BigInt(5e17))
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(1e17), BigInt(9e17))).to.revertedWith(
-				"ControlFacet: Not allowed to set fee less than threshold",
-			)
-			await expect(context.controlFacet.setAffiliateFee(context.signers.hedger, 1, BigInt(9e17), BigInt(1e17))).to.revertedWith(
-				"ControlFacet: Not allowed to set fee less than threshold",
-			)
+			await expect(
+				context.controlFacet.setAffiliateFee(
+					context.signers.hedger.address,
+					[1],
+					[BigInt(1e17)],
+					[BigInt(9e17)]
+				)
+			).to.revertedWith("ControlFacet: Not allowed to set fee less than threshold")
+			await expect(
+				context.controlFacet.setAffiliateFee(
+					context.signers.hedger.address,
+					[1],
+					[BigInt(9e17)],
+					[BigInt(1e17)]
+				)
+			).to.revertedWith("ControlFacet: Not allowed to set fee less than threshold")
 		})
 	})
 
-	describe("setMasterAccountActivationMode", () => {
+	describe("setMasterAccountEnabled", () => {
 		it("should allow admin to toggle master account activation", async function () {
-			expect(await context.viewFacet.getMasterAccountActivationMode()).to.equal(false)
+			expect(await context.viewFacet.getMasterAccountEnabled()).to.equal(false)
 
 			// set true
-			await expect(context.controlFacet.connect(owner).setMasterAccountActivationMode(true))
-				.to.emit(context.controlFacet, "SetMasterAccountActivationMode")
+			await expect(context.controlFacet.connect(owner).setMasterAccountEnabled(true))
+				.to.emit(context.controlFacet, "SetMasterAccountEnabled")
 				.withArgs(false, true)
-			expect(await context.viewFacet.getMasterAccountActivationMode()).to.equal(true)
+			expect(await context.viewFacet.getMasterAccountEnabled()).to.equal(true)
 
 			// set false
-			await expect(context.controlFacet.connect(owner).setMasterAccountActivationMode(false))
-				.to.emit(context.controlFacet, "SetMasterAccountActivationMode")
+			await expect(context.controlFacet.connect(owner).setMasterAccountEnabled(false))
+				.to.emit(context.controlFacet, "SetMasterAccountEnabled")
 				.withArgs(true, false)
-			expect(await context.viewFacet.getMasterAccountActivationMode()).to.equal(false)
+			expect(await context.viewFacet.getMasterAccountEnabled()).to.equal(false)
 		})
 
 		it("should revert when caller dont have admin role for master account activation set", async function () {
-			await expect(context.controlFacet.connect(user2).setMasterAccountActivationMode(true)).to.be.revertedWith("Accessibility: Must has role")
+			await expect(context.controlFacet.connect(user2).setMasterAccountEnabled(true)).to.be.revertedWith("Accessibility: Must has role")
 		})
 	})
 
 	describe("setCustomAffiliateFee", () => {
 		it("should fail when the provided address as affiliate is not affiliate", async () => {
-			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(1e18), BigInt(1e18))).to.revertedWith(
-				"ControlFacet: Invalid affiliate",
-			)
+			await expect(
+				context.controlFacet.setCustomAffiliateFee(
+					context.signers.hedger.address,
+					[context.signers.user.address],
+					[1],
+					[BigInt(1e18)],
+					[BigInt(1e18)],
+				),
+			).to.revertedWith("ControlFacet: Invalid affiliate")
 		})
 
 		it("should set fee for affiliate and user successfully", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
-			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(1e18), BigInt(1e18))).to.not.reverted
+			await expect(
+				context.controlFacet.setCustomAffiliateFee(
+					context.signers.hedger.address,
+					[context.signers.user.address],
+					[1],
+					[BigInt(1e18)],
+					[BigInt(1e18)],
+				),
+			).to.not.reverted
 
-			const fee = await context.viewFacet.getCustomAffiliateFee(context.signers.hedger,context.signers.user, 1)
+			const fee = await context.viewFacet.getCustomAffiliateFee(context.signers.hedger, context.signers.user, 1)
 
 			expect(fee.openFee).to.equal(BigInt(1e18))
 			expect(fee.closeFee).to.equal(BigInt(1e18))
 		})
 
+		it("should fail if array lengths mismatch", async () => {
+			await context.controlFacet.registerAffiliate(context.signers.hedger)
+			await expect(
+				context.controlFacet.setCustomAffiliateFee(
+					context.signers.hedger.address,
+					[context.signers.user.address, context.signers.user2.address],
+					[1],
+					[BigInt(1e18)],
+					[BigInt(1e18)],
+				),
+			).to.revertedWith("ControlFacet: Invalid array length")
+		})
+
+		it("should fail if empty array", async () => {
+			await expect(
+				context.controlFacet.setCustomAffiliateFee(context.signers.hedger.address, [], [], [], []),
+			).to.revertedWith("ControlFacet: Invalid array length")
+		})
+
 		it("should fail if fee is high", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
-			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(2e18), BigInt(1e18))).to.revertedWith(
-				"ControlFacet: High fee",
-			)
-			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(1e18), BigInt(2e18))).to.revertedWith(
-				"ControlFacet: High fee",
-			)
-			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(2e18), BigInt(2e18))).to.revertedWith(
-				"ControlFacet: High fee",
-			)
+			await expect(
+				context.controlFacet.setCustomAffiliateFee(
+					context.signers.hedger.address,
+					[context.signers.user.address],
+					[1],
+					[BigInt(2e18)],
+					[BigInt(1e18)],
+				),
+			).to.revertedWith("ControlFacet: High fee")
+			await expect(
+				context.controlFacet.setCustomAffiliateFee(
+					context.signers.hedger.address,
+					[context.signers.user.address],
+					[1],
+					[BigInt(1e18)],
+					[BigInt(2e18)],
+				),
+			).to.revertedWith("ControlFacet: High fee")
+			await expect(
+				context.controlFacet.setCustomAffiliateFee(
+					context.signers.hedger.address,
+					[context.signers.user.address],
+					[1],
+					[BigInt(2e18)],
+					[BigInt(2e18)],
+				),
+			).to.revertedWith("ControlFacet: High fee")
 		})
 
 		it("should fail if fee is less than threshold", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
 			await context.controlFacet.setMinAffiliateFee(BigInt(5e17))
-			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(1e17), BigInt(9e17))).to.revertedWith(
-				"ControlFacet: Not allowed to set fee less than threshold",
-			)
-			await expect(context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, BigInt(9e17), BigInt(1e17))).to.revertedWith(
-				"ControlFacet: Not allowed to set fee less than threshold",
-			)
+			await expect(
+				context.controlFacet.setCustomAffiliateFee(
+					context.signers.hedger.address,
+					[context.signers.user.address],
+					[1],
+					[BigInt(1e17)],
+					[BigInt(9e17)],
+				),
+			).to.revertedWith("ControlFacet: Not allowed to set fee less than threshold")
+			await expect(
+				context.controlFacet.setCustomAffiliateFee(
+					context.signers.hedger.address,
+					[context.signers.user.address],
+					[1],
+					[BigInt(9e17)],
+					[BigInt(1e17)],
+				),
+			).to.revertedWith("ControlFacet: Not allowed to set fee less than threshold")
 		})
 	})
 
 	describe("setMinAffiliateFee", () => {
-
 		it("should set min fee for affiliates successfully", async () => {
 			await expect(context.controlFacet.setMinAffiliateFee(BigInt(1e16))).to.not.reverted
 			const threshold = await context.viewFacet.getMinAffiliateFee()
@@ -736,56 +845,47 @@ export function shouldBehaveLikeControlFacet(): void {
 	})
 
 	describe("setPenaltyCollector", () => {
-
 		it("should set penalty collector correctly", async () => {
-			await expect(context.controlFacet.setPenaltyCollector(context.signers.admin)).to.not.reverted
+			await expect(context.controlFacet.setSoftLiquidationPenaltyCollector(context.signers.admin)).to.not.reverted
 			expect(await context.viewFacet.getPenaltyCollector()).to.equal(context.signers.admin.address)
 		})
 	})
 
 	describe("SetPartyBBindable", () => {
-
-		beforeEach(async function () {
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-		})
+		// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE, so no separate grant needed
 
 		it("should fail to set non party B bindable", async () => {
-			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.user.address))
-				.to.revertedWith("ControlFacet: Address is not PartyB")
+			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.user.address, true)).to.revertedWith(
+				"ControlFacet: Address is not PartyB",
+			)
 		})
 
 		it("should fail to unset non party B bindable", async () => {
-			await expect(context.controlFacet.connect(context.signers.admin).unsetPartyBBindable(context.signers.user.address))
-				.to.revertedWith("ControlFacet: Address is not PartyB")
-		})
-
-		it("should fail to unset unbindable party B bindable", async () => {
-			await expect(context.controlFacet.connect(context.signers.admin).unsetPartyBBindable(context.signers.hedger.address))
-				.to.revertedWith("ControlFacet: Not bindable")
-		})
-
-		it("should fail to set bindable party B bindable", async () => {
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
-			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address))
-				.to.revertedWith("ControlFacet: Already bindable")
+			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.user.address, false)).to.revertedWith(
+				"ControlFacet: Address is not PartyB",
+			)
 		})
 
 		it("should set party B bindable correctly", async () => {
-			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address))
-				.not.reverted
+			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)).not.reverted
 			expect(await context.viewFacet.isBindable(context.signers.hedger.address)).to.be.true
 		})
 
 		it("should unset party B bindable correctly", async () => {
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
-			await expect(context.controlFacet.connect(context.signers.admin).unsetPartyBBindable(context.signers.hedger.address))
-				.not.reverted
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
+			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, false)).not.reverted
 			expect(await context.viewFacet.isBindable(context.signers.hedger.address)).to.be.false
 		})
 
+		it("should allow setting bindable multiple times", async () => {
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
+			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)).not.reverted
+			expect(await context.viewFacet.isBindable(context.signers.hedger.address)).to.be.true
+		})
+
+		it("should allow unsetting unbindable party B", async () => {
+			await expect(context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, false)).not.reverted
+			expect(await context.viewFacet.isBindable(context.signers.hedger.address)).to.be.false
+		})
 	})
-
-
-
-
 }

@@ -132,9 +132,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 		await partyA2.setBalances(decimal(100000n), decimal(5000n))
 
 		await context.controlFacet.grantRole(context.instantLayer, ROLES.INSTANT_LAYER_ROLE)
-		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ROLES.BINDABLE_SETTER_ROLE)
+		// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 		await context.controlFacet.connect(context.signers.admin).registerPartyB(await context.symmioPartyB.getAddress())
-		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
+		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress(), true)
 
 		await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
 
@@ -1839,6 +1839,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 				ctx.requestSendQuote.affiliate,
 				await ctx.requestSendQuote.upnlSig,
 			])
+
+			// Pre-fund the VA before sending quote (since automatic transfer was removed)
+			// MARKET isolation (1) -> VirtualAccountIsolationType.MARKET (1)
+			const predictedVA = await ctx.context.accountHub.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
+			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, decimal(500n))
+			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositAndAllocateFor(predictedVA, decimal(500n))
 
 			// Create virtual account by sending a quote
 			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [quoteCallDataLocal])

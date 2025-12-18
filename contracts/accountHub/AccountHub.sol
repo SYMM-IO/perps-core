@@ -10,7 +10,6 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-
 import "./interfaces/IAccountHub.sol";
 import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
@@ -226,6 +225,32 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
 
 		emit AddMargin(virtualAccount, parent, amount);
+	}
+
+	/**
+	 * @notice Transfers balance from a sub-account to a predicted virtual account address
+	 * @dev Use this to pre-fund a virtual account before it's created by sendQuote
+	 * @param subAccount The sub-account address (source of funds)
+	 * @param isolationType The isolation type of the virtual account to be created
+	 * @param symbolId The symbol ID for the virtual account
+	 * @param amount The amount to transfer in 18 decimals
+	 */
+	function addMarginToNextVA(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		if (amount == 0) revert ZeroAmount();
+		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
+
+		// Predict the next VA address
+		address predictedVA = this.predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
+
+		// Transfer from sub-account to predicted VA
+		_executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
+
+		emit AddMargin(predictedVA, subAccount, amount);
 	}
 
 	/**
@@ -920,9 +945,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			revert SymbolNotAllowedForThisAccount();
 		}
 
-		address core = getRelatedCore(accountData.parentAccount);
-		_transferBalanceForSendQuote(core, accountData.parentAccount, account, p);
-
 		bytes memory result = _executeWithSigner(account, cd);
 		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
 		return result;
@@ -955,9 +977,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			virtualAccount = _getOrCreateVirtualAccount(account, hex"", vType, p.symbolId);
 		}
 
-		address core = getRelatedCore(account);
-		_transferBalanceForSendQuote(core, account, virtualAccount, p);
-
 		// send quote from virtual account
 		bytes memory result = _executeWithSigner(virtualAccount, cd);
 		virtualAccounts[virtualAccount].quoteIds.add(ISymmio(getRelatedCore(virtualAccount)).getNextQuoteId());
@@ -965,7 +984,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
-	 * @dev Deallocates and transfers balance from virtual account
+	 * @dev Deallocates and transfers balance from virtual account to parent account's balance
+	 * @dev Uses internalTransferToBalance to transfer directly to parent's balance (not allocatedBalance)
+	 * @dev This allows the parent to immediately use the funds for new virtual accounts
 	 */
 	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
@@ -975,7 +996,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		uint256 balance = ISymmio(core).balanceOf(account);
 		if (balance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parentAccount, balance));
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance));
 		}
 	}
 
@@ -1102,17 +1123,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 					)
 				)
 			);
-	}
-
-	/**
-	 * @dev Helper to handle internal transfer and quote execution
-	 */
-	function _transferBalanceForSendQuote(address core, address signerAccount, address transferTarget, QuoteParams memory p) private {
-		ISymmio(core).setSigner(signerAccount);
-		uint256 tradingPrice = p.OrderType == ISymmio.OrderType.LIMIT ? p.price : p.sig.price;
-		ISymmio.Fee memory fee = ISymmio(core).getFee(p.affiliate, p.symbolId);
-		ISymmio(core).internalTransfer(transferTarget, p.cva + p.lf + p.partyAmm + (p.quantity * tradingPrice * fee.openFee) / 1e36);
-		ISymmio(core).setSigner(address(0));
 	}
 
 	/**

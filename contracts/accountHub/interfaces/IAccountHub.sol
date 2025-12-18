@@ -149,6 +149,7 @@ interface IAccountHub {
 	function setAccountManagerImplementation(bytes memory implementation) external;
 
 	function addMargin(address virtualAccount, uint256 amount) external;
+	function addMarginToNextVA(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId, uint256 amount) external;
 	function removeMargin(address virtualAccount, uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
 
 	// ==================== Custom Errors ====================
