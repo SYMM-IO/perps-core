@@ -78,7 +78,7 @@ library ClearingHouseFacetImpl {
 			uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
 			for (uint256 i = 0; i < pendingQuotes.length; ) {
 				Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
-				if (quote.partyB == partyB && (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING)) {
+				if (quote.partyB == partyB) {
 					accountLayout.pendingLockedBalances[partyA].subQuote(quote);
 					uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 					accountLayout.allocatedBalances[partyA] += fee;
@@ -94,7 +94,8 @@ library ClearingHouseFacetImpl {
 
 			if (quoteLayout.partyBPendingQuotes[partyB][partyA].length > 0) {
 				delete quoteLayout.partyBPendingQuotes[partyB][partyA];
-				accountLayout.partyANonces[partyA] += 1;
+				accountLayout.partyBPendingLockedBalances[partyB][address(0)].sub(accountLayout.partyBPendingLockedBalances[partyB][partyA]);
+				accountLayout.partyBPendingLockedBalances[partyB][partyA].makeZero();
 			}
 		}
 	}
@@ -139,7 +140,7 @@ library ClearingHouseFacetImpl {
 			quote.statusModifyTimestamp = block.timestamp;
 
 			accountLayout.lockedBalances[partyA].subQuote(quote);
-			LibAccount.subFromPartyBLockedBalances(partyB, partyA, quote);
+			LibAccount.subFromPartyBLockedBalances(quote);
 
 			uint256 liquidationPrice = priceSig.prices[i];
 			quote.avgClosedPrice =
@@ -163,15 +164,12 @@ library ClearingHouseFacetImpl {
 				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, quote.partyB) {} catch {}
 			}
 			if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
-				LibAccount.updatePartyBNonce(partyB, partyA);
+				LibAccount.increasePartyBNonce(partyB, partyA);
 			}
 		}
 
 		// If no more positions left for partyB in master account mode, clear locked balances and cross liquidation status
 		if (quoteLayout.partyBPositionsCount[partyB][address(0)] == 0) {
-			accountLayout.partyBLockedBalances[partyB][address(0)].makeZero();
-			accountLayout.partyBPendingLockedBalances[partyB][address(0)].makeZero();
-
 			crossLiquidationDetail.inProgress = false;
 			crossLiquidationDetail.timestamp = 0;
 		}

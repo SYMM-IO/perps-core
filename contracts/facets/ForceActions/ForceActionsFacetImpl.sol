@@ -33,7 +33,7 @@ library ForceActionsFacetImpl {
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.CANCELED;
 		accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-		LibAccount.subFromPartyBPendingLockedBalances(quote.partyB, quote.partyA, quote);
+		LibAccount.subFromPartyBPendingLockedBalances(quote);
 
 		// send trading Fee back to partyA
 		uint256 fee = LibQuote.getOpenTradingFee(quote.id);
@@ -64,7 +64,7 @@ library ForceActionsFacetImpl {
 			"ForceActionsFacet: Master account mode inactive"
 		);
 
-		LibForceActions.verifyPrice(quoteId, sig);
+		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
 		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
@@ -108,7 +108,7 @@ library ForceActionsFacetImpl {
 
 		require(!accountLayout.masterAccountMode[partyB], "ForceActionsFacet: Master account mode enabled");
 
-		LibForceActions.verifyPrice(quoteId, sig);
+		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
 		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(

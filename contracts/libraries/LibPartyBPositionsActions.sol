@@ -69,7 +69,7 @@ library LibPartyBPositionsActions {
 
 		if (quote.quantity == filledAmount) {
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-			LibAccount.subFromPartyBPendingLockedBalances(quote.partyB, quote.partyA, quote);
+			LibAccount.subFromPartyBPendingLockedBalances(quote);
 			quote.lockedValues.mul(openedPrice).div(quote.requestedOpenPrice);
 			quoteLayout.partyALockQuotesCount[quote.partyA]--;
 
@@ -160,7 +160,7 @@ library LibPartyBPositionsActions {
 				accountLayout.pendingLockedBalances[quote.partyA].sub(filledLockedValues);
 			}
 			// update partyB pending locked balances
-			LibAccount.subFromPartyBPendingLockedBalances(quote.partyB, quote.partyA, quote);
+			LibAccount.subFromPartyBPendingLockedBalances( quote);
 
 			newQuote.lockedValues = quote.lockedValues.sub(filledLockedValues);
 			newQuote.initialLockedValues = newQuote.lockedValues;
@@ -169,7 +169,7 @@ library LibPartyBPositionsActions {
 		}
 		// lock with amount of filledAmount
 		accountLayout.lockedBalances[quote.partyA].addQuote(quote);
-		LibAccount.addToPartyBLockedBalances(quote.partyB, quote.partyA, quote);
+		LibAccount.addToPartyBLockedBalances(quote);
 
 		// check leverage (is in 18 decimals)
 		require(

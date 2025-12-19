@@ -87,7 +87,7 @@ library PartyBBatchActionsFacetImpl {
 		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
 
 		accountLayout.partyANonces[firstQuote.partyA] += 1;
-		LibAccount.updatePartyBNonce(firstQuote.partyB, firstQuote.partyA);
+		LibAccount.increasePartyBNonce(firstQuote.partyB, firstQuote.partyA);
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			uint256 quoteId = quoteIds[i];
@@ -180,7 +180,7 @@ library PartyBBatchActionsFacetImpl {
 		require(!maLayout.partyBLiquidationStatus[firstQuotePartyB][firstQuotePartyA], "PartyBFacet: PartyB isn't solvent");
 		require(!accountLayout.crossLiquidationDetails[firstQuotePartyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 
-		LibAccount.updatePartyBNonce(firstQuotePartyB, firstQuotePartyA);
+		LibAccount.increasePartyBNonce(firstQuotePartyB, firstQuotePartyA);
 		accountLayout.partyANonces[firstQuotePartyA] += 1;
 
 		quoteStatuses = new QuoteStatus[](quoteIds.length);
