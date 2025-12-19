@@ -1,7 +1,5 @@
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 import { expect } from "chai"
 import { toUtf8Bytes } from "ethers"
-import { ethers } from "hardhat"
 import {loadFixture, time} from "./helpers/network-helpers"
 
 import {
@@ -25,8 +23,7 @@ import {
 	getDummyCrossLiquidationSig,
 	getDummyCrossSettlementSig,
 	getDummyHighLowPriceSig,
-	getDummySettlementSig,
-	getDummySingleUpnlSig,
+	getDummySettlementSig
 } from "./utils/SignatureUtils"
 import {initializeFixture} from "./Initialize.fixture"
 import {ethers} from "./helpers/hardhat-connection"

@@ -1,4 +1,3 @@
-import {loadFixture, time} from "./helpers/network-helpers"
 import {expect} from "chai"
 
 import {initializeFixture} from "./Initialize.fixture"
@@ -22,10 +21,9 @@ import {getDummyHighLowPriceSig, getDummyPriceSig} from "./utils/SignatureUtils"
 import {ForceClosePositionValidator} from "./models/validators/ForceClosePositionValidator"
 import {calculateExpectedAvgPriceForForceClose, calculateExpectedClosePriceForForceClose} from "./utils/PriceUtils"
 import {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
-import { toUtf8Bytes, ZeroAddress } from "ethers"
-import { ethers } from "hardhat"
+import { toUtf8Bytes} from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture"
 import { PartyBForceCloseState, PositionType, QuoteStatus, UPNLSettlementState } from "./models/Enums"

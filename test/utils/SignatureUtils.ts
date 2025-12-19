@@ -1,5 +1,3 @@
-import { ethers } from "hardhat"
-
 import { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
 import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
 import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"

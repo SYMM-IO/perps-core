@@ -1,9 +1,6 @@
 import { loadFixture } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { toUtf8Bytes, ZeroAddress } from "ethers"
-import { ethers } from "hardhat"
-
-import { partyA } from "../src/types/contracts/facets"
 import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
 import { initializeFixture } from "./Initialize.fixture"
 import { PositionType, QuoteStatus } from "./models/Enums"
