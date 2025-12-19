@@ -72,7 +72,7 @@ library LibForceActions {
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlPartyB, block.timestamp);
 	}
 
-	function verifyPrice(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view {
+	function validateForceCloseConditions(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
@@ -144,7 +144,7 @@ library LibForceActions {
 			accountLayout.partyBAllocatedBalances[partyB][quote.partyA] += available;
 			emit SharedEvents.BalanceChangePartyB(partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
-			LibAccount.updatePartyBNonce(partyB, quote.partyA);
+			LibAccount.increasePartyBNonce(partyB, quote.partyA);
 
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			return true;

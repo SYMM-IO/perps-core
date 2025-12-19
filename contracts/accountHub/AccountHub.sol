@@ -2,7 +2,7 @@
 // This contract is licensed under the SYMM Core Business Source License 1.1
 // Copyright (c) 2023 Symmetry Labs AG
 // For more information, see https://docs.symm.io/legal-disclaimer/license
-pragma solidity ^0.8.21;
+pragma solidity >=0.8.18;
 
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
@@ -10,7 +10,6 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-
 import "./interfaces/IAccountHub.sol";
 import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
@@ -54,6 +53,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 	// Pool of deleted virtual accounts for reuse: parentAccount => isolationType => symbolId => stack of addresses
 	mapping(address => mapping(VirtualAccountIsolationType => mapping(uint256 => address[]))) private deletedVirtualAccountsPool;
+
+	// Active virtual account by key (for singleVAMode): subAccount => isolationType => symbolId => VA address
+	mapping(address => mapping(VirtualAccountIsolationType => mapping(uint256 => address))) private activeVAByKey;
 
 	address public affiliateHub;
 	address internal globalSigner;
@@ -175,6 +177,31 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
+	 * @notice Sets or unsets the single VA mode for a sub-account
+	 * @dev Can only be changed when the sub-account has no active virtual accounts
+	 * @dev Only applicable for MARKET and MARKET_DIRECTION isolation types
+	 * @param subAccount The sub-account address
+	 * @param enabled Whether to enable or disable single VA mode
+	 */
+	function setSingleVAMode(address subAccount, bool enabled) external whenNotPaused onlyAccountOwner(subAccount) {
+		SubAccountData storage s = subAccounts[subAccount];
+		if (!s.isExists) revert AccountDoesNotExist();
+
+		// singleVAMode is only applicable for MARKET and MARKET_DIRECTION isolation types
+		if (enabled && s.isolationType != SubAccountIsolationType.MARKET && s.isolationType != SubAccountIsolationType.MARKET_DIRECTION) {
+			revert SingleVAModeNotApplicable();
+		}
+
+		// Can only change mode when there are no active virtual accounts
+		if (subAccountToVirtualAccounts[subAccount].length() > 0) {
+			revert HasActiveVirtualAccounts();
+		}
+
+		s.singleVAMode = enabled;
+		emit SingleVAModeChanged(subAccount, enabled);
+	}
+
+	/**
 	 * @notice Executes arbitrary calls on behalf of an account
 	 * @param account The account address
 	 * @param callDatas Array of encoded function calls
@@ -226,6 +253,32 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
 
 		emit AddMargin(virtualAccount, parent, amount);
+	}
+
+	/**
+	 * @notice Transfers balance from a sub-account to a predicted virtual account address
+	 * @dev Use this to pre-fund a virtual account before it's created by sendQuote
+	 * @param subAccount The sub-account address (source of funds)
+	 * @param isolationType The isolation type of the virtual account to be created
+	 * @param symbolId The symbol ID for the virtual account
+	 * @param amount The amount to transfer in 18 decimals
+	 */
+	function addMarginToNextVA(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		if (amount == 0) revert ZeroAmount();
+		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
+
+		// Predict the next VA address
+		address predictedVA = this.predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
+
+		// Transfer from sub-account to predicted VA
+		_executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
+
+		emit AddMargin(predictedVA, subAccount, amount);
 	}
 
 	/**
@@ -409,6 +462,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				owner: s.owner,
 				name: s.name,
 				isExists: s.isExists,
+				singleVAMode: s.singleVAMode,
 				affiliate: s.affiliate,
 				symmioCore: s.symmioCore,
 				metadata: s.metadata,
@@ -471,6 +525,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 				owner: s.owner,
 				name: s.name,
 				isExists: s.isExists,
+				singleVAMode: s.singleVAMode,
 				affiliate: s.affiliate,
 				symmioCore: s.symmioCore,
 				metadata: s.metadata,
@@ -584,6 +639,22 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	}
 
 	/**
+	 * @notice Gets the active virtual account for a given key (subAccount, isolationType, symbolId)
+	 * @dev Only relevant when singleVAMode is enabled for the sub-account
+	 * @param subAccount The sub-account address
+	 * @param isolationType The virtual account isolation type
+	 * @param symbolId The symbol ID
+	 * @return The active virtual account address, or address(0) if none exists
+	 */
+	function getActiveVAByKey(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) external view returns (address) {
+		return activeVAByKey[subAccount][isolationType][symbolId];
+	}
+
+	/**
 	 * @notice Gets the current virtual account nonce for a sub-account
 	 * @param subAccount The sub-account address
 	 * @return The current nonce value for virtual account creation
@@ -611,6 +682,14 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			return pool[pool.length - 1];
 		}
 
+		// If singleVAMode is enabled, check if there's already an active VA for this key
+		if (subAccounts[subAccount].singleVAMode) {
+			address existingVA = activeVAByKey[subAccount][isolationType][symbolId];
+			if (existingVA != address(0) && virtualAccounts[existingVA].isExists) {
+				return existingVA;
+			}
+		}
+
 		// If no deleted account exists, generate and return a new virtual account address
 		uint256 nextNonce = subAccountVirtualNonces[subAccount] + 1;
 		return _generateVirtualAccountAddress(subAccount, nextNonce);
@@ -635,12 +714,22 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		if (!IAffiliateHub(affiliateHub).isWhitelistedSymmioCore(data.symmioCore)) revert NotSymmioCore();
 		if (IAffiliateHub(affiliateHub).getAffiliateState(affiliate) != IAffiliateHub.AffiliateState.ACTIVE) revert AffiliateNotActive();
 
+		// singleVAMode is only applicable for MARKET and MARKET_DIRECTION isolation types
+		if (
+			data.singleVAMode &&
+			data.isolationType != SubAccountIsolationType.MARKET &&
+			data.isolationType != SubAccountIsolationType.MARKET_DIRECTION
+		) {
+			revert SingleVAModeNotApplicable();
+		}
+
 		uint256 nonce = ++globalNonce;
 		subAccountAddress = _generateSubAccountAddress(affiliate, sender, nonce);
 
 		SubAccountData storage s = subAccounts[subAccountAddress];
 		s.owner = sender;
 		s.isExists = true;
+		s.singleVAMode = data.singleVAMode;
 		s.name = data.name;
 		s.affiliate = affiliate;
 		s.metadata = data.metadata;
@@ -660,6 +749,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 	/**
 	 * @dev Gets or creates a virtual account, trying to reuse a deleted one first
+	 * @dev If singleVAMode is enabled and an active VA exists for the key, returns that VA
 	 */
 	function _getOrCreateVirtualAccount(
 		address parentAccount,
@@ -667,6 +757,14 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId
 	) private returns (address) {
+		// If singleVAMode is enabled, check if there's already an active VA for this key
+		if (subAccounts[parentAccount].singleVAMode) {
+			address existingVA = activeVAByKey[parentAccount][isolationType][symbolId];
+			if (existingVA != address(0) && virtualAccounts[existingVA].isExists) {
+				return existingVA;
+			}
+		}
+
 		address reused = _tryReuseVirtualAccount(parentAccount, isolationType, symbolId);
 		if (reused != address(0)) return reused;
 		return _createVirtualAccount(parentAccount, metadata, isolationType, symbolId);
@@ -692,6 +790,11 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		subAccountToVirtualAccounts[parentAccount].add(reusedAccount);
 
 		SubAccountData storage parent = subAccounts[parentAccount];
+
+		// If singleVAMode is enabled, track this as the active VA for this key
+		if (parent.singleVAMode) {
+			activeVAByKey[parentAccount][isolationType][symbolId] = reusedAccount;
+		}
 
 		_callHook(
 			parent.affiliate,
@@ -728,6 +831,11 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 		subAccountToVirtualAccounts[parentAccount].add(virtualAccount);
 
+		// If singleVAMode is enabled, track this as the active VA for this key
+		if (parent.singleVAMode) {
+			activeVAByKey[parentAccount][isolationType][symbolId] = virtualAccount;
+		}
+
 		ISymmio symmio = ISymmio(parent.symmioCore);
 
 		ISymmio.BindState memory bindState = symmio.getBindState(parentAccount);
@@ -760,6 +868,11 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		_deallocateAndTransferBalance(account, parentAccount, core);
 
 		vData.isExists = false;
+
+		// Clear from activeVAByKey if this was the active VA for this key
+		if (activeVAByKey[parentAccount][vData.isolationType][vData.symbolId] == account) {
+			delete activeVAByKey[parentAccount][vData.isolationType][vData.symbolId];
+		}
 
 		// Add to the reuse pool (stack) and remove from active set
 		deletedVirtualAccountsPool[parentAccount][vData.isolationType][vData.symbolId].push(account);
@@ -920,9 +1033,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			revert SymbolNotAllowedForThisAccount();
 		}
 
-		address core = getRelatedCore(accountData.parentAccount);
-		_transferBalanceForSendQuote(core, accountData.parentAccount, account, p);
-
 		bytes memory result = _executeWithSigner(account, cd);
 		accountData.quoteIds.add(ISymmio(getRelatedCore(account)).getNextQuoteId());
 		return result;
@@ -954,9 +1064,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 
 			virtualAccount = _getOrCreateVirtualAccount(account, hex"", vType, p.symbolId);
 		}
-
-		address core = getRelatedCore(account);
-		_transferBalanceForSendQuote(core, account, virtualAccount, p);
 
 		// send quote from virtual account
 		bytes memory result = _executeWithSigner(virtualAccount, cd);
@@ -1104,17 +1211,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 					)
 				)
 			);
-	}
-
-	/**
-	 * @dev Helper to handle internal transfer and quote execution
-	 */
-	function _transferBalanceForSendQuote(address core, address signerAccount, address transferTarget, QuoteParams memory p) private {
-		ISymmio(core).setSigner(signerAccount);
-		uint256 tradingPrice = p.OrderType == ISymmio.OrderType.LIMIT ? p.price : p.sig.price;
-		ISymmio.Fee memory fee = ISymmio(core).getFee(p.affiliate, p.symbolId);
-		ISymmio(core).internalTransfer(transferTarget, p.cva + p.lf + p.partyAmm + (p.quantity * tradingPrice * fee.openFee) / 1e36);
-		ISymmio(core).setSigner(address(0));
 	}
 
 	/**

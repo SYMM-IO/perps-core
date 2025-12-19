@@ -1,7 +1,10 @@
-import { task, types } from "hardhat/config"
+import { task } from "hardhat/config"
+import { HardhatRuntimeEnvironment } from "hardhat/types"
+import { ArgumentType } from "hardhat/types/arguments"
 
 import { readData, writeData } from "../utils/fs"
 import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants"
+import { deployProxy, erc1967 } from "../../utils/upgrades-shim"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -17,37 +20,47 @@ const ENTRY_TYPES = {
 	IMPLEMENTATION: "Implementation",
 } as const
 
+export async function deployAccountHub(
+	hre: HardhatRuntimeEnvironment,
+	{
+		admin = "",
+		affiliatehubaddress = "",
+		logData = true,
+	}: { admin?: string; affiliatehubaddress?: string; logData?: boolean } = {},
+) {
+	const { ethers } = hre
+	console.log("Running deploy:accountHub")
+
+	const [deployer] = await ethers.getSigners()
+	console.log("Deploying contracts with the account:", deployer.address)
+
+	// Get AccountManager bytecode
+	const accountManagerBytecode = await getAccountManagerBytecode(ethers)
+
+	// Deploy AccountHub as upgradeable proxy
+	const contract = await deployAccountHubProxy(hre, admin, affiliatehubaddress, accountManagerBytecode)
+
+	const addresses = {
+		proxy: await contract.getAddress(),
+		admin: await erc1967(hre).getAdminAddress(await contract.getAddress()),
+		implementation: await erc1967(hre).getImplementationAddress(await contract.getAddress()),
+	}
+	console.log("AccountHub deployed to", addresses)
+
+	// Log deployment data if requested
+	if (logData) {
+		await logDeploymentData(addresses, admin, affiliatehubaddress, accountManagerBytecode)
+	}
+
+	// Return contract instance
+	return contract
+}
+
 task("deploy:accountHub", "Deploys the AccountHub")
-	.addParam("admin", "The admin address")
-	.addParam("affiliatehubaddress", "The address of the affiliateHub contract")
-	.addOptionalParam("logData", "Write the deployed addresses to a data file", true, types.boolean)
-	.setAction(async ({ admin, affiliatehubaddress, logData }, { ethers, upgrades }) => {
-		console.log("Running deploy:accountHub")
-
-		const [deployer] = await ethers.getSigners()
-		console.log("Deploying contracts with the account:", deployer.address)
-
-		// Get AccountManager bytecode
-		const accountManagerBytecode = await getAccountManagerBytecode(ethers)
-
-		// Deploy AccountHub as upgradeable proxy
-		const contract = await deployAccountHub(admin, affiliatehubaddress, accountManagerBytecode, ethers, upgrades)
-
-		const addresses = {
-			proxy: await contract.getAddress(),
-			admin: await upgrades.erc1967.getAdminAddress(await contract.getAddress()),
-			implementation: await upgrades.erc1967.getImplementationAddress(await contract.getAddress()),
-		}
-		console.log("AccountHub deployed to", addresses)
-
-		// Log deployment data if requested
-		if (logData) {
-			await logDeploymentData(addresses, admin, affiliatehubaddress, accountManagerBytecode)
-		}
-
-		// Return contract instance
-		return contract
-	})
+	.addOption({ name: "admin", description: "The admin address", defaultValue: "" })
+	.addOption({ name: "affiliatehubaddress", description: "The address of the affiliateHub contract", defaultValue: "" })
+	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
+	.setAction(async (taskArgs, hre) => deployAccountHub(hre, taskArgs))
 
 /**
  * Gets the AccountManager contract bytecode
@@ -60,18 +73,18 @@ async function getAccountManagerBytecode(ethers: any): Promise<string> {
 /**
  * Deploys the AccountHub upgradeable contract
  */
-async function deployAccountHub(admin: string, affiliateHubAddress: string, accountManagerBytecode: string, ethers: any, upgrades: any) {
+async function deployAccountHubProxy(hre: any, admin: string, affiliateHubAddress: string, accountManagerBytecode: string) {
 	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, {
 		admin,
 		affiliateHubAddress,
 		accountManagerBytecode: `${accountManagerBytecode.slice(0, 10)}...`,
 	})
 
-	const Factory = await ethers.getContractFactory(CONTRACT_CONFIG.NAME)
-	const contract = await upgrades.deployProxy(Factory, [admin, affiliateHubAddress, accountManagerBytecode], {
+	const Factory = await hre.ethers.getContractFactory(CONTRACT_CONFIG.NAME)
+	const contract = await deployProxy(hre, Factory, [admin, affiliateHubAddress, accountManagerBytecode], {
 		initializer: CONTRACT_CONFIG.INITIALIZER,
+		admin,
 	})
-	await contract.waitForDeployment()
 
 	return contract
 }

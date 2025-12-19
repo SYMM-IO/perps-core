@@ -1,5 +1,6 @@
 import fs from "fs";
-import { task, types } from "hardhat/config";
+import { task } from "hardhat/config";
+import { ArgumentType } from "hardhat/types/arguments";
 import path from "path";
 
 
@@ -75,10 +76,10 @@ interface SystemDeploymentReport {
 }
 
 task("deploy:system", "Deploys all system contracts, verifies them, and generates a report")
-	.addParam("admin", "The admin address for contracts")
-	.addParam("symmiofeereceiver", "The address of the symmio fee receiver")
-	.addOptionalParam("verify", "Verify contracts after deployment", true, types.boolean)
-	.addOptionalParam("logData", "Write deployment addresses to data files", true, types.boolean)
+	.addOption({ name: "admin", description: "The admin address for contracts", defaultValue: "" })
+	.addOption({ name: "symmiofeereceiver", description: "The address of the symmio fee receiver", defaultValue: "" })
+	.addOption({ name: "verify", description: "Verify contracts after deployment", type: ArgumentType.BOOLEAN, defaultValue: true })
+	.addOption({ name: "logData", description: "Write deployment addresses to data files", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async ({ admin, symmiofeereceiver, verify, logData }, { run }) => {
 		console.log("=".repeat(80))
 		console.log("SYSTEM DEPLOYMENT STARTED")

@@ -1,7 +1,6 @@
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 import { expect } from "chai"
 import { toUtf8Bytes } from "ethers"
-import { ethers } from "hardhat"
+import {loadFixture, time} from "./helpers/network-helpers"
 
 import {
 	HighLowPriceSigStruct,
@@ -24,8 +23,7 @@ import {
 	getDummyCrossLiquidationSig,
 	getDummyCrossSettlementSig,
 	getDummyHighLowPriceSig,
-	getDummySettlementSig,
-	getDummySingleUpnlSig,
+	getDummySettlementSig
 } from "./utils/SignatureUtils"
 import { migratePartyBToMaster } from "./utils/MasterAccount"
 
@@ -284,7 +282,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 						"LibSettlement, Invalid quote",
 					)
 				})
-			
+
 
 			it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
 				const sigEmpty = await getDummyCrossSettlementSig([0n], 0n, await hedger.getAddress(), [await user.getAddress()], [])

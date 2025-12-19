@@ -95,11 +95,13 @@ library LibSolvency {
 		address partyA
 	) internal view returns (int256 partyBAvailableBalance, int256 partyAAvailableBalance) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlPartyB, partyB, partyA);
-		partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(upnlPartyA, accountLayout.allocatedBalances[partyA], partyA);
-
+		partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
+			upnlPartyA,
+			AccountStorage.layout().allocatedBalances[partyA],
+			partyA
+		);
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			uint256 quoteId = quoteIds[i];
 			uint256 filledAmount = filledAmounts[i];

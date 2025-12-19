@@ -28,10 +28,10 @@ library LibAccount {
 	 */
 	function partyBTotalLockedBalances(address partyB, address partyA) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address bucketKey = partyBAllocationKey(partyB, partyA);
+		address allocationKey = partyBAllocationKey(partyB, partyA);
 		return
-			accountLayout.partyBPendingLockedBalances[partyB][bucketKey].totalForPartyB() +
-			accountLayout.partyBLockedBalances[partyB][bucketKey].totalForPartyB();
+			accountLayout.partyBPendingLockedBalances[partyB][allocationKey].totalForPartyB() +
+			accountLayout.partyBLockedBalances[partyB][allocationKey].totalForPartyB();
 	}
 
 	/**
@@ -107,25 +107,25 @@ library LibAccount {
 	 */
 	function partyBAvailableForQuote(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address bucketKey = partyBAllocationKey(partyB, partyA);
+		address allocationKey = partyBAllocationKey(partyB, partyA);
 		int256 available;
 		if (upnl >= 0) {
 			available =
-				int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) +
+				int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) +
 				upnl -
 				int256(
-					(accountLayout.partyBLockedBalances[partyB][bucketKey].totalForPartyB() +
-						accountLayout.partyBPendingLockedBalances[partyB][bucketKey].totalForPartyB())
+					(accountLayout.partyBLockedBalances[partyB][allocationKey].totalForPartyB() +
+						accountLayout.partyBPendingLockedBalances[partyB][allocationKey].totalForPartyB())
 				);
 		} else {
-			int256 mm = int256(accountLayout.partyBLockedBalances[partyB][bucketKey].partyBmm);
+			int256 mm = int256(accountLayout.partyBLockedBalances[partyB][allocationKey].partyBmm);
 			int256 considering_mm = -upnl > mm ? -upnl : mm;
 			available =
-				int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) -
+				int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
 				int256(
-					(accountLayout.partyBLockedBalances[partyB][bucketKey].cva +
-						accountLayout.partyBLockedBalances[partyB][bucketKey].lf +
-						accountLayout.partyBPendingLockedBalances[partyB][bucketKey].totalForPartyB())
+					(accountLayout.partyBLockedBalances[partyB][allocationKey].cva +
+						accountLayout.partyBLockedBalances[partyB][allocationKey].lf +
+						accountLayout.partyBPendingLockedBalances[partyB][allocationKey].totalForPartyB())
 				) -
 				considering_mm;
 		}
@@ -141,19 +141,19 @@ library LibAccount {
 	 */
 	function partyBAvailableBalance(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address bucketKey = partyBAllocationKey(partyB, partyA);
+		address allocationKey = partyBAllocationKey(partyB, partyA);
 		int256 available;
 		if (upnl >= 0) {
 			available =
-				int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) +
+				int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) +
 				upnl -
-				int256(accountLayout.partyBLockedBalances[partyB][bucketKey].totalForPartyB());
+				int256(accountLayout.partyBLockedBalances[partyB][allocationKey].totalForPartyB());
 		} else {
-			int256 mm = int256(accountLayout.partyBLockedBalances[partyB][bucketKey].partyBmm);
+			int256 mm = int256(accountLayout.partyBLockedBalances[partyB][allocationKey].partyBmm);
 			int256 considering_mm = -upnl > mm ? -upnl : mm;
 			available =
-				int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) -
-				int256(accountLayout.partyBLockedBalances[partyB][bucketKey].cva + accountLayout.partyBLockedBalances[partyB][bucketKey].lf) -
+				int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
+				int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf) -
 				considering_mm;
 		}
 		return available;
@@ -168,9 +168,9 @@ library LibAccount {
 	 */
 	function partyBAvailableBalanceForLiquidation(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		address bucketKey = partyBAllocationKey(partyB, partyA);
-		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][bucketKey]) -
-			int256(accountLayout.partyBLockedBalances[partyB][bucketKey].cva + accountLayout.partyBLockedBalances[partyB][bucketKey].lf);
+		address allocationKey = partyBAllocationKey(partyB, partyA);
+		int256 a = int256(accountLayout.partyBAllocatedBalances[partyB][allocationKey]) -
+			int256(accountLayout.partyBLockedBalances[partyB][allocationKey].cva + accountLayout.partyBLockedBalances[partyB][allocationKey].lf);
 		return a + upnl;
 	}
 
@@ -180,60 +180,50 @@ library LibAccount {
 	 * @param partyA The address of Party A.
 	 * @return bucket Party B allocation mapping key.
 	 */
-	function partyBAllocationKey(address partyB, address partyA) internal view returns (address bucket) {
-		if (AccountStorage.layout().masterAccountMode[partyB]) {
-			bucket = address(0);
-		} else {
-			bucket = partyA;
-		}
+	function partyBAllocationKey(address partyB, address partyA) internal view returns (address) {
+		return AccountStorage.layout().masterAccountMode[partyB] ? address(0) : partyA;
 	}
 
 	/**
 	 * @notice Adds a new quote locked balance to Party B's pending locked balances. In master account mode, adds to both master and specific Party A balances.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
 	 * @param quote The quote whose locked values are to be added.
 	 */
-	function addToPartyBLockedBalances(address partyB, address partyA, Quote storage quote) internal {
+	function addToPartyBLockedBalances(Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		accountLayout.partyBLockedBalances[partyB][partyA].addQuote(quote);
+		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].addQuote(quote);
 
-		if (accountLayout.masterAccountMode[partyB]) {
-			accountLayout.partyBLockedBalances[partyB][address(0)].addQuote(quote);
+		if (accountLayout.masterAccountMode[quote.partyB]) {
+			accountLayout.partyBLockedBalances[quote.partyB][address(0)].addQuote(quote);
 		}
 	}
 
 	/**
 	 * @notice Subtracts a quote's locked balance from Party B's locked balances. In master account mode, subtracts from both master and specific Party A balances.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
 	 * @param quote The quote whose locked values are to be subtracted.
 	 */
-	function subFromPartyBLockedBalances(address partyB, address partyA, Quote storage quote) internal {
+	function subFromPartyBLockedBalances(Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote);
+		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
 
-		if (accountLayout.masterAccountMode[partyB]) {
-			accountLayout.partyBLockedBalances[partyB][address(0)].subQuote(quote);
+		if (accountLayout.masterAccountMode[quote.partyB]) {
+			accountLayout.partyBLockedBalances[quote.partyB][address(0)].subQuote(quote);
 		}
 	}
 
 	/**
 	 * @notice Replaces a quote's locked balance in Party B's locked balances with new locked values. In master account mode, updates both master and specific Party A balances.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
 	 * @param quote The quote whose locked values are to be replaced.
 	 * @param newLockedValues The new locked values to set.
 	 */
-	function replacePartyBLockedBalances(address partyB, address partyA, Quote storage quote, LockedValues memory newLockedValues) internal {
+	function updatePartyBLockedBalances(Quote storage quote, LockedValues memory newLockedValues) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		accountLayout.partyBLockedBalances[partyB][partyA].subQuote(quote).add(newLockedValues);
+		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].subQuote(quote).add(newLockedValues);
 
-		if (accountLayout.masterAccountMode[partyB]) {
-			accountLayout.partyBLockedBalances[partyB][address(0)].subQuote(quote).add(newLockedValues);
+		if (accountLayout.masterAccountMode[quote.partyB]) {
+			accountLayout.partyBLockedBalances[quote.partyB][address(0)].subQuote(quote).add(newLockedValues);
 		}
 	}
 
@@ -255,17 +245,15 @@ library LibAccount {
 
 	/**
 	 * @notice Subtracts a quote's locked balance from Party B's pending locked balances. In master account mode, subtracts from both master and specific Party A balances.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
 	 * @param quote The quote whose locked values are to be subtracted.
 	 */
-	function subFromPartyBPendingLockedBalances(address partyB, address partyA, Quote storage quote) internal {
+	function subFromPartyBPendingLockedBalances(Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		accountLayout.partyBPendingLockedBalances[partyB][partyA].subQuote(quote);
+		accountLayout.partyBPendingLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
 
-		if (accountLayout.masterAccountMode[partyB]) {
-			accountLayout.partyBPendingLockedBalances[partyB][address(0)].subQuote(quote);
+		if (accountLayout.masterAccountMode[quote.partyB]) {
+			accountLayout.partyBPendingLockedBalances[quote.partyB][address(0)].subQuote(quote);
 		}
 	}
 
@@ -274,14 +262,12 @@ library LibAccount {
 	 * @param partyB PartyB address
 	 * @param partyA PartyA address
 	 */
-	function updatePartyBNonce(address partyB, address partyA) internal {
+	function increasePartyBNonce(address partyB, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		bool isMasterAccountMode = accountLayout.masterAccountMode[partyB];
+		accountLayout.partyBNonces[partyB][partyA]++;
 		if (isMasterAccountMode) {
-			accountLayout.partyBNonces[partyB][partyA]++;
 			accountLayout.partyBNonces[partyB][address(0)]++;
-		} else {
-			accountLayout.partyBNonces[partyB][partyA]++;
 		}
 	}
 

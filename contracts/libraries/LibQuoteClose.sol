@@ -55,7 +55,7 @@ library LibQuoteClose {
 		);
 
 		accountLayout.lockedBalances[quote.partyA].subQuote(quote).add(lockedValues);
-		LibAccount.replacePartyBLockedBalances(quote.partyB, quote.partyA, quote, lockedValues);
+		LibAccount.updatePartyBLockedBalances(quote, lockedValues);
 		quote.lockedValues = lockedValues;
 
 		if (LibQuote.quoteOpenAmount(quote) == quote.quantityToClose) {
@@ -71,15 +71,15 @@ library LibQuoteClose {
 		}
 
 		(bool hasMadeProfit, uint256 pnl) = LibQuote.getValueOfQuoteForPartyA(closedPrice, filledAmount, quote);
-
+		address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
 		if (hasMadeProfit) {
 			require(
-				accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationKey(quote.partyB, quote.partyA)] >= pnl,
+				accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] >= pnl,
 				"LibQuote: PartyA should first exit its positions that are incurring losses"
 			);
 			accountLayout.allocatedBalances[quote.partyA] += pnl;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationKey(quote.partyB,quote.partyA)] -= pnl;
+			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] -= pnl;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		} else {
 			require(
@@ -88,7 +88,7 @@ library LibQuoteClose {
 			);
 			accountLayout.allocatedBalances[quote.partyA] -= pnl;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			accountLayout.partyBAllocatedBalances[quote.partyB][LibAccount.partyBAllocationKey(quote.partyB,quote.partyA)] += pnl;
+			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] += pnl;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 
@@ -209,7 +209,7 @@ library LibQuoteClose {
 
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
-				LibAccount.subFromPartyBPendingLockedBalances(quote.partyB, quote.partyA, quote);
+				LibAccount.subFromPartyBPendingLockedBalances(quote);
 				LibQuote.removeFromPartyBPendingQuotes(quote);
 			}
 

@@ -1,6 +1,6 @@
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 import { BytesLike } from "ethers"
-import { ethers } from "hardhat"
+import { ethers } from "../helpers/hardhat-connection"
 
 import { RunContext } from "./RunContext"
 
