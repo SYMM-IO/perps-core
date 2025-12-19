@@ -5,7 +5,7 @@ import {RunContext} from "../RunContext"
 import {BalanceInfo, User} from "../User"
 import {TransactionValidator} from "./TransactionValidator"
 import {logger} from "../../utils/LoggerUtils"
-import {ethers} from "hardhat"
+import {ethers} from "../../helpers/hardhat-connection"
 
 export type UnlockQuoteValidatorBeforeArg = {
 	user: User

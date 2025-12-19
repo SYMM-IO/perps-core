@@ -1,4 +1,4 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { toUtf8Bytes, ZeroAddress } from "ethers"
 import { ethers } from "hardhat"
@@ -14,6 +14,10 @@ import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { decimal } from "./utils/Common"
 import { getDummyCrossLiquidationSig, getDummyPriceSig } from "./utils/SignatureUtils"
+import { ethers } from "./helpers/hardhat-connection"
+import { toUtf8Bytes, ZeroAddress } from "ethers"
+import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 
 export function shouldBehaveLikeClearingHouseFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger

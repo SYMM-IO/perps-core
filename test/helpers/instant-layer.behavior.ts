@@ -1,8 +1,8 @@
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs"
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
+import { loadFixture, time } from "./network-helpers"
 import { expect } from "chai"
 import { ZeroAddress, toUtf8Bytes, TypedDataDomain } from "ethers"
-import { ethers, network } from "hardhat"
+import { ethers } from "./hardhat-connection"
 
 import { InstantLayer } from "../../src/types"
 import { initializeFixture } from "../Initialize.fixture"
@@ -105,8 +105,7 @@ function createSignedOperation(
 }
 
 async function increaseTime(seconds: number): Promise<void> {
-	await network.provider.send("evm_increaseTime", [seconds])
-	await network.provider.send("evm_mine")
+	await time.increase(seconds)
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -1806,6 +1805,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					metadata: ethers.keccak256(toUtf8Bytes("metadata")),
 					symmioCore: ctx.context.diamond,
 					isolationType: 1,
+					singleVAMode: false,
 				},
 			]
 			await ctx.context.accountHub.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), subAccountData)
@@ -1840,6 +1840,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 				ctx.requestSendQuote.affiliate,
 				await ctx.requestSendQuote.upnlSig,
 			])
+
+			// Pre-fund the VA before sending quote (since automatic transfer was removed)
+			// MARKET isolation (1) -> VirtualAccountIsolationType.MARKET (1)
+			const predictedVA = await ctx.context.accountHub.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
+			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, decimal(500n))
+			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositAndAllocateFor(predictedVA, decimal(500n))
 
 			// Create virtual account by sending a quote
 			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [quoteCallDataLocal])

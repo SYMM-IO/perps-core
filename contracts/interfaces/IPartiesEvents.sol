@@ -34,7 +34,7 @@ interface IPartiesEvents {
 
 	event ExpireQuoteClose(QuoteStatus quoteStatus, uint256 quoteId, uint256 closeId);
 
-	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice);  // for backward compatability
+	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice); // for backward compatibility
 	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
 
 	event FillCloseRequest(
@@ -45,7 +45,7 @@ interface IPartiesEvents {
 		uint256 closedPrice,
 		QuoteStatus quoteStatus,
 		uint256 closeId
-	);  // for backward compatability
+	); // for backward compatibility
 	event FillCloseRequest(
 		uint256 quoteId,
 		address partyA,

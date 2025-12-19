@@ -1,6 +1,8 @@
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 import { setBalance } from "@nomicfoundation/hardhat-network-helpers"
 import { BigNumberish, ethers } from "ethers"
+import {setBalance} from "../helpers/network-helpers"
+import {BigNumberish, ethers} from "ethers"
 
 import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
 import { SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/SettlementFacet"

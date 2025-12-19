@@ -2,6 +2,7 @@ import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
 import { expect } from "chai"
 import { toUtf8Bytes } from "ethers"
 import { ethers } from "hardhat"
+import {loadFixture, time} from "./helpers/network-helpers"
 
 import {
 	HighLowPriceSigStruct,
@@ -27,6 +28,21 @@ import {
 	getDummySettlementSig,
 	getDummySingleUpnlSig,
 } from "./utils/SignatureUtils"
+import {initializeFixture} from "./Initialize.fixture"
+import {ethers} from "./helpers/hardhat-connection"
+import {toUtf8Bytes} from "ethers"
+import {PositionType, QuoteStatus} from "./models/Enums"
+import {Hedger} from "./models/Hedger"
+import {RunContext} from "./models/RunContext"
+import {User} from "./models/User"
+import {limitCloseRequestBuilder} from "./models/requestModels/CloseRequest"
+import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
+import {decimal, getBlockTimestamp, getQuoteQuantity,} from "./utils/Common"
+import {getDummyHighLowPriceSig, getDummySettlementSig} from "./utils/SignatureUtils"
+import {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
+import {limitOpenRequestBuilder} from "./models/requestModels/OpenRequest"
+import {QuoteSettlementDataStructOutput} from "../src/types/contracts/facets/Settlement/ISettlementFacet"
+import {expect} from "chai"
 
 export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger, user2: User
@@ -285,7 +301,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 						"LibSettlement, Invalid quote",
 					)
 				})
-			
+
 
 			it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
 				const sigEmpty = await getDummyCrossSettlementSig([0n], 0n, await hedger.getAddress(), [await user.getAddress()], [])

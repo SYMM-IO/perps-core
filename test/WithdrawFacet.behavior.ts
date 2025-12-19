@@ -1,6 +1,6 @@
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, time } from "./helpers/network-helpers";
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import {ethers} from "./helpers/hardhat-connection";
 
 import { initializeFixture } from "./Initialize.fixture";
 import { RunContext } from "./models/RunContext";

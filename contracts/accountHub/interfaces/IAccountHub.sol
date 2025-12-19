@@ -26,6 +26,7 @@ interface IAccountHub {
 		string name;
 		address owner;
 		bool isExists;
+		bool singleVAMode;
 		bytes metadata;
 		address affiliate;
 		address symmioCore;
@@ -46,6 +47,7 @@ interface IAccountHub {
 		bytes metadata;
 		address symmioCore;
 		SubAccountIsolationType isolationType;
+		bool singleVAMode;
 	}
 
 	struct VirtualAccountCreationData {
@@ -77,6 +79,7 @@ interface IAccountHub {
 		address owner;
 		string name;
 		bool isExists;
+		bool singleVAMode;
 		address affiliate;
 		address symmioCore;
 		bytes metadata;
@@ -97,6 +100,7 @@ interface IAccountHub {
 	event VirtualAccountCreated(address indexed account, address indexed parent);
 	event VirtualAccountReused(address indexed account, address indexed parent);
 	event VirtualAccountDeleted(address indexed account, address indexed parent);
+	event SingleVAModeChanged(address indexed subAccount, bool enabled);
 
 	// Transfer events
 	event AddMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
@@ -149,7 +153,12 @@ interface IAccountHub {
 	function setAccountManagerImplementation(bytes memory implementation) external;
 
 	function addMargin(address virtualAccount, uint256 amount) external;
+	function addMarginToNextVA(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId, uint256 amount) external;
 	function removeMargin(address virtualAccount, uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
+
+	// Single VA Mode
+	function setSingleVAMode(address subAccount, bool enabled) external;
+	function getActiveVAByKey(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId) external view returns (address);
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();
@@ -177,4 +186,6 @@ interface IAccountHub {
 	error HookFailed(bytes reason);
 	error InvalidSelector();
 	error DeploymentFailed();
+	error HasActiveVirtualAccounts();
+	error SingleVAModeNotApplicable();
 }
