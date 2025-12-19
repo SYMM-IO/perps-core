@@ -16,6 +16,7 @@ import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/re
 import { OpenPositionValidator } from "./models/validators/OpenPositionValidator"
 import { decimal, getQuoteQuantity, pausePartyB } from "./utils/Common"
 import { getDummyPairUpnlAndPriceSig, getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils"
+import { migratePartyBToMaster } from "./utils/MasterAccount"
 
 export function shouldBehaveLikeOpenPosition(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -597,10 +598,6 @@ export function shouldBehaveLikeOpenPosition(): void {
 
 	describe("Master account shared buckets", function () {
 		beforeEach(async function () {
-			// Activate master account mode for both hedgers
-			await context.controlFacet.setMasterAccountEnabled(true)
-			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
-
 			// Refresh PartyA balances to support larger quotes
 			await user.setBalances(decimal(3000n), decimal(1500n), decimal(1200n))
 			await user2.setBalances(decimal(3000n), decimal(1500n), decimal(1200n))
@@ -612,6 +609,8 @@ export function shouldBehaveLikeOpenPosition(): void {
 			// Lock both quotes
 			await hedger.lockQuote(quoteUser1.id)
 			await hedger.lockQuote(quoteUser2.id)
+
+			await migratePartyBToMaster(context, hedger, [quoteUser1.id, quoteUser2.id])
 		})
 
 		it("opens quotes into the shared master account and clears individual partyA account balances", async function () {

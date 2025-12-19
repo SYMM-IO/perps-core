@@ -19,6 +19,7 @@ import {
 } from "./utils/PriceUtils"
 import { getDummyCrossSettlementSig, getDummyHighLowPriceSig, getDummyMasterAccountSettlementSig, getDummyPriceSig } from "./utils/SignatureUtils"
 import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import { migratePartyBToMaster } from "./utils/MasterAccount"
 
 export function shouldBehaveLikeForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -499,9 +500,6 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			let updatePrice: bigint
 			let settlementSig: any
 			beforeEach(async function () {
-				await context.controlFacet.setMasterAccountEnabled(true)
-				await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
-
 				await hedger.lockQuote(quote1LongOpened.id)
 				await hedger.openPosition(quote1LongOpened.id)
 
@@ -510,6 +508,8 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 				await hedger.lockQuote(quote4LongOpened.id)
 				await hedger.openPosition(quote4LongOpened.id)
+
+				await migratePartyBToMaster(context, hedger, [quote1LongOpened.id, quote2ShortOpened.id, quote4LongOpened.id])
 
 				await user.requestToClosePosition(
 					quote1LongOpened.id,
@@ -599,8 +599,6 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					})
 
 					it("Should revert when quote status is not OPENED/CLOSE_PENDING/CANCEL_CLOSE_PENDING", async function () {
-						await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
-
 						await user.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
 
 						let quoteNotOpened: QuoteStructOutput
@@ -613,6 +611,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 						)
 						await hedger2.lockQuote(quoteNotOpened.id)
 						await hedger2.openPosition(quoteNotOpened.id)
+						await migratePartyBToMaster(context, hedger2, [quoteNotOpened.id])
 
 						const settlementSigCross = await getDummyCrossSettlementSig(
 							[0n],

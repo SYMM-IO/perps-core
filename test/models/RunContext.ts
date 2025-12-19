@@ -28,6 +28,7 @@ import {
 	FakeStablecoin,
 	SymmioPartyA,
 	WithdrawFacet,
+	MasterAccountMigrationFacet,
 } from "../../src/types";
 import { TestManager } from "./TestManager"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
@@ -53,6 +54,7 @@ export class RunContext {
 	forceActionsFacet!: ForceActionsFacet
 	clearingHouseFacet!: ClearingHouseFacet
 	withdrawFacet!: WithdrawFacet
+	masterAccountMigrationFacet!: MasterAccountMigrationFacet
 	signers!: {
 		admin: SignerWithAddress
 		user: SignerWithAddress
@@ -120,6 +122,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.forceActionsFacet = await ethers.getContractAt("ForceActionsFacet", diamond)
 	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
 	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
+	context.masterAccountMigrationFacet = await ethers.getContractAt("MasterAccountMigrationFacet", diamond)
 
 	context.manager = new TestManager(context, onlyInitialize)
 	if (!onlyInitialize) await context.manager.start()

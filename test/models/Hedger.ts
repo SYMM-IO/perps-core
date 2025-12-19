@@ -43,16 +43,14 @@ export class Hedger extends PartyEntity {
 	}
 
 	public async lockQuote(id: BigNumberish, upnl: bigint = 0n, allocateCoefficient: bigint | null = decimal(12n, 17)) {
-		if (allocateCoefficient != null) {
+		const isMasterAccountMode = await this.context.viewFacet.isInMasterAccountMode(this.address)
+		if (allocateCoefficient != null && !isMasterAccountMode) {
 			const quote = await this.context.viewFacetQuote.getQuote(id)
 			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
 			await runTx(
 				this.context.accountFacet
 					.connect(this.signer)
-					.allocateForPartyB(
-						unDecimal(notional * BigInt(allocateCoefficient)),
-						(await this.context.viewFacet.isInMasterAccountMode(this.address)) ? ethers.ZeroAddress : quote.partyA,
-					),
+					.allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA),
 			)
 		}
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).lockQuote(id, await getDummySingleUpnlSig(upnl)))

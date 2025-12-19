@@ -10,6 +10,7 @@ import "../../storages/AccountStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
 import "../../storages/MAStorage.sol";
+import "../../storages/MasterAccountMigrationStorage.sol";
 import "../../libraries/muon/LibMuonAccount.sol";
 import "../../libraries/LibAccount.sol";
 import "../../interfaces/IExternalTransferRelayer.sol";
@@ -162,6 +163,11 @@ library AccountFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 
+		// Master account mode only allows allocations to the master bucket (partyA == address(0)).
+		require(
+			!accountLayout.masterAccountMode[signer] || partyA == address(0),
+			"AccountFacet: Master account mode is active"
+		);
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
 		require(!MAStorage.layout().partyBLiquidationStatus[signer][partyA], "AccountFacet: PartyB isn't solvent");
 		require(!accountLayout.crossLiquidationDetails[signer].inProgress, "AccountFacet: PartyB isn't solvent");
@@ -206,6 +212,10 @@ library AccountFacetImpl {
 		require(GlobalAppStorage.layout().masterAccountEnabled, "AccountFacet: Master account disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
+		require(
+			MasterAccountMigrationStorage.layout().partyBMigrationComplete[signer],
+			"AccountFacet: Master account migration incomplete"
+		);
 		require(!accountLayout.masterAccountMode[signer], "AccountFacet: Master account mode is active");
 		accountLayout.masterAccountMode[signer] = true;
 	}

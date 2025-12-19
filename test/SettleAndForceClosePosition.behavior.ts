@@ -27,6 +27,7 @@ import {
 	getDummySettlementSig,
 	getDummySingleUpnlSig,
 } from "./utils/SignatureUtils"
+import { migratePartyBToMaster } from "./utils/MasterAccount"
 
 export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger, user2: User
@@ -168,10 +169,6 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 	describe("Master Account", async function () {
 		beforeEach(async function () {
-			// switch hedger to master account mode
-			await context.controlFacet.setMasterAccountEnabled(true)
-			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
-
 			// prepare quotes and positions
 
 			// prepare update prices
@@ -185,6 +182,8 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const quantityShort = decimal(75n)
 			await hedger.lockQuote(quote2ShortOpened.id)
 			await hedger.openPosition(quote2ShortOpened.id, limitOpenRequestBuilder().filledAmount(quantityShort).build())
+
+			await migratePartyBToMaster(context, hedger, [quote1LongOpened.id, quote2ShortOpened.id])
 
 			await user.requestToClosePosition(
 				quote1LongOpened.id,
@@ -268,7 +267,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				})
 
 				it("Should revert when signature partyB does not match quote.partyB", async function () {
-					await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
+					await migratePartyBToMaster(context, hedger2, [])
 
 					// Wrong partyB inside sig (use any other address)
 					const wrongPartyB = await hedger2.getAddress()
@@ -306,7 +305,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			})
 
 			it("Should revert when signature partyB does not match quote.partyB", async function () {
-				await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
+				await migratePartyBToMaster(context, hedger2, [])
 
 				// Wrong partyB inside sig (use any other address)
 				const wrongPartyB = await hedger2.getAddress()
