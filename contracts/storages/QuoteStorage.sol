@@ -88,7 +88,7 @@ library QuoteStorage {
 		mapping(address => uint256[]) quoteIdsOf;
 		mapping(uint256 => Quote) quotes;
 		mapping(address => uint256) partyAPositionsCount;
-		mapping(address => mapping(address => uint256)) partyBPositionsCount;
+		mapping(address => mapping(address => uint256)) partyBPositionsCount; // partyB => partyA => count of positions, partyA = address(0) for master account mode
 		mapping(address => uint256[]) partyAPendingQuotes;
 		mapping(address => mapping(address => uint256[])) partyBPendingQuotes;
 		mapping(address => uint256[]) partyAOpenPositions;

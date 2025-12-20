@@ -1,8 +1,8 @@
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs"
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
+import { loadFixture, time } from "./network-helpers"
 import { expect } from "chai"
 import { ZeroAddress, toUtf8Bytes, TypedDataDomain } from "ethers"
-import { ethers, network } from "hardhat"
+import { ethers } from "./hardhat-connection"
 
 import { InstantLayer } from "../../src/types"
 import { initializeFixture } from "../Initialize.fixture"
@@ -105,8 +105,7 @@ function createSignedOperation(
 }
 
 async function increaseTime(seconds: number): Promise<void> {
-	await network.provider.send("evm_increaseTime", [seconds])
-	await network.provider.send("evm_mine")
+	await time.increase(seconds)
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -133,9 +132,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 		await partyA2.setBalances(decimal(100000n), decimal(5000n))
 
 		await context.controlFacet.grantRole(context.instantLayer, ROLES.INSTANT_LAYER_ROLE)
-		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ROLES.BINDABLE_SETTER_ROLE)
+		// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 		await context.controlFacet.connect(context.signers.admin).registerPartyB(await context.symmioPartyB.getAddress())
-		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress())
+		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress(), true)
 
 		await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
 
@@ -1461,7 +1460,148 @@ export function shouldBehaveLikeInstantLayer(): void {
 				await ctx.context.instantLayer.grantBatchDelegationBySig(signedDelegation, sig)
 
 				// Trying same delegation again should fail
-				await expect(ctx.context.instantLayer.grantBatchDelegationBySig(signedDelegation, sig)).to.be.reverted
+				await expect(ctx.context.instantLayer.grantBatchDelegationBySig(signedDelegation, sig)).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidNonce",
+				)
+			})
+		})
+
+		describe("PartyB delegation with isPartyB=false bypass attempt", function () {
+			// This test verifies that attempting to grant delegation to a PartyB address
+			// while passing isPartyB=false to bypass the InvalidDelegation check will fail
+			// because the onlyOwner modifier queries AccountHub.ownerOf() which returns
+			// address(0) for PartyB addresses (they are not registered as sub-accounts)
+
+			it("reverts when trying to grant delegation with PartyB address but isPartyB=false", async function () {
+				// Register PartyB first
+				await ctx.context.instantLayer.registerPartyBs([ctx.context.symmioPartyB])
+				await ctx.context.symmioPartyB.grantRole(ROLES.SETTER_ROLE, await ctx.context.signers.admin.getAddress())
+				await ctx.context.symmioPartyB.setSigner(ctx.partyB1.signer)
+
+				const partyBAddress = await ctx.context.symmioPartyB.getAddress()
+				const selector = ctx.lockQuoteCallData.slice(0, 10) as `0x${string}`
+
+				// Attempt to grant delegation with PartyB address but isPartyB=false
+				// This should fail because AccountHub.ownerOf(partyBAddress) returns address(0)
+				// and the onlyOwner modifier checks if msg.sender == owner
+				await expect(
+					ctx.context.instantLayer.connect(ctx.partyB1.signer).grantDelegation({
+						account: { addr: partyBAddress, isPartyB: false }, // Trying to bypass the check
+						delegatedSigner: ctx.context.signers.admin.address,
+						selectors: [selector],
+						expiryTimestamp: await getBlockTimestamp(DEFAULT_EXPIRY_OFFSET),
+					}),
+				).to.be.revertedWithCustomError(ctx.context.instantLayer, "NotOwnerOfAccount")
+			})
+
+			it("even if delegation somehow existed, PartyB operations cannot use PartyA path", async function () {
+				// This test demonstrates that even if a delegation were somehow stored for a PartyB address,
+				// executing PartyB operations with isPartyB=false would fail because:
+				// 1. The operation would be routed through AccountHub (PartyA path)
+				// 2. AccountHub doesn't know about PartyB contracts
+
+				// Setup
+				await ctx.context.instantLayer.registerPartyBs([ctx.context.symmioPartyB])
+				await ctx.context.symmioPartyB.grantRole(ROLES.SETTER_ROLE, await ctx.context.signers.admin.getAddress())
+				await ctx.context.symmioPartyB.setSigner(ctx.partyB1.signer)
+
+				// Create a legitimate PartyA account and send a quote first
+				await ctx.context.accountManager.connect(ctx.partyA1.signer).addAccount("testAccount")
+				const accounts = await ctx.context.accountManager.getAccounts(ctx.partyA1.address, 0, 100)
+				const partyAAccount = accounts[0].accountAddress
+
+				await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, ethers.MaxUint256)
+				await ctx.context.collateral.connect(ctx.partyA1.signer).mint(partyAAccount, decimal(30n))
+				await ctx.context.accountFacet.connect(ctx.partyA1.signer).internalTransfer(partyAAccount, decimal(1000n))
+				await ctx.context.accountManager.connect(ctx.partyA1.signer)._call(partyAAccount, [ctx.bindToPartyBCallData])
+				await ctx.context.symbolControlFacet.whitelistSymbolType(ctx.context.symmioPartyB.getAddress(), 1)
+
+				// Send quote from PartyA
+				const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+				const sendQuoteOp = createSignedOperation(
+					ctx.partyA1.address,
+					ctx.context.diamond,
+					ctx.quoteCallData,
+					{ addr: partyAAccount, isPartyB: false },
+					1n,
+					deadline,
+				)
+				const sendQuoteSig = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, sendQuoteOp)
+				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig])
+
+				// Now try to execute PartyB operation (lockQuote) with isPartyB=false
+				// This would attempt to route through AccountHub which won't work for PartyB
+				const partyBAddress = await ctx.context.symmioPartyB.getAddress()
+				const lockOp = createSignedOperation(
+					partyBAddress,
+					ctx.context.diamond,
+					ctx.lockQuoteCallData,
+					{ addr: partyBAddress, isPartyB: false }, // Wrong: Using PartyA path for PartyB operation
+					1n,
+					deadline,
+				)
+				const lockSig = await signOperation(ctx.partyB1.signer, ctx.domain, ctx.types, lockOp)
+
+				// This should fail because:
+				// 1. AccountHub.ownerOf(partyBAddress) returns address(0)
+				// 2. Since signer != owner (neither is the actual owner), it checks delegation
+				// 3. No delegation exists for partyBAddress as delegator
+				await expect(ctx.context.instantLayer.executeBatch([lockOp], [lockSig])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidDelegation",
+				)
+			})
+
+			it("PartyB operations work correctly when using isPartyB=true", async function () {
+				// This test confirms that the correct way for PartyB to operate is with isPartyB=true
+
+				// Setup
+				await ctx.context.instantLayer.registerPartyBs([ctx.context.symmioPartyB])
+				await ctx.context.symmioPartyB.grantRole(ROLES.SETTER_ROLE, await ctx.context.signers.admin.getAddress())
+				await ctx.context.symmioPartyB.setSigner(ctx.partyB1.signer)
+
+				// Create a legitimate PartyA account and send a quote first
+				await ctx.context.accountManager.connect(ctx.partyA1.signer).addAccount("testAccount")
+				const accounts = await ctx.context.accountManager.getAccounts(ctx.partyA1.address, 0, 100)
+				const partyAAccount = accounts[0].accountAddress
+
+				await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, ethers.MaxUint256)
+				await ctx.context.collateral.connect(ctx.partyA1.signer).mint(partyAAccount, decimal(30n))
+				await ctx.context.accountFacet.connect(ctx.partyA1.signer).internalTransfer(partyAAccount, decimal(1000n))
+				await ctx.context.accountManager.connect(ctx.partyA1.signer)._call(partyAAccount, [ctx.bindToPartyBCallData])
+				await ctx.context.symbolControlFacet.whitelistSymbolType(ctx.context.symmioPartyB.getAddress(), 1)
+
+				// Send quote from PartyA
+				const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+				const sendQuoteOp = createSignedOperation(
+					ctx.partyA1.address,
+					ctx.context.diamond,
+					ctx.quoteCallData,
+					{ addr: partyAAccount, isPartyB: false },
+					1n,
+					deadline,
+				)
+				const sendQuoteSig = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, sendQuoteOp)
+				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig])
+
+				// Now execute PartyB operation with isPartyB=true (correct way)
+				const partyBAddress = await ctx.context.symmioPartyB.getAddress()
+				const lockOp = createSignedOperation(
+					partyBAddress,
+					ctx.context.diamond,
+					ctx.lockQuoteCallData,
+					{ addr: partyBAddress, isPartyB: true }, // Correct: Using PartyB path
+					1n,
+					deadline,
+				)
+				const lockSig = await signOperation(ctx.partyB1.signer, ctx.domain, ctx.types, lockOp)
+
+				// This should succeed
+				await expect(ctx.context.instantLayer.executeBatch([lockOp], [lockSig])).not.to.be.reverted
+
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
 			})
 		})
 	})
@@ -1665,6 +1805,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					metadata: ethers.keccak256(toUtf8Bytes("metadata")),
 					symmioCore: ctx.context.diamond,
 					isolationType: 1,
+					singleVAMode: false,
 				},
 			]
 			await ctx.context.accountHub.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), subAccountData)
@@ -1699,6 +1840,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 				ctx.requestSendQuote.affiliate,
 				await ctx.requestSendQuote.upnlSig,
 			])
+
+			// Pre-fund the VA before sending quote (since automatic transfer was removed)
+			// MARKET isolation (1) -> VirtualAccountIsolationType.MARKET (1)
+			const predictedVA = await ctx.context.accountHub.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
+			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, decimal(500n))
+			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositAndAllocateFor(predictedVA, decimal(500n))
 
 			// Create virtual account by sending a quote
 			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [quoteCallDataLocal])

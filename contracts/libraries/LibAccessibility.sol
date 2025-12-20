@@ -9,26 +9,33 @@ import "../storages/GlobalAppStorage.sol";
 library LibAccessibility {
 	bytes32 public constant DEFAULT_ADMIN_ROLE = keccak256("DEFAULT_ADMIN_ROLE");
 	bytes32 public constant MUON_SETTER_ROLE = keccak256("MUON_SETTER_ROLE");
-	bytes32 public constant SYMBOL_MANAGER_ROLE = keccak256("SYMBOL_MANAGER_ROLE");
-	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
-	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+	bytes32 public constant SIGNER_ADMIN_ROLE = keccak256("SIGNER_ADMIN_ROLE");
+	bytes32 public constant EMERGENCY_ADMIN_ROLE = keccak256("EMERGENCY_ADMIN_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant PARTY_B_MANAGER_ROLE = keccak256("PARTY_B_MANAGER_ROLE");
-	bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
-	bytes32 public constant SUSPENDER_ROLE = keccak256("SUSPENDER_ROLE");
-	bytes32 public constant DISPUTE_ROLE = keccak256("DISPUTE_ROLE");
 	bytes32 public constant AFFILIATE_MANAGER_ROLE = keccak256("AFFILIATE_MANAGER_ROLE");
-	bytes32 public constant PARTYB_LIQUIDATOR_ROLE = keccak256("PARTYB_LIQUIDATOR_ROLE");
-	bytes32 public constant VIRTUAL_DEPOSITOR_ROLE = keccak256("VIRTUAL_DEPOSITOR_ROLE");
-	bytes32 public constant SECURED_WITHDRAWER_ROLE = keccak256("SECURED_WITHDRAWER_ROLE");
-	bytes32 public constant CLEARING_HOUSE_ROLE = keccak256("CLEARING_HOUSE_ROLE");
-	bytes32 public constant DEALLOCATE_COOLDOWN_SETTER_ROLE = keccak256("DEALLOCATE_COOLDOWN_SETTER_ROLE");
-	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
+	bytes32 public constant DISPUTE_ROLE = keccak256("DISPUTE_ROLE");
 	bytes32 public constant SUSPENDED_FUNDS_WITHDRAWER_ROLE = keccak256("SUSPENDED_FUNDS_WITHDRAWER_ROLE");
+	bytes32 public constant PROTOCOL_CONFIG_ROLE = keccak256("PROTOCOL_CONFIG_ROLE");
+	bytes32 public constant BRIDGE_MANAGER_ROLE = keccak256("BRIDGE_MANAGER_ROLE");
+	bytes32 public constant FEE_ADMIN_ROLE = keccak256("FEE_ADMIN_ROLE");
+	bytes32 public constant COOLDOWN_ADMIN_ROLE = keccak256("COOLDOWN_ADMIN_ROLE");
+	bytes32 public constant FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE = keccak256("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE");
+	bytes32 public constant PROVIDER_ADMIN_ROLE = keccak256("PROVIDER_ADMIN_ROLE");
+	bytes32 public constant INTEGRATION_ADMIN_ROLE = keccak256("INTEGRATION_ADMIN_ROLE");
+	bytes32 public constant UNSUSPENDER_ROLE = keccak256("UNSUSPENDER_ROLE");
+	bytes32 public constant SYMBOL_MANAGER_ROLE = keccak256("SYMBOL_MANAGER_ROLE");
 	bytes32 public constant WITHDRAW_SPEED_UP_ROLE = keccak256("WITHDRAW_SPEED_UP_ROLE");
-	bytes32 public constant SIGNER_SETTER_ROLE = keccak256("SIGNER_SETTER_ROLE");
+	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+	bytes32 public constant SUSPENDER_ROLE = keccak256("SUSPENDER_ROLE");
+	bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
 	bytes32 public constant SOFT_LIQUIDATOR_ROLE = keccak256("SOFT_LIQUIDATOR_ROLE");
-	bytes32 public constant BINDABLE_SETTER_ROLE = keccak256("BINDABLE_SETTER_ROLE");
+	bytes32 public constant PARTYB_LIQUIDATOR_ROLE = keccak256("PARTYB_LIQUIDATOR_ROLE");
+	bytes32 public constant CLEARING_HOUSE_ROLE = keccak256("CLEARING_HOUSE_ROLE");
+	bytes32 public constant VIRTUAL_DEPOSITOR_ROLE = keccak256("VIRTUAL_DEPOSITOR_ROLE");
+	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
+	bytes32 public constant MIGRATION_ROLE = keccak256("MIGRATION_ROLE");
+	bytes32 public constant INTERNAL_TRANSFER_TO_BALANCE_ROLE = keccak256("INTERNAL_TRANSFER_TO_BALANCE_ROLE");
 
 	/**
 	 * @notice Checks if a user has a specific role.

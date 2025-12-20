@@ -33,7 +33,6 @@ library PartyBQuoteActionsFacetImpl {
 	}
 
 	function unlockQuote(uint256 quoteId) internal returns (QuoteStatus) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
@@ -44,7 +43,7 @@ library PartyBQuoteActionsFacetImpl {
 		} else {
 			quote.statusModifyTimestamp = block.timestamp;
 			quote.quoteStatus = QuoteStatus.PENDING;
-			accountLayout.partyBPendingLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
+			LibAccount.subFromPartyBPendingLockedBalances(quote);
 			LibQuote.removeFromPartyBPendingQuotes(quote);
 			quoteLayout.partyALockQuotesCount[quote.partyA]--;
 			quote.partyB = address(0);
@@ -60,7 +59,7 @@ library PartyBQuoteActionsFacetImpl {
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.CANCELED;
 		accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-		accountLayout.partyBPendingLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
+		LibAccount.subFromPartyBPendingLockedBalances(quote);
 
 		// send trading Fee back to partyA
 		uint256 fee = LibQuote.getOpenTradingFee(quoteId);

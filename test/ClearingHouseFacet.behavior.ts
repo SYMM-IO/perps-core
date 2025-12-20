@@ -1,14 +1,17 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture } from "./helpers/network-helpers"
 import { expect } from "chai"
-
+import { toUtf8Bytes, ZeroAddress } from "ethers"
+import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
 import { initializeFixture } from "./Initialize.fixture"
 import { PositionType, QuoteStatus } from "./models/Enums"
 import { Hedger } from "./models/Hedger"
 import { RunContext } from "./models/RunContext"
 import { User } from "./models/User"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { decimal } from "./utils/Common"
 import { getDummyCrossLiquidationSig, getDummyPriceSig } from "./utils/SignatureUtils"
-import { ethers } from "hardhat"
+import { ethers } from "./helpers/hardhat-connection"
 import { toUtf8Bytes, ZeroAddress } from "ethers"
 import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
@@ -37,78 +40,94 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 		await hedger2.setup()
 		await hedger2.setBalances(decimal(2000n), decimal(1000n))
 
-		// Quote1 -> opened
-		await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
-		await hedger.lockQuote(1)
-		await hedger.openPosition(1)
+		await hedger.setBalances(decimal(2000n), decimal(2000n))
+		await hedger2.setBalances(decimal(2000n), decimal(2000n))
+		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(1000n, user.address)
+		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(1000n, user2.address)
+		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(2000n, ZeroAddress)
+		await context.accountFacet.connect(context.signers.hedger2).allocateForPartyB(2000n, ZeroAddress)
 
-		// Quote2 -> locked
+		// Quote1 -> sent
+		await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+
+		// Quote2 -> sent
 		await user.sendQuote()
-		await hedger.lockQuote(2)
 
 		// Quote3 -> sent
 		await user.sendQuote()
 
-		// Quote4 -> user -> opened
+		// Quote4 -> sent
 		await user.sendQuote()
-		await hedger.lockQuote(4)
-		await hedger.openPosition(4)
 
-		// Quote5 -> locked
+		// Quote5 -> sent
 		await user.sendQuote()
-		await hedger.lockQuote(5)
 
 		await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
-		await hedger.setBalances(decimal(2000n), decimal(2000n))
-		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(2000n, ZeroAddress)
 	})
 
-	describe("Access Control", async function () {
-		it("Should fail when caller doesn't have CLEARING_HOUSE_ROLE", async function () {
-			await expect(
-				context.clearingHouseFacet
-					.connect(context.signers.user)
-					.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
-			).to.be.revertedWith("Accessibility: Must has role")
+	describe("None master account mode", async function () {
+		beforeEach(async function () {
+			// Quote1 -> opened
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			// Quote2 -> locked
+			await hedger.lockQuote(2)
+
+			// Quote4 -> opened
+			await hedger.lockQuote(4)
+			await hedger.openPosition(4)
+
+			// Quote5 -> locked
+			await hedger.lockQuote(5)
 		})
+		describe("Access Control", async function () {
+			it("Should fail when caller doesn't have CLEARING_HOUSE_ROLE", async function () {
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.user)
+						.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
+				).to.be.revertedWith("Accessibility: Must has role")
+			})
 
-		it("Should succeed when caller has CLEARING_HOUSE_ROLE", async function () {
-			await context.controlFacet
-				.connect(context.signers.admin)
-				.grantRole(context.signers.user2.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+			it("Should succeed when caller has CLEARING_HOUSE_ROLE", async function () {
+				await context.controlFacet
+					.connect(context.signers.admin)
+					.grantRole(context.signers.user2.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
 
-			// Activate master mode for hedger
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
-			await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
+				// Activate master mode for hedger
+				await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
+				await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
 
-			await expect(
-				context.clearingHouseFacet
-					.connect(context.signers.user2)
-					.liquidateCrossPartyB(
-						context.signers.hedger.address,
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
-					),
-			).to.not.be.reverted
-		})
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.user2)
+						.liquidateCrossPartyB(
+							context.signers.hedger.address,
+							await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						),
+				).to.not.be.reverted
+			})
 
-		it("Should fail when liquidation is paused", async function () {
-			await context.pauseControlFacet.connect(context.signers.admin).pauseLiquidation()
+			it("Should fail when liquidation is paused", async function () {
+				await context.pauseControlFacet.connect(context.signers.admin).pauseLiquidation()
 
-			await expect(
-				context.clearingHouseFacet
-					.connect(context.signers.liquidator)
-					.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
-			).to.be.revertedWith("Pausable: Liquidation paused")
-		})
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
+				).to.be.revertedWith("Pausable: Liquidation paused")
+			})
 
-		it("Should fail when globally paused", async function () {
-			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
+			it("Should fail when globally paused", async function () {
+				await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
-			await expect(
-				context.clearingHouseFacet
-					.connect(context.signers.liquidator)
-					.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
-			).to.be.revertedWith("Pausable: Global paused")
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
+				).to.be.revertedWith("Pausable: Global paused")
+			})
 		})
 	})
 
@@ -123,8 +142,22 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 		describe("With Master Mode Active", () => {
 			beforeEach(async () => {
-				await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
+				await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
 				await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
+
+				// Quote1 -> opened
+				await hedger.lockQuote(1)
+				await hedger.openPosition(1)
+
+				// Quote2 -> locked
+				await hedger.lockQuote(2)
+
+				// Quote4 -> opened
+				await hedger.lockQuote(4)
+				await hedger.openPosition(4)
+
+				// Quote5 -> locked
+				await hedger.lockQuote(5)
 			})
 
 			it("Should fail on partyB being solvent", async function () {
@@ -172,8 +205,22 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 	describe("deallocateForCrossLiquidation", () => {
 		beforeEach(async () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
+			await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
 			await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
+
+			// Quote1 -> opened
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			// Quote2 -> locked
+			await hedger.lockQuote(2)
+
+			// Quote4 -> opened
+			await hedger.lockQuote(4)
+			await hedger.openPosition(4)
+
+			// Quote5 -> locked
+			await hedger.lockQuote(5)
 		})
 
 		it("should failed when partyB not marked as cross liquid", async () => {
@@ -230,7 +277,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						.deallocateForCrossLiquidation(
 							context.signers.hedger,
 							[context.signers.user, context.signers.user2],
-							[deallocateAmount1, deallocateAmount2]
+							[deallocateAmount1, deallocateAmount2],
 						),
 				).to.not.reverted
 
@@ -260,7 +307,9 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 			it("should fail when amount be more than deallocated for liquidation", async () => {
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).distributeForCrossLiquidation(context.signers.hedger, [context.signers.user], [1001n]),
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForCrossLiquidation(context.signers.hedger, [context.signers.user], [1001n]),
 				).to.revertedWith("ClearingHouseFacet: Insufficient allocated balance")
 			})
 
@@ -295,7 +344,9 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 			it("should fail when partyB is not liquidated", async () => {
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).distributeForCrossLiquidation(context.signers.hedger2, [context.signers.user], [1n]),
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForCrossLiquidation(context.signers.hedger2, [context.signers.user], [1n]),
 				).to.be.revertedWith("ClearingHouseFacet: PartyB is solvent")
 			})
 		})
@@ -325,7 +376,9 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				}
 
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user]),
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user]),
 				).to.not.reverted
 
 				const newUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
@@ -342,7 +395,9 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const oldUser2PendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user2)
 
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user, context.signers.user2]),
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user, context.signers.user2]),
 				).to.not.reverted
 
 				const newUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
@@ -354,7 +409,9 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 			it("should fail when partyB is not liquidated", async () => {
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForCrossLiquidation(context.signers.hedger2, [context.signers.user]),
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger2, [context.signers.user]),
 				).to.be.revertedWith("ClearingHouseFacet: PartyB is solvent")
 			})
 		})
@@ -373,9 +430,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const priceSig = await getDummyPriceSig([1n], [decimal(1n)])
 
 				await expect(
-					context.clearingHouseFacet
-						.connect(context.signers.liquidator)
-						.liquidatePositionsForCrossLiquidation(context.signers.hedger, context.signers.user, priceSig),
+					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger, priceSig),
 				).to.not.reverted
 
 				const quote1: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
@@ -387,9 +442,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const priceSig = await getDummyPriceSig([1n], [decimal(1n)])
 
 				await expect(
-					context.clearingHouseFacet
-						.connect(context.signers.liquidator)
-						.liquidatePositionsForCrossLiquidation(context.signers.hedger2, context.signers.user, priceSig),
+					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger2, priceSig),
 				).to.be.revertedWith("ClearingHouseFacet: PartyB is solvent")
 			})
 
@@ -402,9 +455,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				expect(quote1Before.quoteStatus).to.equal(QuoteStatus.OPENED)
 				expect(quote4Before.quoteStatus).to.equal(QuoteStatus.OPENED)
 
-				await context.clearingHouseFacet
-					.connect(context.signers.liquidator)
-					.liquidatePositionsForCrossLiquidation(context.signers.hedger, context.signers.user, priceSig)
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger, priceSig)
 
 				const quote1After: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
 				const quote4After: QuoteStructOutput = await context.viewFacetQuote.getQuote(4)
@@ -413,82 +464,160 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				expect(quote4After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
 			})
 		})
+
+		describe("Shared master bucket state", () => {
+			let quoteUser1: QuoteStructOutput, quoteUser2: QuoteStructOutput
+
+			beforeEach(async () => {
+				await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
+				await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
+
+				// second partyA
+				await user2.setBalances(decimal(2000n), decimal(1000n), decimal(500n))
+
+				quoteUser1 = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().quantity(decimal(80n)).build()))
+				quoteUser2 = await context.viewFacetQuote.getQuote(await user2.sendQuote(limitQuoteRequestBuilder().quantity(decimal(120n)).build()))
+
+				await hedger2.lockQuote(quoteUser1.id)
+				await hedger2.openPosition(quoteUser1.id, limitOpenRequestBuilder().filledAmount(quoteUser1.quantity).build())
+
+				await hedger2.lockQuote(quoteUser2.id)
+				await hedger2.openPosition(quoteUser2.id, limitOpenRequestBuilder().filledAmount(quoteUser2.quantity).build())
+
+				await context.controlFacet
+					.connect(context.signers.admin)
+					.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+			})
+
+			it("clears shared locked/pending bucket and bumps shared nonce after full liquidation", async () => {
+				const masterBucketBefore = await hedger2.getBalanceInfoMasterAccount()
+
+				expect(masterBucketBefore.lockedCva).to.be.greaterThan(0)
+				expect(masterBucketBefore.lockedLf).to.be.greaterThan(0)
+				expect(masterBucketBefore.lockedMmPartyB).to.be.greaterThan(0)
+
+				const nonceBefore = await context.viewFacet.nonceOfPartyB(await hedger2.getAddress(), ZeroAddress)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(await hedger2.getAddress(), await getDummyCrossLiquidationSig(undefined, -decimal(1_000_000n)))
+
+				const priceSig = await getDummyPriceSig([quoteUser1.id, quoteUser2.id], [quoteUser1.openedPrice, quoteUser2.openedPrice])
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(hedger2.address, priceSig)
+
+				const masterBucketAfter = await hedger2.getBalanceInfoMasterAccount()
+
+				expect(masterBucketAfter.lockedCva).to.equal(0)
+				expect(masterBucketAfter.lockedLf).to.equal(0)
+				expect(masterBucketAfter.lockedMmPartyB).to.equal(0)
+
+				const nonceAfter = await context.viewFacet.nonceOfPartyB(await hedger2.getAddress(), ZeroAddress)
+				expect(nonceAfter).to.be.greaterThan(nonceBefore)
+			})
+		})
 	})
 
 	describe("SoftLiquidation", () => {
-		it("should soft liquidate and emit event correctly", async  () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
-			await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
-			await context.controlFacet.connect(context.signers.admin).setPenaltyCollector(context.signers.liquidator)
-			await context.controlFacet.connect(context.signers.admin).grantRole(
-				context.signers.liquidator.address,
-				ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
-			await expect(context.clearingHouseFacet.connect(context.signers.liquidator)
-				.softPartyBLiquidation(context.signers.hedger.address,ethers.parseEther("100"),0))
-				.to.emit(context.clearingHouseFacet, "SoftPartyBLiquidation")
-				.withArgs(context.signers.hedger.address, ethers.parseEther("100"),0);
+		describe("SoftLiquidation without master account mode enabled", () => {
+			it("should fail to soft liquidate without active master account mode", async () => {
+				await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
+				await context.controlFacet
+					.connect(context.signers.admin)
+					.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), 0),
+				).to.revertedWith("ClearingHouseFacet: partyB is not using master account mode")
+			})
 		})
+		describe("SoftLiquidation with master account mode enabled", () => {
+			beforeEach(async () => {
+				await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
+				await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
 
-		it("should fail to soft liquidate without active master account mode", async  () => {
-			await context.controlFacet.connect(context.signers.admin).setPenaltyCollector(context.signers.liquidator)
-			await context.controlFacet.connect(context.signers.admin).grantRole(
-				context.signers.liquidator.address,
-				ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
-			await expect(context.clearingHouseFacet.connect(context.signers.liquidator)
-				.softPartyBLiquidation(context.signers.hedger.address,ethers.parseEther("100"),0))
-				.to.revertedWith("ClearingHouseFacet: partyB is not using master account mode")
-		})
+				// Quote1 -> opened
+				await hedger.lockQuote(1)
+				await hedger.openPosition(1)
 
-		it("should fail to soft liquidate without role", async  () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
-			await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
-			await context.controlFacet.connect(context.signers.admin).setPenaltyCollector(context.signers.liquidator)
-			await expect(context.clearingHouseFacet.connect(context.signers.liquidator)
-				.softPartyBLiquidation(context.signers.hedger.address,ethers.parseEther("100"),0))
-				.to.revertedWith("Accessibility: Must has role");
-		})
+				// Quote2 -> locked
+				await hedger.lockQuote(2)
 
-		it("should change balance in penalty soft liquidate correctly", async  () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
-			await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
-			await context.controlFacet.connect(context.signers.admin).setPenaltyCollector(context.signers.liquidator)
-			await context.controlFacet.connect(context.signers.admin).grantRole(
-				context.signers.liquidator.address,
-				ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
-			await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(ethers.parseEther("100"),ethers.ZeroAddress)
-			const beforeLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
-			const beforeAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address,ethers.ZeroAddress)
-			await expect(context.clearingHouseFacet.connect(context.signers.liquidator)
-				.softPartyBLiquidation(context.signers.hedger.address,ethers.parseEther("100"),ethers.parseEther("10")))
-				.not.reverted
-			const afterLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
-			const afterAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address,ethers.ZeroAddress)
-			expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(afterLiquidatorBalance - beforeLiquidatorBalance)
-			expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(ethers.parseEther("10"))
-		})
+				// Quote4 -> opened
+				await hedger.lockQuote(4)
+				await hedger.openPosition(4)
 
-		it("should fail to soft liquid if penalty is more than balance", async  () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
-			await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
-			await context.controlFacet.connect(context.signers.admin).setPenaltyCollector(context.signers.liquidator)
-			await context.controlFacet.connect(context.signers.admin).grantRole(
-				context.signers.liquidator.address,
-				ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
-			await expect(context.clearingHouseFacet.connect(context.signers.liquidator)
-				.softPartyBLiquidation(context.signers.hedger.address,ethers.parseEther("100"),ethers.parseEther("10")))
-				.to.revertedWith("ClearingHouse: Insufficient Balance");
-		})
+				// Quote5 -> locked
+				await hedger.lockQuote(5)
+			})
+			describe("SoftLiquidation in none master account mode", () => {
+				it("should fail to soft liquidate without role", async () => {
+					await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
+					await expect(
+						context.clearingHouseFacet
+							.connect(context.signers.liquidator)
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), 0),
+					).to.revertedWith("Accessibility: Must has role")
+				})
 
-		it("should fail to soft liquid with penalty without collector", async  () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountActivationMode(true)
-			await context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()
-			await context.controlFacet.connect(context.signers.admin).grantRole(
-				context.signers.liquidator.address,
-				ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
-			await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(ethers.parseEther("100"),ethers.ZeroAddress)
-			await expect(context.clearingHouseFacet.connect(context.signers.liquidator)
-				.softPartyBLiquidation(context.signers.hedger.address,ethers.parseEther("100"),ethers.parseEther("10")))
-				.to.revertedWith("ClearingHouse: No Penalty Collector")
+				it("should fail to soft liquid if penalty is more than balance", async () => {
+					await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
+					await context.controlFacet
+						.connect(context.signers.admin)
+						.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
+					await expect(
+						context.clearingHouseFacet
+							.connect(context.signers.liquidator)
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), ethers.parseEther("2000")),
+					).to.revertedWith("ClearingHouse: Insufficient Balance")
+				})
+
+				it("should fail to soft liquid with penalty without collector", async () => {
+					await context.controlFacet
+						.connect(context.signers.admin)
+						.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
+					await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(ethers.parseEther("100"), ethers.ZeroAddress)
+					await expect(
+						context.clearingHouseFacet
+							.connect(context.signers.liquidator)
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), ethers.parseEther("10")),
+					).to.revertedWith("ClearingHouse: No Penalty Collector")
+				})
+			})
+
+			describe("SoftLiquidation happy path", () => {
+				beforeEach(async () => {
+					await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
+					await context.controlFacet
+						.connect(context.signers.admin)
+						.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
+				})
+
+				it("should soft liquidate and emit event correctly", async () => {
+					await expect(
+						context.clearingHouseFacet
+							.connect(context.signers.liquidator)
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), 0),
+					)
+						.to.emit(context.clearingHouseFacet, "SoftPartyBLiquidation")
+						.withArgs(context.signers.hedger.address, ethers.parseEther("100"), 0)
+				})
+
+				it("should change balance in penalty soft liquidate correctly", async () => {
+					await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(ethers.parseEther("100"), ethers.ZeroAddress)
+					const beforeLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+					const beforeAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, ethers.ZeroAddress)
+					await expect(
+						context.clearingHouseFacet
+							.connect(context.signers.liquidator)
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), ethers.parseEther("10")),
+					).not.reverted
+					const afterLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+					const afterAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, ethers.ZeroAddress)
+					expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(afterLiquidatorBalance - beforeLiquidatorBalance)
+					expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(ethers.parseEther("10"))
+				})
+			})
 		})
 	})
 }

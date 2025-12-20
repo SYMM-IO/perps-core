@@ -1,4 +1,4 @@
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, time } from "./helpers/network-helpers";
 import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture"
@@ -18,7 +18,6 @@ import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/Signature
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { ethers, toUtf8Bytes } from "ethers"
 import { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
-import { increase } from "@nomicfoundation/hardhat-network-helpers/dist/src/helpers/time";
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
@@ -72,7 +71,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		await user.sendQuote()
 		await hedger.lockQuote(5)
 
-		await increase(550)
+		await time.increase(550)
 		await context.controlFacet.setMuonConfig(1000n , 1000n)
 
 	})
@@ -408,7 +407,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		describe("Test normal branch", async function () {
 			const price = decimal(57198n, 14)
 			beforeEach(async function () {
-				await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
 				await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(100n))
 				this.signature1 = await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 				const liquidationState = await user.getLiquidatedStateOfPartyA()
@@ -505,7 +503,6 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	describe("Test normal branch deferred", async function () {
 		const price = decimal(572n, 16)
 		beforeEach(async function () {
-			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("SETTER_ROLE")))
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(100n))
 			this.signature1 = await user.deferredLiquidateAndSetSymbolPrices([1n], [price],[1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()

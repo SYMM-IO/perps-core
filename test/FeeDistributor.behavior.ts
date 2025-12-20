@@ -1,7 +1,8 @@
 import {expect} from "chai"
-import {ethers, upgrades} from "hardhat"
+import {ethers, hre} from "./helpers/hardhat-connection"
 import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
 import {MockSymmio, MockToken, SymmioFeeDistributor} from "../src/types"
+import {deployProxy} from "../utils/upgrades-shim"
 
 export function shouldBehaveLikeFeeDistributor() {
 	describe("FeeDistributor", function () {
@@ -37,12 +38,12 @@ export function shouldBehaveLikeFeeDistributor() {
 
 			// Deploy FeeCollector
 			const FeeCollector = await ethers.getContractFactory("SymmioFeeDistributor")
-			feeDistributor = await upgrades.deployProxy(FeeCollector, [
+			feeDistributor = (await deployProxy(hre, FeeCollector, [
 				admin.address,
 				await mockSymmio.getAddress(),
 				symmioReceiver.address,
 				symmioShare
-			]) as any
+			])) as any
 
 			// Grant roles
 			await feeDistributor.connect(admin).grantRole(await feeDistributor.COLLECTOR_ROLE(), collector.address)

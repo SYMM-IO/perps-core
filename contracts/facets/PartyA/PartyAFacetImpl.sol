@@ -78,8 +78,9 @@ library PartyAFacetImpl {
 			if (appLayout.affiliateFee[affiliate][symbolId].isSet) {
 				fee = appLayout.affiliateFee[affiliate][symbolId];
 			} else {
-				fee = appLayout.defaultAffiliateFee[affiliate];
-				if (!fee.isSet) {
+				if (appLayout.affiliateFee[affiliate][0].isSet) {
+					fee = appLayout.affiliateFee[affiliate][0];
+				} else {
 					uint256 symbolTradingFee = symbolLayout.symbols[symbolId].tradingFee;
 					fee = Fee(symbolTradingFee, symbolTradingFee, true);
 				}

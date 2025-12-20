@@ -1,4 +1,4 @@
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture"
@@ -21,7 +21,7 @@ export function shouldBehaveLikeSendQuote(): void {
 		user = new User(context, context.signers.user)
 		await user.setup()
 		await user.setBalances(decimal(2000n), decimal(1500n), this.user_allocated)
-		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address,ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
+		// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 	})
 
 	it("Should fail on paused partyA", async function () {
@@ -126,7 +126,7 @@ export function shouldBehaveLikeSendQuote(): void {
 	})
 
 	it("Should fail when bind to a partyB and the partyB is not in the whitelisted partyBs", async function () {
-		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address)
+		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 		await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.getAddress())
 		await expect(
 			user.sendQuote(
@@ -162,7 +162,7 @@ export function shouldBehaveLikeSendQuote(): void {
 
 	it("should send quote with correct affiliate fee", async function () {
 		await context.controlFacet.registerAffiliate(context.signers.hedger)
-		await context.controlFacet.setAffiliateFee(context.signers.hedger, 1, 17, 17)
+		await context.controlFacet.setAffiliateFee(context.signers.hedger.address, [1], [17], [17])
 		let validator = new SendQuoteValidator()
 		const before = await validator.before(context, { user: user })
 		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
@@ -171,8 +171,14 @@ export function shouldBehaveLikeSendQuote(): void {
 
 	it("should send quote with correct custom affiliate fee", async function () {
 		await context.controlFacet.registerAffiliate(context.signers.hedger)
-		await context.controlFacet.setAffiliateFee(context.signers.hedger, 1, 18, 18)
-		await context.controlFacet.setCustomAffiliateFee(context.signers.hedger,context.signers.user, 1, 17, 17)
+		await context.controlFacet.setAffiliateFee(context.signers.hedger.address, [1], [18], [18])
+		await context.controlFacet.setCustomAffiliateFee(
+			context.signers.hedger.address,
+			[context.signers.user.address],
+			[1],
+			[17],
+			[17],
+		)
 		let validator = new SendQuoteValidator()
 		const before = await validator.before(context, { user: user })
 		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())

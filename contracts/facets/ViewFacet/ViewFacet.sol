@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import "../../libraries/LibDiamond.sol";
 import "../../libraries/muon/LibMuon.sol";
+import "../../libraries/LibAccount.sol";
 import "../../storages/AccountStorage.sol";
 import "../../storages/WithdrawStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
@@ -16,7 +17,6 @@ import "../../storages/MuonStorage.sol";
 import "../../storages/BridgeStorage.sol";
 import "../../libraries/LibAccessibility.sol";
 import "./IViewFacet.sol";
-
 contract ViewFacet is IViewFacet {
 	using LockedValuesOps for LockedValues;
 
@@ -136,6 +136,30 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Returns balance information of Party B in master account mode.
+	 * @param partyB The address of Party B.
+	 * @return allocatedBalances The allocated balances of Party B.
+	 * @return lockedBalances The locked balances of Party B.
+	 * @return pendingLockedBalances The pending locked balances of Party B.
+	 */
+	function balanceInfoOfPartyBMasterAccount(
+		address partyB
+	) external view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		return (
+			accountLayout.partyBAllocatedBalances[partyB][address(0)],
+			accountLayout.partyBLockedBalances[partyB][address(0)].cva,
+			accountLayout.partyBLockedBalances[partyB][address(0)].lf,
+			accountLayout.partyBLockedBalances[partyB][address(0)].partyAmm,
+			accountLayout.partyBLockedBalances[partyB][address(0)].partyBmm,
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].cva,
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].lf,
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].partyAmm,
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].partyBmm
+		);
+	}
+
+	/**
 	 * @notice Returns the allocated balance of Party A.
 	 * @param partyA The address of Party A.
 	 * @return The allocated balance of Party A.
@@ -152,6 +176,15 @@ contract ViewFacet is IViewFacet {
 	 */
 	function allocatedBalanceOfPartyB(address partyB, address partyA) external view returns (uint256) {
 		return AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
+	}
+
+	/**
+	 * @notice Returns the allocated balance of Party B for a specific Party A.
+	 * @param partyB The address of Party B.
+	 * @return The allocated balance of Party B for Party A.
+	 */
+	function allocatedBalanceOfPartyBInMasterAccount(address partyB) external view returns (uint256) {
+		return AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)];
 	}
 
 	/**
@@ -208,7 +241,7 @@ contract ViewFacet is IViewFacet {
 	 * @notice Returns the nonce of Party B for a specific Party A.
 	 * @param partyB The address of Party B.
 	 * @param partyA The address of Party A.
-	 * @return The nonce of Party B for Party A.
+	 * @return The nonce of Party B for Party A in normal mode or master account mode.
 	 */
 	function nonceOfPartyB(address partyB, address partyA) external view returns (uint256) {
 		return AccountStorage.layout().partyBNonces[partyB][partyA];
@@ -338,10 +371,10 @@ contract ViewFacet is IViewFacet {
 
 	/**
 	 * @notice Indicates whether Party B accounts are allowed to activate master account mode.
-	 * @return True if activation is globally enabled, false otherwise.
+	 * @return True if master account functionality is globally enabled, false otherwise.
 	 */
-	function getMasterAccountActivationMode() external view returns (bool) {
-		return GlobalAppStorage.layout().masterAccountActivationMode;
+	function getMasterAccountEnabled() external view returns (bool) {
+		return GlobalAppStorage.layout().masterAccountEnabled;
 	}
 
 	/**
@@ -403,6 +436,15 @@ contract ViewFacet is IViewFacet {
 	 */
 	function forceCloseMinSigPeriod() external view returns (uint256) {
 		return MAStorage.layout().forceCloseMinSigPeriod;
+	}
+
+	/**
+	 * @notice Returns the force close Detail structure.
+	 * @param forceCloseId The ID of force close
+	 * @return  forceCloseStruct The force close structure
+	 */
+	function forceCloseDetails(uint256 forceCloseId) external view returns (ForceCloseDetail memory forceCloseStruct) {
+		forceCloseStruct = AccountStorage.layout().forceCloseDetails[forceCloseId];
 	}
 
 	/**
@@ -627,24 +669,6 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Retrieves the total CVA of a party B.
-	 * @param partyB The address of the party B.
-	 * @return totalCva The total CVA of the party B.
-	 */
-	function getPartyBTotalCva(address partyB) external view returns (uint256) {
-		return AccountStorage.layout().partyBTotalCva[partyB];
-	}
-
-	/**
-	 * @notice Retrieves the total LF of a party B.
-	 * @param partyB The address of the party B.
-	 * @return totalLf The total LF of the party B.
-	 */
-	function getPartyBTotalLf(address partyB) external view returns (uint256) {
-		return AccountStorage.layout().partyBTotalLf[partyB];
-	}
-
-	/**
 	 * @notice Retrieves the signature verifier.
 	 * @return signatureVerifier The signature verifier.
 	 */
@@ -671,22 +695,13 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Retrieves the default affiliate fee of an affiliate.
-	 * @param affiliate The address of the affiliate.
-	 * @return fee The default affiliate fee of the affiliate.
-	 */
-	function getDefaultAffiliateFee(address affiliate) external view returns (Fee memory) {
-		return GlobalAppStorage.layout().defaultAffiliateFee[affiliate];
-	}
-
-	/**
 	 * @notice Retrieves the custom affiliate fee of an affiliate for specific user and symbol.
 	 * @param affiliate The address of the affiliate.
 	 * @param user The address of the user.
 	 * @param symbolId The id of the symbol.
 	 * @return fee The affiliate fee of the affiliate.
 	 */
-	function getCustomAffiliateFee(address affiliate,address user, uint256 symbolId) external view returns (Fee memory) {
+	function getCustomAffiliateFee(address affiliate, address user, uint256 symbolId) external view returns (Fee memory) {
 		return GlobalAppStorage.layout().customAffiliateFee[affiliate][user][symbolId];
 	}
 
@@ -733,8 +748,9 @@ contract ViewFacet is IViewFacet {
 		if (GlobalAppStorage.layout().affiliateFee[affiliate][symbolId].isSet) {
 			fee = GlobalAppStorage.layout().affiliateFee[affiliate][symbolId];
 		} else {
-			fee = GlobalAppStorage.layout().defaultAffiliateFee[affiliate];
-			if (!fee.isSet) {
+			if (GlobalAppStorage.layout().affiliateFee[affiliate][0].isSet) {
+				fee = GlobalAppStorage.layout().affiliateFee[affiliate][0];
+			} else {
 				uint256 symbolTradingFee = SymbolStorage.layout().symbols[symbolId].tradingFee;
 				fee = Fee(symbolTradingFee, symbolTradingFee, true);
 			}
@@ -816,7 +832,7 @@ contract ViewFacet is IViewFacet {
 	}
 
 	function getPenaltyCollector() external view returns(address) {
-		return MAStorage.layout().penaltyCollector;
+		return MAStorage.layout().softLiquidationPenaltyCollector;
 	}
 
 	function getPartyALockedQuotesCount(address user) external view returns(uint256){
@@ -825,5 +841,14 @@ contract ViewFacet is IViewFacet {
 
 	function isBindable(address partyB) external view returns(bool){
 		return AccountStorage.layout().isPartyBBindable[partyB];
+	}
+
+	function getIterativeFundingDeprecationFlag() external view returns(bool iterativeFundingDeprecationFlag){
+
+		return GlobalAppStorage.layout().iterativeFundingDeprecationFlag;
+	}
+
+	function getAccumulativeFundingRateActivationFlag() external view returns(bool accumulativeFundingRateActivationFlag){
+		return GlobalAppStorage.layout().accumulativeFundingRateActivationFlag;
 	}
 }

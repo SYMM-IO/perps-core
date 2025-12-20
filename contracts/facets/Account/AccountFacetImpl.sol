@@ -16,6 +16,7 @@ import "../../interfaces/IExternalTransferRelayer.sol";
 import "../../libraries/LibSigner.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
+import "../../libraries/muon/LibMuon.sol";
 
 library AccountFacetImpl {
 	using SafeERC20 for IERC20;
@@ -28,6 +29,10 @@ library AccountFacetImpl {
 	}
 
 	function virtualDepositFor(address user, uint256 amount) internal {
+		require(
+			GlobalAppStorage.layout().virtualProviders[msg.sender],
+			"AccountFacet : msg.sender not registered as virtual provider"
+		);
 		AccountStorage.layout().balances[user] += amount;
 	}
 
@@ -103,6 +108,7 @@ library AccountFacetImpl {
 
 		accountLayout.allocatedBalances[signer] -= amount;
 		accountLayout.balances[signer] += amount;
+		accountLayout.withdrawCooldown[signer] = block.timestamp;
 	}
 
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) internal {
@@ -115,9 +121,12 @@ library AccountFacetImpl {
 		require(!maLayout.liquidationStatus[recipient], "PartyBFacet: Recipient isn't solvent");
 		require(!accountLayout.crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB isn't solvent");
 
+		// Not to be in master account mode as when the MA is activated there is no point on transferAllocation
+		require(!accountLayout.masterAccountMode[signer], "PartyBFacet: Master account mode is active");
+
 		// deallocate from origin
-		require(accountLayout.partyBAllocatedBalances[signer][origin] >= amount, "PartyBFacet: Insufficient locked balance");
-		LibMuonAccount.verifyPartyBUpnl(upnlSig, signer, origin);
+		require(accountLayout.partyBAllocatedBalances[signer][origin] >= amount, "PartyBFacet: Insufficient allocated balance");
+		LibMuon.verifyPartyBUpnl(upnlSig, signer, origin, true); // Here the nonce is always from master account mode nonce if enabled
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, origin);
 		require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "PartyBFacet: Will be liquidatable");
@@ -140,14 +149,27 @@ library AccountFacetImpl {
 		accountLayout.allocatedBalances[user] += amount;
 	}
 
-	function allocateForPartyB(uint256 amount, address partyA) internal {
+	function internalTransferToBalance(address user, uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
-		require(!MAStorage.layout().partyBLiquidationStatus[signer][partyA], "AccountFacet: PartyB isn't solvent");
-		require(!accountLayout.crossLiquidationDetails[signer].inProgress, "AccountFacet: PartyB isn't solvent");
+		accountLayout.balances[signer] -= amount;
+		accountLayout.balances[user] += amount;
+		accountLayout.withdrawCooldown[user] = block.timestamp;
+	}
 
+	function allocateForPartyB(uint256 amount, address partyA) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+		require(!accountLayout.masterAccountMode[signer] || partyA == address(0),
+			"PartyBFacet: Master account mode is active");
+		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
+		require(
+			!MAStorage.layout().partyBLiquidationStatus[signer][partyA]
+			&& !accountLayout.crossLiquidationDetails[signer].inProgress,
+			"AccountFacet: PartyB isn't solvent"
+		);
 		accountLayout.balances[signer] -= amount;
 		accountLayout.partyBAllocatedBalances[signer][partyA] += amount;
 	}
@@ -156,7 +178,7 @@ library AccountFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(accountLayout.partyBAllocatedBalances[signer][partyA] >= amount, "AccountFacet: Insufficient allocated balance");
-		LibMuonAccount.verifyPartyBUpnl(upnlSig, signer, partyA);
+		LibMuon.verifyPartyBUpnl(upnlSig, signer, partyA, true); // Here the nonce is always from master account mode nonce if enabled
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, partyA);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: Will be liquidatable");
@@ -185,7 +207,7 @@ library AccountFacetImpl {
 	}
 
 	function activateMasterAccountMode() internal {
-		require(GlobalAppStorage.layout().masterAccountActivationMode, "AccountFacet: Master account activation disabled");
+		require(GlobalAppStorage.layout().masterAccountEnabled, "AccountFacet: Master account disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(!accountLayout.masterAccountMode[signer], "AccountFacet: Master account mode is active");

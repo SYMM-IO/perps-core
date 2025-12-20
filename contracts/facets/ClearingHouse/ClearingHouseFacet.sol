@@ -69,20 +69,17 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 	/**
 	 * @notice Liquidates active positions of PartyB with PartyA.
 	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
 	 * @param priceSig The price signature.
 	 */
 	function liquidatePositionsForCrossLiquidation(
 		address partyB,
-		address partyA,
 		QuotePriceSig memory priceSig
 	) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
 		(uint256[] memory liquidatedAmounts, uint256[] memory closeIds) = ClearingHouseFacetImpl.liquidatePositionsForCrossLiquidation(
 			partyB,
-			partyA,
 			priceSig
 		);
-		emit LiquidatePositionsForCrossLiquidation(partyB, partyA, priceSig.quoteIds, liquidatedAmounts, closeIds);
+		emit LiquidatePositionsForCrossLiquidation(partyB, priceSig.quoteIds, liquidatedAmounts, closeIds);
 	}
 
 	function softPartyBLiquidation(address partyB, int256 marginDelta,uint256 penalty) external onlyRole(LibAccessibility.SOFT_LIQUIDATOR_ROLE){

@@ -1,4 +1,4 @@
-import {loadFixture} from "@nomicfoundation/hardhat-network-helpers"
+import {loadFixture} from "./helpers/network-helpers"
 
 import {initializeFixture} from "./Initialize.fixture"
 import {PositionType} from "./models/Enums"
@@ -198,6 +198,33 @@ export function shouldBehaveLikeSettlement(): void {
 				partyBUpnlIndex: 0n
 			} as QuoteSettlementDataStructOutput
 		]))).to.be.revertedWith("LibSettlement: Invalid upnlPartyBs list")
+	})
+
+	it("Should decrease partyA balance when settlement moves against it", async function () {
+		const partyA = await user.getAddress()
+		const quoteBefore = await context.viewFacetQuote.getQuote(longHedger1)
+		const updatedPrice = decimal(6n, 17)
+
+		const settlementSig = await getDummySettlementSig(0n, [0n], [
+			{
+				quoteId: longHedger1,
+				currentPrice: decimal(5n, 17),
+				partyBUpnlIndex: 0n,
+			} as QuoteSettlementDataStructOutput,
+		])
+
+		const partyABalanceBefore = await user.getBalanceInfo()
+		const partyBBalanceBefore = await hedger.getBalanceInfo(partyA)
+
+		await hedger.settleUpnl(partyA, [updatedPrice], settlementSig)
+
+		const partyABalanceAfter = await user.getBalanceInfo()
+		const partyBBalanceAfter = await hedger.getBalanceInfo(partyA)
+
+		const expectedLoss = unDecimal((quoteBefore.openedPrice - updatedPrice) * quoteBefore.quantity)
+		expect(partyABalanceBefore.allocatedBalances - partyABalanceAfter.allocatedBalances).to.be.eq(expectedLoss)
+		expect(partyBBalanceAfter.allocatedBalances - partyBBalanceBefore.allocatedBalances).to.be.eq(expectedLoss)
+		expect((await context.viewFacetQuote.getQuote(longHedger1)).openedPrice).to.be.eq(updatedPrice)
 	})
 
 	it("Should run successfully", async function () {

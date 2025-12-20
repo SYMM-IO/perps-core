@@ -27,17 +27,16 @@ library GlobalAppStorage {
 		address signatureVerifier;
 		bool externalTransferPaused;
 		mapping(address => mapping(uint256 => Fee)) affiliateFee; // affiliate => symbolId => fee
-		mapping(address => Fee) defaultAffiliateFee; // affiliate => fee
 		bool instantLayerPaused;
-		bool masterAccountActivationMode;
+		bool masterAccountEnabled;
 		mapping(address => bool) virtualProviders;
 		mapping(address => bool) expressProviders;
 		bool deprecateOldWithdrawalPaused;
 		uint256 minAffiliateFee;
 		mapping(address => mapping(address => mapping(uint256 => Fee))) customAffiliateFee; // affiliate => user => symbolId => fee
 		mapping(bytes32 => mapping(address => bool)) roleAdmins; // role => user => admin or not bool
-		bool oldFundingFeeDeprecated;
-		bool newFundingFeeEnabled;
+		bool iterativeFundingDeprecationFlag;
+		bool accumulativeFundingRateActivationFlag;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

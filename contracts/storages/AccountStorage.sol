@@ -13,11 +13,41 @@ enum LiquidationType {
 	OVERDUE
 }
 
+enum AllocatedSettlementState {
+	NONE,
+	GATHER_ALLOCATED_MASTER_ACCOUNT
+}
+
+enum UPNLSettlementState {
+	NONE,
+	REALIZED,
+	REALIZED_MASTER_ACCOUNT
+}
+
+enum PartyBForceCloseState {
+	NONE,
+	INSOLVENT,
+	SOLVED,
+	LIQUIDATED
+}
+
 struct SettlementState {
 	int256 actualAmount;
 	int256 expectedAmount;
 	uint256 cva;
 	bool pending;
+}
+
+struct ForceCloseDetail {
+	bytes priceSigId;
+	uint256 quoteId;
+	uint256 timestamp;
+	int256 partyBAvailableAfterClose;
+	uint256 closePrice;
+	UPNLSettlementState settlementState;
+	AllocatedSettlementState allocatedSettlementState;
+	PartyBForceCloseState partyBState;
+	bool inProgress;
 }
 
 struct LiquidationDetail {
@@ -119,8 +149,6 @@ library AccountStorage {
 		mapping(address => uint256) reserveVault;
 		mapping(address => BindState) bindState;
 		mapping(address => bool) masterAccountMode;
-		mapping(address => uint256) partyBTotalCva;
-		mapping(address => uint256) partyBTotalLf;
 		mapping(address => CrossLiquidationDetail) crossLiquidationDetails;
 		mapping(address => address) externalTransferTargetsRelayers;
 		mapping(address => address) affiliateHooks;
@@ -134,6 +162,8 @@ library AccountStorage {
 		mapping(address => mapping(uint256 => bool)) partyBBlacklistedSymbols; // PartyB => symbolId   => isBlackListed
 		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
 		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
+		// ---- force close ----
+		mapping(uint256 => ForceCloseDetail) forceCloseDetails; // quoteId => Force close status
 		uint256 lastExternalTransferId;
 		mapping(uint256 => ExternalTransferReq) externalTransfers;
 		mapping(address => bool) isPartyBBindable;

@@ -6,32 +6,29 @@ pragma solidity >=0.8.18;
 
 import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
+import "../../storages/QuoteStorage.sol";
 import "./LibMuon.sol";
 import "../LibAccount.sol";
 
-library LibMuonSettlement {
-	function verifySettlement(SettlementSig memory settleSig, address partyA) internal view {
+library LibMuonCrossSettlement {
+	function verifyMasterAccountSettlement(MasterAccountSettlementSig memory settleSig) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		QuoteStorage.Layout storage quotes = QuoteStorage.layout();
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
 		// == ) ==
+		uint256[] memory partyANonces = new uint256[](settleSig.quotesSettlementsData.length);
 		bytes memory encodedData;
-		uint256[] memory nonces = new uint256[](settleSig.quotesSettlementsData.length);
-		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
-			
-			// Get Party B nonce for Standard Account Mode only as it is called for settlement in non master account mode
-			nonces[i] = LibAccount.getPartyBSignatureNonce(
-				QuoteStorage.layout().quotes[settleSig.quotesSettlementsData[i].quoteId].partyB,
-				partyA,
-				false
-			);
+		address partyA;
 
-			// Encode the settlement data
+		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
+			partyA = quotes.quotes[settleSig.quotesSettlementsData[i].quoteId].partyA;
+			partyANonces[i] = accountLayout.partyANonces[partyA];
 			encodedData = abi.encodePacked(
 				encodedData, // Append the previously encoded data
 				settleSig.quotesSettlementsData[i].quoteId,
-				settleSig.quotesSettlementsData[i].currentPrice,
-				settleSig.quotesSettlementsData[i].partyBUpnlIndex
+				settleSig.quotesSettlementsData[i].currentPrice
 			);
 		}
 		bytes32 hash = keccak256(
@@ -39,12 +36,14 @@ library LibMuonSettlement {
 				muonLayout.muonAppId,
 				settleSig.reqId,
 				address(this),
-				"verifySettlement",
-				nonces,
-				AccountStorage.layout().partyANonces[partyA],
+				"verifyCrossSettlement",
+				accountLayout.partyBNonces[settleSig.partyB][address(0)], // always uses party B nonce in Master Account Mode
+				partyANonces,
 				encodedData,
-				settleSig.upnlPartyBs,
-				settleSig.upnlPartyA,
+				settleSig.partyB,
+				settleSig.upnlPartyB,
+				settleSig.partyAs,
+				settleSig.upnlPartyAs,
 				settleSig.timestamp,
 				LibMuon.getChainId()
 			)

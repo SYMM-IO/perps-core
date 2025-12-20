@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../storages/MuonStorage.sol";
 import "../../storages/AccountStorage.sol";
 import "./LibMuon.sol";
+import "../LibAccount.sol";
 
 library LibMuonPartyBBatchActions {
 	function verifyPairUpnlAndPrices(PairUpnlAndPricesSig memory upnlSig, address partyB, address partyA, uint256[] memory quoteIds) internal view {
@@ -21,7 +22,7 @@ library LibMuonPartyBBatchActions {
 				address(this),
 				partyB,
 				partyA,
-				AccountStorage.layout().partyBNonces[partyB][partyA],
+				LibAccount.getPartyBSignatureNonce(partyB, partyA,false),
 				AccountStorage.layout().partyANonces[partyA],
 				upnlSig.upnlPartyB,
 				upnlSig.upnlPartyA,

@@ -1,4 +1,4 @@
-import { ethers } from "hardhat"
+import { ethers } from "./helpers/hardhat-connection"
 
 async function main() {
 	let symmioAddress = ""

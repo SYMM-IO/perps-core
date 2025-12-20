@@ -35,7 +35,6 @@ interface IControlEvents {
 		uint256 newCloseFee
 	);
 	event SetAffiliateFee(address affiliate, uint256 symbolId, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
-	event SetDefaultAffiliateFee(address affiliate, uint256 oldOpenFee, uint256 newOpenFee, uint256 oldCloseFee, uint256 newCloseFee);
 	event SetDefaultFeeCollector(address oldDefaultFeeCollector, address newDefaultFeeCollector);
 	event SetSymbolValidationState(uint256 symbolId, bool oldState, bool isValid);
 	event SetSymbolFundingState(uint256 symbolId, uint256 fundingRateEpochDuration, uint256 fundingRateWindowTime);
@@ -87,7 +86,7 @@ interface IControlEvents {
 	event SetSuspendedAddress(address user, bool isSuspended);
 	event SetPartyBEmergencyStatus(address partyB, bool status);
 	event SetBalanceLimitPerUser(uint256 balanceLimitPerUser);
-	event SetMasterAccountActivationMode(bool oldValue, bool newValue);
+	event SetMasterAccountEnabled(bool oldValue, bool newValue);
 	event RegisterPartyB(address partyB);
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);
@@ -114,15 +113,13 @@ interface IControlEvents {
 	event UnregisterVirtualProvider(address provider);
 	event RegisterExpressProvider(address provider);
 	event UnregisterExpressProvider(address provider);
-	event SetSpeedUpUser(address user);
-	event UnsetSpeedUpUser(address user);
+	event SetSpeedUpUser(address user, bool speedUp);
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
 	event DeprecateOldWithdrawalPaused();
 	event SignerSet(address signer);
 	event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);
-	event SetPenaltyCollector(address penaltyCollector);
-	event SetPartyBBindable(address partyB);
-	event UnsetPartyBBindable(address partyB);
+	event SetSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector);
+	event SetPartyBBindable(address partyB, bool bindable);
 	event DeprecateOldFundingFee();
 	event EnableNewFundingFee();
 }

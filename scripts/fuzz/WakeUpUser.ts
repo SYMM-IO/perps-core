@@ -1,5 +1,5 @@
 import * as fsPromise from "fs/promises"
-import { ethers } from "hardhat"
+import { ethers } from "./helpers/hardhat-connection"
 
 import { ManagedError } from "../../test/models/ManagedError"
 import { createRunContext } from "../../test/models/RunContext"

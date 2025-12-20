@@ -1,6 +1,6 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture } from "./helpers/network-helpers"
 import { Builder } from "builder-pattern"
-import { ethers } from "hardhat"
+import { ethers } from "./helpers/hardhat-connection"
 
 import { initializeFixture } from "./Initialize.fixture"
 import { OrderType, PositionType } from "./models/Enums"

@@ -14,6 +14,7 @@ import "../storages/GlobalAppStorage.sol";
 import "../storages/SymbolStorage.sol";
 import "../storages/MAStorage.sol";
 import "../interfaces/ISymmioHook.sol";
+import "./LibAccount.sol";
 
 library LibQuoteClose {
 	using LockedValuesOps for LockedValues;
@@ -25,6 +26,7 @@ library LibQuoteClose {
 	 * @param closedPrice The price at which the quote is closed.
 	 */
 	function closeQuote(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) public {
+		
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
@@ -53,9 +55,7 @@ library LibQuoteClose {
 		);
 
 		accountLayout.lockedBalances[quote.partyA].subQuote(quote).add(lockedValues);
-		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].subQuote(quote).add(lockedValues);
-		accountLayout.partyBTotalCva[quote.partyB] -= quote.lockedValues.cva;
-		accountLayout.partyBTotalLf[quote.partyB] -= quote.lockedValues.lf;
+		LibAccount.updatePartyBLockedBalances(quote, lockedValues);
 		quote.lockedValues = lockedValues;
 
 		if (LibQuote.quoteOpenAmount(quote) == quote.quantityToClose) {
@@ -71,15 +71,15 @@ library LibQuoteClose {
 		}
 
 		(bool hasMadeProfit, uint256 pnl) = LibQuote.getValueOfQuoteForPartyA(closedPrice, filledAmount, quote);
-
+		address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
 		if (hasMadeProfit) {
 			require(
-				accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] >= pnl,
+				accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] >= pnl,
 				"LibQuote: PartyA should first exit its positions that are incurring losses"
 			);
 			accountLayout.allocatedBalances[quote.partyA] += pnl;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] -= pnl;
+			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] -= pnl;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 		} else {
 			require(
@@ -88,7 +88,7 @@ library LibQuoteClose {
 			);
 			accountLayout.allocatedBalances[quote.partyA] -= pnl;
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += pnl;
+			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] += pnl;
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 
@@ -209,7 +209,7 @@ library LibQuoteClose {
 
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
-				accountLayout.partyBPendingLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
+				LibAccount.subFromPartyBPendingLockedBalances(quote);
 				LibQuote.removeFromPartyBPendingQuotes(quote);
 			}
 

@@ -1,6 +1,6 @@
-import {QuoteStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
-import {decimal} from "./Common"
-import {randomBigNumber} from "./RandomUtils"
+import { QuoteStructOutput } from "../../src/types/contracts/interfaces/ISymmio"
+import { decimal } from "./Common"
+import { randomBigNumber } from "./RandomUtils"
 
 export async function getPrice(): Promise<bigint> {
 	const def = 200000n * 10n ** 18n
@@ -13,6 +13,12 @@ export function calculateExpectedClosePriceForForceClose(q: QuoteStructOutput, p
 	return isLongPosition ? q.requestedClosePrice + a : q.requestedClosePrice - a
 }
 
+export function calculateExpectedClosePriceForForceCloseWithAvg(q: QuoteStructOutput, penalty: bigint, avg: bigint, isLongPosition: boolean): bigint {
+	const a = (q.requestedClosePrice * penalty) / decimal(1n)
+	const b = isLongPosition ? q.requestedClosePrice + a : q.requestedClosePrice - a
+	return avg > b ? avg : b
+}
+
 export function calculateExpectedAvgPriceForForceClose(q: QuoteStructOutput, expectedClosePrice: bigint): bigint {
-	return ((q.avgClosedPrice * q.closedAmount) + (q.quantityToClose * expectedClosePrice)) / (q.closedAmount + q.quantityToClose)
+	return (q.avgClosedPrice * q.closedAmount + q.quantityToClose * expectedClosePrice) / (q.closedAmount + q.quantityToClose)
 }

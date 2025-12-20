@@ -121,6 +121,23 @@ struct SettlementSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+struct MasterAccountQuoteSettlementData {
+	uint256 quoteId;
+	uint256 currentPrice; //market price
+}
+
+struct MasterAccountSettlementSig {
+	bytes reqId;
+	uint256 timestamp;
+	MasterAccountQuoteSettlementData[] quotesSettlementsData;
+	address partyB;
+	int256 upnlPartyB; //Party B UPNLs for all party As in master account mode enabled
+	address[] partyAs;
+	int256[] upnlPartyAs;
+	bytes gatewaySignature;
+	IMuonSignatureVerifier.SchnorrSign sigs;
+}
+
 struct CrossLiquidationSig {
 	bytes reqId; // Unique identifier for the liquidation request
 	bytes liquidationId; // Unique identifier for the liquidation event

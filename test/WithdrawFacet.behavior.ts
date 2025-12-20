@@ -1,6 +1,6 @@
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, time } from "./helpers/network-helpers";
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import {ethers} from "./helpers/hardhat-connection";
 
 import { initializeFixture } from "./Initialize.fixture";
 import { RunContext } from "./models/RunContext";
@@ -69,7 +69,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			.connect(context.signers.admin)
 			.grantRole(
 				context.signers.admin.address,
-				roleHash("SETTER_ROLE")
+				roleHash("PROVIDER_ADMIN_ROLE")
 			);
 	});
 
@@ -625,12 +625,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should fail to initiate withdraw by a non-registered provider", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -648,12 +647,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should initiate withdraw correctly", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -831,12 +829,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should finalize withdraw", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -904,12 +901,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should request to cancel withdraw", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -956,12 +952,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should fail to force cancel withdraw before cooldown", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -985,12 +980,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should fail to force cancel withdraw with wrong request Id", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -1014,12 +1008,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should fail to force cancel withdraw with invalid status", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -1040,12 +1033,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should force cancel withdraw after cooldown", async function() {
-			await context.accountFacet
-				.connect(context.signers.admin)
-				.virtualDepositFor(
-					user.address,
-					ethers.parseEther("100")
-				);
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
@@ -1774,7 +1766,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await context.controlFacet
 				.connect(context.signers.admin)
-				.setSpeedUpUser(user.address);
+				.setSpeedUpUser(user.address, true);
 			await context.withdrawFacet
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, true, "0x");
@@ -1793,7 +1785,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await context.controlFacet
 				.connect(context.signers.admin)
-				.setSpeedUpUser(user.address);
+				.setSpeedUpUser(user.address, true);
 			await context.withdrawFacet
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, true, "0x");
@@ -1815,7 +1807,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await context.controlFacet
 				.connect(context.signers.admin)
-				.setSpeedUpUser(user.address);
+				.setSpeedUpUser(user.address, true);
 			await context.withdrawFacet
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, true, "0x");
@@ -1830,19 +1822,19 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		});
 
 		it("Should set speed up user", async function () {
-			await expect(context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)).not.reverted;
+			await expect(context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true)).not.reverted;
 			expect(await context.viewFacet.isSpeedUpEligible(user.address)).to.equal(true)
 		})
 
 		it("Should unset speed up user", async function () {
-			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address);
-			await expect(context.controlFacet.connect(context.signers.admin).unsetSpeedUpUser(user.address)).not.reverted;
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true);
+			await expect(context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, false)).not.reverted;
 			expect(await context.viewFacet.isSpeedUpEligible(user.address)).to.equal(false)
 		})
 
 		it("Should fail to speed-up more than threshold", async function () {
 			await expect(context.controlFacet.connect(context.signers.admin).setMinWithdrawCooldown(10)).not.reverted;
-			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true)
 			await userDeposit("100");
 			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
@@ -1861,13 +1853,13 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 			const parts = [await buildPart("50" , {expressProvider: epAddress})];
-			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true)
 			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x"))
 				.to.revertedWith("WithdrawFacet : Speed up not allowed with express");
 		})
 
 		it("Should fail to speed-up with invalid id", async function () {
-			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true)
 			await userDeposit("100");
 			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
@@ -1876,7 +1868,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		})
 
 		it("Should fail to speed-up more than one time", async function () {
-			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true)
 			await userDeposit("100");
 			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
@@ -1886,17 +1878,17 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		})
 
 		it("Should fail to speed-up when user is not whitelisted", async function () {
-			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true)
 			await userDeposit("100");
 			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
-			await context.controlFacet.connect(context.signers.admin).unsetSpeedUpUser(user.address)
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, false)
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
 				.to.revertedWith("WithdrawFacet : User not in speed up whitelist");
 		})
 
 		it("Should fail to speed-up when user is not whitelisted", async function () {
-			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true)
 			await userDeposit("100");
 			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
@@ -1906,7 +1898,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		})
 
 		it("Should fail to speed-up when request is not speed-up", async function () {
-			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
+			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true)
 			await userDeposit("100");
 			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,false,"0x")

@@ -10,118 +10,122 @@ import "../../storages/AccountStorage.sol";
 import "./IPauseControlFacet.sol";
 
 contract PauseControlFacet is Accessibility, IPauseControlFacet {
-	/// @notice Pauses global operations.
+	/// @notice Pauses all protocol operations globally. No trading, deposits, or withdrawals will be possible.
 	function pauseGlobal() external onlyRole(LibAccessibility.PAUSER_ROLE) {
 		GlobalAppStorage.layout().globalPaused = true;
 		emit PauseGlobal();
 	}
 
-	/// @notice Pauses liquidation operations.
+	/// @notice Pauses all liquidation operations. Positions cannot be liquidated while paused.
 	function pauseLiquidation() external onlyRole(LibAccessibility.PAUSER_ROLE) {
 		GlobalAppStorage.layout().liquidationPaused = true;
 		emit PauseLiquidation();
 	}
 
-	/// @notice Pauses accounting operations.
+	/// @notice Pauses accounting operations including deposits, withdrawals, allocations, and deallocations.
 	function pauseAccounting() external onlyRole(LibAccessibility.PAUSER_ROLE) {
 		GlobalAppStorage.layout().accountingPaused = true;
 		emit PauseAccounting();
 	}
 
-	/// @notice Pauses Party A actions.
+	/// @notice Pauses all Party A (trader) actions including sending quotes, closing positions, and other trading operations.
 	function pausePartyAActions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
 		GlobalAppStorage.layout().partyAActionsPaused = true;
 		emit PausePartyAActions();
 	}
 
-	/// @notice Pauses Party B actions.
+	/// @notice Pauses all Party B (market maker/hedger) actions including accepting quotes and filling positions.
 	function pausePartyBActions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
 		GlobalAppStorage.layout().partyBActionsPaused = true;
 		emit PausePartyBActions();
 	}
 
-	/// @notice Pauses internal transfers.
+	/// @notice Pauses internal transfers between accounts within the protocol.
 	function pauseInternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
 		GlobalAppStorage.layout().internalTransferPaused = true;
 		emit PauseInternalTransfer();
 	}
 
-	/// @notice Pauses external transfers.
+	/// @notice Pauses external transfers to addresses outside the protocol (e.g., to other protocols or wallets).
 	function pauseExternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
 		GlobalAppStorage.layout().externalTransferPaused = true;
 		emit PauseExternalTransfer();
 	}
 
-	/// @notice Activates emergency mode.
-	function activeEmergencyMode() external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	/// @notice Activates emergency mode which enables emergency withdrawals and restricts normal protocol operations.
+	function activeEmergencyMode() external onlyRole(LibAccessibility.EMERGENCY_ADMIN_ROLE) {
 		GlobalAppStorage.layout().emergencyMode = true;
 		emit ActiveEmergencyMode();
 	}
 
-	/// @notice Unpauses global operations.
+	/// @notice Resumes all protocol operations after a global pause. Trading, deposits, and withdrawals become available.
 	function unpauseGlobal() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().globalPaused = false;
 		emit UnpauseGlobal();
 	}
 
-	/// @notice Unpauses liquidation operations.
+	/// @notice Resumes liquidation operations, allowing undercollateralized positions to be liquidated again.
 	function unpauseLiquidation() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().liquidationPaused = false;
 		emit UnpauseLiquidation();
 	}
 
-	/// @notice Unpauses accounting operations.
+	/// @notice Resumes accounting operations including deposits, withdrawals, allocations, and deallocations.
 	function unpauseAccounting() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().accountingPaused = false;
 		emit UnpauseAccounting();
 	}
 
-	/// @notice Unpauses Party A actions.
+	/// @notice Resumes all Party A (trader) actions including sending quotes, closing positions, and other trading operations.
 	function unpausePartyAActions() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().partyAActionsPaused = false;
 		emit UnpausePartyAActions();
 	}
 
-	/// @notice Unpauses Party B actions.
+	/// @notice Resumes all Party B (market maker/hedger) actions including accepting quotes and filling positions.
 	function unpausePartyBActions() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().partyBActionsPaused = false;
 		emit UnpausePartyBActions();
 	}
 
-	/// @notice Unpauses internal transfers.
+	/// @notice Resumes internal transfers between accounts within the protocol.
 	function unpauseInternalTransfer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().internalTransferPaused = false;
 		emit UnpauseInternalTransfer();
 	}
 
-	/// @notice Unpauses external transfers.
+	/// @notice Resumes external transfers to addresses outside the protocol.
 	function unpauseExternalTransfer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().externalTransferPaused = false;
 		emit UnpauseExternalTransfer();
 	}
 
-	/// @notice Deactivates emergency mode.
-	function deactiveEmergencyMode() external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	/// @notice Deactivates emergency mode, returning the protocol to normal operations and disabling emergency withdrawals.
+	function deactiveEmergencyMode() external onlyRole(LibAccessibility.EMERGENCY_ADMIN_ROLE) {
 		GlobalAppStorage.layout().emergencyMode = false;
 		emit DeactiveEmergencyMode();
 	}
 
-	/// @notice Suspends a user's address.
+	/// @notice Suspends a user's address, preventing them from performing any protocol actions until unsuspended.
+	/// @param user The address of the user to suspend.
 	function suspendedAddress(address user) external onlyRole(LibAccessibility.SUSPENDER_ROLE) {
 		require(user != address(0), "PauseControlFacet: Zero address");
 		emit SetSuspendedAddress(user, true);
 		AccountStorage.layout().suspendedAddresses[user] = true;
 	}
 
-	/// @notice Unsuspends a user's address.
-	function unsuspendedAddress(address user) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	/// @notice Removes suspension from a user's address, restoring their ability to interact with the protocol.
+	/// @param user The address of the user to unsuspend.
+	function unsuspendedAddress(address user) external onlyRole(LibAccessibility.UNSUSPENDER_ROLE) {
 		require(user != address(0), "PauseControlFacet: Zero address");
 		emit SetSuspendedAddress(user, false);
 		AccountStorage.layout().suspendedAddresses[user] = false;
 	}
 
-	/// @notice Sets the emergency status for Party B addresses.
-	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+	/// @notice Sets the emergency status for multiple Party B addresses, enabling or disabling their emergency mode operations.
+	/// @param partyBs Array of Party B addresses to update emergency status for.
+	/// @param status True to enable emergency status, false to disable.
+	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external onlyRole(LibAccessibility.EMERGENCY_ADMIN_ROLE) {
 		for (uint256 i; i < partyBs.length; i++) {
 			require(partyBs[i] != address(0), "PauseControlFacet: Zero address");
 			GlobalAppStorage.layout().partyBEmergencyStatus[partyBs[i]] = status;
@@ -129,21 +133,24 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		}
 	}
 
-	function deprecateOldWithdrawal() external onlyRole(LibAccessibility.SETTER_ROLE) {
+	/// @notice Deprecates the legacy withdrawal mechanism, forcing users to use the new withdrawal system.
+	function deprecateOldWithdrawal() external onlyRole(LibAccessibility.MIGRATION_ROLE) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		appLayout.deprecateOldWithdrawalPaused = true;
 		emit DeprecateOldWithdrawalPaused();
 	}
 
-	function deprecateOldFundingFee() external onlyRole(LibAccessibility.SETTER_ROLE) {
+	/// @notice Deprecates the legacy iterative funding fee calculation, preparing for migration to accumulative funding rates.
+	function deprecateOldFundingFee() external onlyRole(LibAccessibility.MIGRATION_ROLE) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		appLayout.oldFundingFeeDeprecated = true;
+		appLayout.iterativeFundingDeprecationFlag = true;
 		emit DeprecateOldFundingFee();
 	}
 
-	function enableNewFundingFee() external onlyRole(LibAccessibility.SETTER_ROLE) {
+	/// @notice Activates the new accumulative funding rate system which calculates funding more efficiently using stored rates.
+	function enableNewFundingFee() external onlyRole(LibAccessibility.MIGRATION_ROLE) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		appLayout.newFundingFeeEnabled = true;
+		appLayout.accumulativeFundingRateActivationFlag = true;
 		emit EnableNewFundingFee();
 	}
 }

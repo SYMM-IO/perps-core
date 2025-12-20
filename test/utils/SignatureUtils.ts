@@ -1,10 +1,23 @@
+import { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
+import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
+import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
 import { SingleUpnlAndPriceSigStruct } from "../../src/types/contracts/facets/PartyA/PartyAFacet"
+import { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
 import { QuotePriceSigStruct } from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
+import {
+	DeferredLiquidationSigStruct,
+	MasterAccountQuoteSettlementDataStruct,
+	MasterAccountQuoteSettlementDataStructOutput,
+	MasterAccountSettlementSigStruct,
+	MasterAccountSettlementSigStructOutput,
+	PairUpnlAndPriceSigStruct,
+	SingleUpnlSigStruct,
+} from "../../src/types/contracts/interfaces/ISymmio"
 import { getBlockTimestamp } from "./Common"
 import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
 import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
 import { DeferredLiquidationSigStruct, PairUpnlAndPriceSigStruct, SingleUpnlSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
-import { ethers } from "hardhat"
+import { ethers } from "../helpers/hardhat-connection"
 import { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
 import { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
 
@@ -118,6 +131,54 @@ export async function getDummySettlementSig(
 			nonce: ethers.ZeroAddress,
 		} as any,
 	} as any
+}
+
+export async function getDummyCrossSettlementSig(
+	upnlPartyAs: bigint[] = [],
+	upnlPartyB: bigint = 0n,
+	partyB: string = "0x",
+	partyAs: string[] = [],
+	quotesSettlementsData: MasterAccountQuoteSettlementDataStructOutput[] = [],
+): Promise<MasterAccountSettlementSigStructOutput> {
+	return {
+		reqId: "0x",
+		timestamp: BigInt(await getBlockTimestamp()),
+		quotesSettlementsData: quotesSettlementsData,
+		partyB: partyB,
+		upnlPartyB: upnlPartyB,
+		partyAs: partyAs,
+		upnlPartyAs: upnlPartyAs,
+		gatewaySignature: ethers.ZeroAddress,
+		sigs: {
+			signature: 0n,
+			owner: ethers.ZeroAddress,
+			nonce: ethers.ZeroAddress,
+		} as any,
+	} as any
+}
+
+export async function getDummyMasterAccountSettlementSig(
+	quotesSettlementsData: MasterAccountQuoteSettlementDataStruct[] = [],
+	partyB: string = ethers.ZeroAddress,
+	upnlPartyB: bigint = 0n,
+	partyAs: string[] = [],
+	upnlPartyAs: bigint[] = [],
+): Promise<MasterAccountSettlementSigStruct> {
+	return {
+		reqId: "0x",
+		timestamp: BigInt(await getBlockTimestamp()),
+		quotesSettlementsData,
+		partyB,
+		upnlPartyB,
+		partyAs,
+		upnlPartyAs,
+		gatewaySignature: "0x",
+		sigs: {
+			signature: 0n,
+			owner: ethers.ZeroAddress,
+			nonce: ethers.ZeroAddress,
+		} as any,
+	} as MasterAccountSettlementSigStruct
 }
 
 export async function getDummyHighLowPriceSig(

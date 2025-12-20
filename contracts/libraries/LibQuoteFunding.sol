@@ -10,6 +10,7 @@ import "./LibQuote.sol";
 import "../storages/QuoteStorage.sol";
 import "../storages/AccountStorage.sol";
 import "../storages/SymbolStorage.sol";
+import "./LibAccount.sol";
 
 library LibQuoteFunding {
 	/**
@@ -70,19 +71,19 @@ library LibQuoteFunding {
 
 		quote.lastFundingPaymentTimestamp = block.timestamp;
 		updateAccumulatedPaidFunding(quoteId);
-
+		address partyBAllocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
 		if (fee > 0) {
 			// Positive fee: Trader (PartyA) pays Market Maker (PartyB)
 			uint256 feeInUint = uint256(fee);
 			accountLayout.allocatedBalances[quote.partyA] -= feeInUint;
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] += feeInUint;
+			accountLayout.partyBAllocatedBalances[quote.partyB][partyBAllocationKey] += feeInUint;
 
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
 			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
 		} else if (fee < 0) {
 			// Negative fee: Market Maker (PartyB) pays Trader (PartyA)
 			uint256 feeInUint = uint256(-fee);
-			accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA] -= feeInUint;
+			accountLayout.partyBAllocatedBalances[quote.partyB][partyBAllocationKey] -= feeInUint;
 			accountLayout.allocatedBalances[quote.partyA] += feeInUint;
 
 			emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);

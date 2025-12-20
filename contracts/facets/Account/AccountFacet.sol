@@ -45,17 +45,14 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
 	/// @param user The recipient address for the deposit.
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
-	function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
+	function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused {
 		_virtualDepositFor(user, amount);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer and allocate them.
 	/// @param user The recipient address for the deposit.
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
-	function virtualDepositAndAllocateFor(
-		address user,
-		uint256 amount
-	) external whenNotAccountingPaused onlyRole(LibAccessibility.VIRTUAL_DEPOSITOR_ROLE) {
+	function virtualDepositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
 		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
@@ -178,6 +175,24 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(signer, user, ((amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / (10 ** 18)));
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
 		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
+	}
+
+	/// @notice Transfers the sender's deposited balance to the user's balance (not allocated balance).
+	/// @dev This function is restricted to INTERNAL_TRANSFER_TO_BALANCE_ROLE to prevent cooldown manipulation attacks.
+	/// @dev Used by AccountHub when returning funds from virtual accounts to parent accounts.
+	/// @param user The address of the user to whom the balance will be transferred.
+	/// @param amount The amount to transfer in 18 decimals.
+	function internalTransferToBalance(
+		address user,
+		uint256 amount
+	) external whenNotInternalTransferPaused onlyRole(LibAccessibility.INTERNAL_TRANSFER_TO_BALANCE_ROLE) {
+		address signer = LibSigner.getSigner();
+
+		AccountFacetImpl.internalTransferToBalance(user, amount);
+		emit InternalTransferToBalance(signer, user, AccountStorage.layout().balances[user], amount);
+		uint256 amountInCollateralDecimals = (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / (10 ** 18);
+		emit Withdraw(signer, signer, amountInCollateralDecimals);
+		emit Deposit(signer, user, amountInCollateralDecimals, false);
 	}
 
 	/// @notice Allows Party B to allocate a specified amount of collateral for an specified partyA.

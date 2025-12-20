@@ -125,7 +125,16 @@ library LiquidationFacetImpl {
 	function liquidatePositionsPartyA(
 		address partyA,
 		uint256[] memory quoteIds
-	) internal returns (bool, uint256[] memory liquidatedAmounts, uint256[] memory closeIds, uint256[] memory averageClosedPrices, bytes memory liquidationId) {
+	)
+		internal
+		returns (
+			bool,
+			uint256[] memory liquidatedAmounts,
+			uint256[] memory closeIds,
+			uint256[] memory averageClosedPrices,
+			bytes memory liquidationId
+		)
+	{
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -161,10 +170,7 @@ library LiquidationFacetImpl {
 			quote.quoteStatus = QuoteStatus.LIQUIDATED;
 			quote.statusModifyTimestamp = block.timestamp;
 
-			accountLayout.partyBTotalCva[quote.partyB] -= quote.lockedValues.cva;
-			accountLayout.partyBTotalLf[quote.partyB] -= quote.lockedValues.lf;
-
-			accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
+			LibAccount.increasePartyBNonce(quote.partyB, partyA);
 
 			(bool hasMadeProfit, uint256 amount) = LibQuote.getValueOfQuoteForPartyA(
 				accountLayout.symbolsPrices[partyA][quote.symbolId].price,
@@ -421,9 +427,6 @@ library LiquidationFacetImpl {
 			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1;
 
-			accountLayout.partyBTotalCva[quote.partyB] -= quote.lockedValues.cva;
-			accountLayout.partyBTotalLf[quote.partyB] -= quote.lockedValues.lf;
-
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
@@ -446,7 +449,7 @@ library LiquidationFacetImpl {
 		if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
 			maLayout.partyBLiquidationStatus[partyB][partyA] = false;
 			maLayout.partyBLiquidationTimestamp[partyB][partyA] = 0;
-			accountLayout.partyBNonces[partyB][partyA] += 1;
+			LibAccount.increasePartyBNonce(partyB, partyA);
 		}
 		return (liquidatedAmounts, closeIds, averageClosedPrices);
 	}
