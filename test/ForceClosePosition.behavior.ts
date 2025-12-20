@@ -4,7 +4,8 @@ import {initializeFixture} from "./Initialize.fixture"
 import {ethers} from "./helpers/hardhat-connection"
 import {toUtf8Bytes} from "ethers"
 import {PositionType, QuoteStatus} from "./models/Enums"
-import {BalanceInfo, Hedger} from "./models/Hedger"
+import type { BalanceInfo } from "./models/Hedger"
+import { Hedger } from "./models/Hedger"
 import {RunContext} from "./models/RunContext"
 import {User} from "./models/User"
 import {limitCloseRequestBuilder, marketCloseRequestBuilder} from "./models/requestModels/CloseRequest"
@@ -20,14 +21,15 @@ import {
 import {getDummyHighLowPriceSig, getDummyPriceSig} from "./utils/SignatureUtils"
 import {ForceClosePositionValidator} from "./models/validators/ForceClosePositionValidator"
 import {calculateExpectedAvgPriceForForceClose, calculateExpectedClosePriceForForceClose} from "./utils/PriceUtils"
-import {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
 import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { toUtf8Bytes} from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture"
 import { PartyBForceCloseState, PositionType, QuoteStatus, UPNLSettlementState } from "./models/Enums"
-import { BalanceInfo, Hedger } from "./models/Hedger"
+import type { BalanceInfo } from "./models/Hedger"
+import { Hedger } from "./models/Hedger"
 import { RunContext } from "./models/RunContext"
 import { User } from "./models/User"
 import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest"
@@ -40,7 +42,7 @@ import {
 	calculateExpectedClosePriceForForceCloseWithAvg,
 } from "./utils/PriceUtils"
 import { getDummyCrossSettlementSig, getDummyHighLowPriceSig, getDummyMasterAccountSettlementSig, getDummyPriceSig } from "./utils/SignatureUtils"
-import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
 
 export function shouldBehaveLikeForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger

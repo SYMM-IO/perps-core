@@ -1,7 +1,7 @@
 import { Builder } from "builder-pattern"
 import { BigNumberish, ZeroAddress } from "ethers"
 
-import { SingleUpnlAndPriceSigStruct } from "../../../src/types/contracts/facets/PartyA/PartyAFacet"
+import type { SingleUpnlAndPriceSigStruct } from "../../../src/types/contracts/facets/PartyA/PartyAFacet"
 import { decimal, getBlockTimestamp } from "../../utils/Common"
 import { getDummySingleUpnlAndPriceSig } from "../../utils/SignatureUtils"
 import { OrderType, PositionType } from "../Enums"
