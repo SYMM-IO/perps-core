@@ -25,6 +25,7 @@ import {
 	AccountManager,
 	AffiliateHub,
 	AccountHub,
+	AccountHubLens,
 	FakeStablecoin,
 	SymmioPartyA,
 	WithdrawFacet,
@@ -72,6 +73,7 @@ export class RunContext {
 	accountManager2!: AccountManager
 	instantLayer!: InstantLayer
 	accountHub!: AccountHub
+	accountHubLens!: AccountHubLens
 	symmioPartyB!: SymmioPartyB
 	collateral!: FakeStablecoin
 	manager!: TestManager
