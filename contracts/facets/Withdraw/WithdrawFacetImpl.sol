@@ -87,6 +87,8 @@ library WithdrawFacetImpl {
 					"WithdrawFacet : Not registered virtual provider"
 				);
 				totalVirtualAmount += part.amount;
+			} else {
+				require(part.chainId == int256(block.chainid), "WithdrawFacet : Invalid chainId for non-virtual part");
 			}
 
 			// PURE VIRTUAL HANDLING (only if no express anywhere)

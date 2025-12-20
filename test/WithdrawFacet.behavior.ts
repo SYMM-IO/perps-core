@@ -26,11 +26,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		receiver1 = context.signers.user.address;
 	}
 
-	function buildPart(amountEth: string, overrides: Partial<any> = {}) {
+	async function buildPart(amountEth: string, overrides: Partial<any> = {}) {
 		return {
 			id: 1,
 			amount: ethers.parseUnits(amountEth, 18),
-			chainId: 1,
+			chainId: (await ethers.provider.getNetwork()).chainId,
 			receiver: toBytes20(receiver1),
 			virtualProvider: ethers.ZeroAddress,
 			expressProvider: ethers.ZeroAddress,
@@ -38,11 +38,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		};
 	}
 
-	function buildParts(
+	async function buildParts(
 		amountsEth: string[],
 		overrides: Partial<any> = {}
-	): any[] {
-		return amountsEth.map((amt) => buildPart(amt, overrides));
+	): Promise<any[]> {
+		return Promise.all(amountsEth.map((amt) => buildPart(amt, overrides)));
 	}
 
 	beforeEach(async function() {
@@ -159,7 +159,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		beforeEach(async function() {
 			await userDeposit("100");
-			suspendedParts = buildParts(["50", "20"]);
+			suspendedParts = await buildParts(["50", "20"]);
 		});
 
 		it("Should not initiate withdraw for suspended user", async function() {
@@ -300,7 +300,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			const parts: any[] = [];
 			for (let i = 0; i < 51; i++) {
-				parts.push(buildPart("1"));
+				parts.push(await buildPart("1"));
 			}
 
 			await expect(
@@ -315,7 +315,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			const parts: any[] = [];
 			for (let i = 0; i < 50; i++) {
-				parts.push(buildPart("1"));
+				parts.push(await buildPart("1"));
 			}
 
 			await expect(
@@ -327,7 +327,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to initiate withdraw with amounts more than balance", async function() {
 			await userDeposit("100");
-			const parts = [buildPart("120")];
+			const parts = [await buildPart("120")];
 
 			await expect(
 				context.withdrawFacet
@@ -338,7 +338,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to initiate withdraw because of amount 0", async function() {
 			await userDeposit("100");
-			const parts = buildParts(["50", "0"]);
+			const parts = await buildParts(["50", "0"]);
 
 			await expect(
 				context.withdrawFacet
@@ -349,7 +349,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should initiate withdraw correctly", async function() {
 			await userDeposit("100");
-			const parts = buildParts(["50", "20"]);
+			const parts = await buildParts(["50", "20"]);
 
 			await expect(
 				context.withdrawFacet
@@ -373,7 +373,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to finalize withdraw before passing cooldown", async function() {
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -388,7 +388,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to finalize withdraw with wrong id", async function() {
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -405,7 +405,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to finalize withdraw with invalid status", async function() {
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -426,7 +426,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should finalize withdraw", async function() {
 			await userDeposit("100");
-			const parts = buildParts(["50", "20"]);
+			const parts = await buildParts(["50", "20"]);
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -453,7 +453,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to request to cancel withdraw with wrong id", async function() {
 			await userDeposit("100");
-			const parts = buildParts(["50", "20"]);
+			const parts = await buildParts(["50", "20"]);
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -468,7 +468,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to request to cancel withdraw with wrong status", async function() {
 			await userDeposit("100");
-			const parts = buildParts(["50", "20"]);
+			const parts = await buildParts(["50", "20"]);
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -487,7 +487,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should request to cancel withdraw", async function() {
 			await userDeposit("100");
-			const parts = buildParts(["50", "20"]);
+			const parts = await buildParts(["50", "20"]);
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -537,7 +537,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const parts: any[] = [];
 			for (let i = 0; i < 51; i++) {
 				parts.push(
-					buildPart("1", {
+					await buildPart("1", {
 						virtualProvider: vpAddress,
 					})
 				);
@@ -557,7 +557,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const parts: any[] = [];
 			for (let i = 0; i < 50; i++) {
 				parts.push(
-					buildPart("1", {
+					await buildPart("1", {
 						virtualProvider: vpAddress,
 					})
 				);
@@ -575,7 +575,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const vpAddress = await virtualProvider.getAddress();
 
 			const parts = [
-				buildPart("120", {
+				await buildPart("120", {
 					virtualProvider: vpAddress,
 				}),
 			];
@@ -611,8 +611,8 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const vpAddress2 = await virtualProvider2.getAddress();
 
 			const parts = [
-				buildPart("20", { virtualProvider: vpAddress1 }),
-				buildPart("20", { virtualProvider: vpAddress2 }),
+				await buildPart("20", { virtualProvider: vpAddress1 }),
+				await buildPart("20", { virtualProvider: vpAddress2 }),
 			];
 
 			await expect(
@@ -634,7 +634,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				virtualProvider: vpAddress,
 			});
 
@@ -657,7 +657,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				virtualProvider: vpAddress,
 			});
 
@@ -691,7 +691,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to finalize withdraw before passing cooldown", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			const parts = [await buildPart("50", { virtualProvider: vpAddress })];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -707,7 +707,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to accept withdraw with wrong id", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			const parts = [await buildPart("50", { virtualProvider: vpAddress })];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -721,7 +721,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to accept normal withdraw", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -735,7 +735,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to accept withdraw with wrong status", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			const parts = [await buildPart("50", { virtualProvider: vpAddress })];
 			await context.withdrawFacet
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, false, "0x");
@@ -748,7 +748,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to accept withdraw with wrong provider", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			const parts = [await buildPart("50", { virtualProvider: vpAddress })];
 			await context.withdrawFacet
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, false, "0x");
@@ -761,7 +761,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to reject withdraw with wrong id", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			const parts = [await buildPart("50", { virtualProvider: vpAddress })];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -775,7 +775,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to reject normal withdraw", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -789,7 +789,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to reject withdraw with wrong status", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			const parts = [await buildPart("50", { virtualProvider: vpAddress })];
 			await context.withdrawFacet
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, false, "0x");
@@ -802,7 +802,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to reject withdraw with wrong provider", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			const parts = [await buildPart("50", { virtualProvider: vpAddress })];
 			await context.withdrawFacet
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, false, "0x");
@@ -815,7 +815,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to finalize withdraw with invalid status", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			const parts = [await buildPart("50", { virtualProvider: vpAddress })];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -840,7 +840,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				virtualProvider: vpAddress,
 			});
 
@@ -875,7 +875,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should reject withdraw if provider wants", async function() {
 			await userDeposit("100");
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = [buildPart("50", { virtualProvider: vpAddress })];
+			const parts = [await buildPart("50", { virtualProvider: vpAddress })];
 
 			const beforeBalance =
 				await context.viewFacet.balanceOf(user.address);
@@ -913,7 +913,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				virtualProvider: vpAddress,
 			});
 
@@ -965,7 +965,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				virtualProvider: vpAddress,
 			});
 
@@ -994,7 +994,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				virtualProvider: vpAddress,
 			});
 
@@ -1023,7 +1023,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				virtualProvider: vpAddress,
 			});
 
@@ -1049,7 +1049,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			receiver1 = context.signers.user.address;
 			const vpAddress = await virtualProvider.getAddress();
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				virtualProvider: vpAddress,
 			});
 
@@ -1107,7 +1107,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const parts: any[] = [];
 			for (let i = 0; i < 51; i++) {
 				parts.push(
-					buildPart("1", {
+					await buildPart("1", {
 						expressProvider: epAddress,
 					})
 				);
@@ -1127,7 +1127,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const parts: any[] = [];
 			for (let i = 0; i < 50; i++) {
 				parts.push(
-					buildPart("1", {
+					await buildPart("1", {
 						expressProvider: epAddress,
 					})
 				);
@@ -1145,7 +1145,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const epAddress = await expressProvider.getAddress();
 
 			const parts = [
-				buildPart("120", {
+				await buildPart("120", {
 					expressProvider: epAddress,
 				}),
 			];
@@ -1181,8 +1181,8 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const epAddress2 = await expressProvider2.getAddress();
 
 			const parts = [
-				buildPart("20", { expressProvider: epAddress1 }),
-				buildPart("20", { expressProvider: epAddress2 }),
+				await buildPart("20", { expressProvider: epAddress1 }),
+				await buildPart("20", { expressProvider: epAddress2 }),
 			];
 
 			await expect(
@@ -1199,7 +1199,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress,
 			});
 
@@ -1217,7 +1217,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress,
 			});
 
@@ -1256,7 +1256,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
-			const parts = [buildPart("50", { expressProvider: epAddress })];
+			const parts = [await buildPart("50", { expressProvider: epAddress })];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -1273,7 +1273,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress,
 			});
 
@@ -1316,7 +1316,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
-			const parts = [buildPart("50", { expressProvider: epAddress })];
+			const parts = [await buildPart("50", { expressProvider: epAddress })];
 
 			const beforeBalance =
 				await context.viewFacet.balanceOf(user.address);
@@ -1348,7 +1348,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress,
 			});
 
@@ -1394,7 +1394,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress,
 			});
 
@@ -1418,7 +1418,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress,
 			});
 
@@ -1438,7 +1438,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress,
 			});
 
@@ -1463,10 +1463,10 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const epAddress = await expressProvider.getAddress();
 
 			const parts = [
-				buildPart("50", {
+				await buildPart("50", {
 					expressProvider: epAddress,
 				}),
-				buildPart("20"),
+				await buildPart("20"),
 			];
 
 			await context.withdrawFacet
@@ -1519,7 +1519,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 			const vrAddress = await virtualProvider.getAddress();
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress, virtualProvider: vrAddress
 			});
 
@@ -1555,7 +1555,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const epAddress = await expressProvider.getAddress();
 			const vrAddress = await virtualProvider.getAddress();
 
-			const parts = [buildPart("50", { expressProvider: epAddress, virtualProvider: vrAddress })];
+			const parts = [await buildPart("50", { expressProvider: epAddress, virtualProvider: vrAddress })];
 
 			await context.withdrawFacet
 				.connect(context.signers.user)
@@ -1573,7 +1573,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const epAddress = await expressProvider.getAddress();
 			const vrAddress = await virtualProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress, virtualProvider: vrAddress
 			});
 
@@ -1616,7 +1616,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const epAddress = await expressProvider.getAddress();
 			const vrAddress = await virtualProvider.getAddress();
 
-			const parts = [buildPart("50", { expressProvider: epAddress, virtualProvider: vrAddress })];
+			const parts = [await buildPart("50", { expressProvider: epAddress, virtualProvider: vrAddress })];
 
 			const beforeBalance =
 				await context.viewFacet.balanceOf(user.address);
@@ -1649,7 +1649,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const epAddress = await expressProvider.getAddress();
 			const vrAddress = await virtualProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress,
 				virtualProvider: vrAddress
 			});
@@ -1697,7 +1697,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const epAddress = await expressProvider.getAddress();
 			const vrAddress = await virtualProvider.getAddress();
 
-			const parts = buildParts(["50", "20"], {
+			const parts = await buildParts(["50", "20"], {
 				expressProvider: epAddress, virtualProvider: vrAddress
 			});
 
@@ -1770,7 +1770,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to speed up withdraw without role", async function() {
 			await userDeposit("100");
 
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 
 			await context.controlFacet
 				.connect(context.signers.admin)
@@ -1789,7 +1789,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should speed up withdraw for classic withdrawals", async function() {
 			await userDeposit("100");
 
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 
 			await context.controlFacet
 				.connect(context.signers.admin)
@@ -1811,7 +1811,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const vrAddress = await virtualProvider.getAddress();
 
-			const parts = [buildPart("50" , {virtualProvider : vrAddress})];
+			const parts = [await buildPart("50" , {virtualProvider : vrAddress})];
 
 			await context.controlFacet
 				.connect(context.signers.admin)
@@ -1844,7 +1844,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await expect(context.controlFacet.connect(context.signers.admin).setMinWithdrawCooldown(10)).not.reverted;
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
 				.to.revertedWith("WithdrawFacet : New cooldown exceeds min cooldown");
@@ -1852,7 +1852,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to initiate speed up withdraw when not whitelisted", async function () {
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x"))
 				.to.revertedWith("WithdrawFacet : Not allowed to speed up withdraw")
 		})
@@ -1860,7 +1860,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to initiate speed up withdraw with express", async function () {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
-			const parts = [buildPart("50" , {expressProvider: epAddress})];
+			const parts = [await buildPart("50" , {expressProvider: epAddress})];
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
 			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x"))
 				.to.revertedWith("WithdrawFacet : Speed up not allowed with express");
@@ -1869,7 +1869,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to speed-up with invalid id", async function () {
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,2 , 5))
 				.to.revertedWith("WithdrawFacet : Invalid withdraw request ID");
@@ -1878,7 +1878,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to speed-up more than one time", async function () {
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
 			await context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 10)
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
@@ -1888,7 +1888,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to speed-up when user is not whitelisted", async function () {
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
 			await context.controlFacet.connect(context.signers.admin).unsetSpeedUpUser(user.address)
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
@@ -1898,7 +1898,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to speed-up when user is not whitelisted", async function () {
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,true,"0x")
 			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
@@ -1908,7 +1908,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to speed-up when request is not speed-up", async function () {
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address)
 			await userDeposit("100");
-			const parts = [buildPart("50")];
+			const parts = [await buildPart("50")];
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts,false,"0x")
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address,1 , 5))
 				.to.revertedWith("WithdrawFacet : Withdraw request is not speed up");
