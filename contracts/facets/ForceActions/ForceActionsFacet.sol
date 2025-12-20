@@ -36,7 +36,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	 * @param sig The Muon signature to calculate the close price.
 	 */
 	function forceClosePosition(uint256 quoteId, HighLowPriceSig memory sig) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
-		forceClose(quoteId, sig);
+		_forceClose(quoteId, sig);
 	}
 
 	/**
@@ -68,7 +68,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 			newPartyBsAllocatedBalances
 		);
 
-		forceClose(quoteId, sig);
+		_forceClose(quoteId, sig);
 	}
 
 	/**
@@ -196,7 +196,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
 	 * @param sig The Muon signature.
 	 */
-	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) private {
+	function _forceClose(uint256 quoteId, HighLowPriceSig memory sig) private {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote memory quote = quoteLayout.quotes[quoteId];
 		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);

@@ -151,27 +151,69 @@ library LibForceActions {
 		}
 	}
 
-	function closeQuoteMasterAccount(uint256 quoteId, uint256 closePrice) internal {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
+	/**
+	 * @notice Computes partyB's available balance for a force-close using closePrice vs marketPrice in master-account mode.
+	 * @param quoteId The ID of the quote to evaluate.
+	 * @param closedPrice The force-close price.
+	 * @param marketPrice The current market price.
+	 */
+	function getAvailableBalanceToForceClosePosition(
+		uint256 quoteId,
+		uint256 closedPrice,
+		uint256 marketPrice
+	) internal view returns (int256 partyBAvailableBalance) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		Quote storage quote = quoteLayout.quotes[quoteId];
+
+		uint256 filledAmount = quote.quantityToClose;
+		partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(0, quote.partyB, address(0));
+
+		if (quote.positionType == PositionType.LONG) {
+			if (closedPrice >= marketPrice) {
+				uint256 diff = (filledAmount * (closedPrice - marketPrice)) / 1e18;
+				partyBAvailableBalance -= int256(diff);
+			} else {
+				uint256 diff = (filledAmount * (marketPrice - closedPrice)) / 1e18;
+				partyBAvailableBalance += int256(diff);
+			}
+		} else if (quote.positionType == PositionType.SHORT) {
+			if (closedPrice <= marketPrice) {
+				uint256 diff = (filledAmount * (marketPrice - closedPrice)) / 1e18;
+				partyBAvailableBalance -= int256(diff);
+			} else {
+				uint256 diff = (filledAmount * (closedPrice - marketPrice)) / 1e18;
+				partyBAvailableBalance += int256(diff);
+			}
+		}
 	}
 
+	/**
+	 * @notice Closes a master-account quote using full uPNL if possible, otherwise a price-only fallback.
+	 * @param quoteId The ID of the quote to close.
+	 * @param currentPrice The current market price used for solvency checks.
+	 * @param upnlPartyB The PartyB uPNL used for the primary solvency path.
+	 * @param closePrice The force-close price to apply.
+	 */
 	function closeQuoteMasterAccountWithRespectToUpnl(
 		uint256 quoteId,
 		uint256 currentPrice,
 		int256 upnlPartyB,
 		uint256 closePrice
-	) internal returns (bool isSolvent, int256 partyBAvailableAfterClose) {
+	) internal returns (bool isSolvent, int256 partyBAvailableForClose) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		(partyBAvailableAfterClose, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
-		if (partyBAvailableAfterClose >= 0) {
-			closeQuoteMasterAccount(quoteId, closePrice);
-			return (true, partyBAvailableAfterClose);
+
+		// Close using UPNL
+		(partyBAvailableForClose, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
+		if (partyBAvailableForClose >= 0) {
+			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
+			return (true, partyBAvailableForClose);
 		}
 
-		partyBAvailableAfterClose = LibAccount.partyBAvailableBalanceForLiquidation(0, quote.partyB, address(0));
-		require(partyBAvailableAfterClose >= 0, "ForceActionsFacet: Insufficient balance");
-		closeQuoteMasterAccount(quoteId, closePrice);
-		return (false, partyBAvailableAfterClose);
+		// Close ignoring UPNL
+		partyBAvailableForClose = getAvailableBalanceToForceClosePosition(quoteId, closePrice, currentPrice);
+		require(partyBAvailableForClose >= 0, "ForceActionsFacet: Insufficient balance");
+		LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
+
+		return (false, partyBAvailableForClose);
 	}
 }
