@@ -1,11 +1,11 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
-import { loadFixture, time } from "./helpers/network-helpers"
-import { expect, use } from "chai"
+import { expect } from "chai"
 import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
-import { ethers } from "./helpers/hardhat-connection"
 
 import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
 import { initializeFixture } from "./Initialize.fixture"
+import { ethers } from "./helpers/hardhat-connection"
+import { loadFixture } from "./helpers/network-helpers"
 import { PositionType } from "./models/Enums"
 import { Hedger } from "./models/Hedger"
 import { RunContext } from "./models/RunContext"
@@ -38,7 +38,12 @@ export function shouldBehaveLikeAccountHub(): void {
 		])
 	}
 
-	function createSubAccountData(name: string, isolationType: number, metadata: string = "0x", singleVAMode: boolean = false): IAccountHub.SubAccountCreationDataStruct {
+	function createSubAccountData(
+		name: string,
+		isolationType: number,
+		metadata: string = "0x",
+		singleVAMode: boolean = false,
+	): IAccountHub.SubAccountCreationDataStruct {
 		return {
 			name,
 			metadata: ethers.keccak256(toUtf8Bytes(metadata)),
@@ -212,6 +217,7 @@ export function shouldBehaveLikeAccountHub(): void {
 
 		describe("createSubAccounts", async () => {
 			const buildExampleSubAccountData = (): IAccountHub.SubAccountCreationDataStruct[] => [createSubAccountData("EXAMPLE_NAME", 0, "EXAMPLE")]
+
 			it("should create subAccount successfully", async () => {
 				const subAccountData = buildExampleSubAccountData()
 				const oldNonce = await context.accountHub.globalNonce()
@@ -258,9 +264,15 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 
 			it("should failed when affiliate not whitelisted provided symmioCore", async () => {
-				const subAccountData = buildExampleSubAccountData()
+				const subAccountData = {
+					name: "EXAMPLE_NAME",
+					metadata: ethers.keccak256(toUtf8Bytes("EXAMPLE")),
+					symmioCore: context.signers.others[0].address,
+					isolationType: 0,
+					singleVAMode: false,
+				}
 				await expect(
-					context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData),
+					context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), [subAccountData]),
 				).to.revertedWithCustomError(context.accountHub, "NotSymmioCore")
 			})
 
@@ -396,9 +408,10 @@ export function shouldBehaveLikeAccountHub(): void {
 					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
 					const positionSubAccount = accounts[accounts.length - 1]
 
-					await expect(
-						context.accountHub.connect(context.signers.user).setSingleVAMode(positionSubAccount, true)
-					).to.revertedWithCustomError(context.accountHub, "SingleVAModeNotApplicable")
+					await expect(context.accountHub.connect(context.signers.user).setSingleVAMode(positionSubAccount, true)).to.revertedWithCustomError(
+						context.accountHub,
+						"SingleVAModeNotApplicable",
+					)
 				})
 
 				it("should revert when enabling singleVAMode on CUSTOM isolation sub-account", async () => {
@@ -407,22 +420,23 @@ export function shouldBehaveLikeAccountHub(): void {
 					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
 					const customSubAccount = accounts[accounts.length - 1]
 
-					await expect(
-						context.accountHub.connect(context.signers.user).setSingleVAMode(customSubAccount, true)
-					).to.revertedWithCustomError(context.accountHub, "SingleVAModeNotApplicable")
+					await expect(context.accountHub.connect(context.signers.user).setSingleVAMode(customSubAccount, true)).to.revertedWithCustomError(
+						context.accountHub,
+						"SingleVAModeNotApplicable",
+					)
 				})
 
 				it("should revert when creating POSITION sub-account with singleVAMode enabled", async () => {
 					const subAccountData = [createSubAccountData("POSITION_SINGLE", 0, "POSITION", true)]
 					await expect(
-						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData),
 					).to.revertedWithCustomError(context.accountHub, "SingleVAModeNotApplicable")
 				})
 
 				it("should revert when creating CUSTOM sub-account with singleVAMode enabled", async () => {
 					const subAccountData = [createSubAccountData("CUSTOM_SINGLE", 3, "CUSTOM", true)]
 					await expect(
-						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+						context.accountHub.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData),
 					).to.revertedWithCustomError(context.accountHub, "SingleVAModeNotApplicable")
 				})
 
@@ -432,14 +446,15 @@ export function shouldBehaveLikeAccountHub(): void {
 					const accounts = await context.accountHub.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
 					const marketSubAccount = accounts[accounts.length - 1]
 
-					await expect(
-						context.accountHub.connect(context.signers.others[0]).setSingleVAMode(marketSubAccount, true)
-					).to.revertedWithCustomError(context.accountHub, "NotOwner")
+					await expect(context.accountHub.connect(context.signers.others[0]).setSingleVAMode(marketSubAccount, true)).to.revertedWithCustomError(
+						context.accountHub,
+						"NotOwner",
+					)
 				})
 
 				it("should revert when sub-account does not exist", async () => {
 					await expect(
-						context.accountHub.connect(context.signers.user).setSingleVAMode(context.signers.others[0].address, true)
+						context.accountHub.connect(context.signers.user).setSingleVAMode(context.signers.others[0].address, true),
 					).to.revertedWithCustomError(context.accountHub, "NotOwner")
 				})
 
@@ -457,9 +472,10 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(vaCount).to.equal(1)
 
 					// Try to enable singleVAMode - should fail
-					await expect(
-						context.accountHub.connect(context.signers.user).setSingleVAMode(marketSubAccount, true)
-					).to.revertedWithCustomError(context.accountHub, "HasActiveVirtualAccounts")
+					await expect(context.accountHub.connect(context.signers.user).setSingleVAMode(marketSubAccount, true)).to.revertedWithCustomError(
+						context.accountHub,
+						"HasActiveVirtualAccounts",
+					)
 				})
 			})
 
@@ -1512,7 +1528,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountCreation)
 
 					// Create 3 virtual accounts
-					for (let i = 0; i < 4; i++) {
+					for (let i = 0; i < 3; i++) {
 						await context.accountHub
 							.connect(context.signers.user)
 							.createCustomVirtualAccount(customAccount, ethers.keccak256(toUtf8Bytes("V3")), 2, 1)
