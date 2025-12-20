@@ -135,13 +135,14 @@ library LibForceActions {
 		}
 
 		address partyB = quote.partyB;
+		address allocationKey = LibAccount.partyBAllocationKey(partyB, quote.partyA);
 
 		if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
 			uint256 available = uint256(-partyBAvailableBalance);
 
 			accountLayout.reserveVault[partyB] -= available;
 
-			accountLayout.partyBAllocatedBalances[partyB][quote.partyA] += available;
+			accountLayout.partyBAllocatedBalances[partyB][allocationKey] += available;
 			emit SharedEvents.BalanceChangePartyB(partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
 			LibAccount.increasePartyBNonce(partyB, quote.partyA);

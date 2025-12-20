@@ -47,8 +47,12 @@ library ClearingHouseFacetImpl {
 		for (uint256 i = 0; i < partyAs.length; i++) {
 			address partyA = partyAs[i];
 			uint256 amount = amounts[i];
-			require(accountLayout.partyBAllocatedBalances[partyB][partyA] >= amount, "ClearingHouseFacet: Insufficient allocated balance");
-			accountLayout.partyBAllocatedBalances[partyB][partyA] -= amount;
+			address allocationKey = LibAccount.partyBAllocationKey(partyB, partyA);
+			require(
+				accountLayout.partyBAllocatedBalances[partyB][allocationKey] >= amount,
+				"ClearingHouseFacet: Insufficient allocated balance"
+			);
+			accountLayout.partyBAllocatedBalances[partyB][allocationKey] -= amount;
 			crossLiquidationDetail.deallocateForLiquidation += amount;
 		}
 	}

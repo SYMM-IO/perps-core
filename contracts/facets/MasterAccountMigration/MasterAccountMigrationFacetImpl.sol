@@ -12,10 +12,7 @@ import "../../storages/MasterAccountMigrationStorage.sol";
 library MasterAccountMigrationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
-	function beginMasterAccountMigration(
-		address partyB,
-		bool initializeMasterBalances
-	) internal returns (uint256) {
+	function beginMasterAccountMigration(address partyB, bool initializeMasterBalances) internal returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MasterAccountMigrationStorage.Layout storage migrationLayout = MasterAccountMigrationStorage.layout();
 		require(partyB != address(0), "MasterAccountMigration: Zero address");
@@ -37,10 +34,7 @@ library MasterAccountMigrationFacetImpl {
 		return migrationId;
 	}
 
-	function migrateMasterAccountQuotes(
-		address partyB,
-		address[] calldata partyAs
-	) internal returns (uint256 partyAsProcessed) {
+	function migrateMasterAccountQuotes(address partyB, address[] calldata partyAs) internal returns (uint256 partyAsProcessed) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MasterAccountMigrationStorage.Layout storage migrationLayout = MasterAccountMigrationStorage.layout();
 		require(migrationLayout.partyBMigrationPaused[partyB], "MasterAccountMigration: Migration not active");
@@ -57,6 +51,9 @@ library MasterAccountMigrationFacetImpl {
 			accountLayout.partyBAllocatedBalances[partyB][address(0)] += accountLayout.partyBAllocatedBalances[partyB][partyA];
 			accountLayout.partyBLockedBalances[partyB][address(0)].add(accountLayout.partyBLockedBalances[partyB][partyA]);
 			accountLayout.partyBPendingLockedBalances[partyB][address(0)].add(accountLayout.partyBPendingLockedBalances[partyB][partyA]);
+
+			// resetting normal balances
+			accountLayout.partyBAllocatedBalances[partyB][partyA] = 0;
 		}
 	}
 

@@ -237,7 +237,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should failed when deallocated amount be more than partyB allocation for for partyA", async () => {
-				const allocated = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger, context.signers.user)
+				const allocated = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
@@ -246,25 +246,24 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should deallocated amount successfully", async () => {
-				const OldAllocated = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger, context.signers.user)
+				const OldAllocated = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.deallocateForCrossLiquidation(context.signers.hedger, [context.signers.user], [OldAllocated]),
 				).to.not.reverted
 
-				const newAllocated = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger, context.signers.user)
+				const newAllocated = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
 				const d = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 				expect(newAllocated).to.equal(0)
 				expect(d.deallocateForLiquidation).to.equal(OldAllocated)
 			})
 
 			it("should deallocate for multiple partyAs in batch", async () => {
-				const OldAllocatedUser = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger, context.signers.user)
-				const OldAllocatedUser2 = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger, context.signers.user2)
+				const OldAllocatedMaster = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
 
-				const deallocateAmount1 = OldAllocatedUser / 2n
-				const deallocateAmount2 = OldAllocatedUser2 / 2n
+				const deallocateAmount1 = OldAllocatedMaster / 4n
+				const deallocateAmount2 = OldAllocatedMaster / 4n
 
 				await expect(
 					context.clearingHouseFacet
@@ -276,12 +275,10 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						),
 				).to.not.reverted
 
-				const newAllocatedUser = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger, context.signers.user)
-				const newAllocatedUser2 = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger, context.signers.user2)
+				const newAllocatedMaster = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
 				const d = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 
-				expect(newAllocatedUser).to.equal(OldAllocatedUser - deallocateAmount1)
-				expect(newAllocatedUser2).to.equal(OldAllocatedUser2 - deallocateAmount2)
+				expect(newAllocatedMaster).to.equal(OldAllocatedMaster - deallocateAmount1 - deallocateAmount2)
 				expect(d.deallocateForLiquidation).to.equal(deallocateAmount1 + deallocateAmount2)
 			})
 		})

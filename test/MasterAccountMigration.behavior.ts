@@ -5,6 +5,9 @@ import { ZeroAddress } from "ethers"
 import { initializeFixture } from "./Initialize.fixture"
 import { RunContext } from "./models/RunContext"
 import { Hedger } from "./models/Hedger"
+import { User } from "./models/User"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { decimal } from "./utils/Common"
 
 export function shouldBehaveLikeMasterAccountMigration(): void {
@@ -78,11 +81,37 @@ export function shouldBehaveLikeMasterAccountMigration(): void {
 		const partyB = await hedger.getAddress()
 		const partyA1 = context.signers.user.address
 		const partyA2 = context.signers.user2.address
-		const allocateA1 = decimal(100n)
-		const allocateA2 = decimal(50n)
+		const allocateA1 = decimal(200n)
+		const allocateA2 = decimal(150n)
+		const user1 = new User(context, context.signers.user)
+		const user2 = new User(context, context.signers.user2)
+
+		await user1.setup()
+		await user2.setup()
+		await user1.setBalances(decimal(2000n), decimal(1000n), decimal(300n))
+		await user2.setBalances(decimal(2000n), decimal(1000n), decimal(300n))
 
 		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA1, partyA1)
 		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA2, partyA2)
+		const quote1Id = await user1.sendQuote(limitQuoteRequestBuilder().quantity(decimal(80n)).build())
+		const quote2Id = await user2.sendQuote(limitQuoteRequestBuilder().quantity(decimal(120n)).build())
+		await hedger.lockQuote(quote1Id, 0n, null)
+		await hedger.lockQuote(quote2Id, 0n, null)
+		const quote1 = await context.viewFacetQuote.getQuote(quote1Id)
+		const quote2 = await context.viewFacetQuote.getQuote(quote2Id)
+		await hedger.openPosition(
+			quote1Id,
+			limitOpenRequestBuilder().filledAmount(quote1.quantity).openPrice(quote1.requestedOpenPrice).build(),
+		)
+		await hedger.openPosition(
+			quote2Id,
+			limitOpenRequestBuilder().filledAmount(quote2.quantity).openPrice(quote2.requestedOpenPrice).build(),
+		)
+		const beforePartyA1 = await hedger.getBalanceInfo(partyA1)
+		const beforePartyA2 = await hedger.getBalanceInfo(partyA2)
+
+		expect(beforePartyA1.totalLockedPartyB).to.be.gt(0)
+		expect(beforePartyA2.totalLockedPartyB).to.be.gt(0)
 
 		await context.masterAccountMigrationFacet
 			.connect(context.signers.admin)
@@ -93,5 +122,14 @@ export function shouldBehaveLikeMasterAccountMigration(): void {
 		const afterBalances = await context.viewFacet.balanceInfoOfPartyBMasterAccount(partyB)
 
 		expect(afterBalances[0]).to.equal(allocateA1 + allocateA2)
+		expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA1)).to.equal(0)
+		expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA2)).to.equal(0)
+
+		const afterPartyA1 = await hedger.getBalanceInfo(partyA1)
+		const afterPartyA2 = await hedger.getBalanceInfo(partyA2)
+		expect(afterPartyA1.totalLockedPartyB).to.equal(beforePartyA1.totalLockedPartyB)
+		expect(afterPartyA1.totalPendingLockedPartyB).to.equal(beforePartyA1.totalPendingLockedPartyB)
+		expect(afterPartyA2.totalLockedPartyB).to.equal(beforePartyA2.totalLockedPartyB)
+		expect(afterPartyA2.totalPendingLockedPartyB).to.equal(beforePartyA2.totalPendingLockedPartyB)
 	})
 }
