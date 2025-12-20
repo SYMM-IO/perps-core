@@ -87,8 +87,7 @@ export enum ExternalTransferStatus {
 
 export enum UPNLSettlementState {
 	NONE,
-	REALIZED,
-	REALIZED_MASTER_ACCOUNT,
+	REALIZED
 }
 
 export enum PartyBForceCloseState {

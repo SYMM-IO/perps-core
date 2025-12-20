@@ -295,7 +295,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					)
 
 					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
-						"LibSettlement, Invalid quote",
+						"LibSettlement: Invalid quote",
 					)
 				})
 
@@ -333,7 +333,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				)
 
 				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
-					"LibSettlement, Invalid quote",
+					"LibSettlement: Invalid quote",
 				)
 			})
 		})

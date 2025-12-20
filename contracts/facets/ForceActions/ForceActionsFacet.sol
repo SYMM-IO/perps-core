@@ -75,18 +75,18 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		uint256 quoteId,
 		HighLowPriceSig memory sig
 	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
-		forceCloseInit(quoteId, sig);
-	}
+		uint256 closePrice = ForceActionsFacetImpl.forceCloseMasterAccountInit(quoteId, sig);
+		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, closePrice, sig.timestamp);	}
 
 	function settleUpnlMasterAccount(
-		uint256 quoteId,
+		uint256 forceCloseQuoteId,
 		MasterAccountSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
 	) external whenNotPartyAActionsPaused {
 		address partyB = settlementSig.partyB;
 
 		(uint256[] memory _newPartyAsAllocatedBalances, address[] memory _partyAs) = ForceActionsFacetImpl.settleUpnlMasterAccount(
-			quoteId,
+			forceCloseQuoteId,
 			settlementSig,
 			updatedPrices
 		);
@@ -99,7 +99,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 			_partyAs,
 			_newPartyAsAllocatedBalances,
 			AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)],
-			quoteId
+			forceCloseQuoteId
 		);
 	}
 
@@ -107,22 +107,13 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		forceCloseFinalize(quoteId);
 	}
 
-	function ForceCloseAndSettlePositionsMasterAccount(
+	function forceCloseAndSettlePositionsMasterAccount(
 		uint256 quoteId,
 		HighLowPriceSig memory sig
 	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
-		forceCloseInit(quoteId, sig);
-		forceCloseFinalize(quoteId);
-	}
-
-	/* private	 functions */
-
-	/* description: initiates the force close process for a master account mode party B */
-	// @param		quoteId  The ID of the quote for which the position should be forced to close.
-	// @param		sig  The Muon signature.	
-	function forceCloseInit(uint256 quoteId, HighLowPriceSig memory sig) private {
 		uint256 closePrice = ForceActionsFacetImpl.forceCloseMasterAccountInit(quoteId, sig);
 		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, closePrice, sig.timestamp);
+		forceCloseFinalize(quoteId);
 	}
 
 	/* description: finalizes the force close process for a master account mode party B */
