@@ -33,7 +33,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	/**
 	 * @notice Forces the closure of the position associated with the specified quote.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature.
+	 * @param sig The Muon signature to calculate the close price.
 	 */
 	function forceClosePosition(uint256 quoteId, HighLowPriceSig memory sig) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		forceClose(quoteId, sig);
@@ -42,7 +42,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	/**
 	 * @notice Settles the positions then forces the closure of the position associated with the specified quote.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature.
+	 * @param sig The Muon signature to calculate the close price.
 	 * @param settleSig The data struct contains quoteIds and upnl of parties and market prices
 	 * @param updatedPrices New prices to be set as openedPrice for the specified quotes.
 	 */
@@ -74,7 +74,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	/**
 	 * @notice Initializes the master-account force-close flow for a quote.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature.
+	 * @param sig The Muon signature to calculate the close price.
 	 */
 	function initializeMasterAccountForceClose(
 		uint256 quoteId,
@@ -110,7 +110,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	/**
 	 * @notice Initializes, settles uPNL, and finalizes a master-account force close in a single transaction.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature.
+	 * @param sig The Muon signature to calculate the close price.
 	 * @param settlementSig Master-account settlement data (uPNLs + pricing).
 	 * @param updatedPrices Prices applied during master-account settlement.
 	 */
