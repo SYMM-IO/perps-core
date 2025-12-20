@@ -1,7 +1,7 @@
 import { toUtf8Bytes } from "ethers"
 import { ethers, hre } from "./helpers/hardhat-connection"
 
-import { AccountHub, AffiliateHub } from "../src/types"
+import { AccountHub, AccountHubLens, AffiliateHub } from "../src/types"
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types"
 import { createRunContext, RunContext } from "./models/RunContext"
 import { decimal } from "./utils/Common"
@@ -120,6 +120,12 @@ export async function initializeFixture(): Promise<RunContext> {
 	context.affiliateHub = affiliateHub
 	context.symmioPartyB = symmioPartyB
 	context.instantLayer = instantLayer
+
+	// Deploy AccountHubLens
+	const AccountHubLensFactory = await ethers.getContractFactory("AccountHubLens")
+	const accountHubLens = (await AccountHubLensFactory.deploy(await accountHub.getAddress())) as AccountHubLens
+	await accountHubLens.waitForDeployment()
+	context.accountHubLens = accountHubLens
 
 	// set AccountHub for InstantLayer
 	await instantLayer.setAccountHub(await accountHub.getAddress())

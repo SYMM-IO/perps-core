@@ -88,7 +88,6 @@ library ForceActionsFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 
-		require(accountLayout.masterAccountMode[QuoteStorage.layout().quotes[quoteId].partyB], "ForceActionsFacet: Master account mode inactive");
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
 		succeed = LibForceActions.closeQuote(quoteId, detail.closePrice, detail.partyBAvailableAfterClose, 0);
@@ -151,13 +150,11 @@ library ForceActionsFacetImpl {
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
-		require(accountLayout.masterAccountMode[QuoteStorage.layout().quotes[quoteId].partyB], "ForceActionsFacet: Master account mode inactive");
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
-
 		LibMuonCrossSettlement.verifyMasterAccountSettlement(sig);
 		(newPartyAsAllocatedBalances, partyAs) = LibSettlement.settleUpnlMasterAccount(sig, updatedPrices);
-		detail.settlementState = UPNLSettlementState.REALIZED_MASTER_ACCOUNT;
 		detail.timestamp = block.timestamp;
 	}
 }

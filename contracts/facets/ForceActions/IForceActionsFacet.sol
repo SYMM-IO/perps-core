@@ -137,12 +137,12 @@ interface IForceActionsFacet is ForceActionsFacetEvents {
 	 * - Updates settlementState = UPNLSettlementState.REALIZED_MASTER_ACCOUNT.
 	 * - Updates timestamp.
 	 *
-	 * @param forceCloseId Same as quoteId for the force-close workflow.
+	 * @param forceCloseQuoteId Same as quoteId for the force-close workflow.
 	 * @param settlementSig Master-account settlement data (uPNLs + pricing).
 	 * @param updatedPrices Prices applied during master-account settlement.
 	 */
 	function settleUpnlMasterAccount(
-		uint256 forceCloseId,
+		uint256 forceCloseQuoteId,
 		MasterAccountSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
 	) external;
@@ -168,4 +168,9 @@ interface IForceActionsFacet is ForceActionsFacetEvents {
 	 * @param forceCloseId Same as quoteId for the force-close workflow.
 	 */
 	function finalizeMasterAccountForceClose(uint256 forceCloseId) external;
+
+	function forceCloseAndSettlePositionsMasterAccount(
+		uint256 quoteId,
+		HighLowPriceSig memory sig
+	) external;
 }

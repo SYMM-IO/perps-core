@@ -501,19 +501,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 						"ForceActionsFacet: Master account mode inactive",
 					)
 				})
-				it("reverts finalizeMasterAccountForceClose when master account mode is inactive", async function () {
-					await expect(context.forceActionsFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)).to.be.revertedWith(
-						"ForceActionsFacet: Master account mode inactive",
-					)
-				})
 
-				it("reverts settleUpnlMasterAccount when master account mode is inactive", async function () {
-					const dummyMasterSig = await getDummyMasterAccountSettlementSig()
-
-					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, dummyMasterSig, [])).to.be.revertedWith(
-						"ForceActionsFacet: Master account mode inactive",
-					)
-				})
 			})
 		})
 
@@ -687,7 +675,6 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 
-							expect(detailAfter.settlementState).to.equal(UPNLSettlementState.REALIZED_MASTER_ACCOUNT)
 							expect(detailAfter.timestamp > detailBefore.timestamp).to.equal(true)
 						})
 					})

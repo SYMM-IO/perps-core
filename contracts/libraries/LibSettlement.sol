@@ -143,7 +143,6 @@ library LibSettlement {
 		// Validations
 		// Ensure Party B is in Master Account Mode and not in cross liquidation
 		// we do not check being in progress force close as there is only one path
-		require(accountLayout.masterAccountMode[partyB], "LibSettlement: Not in Master Account Mode!");
 		require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
 		require(
 			settleSig.quotesSettlementsData.length > 0 && settleSig.quotesSettlementsData.length == updatedPrices.length,
@@ -160,7 +159,7 @@ library LibSettlement {
 			MasterAccountQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
 
-			require(settleSig.partyB == quote.partyB, "LibSettlement, Invalid quote");
+			require(settleSig.partyB == quote.partyB, "LibSettlement: Invalid quote");
 			require(
 				quote.quoteStatus == QuoteStatus.OPENED ||
 					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||

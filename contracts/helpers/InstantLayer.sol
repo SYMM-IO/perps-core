@@ -42,6 +42,7 @@ import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/Sig
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { IAccountHub } from "../accountHub/interfaces/IAccountHub.sol";
+import { IAccountHubInternal } from "../accountHub/interfaces/IAccountHubInternal.sol";
 
 /* ════════════════════════════ EXTERNAL INTERFACES ════════════════════════════ */
 
@@ -844,7 +845,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				assembly ("memory-safe") {
 					selector := calldataload(callData.offset) // Extract first 4 bytes
 				}
-				IAccountHub.VirtualAccountDetail memory virtualAccount = IAccountHub(accountHub).getVirtualAccount(signedOp.signerAccount.addr);
+				IAccountHub.VirtualAccountDetail memory virtualAccount = IAccountHubInternal(accountHub).getVirtualAccountRaw(signedOp.signerAccount.addr);
 				address delegator = signedOp.signerAccount.addr;
 				if (virtualAccount.isExists) delegator = virtualAccount.parentAccount;
 				if (!isDelegationActive(delegator, signedOp.signer, selector)) {
