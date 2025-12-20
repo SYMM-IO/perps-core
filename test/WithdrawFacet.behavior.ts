@@ -336,6 +336,24 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			).to.revertedWith("WithdrawFacet : Insufficient balance");
 		});
 
+		it("Should fail to initiate withdraw with wrong chain id", async function() {
+			await userDeposit("100");
+			const parts = [{
+				id: 1,
+				amount: ethers.parseUnits("50", 18),
+				chainId: 1,
+				receiver: toBytes20(receiver1),
+				virtualProvider: ethers.ZeroAddress,
+				expressProvider: ethers.ZeroAddress}
+			];
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.initiateWithdraw(parts, false, "0x")
+			).to.revertedWith("WithdrawFacet : Invalid chainId for non-virtual part");
+		});
+
 		it("Should fail to initiate withdraw because of amount 0", async function() {
 			await userDeposit("100");
 			const parts = await buildParts(["50", "0"]);
