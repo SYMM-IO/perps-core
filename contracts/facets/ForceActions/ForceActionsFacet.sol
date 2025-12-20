@@ -71,18 +71,86 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		forceClose(quoteId, sig);
 	}
 
+	/**
+	 * @notice Initializes the master-account force-close flow for a quote.
+	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 * @param sig The Muon signature.
+	 */
 	function initializeMasterAccountForceClose(
 		uint256 quoteId,
 		HighLowPriceSig memory sig
 	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
-		uint256 closePrice = ForceActionsFacetImpl.forceCloseMasterAccountInit(quoteId, sig);
-		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, closePrice, sig.timestamp);	}
+		_initializeMasterAccountForceClose(quoteId, sig);
+	}
 
+	/**
+	 * @notice Settles uPNL for master-account mode for a force-close workflow.
+	 * @param forceCloseQuoteId Same as quoteId for the force-close workflow.
+	 * @param settlementSig Master-account settlement data (uPNLs + pricing).
+	 * @param updatedPrices Prices applied during master-account settlement.
+	 */
 	function settleUpnlMasterAccount(
 		uint256 forceCloseQuoteId,
 		MasterAccountSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
 	) external whenNotPartyAActionsPaused {
+		address partyB = settlementSig.partyB;
+
+		_settleUpnlMasterAccount(forceCloseQuoteId, settlementSig, updatedPrices);
+	}
+
+	/**
+	 * @notice Finalizes the master-account force-close flow.
+	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 */
+	function finalizeMasterAccountForceClose(uint256 quoteId) external {
+		_finalizeMasterAccountForceClose(quoteId);
+	}
+
+	/**
+	 * @notice Initializes, settles uPNL, and finalizes a master-account force close in a single transaction.
+	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 * @param sig The Muon signature.
+	 * @param settlementSig Master-account settlement data (uPNLs + pricing).
+	 * @param updatedPrices Prices applied during master-account settlement.
+	 */
+	function forceCloseAndSettlePositionsMasterAccount(
+		uint256 quoteId,
+		HighLowPriceSig memory sig,
+		MasterAccountSettlementSig memory settlementSig,
+		uint256[] memory updatedPrices
+	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
+		address partyB = settlementSig.partyB;
+
+		_initializeMasterAccountForceClose(quoteId, sig);
+		if (updatedPrices.length > 0) _settleUpnlMasterAccount(quoteId, settlementSig, updatedPrices);
+		_finalizeMasterAccountForceClose(quoteId);
+	}
+
+	/**
+	 * @notice Initializes the master-account force-close flow for a quote.
+	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 * @param sig The Muon signature.
+	 */
+	function _initializeMasterAccountForceClose(
+		uint256 quoteId,
+		HighLowPriceSig memory sig
+	) private notLiquidated(quoteId) whenNotPartyAActionsPaused {
+		uint256 closePrice = ForceActionsFacetImpl.forceCloseMasterAccountInit(quoteId, sig);
+		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, closePrice, sig.timestamp);
+	}
+
+	/**
+	 * @notice Settles uPNL for master-account mode for a force-close workflow.
+	 * @param forceCloseQuoteId Same as quoteId for the force-close workflow.
+	 * @param settlementSig Master-account settlement data (uPNLs + pricing).
+	 * @param updatedPrices Prices applied during master-account settlement.
+	 */
+	function _settleUpnlMasterAccount(
+		uint256 forceCloseQuoteId,
+		MasterAccountSettlementSig memory settlementSig,
+		uint256[] memory updatedPrices
+	) private whenNotPartyAActionsPaused {
 		address partyB = settlementSig.partyB;
 
 		(uint256[] memory _newPartyAsAllocatedBalances, address[] memory _partyAs) = ForceActionsFacetImpl.settleUpnlMasterAccount(
@@ -103,23 +171,13 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		);
 	}
 
-	function finalizeMasterAccountForceClose(uint256 quoteId) external {
-		forceCloseFinalize(quoteId);
-	}
-
-	function forceCloseAndSettlePositionsMasterAccount(
-		uint256 quoteId,
-		HighLowPriceSig memory sig
-	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
-		uint256 closePrice = ForceActionsFacetImpl.forceCloseMasterAccountInit(quoteId, sig);
-		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, closePrice, sig.timestamp);
-		forceCloseFinalize(quoteId);
-	}
-
-	/* description: finalizes the force close process for a master account mode party B */
-	// @param		quoteId  The ID of the quote for which the position should be forced to close.
-	function forceCloseFinalize(uint256 quoteId) private {
-		bool succeed = ForceActionsFacetImpl.finalizeMasterAccountForceClose(quoteId);
+	/**
+	 * @notice Finalizes the force close process for a master account mode party B.
+	 * @dev Emits isSolvent to indicate whether close used full upnlPartyB or ignore-upnl fallback.
+	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 */
+	function _finalizeMasterAccountForceClose(uint256 quoteId) private {
+		bool isSolvent = ForceActionsFacetImpl.finalizeMasterAccountForceClose(quoteId);
 		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
 		emit ForceClosePositionMasterAccount(
 			quoteId,
@@ -129,13 +187,15 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 			AccountStorage.layout().forceCloseDetails[quoteId].closePrice,
 			quote.quoteStatus,
 			QuoteStorage.layout().closeIds[quoteId],
-			succeed
+			isSolvent
 		);
 	}
 
-	/* description: forces the closure of the position associated with the specified quote */
-	// @param		quoteId  The ID of the quote for which the position should be forced to close.
-	// @param		sig  The Muon signature.
+	/**
+	 * @notice Forces the closure of the position associated with the specified quote.
+	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 * @param sig The Muon signature.
+	 */
 	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) private {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote memory quote = quoteLayout.quotes[quoteId];
@@ -151,7 +211,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 				quote.partyB,
 				quote.quantityToClose,
 				closePrice,
-				QuoteStorage.layout().quotes[quoteId].quoteStatus,
+				quoteLayout.quotes[quoteId].quoteStatus,
 				quoteLayout.closeIds[quoteId]
 			);
 		} else {

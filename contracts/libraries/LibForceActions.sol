@@ -125,6 +125,14 @@ library LibForceActions {
 		);
 	}
 
+	function getAvailableBalancesAfterCloseIgnoreUpnlPartyB(
+		uint256 quoteId,
+		uint256 sigCurrentPrice,
+		uint256 closePrice
+	) internal view returns (int256 partyBAvailableBalance, int256 partyAAvailableBalance) {
+		(partyBAvailableBalance, partyAAvailableBalance) = getAvailableBalancesAfterClose(quoteId, sigCurrentPrice, 0, 0, closePrice);
+	}
+
 	function closeQuote(uint256 quoteId, uint256 closePrice, int256 partyBAvailableBalance, uint256 reservedBalance) internal returns (bool succeed) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
@@ -149,5 +157,28 @@ library LibForceActions {
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			return true;
 		}
+	}
+
+	function closeQuoteMasterAccount(uint256 quoteId, uint256 closePrice) internal {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
+	}
+
+	function closeQuoteMasterAccountWithRespectToUpnl(
+		uint256 quoteId,
+		uint256 currentPrice,
+		int256 upnlPartyB,
+		uint256 closePrice
+	) internal returns (bool isSolvent, int256 partyBAvailableAfterClose) {
+		(partyBAvailableAfterClose, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
+		if (partyBAvailableAfterClose >= 0) {
+			closeQuoteMasterAccount(quoteId, closePrice);
+			return (true, partyBAvailableAfterClose);
+		}
+
+		(partyBAvailableAfterClose, ) = getAvailableBalancesAfterCloseIgnoreUpnlPartyB(quoteId, currentPrice, closePrice);
+		require(partyBAvailableAfterClose >= 0, "ForceActionsFacet: Insufficient balance");
+		closeQuoteMasterAccount(quoteId, closePrice);
+		return (false, partyBAvailableAfterClose);
 	}
 }
