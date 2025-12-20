@@ -1,13 +1,13 @@
-import { loadFixture, time } from "./helpers/network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { OrderType, PositionType, QuoteStatus } from "./models/Enums"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import {
 	decimal,
 	getBlockTimestamp,
@@ -17,14 +17,14 @@ import {
 	pausePartyA,
 	pausePartyB,
 	unDecimal,
-} from "./utils/Common"
-import { CloseRequestValidator } from "./models/validators/CloseRequestValidator"
-import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
-import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator"
-import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator"
-import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator"
-import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
-import { ethers, toUtf8Bytes } from "ethers";
+} from "./utils/Common.js"
+import { CloseRequestValidator } from "./models/validators/CloseRequestValidator.js"
+import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
+import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator.js"
+import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator.js"
+import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
+import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio.js"
+
 
 export function shouldBehaveLikeClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger

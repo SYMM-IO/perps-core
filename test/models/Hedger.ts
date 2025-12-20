@@ -1,12 +1,11 @@
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { setBalance } from "@nomicfoundation/hardhat-network-helpers"
+import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 import { BigNumberish, ethers } from "ethers"
 import {setBalance} from "../helpers/network-helpers"
 import {BigNumberish, ethers} from "ethers"
 
 import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
 import { SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/SettlementFacet"
-import { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/contracts/interfaces/ISymmio"
 import { decimal, serializeToJson, unDecimal } from "../utils/Common"
 import { logger } from "../utils/LoggerUtils"
 import { getPrice } from "../utils/PriceUtils"
@@ -14,7 +13,7 @@ import { getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlS
 import { runTx } from "../utils/TxUtils"
 import { PositionType } from "./Enums"
 import { RunContext } from "./RunContext"
-import { PartyEntity } from "./partyEntitiy"
+import { PartyEntity } from "./partyEntitiy.js"
 import { EmergencyCloseRequest, emergencyCloseRequestBuilder } from "./requestModels/EmergencyCloseRequest"
 import { FillCloseRequest, limitFillCloseRequestBuilder } from "./requestModels/FillCloseRequest"
 import { limitOpenRequestBuilder, OpenRequest } from "./requestModels/OpenRequest"
@@ -230,7 +229,7 @@ export class Hedger extends PartyEntity {
 		for (const pos of openPositions) {
 			const priceDiff = pos.openedPrice - (await getPrice())
 			const amount = pos.quantity - pos.closedAmount
-			upnl += unDecimal(BigInt(amount) * priceDiff) * (pos.positionType === BigInt(PositionType.LONG) ? -1n : 1n)
+			upnl += unDecimal(amount * priceDiff) * (pos.positionType === BigInt(PositionType.LONG) ? -1n : 1n)
 		}
 		return upnl
 	}

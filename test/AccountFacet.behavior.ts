@@ -2,7 +2,7 @@ import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { ZeroAddress } from "ethers"
 import { toUtf8Bytes } from "ethers"
-import { ethers } from "hardhat"
+
 
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types"
 import { initializeFixture, initializeExternalTransferRelayerFixture, initializeVirtualFixture } from "./Initialize.fixture"
@@ -15,6 +15,7 @@ import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/re
 import { decimal, getBlockTimestamp } from "./utils/Common"
 import { migratePartyBToMaster } from "./utils/MasterAccount"
 import { getDummySingleUpnlSig } from "./utils/SignatureUtils"
+import { ethers } from "./helpers/hardhat-connection.js"
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"))
 

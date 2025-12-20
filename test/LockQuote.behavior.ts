@@ -2,7 +2,7 @@ import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { ethers, toUtf8Bytes } from "ethers"
 
-import { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
 import { initializeFixture } from "./Initialize.fixture"
 import { PositionType, QuoteStatus } from "./models/Enums"
 import { Hedger } from "./models/Hedger"

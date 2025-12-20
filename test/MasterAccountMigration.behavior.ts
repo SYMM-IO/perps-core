@@ -1,4 +1,4 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers"
+import { loadFixture } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { ZeroAddress } from "ethers"
 
@@ -67,7 +67,7 @@ export function shouldBehaveLikeMasterAccountMigration(): void {
 
 		await expect(
 			context.accountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, context.signers.user.address)
-		).to.be.revertedWith("AccountFacet: Master account mode is active")
+		).to.be.revertedWith("PartyBFacet: Master account mode is active")
 
 		await expect(
 			context.accountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, ZeroAddress)

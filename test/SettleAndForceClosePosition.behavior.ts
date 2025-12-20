@@ -1,8 +1,8 @@
 import { expect } from "chai"
-import { toUtf8Bytes } from "ethers"
+import { ethers, toUtf8Bytes } from "ethers"
 import {loadFixture, time} from "./helpers/network-helpers"
 
-import {
+import type {
 	HighLowPriceSigStruct,
 	MasterAccountQuoteSettlementDataStructOutput,
 	MasterAccountSettlementSigStruct,
