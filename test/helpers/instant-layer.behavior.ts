@@ -1809,7 +1809,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				},
 			]
 			await ctx.context.accountHub.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), subAccountData)
-			const accounts = await ctx.context.accountHub.getUserSubAccountsAddresses(ctx.partyA1.address, 0, 100)
+			const accounts = await ctx.context.accountHubLens.getUserSubAccountsAddresses(ctx.partyA1.address, 0, 100)
 			subAccountAddress = accounts[0]
 
 			// Fund sub-account
@@ -1843,7 +1843,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Pre-fund the VA before sending quote (since automatic transfer was removed)
 			// MARKET isolation (1) -> VirtualAccountIsolationType.MARKET (1)
-			const predictedVA = await ctx.context.accountHub.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
+			const predictedVA = await ctx.context.accountHubLens.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
 			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, decimal(500n))
 			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositAndAllocateFor(predictedVA, decimal(500n))
 
@@ -1851,7 +1851,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [quoteCallDataLocal])
 
 			// Get virtual account address
-			const virtualAccounts = await ctx.context.accountHub.getVirtualAccountsAddressesOfSubAccount(subAccountAddress, 0, 10)
+			const virtualAccounts = await ctx.context.accountHubLens.getVirtualAccountsAddressesOfSubAccount(subAccountAddress, 0, 10)
 			virtualAccountAddress = virtualAccounts[0]
 
 			// Grant delegation on parent sub-account
@@ -1888,7 +1888,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
 
-			const quoteIds = await ctx.context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+			const quoteIds = await ctx.context.accountHubLens.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 			expect(quoteIds.length).to.equal(2)
 		})
 
@@ -1934,7 +1934,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		it("correctly identifies parent account for delegation", async function () {
-			const virtualAccountDetail = await ctx.context.accountHub.getVirtualAccount(virtualAccountAddress)
+			const virtualAccountDetail = await ctx.context.accountHubLens.getVirtualAccount(virtualAccountAddress)
 			expect(virtualAccountDetail.isExists).to.be.true
 			expect(virtualAccountDetail.parentAccount).to.equal(subAccountAddress)
 

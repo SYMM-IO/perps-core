@@ -130,22 +130,7 @@ interface IAccountHub {
 	function getSigner() external view returns (address);
 	function getRelatedCore(address account) external view returns (address);
 	function ownerOf(address account) external view returns (address);
-	function getSubAccountVirtualNonce(address subAccount) external view returns (uint256);
-	function predictNextVirtualAccountAddress(
-		address subAccount,
-		VirtualAccountIsolationType isolationType,
-		uint256 symbolId
-	) external view returns (address);
 	function setSigner(address _signer) external;
-	function getSubAccount(address account) external view returns (SubAccountDetail memory);
-	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details);
-	function getUserSubAccountsAddresses(address owner, uint256 offset, uint256 limit) external view returns (address[] memory);
-	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory);
-	function getVirtualAccount(address account) external view returns (VirtualAccountDetail memory);
-	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (VirtualAccountDetail[] memory details);
-	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory);
-	function getSubAccountsCountOfUser(address owner) external view returns (uint256);
-	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256);
 
 	// AccountManager management
 	function deployAccountManager(address affiliate, address registrant, string memory name) external returns (address accountManager);
@@ -158,7 +143,6 @@ interface IAccountHub {
 
 	// Single VA Mode
 	function setSingleVAMode(address subAccount, bool enabled) external;
-	function getActiveVAByKey(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId) external view returns (address);
 
 	// ==================== Custom Errors ====================
 	error ZeroAddress();

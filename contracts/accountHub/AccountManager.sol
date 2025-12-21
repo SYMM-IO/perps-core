@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./interfaces/IAccountManager.sol";
 import "./interfaces/IAccountHub.sol";
+import "./interfaces/IAccountHubInternal.sol";
 import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 
@@ -88,15 +89,26 @@ contract AccountManager is IAccountManager {
 	}
 
 	function getAccounts(address user, uint256 start, uint256 size) external view returns (IAccountHub.Account[] memory) {
-		IAccountHub.SubAccountDetail[] memory subAccounts = IAccountHub(accountHub).getUserSubAccounts(user, start, size);
-		IAccountHub.Account[] memory accounts = new IAccountHub.Account[](subAccounts.length);
-		for (uint256 i = 0; i < subAccounts.length; i++) {
-			accounts[i] = IAccountHub.Account({ accountAddress: subAccounts[i].accountAddress, name: subAccounts[i].name });
+		IAccountHubInternal hub = IAccountHubInternal(accountHub);
+		uint256 total = hub.getUserSubAccountsCount(user);
+
+		if (start >= total) {
+			return new IAccountHub.Account[](0);
+		}
+
+		uint256 remaining = total - start;
+		uint256 resultSize = remaining < size ? remaining : size;
+
+		IAccountHub.Account[] memory accounts = new IAccountHub.Account[](resultSize);
+		for (uint256 i = 0; i < resultSize; i++) {
+			address accountAddr = hub.getUserSubAccountAt(user, start + i);
+			IAccountHub.SubAccountDetail memory detail = hub.getSubAccountRaw(accountAddr);
+			accounts[i] = IAccountHub.Account({ accountAddress: accountAddr, name: detail.name });
 		}
 		return accounts;
 	}
 
 	function getAccountsLength(address user) external view returns (uint256) {
-		return IAccountHub(accountHub).getSubAccountsCountOfUser(user);
+		return IAccountHubInternal(accountHub).getUserSubAccountsCount(user);
 	}
 }

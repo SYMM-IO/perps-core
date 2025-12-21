@@ -36,16 +36,35 @@ export default defineConfig({
 	plugins: [hardhatToolboxMochaEthers],
 
 	solidity: {
-		version: "0.8.18",
-		settings: {
-			metadata: { 
-				bytecodeHash: "none",
+		compilers: [
+			{
+				version: "0.8.18",
+				settings: {
+					metadata: {
+						bytecodeHash: "none",
+					},
+					optimizer: {
+						enabled: true,
+						runs: 200,
+					},
+					viaIR: true,
+				},
 			},
-			optimizer: {
-				enabled: true,
-				runs: 200,
+		],
+		overrides: {
+			"contracts/accountHub/AccountHub.sol": {
+				version: "0.8.18",
+				settings: {
+					metadata: {
+						bytecodeHash: "none",
+					},
+					optimizer: {
+						enabled: true,
+						runs: 1,
+					},
+					viaIR: true,
+				},
 			},
-			viaIR: true,
 		},
 	},
 
