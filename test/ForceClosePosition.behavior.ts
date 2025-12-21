@@ -4,7 +4,8 @@ import {initializeFixture} from "./Initialize.fixture"
 import {ethers} from "./helpers/hardhat-connection"
 import {toUtf8Bytes} from "ethers"
 import {PositionType, QuoteStatus} from "./models/Enums"
-import {BalanceInfo, Hedger} from "./models/Hedger"
+import type { BalanceInfo } from "./models/Hedger"
+import { Hedger } from "./models/Hedger"
 import {RunContext} from "./models/RunContext"
 import {User} from "./models/User"
 import {limitCloseRequestBuilder, marketCloseRequestBuilder} from "./models/requestModels/CloseRequest"
@@ -20,14 +21,15 @@ import {
 import {getDummyHighLowPriceSig, getDummyPriceSig} from "./utils/SignatureUtils"
 import {ForceClosePositionValidator} from "./models/validators/ForceClosePositionValidator"
 import {calculateExpectedAvgPriceForForceClose, calculateExpectedClosePriceForForceClose} from "./utils/PriceUtils"
-import {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
 import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { toUtf8Bytes} from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture"
 import { PartyBForceCloseState, PositionType, QuoteStatus, UPNLSettlementState } from "./models/Enums"
-import { BalanceInfo, Hedger } from "./models/Hedger"
+import type { BalanceInfo } from "./models/Hedger"
+import { Hedger } from "./models/Hedger"
 import { RunContext } from "./models/RunContext"
 import { User } from "./models/User"
 import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest"
@@ -40,7 +42,8 @@ import {
 	calculateExpectedClosePriceForForceCloseWithAvg,
 } from "./utils/PriceUtils"
 import { getDummyCrossSettlementSig, getDummyHighLowPriceSig, getDummyMasterAccountSettlementSig, getDummyPriceSig } from "./utils/SignatureUtils"
-import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
 
 export function shouldBehaveLikeForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -465,6 +468,15 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				const partyAAddress = await user.getAddress()
 
 				await context.accountFacet.connect(hedger.signer).depositToReserveVault(decimal(1000n), hedgerAddress)
+				{
+					const targetAllocated = decimal(2000n)
+					const balanceInfo = await hedger.getBalanceInfo(partyAAddress)
+					if (balanceInfo.allocatedBalances < targetAllocated) {
+						const topUp = targetAllocated - balanceInfo.allocatedBalances
+						await hedger.setBalances(topUp, topUp)
+						await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, partyAAddress)
+					}
+				}
 
 				const solventSig = await getDummyHighLowPriceSig(
 					sigTimes[0],
@@ -659,8 +671,13 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 							expect(detail.inProgress).to.equal(true)
 							expect(detail.closePrice).to.equal(expectedClosePrice)
-							expect(detail.partyBAvailableAfterClose >= 0n).to.equal(true)
 							expect(detail.timestamp > 0n).to.equal(true)
+						})
+
+						it("should revert initializeMasterAccountForceClose when partyA would be insolvent", async function () {
+							highLowSig.upnlPartyA = -decimal(10_000n)
+							await expect(context.forceActionsFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)).to.be.revertedWith('PartyAFacet: PartyA will be insolvent')
+
 						})
 					})
 
@@ -689,38 +706,187 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							await context.forceActionsFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const masterBalance = await hedger.getBalanceInfoMasterAccount()
+							const minRequired = masterBalance.lockedCva + masterBalance.lockedLf
 
 							expect(detailAfter.inProgress).to.equal(false)
-							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.SOLVED)
+							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.SOLVENT)
+							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
+						})
+					})
+
+					describe("forceCloseAndSettlePositionsMasterAccount", function () {
+						it("runs initialize, settle, and finalize in a single call", async function () {
+							const tx = await context.forceActionsFacet.forceCloseAndSettlePositionsMasterAccount(
+								quote1LongOpened.id,
+								highLowSig,
+								settlementSig,
+								[updatePrice],
+							)
+
+							await expect(tx)
+								.to.emit(context.forceActionsFacet, "ForceCloseInitialized")
+								.withArgs(anyValue, anyValue, quote1LongOpened.id, anyValue, anyValue, anyValue)
+							await expect(tx).to.emit(context.forceActionsFacet, "SettleUpnlMasterAccount")
+							await expect(tx)
+								.to.emit(context.forceActionsFacet, "ForceClosePositionMasterAccount")
+								.withArgs(
+									quote1LongOpened.id,
+									quote1LongOpened.partyA,
+									quote1LongOpened.partyB,
+									anyValue,
+									anyValue,
+									anyValue,
+									anyValue,
+									true,
+								)
+
+							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const masterBalance = await hedger.getBalanceInfoMasterAccount()
+							const minRequired = masterBalance.lockedCva + masterBalance.lockedLf
+							expect(detailAfter.inProgress).to.equal(false)
+							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.SOLVENT)
+							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
+						})
+
+						it("skips settlement when updatedPrices is empty", async function () {
+							const targetAllocated = decimal(20000n)
+							const masterBalanceBefore = await hedger.getBalanceInfoMasterAccount()
+							if (masterBalanceBefore.allocatedBalances < targetAllocated) {
+								const topUp = targetAllocated - masterBalanceBefore.allocatedBalances
+								await hedger.setBalances(topUp, topUp)
+								await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+							}
+
+							const tx = await context.forceActionsFacet.forceCloseAndSettlePositionsMasterAccount(
+								quote1LongOpened.id,
+								highLowSig,
+								settlementSig,
+								[],
+							)
+
+							await expect(tx).to.emit(context.forceActionsFacet, "ForceCloseInitialized")
+							await expect(tx).to.not.emit(context.forceActionsFacet, "SettleUpnlMasterAccount")
+							await expect(tx).to.emit(context.forceActionsFacet, "ForceClosePositionMasterAccount")
+
+							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const masterBalance = await hedger.getBalanceInfoMasterAccount()
+							const minRequired = masterBalance.lockedCva + masterBalance.lockedLf
+							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
+						})
+
+						it("marks partyBState as INSOLVENT when master account is not solvent but can pay from allocation", async function () {
+							const targetAllocated = decimal(20000n)
+							const masterBalanceBefore = await hedger.getBalanceInfoMasterAccount()
+							if (masterBalanceBefore.allocatedBalances < targetAllocated) {
+								const topUp = targetAllocated - masterBalanceBefore.allocatedBalances
+								await hedger.setBalances(topUp, topUp)
+								await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+							}
+							highLowSig.upnlPartyB = -decimal(1_000_000n)
+							highLowSig.currentPrice = decimal(1n)
+
+							const tx = await context.forceActionsFacet.forceCloseAndSettlePositionsMasterAccount(
+								quote1LongOpened.id,
+								highLowSig,
+								settlementSig,
+								[updatePrice],
+							)
+
+							await expect(tx)
+								.to.emit(context.forceActionsFacet, "ForceClosePositionMasterAccount")
+								.withArgs(
+									quote1LongOpened.id,
+									quote1LongOpened.partyA,
+									quote1LongOpened.partyB,
+									anyValue,
+									anyValue,
+									anyValue,
+									anyValue,
+									false,
+								)
+
+							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const masterBalance = await hedger.getBalanceInfoMasterAccount()
+							const minRequired = masterBalance.lockedCva + masterBalance.lockedLf
+							expect(detailAfter.inProgress).to.equal(false)
+							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.INSOLVENT)
+							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
 						})
 					})
 
 					describe("ForceCloseDetail flags finalize (insolvent case)", function () {
-						it("Should forceClose the quote in master account mode when solvent", async function () {
+						it("reverts when master allocated balance is insufficient to pay pnl", async function () {
+							highLowSig.currentPrice = decimal(0n)
 							await expect(await context.forceActionsFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)).not.to.reverted
-
-							const balanceInfoMasterB = await hedger.getBalanceInfo(ethers.ZeroAddress)
 
 							// not enough balance in master account but solvent
 							await expect(context.forceActionsFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)).to.be.revertedWith(
-								"LibQuote: PartyA should first exit its positions that are incurring losses",
+								"ForceActionsFacet: Insufficient balance",
 							)
 							expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSE_PENDING)
 						})
 
-						it("marks partyBState as INSOLVENT when master account is not solvent and leaves the inProgress flag as true", async function () {
-							// Large negative upnlPartyB to make available balance < 0
-							const bigNegativeUpnlPartyB = -decimal(10_000n)
-							highLowSig.upnlPartyB = bigNegativeUpnlPartyB
+						it("records non-negative partyBAvailableAfterClose when insolvent", async function () {
+							const targetAllocated = decimal(20000n)
+							const masterBalanceBefore = await hedger.getBalanceInfoMasterAccount()
+							if (masterBalanceBefore.allocatedBalances < targetAllocated) {
+								const topUp = targetAllocated - masterBalanceBefore.allocatedBalances
+								await hedger.setBalances(topUp, topUp)
+								await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+							}
+
+							highLowSig.upnlPartyB = -decimal(1_000_000n)
+							const expectedClosePrice = calculateExpectedClosePriceForForceCloseWithAvg(
+								quote1LongOpened,
+								penalty,
+								BigInt(highLowSig.averagePrice),
+								quote1LongOpened.positionType == BigInt(PositionType.LONG),
+							)
+							highLowSig.currentPrice = expectedClosePrice
+
+							await context.forceActionsFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)
+							await context.forceActionsFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)
+
+							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const masterBalance = await hedger.getBalanceInfoMasterAccount()
+							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.INSOLVENT)
+							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(masterBalance.lockedCva + masterBalance.lockedLf)
+						})
+
+						it("marks partyBState as INSOLVENT and clears inProgress when master account is not solvent but can pay from allocation", async function () {
+							const targetAllocated = decimal(20000n)
+							const masterBalanceBefore = await hedger.getBalanceInfoMasterAccount()
+							if (masterBalanceBefore.allocatedBalances < targetAllocated) {
+								const topUp = targetAllocated - masterBalanceBefore.allocatedBalances
+								await hedger.setBalances(topUp, topUp)
+								await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+							}
+							highLowSig.upnlPartyB = -decimal(1_000_000n)
+							highLowSig.currentPrice = decimal(1n)
 
 							await context.forceActionsFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)
 							const detailBefore = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
-							await context.forceActionsFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)
+							await expect(context.forceActionsFacet.finalizeMasterAccountForceClose(quote1LongOpened.id))
+								.to.emit(context.forceActionsFacet, "ForceClosePositionMasterAccount")
+								.withArgs(
+									quote1LongOpened.id,
+									quote1LongOpened.partyA,
+									quote1LongOpened.partyB,
+									anyValue,
+									anyValue,
+									anyValue,
+									anyValue,
+									false,
+								)
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const masterBalance = await hedger.getBalanceInfoMasterAccount()
+							const minRequired = masterBalance.lockedCva + masterBalance.lockedLf
 
 							expect(detailBefore.inProgress).to.equal(true)
-							expect(detailAfter.inProgress).to.equal(true)
+							expect(detailAfter.inProgress).to.equal(false)
 							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.INSOLVENT)
+							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
 						})
 					})
 				})

@@ -9,7 +9,7 @@ import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
 import {decimal, unDecimal} from "./utils/Common"
 import {expect} from "chai"
 import {getDummySettlementSig, getDummySingleUpnlSig} from "./utils/SignatureUtils"
-import {QuoteSettlementDataStructOutput} from "../src/types/contracts/facets/Settlement/ISettlementFacet"
+import type { QuoteSettlementDataStructOutput} from "../src/types/contracts/facets/Settlement/ISettlementFacet"
 
 export function shouldBehaveLikeSettlement(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger

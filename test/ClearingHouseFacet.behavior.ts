@@ -1,7 +1,7 @@
 import { loadFixture } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { toUtf8Bytes, ZeroAddress } from "ethers"
-import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
 import { initializeFixture } from "./Initialize.fixture"
 import { PositionType, QuoteStatus } from "./models/Enums"
 import { Hedger } from "./models/Hedger"
@@ -13,7 +13,7 @@ import { decimal } from "./utils/Common"
 import { getDummyCrossLiquidationSig, getDummyPriceSig } from "./utils/SignatureUtils"
 import { ethers } from "./helpers/hardhat-connection"
 import { toUtf8Bytes, ZeroAddress } from "ethers"
-import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 
 export function shouldBehaveLikeClearingHouseFacet(): void {

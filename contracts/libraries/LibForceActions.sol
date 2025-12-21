@@ -150,4 +150,34 @@ library LibForceActions {
 			return true;
 		}
 	}
+
+	/**
+	 * @notice Closes a master-account quote using full uPNL if possible, otherwise a price-only fallback.
+	 * @param quoteId The ID of the quote to close.
+	 * @param currentPrice The current market price used for solvency checks.
+	 * @param upnlPartyB The PartyB uPNL used for the primary solvency path.
+	 * @param closePrice The force-close price to apply.
+	 */
+	function closeQuoteMasterAccountWithRespectToUpnl(
+		uint256 quoteId,
+		uint256 currentPrice,
+		int256 upnlPartyB,
+		uint256 closePrice
+	) internal returns (bool isSolvent, int256 partyBAvailableForClose) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+
+		// Close using UPNL
+		(partyBAvailableForClose, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
+		if (partyBAvailableForClose >= 0) {
+			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
+			return (true, partyBAvailableForClose);
+		}
+
+		// Close ignoring UPNL
+		(partyBAvailableForClose, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, 0, closePrice);
+		require(partyBAvailableForClose >= 0, "ForceActionsFacet: Insufficient balance");
+		LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
+
+		return (false, partyBAvailableForClose);
+	}
 }
