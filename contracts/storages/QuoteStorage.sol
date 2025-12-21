@@ -81,6 +81,11 @@ struct Fee {
 	bool isSet; // true if the fee is explicitly set, false if default (unset/zero)
 }
 
+struct PartyBPositionsInfo {
+	uint256 totalAmounts;
+	uint256 totalNotionals;
+}
+
 library QuoteStorage {
 	bytes32 internal constant QUOTE_STORAGE_SLOT = keccak256("diamond.standard.storage.quote");
 
@@ -99,6 +104,7 @@ library QuoteStorage {
 		uint256 lastCloseId;
 		mapping(uint256 => uint256) closeIds;
 		mapping(address => uint256) partyALockQuotesCount;
+		mapping(address => mapping(uint256 => mapping(PositionType => PartyBPositionsInfo))) partyBTotalPositionsInfo; // partyB => symbolId => positionType => struct with totalAmounts and totalNotionals
 	}
 
 	function layout() internal pure returns (Layout storage l) {

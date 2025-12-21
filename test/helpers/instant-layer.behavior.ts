@@ -1108,6 +1108,62 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		describe("executeTemplate - Successful Execution", function () {
+			it("executes allocateForPartyB after PartyA sends quote (partyA injected from view op)", async function () {
+				const partyBAddress = await execCtx.context.symmioPartyB.getAddress()
+				const partyAAccount = execCtx.accounts[0].accountAddress
+				const partyBDepositAmount = decimal(5000n)
+				const allocateAmount = decimal(1000n)
+
+				await execCtx.context.collateral.connect(execCtx.context.signers.hedger).approve(execCtx.context.diamond, ethers.MaxUint256)
+				await execCtx.context.collateral.connect(execCtx.context.signers.hedger).mint(execCtx.context.signers.hedger.address, partyBDepositAmount)
+				await execCtx.context.accountFacet.connect(execCtx.context.signers.hedger).depositFor(partyBAddress, partyBDepositAmount)
+
+				await ctx.context.instantLayer.addTemplate("sendQuoteThenAllocateWithPartyAFromView", [
+					{ insertionPoints: [], sourceIndices: [] }, // sendQuote
+					{ insertionPoints: [], sourceIndices: [] }, // getSigner (returns partyA account address)
+					{ insertionPoints: [32], sourceIndices: [1] }, // allocateForPartyB(amount, partyA) inject partyA
+				])
+				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+
+				const sendQuoteOp = createSignedOperation(
+					execCtx.context.signers.admin.address,
+					execCtx.symmioAddress,
+					execCtx.quoteCallData,
+					{ addr: partyAAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const getSignerCallData = execCtx.context.viewFacet.interface.encodeFunctionData("getSigner", [])
+				const getSignerOp = createSignedOperation(
+					execCtx.partyA1.address,
+					execCtx.symmioAddress,
+					getSignerCallData,
+					{ addr: partyAAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const allocateCallDataRaw = execCtx.context.accountFacet.interface.encodeFunctionData("allocateForPartyB", [allocateAmount, ZeroAddress])
+				const allocateCallData = allocateCallDataRaw + "00"
+				const allocateOp = createSignedOperation(
+					partyBAddress,
+					execCtx.symmioAddress,
+					allocateCallData,
+					{ addr: partyBAddress, isPartyB: true },
+					0n,
+					execCtx.deadline,
+				)
+
+				const sendQuoteSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
+				const getSignerSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, getSignerOp)
+				const allocateSig = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, allocateOp)
+
+				await expect(
+					ctx.context.instantLayer.executeTemplate(templateId, [sendQuoteOp, getSignerOp, allocateOp], [sendQuoteSig, getSignerSig, allocateSig]),
+				).not.to.be.reverted
+
+				expect(await ctx.context.viewFacet.allocatedBalanceOfPartyB(partyBAddress, partyAAccount)).to.equal(allocateAmount)
+			})
+
 			it("executes basic template and emits OperationsExecuted", async function () {
 				const op1 = createSignedOperation(
 					execCtx.context.signers.admin.address,

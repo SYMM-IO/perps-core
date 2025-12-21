@@ -7,6 +7,12 @@ pragma solidity >=0.8.18;
 import "../../storages/QuoteStorage.sol";
 
 interface IViewFacetQuote {
+	struct TotalPositionAmount {
+		PositionType positionType;
+		uint256 totalOpenAmount;
+		uint256 avgOpenPrice;
+	}
+
 	struct Bitmap {
 		uint256 size;
 		BitmapElement[] elements;
@@ -40,6 +46,8 @@ interface IViewFacetQuote {
 	function getActivePositionsFilteredByPartyB(address partyB, uint256 start, uint256 size) external view returns (Quote[] memory);
 
 	function partyBPositionsCount(address partyB, address partyA) external view returns (uint256);
+
+	function getPartyBTotalPositionAmountsBySymbol(address partyB, uint256 symbolId) external view returns (TotalPositionAmount[] memory);
 
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 
