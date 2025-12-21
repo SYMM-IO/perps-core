@@ -674,12 +674,10 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							expect(detail.timestamp > 0n).to.equal(true)
 						})
 
-						it("does not revert initializeMasterAccountForceClose when partyA would be insolvent", async function () {
+						it("should revert initializeMasterAccountForceClose when partyA would be insolvent", async function () {
 							highLowSig.upnlPartyA = -decimal(10_000n)
-							await expect(context.forceActionsFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)).not.to.be.reverted
+							await expect(context.forceActionsFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)).to.be.revertedWith('PartyAFacet: PartyA will be insolvent')
 
-							const detail = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
-							expect(detail.inProgress).to.equal(true)
 						})
 					})
 

@@ -67,6 +67,16 @@ library ForceActionsFacetImpl {
 		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
+		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
+			quoteId,
+			sig.currentPrice,
+			sig.upnlPartyA,
+			sig.upnlPartyB,
+			closePrice
+		);
+
+		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
+
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
 		detail.timestamp = block.timestamp;
 		detail.closePrice = closePrice;
@@ -145,7 +155,6 @@ library ForceActionsFacetImpl {
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
-		LibMuonCrossSettlement.verifyMasterAccountSettlement(sig);
 		(newPartyAsAllocatedBalances, partyAs) = LibSettlement.settleUpnlMasterAccount(sig, updatedPrices);
 		detail.timestamp = block.timestamp;
 	}
