@@ -272,6 +272,34 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
+	 * @notice Returns total open position amounts and average open prices for a party B and symbol, grouped by position type.
+	 * @param partyB The address of party B.
+	 * @param symbolId The symbol ID.
+	 * @return amounts An array of position types with total open amounts and average open prices (LONG, SHORT).
+	 */
+	function getPartyBTotalPositionAmountsBySymbol(
+		address partyB,
+		uint256 symbolId
+	) external view returns (TotalPositionAmount[] memory amounts) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		amounts = new TotalPositionAmount[](2);
+		uint256 longAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalAmounts;
+		uint256 shortAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalAmounts;
+		uint256 longNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalNotionals;
+		uint256 shortNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalNotionals;
+		amounts[0] = TotalPositionAmount(
+			PositionType.LONG,
+			longAmount,
+			longAmount == 0 ? 0 : longNotional / longAmount
+		);
+		amounts[1] = TotalPositionAmount(
+			PositionType.SHORT,
+			shortAmount,
+			shortAmount == 0 ? 0 : shortNotional / shortAmount
+		);
+	}
+
+	/**
 	 * @notice Returns an array of pending quotes associated with a party A address.
 	 * @param partyA The address of party A.
 	 * @return An array of pending quotes.

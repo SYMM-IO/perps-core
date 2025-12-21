@@ -36,19 +36,20 @@ export function shouldBehaveLikeDiamond(): void {
 		this.context = await loadFixture(initializeFixture)
 	})
 
-	it("should have 16 facets", async function () {
+	it("should have 21 facets", async function () {
 		const context: RunContext = this.context
 		for (const address of await context.diamondLoupeFacet.facetAddresses()) {
 			addresses.push(address)
 		}
-		assert.equal(addresses.length, 20)
+		assert.equal(addresses.length, 21)
 	})
 
 	it("facets should have the right function selectors -- call to facetFunctionSelectors function", async function () {
 		const context: RunContext = this.context
 		// DiamondLoupeFacet
 		selectors = getSelectors(ethers, context.diamondLoupeFacet as any).selectors
-		result = await context.diamondLoupeFacet.facetFunctionSelectors(addresses[5])
+		const loupeAddress = await context.diamondLoupeFacet.facetAddress(selectors[0])
+		result = await context.diamondLoupeFacet.facetFunctionSelectors(loupeAddress)
 		expect(haveSameMembers(result, selectors)).to.be.true
 	})
 
@@ -56,7 +57,7 @@ export function shouldBehaveLikeDiamond(): void {
 		const context: RunContext = this.context
 		const viewFacet = await ethers.getContractFactory("ViewFacet")
 		const selectors = getSelectors(ethers, viewFacet as any).get(["balanceOf(address)"])
-		const viewFacetAddress = addresses[9]
+		const viewFacetAddress = await context.diamondLoupeFacet.facetAddress(selectors[0])
 
 		const tx = await context.diamondCutFacet.diamondCut(
 			[
@@ -83,7 +84,10 @@ export function shouldBehaveLikeDiamond(): void {
 	it("should add the getAccountBalance() function back", async function () {
 		const context: RunContext = this.context
 		const viewFacet = await ethers.getContractFactory("ViewFacet")
-		const viewFacetAddress = addresses[9]
+		const selectors = getSelectors(ethers, viewFacet as any).get(["balanceOf(address)"])
+		const allSelectors = getSelectors(ethers, viewFacet as any).selectors
+		const fallbackSelector = allSelectors.find(selector => selector !== selectors[0])
+		const viewFacetAddress = await context.diamondLoupeFacet.facetAddress(fallbackSelector!)
 
 		const tx = await context.diamondCutFacet.diamondCut(
 			[

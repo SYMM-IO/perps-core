@@ -5,7 +5,8 @@ import { initializeFixture } from "./Initialize.fixture"
 import { LiquidationType, OrderType, PositionType, QuoteStatus } from "./models/Enums"
 import { Hedger } from "./models/Hedger"
 import { RunContext } from "./models/RunContext"
-import { BalanceInfo, User } from "./models/User"
+import { User } from "./models/User"
+import type { BalanceInfo } from "./models/User"
 import {
 	decimal,
 	getBlockTimestamp,
@@ -17,7 +18,7 @@ import {
 import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { ethers, toUtf8Bytes } from "ethers"
-import { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger

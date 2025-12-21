@@ -1,5 +1,5 @@
 import { expect } from "chai"
-import { QuoteStructOutput } from "../../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../../../src/types/contracts/interfaces/ISymmio"
 import { getCloseTradingFeeForQuotes, getTotalPartyALockedValuesForQuotes, getTotalPartyBLockedValuesForQuotes, unDecimal } from "../../utils/Common"
 import { logger } from "../../utils/LoggerUtils"
 import { expectToBeApproximately } from "../../utils/SafeMath"

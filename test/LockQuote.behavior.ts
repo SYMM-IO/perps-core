@@ -2,7 +2,7 @@ import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { ethers, toUtf8Bytes } from "ethers"
 
-import { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
 import { initializeFixture } from "./Initialize.fixture"
 import { PositionType, QuoteStatus } from "./models/Enums"
 import { Hedger } from "./models/Hedger"
@@ -13,6 +13,7 @@ import { LockQuoteValidator } from "./models/validators/LockQuoteValidator"
 import { UnlockQuoteValidator } from "./models/validators/UnlockQuoteValidator"
 import { decimal, pausePartyB } from "./utils/Common"
 import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
+import { migratePartyBToMaster } from "./utils/MasterAccount"
 
 export function shouldBehaveLikeLockQuote(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger, user2: User
@@ -137,9 +138,6 @@ export function shouldBehaveLikeLockQuote(): void {
 		let quoteUser1: QuoteStruct, quoteUser2: QuoteStruct
 
 		beforeEach(async function () {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
-			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
-
 			user2 = new User(context, context.signers.user2)
 			await user2.setup()
 			await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
@@ -149,6 +147,7 @@ export function shouldBehaveLikeLockQuote(): void {
 
 			await hedger.lockQuote(quoteUser1.id)
 			await hedger.lockQuote(quoteUser2.id)
+			await migratePartyBToMaster(context, hedger, [quoteUser1.id, quoteUser2.id])
 
 			quoteUser1 = await context.viewFacetQuote.getQuote(quoteUser1.id)
 			quoteUser2 = await context.viewFacetQuote.getQuote(quoteUser2.id)

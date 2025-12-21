@@ -1,5 +1,6 @@
 export const FacetNames = [
 	"AccountFacet",
+	"MasterAccountMigrationFacet",
 	"ControlFacet",
 	"SymbolControlFacet",
 	"PauseControlFacet",

@@ -1108,6 +1108,62 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		describe("executeTemplate - Successful Execution", function () {
+			it("executes allocateForPartyB after PartyA sends quote (partyA injected from view op)", async function () {
+				const partyBAddress = await execCtx.context.symmioPartyB.getAddress()
+				const partyAAccount = execCtx.accounts[0].accountAddress
+				const partyBDepositAmount = decimal(5000n)
+				const allocateAmount = decimal(1000n)
+
+				await execCtx.context.collateral.connect(execCtx.context.signers.hedger).approve(execCtx.context.diamond, ethers.MaxUint256)
+				await execCtx.context.collateral.connect(execCtx.context.signers.hedger).mint(execCtx.context.signers.hedger.address, partyBDepositAmount)
+				await execCtx.context.accountFacet.connect(execCtx.context.signers.hedger).depositFor(partyBAddress, partyBDepositAmount)
+
+				await ctx.context.instantLayer.addTemplate("sendQuoteThenAllocateWithPartyAFromView", [
+					{ insertionPoints: [], sourceIndices: [] }, // sendQuote
+					{ insertionPoints: [], sourceIndices: [] }, // getSigner (returns partyA account address)
+					{ insertionPoints: [32], sourceIndices: [1] }, // allocateForPartyB(amount, partyA) inject partyA
+				])
+				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+
+				const sendQuoteOp = createSignedOperation(
+					execCtx.context.signers.admin.address,
+					execCtx.symmioAddress,
+					execCtx.quoteCallData,
+					{ addr: partyAAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const getSignerCallData = execCtx.context.viewFacet.interface.encodeFunctionData("getSigner", [])
+				const getSignerOp = createSignedOperation(
+					execCtx.partyA1.address,
+					execCtx.symmioAddress,
+					getSignerCallData,
+					{ addr: partyAAccount, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const allocateCallDataRaw = execCtx.context.accountFacet.interface.encodeFunctionData("allocateForPartyB", [allocateAmount, ZeroAddress])
+				const allocateCallData = allocateCallDataRaw + "00"
+				const allocateOp = createSignedOperation(
+					partyBAddress,
+					execCtx.symmioAddress,
+					allocateCallData,
+					{ addr: partyBAddress, isPartyB: true },
+					0n,
+					execCtx.deadline,
+				)
+
+				const sendQuoteSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
+				const getSignerSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, getSignerOp)
+				const allocateSig = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, allocateOp)
+
+				await expect(
+					ctx.context.instantLayer.executeTemplate(templateId, [sendQuoteOp, getSignerOp, allocateOp], [sendQuoteSig, getSignerSig, allocateSig]),
+				).not.to.be.reverted
+
+				expect(await ctx.context.viewFacet.allocatedBalanceOfPartyB(partyBAddress, partyAAccount)).to.equal(allocateAmount)
+			})
+
 			it("executes basic template and emits OperationsExecuted", async function () {
 				const op1 = createSignedOperation(
 					execCtx.context.signers.admin.address,
@@ -1809,7 +1865,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				},
 			]
 			await ctx.context.accountHub.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), subAccountData)
-			const accounts = await ctx.context.accountHub.getUserSubAccountsAddresses(ctx.partyA1.address, 0, 100)
+			const accounts = await ctx.context.accountHubLens.getUserSubAccountsAddresses(ctx.partyA1.address, 0, 100)
 			subAccountAddress = accounts[0]
 
 			// Fund sub-account
@@ -1843,7 +1899,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Pre-fund the VA before sending quote (since automatic transfer was removed)
 			// MARKET isolation (1) -> VirtualAccountIsolationType.MARKET (1)
-			const predictedVA = await ctx.context.accountHub.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
+			const predictedVA = await ctx.context.accountHubLens.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
 			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, decimal(500n))
 			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositAndAllocateFor(predictedVA, decimal(500n))
 
@@ -1851,7 +1907,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [quoteCallDataLocal])
 
 			// Get virtual account address
-			const virtualAccounts = await ctx.context.accountHub.getVirtualAccountsAddressesOfSubAccount(subAccountAddress, 0, 10)
+			const virtualAccounts = await ctx.context.accountHubLens.getVirtualAccountsAddressesOfSubAccount(subAccountAddress, 0, 10)
 			virtualAccountAddress = virtualAccounts[0]
 
 			// Grant delegation on parent sub-account
@@ -1888,7 +1944,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
 
-			const quoteIds = await ctx.context.accountHub.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+			const quoteIds = await ctx.context.accountHubLens.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 			expect(quoteIds.length).to.equal(2)
 		})
 
@@ -1934,7 +1990,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		it("correctly identifies parent account for delegation", async function () {
-			const virtualAccountDetail = await ctx.context.accountHub.getVirtualAccount(virtualAccountAddress)
+			const virtualAccountDetail = await ctx.context.accountHubLens.getVirtualAccount(virtualAccountAddress)
 			expect(virtualAccountDetail.isExists).to.be.true
 			expect(virtualAccountDetail.parentAccount).to.equal(subAccountAddress)
 

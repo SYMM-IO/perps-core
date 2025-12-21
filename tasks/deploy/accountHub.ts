@@ -80,7 +80,18 @@ async function deployAccountHubProxy(hre: any, admin: string, affiliateHubAddres
 		accountManagerBytecode: `${accountManagerBytecode.slice(0, 10)}...`,
 	})
 
-	const Factory = await hre.ethers.getContractFactory(CONTRACT_CONFIG.NAME)
+	// Deploy LibQuoteParams library first
+	const LibQuoteParamsFactory = await hre.ethers.getContractFactory("LibQuoteParams")
+	const libQuoteParams = await LibQuoteParamsFactory.deploy()
+	await libQuoteParams.waitForDeployment()
+	console.log("LibQuoteParams deployed to:", await libQuoteParams.getAddress())
+
+	// Deploy AccountHub with library linked
+	const Factory = await hre.ethers.getContractFactory(CONTRACT_CONFIG.NAME, {
+		libraries: {
+			LibQuoteParams: await libQuoteParams.getAddress(),
+		},
+	})
 	const contract = await deployProxy(hre, Factory, [admin, affiliateHubAddress, accountManagerBytecode], {
 		initializer: CONTRACT_CONFIG.INITIALIZER,
 		admin,

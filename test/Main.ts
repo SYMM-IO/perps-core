@@ -26,6 +26,7 @@ import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior"
 import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior"
 import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior";
 import { shouldBehaveLikeAccessControlRoleAdmins } from "./AccessControlRoleAdmins.behavior"
+import { shouldBehaveLikeMasterAccountMigration } from "./MasterAccountMigration.behavior"
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
@@ -99,6 +100,10 @@ describe("UnitTests", function () {
 
 		describe("AccessControlRoleAdmins", async function () {
 			shouldBehaveLikeAccessControlRoleAdmins()
+		})
+
+		describe("MasterAccountMigration", async function () {
+			shouldBehaveLikeMasterAccountMigration()
 		})
 
 		describe("Settlement", async function () {

@@ -14,6 +14,7 @@ import "../../storages/MAStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/SymbolStorage.sol";
 import "../../storages/MuonStorage.sol";
+import "../../storages/MasterAccountMigrationStorage.sol";
 import "../../storages/BridgeStorage.sol";
 import "../../libraries/LibAccessibility.sol";
 import "./IViewFacet.sol";
@@ -203,6 +204,15 @@ contract ViewFacet is IViewFacet {
 	 */
 	function isInMasterAccountMode(address partyB) external view returns (bool) {
 		return AccountStorage.layout().masterAccountMode[partyB];
+	}
+
+	/**
+	 * @notice Checks if a party B has completed master account migration.
+	 * @param partyB The address of Party B.
+	 * @return A boolean indicating whether the party B has completed migration.
+	 */
+	function isMasterAccountMigrationComplete(address partyB) external view returns (bool) {
+		return MasterAccountMigrationStorage.layout().partyBMigrationComplete[partyB];
 	}
 
 	/**

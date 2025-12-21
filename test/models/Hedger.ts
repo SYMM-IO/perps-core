@@ -1,12 +1,11 @@
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { setBalance } from "@nomicfoundation/hardhat-network-helpers"
+import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 import { BigNumberish, ethers } from "ethers"
 import {setBalance} from "../helpers/network-helpers"
 import {BigNumberish, ethers} from "ethers"
 
 import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
 import { SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/SettlementFacet"
-import { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/contracts/interfaces/ISymmio"
 import { decimal, serializeToJson, unDecimal } from "../utils/Common"
 import { logger } from "../utils/LoggerUtils"
 import { getPrice } from "../utils/PriceUtils"
@@ -14,7 +13,7 @@ import { getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlS
 import { runTx } from "../utils/TxUtils"
 import { PositionType } from "./Enums"
 import { RunContext } from "./RunContext"
-import { PartyEntity } from "./partyEntitiy"
+import { PartyEntity } from "./partyEntitiy.js"
 import { EmergencyCloseRequest, emergencyCloseRequestBuilder } from "./requestModels/EmergencyCloseRequest"
 import { FillCloseRequest, limitFillCloseRequestBuilder } from "./requestModels/FillCloseRequest"
 import { limitOpenRequestBuilder, OpenRequest } from "./requestModels/OpenRequest"
@@ -45,16 +44,14 @@ export class Hedger extends PartyEntity {
 	}
 
 	public async lockQuote(id: BigNumberish, upnl: bigint = 0n, allocateCoefficient: bigint | null = decimal(12n, 17)) {
-		if (allocateCoefficient != null) {
+		const isMasterAccountMode = await this.context.viewFacet.isInMasterAccountMode(this.address)
+		if (allocateCoefficient != null && !isMasterAccountMode) {
 			const quote = await this.context.viewFacetQuote.getQuote(id)
 			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
 			await runTx(
 				this.context.accountFacet
 					.connect(this.signer)
-					.allocateForPartyB(
-						unDecimal(notional * BigInt(allocateCoefficient)),
-						(await this.context.viewFacet.isInMasterAccountMode(this.address)) ? ethers.ZeroAddress : quote.partyA,
-					),
+					.allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA),
 			)
 		}
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).lockQuote(id, await getDummySingleUpnlSig(upnl)))
@@ -232,7 +229,7 @@ export class Hedger extends PartyEntity {
 		for (const pos of openPositions) {
 			const priceDiff = pos.openedPrice - (await getPrice())
 			const amount = pos.quantity - pos.closedAmount
-			upnl += unDecimal(BigInt(amount) * priceDiff) * (pos.positionType === BigInt(PositionType.LONG) ? -1n : 1n)
+			upnl += unDecimal(amount * priceDiff) * (pos.positionType === BigInt(PositionType.LONG) ? -1n : 1n)
 		}
 		return upnl
 	}

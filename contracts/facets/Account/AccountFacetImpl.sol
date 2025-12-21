@@ -10,6 +10,7 @@ import "../../storages/AccountStorage.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/GlobalAppStorage.sol";
 import "../../storages/MAStorage.sol";
+import "../../storages/MasterAccountMigrationStorage.sol";
 import "../../libraries/muon/LibMuonAccount.sol";
 import "../../libraries/LibAccount.sol";
 import "../../interfaces/IExternalTransferRelayer.sol";
@@ -210,6 +211,10 @@ library AccountFacetImpl {
 		require(GlobalAppStorage.layout().masterAccountEnabled, "AccountFacet: Master account disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
+		require(
+			MasterAccountMigrationStorage.layout().partyBMigrationComplete[signer],
+			"AccountFacet: Master account migration incomplete"
+		);
 		require(!accountLayout.masterAccountMode[signer], "AccountFacet: Master account mode is active");
 		accountLayout.masterAccountMode[signer] = true;
 	}

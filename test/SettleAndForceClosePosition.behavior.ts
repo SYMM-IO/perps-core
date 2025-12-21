@@ -1,8 +1,8 @@
 import { expect } from "chai"
-import { toUtf8Bytes } from "ethers"
+import { ethers, toUtf8Bytes } from "ethers"
 import {loadFixture, time} from "./helpers/network-helpers"
 
-import {
+import type {
 	HighLowPriceSigStruct,
 	MasterAccountQuoteSettlementDataStructOutput,
 	MasterAccountSettlementSigStruct,
@@ -25,21 +25,7 @@ import {
 	getDummyHighLowPriceSig,
 	getDummySettlementSig
 } from "./utils/SignatureUtils"
-import {initializeFixture} from "./Initialize.fixture"
-import {ethers} from "./helpers/hardhat-connection"
-import {toUtf8Bytes} from "ethers"
-import {PositionType, QuoteStatus} from "./models/Enums"
-import {Hedger} from "./models/Hedger"
-import {RunContext} from "./models/RunContext"
-import {User} from "./models/User"
-import {limitCloseRequestBuilder} from "./models/requestModels/CloseRequest"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
-import {decimal, getBlockTimestamp, getQuoteQuantity,} from "./utils/Common"
-import {getDummyHighLowPriceSig, getDummySettlementSig} from "./utils/SignatureUtils"
-import {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
-import {limitOpenRequestBuilder} from "./models/requestModels/OpenRequest"
-import {QuoteSettlementDataStructOutput} from "../src/types/contracts/facets/Settlement/ISettlementFacet"
-import {expect} from "chai"
+import { migratePartyBToMaster } from "./utils/MasterAccount"
 
 export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger, user2: User
@@ -181,10 +167,6 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 	describe("Master Account", async function () {
 		beforeEach(async function () {
-			// switch hedger to master account mode
-			await context.controlFacet.setMasterAccountEnabled(true)
-			await context.accountFacet.connect(hedger.signer).activateMasterAccountMode()
-
 			// prepare quotes and positions
 
 			// prepare update prices
@@ -198,6 +180,8 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const quantityShort = decimal(75n)
 			await hedger.lockQuote(quote2ShortOpened.id)
 			await hedger.openPosition(quote2ShortOpened.id, limitOpenRequestBuilder().filledAmount(quantityShort).build())
+
+			await migratePartyBToMaster(context, hedger, [quote1LongOpened.id, quote2ShortOpened.id])
 
 			await user.requestToClosePosition(
 				quote1LongOpened.id,
@@ -281,7 +265,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				})
 
 				it("Should revert when signature partyB does not match quote.partyB", async function () {
-					await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
+					await migratePartyBToMaster(context, hedger2, [])
 
 					// Wrong partyB inside sig (use any other address)
 					const wrongPartyB = await hedger2.getAddress()
@@ -295,7 +279,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					)
 
 					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
-						"LibSettlement, Invalid quote",
+						"LibSettlement: Invalid quote",
 					)
 				})
 
@@ -319,7 +303,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			})
 
 			it("Should revert when signature partyB does not match quote.partyB", async function () {
-				await context.accountFacet.connect(hedger2.signer).activateMasterAccountMode()
+				await migratePartyBToMaster(context, hedger2, [])
 
 				// Wrong partyB inside sig (use any other address)
 				const wrongPartyB = await hedger2.getAddress()
@@ -333,7 +317,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				)
 
 				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
-					"LibSettlement, Invalid quote",
+					"LibSettlement: Invalid quote",
 				)
 			})
 		})

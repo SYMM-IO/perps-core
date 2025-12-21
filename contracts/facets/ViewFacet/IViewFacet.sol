@@ -42,6 +42,8 @@ interface IViewFacet {
 
 	function isInMasterAccountMode(address partyB) external view returns (bool);
 
+	function isMasterAccountMigrationComplete(address partyB) external view returns (bool);
+
 	function allocatedBalanceOfPartyBs(address partyA, address[] memory partyBs) external view returns (uint256[] memory);
 
 	function withdrawCooldownOf(address user) external view returns (uint256);

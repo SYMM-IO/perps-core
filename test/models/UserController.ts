@@ -31,7 +31,7 @@ import {
 import {CancelQuoteValidator, CancelQuoteValidatorBeforeOutput} from "./validators/CancelQuoteValidator"
 import {CloseRequestValidator, CloseRequestValidatorBeforeOutput} from "./validators/CloseRequestValidator"
 import {QuoteCheckpoint} from "./quoteCheckpoint"
-import {QuoteStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
+import type {QuoteStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
 
 export class UserController {
 	private readonly context: RunContext

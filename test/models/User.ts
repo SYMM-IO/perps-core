@@ -16,10 +16,10 @@ import {
 import { runTx } from "../utils/TxUtils"
 import { getDummyLiquidationSig } from "../utils/SignatureUtils"
 import { LiquidationSigStruct } from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
-import { QuoteStructOutput, SettlementSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput, SettlementSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
 import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { PartyEntity } from "./partyEntitiy"
+import { PartyEntity } from "./partyEntitiy.js"
 
 export class User extends PartyEntity {
 	constructor(context: RunContext, signer: SignerWithAddress) {
@@ -247,7 +247,7 @@ export class User extends PartyEntity {
 					: await symbolNamePriceFetcher((await this.context.viewFacetSymbol.getSymbol(pos.symbolId)).name)
 			)
 			const amount = pos.quantity - pos.closedAmount
-			upnl += unDecimal(amount * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? -1n : 1n)
+			upnl += unDecimal(BigInt(amount) * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? -1n : 1n)
 		}
 		return upnl
 	}
@@ -265,7 +265,7 @@ export class User extends PartyEntity {
 					: await symbolNamePriceFetcher((await this.context.viewFacetSymbol.getSymbol(pos.symbolId)).name)
 			)
 			const amount = pos.quantity - pos.closedAmount
-			upnl += unDecimal(amount * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? 0n : 1n)
+			upnl += unDecimal(BigInt(amount) * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? 0n : 1n)
 		}
 		return upnl
 	}

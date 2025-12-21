@@ -212,10 +212,12 @@ library LiquidationFacetImpl {
 			}
 			accountLayout.partyBLockedBalances[quote.partyB][partyA].subQuote(quote);
 			uint256 liquidationPrice = accountLayout.symbolsPrices[partyA][quote.symbolId].price;
+			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 			quote.avgClosedPrice =
-				(quote.avgClosedPrice * quote.closedAmount + LibQuote.quoteOpenAmount(quote) * liquidationPrice) /
-				(quote.closedAmount + LibQuote.quoteOpenAmount(quote));
+				(quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) /
+				(quote.closedAmount + openAmount);
 
+			LibQuote.subFromPartyBOpenPositionAmounts(quote, openAmount);
 			quote.closedAmount = quote.quantity;
 
 			LibQuote.removeFromOpenPositions(quote.id);
@@ -223,7 +225,7 @@ library LiquidationFacetImpl {
 			quoteLayout.partyBPositionsCount[quote.partyB][partyA] -= 1;
 			quoteLayout.partyBPositionsCount[quote.partyB][address(0)] -= 1;
 
-		if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
+			if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
 				int256 settleAmount = accountLayout.settlementStates[partyA][quote.partyB].expectedAmount;
 				if (settleAmount < 0) {
 					accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += settleAmount;
@@ -417,9 +419,11 @@ library LiquidationFacetImpl {
 			accountLayout.lockedBalances[partyA].subQuote(quote);
 
 			uint256 liquidationPrice = priceSig.prices[i];
+			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 			quote.avgClosedPrice =
-				(quote.avgClosedPrice * quote.closedAmount + LibQuote.quoteOpenAmount(quote) * liquidationPrice) /
-				(quote.closedAmount + LibQuote.quoteOpenAmount(quote));
+				(quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) /
+				(quote.closedAmount + openAmount);
+			LibQuote.subFromPartyBOpenPositionAmounts(quote, openAmount);
 			quote.closedAmount = quote.quantity;
 
 			LibQuote.removeFromOpenPositions(quote.id);

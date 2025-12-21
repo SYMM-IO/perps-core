@@ -5,6 +5,8 @@
 pragma solidity >=0.8.18;
 
 import "../storages/GlobalAppStorage.sol";
+import "../storages/MasterAccountMigrationStorage.sol";
+import "../libraries/LibSigner.sol";
 
 abstract contract Pausable {
 	modifier whenNotGlobalPaused() {
@@ -33,6 +35,7 @@ abstract contract Pausable {
 	modifier whenNotPartyBActionsPaused() {
 		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
 		require(!GlobalAppStorage.layout().partyBActionsPaused, "Pausable: PartyB actions paused");
+		require(!MasterAccountMigrationStorage.layout().partyBMigrationPaused[LibSigner.getSigner()], "Pausable: PartyB migration paused");
 		_;
 	}
 

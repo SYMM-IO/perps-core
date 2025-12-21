@@ -11,17 +11,19 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "./interfaces/IAccountHub.sol";
+import "./interfaces/IAccountHubInternal.sol";
 import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/ISymmio.sol";
 import "./interfaces/IAccountHubHook.sol";
 import "./interfaces/IMultiAccount.sol";
+import "./libraries/LibQuoteParams.sol";
 
 /**
  * @title AccountHub
  * @notice Manages sub-accounts and virtual accounts for the Symmio protocol
  * @dev Implements role-based access control, pausability, and reentrancy protection
  */
-contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
+contract AccountHub is IAccountHub, IAccountHubInternal, Initializable, PausableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
@@ -33,10 +35,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 	bytes32 public constant SIGNER_SETTER_ROLE = keccak256("SIGNER_SETTER_ROLE");
 	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
 	bytes32 public constant DEPLOYER_ROLE = keccak256("DEPLOYER_ROLE");
-
-	bytes4 private constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
-	bytes4 private constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
-	bytes4 private constant SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR = 0x7cd6168d;
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
@@ -220,8 +218,12 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			bytes calldata cd = callDatas[i];
 			bytes4 selector = bytes4(cd[:4]);
 
-			if (selector == SEND_QUOTE_SELECTOR || selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
-				QuoteParams memory p = _decodeQuoteParams(cd);
+			if (
+				selector == LibQuoteParams.SEND_QUOTE_SELECTOR ||
+				selector == LibQuoteParams.SEND_QUOTE_WITH_AFFILIATE_SELECTOR ||
+				selector == LibQuoteParams.SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR
+			) {
+				QuoteParams memory p = LibQuoteParams.decodeQuoteParams(cd);
 
 				if (virtualAccounts[account].isExists) {
 					results[i] = _handleVirtualAccountSendQuote(account, cd, p);
@@ -273,7 +275,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		if (!subAccounts[subAccount].isExists) revert AccountDoesNotExist();
 
 		// Predict the next VA address
-		address predictedVA = this.predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
+		address predictedVA = _predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
 
 		// Transfer from sub-account to predicted VA
 		_executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
@@ -449,12 +451,9 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		return _resolveAccountOwner(account);
 	}
 
-	/**
-	 * @notice Gets detailed information for a single sub-account
-	 * @param account The sub-account address
-	 * @return SubAccountDetail struct with account information
-	 */
-	function getSubAccount(address account) external view returns (SubAccountDetail memory) {
+	// ==================== Raw Storage Accessors (for AccountHubLens) ====================
+
+	function getSubAccountRaw(address account) external view returns (SubAccountDetail memory) {
 		SubAccountData storage s = subAccounts[account];
 		return
 			SubAccountDetail({
@@ -470,7 +469,7 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			});
 	}
 
-	function getVirtualAccount(address account) external view returns (VirtualAccountDetail memory) {
+	function getVirtualAccountRaw(address account) external view returns (VirtualAccountDetail memory) {
 		VirtualAccountData storage v = virtualAccounts[account];
 		return
 			VirtualAccountDetail({
@@ -483,170 +482,31 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 			});
 	}
 
-	function getUserSubAccountsAddresses(address owner, uint256 offset, uint256 limit) external view returns (address[] memory) {
-		uint256 total = userToSubAccounts[owner].length();
-		if (offset >= total) {
-			return new address[](0);
-		}
-		uint256 remaining = total - offset;
-		uint256 resultSize = remaining < limit ? remaining : limit;
-		address[] memory paginatedAddresses = new address[](resultSize);
-		for (uint256 i = 0; i < resultSize; i++) {
-			paginatedAddresses[i] = userToSubAccounts[owner].at(offset + i);
-		}
-		return paginatedAddresses;
-	}
-
-	/**
-	 * @notice Gets paginated detailed information for sub-accounts of an owner
-	 * @param owner The owner address
-	 * @param offset The starting index
-	 * @param limit The maximum number of accounts to return
-	 * @return details Array of SubAccountDetail structs
-	 */
-	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details) {
-		uint256 total = userToSubAccounts[owner].length();
-
-		if (offset >= total) {
-			return new SubAccountDetail[](0);
-		}
-
-		uint256 remaining = total - offset;
-		uint256 resultSize = remaining < limit ? remaining : limit;
-
-		details = new SubAccountDetail[](resultSize);
-
-		for (uint256 i = 0; i < resultSize; i++) {
-			address accountAddr = userToSubAccounts[owner].at(offset + i);
-			SubAccountData storage s = subAccounts[accountAddr];
-
-			details[i] = SubAccountDetail({
-				accountAddress: accountAddr,
-				owner: s.owner,
-				name: s.name,
-				isExists: s.isExists,
-				singleVAMode: s.singleVAMode,
-				affiliate: s.affiliate,
-				symmioCore: s.symmioCore,
-				metadata: s.metadata,
-				isolationType: s.isolationType
-			});
-		}
-	}
-
-	/**
-	 * @notice Gets paginated virtual account addresses for a sub-account
-	 * @param subAccount The sub-account address
-	 * @param offset The starting index
-	 * @param limit The maximum number of accounts to return
-	 * @return Array of virtual account addresses
-	 */
-	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory) {
-		uint256 total = subAccountToVirtualAccounts[subAccount].length();
-
-		if (offset >= total) {
-			return new address[](0);
-		}
-
-		uint256 remaining = total - offset;
-		uint256 resultSize = remaining < limit ? remaining : limit;
-
-		address[] memory paginatedAccounts = new address[](resultSize);
-		for (uint256 i = 0; i < resultSize; i++) {
-			paginatedAccounts[i] = subAccountToVirtualAccounts[subAccount].at(offset + i);
-		}
-		return paginatedAccounts;
-	}
-
-	/**
-	 * @notice Gets paginated detailed information for virtual accounts of a sub-account
-	 * @param subAccount The sub-account address
-	 * @param offset The starting index
-	 * @param limit The maximum number of accounts to return
-	 * @return details Array of VirtualAccountDetail structs
-	 */
-	function getVirtualAccountsOfSubAccount(
-		address subAccount,
-		uint256 offset,
-		uint256 limit
-	) external view returns (VirtualAccountDetail[] memory details) {
-		uint256 total = subAccountToVirtualAccounts[subAccount].length();
-
-		if (offset >= total) {
-			return new VirtualAccountDetail[](0);
-		}
-
-		uint256 remaining = total - offset;
-		uint256 resultSize = remaining < limit ? remaining : limit;
-
-		details = new VirtualAccountDetail[](resultSize);
-
-		for (uint256 i = 0; i < resultSize; i++) {
-			address accountAddr = subAccountToVirtualAccounts[subAccount].at(offset + i);
-			VirtualAccountData storage v = virtualAccounts[accountAddr];
-
-			details[i] = VirtualAccountDetail({
-				accountAddress: accountAddr,
-				parentAccount: v.parentAccount,
-				symbolId: v.symbolId,
-				metadata: v.metadata,
-				isExists: v.isExists,
-				isolationType: v.isolationType
-			});
-		}
-	}
-
-	/**
-	 * @notice Gets paginated quote IDs for a virtual account
-	 * @param account The account address
-	 * @param offset The starting index
-	 * @param limit The maximum number of quote IDs to return
-	 * @return Array of quote IDs
-	 */
-	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory) {
-		uint256 total = virtualAccounts[account].quoteIds.length();
-
-		if (offset >= total) {
-			return new uint256[](0);
-		}
-
-		uint256 remaining = total - offset;
-		uint256 resultSize = remaining < limit ? remaining : limit;
-
-		uint256[] memory paginatedQuoteIds = new uint256[](resultSize);
-		for (uint256 i = 0; i < resultSize; i++) {
-			paginatedQuoteIds[i] = virtualAccounts[account].quoteIds.at(offset + i);
-		}
-		return paginatedQuoteIds;
-	}
-
-	/**
-	 * @notice Gets the total count of sub-accounts for an owner
-	 * @param owner The owner address
-	 * @return The total number of sub-accounts
-	 */
-	function getSubAccountsCountOfUser(address owner) external view returns (uint256) {
+	function getUserSubAccountsCount(address owner) external view returns (uint256) {
 		return userToSubAccounts[owner].length();
 	}
 
-	/**
-	 * @notice Gets the total count of virtual accounts for a sub-account
-	 * @param subAccount The sub-account address
-	 * @return The total number of virtual accounts
-	 */
-	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256) {
+	function getUserSubAccountAt(address owner, uint256 index) external view returns (address) {
+		return userToSubAccounts[owner].at(index);
+	}
+
+	function getSubAccountVirtualAccountsCount(address subAccount) external view returns (uint256) {
 		return subAccountToVirtualAccounts[subAccount].length();
 	}
 
-	/**
-	 * @notice Gets the active virtual account for a given key (subAccount, isolationType, symbolId)
-	 * @dev Only relevant when singleVAMode is enabled for the sub-account
-	 * @param subAccount The sub-account address
-	 * @param isolationType The virtual account isolation type
-	 * @param symbolId The symbol ID
-	 * @return The active virtual account address, or address(0) if none exists
-	 */
-	function getActiveVAByKey(
+	function getSubAccountVirtualAccountAt(address subAccount, uint256 index) external view returns (address) {
+		return subAccountToVirtualAccounts[subAccount].at(index);
+	}
+
+	function getVirtualAccountQuoteIdsCount(address account) external view returns (uint256) {
+		return virtualAccounts[account].quoteIds.length();
+	}
+
+	function getVirtualAccountQuoteIdAt(address account, uint256 index) external view returns (uint256) {
+		return virtualAccounts[account].quoteIds.at(index);
+	}
+
+	function getActiveVAByKeyRaw(
 		address subAccount,
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId
@@ -654,45 +514,25 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		return activeVAByKey[subAccount][isolationType][symbolId];
 	}
 
-	/**
-	 * @notice Gets the current virtual account nonce for a sub-account
-	 * @param subAccount The sub-account address
-	 * @return The current nonce value for virtual account creation
-	 */
-	function getSubAccountVirtualNonce(address subAccount) external view returns (uint256) {
+	function getSubAccountVirtualNonceRaw(address subAccount) external view returns (uint256) {
 		return subAccountVirtualNonces[subAccount];
 	}
 
-	/**
-	 * @notice Predicts the address of the next virtual account that will be created for a sub-account
-	 * @param subAccount The sub-account address
-	 * @param isolationType The virtual account isolation type
-	 * @param symbolId The symbol ID (0 for position isolation)
-	 * @return The predicted address for the next virtual account (either reused or newly generated)
-	 */
-	function predictNextVirtualAccountAddress(
-		address subAccount,
+	function getDeletedVirtualAccountsPoolLength(
+		address parentAccount,
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId
+	) external view returns (uint256) {
+		return deletedVirtualAccountsPool[parentAccount][isolationType][symbolId].length;
+	}
+
+	function getDeletedVirtualAccountAt(
+		address parentAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId,
+		uint256 index
 	) external view returns (address) {
-		// First check if a deleted virtual account exists for this combination
-		address[] storage pool = deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
-		if (pool.length > 0) {
-			// Return the address that would be reused (last element in the stack)
-			return pool[pool.length - 1];
-		}
-
-		// If singleVAMode is enabled, check if there's already an active VA for this key
-		if (subAccounts[subAccount].singleVAMode) {
-			address existingVA = activeVAByKey[subAccount][isolationType][symbolId];
-			if (existingVA != address(0) && virtualAccounts[existingVA].isExists) {
-				return existingVA;
-			}
-		}
-
-		// If no deleted account exists, generate and return a new virtual account address
-		uint256 nextNonce = subAccountVirtualNonces[subAccount] + 1;
-		return _generateVirtualAccountAddress(subAccount, nextNonce);
+		return deletedVirtualAccountsPool[parentAccount][isolationType][symbolId][index];
 	}
 
 	// ==================== Internal Functions ====================
@@ -887,127 +727,6 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		);
 
 		emit VirtualAccountDeleted(account, parentAccount);
-	}
-
-	/**
-	 * @dev Decodes quote parameters from calldata
-	 */
-	/**
-	 * @dev Decodes quote parameters from calldata
-	 */
-	function _decodeQuoteParams(bytes calldata cd) private pure returns (QuoteParams memory) {
-		bytes4 selector = bytes4(cd[:4]);
-
-		if (selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
-			(
-				,
-				uint256 symbolId,
-				ISymmio.PositionType positionType,
-				ISymmio.OrderType orderType,
-				uint256 price,
-				uint256 quantity,
-				uint256 cva,
-				uint256 lf,
-				uint256 partyAmm,
-				,
-				,
-				,
-				address affiliate,
-				ISymmio.SingleUpnlAndPriceSig memory sig
-			) = abi.decode(
-					cd[4:],
-					(
-						address[],
-						uint256,
-						ISymmio.PositionType,
-						ISymmio.OrderType,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						address,
-						ISymmio.SingleUpnlAndPriceSig
-					)
-				);
-			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, affiliate);
-		} else if (selector == SEND_QUOTE_SELECTOR) {
-			(
-				,
-				uint256 symbolId,
-				ISymmio.PositionType positionType,
-				ISymmio.OrderType orderType,
-				uint256 price,
-				uint256 quantity,
-				uint256 cva,
-				uint256 lf,
-				uint256 partyAmm,
-				,
-				,
-				,
-				ISymmio.SingleUpnlAndPriceSig memory sig
-			) = abi.decode(
-					cd[4:],
-					(
-						address[],
-						uint256,
-						ISymmio.PositionType,
-						ISymmio.OrderType,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						ISymmio.SingleUpnlAndPriceSig
-					)
-				);
-			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
-		} else if (selector == SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR) {
-			(
-				,
-				uint256 symbolId,
-				ISymmio.PositionType positionType,
-				ISymmio.OrderType orderType,
-				uint256 price,
-				uint256 quantity,
-				uint256 cva,
-				uint256 lf,
-				uint256 partyAmm,
-				,
-				,
-				,
-				,
-				ISymmio.SingleUpnlAndPriceSig memory sig,
-
-			) = abi.decode(
-					cd[4:],
-					(
-						address[],
-						uint256,
-						ISymmio.PositionType,
-						ISymmio.OrderType,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						uint256,
-						address,
-						ISymmio.SingleUpnlAndPriceSig,
-						bytes
-					)
-				);
-			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
-		}
-		revert InvalidSelector();
 	}
 
 	/**
@@ -1235,5 +954,32 @@ contract AccountHub is IAccountHub, Initializable, PausableUpgradeable, AccessCo
 		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
 		bytes32 initCodeHash = keccak256(bytecode);
 		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
+	}
+
+	/**
+	 * @dev Predicts the address of the next virtual account that will be created for a sub-account
+	 */
+	function _predictNextVirtualAccountAddress(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) private view returns (address) {
+		// First check if a deleted virtual account exists for this combination
+		address[] storage pool = deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
+		if (pool.length > 0) {
+			return pool[pool.length - 1];
+		}
+
+		// If singleVAMode is enabled, check if there's already an active VA for this key
+		if (subAccounts[subAccount].singleVAMode) {
+			address existingVA = activeVAByKey[subAccount][isolationType][symbolId];
+			if (existingVA != address(0) && virtualAccounts[existingVA].isExists) {
+				return existingVA;
+			}
+		}
+
+		// If no deleted account exists, generate and return a new virtual account address
+		uint256 nextNonce = subAccountVirtualNonces[subAccount] + 1;
+		return _generateVirtualAccountAddress(subAccount, nextNonce);
 	}
 }

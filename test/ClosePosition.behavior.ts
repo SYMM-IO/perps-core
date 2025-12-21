@@ -1,13 +1,13 @@
-import { loadFixture, time } from "./helpers/network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { OrderType, PositionType, QuoteStatus } from "./models/Enums"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import {
 	decimal,
 	getBlockTimestamp,
@@ -17,14 +17,14 @@ import {
 	pausePartyA,
 	pausePartyB,
 	unDecimal,
-} from "./utils/Common"
-import { CloseRequestValidator } from "./models/validators/CloseRequestValidator"
-import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
-import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator"
-import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator"
-import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator"
-import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
-import { ethers, toUtf8Bytes } from "ethers";
+} from "./utils/Common.js"
+import { CloseRequestValidator } from "./models/validators/CloseRequestValidator.js"
+import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
+import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator.js"
+import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator.js"
+import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
+import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio.js"
+
 
 export function shouldBehaveLikeClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -68,6 +68,36 @@ export function shouldBehaveLikeClosePosition(): void {
 		quote4LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote4LongOpened.id)
 		await hedger.openPosition(quote4LongOpened.id)
+	})
+
+	it("Should return total open amounts and average open prices by position type for partyB and symbol", async function () {
+		const symbolId = (await context.viewFacetQuote.getQuote(quote1LongOpened.id)).symbolId
+		const quoteIds = [quote1LongOpened.id, quote2ShortOpened.id, quote4LongOpened.id]
+		let expectedLong = 0n
+		let expectedShort = 0n
+		let expectedLongNotional = 0n
+		let expectedShortNotional = 0n
+		for (const quoteId of quoteIds) {
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			if (quote.symbolId !== symbolId) continue
+			const openAmount = quote.quantity - quote.closedAmount
+			if (quote.positionType === BigInt(PositionType.LONG)) {
+				expectedLong += openAmount
+				expectedLongNotional += openAmount * quote.openedPrice
+			} else {
+				expectedShort += openAmount
+				expectedShortNotional += openAmount * quote.openedPrice
+			}
+		}
+
+		const amounts = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, symbolId)
+		expect(amounts.length).to.equal(2)
+		expect(amounts[0].positionType).to.equal(BigInt(PositionType.LONG))
+		expect(amounts[0].totalOpenAmount).to.equal(expectedLong)
+		expect(amounts[0].avgOpenPrice).to.equal(expectedLong === 0n ? 0n : expectedLongNotional / expectedLong)
+		expect(amounts[1].positionType).to.equal(BigInt(PositionType.SHORT))
+		expect(amounts[1].totalOpenAmount).to.equal(expectedShort)
+		expect(amounts[1].avgOpenPrice).to.equal(expectedShort === 0n ? 0n : expectedShortNotional / expectedShort)
 	})
 
 	it("Should fail on invalid partyA", async function () {

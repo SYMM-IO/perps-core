@@ -71,6 +71,23 @@ library LibQuote {
 	}
 
 	/**
+	 * @notice Updates Party B open position amounts when positions open or close.
+	 * @param quote The quote being updated.
+	 * @param amount The amount to add or subtract.
+	 */
+	function addToPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalAmounts += amount;
+		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalNotionals += amount * quote.openedPrice;
+	}
+
+	function subFromPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalAmounts -= amount;
+		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalNotionals -= amount * quote.openedPrice;
+	}
+
+	/**
 	 * @notice Adds a quote to the open positions.
 	 * @param quoteId The ID of the quote to add to the open positions.
 	 */
@@ -86,6 +103,8 @@ library LibQuote {
 
 		quoteLayout.partyAPositionsCount[quote.partyA] += 1;
 		quoteLayout.partyBPositionsCount[quote.partyB][quote.partyA] += 1;
+
+		addToPartyBOpenPositionAmounts(quote, quoteOpenAmount(quote));
 	}
 
 	/**
