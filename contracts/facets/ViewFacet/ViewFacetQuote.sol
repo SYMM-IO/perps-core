@@ -277,19 +277,19 @@ contract ViewFacetQuote is IViewFacetQuote {
 	 * @param symbolId The symbol ID.
 	 * @return amounts An array of position types with total open amounts (LONG, SHORT).
 	 */
-	function getPartyBOpenPositionAmountsBySymbol(
+	function getPartyBTotalPositionAmountsBySymbol(
 		address partyB,
 		uint256 symbolId
-	) external view returns (PositionOpenAmount[] memory amounts) {
+	) external view returns (TotalPositionAmount[] memory amounts) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		amounts = new PositionOpenAmount[](2);
-		amounts[0] = PositionOpenAmount(
+		amounts = new TotalPositionAmount[](2);
+		amounts[0] = TotalPositionAmount(
 			PositionType.LONG,
-			quoteLayout.partyBOpenPositionAmounts[partyB][symbolId][PositionType.LONG]
+			quoteLayout.partyBTotalPositionAmounts[partyB][symbolId][PositionType.LONG]
 		);
-		amounts[1] = PositionOpenAmount(
+		amounts[1] = TotalPositionAmount(
 			PositionType.SHORT,
-			quoteLayout.partyBOpenPositionAmounts[partyB][symbolId][PositionType.SHORT]
+			quoteLayout.partyBTotalPositionAmounts[partyB][symbolId][PositionType.SHORT]
 		);
 	}
 

@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import "../../storages/QuoteStorage.sol";
 
 interface IViewFacetQuote {
-	struct PositionOpenAmount {
+	struct TotalPositionAmount {
 		PositionType positionType;
 		uint256 totalOpenAmount;
 	}
@@ -46,7 +46,7 @@ interface IViewFacetQuote {
 
 	function partyBPositionsCount(address partyB, address partyA) external view returns (uint256);
 
-	function getPartyBOpenPositionAmountsBySymbol(address partyB, uint256 symbolId) external view returns (PositionOpenAmount[] memory);
+	function getPartyBTotalPositionAmountsBySymbol(address partyB, uint256 symbolId) external view returns (TotalPositionAmount[] memory);
 
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 

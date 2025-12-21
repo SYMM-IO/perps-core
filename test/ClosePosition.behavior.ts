@@ -86,7 +86,7 @@ export function shouldBehaveLikeClosePosition(): void {
 			}
 		}
 
-		const amounts = await context.viewFacetQuote.getPartyBOpenPositionAmountsBySymbol(hedger.address, symbolId)
+		const amounts = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, symbolId)
 		expect(amounts.length).to.equal(2)
 		expect(amounts[0].positionType).to.equal(BigInt(PositionType.LONG))
 		expect(amounts[0].totalOpenAmount).to.equal(expectedLong)

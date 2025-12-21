@@ -76,11 +76,11 @@ library LibQuote {
 	 * @param amount The amount to add or subtract.
 	 */
 	function addToPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
-		QuoteStorage.layout().partyBOpenPositionAmounts[quote.partyB][quote.symbolId][quote.positionType] += amount;
+		QuoteStorage.layout().partyBTotalPositionAmounts[quote.partyB][quote.symbolId][quote.positionType] += amount;
 	}
 
 	function subFromPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
-		QuoteStorage.layout().partyBOpenPositionAmounts[quote.partyB][quote.symbolId][quote.positionType] -= amount;
+		QuoteStorage.layout().partyBTotalPositionAmounts[quote.partyB][quote.symbolId][quote.positionType] -= amount;
 	}
 
 	/**
