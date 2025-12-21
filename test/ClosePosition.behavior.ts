@@ -70,6 +70,30 @@ export function shouldBehaveLikeClosePosition(): void {
 		await hedger.openPosition(quote4LongOpened.id)
 	})
 
+	it("Should return total open amounts by position type for partyB and symbol", async function () {
+		const symbolId = (await context.viewFacetQuote.getQuote(quote1LongOpened.id)).symbolId
+		const quoteIds = [quote1LongOpened.id, quote2ShortOpened.id, quote4LongOpened.id]
+		let expectedLong = 0n
+		let expectedShort = 0n
+		for (const quoteId of quoteIds) {
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			if (quote.symbolId !== symbolId) continue
+			const openAmount = quote.quantity - quote.closedAmount
+			if (quote.positionType === BigInt(PositionType.LONG)) {
+				expectedLong += openAmount
+			} else {
+				expectedShort += openAmount
+			}
+		}
+
+		const amounts = await context.viewFacetQuote.getPartyBOpenPositionAmountsBySymbol(hedger.address, symbolId)
+		expect(amounts.length).to.equal(2)
+		expect(amounts[0].positionType).to.equal(BigInt(PositionType.LONG))
+		expect(amounts[0].totalOpenAmount).to.equal(expectedLong)
+		expect(amounts[1].positionType).to.equal(BigInt(PositionType.SHORT))
+		expect(amounts[1].totalOpenAmount).to.equal(expectedShort)
+	})
+
 	it("Should fail on invalid partyA", async function () {
 		await expect(
 			context.partyAFacet.requestToClosePosition(
