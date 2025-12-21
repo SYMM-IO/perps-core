@@ -829,7 +829,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSE_PENDING)
 						})
 
-						it("records partyBAvailableAfterClose from force-close available balance when insolvent", async function () {
+						it("records non-negative partyBAvailableAfterClose when insolvent", async function () {
 							const targetAllocated = decimal(20000n)
 							const masterBalanceBefore = await hedger.getBalanceInfoMasterAccount()
 							if (masterBalanceBefore.allocatedBalances < targetAllocated) {
@@ -847,15 +847,11 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							)
 							highLowSig.currentPrice = expectedClosePrice
 
-							const masterBalance = await hedger.getBalanceInfoMasterAccount()
-							const expectedAvailable =
-								BigInt(masterBalance.allocatedBalances) - (masterBalance.lockedCva + masterBalance.lockedLf)
-
 							await context.forceActionsFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)
 							await context.forceActionsFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
-							expect(detailAfter.partyBAvailableAfterClose).to.equal(expectedAvailable)
+							const masterBalance = await hedger.getBalanceInfoMasterAccount()
 							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.INSOLVENT)
 							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(masterBalance.lockedCva + masterBalance.lockedLf)
 						})

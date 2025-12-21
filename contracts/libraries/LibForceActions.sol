@@ -152,42 +152,6 @@ library LibForceActions {
 	}
 
 	/**
-	 * @notice Computes partyB's available balance for a force-close using closePrice vs marketPrice in master-account mode.
-	 * @param quoteId The ID of the quote to evaluate.
-	 * @param closedPrice The force-close price.
-	 * @param marketPrice The current market price.
-	 */
-	function getAvailableBalanceToForceClosePosition(
-		uint256 quoteId,
-		uint256 closedPrice,
-		uint256 marketPrice
-	) internal view returns (int256 partyBAvailableBalance) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote storage quote = quoteLayout.quotes[quoteId];
-
-		uint256 filledAmount = quote.quantityToClose;
-		partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(0, quote.partyB, address(0));
-
-		if (quote.positionType == PositionType.LONG) {
-			if (closedPrice >= marketPrice) {
-				uint256 diff = (filledAmount * (closedPrice - marketPrice)) / 1e18;
-				partyBAvailableBalance -= int256(diff);
-			} else {
-				uint256 diff = (filledAmount * (marketPrice - closedPrice)) / 1e18;
-				partyBAvailableBalance += int256(diff);
-			}
-		} else if (quote.positionType == PositionType.SHORT) {
-			if (closedPrice <= marketPrice) {
-				uint256 diff = (filledAmount * (marketPrice - closedPrice)) / 1e18;
-				partyBAvailableBalance -= int256(diff);
-			} else {
-				uint256 diff = (filledAmount * (closedPrice - marketPrice)) / 1e18;
-				partyBAvailableBalance += int256(diff);
-			}
-		}
-	}
-
-	/**
 	 * @notice Closes a master-account quote using full uPNL if possible, otherwise a price-only fallback.
 	 * @param quoteId The ID of the quote to close.
 	 * @param currentPrice The current market price used for solvency checks.
@@ -210,7 +174,7 @@ library LibForceActions {
 		}
 
 		// Close ignoring UPNL
-		partyBAvailableForClose = getAvailableBalanceToForceClosePosition(quoteId, closePrice, currentPrice);
+		(partyBAvailableForClose, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, 0, closePrice);
 		require(partyBAvailableForClose >= 0, "ForceActionsFacet: Insufficient balance");
 		LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 
