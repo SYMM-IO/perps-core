@@ -100,6 +100,7 @@ library QuoteStorage {
 		mapping(uint256 => uint256) closeIds;
 		mapping(address => uint256) partyALockQuotesCount;
 		mapping(address => mapping(uint256 => mapping(PositionType => uint256))) partyBTotalPositionAmounts; // partyB => symbolId => positionType => open amount
+		mapping(address => mapping(uint256 => mapping(PositionType => uint256))) partyBTotalPositionNotionals; // partyB => symbolId => positionType => open amount * openedPrice
 	}
 
 	function layout() internal pure returns (Layout storage l) {
