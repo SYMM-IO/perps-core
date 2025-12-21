@@ -19,4 +19,5 @@ interface IPartyBPositionActionsEvents is IPartiesEvents {
 		uint256 closeId
 	);
 	event EmergencyClosePosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice, QuoteStatus quoteStatus); // For backward compatibility, will be removed in future
+	event ADLClose(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 closedPrice);
 }

@@ -10,7 +10,6 @@ import "../../utils/Accessibility.sol";
 import "../../utils/Pausable.sol";
 
 contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet {
-
 	/**
 	 * @notice Opens a position for the specified quote. The opened position's size can't be excessively small or large.
 	 * 			If it's like 99/100, the leftover will be a minuscule quote that falls below the minimum acceptable quote value.
@@ -110,5 +109,33 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 			quoteLayout.closeIds[quoteId]
 		);
 		emit EmergencyClosePosition(quoteId, quote.partyA, quote.partyB, filledAmount, upnlSig.price, quote.quoteStatus); // For backward compatibility, will be removed in future
+	}
+
+	/**
+	 * @notice close the positions with specidied price to ADL on same symbol.
+	 * @param quoteIds The ID of the quotes for which the ADL is happening.
+	 * @param ratio The ratio of open amounts to be closed.
+	 * @param price The closed price for the positions.
+	 */
+	function adlClose(uint256[] calldata quoteIds, uint256 ratio, uint256 price) external returns (uint256) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		(uint256[] memory filledAmounts, uint256 closedAmount) = PartyBPositionActionsFacetImpl.adlClose(quoteIds, ratio, price);
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			if (filledAmounts[i] > 0) {
+				Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+				emit FillCloseRequest(
+					quoteIds[i],
+					quote.partyA,
+					quote.partyB,
+					filledAmounts[i],
+					price,
+					quote.quoteStatus,
+					quoteLayout.closeIds[quoteIds[i]]
+				);
+				emit FillCloseRequest(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], price, quote.quoteStatus); // For backward compatibility, will be removed in future
+				emit ADLClose(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], price);
+			}
+		}
+		return closedAmount;
 	}
 }
