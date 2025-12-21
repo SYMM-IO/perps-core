@@ -283,10 +283,10 @@ contract ViewFacetQuote is IViewFacetQuote {
 	) external view returns (TotalPositionAmount[] memory amounts) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		amounts = new TotalPositionAmount[](2);
-		uint256 longAmount = quoteLayout.partyBTotalPositionAmounts[partyB][symbolId][PositionType.LONG];
-		uint256 shortAmount = quoteLayout.partyBTotalPositionAmounts[partyB][symbolId][PositionType.SHORT];
-		uint256 longNotional = quoteLayout.partyBTotalPositionNotionals[partyB][symbolId][PositionType.LONG];
-		uint256 shortNotional = quoteLayout.partyBTotalPositionNotionals[partyB][symbolId][PositionType.SHORT];
+		uint256 longAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalAmounts;
+		uint256 shortAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalAmounts;
+		uint256 longNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalNotionals;
+		uint256 shortNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalNotionals;
 		amounts[0] = TotalPositionAmount(
 			PositionType.LONG,
 			longAmount,

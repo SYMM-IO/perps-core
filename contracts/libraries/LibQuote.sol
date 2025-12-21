@@ -77,14 +77,14 @@ library LibQuote {
 	 */
 	function addToPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		quoteLayout.partyBTotalPositionAmounts[quote.partyB][quote.symbolId][quote.positionType] += amount;
-		quoteLayout.partyBTotalPositionNotionals[quote.partyB][quote.symbolId][quote.positionType] += amount * quote.openedPrice;
+		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalAmounts += amount;
+		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalNotionals += amount * quote.openedPrice;
 	}
 
 	function subFromPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		quoteLayout.partyBTotalPositionAmounts[quote.partyB][quote.symbolId][quote.positionType] -= amount;
-		quoteLayout.partyBTotalPositionNotionals[quote.partyB][quote.symbolId][quote.positionType] -= amount * quote.openedPrice;
+		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalAmounts -= amount;
+		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalNotionals -= amount * quote.openedPrice;
 	}
 
 	/**
