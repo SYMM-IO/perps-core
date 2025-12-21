@@ -129,6 +129,9 @@ library PartyBPositionActionsFacetImpl {
 		uint256 firstSymbolId;
 		for (uint256 i = 0; i < len; ) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+
+			require(quote.partyB == msg.sender,"PartyBFacet: Sender isn't partyB of quote");
+			
 			if (i == 0) {
 				firstSymbolId = quote.symbolId;
 			} else {
