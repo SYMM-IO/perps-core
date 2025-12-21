@@ -10,6 +10,7 @@ interface IViewFacetQuote {
 	struct TotalPositionAmount {
 		PositionType positionType;
 		uint256 totalOpenAmount;
+		uint256 avgOpenPrice;
 	}
 
 	struct Bitmap {

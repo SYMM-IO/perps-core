@@ -272,10 +272,10 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
-	 * @notice Returns total open position amounts for a party B and symbol, grouped by position type.
+	 * @notice Returns total open position amounts and average open prices for a party B and symbol, grouped by position type.
 	 * @param partyB The address of party B.
 	 * @param symbolId The symbol ID.
-	 * @return amounts An array of position types with total open amounts (LONG, SHORT).
+	 * @return amounts An array of position types with total open amounts and average open prices (LONG, SHORT).
 	 */
 	function getPartyBTotalPositionAmountsBySymbol(
 		address partyB,
@@ -283,13 +283,19 @@ contract ViewFacetQuote is IViewFacetQuote {
 	) external view returns (TotalPositionAmount[] memory amounts) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		amounts = new TotalPositionAmount[](2);
+		uint256 longAmount = quoteLayout.partyBTotalPositionAmounts[partyB][symbolId][PositionType.LONG];
+		uint256 shortAmount = quoteLayout.partyBTotalPositionAmounts[partyB][symbolId][PositionType.SHORT];
+		uint256 longNotional = quoteLayout.partyBTotalPositionNotionals[partyB][symbolId][PositionType.LONG];
+		uint256 shortNotional = quoteLayout.partyBTotalPositionNotionals[partyB][symbolId][PositionType.SHORT];
 		amounts[0] = TotalPositionAmount(
 			PositionType.LONG,
-			quoteLayout.partyBTotalPositionAmounts[partyB][symbolId][PositionType.LONG]
+			longAmount,
+			longAmount == 0 ? 0 : longNotional / longAmount
 		);
 		amounts[1] = TotalPositionAmount(
 			PositionType.SHORT,
-			quoteLayout.partyBTotalPositionAmounts[partyB][symbolId][PositionType.SHORT]
+			shortAmount,
+			shortAmount == 0 ? 0 : shortNotional / shortAmount
 		);
 	}
 
