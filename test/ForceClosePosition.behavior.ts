@@ -1,48 +1,50 @@
-import { ethers, toUtf8Bytes } from "ethers";
-import { expect } from "chai";
+import {expect} from "chai"
 
-import { loadFixture, time } from "./helpers/network-helpers";
-import { initializeFixture } from "./Initialize.fixture";
-
-import { Hedger, BalanceInfo } from "./models/Hedger";
-import { RunContext } from "./models/RunContext";
-import { User } from "./models/User";
-import { PartyBForceCloseState, PositionType, QuoteStatus } from "./models/Enums";
-
-import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio";
-
+import {initializeFixture} from "./Initialize.fixture"
+import {ethers} from "./helpers/hardhat-connection"
+import {toUtf8Bytes} from "ethers"
+import {PositionType, QuoteStatus} from "./models/Enums"
+import type { BalanceInfo } from "./models/Hedger"
+import { Hedger } from "./models/Hedger"
+import {RunContext} from "./models/RunContext"
+import {User} from "./models/User"
+import {limitCloseRequestBuilder, marketCloseRequestBuilder} from "./models/requestModels/CloseRequest"
+import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
 import {
-    limitCloseRequestBuilder,
-    marketCloseRequestBuilder,
-} from "./models/requestModels/CloseRequest";
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest";
+	decimal,
+	getBlockTimestamp,
+	getQuoteQuantity,
+	getTotalLockedValuesForQuoteIds,
+	getTradingFeeForQuotes,
+	unDecimal,
+} from "./utils/Common"
+import {getDummyHighLowPriceSig, getDummyPriceSig} from "./utils/SignatureUtils"
+import {ForceClosePositionValidator} from "./models/validators/ForceClosePositionValidator"
+import {calculateExpectedAvgPriceForForceClose, calculateExpectedClosePriceForForceClose} from "./utils/PriceUtils"
+import type { QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
+import { loadFixture, time } from "./helpers/network-helpers"
+import { expect } from "chai"
+import { toUtf8Bytes} from "ethers"
 
-import { ForceClosePositionValidator } from "./models/validators/ForceClosePositionValidator";
-
+import { initializeFixture } from "./Initialize.fixture"
+import { PartyBForceCloseState, PositionType, QuoteStatus, UPNLSettlementState } from "./models/Enums"
+import type { BalanceInfo } from "./models/Hedger"
+import { Hedger } from "./models/Hedger"
+import { RunContext } from "./models/RunContext"
+import { User } from "./models/User"
+import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+import { ForceClosePositionValidator } from "./models/validators/ForceClosePositionValidator"
+import { decimal, getBlockTimestamp, getQuoteQuantity, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common"
 import {
-    decimal,
-    unDecimal,
-    getBlockTimestamp,
-    getQuoteQuantity,
-    getTotalLockedValuesForQuoteIds,
-    getTradingFeeForQuotes,
-} from "./utils/Common";
-
-import {
-    calculateExpectedAvgPriceForForceClose,
-    calculateExpectedClosePriceForForceClose,
-    calculateExpectedClosePriceForForceCloseWithAvg,
-} from "./utils/PriceUtils";
-
-import {
-    getDummyCrossSettlementSig,
-    getDummyHighLowPriceSig,
-    getDummyMasterAccountSettlementSig,
-    getDummyPriceSig,
-} from "./utils/SignatureUtils";
-
-import { migratePartyBToMaster } from "./utils/MasterAccount";
-
+	calculateExpectedAvgPriceForForceClose,
+	calculateExpectedClosePriceForForceClose,
+	calculateExpectedClosePriceForForceCloseWithAvg,
+} from "./utils/PriceUtils"
+import { getDummyCrossSettlementSig, getDummyHighLowPriceSig, getDummyMasterAccountSettlementSig, getDummyPriceSig } from "./utils/SignatureUtils"
+import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
+import {migratePartyBToMaster} from "./utils/MasterAccount.js";
 
 export function shouldBehaveLikeForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
