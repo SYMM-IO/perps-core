@@ -79,26 +79,29 @@ library ForceActionsFacetImpl {
 
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
 		detail.timestamp = block.timestamp;
-		detail.partyBAvailableAfterClose = partyBAvailableBalance;
 		detail.closePrice = closePrice;
+		detail.upnlPartyB = sig.upnlPartyB;
+		detail.currentPrice = sig.currentPrice;
 		detail.inProgress = true;
 	}
 
-	function finalizeMasterAccountForceClose(uint256 quoteId) internal returns (bool succeed) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
+	function finalizeMasterAccountForceClose(uint256 quoteId) internal returns (bool isSolvent) {
+		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
 
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
-		succeed = LibForceActions.closeQuote(quoteId, detail.closePrice, detail.partyBAvailableAfterClose, 0);
+		(isSolvent,  detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteMasterAccountWithRespectToUpnl(
+			quoteId,
+			detail.currentPrice,
+			detail.upnlPartyB,
+			detail.closePrice
+		);
 
-		if (succeed) {
-			detail.partyBState = PartyBForceCloseState.SOLVED;
-			detail.inProgress = false;
-		} else {
-			detail.partyBState = PartyBForceCloseState.INSOLVENT;
-		}
+		detail.partyBState = isSolvent ? PartyBForceCloseState.SOLVENT : PartyBForceCloseState.INSOLVENT;
+		detail.inProgress = false;
 		detail.timestamp = block.timestamp;
+		detail.upnlPartyB = 0;
+		detail.currentPrice = 0;
 	}
 
 	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice, int256 upnlPartyB, bool succeed) {
@@ -150,10 +153,8 @@ library ForceActionsFacetImpl {
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
-		LibMuonCrossSettlement.verifyMasterAccountSettlement(sig);
 		(newPartyAsAllocatedBalances, partyAs) = LibSettlement.settleUpnlMasterAccount(sig, updatedPrices);
 		detail.timestamp = block.timestamp;
 	}

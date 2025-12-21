@@ -1,10 +1,10 @@
-import { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
-import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
-import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
-import { SingleUpnlAndPriceSigStruct } from "../../src/types/contracts/facets/PartyA/PartyAFacet"
-import { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
-import { QuotePriceSigStruct } from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
-import {
+import type { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
+import type { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
+import type { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
+import type { SingleUpnlAndPriceSigStruct } from "../../src/types/contracts/facets/PartyA/PartyAFacet"
+import type { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
+import type { QuotePriceSigStruct } from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
+import type {
 	DeferredLiquidationSigStruct,
 	MasterAccountQuoteSettlementDataStruct,
 	MasterAccountQuoteSettlementDataStructOutput,
@@ -14,12 +14,12 @@ import {
 	SingleUpnlSigStruct,
 } from "../../src/types/contracts/interfaces/ISymmio"
 import { getBlockTimestamp } from "./Common"
-import { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
-import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
-import { DeferredLiquidationSigStruct, PairUpnlAndPriceSigStruct, SingleUpnlSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
+import type { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
+import type { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
+import type { DeferredLiquidationSigStruct, PairUpnlAndPriceSigStruct, SingleUpnlSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
 import { ethers } from "../helpers/hardhat-connection"
-import { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
-import { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
+import type { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
+import type { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
 
 export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUpnlSigStruct> {
 	return {
