@@ -120,15 +120,19 @@ library PartyBPositionActionsFacetImpl {
 		uint256[] calldata quoteIds,
 		uint256 ratio,
 		uint256 price
-	) external returns (uint256[] memory filledAmounts, uint256 closedAmount) {
+	) internal returns (uint256[] memory filledAmounts, uint256 closedAmount) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		require(ratio <= 1e18, "PartyBFacet: Low ratio");
-		filledAmounts = new uint256[](quoteIds.length);
-		for (uint256 i = 0; i < quoteIds.length; i++) {
+		uint256 len = quoteIds.length;
+		filledAmounts = new uint256[](len);		
+		uint256 firstSymbolId;
+		for (uint256 i = 0; i < len; ) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
-			if (i > 0) {
-				require(quote.symbolId == quoteLayout.quotes[quoteIds[i - 1]].symbolId, "PartyBFacet: Symbols not match");
+			if (i == 0) {
+				firstSymbolId = quote.symbolId;
+			} else {
+				require(quote.symbolId == firstSymbolId, "PartyBFacet: Symbols not match");
 			}
 			if (quote.quoteStatus == QuoteStatus.OPENED || quote.quoteStatus == QuoteStatus.CLOSE_PENDING) {
 				uint256 filledAmount = (LibQuote.quoteOpenAmount(quote) * ratio) / 1e18;
@@ -139,8 +143,9 @@ library PartyBPositionActionsFacetImpl {
 				LibQuote.closeQuote(quote, filledAmount, price);
 				closedAmount += filledAmount;
 				filledAmounts[i] = filledAmount;
-			} else {
-				filledAmounts[i] = 0;
+			}
+			unchecked {
+				++i;
 			}
 		}
 	}

@@ -120,20 +120,26 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	function adlClose(uint256[] calldata quoteIds, uint256 ratio, uint256 price) external returns (uint256) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		(uint256[] memory filledAmounts, uint256 closedAmount) = PartyBPositionActionsFacetImpl.adlClose(quoteIds, ratio, price);
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			if (filledAmounts[i] > 0) {
-				Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+		uint256 len = quoteIds.length;
+		for (uint256 i = 0; i < len; ) {
+			uint256 filledAmount = filledAmounts[i];
+			if (filledAmount > 0) {
+				uint256 quoteId = quoteIds[i];
+				Quote storage quote = quoteLayout.quotes[quoteId];
 				emit FillCloseRequest(
-					quoteIds[i],
+					quoteId,
 					quote.partyA,
 					quote.partyB,
-					filledAmounts[i],
+					filledAmount,
 					price,
 					quote.quoteStatus,
-					quoteLayout.closeIds[quoteIds[i]]
+					quoteLayout.closeIds[quoteId]
 				);
-				emit FillCloseRequest(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], price, quote.quoteStatus); // For backward compatibility, will be removed in future
-				emit ADLClose(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], price);
+				emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, price, quote.quoteStatus); // For backward compatibility, will be removed in future
+				emit ADLClose(quoteId, quote.partyA, quote.partyB, filledAmount, price);
+			}
+			unchecked {
+				++i;
 			}
 		}
 		return closedAmount;
