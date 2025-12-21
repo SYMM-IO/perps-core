@@ -23,7 +23,7 @@ import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./m
 import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator"
 import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator"
 import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator"
-import { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
 import { ethers, toUtf8Bytes } from "ethers";
 
 export function shouldBehaveLikeClosePosition(): void {

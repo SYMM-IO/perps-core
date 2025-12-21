@@ -15,7 +15,7 @@ import {getPrice} from "../utils/PriceUtils"
 import {pick, randomBigNumber, randomBigNumberRatio} from "../utils/RandomUtils"
 import {roundToPrecision, safeDiv} from "../utils/SafeMath"
 import {getDummySingleUpnlAndPriceSig} from "../utils/SignatureUtils"
-import {SymbolStructOutput} from "../../src/types/contracts/facets/Control/ControlFacet"
+import type { SymbolStructOutput} from "../../src/types/contracts/facets/Control/ControlFacet"
 import {Action, actionNamesMap, ActionWrapper, expandActions, userActionsMap} from "./Actions"
 import {OrderType, PositionType, QuoteStatus} from "./Enums"
 import {ManagedError} from "./ManagedError"
@@ -31,7 +31,7 @@ import {
 import {CancelQuoteValidator, CancelQuoteValidatorBeforeOutput} from "./validators/CancelQuoteValidator"
 import {CloseRequestValidator, CloseRequestValidatorBeforeOutput} from "./validators/CloseRequestValidator"
 import {QuoteCheckpoint} from "./quoteCheckpoint"
-import {QuoteStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
 
 export class UserController {
 	private readonly context: RunContext

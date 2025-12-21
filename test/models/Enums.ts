@@ -93,6 +93,6 @@ export enum UPNLSettlementState {
 export enum PartyBForceCloseState {
 	NONE,
 	INSOLVENT,
-	SOLVED,
+	SOLVENT,
 	LIQUIDATED,
 }

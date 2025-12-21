@@ -2,7 +2,7 @@ import { expect } from "chai"
 import { toUtf8Bytes } from "ethers"
 import {loadFixture, time} from "./helpers/network-helpers"
 
-import {
+import type {
 	HighLowPriceSigStruct,
 	MasterAccountQuoteSettlementDataStructOutput,
 	MasterAccountSettlementSigStruct,
@@ -36,9 +36,9 @@ import {limitCloseRequestBuilder} from "./models/requestModels/CloseRequest"
 import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
 import {decimal, getBlockTimestamp, getQuoteQuantity,} from "./utils/Common"
 import {getDummyHighLowPriceSig, getDummySettlementSig} from "./utils/SignatureUtils"
-import {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
 import {limitOpenRequestBuilder} from "./models/requestModels/OpenRequest"
-import {QuoteSettlementDataStructOutput} from "../src/types/contracts/facets/Settlement/ISettlementFacet"
+import type { QuoteSettlementDataStructOutput} from "../src/types/contracts/facets/Settlement/ISettlementFacet"
 import {expect} from "chai"
 
 export function shouldBehaveLikeSettleAndForceClosePosition(): void {

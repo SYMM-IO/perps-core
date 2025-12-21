@@ -8,7 +8,7 @@ import { Hedger } from "../Hedger"
 import { RunContext } from "../RunContext"
 import { BalanceInfo, User } from "../User"
 import { TransactionValidator } from "./TransactionValidator"
-import { QuoteStructOutput } from "../../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../../../src/types/contracts/interfaces/ISymmio"
 
 export type ForceClosePositionValidatorBeforeArg = {
 	user: User
