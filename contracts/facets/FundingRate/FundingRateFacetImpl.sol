@@ -53,6 +53,7 @@ library FundingRateFacetImpl {
 		// Process each position
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			uint256 oldOpenedPrice = quote.openedPrice;
 
 			// Validate quote ownership and status
 			require(quote.partyA == partyA, "ChargeFundingFacet: Invalid quote");
@@ -127,6 +128,8 @@ library FundingRateFacetImpl {
 				partyAAvailableBalance += int256((LibQuote.quoteOpenAmount(quote) * priceAdjustment) / 1e18);
 				partyBAvailableBalance -= int256((LibQuote.quoteOpenAmount(quote) * priceAdjustment) / 1e18);
 			}
+
+			LibQuote.updatePartyBOpenPositionNotional(quote, oldOpenedPrice);
 
 			// Mark this epoch as paid
 			quote.lastFundingPaymentTimestamp = paidTimestamp;

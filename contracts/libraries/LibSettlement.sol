@@ -45,6 +45,7 @@ library LibSettlement {
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			QuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
+			uint256 oldOpenedPrice = quote.openedPrice;
 			require(quote.partyA == partyA, "LibSettlement: PartyA is invalid");
 			require(
 				quote.quoteStatus == QuoteStatus.OPENED ||
@@ -80,6 +81,7 @@ library LibSettlement {
 					1e18;
 			}
 			quote.openedPrice = updatedPrices[i];
+			LibQuote.updatePartyBOpenPositionNotional(quote, oldOpenedPrice);
 		}
 
 		int256 totalSettlementAmount;
@@ -158,6 +160,7 @@ library LibSettlement {
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			MasterAccountQuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
+			uint256 oldOpenedPrice = quote.openedPrice;
 
 			require(settleSig.partyB == quote.partyB, "LibSettlement: Invalid quote");
 			require(
@@ -189,6 +192,7 @@ library LibSettlement {
 
 			// Update quote's opened price
 			quote.openedPrice = updatedPrices[i];
+			LibQuote.updatePartyBOpenPositionNotional(quote, oldOpenedPrice);
 		}
 
 		// Check solvency of all Party As before proceeding with settlements
