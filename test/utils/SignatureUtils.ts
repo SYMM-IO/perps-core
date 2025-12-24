@@ -1,9 +1,9 @@
-import type { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
-import type { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
-import type { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
-import type { SingleUpnlAndPriceSigStruct } from "../../src/types/contracts/facets/PartyA/PartyAFacet"
-import type { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
-import type { QuotePriceSigStruct } from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
+import type { CrossLiquidationSigStruct } from "../../src/types/facets/ClearingHouse/ClearingHouseFacet"
+import type { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet"
+import type { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet"
+import type { SingleUpnlAndPriceSigStruct } from "../../src/types/facets/PartyA/PartyAFacet"
+import type { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/facets/Settlement/ISettlementFacet"
+import type { QuotePriceSigStruct } from "../../src/types/facets/liquidation/LiquidationFacet"
 import type {
 	DeferredLiquidationSigStruct,
 	MasterAccountQuoteSettlementDataStruct,
@@ -12,14 +12,9 @@ import type {
 	MasterAccountSettlementSigStructOutput,
 	PairUpnlAndPriceSigStruct,
 	SingleUpnlSigStruct,
-} from "../../src/types/contracts/interfaces/ISymmio"
-import { getBlockTimestamp } from "./Common"
-import type { PairUpnlSigStructOutput } from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
-import type { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
-import type { DeferredLiquidationSigStruct, PairUpnlAndPriceSigStruct, SingleUpnlSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
+} from "../../src/types/interfaces/ISymmio"
 import { ethers } from "../helpers/hardhat-connection"
-import type { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
-import type { CrossLiquidationSigStruct } from "../../src/types/contracts/facets/ClearingHouse/ClearingHouseFacet"
+import { getBlockTimestamp } from "./Common"
 
 export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUpnlSigStruct> {
 	return {

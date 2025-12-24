@@ -10,7 +10,7 @@ import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
 import {decimal, pausePartyB,} from "./utils/Common"
 import {emergencyCloseRequestBuilder} from "./models/requestModels/EmergencyCloseRequest"
 import {EmergencyCloseRequestValidator} from "./models/validators/EmergencyCloseRequestValidator"
-import type {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio.js"
+import type {QuoteStructOutput} from "../src/types/interfaces/ISymmio"
 
 export function shouldBehaveLikeEmergencyClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger

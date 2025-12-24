@@ -1,5 +1,5 @@
 import {expect} from "chai"
-import type { BridgeTransactionStructOutput} from "../../../src/types/contracts/interfaces/ISymmio"
+import type { BridgeTransactionStructOutput} from "../../../src/types/interfaces/ISymmio"
 import {logger} from "../../utils/LoggerUtils"
 import {BridgeTransactionStatus} from "../Enums"
 import {RunContext} from "../RunContext"

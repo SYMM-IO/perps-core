@@ -1,5 +1,5 @@
 import {expect} from "chai"
-import type { QuoteStructOutput} from "../../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput} from "../../../src/types/interfaces/ISymmio"
 import {logger} from "../../utils/LoggerUtils"
 import {QuoteStatus} from "../Enums"
 import {Hedger} from "../Hedger"

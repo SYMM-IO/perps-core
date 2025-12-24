@@ -24,7 +24,7 @@ import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./m
 import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator.js"
 import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator.js"
 import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
-import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio.js"
+import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio"
 
 
 export function shouldBehaveLikeClosePosition(): void {

@@ -9,7 +9,7 @@ import type {
 	QuoteSettlementDataStructOutput,
 	QuoteStructOutput,
 	SettlementSigStruct,
-} from "../src/types/contracts/interfaces/ISymmio"
+} from "../src/types/interfaces/ISymmio"
 import { initializeFixture } from "./Initialize.fixture"
 import { PositionType, QuoteStatus } from "./models/Enums"
 import { Hedger } from "./models/Hedger"

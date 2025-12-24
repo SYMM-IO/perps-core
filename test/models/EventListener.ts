@@ -25,7 +25,7 @@ import type {
 	SendQuoteEvent,
 	UnlockQuoteEvent,
 	WithdrawEvent
-} from "../../src/types/contracts/interfaces/ISymmio"
+} from "../../src/types/interfaces/ISymmio"
 
 export class EventListener {
 	queues: Map<QuoteStatus, Subject<bigint>> = new Map([

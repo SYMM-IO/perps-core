@@ -1,32 +1,9 @@
-import {expect} from "chai"
-
-import {initializeFixture} from "./Initialize.fixture"
-import {ethers} from "./helpers/hardhat-connection"
-import {toUtf8Bytes} from "ethers"
-import {PositionType, QuoteStatus} from "./models/Enums"
-import type { BalanceInfo } from "./models/Hedger"
-import { Hedger } from "./models/Hedger"
-import {RunContext} from "./models/RunContext"
-import {User} from "./models/User"
-import {limitCloseRequestBuilder, marketCloseRequestBuilder} from "./models/requestModels/CloseRequest"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
-import {
-	decimal,
-	getBlockTimestamp,
-	getQuoteQuantity,
-	getTotalLockedValuesForQuoteIds,
-	getTradingFeeForQuotes,
-	unDecimal,
-} from "./utils/Common"
-import {getDummyHighLowPriceSig, getDummyPriceSig} from "./utils/SignatureUtils"
-import {ForceClosePositionValidator} from "./models/validators/ForceClosePositionValidator"
-import {calculateExpectedAvgPriceForForceClose, calculateExpectedClosePriceForForceClose} from "./utils/PriceUtils"
-import type { QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
-import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
-import { toUtf8Bytes} from "ethers"
+import { toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture"
+import { ethers } from "./helpers/hardhat-connection"
+import { loadFixture, time } from "./helpers/network-helpers"
 import { PartyBForceCloseState, PositionType, QuoteStatus, UPNLSettlementState } from "./models/Enums"
 import type { BalanceInfo } from "./models/Hedger"
 import { Hedger } from "./models/Hedger"
@@ -42,9 +19,9 @@ import {
 	calculateExpectedClosePriceForForceCloseWithAvg,
 } from "./utils/PriceUtils"
 import { getDummyCrossSettlementSig, getDummyHighLowPriceSig, getDummyMasterAccountSettlementSig, getDummyPriceSig } from "./utils/SignatureUtils"
-import type { QuoteStructOutput } from "../src/types/contracts/interfaces/ISymmio"
+import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio"
 import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
-import {migratePartyBToMaster} from "./utils/MasterAccount.js";
 
 export function shouldBehaveLikeForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
