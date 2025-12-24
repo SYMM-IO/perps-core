@@ -168,6 +168,10 @@ export async function pausePartyB(context: RunContext): Promise<void> {
 	await context.pauseControlFacet.connect(context.signers.admin).pausePartyBActions()
 }
 
+export async function pausePartyBOpenPositions(context: RunContext): Promise<void> {
+	await context.pauseControlFacet.connect(context.signers.admin).pausePartyBOpenPositions()
+}
+
 export async function pausePartyA(context: RunContext): Promise<void> {
 	await context.pauseControlFacet.connect(context.signers.admin).pausePartyAActions()
 }

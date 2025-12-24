@@ -71,6 +71,7 @@ interface IControlEvents {
 	event PauseAccounting();
 	event PausePartyAActions();
 	event PausePartyBActions();
+	event PausePartyBOpenPositions();
 	event PauseInternalTransfer();
 	event PauseExternalTransfer();
 	event ActiveEmergencyMode();
@@ -79,6 +80,7 @@ interface IControlEvents {
 	event UnpauseAccounting();
 	event UnpausePartyAActions();
 	event UnpausePartyBActions();
+	event UnpausePartyBOpenPositions();
 	event UnpauseInternalTransfer();
 	event UnpauseExternalTransfer();
 	event DeactiveEmergencyMode();

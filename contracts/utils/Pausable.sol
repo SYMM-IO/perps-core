@@ -39,6 +39,14 @@ abstract contract Pausable {
 		_;
 	}
 
+	modifier whenNotPartyBOpenPositionsPaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		require(!GlobalAppStorage.layout().partyBActionsPaused, "Pausable: PartyB actions paused");
+		require(!GlobalAppStorage.layout().partyBOpenPositionsPaused, "Pausable: PartyB open positions paused");
+		require(!MasterAccountMigrationStorage.layout().partyBMigrationPaused[LibSigner.getSigner()], "Pausable: PartyB migration paused");
+		_;
+	}
+
 	modifier whenNotInternalTransferPaused() {
 		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
 		require(!GlobalAppStorage.layout().internalTransferPaused, "Pausable: Internal transfer paused");

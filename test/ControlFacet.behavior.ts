@@ -393,6 +393,13 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("pausePartyBOpenPositions", () => {
+		it("Should pausePartyBOpenPositions successfully", async function () {
+			await expect(context.pauseControlFacet.connect(owner).pausePartyBOpenPositions()).to.not.reverted
+			expect((await context.viewFacet.pauseState()).partyBOpenPositionsPaused).to.be.equal(true)
+		})
+	})
+
 	describe("activeEmergencyMode", () => {
 		it("Should activeEmergencyMode successfully", async function () {
 			await expect(context.pauseControlFacet.connect(owner).activeEmergencyMode()).to.not.reverted
@@ -432,6 +439,13 @@ export function shouldBehaveLikeControlFacet(): void {
 		it("Should unpausePartyBActions successfully", async function () {
 			await expect(context.pauseControlFacet.connect(owner).unpausePartyBActions()).to.not.reverted
 			expect((await context.viewFacet.pauseState()).partyBActionsPaused).to.be.equal(false)
+		})
+	})
+
+	describe("unpausePartyBOpenPositions", () => {
+		it("Should unpausePartyBOpenPositions successfully", async function () {
+			await expect(context.pauseControlFacet.connect(owner).unpausePartyBOpenPositions()).to.not.reverted
+			expect((await context.viewFacet.pauseState()).partyBOpenPositionsPaused).to.be.equal(false)
 		})
 	})
 

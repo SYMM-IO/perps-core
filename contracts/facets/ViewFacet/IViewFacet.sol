@@ -129,7 +129,8 @@ interface IViewFacet {
 			bool partyAActionsPaused,
 			bool internalTransferPaused,
 			bool externalTransferPaused,
-			bool emergencyMode
+			bool emergencyMode,
+			bool partyBOpenPositionsPaused
 		);
 
 	function getPartyBEmergencyStatus(address partyB) external view returns (bool isEmergency);

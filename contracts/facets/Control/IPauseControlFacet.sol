@@ -17,6 +17,8 @@ interface IPauseControlFacet is IControlEvents {
 
 	function pausePartyBActions() external;
 
+	function pausePartyBOpenPositions() external;
+
 	function pauseInternalTransfer() external;
 
 	function pauseExternalTransfer() external;
@@ -32,6 +34,8 @@ interface IPauseControlFacet is IControlEvents {
 	function unpausePartyAActions() external;
 
 	function unpausePartyBActions() external;
+
+	function unpausePartyBOpenPositions() external;
 
 	function unpauseInternalTransfer() external;
 

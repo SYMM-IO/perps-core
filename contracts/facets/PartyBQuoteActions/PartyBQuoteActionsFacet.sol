@@ -16,7 +16,7 @@ contract PartyBQuoteActionsFacet is Accessibility, Pausable, IPartyBQuoteActions
 	 * @param quoteId The ID of the quote to be locked.
 	 * @param upnlSig The Muon signature containing the upnl value used to lock the quote.
 	 */
-	function lockQuote(uint256 quoteId, SingleUpnlSig memory upnlSig) external whenNotPartyBActionsPaused onlyPartyB notLiquidated(quoteId) {
+	function lockQuote(uint256 quoteId, SingleUpnlSig memory upnlSig) external whenNotPartyBOpenPositionsPaused onlyPartyB notLiquidated(quoteId) {
 		PartyBQuoteActionsFacetImpl.lockQuote(quoteId, upnlSig);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		emit LockQuote(quote.partyB, quoteId);

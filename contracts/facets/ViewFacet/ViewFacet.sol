@@ -579,6 +579,7 @@ contract ViewFacet is IViewFacet {
 	 * @return internalTransferPaused The internal transfer pause state.
 	 * @return externalTransferPaused The external transfer pause state.
 	 * @return emergencyMode The emergency mode state.
+	 * @return partyBOpenPositionsPaused The pause state for party B opening positions and locking quotes.
 	 */
 	function pauseState()
 		external
@@ -591,7 +592,8 @@ contract ViewFacet is IViewFacet {
 			bool partyAActionsPaused,
 			bool internalTransferPaused,
 			bool externalTransferPaused,
-			bool emergencyMode
+			bool emergencyMode,
+			bool partyBOpenPositionsPaused
 		)
 	{
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
@@ -603,7 +605,8 @@ contract ViewFacet is IViewFacet {
 			appLayout.partyAActionsPaused,
 			appLayout.internalTransferPaused,
 			appLayout.externalTransferPaused,
-			appLayout.emergencyMode
+			appLayout.emergencyMode,
+			appLayout.partyBOpenPositionsPaused
 		);
 	}
 

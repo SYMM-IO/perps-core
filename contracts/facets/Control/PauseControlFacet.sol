@@ -40,6 +40,12 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		emit PausePartyBActions();
 	}
 
+	/// @notice Restricts Party B to closing positions only; opening positions and locking quotes are blocked.
+	function pausePartyBOpenPositions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+		GlobalAppStorage.layout().partyBOpenPositionsPaused = true;
+		emit PausePartyBOpenPositions();
+	}
+
 	/// @notice Pauses internal transfers between accounts within the protocol.
 	function pauseInternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
 		GlobalAppStorage.layout().internalTransferPaused = true;
@@ -86,6 +92,12 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	function unpausePartyBActions() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().partyBActionsPaused = false;
 		emit UnpausePartyBActions();
+	}
+
+	/// @notice Restores Party B's ability to open new positions and lock quotes.
+	function unpausePartyBOpenPositions() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
+		GlobalAppStorage.layout().partyBOpenPositionsPaused = false;
+		emit UnpausePartyBOpenPositions();
 	}
 
 	/// @notice Resumes internal transfers between accounts within the protocol.

@@ -25,7 +25,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		uint256 filledAmount,
 		uint256 openedPrice,
 		PairUpnlAndPriceSig memory upnlSig
-	) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
+	) external whenNotPartyBOpenPositionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
 		uint256 newId = PartyBPositionActionsFacetImpl.openPosition(quoteId, filledAmount, openedPrice, upnlSig);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		emit OpenPosition(quoteId, quote.partyA, quote.partyB, filledAmount, openedPrice);

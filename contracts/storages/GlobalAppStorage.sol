@@ -37,6 +37,7 @@ library GlobalAppStorage {
 		mapping(bytes32 => mapping(address => bool)) roleAdmins; // role => user => admin or not bool
 		bool iterativeFundingDeprecationFlag;
 		bool accumulativeFundingRateActivationFlag;
+		bool partyBOpenPositionsPaused;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

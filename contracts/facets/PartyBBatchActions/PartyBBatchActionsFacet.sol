@@ -25,7 +25,7 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 		uint256[] memory filledAmounts,
 		uint256[] memory openedPrices,
 		PairUpnlAndPricesSig memory upnlSig
-	) external whenNotPartyBActionsPaused {
+	) external whenNotPartyBOpenPositionsPaused {
 		PartyBBatchActionsFacetImpl.openPositions(quoteIds, filledAmounts, openedPrices, upnlSig);
 	}
 

@@ -16,6 +16,7 @@ import {
 	getTradingFeeForQuotes,
 	pausePartyA,
 	pausePartyB,
+	pausePartyBOpenPositions,
 	unDecimal,
 } from "./utils/Common.js"
 import { CloseRequestValidator } from "./models/validators/CloseRequestValidator.js"
@@ -115,6 +116,16 @@ export function shouldBehaveLikeClosePosition(): void {
 	it("Should fail on paused partyA", async function () {
 		await pausePartyA(context)
 		await expect(user.requestToClosePosition(2)).to.be.revertedWith("Pausable: PartyA actions paused")
+	})
+
+	it("Should restrict PartyB to closing positions only when close-only mode is active", async function () {
+		await pausePartyBOpenPositions(context)
+
+		await expect(hedger.lockQuote(quote3JustSent.id)).to.be.revertedWith("Pausable: PartyB open positions paused")
+		await expect(hedger.openPosition(quote4LongOpened.id)).to.be.revertedWith("Pausable: PartyB open positions paused")
+
+		await user.requestToClosePosition(quote1LongOpened.id, limitCloseRequestBuilder().build())
+		await expect(hedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().build())).to.not.be.reverted
 	})
 
 	it("Should fail on invalid quoteId", async function () {
