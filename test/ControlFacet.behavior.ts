@@ -331,9 +331,24 @@ export function shouldBehaveLikeControlFacet(): void {
 	})
 
 	describe("setDeallocateCooldown", () => {
-		it("Should setDeallocateCooldown successfully", async function () {
-			await expect(context.controlFacet.connect(owner).setDeallocateCooldown(BigInt("1708784117"))).to.not.be.reverted
-			expect((await context.viewFacet.coolDownsOfMA())[0]).to.equal(BigInt("1708784117"))
+		it("Should setDeallocateCooldown successfully and sync withdrawCooldownPeriod", async function () {
+			const cooldownValue = BigInt("100")
+			await expect(context.controlFacet.connect(owner).setDeallocateCooldown(cooldownValue))
+				.to.emit(context.controlFacet, "SetDeallocateCooldown")
+				.and.to.emit(context.controlFacet, "SetWithdrawCooldownPeriod")
+				.withArgs(120, cooldownValue)
+			expect((await context.viewFacet.coolDownsOfMA())[0]).to.equal(cooldownValue)
+		})
+	})
+
+	describe("setWithdrawCooldownPeriod", () => {
+		it("Should setWithdrawCooldownPeriod successfully and sync deallocateCooldown", async function () {
+			const cooldownValue = BigInt("100")
+			await expect(context.controlFacet.connect(owner).setWithdrawCooldownPeriod(cooldownValue))
+				.to.emit(context.controlFacet, "SetWithdrawCooldownPeriod")
+				.withArgs(120, cooldownValue)
+				.and.to.emit(context.controlFacet, "SetDeallocateCooldown")
+			expect((await context.viewFacet.coolDownsOfMA())[0]).to.equal(cooldownValue)
 		})
 	})
 

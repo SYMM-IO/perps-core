@@ -306,10 +306,10 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	}
 
 	/// @notice Sets the waiting period after deallocation before funds can be withdrawn. Allows time for any problem resolution.
+	/// @dev Also updates the withdraw cooldown period to maintain consistency.
 	/// @param deallocateCooldown The cooldown duration in seconds after deallocation before withdrawal is permitted.
 	function setDeallocateCooldown(uint256 deallocateCooldown) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
-		emit SetDeallocateCooldown(MAStorage.layout().deallocateCooldown, deallocateCooldown);
-		MAStorage.layout().deallocateCooldown = deallocateCooldown;
+		_updateWithdrawAndDeallocateCooldown(deallocateCooldown);
 	}
 
 	/// @notice Sets the waiting period before Party A can force cancel a pending quote that Party B hasn't responded to.
@@ -495,16 +495,6 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		emit SetADLEnabled(partyB, enabled);
 	}
 
-	/// @notice Sets a unified cooldown period for both deallocation and withdrawal operations simultaneously.
-	/// @param _withdrawCooldownPeriod The cooldown duration in seconds applied to both deallocate and withdraw operations.
-	function setMaxDeallocateWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
-		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;
-		emit SetWithdrawCooldownPeriod(_withdrawCooldownPeriod);
-		emit SetDeallocateCooldown(MAStorage.layout().deallocateCooldown, _withdrawCooldownPeriod);
-		MAStorage.layout().deallocateCooldown = _withdrawCooldownPeriod;
-	}
-
 	/// @notice Sets the maximum number of partial withdrawals allowed. Withdrawals can be split to manage liquidity.
 	/// @param _maxWithdrawParts The maximum number of parts a single withdrawal can be divided into.
 	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
@@ -514,11 +504,19 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	}
 
 	/// @notice Sets the waiting period after initiating a withdrawal before funds can be claimed. Provides time for security checks.
+	/// @dev Also updates the deallocate cooldown to maintain consistency.
 	/// @param _withdrawCooldownPeriod The cooldown duration in seconds before withdrawal can be completed.
 	function setWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
+		_updateWithdrawAndDeallocateCooldown(_withdrawCooldownPeriod);
+	}
+
+	function _updateWithdrawAndDeallocateCooldown(uint256 newValue) internal {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-		withdrawLayout.withdrawCooldownPeriod = _withdrawCooldownPeriod;
-		emit SetWithdrawCooldownPeriod(_withdrawCooldownPeriod);
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		emit SetWithdrawCooldownPeriod(withdrawLayout.withdrawCooldownPeriod, newValue);
+		emit SetDeallocateCooldown(maLayout.deallocateCooldown, newValue);
+		withdrawLayout.withdrawCooldownPeriod = newValue;
+		maLayout.deallocateCooldown = newValue;
 	}
 
 	/// @notice Registers a virtual provider that can facilitate virtual deposits/withdrawals without actual token transfers.

@@ -110,7 +110,7 @@ interface IControlEvents {
 	event SetEntityMetadata(address entity, EntityMetadata metadata);
 	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
 	event SetMaxWithdrawParts(uint256 maxWithdrawParts);
-	event SetWithdrawCooldownPeriod(uint256 withdrawCooldownPeriod);
+	event SetWithdrawCooldownPeriod(uint256 oldWithdrawCooldownPeriod, uint256 newWithdrawCooldownPeriod);
 	event RegisterVirtualProvider(address provider);
 	event UnregisterVirtualProvider(address provider);
 	event RegisterExpressProvider(address provider);

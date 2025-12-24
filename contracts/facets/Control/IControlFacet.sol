@@ -114,8 +114,6 @@ interface IControlFacet is IControlEvents {
 
 	function setMaxPartyAConnectionLimit(uint256 maxLimit) external;
 
-	function setMaxDeallocateWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external;
-
 	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external;
 
 	function setWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external;
