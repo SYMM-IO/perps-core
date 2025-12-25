@@ -108,6 +108,7 @@ def main():
         ("accountHub/SymmioPartyB.sol", "SymmioPartyB", "partyB"),
         ("helpers/InstantLayer.sol", "InstantLayer", "instantLayer"),
         ("accountHub/AccountHub.sol", "AccountHub", "accountHub"),
+        ("accountHub/AccountHubLens.sol", "AccountHubLens", "accountHubLens"),
         ("accountHub/AffiliateHub.sol", "AffiliateHub", "affiliateHub"),
         ("accountHub/AccountManager.sol", "AccountManager", "accountManager"),
         ("multiAccount/MultiAccount.sol", "MultiAccount", "multiAccount"),

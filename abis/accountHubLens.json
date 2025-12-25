@@ -1,0 +1,506 @@
+[
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "_accountHub",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "constructor"
+    },
+    {
+        "inputs": [],
+        "name": "accountHub",
+        "outputs": [
+            {
+                "internalType": "contract IAccountHubInternal",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "registrant",
+                "type": "address"
+            },
+            {
+                "internalType": "string",
+                "name": "name",
+                "type": "string"
+            }
+        ],
+        "name": "generateAccountManagerAddress",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "enum IAccountHub.VirtualAccountIsolationType",
+                "name": "isolationType",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getActiveVAByKey",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "getSubAccount",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "owner",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isExists",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "singleVAMode",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "affiliate",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "symmioCore",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "enum IAccountHub.SubAccountIsolationType",
+                        "name": "isolationType",
+                        "type": "uint8"
+                    }
+                ],
+                "internalType": "struct IAccountHub.SubAccountDetail",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            }
+        ],
+        "name": "getSubAccountVirtualNonce",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            }
+        ],
+        "name": "getSubAccountsCountOfUser",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getUserSubAccounts",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "owner",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isExists",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "singleVAMode",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "affiliate",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "symmioCore",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "enum IAccountHub.SubAccountIsolationType",
+                        "name": "isolationType",
+                        "type": "uint8"
+                    }
+                ],
+                "internalType": "struct IAccountHub.SubAccountDetail[]",
+                "name": "details",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getUserSubAccountsAddresses",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "getVirtualAccount",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "parentAccount",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isExists",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "enum IAccountHub.VirtualAccountIsolationType",
+                        "name": "isolationType",
+                        "type": "uint8"
+                    }
+                ],
+                "internalType": "struct IAccountHub.VirtualAccountDetail",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getVirtualAccountQuoteIds",
+        "outputs": [
+            {
+                "internalType": "uint256[]",
+                "name": "",
+                "type": "uint256[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getVirtualAccountsAddressesOfSubAccount",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            }
+        ],
+        "name": "getVirtualAccountsCountOfSubAccount",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getVirtualAccountsOfSubAccount",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "parentAccount",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isExists",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "enum IAccountHub.VirtualAccountIsolationType",
+                        "name": "isolationType",
+                        "type": "uint8"
+                    }
+                ],
+                "internalType": "struct IAccountHub.VirtualAccountDetail[]",
+                "name": "details",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "enum IAccountHub.VirtualAccountIsolationType",
+                "name": "isolationType",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "predictNextVirtualAccountAddress",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]
