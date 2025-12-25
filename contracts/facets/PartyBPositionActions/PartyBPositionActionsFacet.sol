@@ -118,7 +118,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	 * @param ratio The ratio of open amounts to be closed.
 	 * @param price The closed price for the positions.
 	 */
-	function adlClose(uint256[] calldata quoteIds, uint256 ratio, uint256 price) external returns (uint256) {
+	function adlClose(uint256[] calldata quoteIds, uint256 ratio, uint256 price) external whenNotPartyBActionsPaused returns (uint256) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		uint256 len = quoteIds.length;
 
@@ -146,6 +146,10 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 				if (oldStatuses[i] == QuoteStatus.CLOSE_PENDING) {
 					emit RequestToCancelCloseRequest(quote.partyA, quote.partyB, quoteId, QuoteStatus.CANCEL_CLOSE_PENDING, oldCloseIds[i]);
 					emit RequestToCancelCloseRequest(quote.partyA, quote.partyB, quoteId, QuoteStatus.CANCEL_CLOSE_PENDING); // For backward compatibility
+					emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED, oldCloseIds[i]);
+					emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED); // For backward compatibility
+				}
+				else if (oldStatuses[i] == QuoteStatus.CANCEL_CLOSE_PENDING) {
 					emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED, oldCloseIds[i]);
 					emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED); // For backward compatibility
 				}
