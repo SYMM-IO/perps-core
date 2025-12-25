@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../libraries/muon/LibMuonPartyB.sol";
 import "../../libraries/LibSolvency.sol";
 import "../../libraries/LibPartyBPositionsActions.sol";
+import "../../storages/MAStorage.sol";
 
 library PartyBPositionActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -114,5 +115,44 @@ library PartyBPositionActionsFacetImpl {
 		accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
 		accountLayout.partyANonces[quote.partyA] += 1;
 		LibQuote.closeQuote(quote, filledAmount, upnlSig.price);
+	}
+
+	function adlClose(
+		uint256[] calldata quoteIds,
+		uint256 ratio,
+		uint256 price
+	) internal returns (uint256[] memory filledAmounts, uint256 closedAmount) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		require(ratio > 0 && ratio <= 1e18, "PartyBFacet: Invalid ratio");
+		uint256 len = quoteIds.length;
+		filledAmounts = new uint256[](len);		
+		uint256 firstSymbolId;
+		for (uint256 i = 0; i < len; ) {
+			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+
+			require(quote.partyB == msg.sender,"PartyBFacet: Sender isn't partyB of quote");
+			require(!MAStorage.layout().liquidationStatus[quote.partyA], "PartyBFacet: PartyA is liquidated");
+			require(!MAStorage.layout().partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
+			
+			if (i == 0) {
+				firstSymbolId = quote.symbolId;
+			} else {
+				require(quote.symbolId == firstSymbolId, "PartyBFacet: Symbols not match");
+			}
+			if (quote.quoteStatus == QuoteStatus.OPENED || quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
+				uint256 filledAmount = (LibQuote.quoteOpenAmount(quote) * ratio) / 1e18;
+				quote.quantityToClose = filledAmount;
+				quote.requestedClosePrice = price;
+				accountLayout.partyBNonces[quote.partyB][quote.partyA] += 1;
+				accountLayout.partyANonces[quote.partyA] += 1;
+				LibQuote.closeQuote(quote, filledAmount, price);
+				closedAmount += filledAmount;
+				filledAmounts[i] = filledAmount;
+			}
+			unchecked {
+				++i;
+			}
+		}
 	}
 }

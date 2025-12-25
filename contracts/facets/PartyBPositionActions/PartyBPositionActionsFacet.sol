@@ -6,11 +6,11 @@ pragma solidity >=0.8.18;
 
 import "./PartyBPositionActionsFacetImpl.sol";
 import "./IPartyBPositionActionsFacet.sol";
+import "../PartyA/IPartyAEvents.sol";
 import "../../utils/Accessibility.sol";
 import "../../utils/Pausable.sol";
 
-contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet {
-
+contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet, IPartyAEvents {
 	/**
 	 * @notice Opens a position for the specified quote. The opened position's size can't be excessively small or large.
 	 * 			If it's like 99/100, the leftover will be a minuscule quote that falls below the minimum acceptable quote value.
@@ -110,5 +110,96 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 			quoteLayout.closeIds[quoteId]
 		);
 		emit EmergencyClosePosition(quoteId, quote.partyA, quote.partyB, filledAmount, upnlSig.price, quote.quoteStatus); // For backward compatibility, will be removed in future
+	}
+
+	/**
+	 * @notice close the positions with specidied price to ADL on same symbol.
+	 * @param quoteIds The ID of the quotes for which the ADL is happening.
+	 * @param ratio The ratio of open amounts to be closed.
+	 * @param price The closed price for the positions.
+	 */
+	function adlClose(uint256[] calldata quoteIds, uint256 ratio, uint256 price) external whenNotPartyBActionsPaused returns (uint256) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256 len = quoteIds.length;
+
+		// Capture old statuses and closeIds before the impl call modifies them
+		QuoteStatus[] memory oldStatuses = new QuoteStatus[](len);
+		uint256[] memory oldCloseIds = new uint256[](len);
+		for (uint256 i = 0; i < len; ) {
+			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+			oldStatuses[i] = quote.quoteStatus;
+			oldCloseIds[i] = quoteLayout.closeIds[quoteIds[i]];
+			unchecked {
+				++i;
+			}
+		}
+
+		(uint256[] memory filledAmounts, uint256 closedAmount) = PartyBPositionActionsFacetImpl.adlClose(quoteIds, ratio, price);
+
+		for (uint256 i = 0; i < len; ) {
+			uint256 filledAmount = filledAmounts[i];
+			if (filledAmount > 0) {
+				uint256 quoteId = quoteIds[i];
+				Quote storage quote = quoteLayout.quotes[quoteId];
+
+				// If quote was CLOSE_PENDING, emit cancel events for the old close request
+				if (oldStatuses[i] == QuoteStatus.CLOSE_PENDING) {
+					emit RequestToCancelCloseRequest(quote.partyA, quote.partyB, quoteId, QuoteStatus.CANCEL_CLOSE_PENDING, oldCloseIds[i]);
+					emit RequestToCancelCloseRequest(quote.partyA, quote.partyB, quoteId, QuoteStatus.CANCEL_CLOSE_PENDING); // For backward compatibility
+					emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED, oldCloseIds[i]);
+					emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED); // For backward compatibility
+				}
+				else if (oldStatuses[i] == QuoteStatus.CANCEL_CLOSE_PENDING) {
+					emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED, oldCloseIds[i]);
+					emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED); // For backward compatibility
+				}
+
+				// Generate new closeId for the ADL close request
+				uint256 newCloseId = ++quoteLayout.lastCloseId;
+				quoteLayout.closeIds[quoteId] = newCloseId;
+
+				// Emit RequestToClosePosition for the ADL-initiated close
+				emit RequestToClosePosition(
+					quote.partyA,
+					quote.partyB,
+					quoteId,
+					price,
+					filledAmount,
+					OrderType.MARKET,
+					block.timestamp,
+					QuoteStatus.CLOSE_PENDING,
+					newCloseId
+				);
+				emit RequestToClosePosition(
+					quote.partyA,
+					quote.partyB,
+					quoteId,
+					price,
+					filledAmount,
+					OrderType.MARKET,
+					block.timestamp,
+					QuoteStatus.CLOSE_PENDING
+				); // For backward compatibility
+
+				// Emit FillCloseRequest with the new closeId
+				emit FillCloseRequest(
+					quoteId,
+					quote.partyA,
+					quote.partyB,
+					filledAmount,
+					price,
+					quote.quoteStatus,
+					newCloseId
+				);
+				emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, price, quote.quoteStatus); // For backward compatibility
+
+				// Emit ADLClose to mark this as an ADL action
+				emit ADLClose(quoteId, quote.partyA, quote.partyB, filledAmount, price, newCloseId);
+			}
+			unchecked {
+				++i;
+			}
+		}
+		return closedAmount;
 	}
 }
