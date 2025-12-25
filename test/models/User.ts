@@ -15,9 +15,9 @@ import {
 } from "./requestModels/QuoteRequest";
 import { runTx } from "../utils/TxUtils"
 import { getDummyLiquidationSig } from "../utils/SignatureUtils"
-import { LiquidationSigStruct } from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
-import type { QuoteStructOutput, SettlementSigStruct } from "../../src/types/contracts/interfaces/ISymmio"
-import { HighLowPriceSigStruct } from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
+import { LiquidationSigStruct } from "../../src/types/facets/liquidation/LiquidationFacet"
+import type { QuoteStructOutput, SettlementSigStruct } from "../../src/types/interfaces/ISymmio"
+import { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 import { PartyEntity } from "./partyEntitiy.js"
 

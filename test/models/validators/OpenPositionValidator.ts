@@ -1,7 +1,7 @@
 import {BigNumber as BN} from "bignumber.js"
 import {expect} from "chai"
 
-import type { QuoteStructOutput} from "../../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput} from "../../../src/types/interfaces/ISymmio"
 import {
 	getTotalPartyALockedValuesForQuotes,
 	getTotalPartyBLockedValuesForQuotes,

@@ -5,7 +5,7 @@ import {OrderType, QuoteStatus} from "../models/Enums"
 import {RunContext} from "../models/RunContext"
 import {safeDiv} from "./SafeMath"
 import {network} from "../helpers/hardhat-connection"
-import type { QuoteStructOutput, SymbolStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput, SymbolStructOutput} from "../../src/types/interfaces/ISymmio"
 
 const defaultSerializer = new JsonSerializer()
 

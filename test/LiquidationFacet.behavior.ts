@@ -18,7 +18,7 @@ import {
 import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
 import { ethers, toUtf8Bytes } from "ethers"
-import type { QuoteStruct } from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStruct } from "../src/types/interfaces/ISymmio"
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger

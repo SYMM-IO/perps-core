@@ -1,4 +1,4 @@
-import type { QuoteStructOutput } from "../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../../src/types/interfaces/ISymmio"
 import { decimal } from "./Common"
 import { randomBigNumber } from "./RandomUtils"
 
