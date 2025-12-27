@@ -9,7 +9,6 @@ import "../storages/AccountStorage.sol";
 import "../storages/QuoteStorage.sol";
 import "../storages/SymbolStorage.sol";
 import "./LibQuoteClose.sol";
-import "./LibQuote.sol";
 import "./LibAccount.sol";
 import "./LibSolvency.sol";
 import "./muon/LibMuonForceActions.sol";

@@ -4,13 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/muon/LibMuonForceActions.sol";
 import "../../libraries/muon/LibMuonSettlement.sol";
-import "../../libraries/muon/LibMuonCrossSettlement.sol";
 import "../../libraries/LibSettlement.sol";
-import "../../libraries/LibLiquidation.sol";
 import "../../libraries/LibForceActions.sol";
-import "../../libraries/LibSolvency.sol";
 import "../../libraries/LibAccount.sol";
 import "../../storages/QuoteStorage.sol";
 import "../../storages/AccountStorage.sol";
@@ -90,7 +86,7 @@ library ForceActionsFacetImpl {
 
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
-		(isSolvent,  detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteMasterAccountWithRespectToUpnl(
+		(isSolvent, detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteMasterAccountWithRespectToUpnl(
 			quoteId,
 			detail.currentPrice,
 			detail.upnlPartyB,
