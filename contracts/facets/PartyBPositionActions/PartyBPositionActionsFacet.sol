@@ -194,12 +194,13 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 				emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, price, quote.quoteStatus); // For backward compatibility
 
 				// Emit ADLClose to mark this as an ADL action
-				emit ADLClose(quoteId, quote.partyA, quote.partyB, filledAmount, price, newCloseId);
+				emit ADLClosePosition(quoteId, quote.partyA, quote.partyB, filledAmount, price, newCloseId);
 			}
 			unchecked {
 				++i;
 			}
 		}
+		emit ADLClose(quoteIds, ratio, price, closedAmount);
 		return closedAmount;
 	}
 }
