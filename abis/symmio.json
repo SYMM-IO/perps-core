@@ -2299,30 +2299,6 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            }
-        ],
-        "name": "allocatedBalanceOfPartyB",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
                 "name": "partyA",
                 "type": "address"
             },
@@ -2486,25 +2462,6 @@
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            }
-        ],
-        "name": "balanceOfMasterAccount",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [],
         "name": "coolDownsOfMA",
         "outputs": [
@@ -2595,7 +2552,7 @@
         "outputs": [
             {
                 "internalType": "bool",
-                "name": "accumulativeFundingRateActivationFlag",
+                "name": "",
                 "type": "bool"
             }
         ],
@@ -3069,7 +3026,7 @@
         "outputs": [
             {
                 "internalType": "bool",
-                "name": "iterativeFundingDeprecationFlag",
+                "name": "",
                 "type": "bool"
             }
         ],
@@ -3165,19 +3122,6 @@
                 "internalType": "uint256",
                 "name": "",
                 "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "getMasterAccountEnabled",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
             }
         ],
         "stateMutability": "view",
@@ -3322,19 +3266,6 @@
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "getPenaltyCollector",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [
             {
                 "internalType": "string",
@@ -3415,6 +3346,19 @@
     {
         "inputs": [],
         "name": "getSigner",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getSoftLiquidationPenaltyCollector",
         "outputs": [
             {
                 "internalType": "address",
@@ -3749,6 +3693,19 @@
             }
         ],
         "name": "isInMasterAccountMode",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "isMasterAccountEnabled",
         "outputs": [
             {
                 "internalType": "bool",
@@ -4323,9 +4280,14 @@
                 "internalType": "address",
                 "name": "partyB",
                 "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
             }
         ],
-        "name": "allocatedBalanceOfPartyBInMasterAccount",
+        "name": "allocatedBalanceOfPartyB",
         "outputs": [
             {
                 "internalType": "uint256",
@@ -4386,6 +4348,25 @@
                 "name": "",
                 "type": "uint256"
             },
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "balanceOfMasterAccount",
+        "outputs": [
             {
                 "internalType": "uint256",
                 "name": "",
