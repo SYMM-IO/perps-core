@@ -17,7 +17,7 @@ and modularity. Currently, we have 21 facets:
 6. **DiamondLoupeFacet** - Diamond introspection (EIP-2535)
 7. **LiquidationFacet** - Position liquidation logic
 8. **PartyAFacet** - PartyA (trader) operations
-9. **BridgeFacet** - Cross-chain bridge functionality
+9. **BridgeFacet** - Fast withdrawals
 10. **ViewFacet** - General read-only queries
 11. **ViewFacetSymbol** - Symbol-related queries
 12. **ViewFacetQuote** - Quote-related queries
@@ -35,13 +35,10 @@ There are also some additional second-layer contracts required by hedgers and fr
 1. **AccountHub**:
    This contract manages account creation and configuration, allowing each wallet to have multiple accounts within
    the system. Features like instant open/close and stop-loss bots require the `delegateAccess` feature.
-
 2. **AffiliateHub**:
    This contract manages affiliate relationships and fee distribution for frontend partners.
-
 3. **InstantLayer**:
    This contract enables instant trade execution and settlement features.
-
 4. **SymmioPartyB**:
    This contract enables hedgers to have multiple private keys behind their bots.
 
@@ -68,11 +65,11 @@ that need to be commented out for the tests to run without issues. This script a
 
 The deployment scripts support different log levels controlled via the `DEPLOY_LOG_LEVEL` environment variable:
 
-| Level     | Description                                                    |
-|-----------|----------------------------------------------------------------|
-| `silent`  | No deployment output (default for tests)                       |
-| `minimal` | Summary output only                                            |
-| `verbose` | Full deployment details with formatted output and separators   |
+| Level       | Description                                                  |
+| ----------- | ------------------------------------------------------------ |
+| `silent`  | No deployment output (default for tests)                     |
+| `minimal` | Summary output only                                          |
+| `verbose` | Full deployment details with formatted output and separators |
 
 Examples:
 
