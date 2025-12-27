@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import "../../libraries/muon/LibMuonPartyB.sol";
 import "../../libraries/LibQuote.sol";
 import "../../libraries/LibQuoteClose.sol";
+import "../../libraries/LibHook.sol";
 import "../../libraries/LibPartyBQuoteActions.sol";
 import "../../storages/AccountStorage.sol";
 import {LibSigner} from "../../libraries/LibSigner.sol";
@@ -73,10 +74,14 @@ library PartyBQuoteActionsFacetImpl {
 		address systemHook = accountLayout.affiliateHooks[address(0)];
 
 		if (affiliateHook != address(0)) {
-			try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+				LibHook.revertIfHookFailed(reason);
+			}
 		}
 		if (systemHook != address(0)) {
-			try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+				LibHook.revertIfHookFailed(reason);
+			}
 		}
 	}
 }

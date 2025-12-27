@@ -8,6 +8,7 @@ import "../../libraries/muon/LibMuonPartyA.sol";
 import "../../libraries/LibAccount.sol";
 import "../../libraries/LibQuote.sol";
 import "../../libraries/LibQuoteClose.sol";
+import "../../libraries/LibHook.sol";
 import "../../libraries/LibAccessibility.sol";
 import "../../libraries/SharedEvents.sol";
 import "../../storages/MAStorage.sol";
@@ -165,10 +166,14 @@ library PartyAFacetImpl {
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
 			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					LibHook.revertIfHookFailed(reason);
+				}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					LibHook.revertIfHookFailed(reason);
+				}
 			}
 		} else {
 			// Quote is locked

@@ -14,6 +14,7 @@ import "../storages/GlobalAppStorage.sol";
 import "../storages/SymbolStorage.sol";
 import "../storages/MAStorage.sol";
 import "../interfaces/ISymmioHook.sol";
+import "./LibHook.sol";
 import "./LibAccount.sol";
 
 library LibQuoteClose {
@@ -136,7 +137,9 @@ library LibQuoteClose {
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
 			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(affiliateHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					LibHook.revertIfHookFailed(reason);
+				}
 				try
 					ISymmioHook(affiliateHook).onFeeCharged(
 						quote.id,
@@ -150,7 +153,9 @@ library LibQuoteClose {
 				{} catch {}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					LibHook.revertIfHookFailed(reason);
+				}
 				try
 					ISymmioHook(systemHook).onFeeCharged(
 						quote.id,
@@ -224,10 +229,14 @@ library LibQuoteClose {
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
 			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					LibHook.revertIfHookFailed(reason);
+				}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					LibHook.revertIfHookFailed(reason);
+				}
 			}
 		} else if (quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
 			quote.statusModifyTimestamp = block.timestamp;

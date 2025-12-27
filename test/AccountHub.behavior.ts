@@ -1633,10 +1633,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(virtualAccountData.isExists).to.be.true
 				})
 
-				// Note: These tests are skipped because the beforeEach in this describe block
-				// fails with "Transaction reverted without a reason string" when trying to
-				// create a virtual account via sendQuote. This is a pre-existing issue.
-				it.skip("should handle hook revert gracefully during deletion", async () => {
+				it("should handle hook revert gracefully during deletion", async () => {
 					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountDeletion, true, "Hook rejected deletion")
 
 					const quotes = await context.accountHubLens.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
@@ -1650,7 +1647,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					).to.be.revertedWithCustomError(context.accountHub, "HookFailed")
 				})
 
-				it.skip("should return the hook failure reason for virtual account deletion", async () => {
+				it("should return the hook failure reason for virtual account deletion", async () => {
 					const revertMessage = "Deletion blocked: account has pending rewards"
 
 					const quotes = await context.accountHubLens.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
