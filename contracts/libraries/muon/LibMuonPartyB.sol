@@ -13,7 +13,7 @@ library LibMuonPartyB {
 	function verifyPairUpnlAndPrice(PairUpnlAndPriceSig memory upnlSig, address partyB, address partyA, uint256 symbolId) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
-// 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
 		// == ) ==
 		bytes32 hash = keccak256(
 			abi.encodePacked(
