@@ -202,6 +202,13 @@ export async function initializeFixture(): Promise<RunContext> {
 	// Grant AffiliateHub DEPLOYER_ROLE on AccountHub so it can deploy AccountManagers
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("DEPLOYER_ROLE")), await affiliateHub.getAddress())
 
+	// Deploy AccountHubLens and set it on AccountHub (required for affiliate registration)
+	const AccountHubLensFactory = await ethers.getContractFactory("AccountHubLens")
+	const accountHubLens = (await AccountHubLensFactory.deploy(await accountHub.getAddress())) as AccountHubLens
+	await accountHubLens.waitForDeployment()
+	await accountHub.connect(context.signers.admin).setAccountHubLens(await accountHubLens.getAddress())
+	context.accountHubLens = accountHubLens
+
 	const MockMultiAccount = await ethers.getContractFactory("MockMultiAccount")
 	const multiAccountMock = await MockMultiAccount.deploy(diamond)
 
@@ -262,12 +269,6 @@ export async function initializeFixture(): Promise<RunContext> {
 	context.affiliateHub = affiliateHub
 	context.symmioPartyB = symmioPartyB
 	context.instantLayer = instantLayer
-
-	// Deploy AccountHubLens
-	const AccountHubLensFactory = await ethers.getContractFactory("AccountHubLens")
-	const accountHubLens = (await AccountHubLensFactory.deploy(await accountHub.getAddress())) as AccountHubLens
-	await accountHubLens.waitForDeployment()
-	context.accountHubLens = accountHubLens
 
 	// set AccountHub for InstantLayer
 	await instantLayer.setAccountHub(await accountHub.getAddress())

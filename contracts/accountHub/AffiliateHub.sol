@@ -14,6 +14,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import "./interfaces/IAffiliateHub.sol";
 import "./interfaces/IAccountHub.sol";
+import "./interfaces/IAccountHubLens.sol";
 import "./interfaces/ISymmio.sol";
 
 /**
@@ -102,7 +103,9 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 */
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
 		if (accountHub == address(0)) revert AccountHubNotSet();
-		affiliateAddress = IAccountHub(accountHub).generateAccountManagerAddress(msg.sender, reg.name);
+		address lens = IAccountHub(accountHub).accountHubLens();
+		if (lens == address(0)) revert AccountHubLensNotSet();
+		affiliateAddress = IAccountHubLens(lens).generateAccountManagerAddress(msg.sender, reg.name);
 
 		if (affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
 		if (reg.admin == address(0)) revert ZeroAddress();

@@ -56,6 +56,7 @@ contract AccountHub is IAccountHub, IAccountHubInternal, Initializable, Pausable
 	mapping(address => mapping(VirtualAccountIsolationType => mapping(uint256 => address))) private activeVAByKey;
 
 	address public affiliateHub;
+	address public accountHubLens;
 	address internal globalSigner;
 	uint256 public globalNonce;
 
@@ -364,22 +365,21 @@ contract AccountHub is IAccountHub, IAccountHubInternal, Initializable, Pausable
 	}
 
 	/**
-	 * @notice Generates the predicted AccountManager address for a registrant and name
-	 * @param registrant The registrant address
-	 * @param name The affiliate name
-	 * @return The predicted AccountManager address
-	 */
-	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address) {
-		return _generateAccountManagerAddress(registrant, name);
-	}
-
-	/**
 	 * @notice Sets the AffiliateHub contract address (only for emergency updates)
 	 * @param _affiliateHub The new AffiliateHub address
 	 */
 	function setAffiliateHub(address _affiliateHub) external onlyRole(SETTER_ROLE) {
 		if (_affiliateHub == address(0)) revert ZeroAddress();
 		affiliateHub = _affiliateHub;
+	}
+
+	/**
+	 * @notice Sets the AccountHubLens contract address
+	 * @param _accountHubLens The new AccountHubLens address
+	 */
+	function setAccountHubLens(address _accountHubLens) external onlyRole(SETTER_ROLE) {
+		if (_accountHubLens == address(0)) revert ZeroAddress();
+		accountHubLens = _accountHubLens;
 	}
 
 	/**

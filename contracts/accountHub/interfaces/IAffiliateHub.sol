@@ -150,6 +150,7 @@ interface IAffiliateHub {
 	error InvalidState();
 	error InvalidNameLength();
 	error AccountHubNotSet();
+	error AccountHubLensNotSet();
 	error InvalidCallData();
 	error SymmioCoreNotAllowed();
 }
