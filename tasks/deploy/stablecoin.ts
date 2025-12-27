@@ -4,6 +4,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { readData, writeData } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
 import { getConnection } from "./helpers.js"
+import { logger } from "./logger.js"
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
 type DeployStablecoinArgs = {
@@ -12,18 +13,16 @@ type DeployStablecoinArgs = {
 
 export async function deployStablecoin(hre: any, { logData = true }: DeployStablecoinArgs = {}) {
 	const { ethers } = await getConnection(hre)
-	console.log("Running deploy:stablecoin")
 
 	const signers: HardhatEthersSigner[] = await ethers.getSigners()
 	const owner: HardhatEthersSigner = signers[0]
-	console.log("using address: " + JSON.stringify(owner))
 
 	const StablecoinFactory = await ethers.getContractFactory("FakeStablecoin")
 	const stablecoin = await StablecoinFactory.connect(owner).deploy()
 	await stablecoin.waitForDeployment()
 
 	await stablecoin.deploymentTransaction()!.wait()
-	console.log("FakeStablecoin deployed:", await stablecoin.getAddress())
+	logger.debug("FakeStablecoin deployed:", await stablecoin.getAddress())
 
 	if (logData) {
 		// Read existing data
@@ -41,7 +40,6 @@ export async function deployStablecoin(hre: any, { logData = true }: DeployStabl
 
 		// Write updated data back to JSON file
 		writeData(DEPLOYMENT_LOG_FILE, deployedData)
-		console.log("Deployed addresses written to JSON file")
 	}
 
 	return stablecoin

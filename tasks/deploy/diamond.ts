@@ -7,6 +7,7 @@ import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 import { writeData } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE, FacetNames } from "./constants.js"
 import { getConnection } from "./helpers.js"
+import { logger } from "./logger.js"
 
 // Define which facets need which external libraries (based on compiled artifacts)
 const FacetLibraryDependencies: Record<string, string[]> = {
@@ -33,13 +34,16 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	let totalGasUsed = BigInt(0)
 	let receipt: ContractTransactionReceipt
 
+	logger.section("Diamond Deployment")
+
 	// Deploy DiamondCutFacet
+	logger.subsection("Core Contracts")
 	const DiamondCutFacetFactory = await ethers.getContractFactory("DiamondCutFacet")
 	const diamondCutFacet = await DiamondCutFacetFactory.deploy()
 	await diamondCutFacet.waitForDeployment()
 	receipt = (await diamondCutFacet.deploymentTransaction()!.wait())!
 	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	console.log("DiamondCutFacet deployed:", await diamondCutFacet.getAddress())
+	logger.deployed("DiamondCutFacet", await diamondCutFacet.getAddress())
 
 	// Deploy Diamond
 	const DiamondFactory = await ethers.getContractFactory("Diamond")
@@ -47,7 +51,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	await diamond.waitForDeployment()
 	receipt = (await diamond.deploymentTransaction()!.wait())!
 	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	console.log("Diamond deployed:", await diamond.getAddress())
+	logger.deployed("Diamond", await diamond.getAddress())
 
 	// Deploy DiamondInit
 	const DiamondInit = await ethers.getContractFactory("DiamondInit")
@@ -55,9 +59,10 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	await diamondInit.waitForDeployment()
 	receipt = (await diamondInit.deploymentTransaction()!.wait())!
 	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	console.log("DiamondInit deployed:", await diamondInit.getAddress())
+	logger.deployed("DiamondInit", await diamondInit.getAddress())
 
 	// Deploy external libraries first
+	logger.subsection("Libraries")
 	const libraryAddresses: Record<string, string> = {}
 
 	// Deploy LibQuoteFunding first (no dependencies)
@@ -67,7 +72,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	receipt = (await libQuoteFunding.deploymentTransaction()!.wait())!
 	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
 	libraryAddresses["LibQuoteFunding"] = await libQuoteFunding.getAddress()
-	console.log("LibQuoteFunding deployed:", libraryAddresses["LibQuoteFunding"])
+	logger.deployed("LibQuoteFunding", libraryAddresses["LibQuoteFunding"])
 
 	// Deploy LibQuoteClose (depends on LibQuoteFunding)
 	const LibQuoteCloseFactory = await ethers.getContractFactory("LibQuoteClose", {
@@ -80,7 +85,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	receipt = (await libQuoteClose.deploymentTransaction()!.wait())!
 	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
 	libraryAddresses["LibQuoteClose"] = await libQuoteClose.getAddress()
-	console.log("LibQuoteClose deployed:", libraryAddresses["LibQuoteClose"])
+	logger.deployed("LibQuoteClose", libraryAddresses["LibQuoteClose"])
 
 	// Deploy Facets
 	const cut: Array<{
@@ -94,8 +99,9 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		address: string
 	}> = []
 
-	console.log("Deploying facets: ", FacetNames)
-	for (const facetName of FacetNames) {
+	logger.subsection(`Facets (${FacetNames.length} total)`)
+	for (let i = 0; i < FacetNames.length; i++) {
+		const facetName = FacetNames[i]
 		// Check if this facet needs library linking
 		const requiredLibraries = FacetLibraryDependencies[facetName]
 		let FacetFactory
@@ -114,27 +120,31 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		await facet.waitForDeployment()
 		receipt = (await facet.deploymentTransaction()!.wait())!
 		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-		console.log(`${facetName} deployed: ${await facet.getAddress()}`)
+		const facetAddress = await facet.getAddress()
+		logger.progress(i + 1, FacetNames.length, facetName)
 		cut.push({
-			facetAddress: await facet.getAddress(),
+			facetAddress,
 			action: FacetCutAction.Add,
 			functionSelectors: getSelectors(ethers, facet as any).selectors,
 		})
 
 		deployedFacets.push({
 			name: facetName,
-			address: await facet.getAddress(),
+			address: facetAddress,
 		})
 	}
 
 	// Upgrade Diamond with Facets
+	logger.subsection("Diamond Cut")
 	const diamondCut = await ethers.getContractAt("IDiamondCut", await diamond.getAddress())
 
 	// Call Initializer
 	const call = diamondInit.interface.encodeFunctionData("init")
 	const chunkSize = 6
+	const totalChunks = Math.ceil(cut.length / chunkSize)
 	for (let i = 0; i < cut.length; i += chunkSize) {
 		const chunk = cut.slice(i, i + chunkSize)
+		const chunkNum = Math.floor(i / chunkSize) + 1
 		const isFirst = i === 0
 		const initTarget = isFirst ? await diamondInit.getAddress() : ethers.ZeroAddress
 		const initCalldata = isFirst ? call : "0x"
@@ -145,8 +155,14 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		if (!receipt.status) {
 			throw Error(`Diamond upgrade failed: ${tx.hash}`)
 		}
+		logger.progress(chunkNum, totalChunks, `Chunk ${chunkNum} (${chunk.length} facets)`)
 	}
-	console.log("Completed Diamond Cut")
+
+	logger.complete("Diamond Deployment", [
+		{ name: "Diamond", address: await diamond.getAddress() },
+		{ name: "DiamondCutFacet", address: await diamondCutFacet.getAddress() },
+		{ name: "DiamondInit", address: await diamondInit.getAddress() },
+	])
 
 	// if (reportGas) { //FIXME
 	// 	await generateGasReport(ethers.provider as any, totalGasUsed)
@@ -186,7 +202,6 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 				constructorArguments: [],
 			})),
 		])
-		console.log("Deployed addresses written to json file")
 	}
 
 	return diamond

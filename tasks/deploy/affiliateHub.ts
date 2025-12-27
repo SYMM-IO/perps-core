@@ -4,6 +4,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { readData, writeData } from "../utils/fs.js"
 import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants.js"
 import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { logger } from "./logger.js"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -26,19 +27,22 @@ type DeployAffiliateHubArgs = {
 
 export async function deployAffiliateHub(hre: any, { admin, symmiofeereceiver, logData = true }: DeployAffiliateHubArgs) {
 	const { ethers, upgrades } = await getConnection(hre)
-	console.log("Running deploy:affiliateHub")
+
+	logger.section("AffiliateHub Deployment")
 
 	const [deployer] = await ethers.getSigners()
-	console.log("Deploying contracts with the account:", deployer.address)
+	logger.debug("Deployer:", deployer.address)
 
 	// Deploy AffiliateHub as upgradeable proxy
+	logger.subsection("Proxy Contract")
 	const contract = await deployAffiliateHubContract(hre, admin, symmiofeereceiver)
 
 	const addresses = {
 		proxy: await contract.getAddress(),
 		...(await getUpgradeAddresses(upgrades, contract)),
 	}
-	console.log("AffiliateHub deployed to", addresses)
+
+	logger.complete("AffiliateHub Deployment", [{ name: "AffiliateHub", address: addresses.proxy }])
 
 	// Log deployment data if requested
 	if (logData) {
@@ -67,10 +71,6 @@ export const affiliateHubTask = task("deploy:affiliateHub", "Deploys the Affilia
  */
 async function deployAffiliateHubContract(hre: any, admin: string, symmioFeeReceiver: string) {
 	const { ethers } = await getConnection(hre)
-	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, {
-		admin,
-		symmioFeeReceiver,
-	})
 
 	const Factory = await ethers.getContractFactory("AffiliateHub")
 	const contract = await deployProxyWithFallback(hre, Factory, [admin, symmioFeeReceiver], {
@@ -91,9 +91,8 @@ async function logDeploymentData(addresses: any, admin: string, symmioFeeReceive
 		const updatedData = [...deployedData, ...newEntries]
 
 		writeData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE, updatedData)
-		console.log("Deployed addresses written to JSON file")
 	} catch (err) {
-		console.error(`Failed to log deployment data: ${err}`)
+		logger.error(`Failed to log deployment data: ${err}`)
 		throw err
 	}
 }
@@ -105,7 +104,6 @@ function readExistingDeployments(): any[] {
 	try {
 		return readData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE)
 	} catch (err) {
-		console.warn(`Could not read existing JSON file: ${err}. Starting with empty data.`)
 		return []
 	}
 }

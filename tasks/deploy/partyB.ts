@@ -4,6 +4,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { readData, writeData } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
 import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { logger } from "./logger.js"
 
 type DeploySymmioPartyBArgs = {
 	symmioAddress: string
@@ -13,11 +14,9 @@ type DeploySymmioPartyBArgs = {
 
 export async function deploySymmioPartyB(hre: any, { symmioAddress, admin, logData = true }: DeploySymmioPartyBArgs) {
 	const { ethers, upgrades } = await getConnection(hre)
-	console.log("Running deploy:symmioPartyB")
 
 	const [deployer] = await ethers.getSigners()
-
-	console.log("Deploying contracts with the account:", deployer.address)
+	logger.debug("Deploying SymmioPartyB with account:", deployer.address)
 
 	// Deploy SymmioPartyB as upgradeable
 	const SymmioPartyBFactory = await ethers.getContractFactory("SymmioPartyB")
@@ -28,7 +27,7 @@ export async function deploySymmioPartyB(hre: any, { symmioAddress, admin, logDa
 		proxy: await symmioPartyB.getAddress(),
 		...(await getUpgradeAddresses(upgrades, symmioPartyB)),
 	}
-	console.log("SymmioPartyB deployed to", addresses)
+	logger.debug("SymmioPartyB deployed to", addresses.proxy)
 
 	// Update the deployed addresses JSON file
 	if (logData) {
@@ -36,7 +35,7 @@ export async function deploySymmioPartyB(hre: any, { symmioAddress, admin, logDa
 		try {
 			deployedData = readData(DEPLOYMENT_LOG_FILE)
 		} catch (err) {
-			console.error(`Could not read existing JSON file: ${err}`)
+			logger.debug(`Could not read existing JSON file: ${err}`)
 		}
 
 		// Append new data
@@ -60,7 +59,6 @@ export async function deploySymmioPartyB(hre: any, { symmioAddress, admin, logDa
 
 		// Write updated data back to JSON file
 		writeData(DEPLOYMENT_LOG_FILE, deployedData)
-		console.log("Deployed addresses written to JSON file")
 	}
 
 	return symmioPartyB

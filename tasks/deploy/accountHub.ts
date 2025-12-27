@@ -4,6 +4,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { readData, writeData } from "../utils/fs.js"
 import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants.js"
 import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { logger } from "./logger.js"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -27,25 +28,30 @@ type DeployAccountHubArgs = {
 
 export async function deployAccountHub(hre: any, { admin, affiliatehubaddress, logData = true }: DeployAccountHubArgs) {
 	const { ethers, upgrades } = await getConnection(hre)
-	console.log("Running deploy:accountHub")
+
+	logger.section("AccountHub Deployment")
 
 	const [deployer] = await ethers.getSigners()
-	console.log("Deploying contracts with the account:", deployer.address)
+	logger.debug("Deployer:", deployer.address)
 
 	// Deploy linked libraries
+	logger.subsection("Libraries")
 	const libQuoteParamsAddress = await deployLibQuoteParams(ethers)
+	logger.deployed("LibQuoteParams", libQuoteParamsAddress)
 
 	// Get AccountManager bytecode
 	const accountManagerBytecode = await getAccountManagerBytecode(ethers)
 
 	// Deploy AccountHub as upgradeable proxy
+	logger.subsection("Proxy Contract")
 	const contract = await deployAccountHubContract(hre, admin, affiliatehubaddress, accountManagerBytecode, libQuoteParamsAddress)
 
 	const addresses = {
 		proxy: await contract.getAddress(),
 		...(await getUpgradeAddresses(upgrades, contract)),
 	}
-	console.log("AccountHub deployed to", addresses)
+
+	logger.complete("AccountHub Deployment", [{ name: "AccountHub", address: addresses.proxy }])
 
 	// Log deployment data if requested
 	if (logData) {
@@ -88,11 +94,6 @@ async function deployAccountHubContract(
 	libQuoteParamsAddress: string,
 ) {
 	const { ethers } = await getConnection(hre)
-	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, {
-		admin,
-		affiliateHubAddress,
-		accountManagerBytecode: `${accountManagerBytecode.slice(0, 10)}...`,
-	})
 
 	const Factory = await ethers.getContractFactory(CONTRACT_CONFIG.NAME, {
 		libraries: {
@@ -124,9 +125,8 @@ async function logDeploymentData(addresses: any, admin: string, affiliateHubAddr
 		const updatedData = [...deployedData, ...newEntries]
 
 		writeData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE, updatedData)
-		console.log("Deployed addresses written to JSON file")
 	} catch (err) {
-		console.error(`Failed to log deployment data: ${err}`)
+		logger.error(`Failed to log deployment data: ${err}`)
 		throw err
 	}
 }
@@ -138,7 +138,6 @@ function readExistingDeployments(): any[] {
 	try {
 		return readData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE)
 	} catch (err) {
-		console.warn(`Could not read existing JSON file: ${err}. Starting with empty data.`)
 		return []
 	}
 }
