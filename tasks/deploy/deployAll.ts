@@ -244,6 +244,7 @@ async function setupSystem(hre: any, deployedContracts: { [key: string]: string 
 	const accountHub = await ethers.getContractAt("AccountHub", accountHubAddress)
 	const affiliateHub = await ethers.getContractAt("AffiliateHub", affiliateHubAddress)
 	const controlFacet = await ethers.getContractAt("ControlFacet", coreAddress)
+	const viewFacet = await ethers.getContractAt("ViewFacet", coreAddress)
 
 	console.log("🔐 Granting roles...")
 	await accountHub.connect(deployer).grantRole(ethers.keccak256(ethers.toUtf8Bytes("DEPLOYER_ROLE")), affiliateHubAddress)
@@ -287,8 +288,12 @@ async function setupSystem(hre: any, deployedContracts: { [key: string]: string 
 		symmioCores: [coreAddress],
 	})
 
+	await controlFacet.connect(deployer).setAdmin(deployer.address)
 	console.log("🔐 Granting signer admin roles...")
+	console.log(deployer.address)
+	console.log(await viewFacet.hasRole(await deployer.getAddress(), ethers.keccak256(ethers.toUtf8Bytes("DEFAULT_ADMIN_ROLE"))))
 	await controlFacet.connect(deployer).grantRole(affiliateHubAddress, ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ADMIN_ROLE")))
+	await controlFacet.connect(deployer).grantRole(affiliateHubAddress, ethers.keccak256(ethers.toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
 	await controlFacet.connect(deployer).grantRole(accountHubAddress, ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ADMIN_ROLE")))
 
 	console.log("✅ Approving affiliate...")
@@ -391,7 +396,7 @@ function saveReport(report: SystemDeploymentReport): void {
 		writeData(filename, report)
 
 		console.log()
-		console.log(`📁 Full report saved to: ${filename}`)
+		console.log(`📁 Full report saved to:  data/${filename}`)
 	} catch (err: any) {
 		console.error(`Failed to save report: ${err.message}`)
 	}
