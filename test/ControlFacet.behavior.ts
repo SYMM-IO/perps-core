@@ -725,19 +725,19 @@ export function shouldBehaveLikeControlFacet(): void {
 
 	describe("setMasterAccountEnabled", () => {
 		it("should allow admin to toggle master account activation", async function () {
-			expect(await context.viewFacet.getMasterAccountEnabled()).to.equal(false)
+			expect(await context.viewFacet.isMasterAccountEnabled()).to.equal(false)
 
 			// set true
 			await expect(context.controlFacet.connect(owner).setMasterAccountEnabled(true))
 				.to.emit(context.controlFacet, "SetMasterAccountEnabled")
 				.withArgs(false, true)
-			expect(await context.viewFacet.getMasterAccountEnabled()).to.equal(true)
+			expect(await context.viewFacet.isMasterAccountEnabled()).to.equal(true)
 
 			// set false
 			await expect(context.controlFacet.connect(owner).setMasterAccountEnabled(false))
 				.to.emit(context.controlFacet, "SetMasterAccountEnabled")
 				.withArgs(true, false)
-			expect(await context.viewFacet.getMasterAccountEnabled()).to.equal(false)
+			expect(await context.viewFacet.isMasterAccountEnabled()).to.equal(false)
 		})
 
 		it("should revert when caller dont have admin role for master account activation set", async function () {
@@ -861,7 +861,7 @@ export function shouldBehaveLikeControlFacet(): void {
 	describe("setPenaltyCollector", () => {
 		it("should set penalty collector correctly", async () => {
 			await expect(context.controlFacet.setSoftLiquidationPenaltyCollector(context.signers.admin)).to.not.reverted
-			expect(await context.viewFacet.getPenaltyCollector()).to.equal(context.signers.admin.address)
+			expect(await context.viewFacet.getSoftLiquidationPenaltyCollector()).to.equal(context.signers.admin.address)
 		})
 	})
 

@@ -36,10 +36,6 @@ interface IViewFacet {
 
 	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
 
-	function allocatedBalanceOfPartyB(address partyB, address partyA) external view returns (uint256);
-
-	function balanceOfMasterAccount(address partyB) external view returns (uint256);
-
 	function isInMasterAccountMode(address partyB) external view returns (bool);
 
 	function isMasterAccountMigrationComplete(address partyB) external view returns (bool);
@@ -76,7 +72,7 @@ interface IViewFacet {
 
 	function getDefaultFeeCollector() external view returns (address);
 
-	function getMasterAccountEnabled() external view returns (bool);
+	function isMasterAccountEnabled() external view returns (bool);
 
 	function isPartyALiquidated(address partyA) external view returns (bool);
 
@@ -185,13 +181,13 @@ interface IViewFacet {
 
 	function getEntityMetadata(address entity) external view returns (EntityMetadata memory);
 
-	function getPenaltyCollector() external view returns(address);
+	function getSoftLiquidationPenaltyCollector() external view returns (address);
 
-	function getPartyALockedQuotesCount(address user) external view returns(uint256);
+	function getPartyALockedQuotesCount(address user) external view returns (uint256);
 
-	function isBindable(address partyB) external view returns(bool);
+	function isBindable(address partyB) external view returns (bool);
 
-	function getIterativeFundingDeprecationFlag() external view returns(bool iterativeFundingDeprecationFlag);
+	function getIterativeFundingDeprecationFlag() external view returns (bool);
 
-	function getAccumulativeFundingRateActivationFlag() external view returns(bool accumulativeFundingRateActivationFlag);
+	function getAccumulativeFundingRateActivationFlag() external view returns (bool);
 }

@@ -67,7 +67,7 @@ library ForceActionsFacetImpl {
 		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
-		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
+		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
 			quoteId,
 			sig.currentPrice,
 			sig.upnlPartyA,

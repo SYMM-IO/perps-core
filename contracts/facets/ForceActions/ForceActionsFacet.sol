@@ -118,8 +118,6 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		MasterAccountSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
 	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
-		address partyB = settlementSig.partyB;
-
 		_initializeMasterAccountForceClose(quoteId, sig);
 		if (updatedPrices.length > 0) _settleUpnlMasterAccount(quoteId, settlementSig, updatedPrices);
 		_finalizeMasterAccountForceClose(quoteId);

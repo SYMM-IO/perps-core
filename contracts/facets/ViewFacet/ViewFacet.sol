@@ -180,15 +180,6 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Returns the allocated balance of Party B for a specific Party A.
-	 * @param partyB The address of Party B.
-	 * @return The allocated balance of Party B for Party A.
-	 */
-	function allocatedBalanceOfPartyBInMasterAccount(address partyB) external view returns (uint256) {
-		return AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)];
-	}
-
-	/**
 	 * @notice Returns the balance of Party B emergency reserve vault.
 	 * @param partyB The address of Party B.
 	 * @return The balance of Party B vault.
@@ -373,7 +364,7 @@ contract ViewFacet is IViewFacet {
 
 	/**
 	 * @notice Returns the address of the default fee collector.
-	 * @return The address of the defaultfee collector.
+	 * @return The address of the default fee collector.
 	 */
 	function getDefaultFeeCollector() external view returns (address) {
 		return GlobalAppStorage.layout().defaultFeeCollector;
@@ -383,7 +374,7 @@ contract ViewFacet is IViewFacet {
 	 * @notice Indicates whether Party B accounts are allowed to activate master account mode.
 	 * @return True if master account functionality is globally enabled, false otherwise.
 	 */
-	function getMasterAccountEnabled() external view returns (bool) {
+	function isMasterAccountEnabled() external view returns (bool) {
 		return GlobalAppStorage.layout().masterAccountEnabled;
 	}
 
@@ -844,24 +835,23 @@ contract ViewFacet is IViewFacet {
 		return MAStorage.layout().entitiesMetadata[entity];
 	}
 
-	function getPenaltyCollector() external view returns(address) {
+	function getSoftLiquidationPenaltyCollector() external view returns (address) {
 		return MAStorage.layout().softLiquidationPenaltyCollector;
 	}
 
-	function getPartyALockedQuotesCount(address user) external view returns(uint256){
+	function getPartyALockedQuotesCount(address user) external view returns (uint256) {
 		return QuoteStorage.layout().partyALockQuotesCount[user];
 	}
 
-	function isBindable(address partyB) external view returns(bool){
+	function isBindable(address partyB) external view returns (bool) {
 		return AccountStorage.layout().isPartyBBindable[partyB];
 	}
 
-	function getIterativeFundingDeprecationFlag() external view returns(bool iterativeFundingDeprecationFlag){
-
+	function getIterativeFundingDeprecationFlag() external view returns (bool) {
 		return GlobalAppStorage.layout().iterativeFundingDeprecationFlag;
 	}
 
-	function getAccumulativeFundingRateActivationFlag() external view returns(bool accumulativeFundingRateActivationFlag){
+	function getAccumulativeFundingRateActivationFlag() external view returns (bool) {
 		return GlobalAppStorage.layout().accumulativeFundingRateActivationFlag;
 	}
 }
