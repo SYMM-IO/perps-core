@@ -1,4 +1,4 @@
-import {RunContext} from "../RunContext"
+import {RunContext} from "../RunContext.js"
 
 export interface TransactionValidator {
 	before(context: RunContext, arg: any): Promise<any>

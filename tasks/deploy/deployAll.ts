@@ -1,36 +1,8 @@
-import fs from "fs";
-import { task } from "hardhat/config";
-import { ArgumentType } from "hardhat/types/arguments";
-import path from "path";
+import { task } from "hardhat/config"
+import { ArgumentType } from "hardhat/types/arguments"
 
-
-
-import { readData, writeData } from "../utils/fs";
-import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE, AFFILIATEHUB_DEPLOYMENT_FILE, DEPLOYMENT_LOG_FILE, INSTANTLAYER_DEPLOYMENT_FILE } from "./constants";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+import { readData, writeData } from "../utils/fs.js"
+import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE, AFFILIATEHUB_DEPLOYMENT_FILE, DEPLOYMENT_LOG_FILE, INSTANTLAYER_DEPLOYMENT_FILE } from "./constants.js"
 
 const DEPLOYMENT_FILES = {
 	DIAMOND: DEPLOYMENT_LOG_FILE,
@@ -75,129 +47,137 @@ interface SystemDeploymentReport {
 	timestamp: string
 }
 
-task("deploy:system", "Deploys all system contracts, verifies them, and generates a report")
-	.addOption({ name: "admin", description: "The admin address for contracts", defaultValue: "" })
-	.addOption({ name: "symmiofeereceiver", description: "The address of the symmio fee receiver", defaultValue: "" })
+export const deployAllTask = task("deploy:system", "Deploys all system contracts, verifies them, and generates a report")
+	.addOption({ name: "admin", description: "The admin address for contracts", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
+	.addOption({
+		name: "symmiofeereceiver",
+		description: "The address of the symmio fee receiver",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
 	.addOption({ name: "verify", description: "Verify contracts after deployment", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.addOption({ name: "logData", description: "Write deployment addresses to data files", type: ArgumentType.BOOLEAN, defaultValue: true })
-	.setAction(async ({ admin, symmiofeereceiver, verify, logData }, { run }) => {
-		console.log("=".repeat(80))
-		console.log("SYSTEM DEPLOYMENT STARTED")
-		console.log("=".repeat(80))
-		console.log(`Admin Address: ${admin}`)
-		console.log(`Verify Contracts: ${verify}`)
-		console.log("=".repeat(80))
-		console.log()
-
-		const deploymentResults: DeploymentResult[] = []
-		const deployedContracts: { [key: string]: string } = {}
-
-		// Step 1: Deploy Diamond
-		console.log("Step 1/4: Deploying Diamond...")
-		const diamondResult = await deployContract(run, "deploy:diamond", {}, CONTRACT_NAMES.DIAMOND, logData)
-		deploymentResults.push(diamondResult)
-		if (diamondResult.status === "success") {
-			deployedContracts.diamond = diamondResult.address
-		}
-		console.log()
-
-		// Step 2: Deploy AffiliateHub
-		console.log("Step 2/4: Deploying AffiliateHub...")
-		const affiliateHubResult = await deployContract(
-			run,
-			"deploy:affiliateHub",
-			{
-				admin,
-				symmiofeereceiver,
-				logData,
-			},
-			CONTRACT_NAMES.AFFILIATE_HUB,
-			logData,
-		)
-		deploymentResults.push(affiliateHubResult)
-		if (affiliateHubResult.status === "success") {
-			deployedContracts.affiliateHub = affiliateHubResult.address
-		}
-		console.log()
-
-		// Step 3: Deploy AccountHub (requires AffiliateHub)
-		console.log("Step 3/4: Deploying AccountHub...")
-		if (deployedContracts.affiliateHub) {
-			const accountHubResult = await deployContract(
-				run,
-				"deploy:accountHub",
-				{
-					admin,
-					affiliatehubaddress: deployedContracts.affiliateHub,
-					logData,
-				},
-				CONTRACT_NAMES.ACCOUNT_HUB,
-				logData,
-			)
-			deploymentResults.push(accountHubResult)
-			if (accountHubResult.status === "success") {
-				deployedContracts.accountHub = accountHubResult.address
-			}
-		} else {
-			console.error("⚠️  Skipping AccountHub deployment - AffiliateHub deployment failed")
-			deploymentResults.push({
-				contract: CONTRACT_NAMES.ACCOUNT_HUB,
-				address: "N/A",
-				status: "failed",
-				error: "Dependency failed: AffiliateHub",
-				timestamp: new Date().toISOString(),
-			})
-		}
-		console.log()
-
-		// Step 4: Deploy InstantLayer
-		console.log("Step 4/4: Deploying InstantLayer...")
-		const instantLayerResult = await deployContract(
-			run,
-			"deploy:InstantLayer",
-			{
-				symmioaddress: deployedContracts.diamond,
-				admin,
-				logData,
-			},
-			CONTRACT_NAMES.INSTANT_LAYER,
-			logData,
-		)
-		deploymentResults.push(instantLayerResult)
-		if (instantLayerResult.status === "success") {
-			deployedContracts.instantLayer = instantLayerResult.address
-		}
-		console.log()
-
-		// Step 5: Verify all contracts
-		let verificationResults: VerificationResult[] = []
-		if (verify) {
+	.setAction(async () => ({
+		default: async ({ admin, symmiofeereceiver, verify, logData }, hre) => {
+			const run = (taskName: string, params: Record<string, unknown> = {}) => hre.tasks.getTask(taskName).run(params)
 			console.log("=".repeat(80))
-			console.log("VERIFICATION STARTED")
+			console.log("SYSTEM DEPLOYMENT STARTED")
+			console.log("=".repeat(80))
+			console.log(`Admin Address: ${admin}`)
+			console.log(`Verify Contracts: ${verify}`)
 			console.log("=".repeat(80))
 			console.log()
-			verifyAllContracts(run)
-		}
 
-		// Step 6: Generate and display report
-		console.log()
-		console.log("=".repeat(80))
-		console.log("DEPLOYMENT REPORT")
-		console.log("=".repeat(80))
-		console.log()
+			const deploymentResults: DeploymentResult[] = []
+			const deployedContracts: { [key: string]: string } = {}
 
-		const report = generateReport(deploymentResults, verificationResults)
-		displayReport(report)
+			// Step 1: Deploy Diamond
+			console.log("Step 1/4: Deploying Diamond...")
+			const diamondResult = await deployContract(run, "deploy:diamond", {}, CONTRACT_NAMES.DIAMOND, logData)
+			deploymentResults.push(diamondResult)
+			if (diamondResult.status === "success") {
+				deployedContracts.diamond = diamondResult.address
+			}
+			console.log()
 
-		// Save report to file
-		saveReport(report)
+			// Step 2: Deploy AffiliateHub
+			console.log("Step 2/4: Deploying AffiliateHub...")
+			const affiliateHubResult = await deployContract(
+				run,
+				"deploy:affiliateHub",
+				{
+					admin,
+					symmiofeereceiver,
+					logData,
+				},
+				CONTRACT_NAMES.AFFILIATE_HUB,
+				logData,
+			)
+			deploymentResults.push(affiliateHubResult)
+			if (affiliateHubResult.status === "success") {
+				deployedContracts.affiliateHub = affiliateHubResult.address
+			}
+			console.log()
 
-		return {
-			deployments: deployedContracts,
-			report,
-		}
-	})
+			// Step 3: Deploy AccountHub (requires AffiliateHub)
+			console.log("Step 3/4: Deploying AccountHub...")
+			if (deployedContracts.affiliateHub) {
+				const accountHubResult = await deployContract(
+					run,
+					"deploy:accountHub",
+					{
+						admin,
+						affiliatehubaddress: deployedContracts.affiliateHub,
+						logData,
+					},
+					CONTRACT_NAMES.ACCOUNT_HUB,
+					logData,
+				)
+				deploymentResults.push(accountHubResult)
+				if (accountHubResult.status === "success") {
+					deployedContracts.accountHub = accountHubResult.address
+				}
+			} else {
+				console.error("⚠️  Skipping AccountHub deployment - AffiliateHub deployment failed")
+				deploymentResults.push({
+					contract: CONTRACT_NAMES.ACCOUNT_HUB,
+					address: "N/A",
+					status: "failed",
+					error: "Dependency failed: AffiliateHub",
+					timestamp: new Date().toISOString(),
+				})
+			}
+			console.log()
 
+			// Step 4: Deploy InstantLayer
+			console.log("Step 4/4: Deploying InstantLayer...")
+			const instantLayerResult = await deployContract(
+				run,
+				"deploy:InstantLayer",
+				{
+					symmioaddress: deployedContracts.diamond,
+					admin,
+					logData,
+				},
+				CONTRACT_NAMES.INSTANT_LAYER,
+				logData,
+			)
+			deploymentResults.push(instantLayerResult)
+			if (instantLayerResult.status === "success") {
+				deployedContracts.instantLayer = instantLayerResult.address
+			}
+			console.log()
+
+			// Step 5: Verify all contracts
+			let verificationResults: VerificationResult[] = []
+			if (verify) {
+				console.log("=".repeat(80))
+				console.log("VERIFICATION STARTED")
+				console.log("=".repeat(80))
+				console.log()
+				verifyAllContracts(run)
+			}
+
+			// Step 6: Generate and display report
+			console.log()
+			console.log("=".repeat(80))
+			console.log("DEPLOYMENT REPORT")
+			console.log("=".repeat(80))
+			console.log()
+
+			const report = generateReport(deploymentResults, verificationResults)
+			displayReport(report)
+
+			// Save report to file
+			saveReport(report)
+
+			return {
+				deployments: deployedContracts,
+				report,
+			}
+		},
+	}))
+	.build()
 /**
  * Deploys a single contract
  */

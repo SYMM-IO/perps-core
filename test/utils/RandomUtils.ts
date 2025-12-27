@@ -1,4 +1,4 @@
-import {decimal, unDecimal} from "./Common"
+import {decimal, unDecimal} from "./Common.js"
 import {ethers} from "ethers"
 
 export function pick(array: any[]): any {

@@ -1,11 +1,11 @@
 // scripts/deploy-and-dump.ts
 import fs from "fs"
 import path from "path"
-import { pathToFileURL } from "url"
-import { initializeFixture } from "../../../test/Initialize.fixture"
-import { ethers, network } from "../hardhat-connection"
-import { User } from "../../models/User"
-import { decimal } from "../../utils/Common"
+import { fileURLToPath, pathToFileURL } from "url"
+import { initializeFixture } from "../../../test/Initialize.fixture.js"
+import { ethers, network } from "../hardhat-connection.js"
+import { User } from "../../models/User.js"
+import { decimal } from "../../utils/Common.js"
 // ^ you already use this in tests; it deploys everything and returns the context
 
 async function main() {
@@ -24,7 +24,7 @@ async function main() {
 	await partyA1.setup()
 	await partyA1.setBalances(decimal(100000n), decimal(5000n), decimal(2000n))
 
-	const outDir = path.resolve(__dirname, "./") // put JSON next to your index.html
+	const outDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "./") // put JSON next to your index.html
 	const outFile = path.join(outDir, "addresses.json")
 	fs.mkdirSync(outDir, { recursive: true })
 	fs.writeFileSync(outFile, JSON.stringify(addrs, null, 2))

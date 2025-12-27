@@ -1,15 +1,15 @@
-import { loadFixture, time } from "./helpers/network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common"
-import { getDummyPairUpnlSig } from "./utils/SignatureUtils"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
+import { getDummyPairUpnlSig } from "./utils/SignatureUtils.js"
 import { expect } from "chai"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { PositionType } from "./models/Enums"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { PositionType } from "./models/Enums.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { ethers, toUtf8Bytes } from "ethers";
 
 export function shouldBehaveLikeFundingRate(): void {

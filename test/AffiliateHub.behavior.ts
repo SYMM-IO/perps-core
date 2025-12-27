@@ -1,8 +1,8 @@
-import { loadFixture } from "./helpers/network-helpers"
+import { loadFixture } from "./helpers/network-helpers.js"
 import { expect } from "chai"
-import { ethers } from "./helpers/hardhat-connection"
-import { initializeFixture } from "./Initialize.fixture"
-import { RunContext } from "./models/RunContext"
+import { ethers } from "./helpers/hardhat-connection.js"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { RunContext } from "./models/RunContext.js"
 
 type Stakeholder = { receiver: string; share: bigint }
 type AffiliateRegistrationInput = {

@@ -1,4 +1,4 @@
-import {run} from "hardhat"
+import { tasks } from "hardhat"
 import {Addresses, loadAddresses} from "./utils/file"
 
 async function main() {
@@ -9,7 +9,7 @@ async function main() {
 	const symmioShareReceiver = ""
 
 	// Run the deploy:feeDistributor task
-	const contract = await run("deploy:feeDistributor", {
+	const contract = await tasks.getTask("deploy:feeDistributor").run({
 		symmioAddress,
 		admin,
 		symmioShare,

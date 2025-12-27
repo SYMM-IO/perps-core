@@ -1,4 +1,4 @@
-import {ethers, run} from "hardhat"
+import { ethers, tasks } from "hardhat"
 import {sleep} from "@nomicfoundation/hardhat-verify/internal/utilities"
 
 async function main() {
@@ -28,7 +28,7 @@ async function main() {
 		await sleep(10000)
 
 		try {
-			await run("verify:verify", {
+			await tasks.getTask("verify:verify").run({
 				address: addr,
 				constructorArguments: [],
 			})

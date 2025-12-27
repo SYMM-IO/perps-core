@@ -1,10 +1,10 @@
-import { loadFixture } from "./helpers/network-helpers"
-import { RunContext } from "./models/RunContext"
-import { initializeFixture } from "./Initialize.fixture"
+import { loadFixture } from "./helpers/network-helpers.js"
+import { RunContext } from "./models/RunContext.js"
+import { initializeFixture } from "./Initialize.fixture.js"
 import { expect } from "chai"
 import sha3 from "js-sha3"
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { ethers } from "./helpers/hardhat-connection"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { ethers } from "./helpers/hardhat-connection.js"
 import { ZeroAddress } from "ethers"
 import { toUtf8Bytes } from "ethers";
 
@@ -27,11 +27,11 @@ const MIGRATION_ROLE = `0x${keccak256("MIGRATION_ROLE")}`
 
 export function shouldBehaveLikeControlFacet(): void {
 	let context: RunContext
-	let owner: SignerWithAddress
-	let user2: SignerWithAddress
-	let hedger: SignerWithAddress
-	let hedger2: SignerWithAddress
-	let hedger3: SignerWithAddress
+	let owner: HardhatEthersSigner
+	let user2: HardhatEthersSigner
+	let hedger: HardhatEthersSigner
+	let hedger2: HardhatEthersSigner
+	let hedger3: HardhatEthersSigner
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)

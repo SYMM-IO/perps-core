@@ -1,4 +1,4 @@
-import {QuoteStatus} from "./Enums"
+import {QuoteStatus} from "./Enums.js"
 
 export enum Action {
 	CANCEL_REQUEST,

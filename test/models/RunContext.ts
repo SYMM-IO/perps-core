@@ -1,4 +1,4 @@
-import { ethers } from "../helpers/hardhat-connection"
+import { ethers } from "../helpers/hardhat-connection.js"
 
 import {
 	AccountFacet,
@@ -30,9 +30,9 @@ import {
 	SymmioPartyA,
 	WithdrawFacet,
 	MasterAccountMigrationFacet,
-} from "../../src/types";
-import { TestManager } from "./TestManager"
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
+} from "../../src/types/index.js";
+import { TestManager } from "./TestManager.js"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
 export class RunContext {
 	accountFacet!: AccountFacet
@@ -57,18 +57,18 @@ export class RunContext {
 	withdrawFacet!: WithdrawFacet
 	masterAccountMigrationFacet!: MasterAccountMigrationFacet
 	signers!: {
-		admin: SignerWithAddress
-		user: SignerWithAddress
-		user2: SignerWithAddress
-		liquidator: SignerWithAddress
-		hedger: SignerWithAddress
-		hedger2: SignerWithAddress
-		bridge: SignerWithAddress
-		bridge2: SignerWithAddress
-		feeCollector: SignerWithAddress
-		feeCollector2: SignerWithAddress
-		symmioFeeReceiver: SignerWithAddress
-		others: SignerWithAddress[]
+		admin: HardhatEthersSigner
+		user: HardhatEthersSigner
+		user2: HardhatEthersSigner
+		liquidator: HardhatEthersSigner
+		hedger: HardhatEthersSigner
+		hedger2: HardhatEthersSigner
+		bridge: HardhatEthersSigner
+		bridge2: HardhatEthersSigner
+		feeCollector: HardhatEthersSigner
+		feeCollector2: HardhatEthersSigner
+		symmioFeeReceiver: HardhatEthersSigner
+		others: HardhatEthersSigner[]
 	}
 	diamond!: string
 	accountManager!: AccountManager
@@ -85,7 +85,7 @@ export class RunContext {
 export async function createRunContext(diamond: string, collateral: string, onlyInitialize: boolean = false): Promise<RunContext> {
 	let context = new RunContext()
 
-	const signers: SignerWithAddress[] = await ethers.getSigners()
+	const signers: HardhatEthersSigner[] = await ethers.getSigners()
 	context.signers = {
 		admin: signers[0],
 		user: signers[1],

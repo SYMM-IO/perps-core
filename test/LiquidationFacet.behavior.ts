@@ -1,12 +1,12 @@
-import { loadFixture, time } from "./helpers/network-helpers";
+import { loadFixture, time } from "./helpers/network-helpers.js";
 import { expect } from "chai"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { LiquidationType, OrderType, PositionType, QuoteStatus } from "./models/Enums"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import type { BalanceInfo } from "./models/User"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { LiquidationType, OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import type { BalanceInfo } from "./models/User.js"
 import {
 	decimal,
 	getBlockTimestamp,
@@ -14,11 +14,11 @@ import {
 	getTotalLockedValuesForQuoteIds,
 	getTradingFeeForQuotes,
 	unDecimal,
-} from "./utils/Common";
-import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/SignatureUtils"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
+} from "./utils/Common.js";
+import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { ethers, toUtf8Bytes } from "ethers"
-import type { QuoteStruct } from "../src/types/interfaces/ISymmio"
+import type { QuoteStruct } from "../src/types/interfaces/ISymmio.js"
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger

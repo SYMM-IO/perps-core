@@ -1,10 +1,10 @@
 import {expect} from "chai"
-import type { BridgeTransactionStructOutput} from "../../../src/types/interfaces/ISymmio"
-import {logger} from "../../utils/LoggerUtils"
-import {BridgeTransactionStatus} from "../Enums"
-import {RunContext} from "../RunContext"
-import {User} from "../User"
-import {TransactionValidator} from "./TransactionValidator"
+import type { BridgeTransactionStructOutput} from "../../../src/types/interfaces/ISymmio.js"
+import {logger} from "../../utils/LoggerUtils.js"
+import {BridgeTransactionStatus} from "../Enums.js"
+import {RunContext} from "../RunContext.js"
+import {User} from "../User.js"
+import {TransactionValidator} from "./TransactionValidator.js"
 
 export type TransferToBridgeValidatorBeforeArg = {
 	bridge: string

@@ -1,18 +1,18 @@
-import { loadFixture, time } from "./helpers/network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { BridgeTransactionStatus } from "./models/Enums"
-import { TransferToBridgeValidator } from "./models/validators/TransferToBridgeValidator"
-import { WithdrawLockedTransactionValidator } from "./models/validators/WithdrawLockedTransactionValidator"
-import { decimal, pauseAccounting, suspendAddress } from "./utils/Common"
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { BridgeTransactionStatus } from "./models/Enums.js"
+import { TransferToBridgeValidator } from "./models/validators/TransferToBridgeValidator.js"
+import { WithdrawLockedTransactionValidator } from "./models/validators/WithdrawLockedTransactionValidator.js"
+import { decimal, pauseAccounting, suspendAddress } from "./utils/Common.js"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
 export function shouldBehaveLikeBridgeFacet(): void {
 	let context: RunContext, user: User, user2: User
-	let bridge: SignerWithAddress, bridge2: SignerWithAddress
+	let bridge: HardhatEthersSigner, bridge2: HardhatEthersSigner
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)

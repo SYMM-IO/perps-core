@@ -1,24 +1,24 @@
-import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { BigNumberish, ethers } from "ethers"
-import { setBalance } from "../helpers/network-helpers"
+import { setBalance } from "../helpers/network-helpers.js"
 
-import { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet"
-import { SettlementSigStructOutput } from "../../src/types/facets/Settlement/SettlementFacet"
-import type { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/interfaces/ISymmio"
-import { decimal, serializeToJson, unDecimal } from "../utils/Common"
-import { logger } from "../utils/LoggerUtils"
-import { getPrice } from "../utils/PriceUtils"
-import { getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlSig } from "../utils/SignatureUtils"
-import { runTx } from "../utils/TxUtils"
-import { PositionType } from "./Enums"
-import { RunContext } from "./RunContext"
+import { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet.js"
+import { SettlementSigStructOutput } from "../../src/types/facets/Settlement/SettlementFacet.js"
+import type { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/interfaces/ISymmio.js"
+import { decimal, serializeToJson, unDecimal } from "../utils/Common.js"
+import { logger } from "../utils/LoggerUtils.js"
+import { getPrice } from "../utils/PriceUtils.js"
+import { getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlSig } from "../utils/SignatureUtils.js"
+import { runTx } from "../utils/TxUtils.js"
+import { PositionType } from "./Enums.js"
+import { RunContext } from "./RunContext.js"
 import { PartyEntity } from "./partyEntitiy.js"
-import { EmergencyCloseRequest, emergencyCloseRequestBuilder } from "./requestModels/EmergencyCloseRequest"
-import { FillCloseRequest, limitFillCloseRequestBuilder } from "./requestModels/FillCloseRequest"
-import { limitOpenRequestBuilder, OpenRequest } from "./requestModels/OpenRequest"
+import { EmergencyCloseRequest, emergencyCloseRequestBuilder } from "./requestModels/EmergencyCloseRequest.js"
+import { FillCloseRequest, limitFillCloseRequestBuilder } from "./requestModels/FillCloseRequest.js"
+import { limitOpenRequestBuilder, OpenRequest } from "./requestModels/OpenRequest.js"
 
 export class Hedger extends PartyEntity {
-	constructor(context: RunContext, signer: SignerWithAddress) {
+	constructor(context: RunContext, signer: HardhatEthersSigner) {
 		super(context, signer)
 	}
 

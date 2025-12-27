@@ -1,7 +1,7 @@
 import {Builder} from "builder-pattern"
 import {BigNumberish} from "ethers"
 
-import {decimal} from "../../utils/Common"
+import {decimal} from "../../utils/Common.js"
 
 export interface FillCloseRequest {
 	filledAmount: BigNumberish

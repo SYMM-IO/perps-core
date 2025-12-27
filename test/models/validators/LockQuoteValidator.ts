@@ -1,11 +1,11 @@
 import {expect} from "chai"
 
-import {QuoteStatus} from "../Enums"
-import {Hedger} from "../Hedger"
-import {RunContext} from "../RunContext"
-import {BalanceInfo, User} from "../User"
-import {logger} from "../../utils/LoggerUtils"
-import {TransactionValidator} from "./TransactionValidator"
+import {QuoteStatus} from "../Enums.js"
+import {Hedger} from "../Hedger.js"
+import {RunContext} from "../RunContext.js"
+import {BalanceInfo, User} from "../User.js"
+import {logger} from "../../utils/LoggerUtils.js"
+import {TransactionValidator} from "./TransactionValidator.js"
 
 export type LockQuoteValidatorBeforeArg = {
 	user: User

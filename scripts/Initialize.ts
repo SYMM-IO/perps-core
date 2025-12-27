@@ -1,4 +1,4 @@
-import { ethers, run } from "hardhat"
+import { tasks } from "hardhat"
 
 import { createRunContext, RunContext } from "../test/models/RunContext"
 import { decimal } from "../test/utils/Common"
@@ -7,18 +7,19 @@ import { ControlFacet } from "../src/types"
 import { symbolsMock } from "../test/models/SymbolManager"
 import { Addresses, loadAddresses, saveAddresses } from "./utils/file"
 import { keccak256, toUtf8Bytes } from "ethers"
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
 export async function initialize(): Promise<RunContext> {
-	let collateral = await run("deploy:stablecoin")
-	let diamond = await run("deploy:diamond", {
+	const runTask = (taskName: string, params: Record<string, unknown> = {}) => tasks.getTask(taskName).run(params)
+	let collateral = await runTask("deploy:stablecoin")
+	let diamond = await runTask("deploy:diamond", {
 		logData: false,
 		genABI: false,
 		reportGas: true,
 	})
-	let multicall = process.env.DEPLOY_MULTICALL == "true" ? await run("deploy:multicall") : undefined
+	let multicall = process.env.DEPLOY_MULTICALL == "true" ? await runTask("deploy:multicall") : undefined
 
-	const multiAccount = await run("deploy:multiAccount", { symmioAddress: diamond.address, admin: process.env.ADMIN_PUBLIC_KEY });
+	const multiAccount = await runTask("deploy:multiAccount", { symmioAddress: diamond.address, admin: process.env.ADMIN_PUBLIC_KEY });
 
 	let context = await createRunContext(diamond.address, collateral.address, multiAccount.address)
 
@@ -49,7 +50,7 @@ export async function initialize(): Promise<RunContext> {
 		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.user2.getAddress(), keccak256(toUtf8Bytes("LIQUIDATOR_ROLE"))),
 	)
 
-	const addSymbolAsync = async (controlFacet: ControlFacet, adminSigner: SignerWithAddress, sym: any) => {
+	const addSymbolAsync = async (controlFacet: ControlFacet, adminSigner: HardhatEthersSigner, sym: any) => {
 		await runTx(
 			controlFacet
 				.connect(adminSigner)
