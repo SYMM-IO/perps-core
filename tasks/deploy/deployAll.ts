@@ -3,6 +3,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 
 import { readData, writeData } from "../utils/fs.js"
 import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE, AFFILIATEHUB_DEPLOYMENT_FILE, DEPLOYMENT_LOG_FILE, INSTANTLAYER_DEPLOYMENT_FILE } from "./constants.js"
+import { getConnection } from "./helpers.js"
 
 const DEPLOYMENT_FILES = {
 	DIAMOND: DEPLOYMENT_LOG_FILE,
@@ -55,16 +56,18 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 		type: ArgumentType.STRING_WITHOUT_DEFAULT,
 		defaultValue: undefined,
 	})
-	.addOption({ name: "verify", description: "Verify contracts after deployment", type: ArgumentType.BOOLEAN, defaultValue: true })
+	.addOption({ name: "verify", description: "Verify contracts after deployment", type: ArgumentType.BOOLEAN, defaultValue: false })
 	.addOption({ name: "logData", description: "Write deployment addresses to data files", type: ArgumentType.BOOLEAN, defaultValue: true })
+	.addOption({ name: "setup", description: "Run post-deployment system setup", type: ArgumentType.BOOLEAN, defaultValue: false })
 	.setAction(async () => ({
-		default: async ({ admin, symmiofeereceiver, verify, logData }, hre) => {
+		default: async ({ admin, symmiofeereceiver, verify, logData, setup }, hre) => {
 			const run = (taskName: string, params: Record<string, unknown> = {}) => hre.tasks.getTask(taskName).run(params)
 			console.log("=".repeat(80))
 			console.log("SYSTEM DEPLOYMENT STARTED")
 			console.log("=".repeat(80))
 			console.log(`Admin Address: ${admin}`)
 			console.log(`Verify Contracts: ${verify}`)
+			console.log(`Run Setup: ${setup}`)
 			console.log("=".repeat(80))
 			console.log()
 
@@ -148,6 +151,13 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			}
 			console.log()
 
+			// Post-deployment setup (optional)
+			if (setup) {
+				console.log("Running post-deployment setup...")
+				await setupSystem(hre, deployedContracts)
+				console.log()
+			}
+
 			// Step 5: Verify all contracts
 			let verificationResults: VerificationResult[] = []
 			if (verify) {
@@ -216,6 +226,79 @@ async function verifyAllContracts(run: any) {
 	await run("verify:accountHub")
 	await run("verify:affiliateHub")
 	await run("verify:instantLayer")
+}
+
+async function setupSystem(hre: any, deployedContracts: { [key: string]: string }) {
+	console.log("🛠️  Setting up system...")
+	const coreAddress = deployedContracts.diamond
+	const affiliateHubAddress = deployedContracts.affiliateHub
+	const accountHubAddress = deployedContracts.accountHub
+
+	if (!coreAddress || !affiliateHubAddress || !accountHubAddress) {
+		throw new Error("Missing deployment addresses required for setup")
+	}
+
+	console.log("🔗 Connecting contracts...")
+	const { ethers } = await getConnection(hre)
+	const [deployer] = await ethers.getSigners()
+	const accountHub = await ethers.getContractAt("AccountHub", accountHubAddress)
+	const affiliateHub = await ethers.getContractAt("AffiliateHub", affiliateHubAddress)
+	const controlFacet = await ethers.getContractAt("ControlFacet", coreAddress)
+	const viewFacet = await ethers.getContractAt("ViewFacet", coreAddress)
+
+	console.log("🔐 Granting roles...")
+	await accountHub.connect(deployer).grantRole(ethers.keccak256(ethers.toUtf8Bytes("DEPLOYER_ROLE")), affiliateHubAddress)
+	await affiliateHub.connect(deployer).grantRole(ethers.keccak256(ethers.toUtf8Bytes("SETTER_ROLE")), await deployer.getAddress())
+	await affiliateHub.connect(deployer).grantRole(ethers.keccak256(ethers.toUtf8Bytes("APPROVER_ROLE")), await deployer.getAddress())
+	console.log("⚙️  Linking hubs and whitelisting core...")
+	await affiliateHub.connect(deployer).setAccountHub(accountHubAddress)
+	await affiliateHub.connect(deployer).setWhitelistedSymmioCore(coreAddress, true)
+
+	console.log("🧾 Requesting affiliate registration (static call)...")
+	const accountManagerAddress = await affiliateHub.connect(deployer).requestToRegisterAffiliate.staticCall({
+		name: "test affiliate",
+		brandColor: "d69d00",
+		admin: await deployer.getAddress(),
+		stakeholders: [
+			{
+				receiver: await deployer.getAddress(),
+				share: ethers.parseEther("0"),
+			},
+		],
+		symmioShare: ethers.parseEther("1"),
+		metadata: "0x",
+		legacyMultiAccounts: [],
+		symmioCores: [coreAddress],
+	})
+
+	console.log("🧾 Requesting affiliate registration (tx)...")
+	await affiliateHub.connect(deployer).requestToRegisterAffiliate({
+		name: "test affiliate",
+		brandColor: "d69d00",
+		admin: await deployer.getAddress(),
+		stakeholders: [
+			{
+				receiver: await deployer.getAddress(),
+				share: ethers.parseEther("0"),
+			},
+		],
+		symmioShare: ethers.parseEther("1"),
+		metadata: "0x",
+		legacyMultiAccounts: [],
+		symmioCores: [coreAddress],
+	})
+
+	await controlFacet.connect(deployer).setAdmin(deployer.address)
+	console.log("🔐 Granting signer admin roles...")
+	console.log(deployer.address)
+	console.log(await viewFacet.hasRole(await deployer.getAddress(), ethers.keccak256(ethers.toUtf8Bytes("DEFAULT_ADMIN_ROLE"))))
+	await controlFacet.connect(deployer).grantRole(affiliateHubAddress, ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ADMIN_ROLE")))
+	await controlFacet.connect(deployer).grantRole(affiliateHubAddress, ethers.keccak256(ethers.toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
+	await controlFacet.connect(deployer).grantRole(accountHubAddress, ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ADMIN_ROLE")))
+
+	console.log("✅ Approving affiliate...")
+	await affiliateHub.connect(deployer).approveAffiliate(accountManagerAddress)
+	console.log("✅ System setup complete.")
 }
 
 /**
@@ -313,7 +396,7 @@ function saveReport(report: SystemDeploymentReport): void {
 		writeData(filename, report)
 
 		console.log()
-		console.log(`📁 Full report saved to: ${filename}`)
+		console.log(`📁 Full report saved to:  data/${filename}`)
 	} catch (err: any) {
 		console.error(`Failed to save report: ${err.message}`)
 	}

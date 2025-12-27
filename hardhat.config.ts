@@ -12,6 +12,7 @@ dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
 const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
 const privateKey = process.env.PRIVATE_KEY || DUMMY_PRIVATE_KEY
 const privateKeyList = process.env.PRIVATE_KEYS_STR?.split(",") || []
+const defaultBalance = "10000000000000000000000"
 const etherscanApiKey = process.env.ETHERSCAN_API_KEY || ""
 const hardhatDockerUrl = process.env.HARDHAT_DOCKER_URL || ""
 
@@ -106,6 +107,7 @@ export default defineConfig({
 			type: "edr-simulated",
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
+			accounts: [{ privateKey, balance: defaultBalance }],
 		},
 		// docker: {
 		// 	type: "http",
