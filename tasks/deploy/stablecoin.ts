@@ -1,19 +1,21 @@
 import { task } from "hardhat/config"
-import { HardhatRuntimeEnvironment } from "hardhat/types"
 import { ArgumentType } from "hardhat/types/arguments"
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { readData, writeData } from "../utils/fs"
-import { DEPLOYMENT_LOG_FILE } from "./constants"
 
-export async function deployStablecoin(
-	hre: HardhatRuntimeEnvironment,
-	{ logData = true }: { logData?: boolean } = {},
-) {
-	const { ethers } = hre
+import { readData, writeData } from "../utils/fs.js"
+import { DEPLOYMENT_LOG_FILE } from "./constants.js"
+import { getConnection } from "./helpers.js"
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+
+type DeployStablecoinArgs = {
+	logData?: boolean
+}
+
+export async function deployStablecoin(hre: any, { logData = true }: DeployStablecoinArgs = {}) {
+	const { ethers } = await getConnection(hre)
 	console.log("Running deploy:stablecoin")
 
-	const signers: SignerWithAddress[] = await ethers.getSigners()
-	const owner: SignerWithAddress = signers[0]
+	const signers: HardhatEthersSigner[] = await ethers.getSigners()
+	const owner: HardhatEthersSigner = signers[0]
 	console.log("using address: " + JSON.stringify(owner))
 
 	const StablecoinFactory = await ethers.getContractFactory("FakeStablecoin")
@@ -28,8 +30,7 @@ export async function deployStablecoin(
 		let deployedData = []
 		try {
 			deployedData = readData(DEPLOYMENT_LOG_FILE)
-		} catch (err) {
-		}
+		} catch (err) {}
 
 		// Append new data
 		deployedData.push({
@@ -46,6 +47,9 @@ export async function deployStablecoin(
 	return stablecoin
 }
 
-task("deploy:stablecoin", "Deploys the FakeStablecoin")
+export const stablecoinTask = task("deploy:stablecoin", "Deploys the FakeStablecoin")
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
-	.setAction(async (taskArgs, hre) => deployStablecoin(hre, taskArgs))
+	.setAction(async () => ({
+		default: async ({ logData }, hre) => deployStablecoin(hre, { logData }),
+	}))
+	.build()

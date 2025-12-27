@@ -1,4 +1,4 @@
-import { networkHelpers } from "./hardhat-connection"
+import { networkHelpers } from "./hardhat-connection.js"
 
 export async function loadFixture<T>(fixture: () => Promise<T>): Promise<T> {
 	return networkHelpers.loadFixture(fixture)

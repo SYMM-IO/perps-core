@@ -1,16 +1,156 @@
-import { toUtf8Bytes } from "ethers"
-import { ethers, hre } from "./helpers/hardhat-connection"
+import { toUtf8Bytes } from "ethers";
 
-import { AccountHub, AccountHubLens, AffiliateHub } from "../src/types"
-import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types"
-import { createRunContext, RunContext } from "./models/RunContext"
-import { decimal } from "./utils/Common"
-import { deployStablecoin } from "../tasks/deploy/stablecoin"
-import { deployDiamond } from "../tasks/deploy/diamond"
-import { deploySymmioPartyB } from "../tasks/deploy/partyB"
-import { deployInstantLayer } from "../tasks/deploy/instantLayer"
-import { deployAffiliateHub } from "../tasks/deploy/affiliateHub"
-import { deployAccountHub } from "../tasks/deploy/accountHub"
+
+
+import { AccountHub, AccountHubLens, AffiliateHub } from "../src/types/index.js";
+import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types/index.js";
+import { deployAccountHub } from "../tasks/deploy/accountHub.js";
+import { deployAffiliateHub } from "../tasks/deploy/affiliateHub.js";
+import { deployDiamond } from "../tasks/deploy/diamond.js";
+import { deployInstantLayer } from "../tasks/deploy/instantLayer.js";
+import { deploySymmioPartyB } from "../tasks/deploy/partyB.js";
+import { deployStablecoin } from "../tasks/deploy/stablecoin.js";
+import { ethers, hre } from "./helpers/hardhat-connection.js";
+import { createRunContext, RunContext } from "./models/RunContext.js";
+import { decimal } from "./utils/Common.js";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 export async function initializeFixture(): Promise<RunContext> {
 	const collateral = await deployStablecoin(hre, { logData: false })
@@ -50,8 +190,10 @@ export async function initializeFixture(): Promise<RunContext> {
 	await affiliateHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
 	await affiliateHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("APPROVER_ROLE")), context.signers.admin.address)
 
+
 	await affiliateHub.connect(context.signers.admin).setWhitelistedSymmioCore(diamond, true)
-	await affiliateHub.connect(context.signers.admin).setAccountHub(await accountHub.getAddress())
+	const accountHubAddress = await accountHub.getAddress()
+	await affiliateHub.connect(context.signers.admin).setAccountHub(accountHubAddress)
 
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
 	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("PAUSER_ROLE")), context.signers.admin.address)

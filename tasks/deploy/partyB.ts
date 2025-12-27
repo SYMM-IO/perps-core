@@ -1,33 +1,36 @@
 import { task } from "hardhat/config"
-import { HardhatRuntimeEnvironment } from "hardhat/types"
 import { ArgumentType } from "hardhat/types/arguments"
-import { readData, writeData } from "../utils/fs"
-import { DEPLOYMENT_LOG_FILE } from "./constants"
-import { deployProxy, erc1967 } from "../../utils/upgrades-shim"
 
-export async function deploySymmioPartyB(
-	hre: HardhatRuntimeEnvironment,
-	{ symmioAddress = "", admin = "", logData = true }: { symmioAddress?: string; admin?: string; logData?: boolean } = {},
-) {
-	const { ethers } = hre
+import { readData, writeData } from "../utils/fs.js"
+import { DEPLOYMENT_LOG_FILE } from "./constants.js"
+import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+
+type DeploySymmioPartyBArgs = {
+	symmioAddress: string
+	admin: string
+	logData?: boolean
+}
+
+export async function deploySymmioPartyB(hre: any, { symmioAddress, admin, logData = true }: DeploySymmioPartyBArgs) {
+	const { ethers, upgrades } = await getConnection(hre)
 	console.log("Running deploy:symmioPartyB")
 
 	const [deployer] = await ethers.getSigners()
+
 	console.log("Deploying contracts with the account:", deployer.address)
 
 	// Deploy SymmioPartyB as upgradeable
 	const SymmioPartyBFactory = await ethers.getContractFactory("SymmioPartyB")
-	const symmioPartyB = await deployProxy(hre, SymmioPartyBFactory, [admin, symmioAddress], {
-		initializer: "initialize",
-		admin,
-	})
+	const symmioPartyB = await deployProxyWithFallback(hre, SymmioPartyBFactory, [admin, symmioAddress], { initializer: "initialize" })
+	await symmioPartyB.waitForDeployment()
 
-	console.log("SymmioPartyB deployed to", {
+	const addresses = {
 		proxy: await symmioPartyB.getAddress(),
-		admin: await erc1967(hre).getAdminAddress(await symmioPartyB.getAddress()),
-		implementation: await erc1967(hre).getImplementationAddress(await symmioPartyB.getAddress()),
-	})
+		...(await getUpgradeAddresses(upgrades, symmioPartyB)),
+	}
+	console.log("SymmioPartyB deployed to", addresses)
 
+	// Update the deployed addresses JSON file
 	if (logData) {
 		let deployedData = []
 		try {
@@ -45,12 +48,12 @@ export async function deploySymmioPartyB(
 			},
 			{
 				name: "SymmioPartyBAdmin",
-				address: await erc1967(hre).getAdminAddress(await symmioPartyB.getAddress()),
+				address: addresses.admin,
 				constructorArguments: [],
 			},
 			{
 				name: "SymmioPartyBImplementation",
-				address: await erc1967(hre).getImplementationAddress(await symmioPartyB.getAddress()),
+				address: addresses.implementation,
 				constructorArguments: [],
 			},
 		)
@@ -63,8 +66,16 @@ export async function deploySymmioPartyB(
 	return symmioPartyB
 }
 
-task("deploy:symmioPartyB", "Deploys the SymmioPartyB")
-	.addOption({ name: "symmioAddress", description: "The address of the Symmio contract", defaultValue: "" })
-	.addOption({ name: "admin", description: "The admin address", defaultValue: "" })
+export const partyBTask = task("deploy:symmioPartyB", "Deploys the SymmioPartyB")
+	.addOption({
+		name: "symmioAddress",
+		description: "The address of the Symmio contract",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
+	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
-	.setAction(async (taskArgs, hre) => deploySymmioPartyB(hre, taskArgs))
+	.setAction(async () => ({
+		default: async ({ symmioAddress, admin, logData }, hre) => deploySymmioPartyB(hre, { symmioAddress, admin, logData }),
+	}))
+	.build()

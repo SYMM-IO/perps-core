@@ -1,15 +1,15 @@
-import {loadFixture} from "./helpers/network-helpers"
+import {loadFixture} from "./helpers/network-helpers.js"
 
-import {initializeFixture} from "./Initialize.fixture"
-import {PositionType} from "./models/Enums"
-import {Hedger} from "./models/Hedger"
-import {RunContext} from "./models/RunContext"
-import {User} from "./models/User"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
-import {decimal, unDecimal} from "./utils/Common"
+import {initializeFixture} from "./Initialize.fixture.js"
+import {PositionType} from "./models/Enums.js"
+import {Hedger} from "./models/Hedger.js"
+import {RunContext} from "./models/RunContext.js"
+import {User} from "./models/User.js"
+import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest.js"
+import {decimal, unDecimal} from "./utils/Common.js"
 import {expect} from "chai"
-import {getDummySettlementSig, getDummySingleUpnlSig} from "./utils/SignatureUtils"
-import type { QuoteSettlementDataStructOutput} from "../src/types/facets/Settlement/ISettlementFacet"
+import {getDummySettlementSig, getDummySingleUpnlSig} from "./utils/SignatureUtils.js"
+import type { QuoteSettlementDataStructOutput} from "../src/types/facets/Settlement/ISettlementFacet.js"
 
 export function shouldBehaveLikeSettlement(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger

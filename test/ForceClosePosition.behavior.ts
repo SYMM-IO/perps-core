@@ -1,26 +1,26 @@
 import { expect } from "chai"
 import { toUtf8Bytes } from "ethers"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { ethers } from "./helpers/hardhat-connection"
-import { loadFixture, time } from "./helpers/network-helpers"
-import { PartyBForceCloseState, PositionType, QuoteStatus, UPNLSettlementState } from "./models/Enums"
-import type { BalanceInfo } from "./models/Hedger"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { ForceClosePositionValidator } from "./models/validators/ForceClosePositionValidator"
-import { decimal, getBlockTimestamp, getQuoteQuantity, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { ethers } from "./helpers/hardhat-connection.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { PartyBForceCloseState, PositionType, QuoteStatus, UPNLSettlementState } from "./models/Enums.js"
+import type { BalanceInfo } from "./models/Hedger.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { ForceClosePositionValidator } from "./models/validators/ForceClosePositionValidator.js"
+import { decimal, getBlockTimestamp, getQuoteQuantity, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common.js"
 import {
 	calculateExpectedAvgPriceForForceClose,
 	calculateExpectedClosePriceForForceClose,
 	calculateExpectedClosePriceForForceCloseWithAvg,
-} from "./utils/PriceUtils"
-import { getDummyCrossSettlementSig, getDummyHighLowPriceSig, getDummyMasterAccountSettlementSig, getDummyPriceSig } from "./utils/SignatureUtils"
+} from "./utils/PriceUtils.js"
+import { getDummyCrossSettlementSig, getDummyHighLowPriceSig, getDummyMasterAccountSettlementSig, getDummyPriceSig } from "./utils/SignatureUtils.js"
 import { migratePartyBToMaster } from "./utils/MasterAccount.js"
-import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
 
 export function shouldBehaveLikeForceClosePosition(): void {

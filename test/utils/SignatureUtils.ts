@@ -1,9 +1,9 @@
-import type { CrossLiquidationSigStruct } from "../../src/types/facets/ClearingHouse/ClearingHouseFacet"
-import type { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet"
-import type { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet"
-import type { SingleUpnlAndPriceSigStruct } from "../../src/types/facets/PartyA/PartyAFacet"
-import type { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/facets/Settlement/ISettlementFacet"
-import type { QuotePriceSigStruct } from "../../src/types/facets/liquidation/LiquidationFacet"
+import type { CrossLiquidationSigStruct } from "../../src/types/facets/ClearingHouse/ClearingHouseFacet.js"
+import type { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet.js"
+import type { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet.js"
+import type { SingleUpnlAndPriceSigStruct } from "../../src/types/facets/PartyA/PartyAFacet.js"
+import type { QuoteSettlementDataStructOutput, SettlementSigStructOutput } from "../../src/types/facets/Settlement/ISettlementFacet.js"
+import type { QuotePriceSigStruct } from "../../src/types/facets/liquidation/LiquidationFacet.js"
 import type {
 	DeferredLiquidationSigStruct,
 	MasterAccountQuoteSettlementDataStruct,
@@ -12,9 +12,9 @@ import type {
 	MasterAccountSettlementSigStructOutput,
 	PairUpnlAndPriceSigStruct,
 	SingleUpnlSigStruct,
-} from "../../src/types/interfaces/ISymmio"
-import { ethers } from "../helpers/hardhat-connection"
-import { getBlockTimestamp } from "./Common"
+} from "../../src/types/interfaces/ISymmio.js"
+import { ethers } from "../helpers/hardhat-connection.js"
+import { getBlockTimestamp } from "./Common.js"
 
 export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUpnlSigStruct> {
 	return {

@@ -1,41 +1,35 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { ContractTransactionReceipt } from "ethers"
 import { task } from "hardhat/config"
-import { HardhatRuntimeEnvironment } from "hardhat/types"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import {FacetCutAction, getSelectors} from "../utils/diamondCut"
-import {writeData} from "../utils/fs"
-import {generateGasReport} from "../utils/gas"
-import {DEPLOYMENT_LOG_FILE, FacetNames} from "./constants"
-import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
-import {ContractTransactionReceipt} from "ethers"
+import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
+import { writeData } from "../utils/fs.js"
+import { DEPLOYMENT_LOG_FILE, FacetNames } from "./constants.js"
+import { getConnection } from "./helpers.js"
 
 // Define which facets need which external libraries (based on compiled artifacts)
 const FacetLibraryDependencies: Record<string, string[]> = {
-	"PartyAFacet": ["LibQuoteClose"],
-	"PartyBPositionActionsFacet": ["LibQuoteClose", "LibQuoteFunding"],
-	"PartyBBatchActionsFacet": ["LibQuoteClose", "LibQuoteFunding"],
-	"PartyBQuoteActionsFacet": ["LibQuoteClose"],
-	"ForceActionsFacet": ["LibQuoteClose"],
-	"ViewFacetSymbol": ["LibQuoteFunding"],
-	"FundingRateFacet": ["LibQuoteFunding"],
-	"LiquidationFacet": ["LibQuoteFunding"]
+	PartyAFacet: ["LibQuoteClose"],
+	PartyBPositionActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
+	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
+	PartyBQuoteActionsFacet: ["LibQuoteClose"],
+	ForceActionsFacet: ["LibQuoteClose"],
+	ViewFacetSymbol: ["LibQuoteFunding"],
+	FundingRateFacet: ["LibQuoteFunding"],
+	LiquidationFacet: ["LibQuoteFunding"],
 }
 
-function chunkArray<T>(items: T[], size: number): T[][] {
-	const chunks: T[][] = []
-	for (let i = 0; i < items.length; i += size) {
-		chunks.push(items.slice(i, i + size))
-	}
-	return chunks
+type DeployDiamondArgs = {
+	genABI?: boolean
+	logData?: boolean
+	reportGas?: boolean
 }
 
-export async function deployDiamond(
-	hre: HardhatRuntimeEnvironment,
-	{ logData = true, reportGas = true, genABI = false }: { logData?: boolean; reportGas?: boolean; genABI?: boolean } = {},
-) {
-	const { ethers } = hre
-	const signers: SignerWithAddress[] = await ethers.getSigners()
-	const owner: SignerWithAddress = signers[0]
+export async function deployDiamond(hre: any, { logData = true, genABI = false, reportGas = true }: DeployDiamondArgs = {}) {
+	const { ethers } = await getConnection(hre)
+	const signers: HardhatEthersSigner[] = await ethers.getSigners()
+	const owner: HardhatEthersSigner = signers[0]
 	let totalGasUsed = BigInt(0)
 	let receipt: ContractTransactionReceipt
 
@@ -90,14 +84,14 @@ export async function deployDiamond(
 
 	// Deploy Facets
 	const cut: Array<{
-		facetAddress: string;
-		action: FacetCutAction;
-		functionSelectors: string[];
+		facetAddress: string
+		action: FacetCutAction
+		functionSelectors: string[]
 	}> = []
 
 	const deployedFacets: Array<{
-		name: string;
-		address: string;
+		name: string
+		address: string
 	}> = []
 
 	console.log("Deploying facets: ", FacetNames)
@@ -107,10 +101,10 @@ export async function deployDiamond(
 		let FacetFactory
 
 		if (requiredLibraries && requiredLibraries.length > 0) {
-				const libraries: Record<string, string> = {}
-				for (const lib of requiredLibraries) {
-					libraries[`project/contracts/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
-				}
+			const libraries: Record<string, string> = {}
+			for (const lib of requiredLibraries) {
+				libraries[`project/contracts/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
+			}
 			FacetFactory = await ethers.getContractFactory(facetName, { libraries })
 		} else {
 			FacetFactory = await ethers.getContractFactory(facetName)
@@ -136,18 +130,15 @@ export async function deployDiamond(
 	// Upgrade Diamond with Facets
 	const diamondCut = await ethers.getContractAt("IDiamondCut", await diamond.getAddress())
 
-	const cutChunks = chunkArray(
-		cut,
-		8, // chunk to stay under per-tx gas caps
-	)
-
-	for (let i = 0; i < cutChunks.length; i++) {
-		const actions = cutChunks[i]
+	// Call Initializer
+	const call = diamondInit.interface.encodeFunctionData("init")
+	const chunkSize = 6
+	for (let i = 0; i < cut.length; i += chunkSize) {
+		const chunk = cut.slice(i, i + chunkSize)
 		const isFirst = i === 0
-		const callData = isFirst ? diamondInit.interface.encodeFunctionData("init") : "0x"
-		const target = isFirst ? await diamondInit.getAddress() : ethers.ZeroAddress
-
-		const tx = await diamondCut.diamondCut(actions, target, callData)
+		const initTarget = isFirst ? await diamondInit.getAddress() : ethers.ZeroAddress
+		const initCalldata = isFirst ? call : "0x"
+		const tx = await diamondCut.diamondCut(chunk, initTarget, initCalldata)
 		receipt = (await tx.wait())!
 		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
 
@@ -201,8 +192,13 @@ export async function deployDiamond(
 	return diamond
 }
 
-task("deploy:diamond", "Deploys the Diamond contract")
+export const diamondTask = task("deploy:diamond", "Deploys the Diamond contract")
+	.addOption({ name: "genABI", description: "Generate ABI artifacts", type: ArgumentType.BOOLEAN, defaultValue: false })
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.addOption({ name: "reportGas", description: "Report gas consumption and costs", type: ArgumentType.BOOLEAN, defaultValue: true })
-	.addOption({ name: "genABI", description: "Generate ABI artifacts (ignored)", type: ArgumentType.BOOLEAN, defaultValue: false })
-	.setAction(async (taskArgs, hre) => deployDiamond(hre, taskArgs))
+	.setAction(async () => ({
+		default: async ({ logData, genABI, reportGas }, hre) => {
+			return deployDiamond(hre, { logData, genABI, reportGas })
+		},
+	}))
+	.build()

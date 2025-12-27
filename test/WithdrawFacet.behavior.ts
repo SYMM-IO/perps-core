@@ -1,11 +1,11 @@
-import { loadFixture, time } from "./helpers/network-helpers";
+import { loadFixture, time } from "./helpers/network-helpers.js";
 import { expect } from "chai";
-import {ethers} from "./helpers/hardhat-connection";
+import {ethers} from "./helpers/hardhat-connection.js";
 
-import { initializeFixture } from "./Initialize.fixture";
-import { RunContext } from "./models/RunContext";
-import { User } from "./models/User";
-import { WithdrawStatus } from "./models/Enums";
+import { initializeFixture } from "./Initialize.fixture.js";
+import { RunContext } from "./models/RunContext.js";
+import { User } from "./models/User.js";
+import { WithdrawStatus } from "./models/Enums.js";
 
 export function shouldBehaveLikeWithdrawFacet(): void {
 	let context: RunContext;

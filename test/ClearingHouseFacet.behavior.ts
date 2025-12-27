@@ -11,7 +11,7 @@ import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js
 import { decimal } from "./utils/Common.js"
 import { getDummyCrossLiquidationSig, getDummyPriceSig } from "./utils/SignatureUtils.js"
 import { migratePartyBToMaster } from "./utils/MasterAccount.js"
-import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { loadFixture } from "./helpers/network-helpers.js"
 
 export function shouldBehaveLikeClearingHouseFacet(): void {

@@ -1,20 +1,20 @@
-import { loadFixture } from "./helpers/network-helpers"
+import { loadFixture } from "./helpers/network-helpers.js"
 import { Builder } from "builder-pattern"
-import { ethers } from "./helpers/hardhat-connection"
+import { ethers } from "./helpers/hardhat-connection.js"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { OrderType, PositionType } from "./models/Enums"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { OpenRequest } from "./models/requestModels/OpenRequest"
-import { QuoteRequest } from "./models/requestModels/QuoteRequest"
-import { decimal } from "./utils/Common"
-import { getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils"
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { OrderType, PositionType } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { OpenRequest } from "./models/requestModels/OpenRequest.js"
+import { QuoteRequest } from "./models/requestModels/QuoteRequest.js"
+import { decimal } from "./utils/Common.js"
+import { getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils.js"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
 export function shouldBehaveLikeSpecificScenario(): void {
-	let uSigner: SignerWithAddress
+	let uSigner: HardhatEthersSigner
 	beforeEach(async function () {
 		this.context = await loadFixture(initializeFixture)
 		uSigner = await ethers.getImpersonatedSigner(ethers.Wallet.createRandom().address)

@@ -1,15 +1,15 @@
 import { task } from "hardhat/config"
 
-import { readData } from "../utils/fs"
-import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE, AFFILIATEHUB_DEPLOYMENT_FILE, DEPLOYMENT_LOG_FILE, INSTANTLAYER_DEPLOYMENT_FILE } from "./constants"
+import { readData } from "../utils/fs.js"
+import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE, AFFILIATEHUB_DEPLOYMENT_FILE, DEPLOYMENT_LOG_FILE, INSTANTLAYER_DEPLOYMENT_FILE } from "./constants.js"
 
-task("verify:deployment", "Verifies the deployed contracts").setAction(async (_, { run }) => {
+const verifyDeploymentAction = async (_: unknown, hre: any) => {
 	const deployedAddresses = readData(DEPLOYMENT_LOG_FILE)
 
 	for (const address of deployedAddresses) {
 		try {
 			console.log(`Verifying ${address.address}`)
-			await run("verify:verify", {
+			await hre.tasks.getTask("verify:verify").run({
 				address: address.address,
 				constructorArguments: address.constructorArguments,
 			})
@@ -17,15 +17,15 @@ task("verify:deployment", "Verifies the deployed contracts").setAction(async (_,
 			console.error(err)
 		}
 	}
-})
+}
 
-task("verify:affiliateHub", "Verifies the deployed contracts").setAction(async (_, { run }) => {
+const verifyAffiliateHubAction = async (_: unknown, hre: any) => {
 	const deployedAddresses = readData(AFFILIATEHUB_DEPLOYMENT_FILE)
 
 	for (const address of deployedAddresses) {
 		try {
 			console.log(`Verifying ${address.address}`)
-			await run("verify:verify", {
+			await hre.tasks.getTask("verify:verify").run({
 				address: address.address,
 				constructorArguments: address.constructorArguments,
 			})
@@ -33,15 +33,15 @@ task("verify:affiliateHub", "Verifies the deployed contracts").setAction(async (
 			console.error(err)
 		}
 	}
-})
+}
 
-task("verify:accountHub", "Verifies the deployed contracts").setAction(async (_, { run }) => {
+const verifyAccountHubAction = async (_: unknown, hre: any) => {
 	const deployedAddresses = readData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE)
 
 	for (const address of deployedAddresses) {
 		try {
 			console.log(`Verifying ${address.address}`)
-			await run("verify:verify", {
+			await hre.tasks.getTask("verify:verify").run({
 				address: address.address,
 				constructorArguments: address.constructorArguments,
 			})
@@ -49,15 +49,15 @@ task("verify:accountHub", "Verifies the deployed contracts").setAction(async (_,
 			console.error(err)
 		}
 	}
-})
+}
 
-task("verify:instantLayer", "Verifies the deployed contracts").setAction(async (_, { run }) => {
+const verifyInstantLayerAction = async (_: unknown, hre: any) => {
 	const deployedAddresses = readData(INSTANTLAYER_DEPLOYMENT_FILE)
 
 	for (const address of deployedAddresses) {
 		try {
 			console.log(`Verifying ${address.address}`)
-			await run("verify:verify", {
+			await hre.tasks.getTask("verify:verify").run({
 				address: address.address,
 				constructorArguments: address.constructorArguments,
 			})
@@ -65,4 +65,20 @@ task("verify:instantLayer", "Verifies the deployed contracts").setAction(async (
 			console.error(err)
 		}
 	}
-})
+}
+
+export const verifyDeploymentTask = task("verify:deployment", "Verifies the deployed contracts")
+	.setAction(async () => ({ default: verifyDeploymentAction }))
+	.build()
+
+export const verifyAffiliateHubTask = task("verify:affiliateHub", "Verifies the deployed contracts")
+	.setAction(async () => ({ default: verifyAffiliateHubAction }))
+	.build()
+
+export const verifyAccountHubTask = task("verify:accountHub", "Verifies the deployed contracts")
+	.setAction(async () => ({ default: verifyAccountHubAction }))
+	.build()
+
+export const verifyInstantLayerTask = task("verify:instantLayer", "Verifies the deployed contracts")
+	.setAction(async () => ({ default: verifyInstantLayerAction }))
+	.build()

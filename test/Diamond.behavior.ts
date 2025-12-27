@@ -1,10 +1,10 @@
-import {loadFixture} from "./helpers/network-helpers"
+import {loadFixture} from "./helpers/network-helpers.js"
 import {assert, expect} from "chai"
-import {ethers} from "./helpers/hardhat-connection"
+import {ethers} from "./helpers/hardhat-connection.js"
 
-import {FacetCutAction, getSelectors} from "../tasks/utils/diamondCut"
-import {initializeFixture} from "./Initialize.fixture"
-import {RunContext} from "./models/RunContext"
+import {FacetCutAction, getSelectors} from "../tasks/utils/diamondCut.js"
+import {initializeFixture} from "./Initialize.fixture.js"
+import {RunContext} from "./models/RunContext.js"
 
 function haveSameMembers(array1: any[], array2: any[]) {
 	if (array1.length !== array2.length) {

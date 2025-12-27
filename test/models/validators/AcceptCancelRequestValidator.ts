@@ -1,13 +1,13 @@
 import {expect} from "chai"
 
-import type { QuoteStructOutput} from "../../../src/types/interfaces/ISymmio"
-import {getTotalPartyALockedValuesForQuotes, getTradingFeeForQuotes} from "../../utils/Common"
-import {logger} from "../../utils/LoggerUtils"
-import {expectToBeApproximately} from "../../utils/SafeMath"
-import {QuoteStatus} from "../Enums"
-import {RunContext} from "../RunContext"
-import {BalanceInfo, User} from "../User"
-import {TransactionValidator} from "./TransactionValidator"
+import type { QuoteStructOutput} from "../../../src/types/interfaces/ISymmio.js"
+import {getTotalPartyALockedValuesForQuotes, getTradingFeeForQuotes} from "../../utils/Common.js"
+import {logger} from "../../utils/LoggerUtils.js"
+import {expectToBeApproximately} from "../../utils/SafeMath.js"
+import {QuoteStatus} from "../Enums.js"
+import {RunContext} from "../RunContext.js"
+import {BalanceInfo, User} from "../User.js"
+import {TransactionValidator} from "./TransactionValidator.js"
 
 export type AcceptCancelRequestValidatorBeforeArg = {
 	user: User

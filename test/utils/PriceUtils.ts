@@ -1,6 +1,6 @@
-import type { QuoteStructOutput } from "../../src/types/interfaces/ISymmio"
-import { decimal } from "./Common"
-import { randomBigNumber } from "./RandomUtils"
+import type { QuoteStructOutput } from "../../src/types/interfaces/ISymmio.js"
+import { decimal } from "./Common.js"
+import { randomBigNumber } from "./RandomUtils.js"
 
 export async function getPrice(): Promise<bigint> {
 	const def = 200000n * 10n ** 18n

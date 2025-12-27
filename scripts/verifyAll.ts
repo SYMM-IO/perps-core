@@ -1,4 +1,4 @@
-import { run } from "hardhat"
+import { tasks } from "hardhat"
 
 async function main() {
 	let facets = {
@@ -15,7 +15,7 @@ async function main() {
 		if (!facets.hasOwnProperty(facet)) continue
 		const facetAddr = (facets as any)[facet]
 		console.log(`Verifying ${facet} with impl in ${facetAddr}`)
-		await run("verify:verify", {
+		await tasks.getTask("verify:verify").run({
 			address: facetAddr,
 			constructorArguments: [],
 		})

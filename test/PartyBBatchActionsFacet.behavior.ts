@@ -1,15 +1,15 @@
-import { loadFixture, time } from "./helpers/network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { Hedger } from "./models/Hedger"
-import { PositionType } from "./models/Enums"
-import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest"
-import { decimal, pausePartyB } from "./utils/Common"
-import { getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { Hedger } from "./models/Hedger.js"
+import { PositionType } from "./models/Enums.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { decimal, pausePartyB } from "./utils/Common.js"
+import { getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger

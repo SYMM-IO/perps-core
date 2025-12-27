@@ -1,16 +1,16 @@
-import { loadFixture } from "./helpers/network-helpers"
+import { loadFixture } from "./helpers/network-helpers.js"
 import { expect } from "chai"
-import {ethers} from "./helpers/hardhat-connection"
+import {ethers} from "./helpers/hardhat-connection.js"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest"
-import { decimal, getQuoteQuantity } from "./utils/Common"
-import { PositionType } from "./models/Enums"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
+import { decimal, getQuoteQuantity } from "./utils/Common.js"
+import { PositionType } from "./models/Enums.js"
 
 export function shouldBehaveLikeHooks(): void {
   let user: User, hedger: Hedger

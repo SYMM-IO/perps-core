@@ -1,14 +1,14 @@
 import { expect } from "chai"
 
-import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio"
-import { getCloseTradingFeeForQuotes, getTotalPartyALockedValuesForQuotes, getTotalPartyBLockedValuesForQuotes, unDecimal } from "../../utils/Common"
-import { logger } from "../../utils/LoggerUtils"
-import { expectToBeApproximately } from "../../utils/SafeMath"
-import { PositionType, QuoteStatus } from "../Enums"
-import { Hedger } from "../Hedger"
-import { RunContext } from "../RunContext"
-import { BalanceInfo, User } from "../User"
-import { TransactionValidator } from "./TransactionValidator"
+import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
+import { getCloseTradingFeeForQuotes, getTotalPartyALockedValuesForQuotes, getTotalPartyBLockedValuesForQuotes, unDecimal } from "../../utils/Common.js"
+import { logger } from "../../utils/LoggerUtils.js"
+import { expectToBeApproximately } from "../../utils/SafeMath.js"
+import { PositionType, QuoteStatus } from "../Enums.js"
+import { Hedger } from "../Hedger.js"
+import { RunContext } from "../RunContext.js"
+import { BalanceInfo, User } from "../User.js"
+import { TransactionValidator } from "./TransactionValidator.js"
 
 export type EmergencyCloseRequestValidatorBeforeArg = {
 	user: User

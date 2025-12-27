@@ -1,7 +1,7 @@
 import { BigNumberish } from "ethers"
 
-import { RunContext } from "../models/RunContext"
-import { Hedger } from "../models/Hedger"
+import { RunContext } from "../models/RunContext.js"
+import { Hedger } from "../models/Hedger.js"
 
 export async function migratePartyBToMaster(
 	context: RunContext,

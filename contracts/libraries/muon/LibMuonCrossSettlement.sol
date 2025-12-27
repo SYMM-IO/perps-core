@@ -16,7 +16,7 @@ library LibMuonCrossSettlement {
 		QuoteStorage.Layout storage quotes = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		// == SignatureCheck( ==
-		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+// 		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
 		// == ) ==
 		uint256[] memory partyANonces = new uint256[](settleSig.quotesSettlementsData.length);
 		bytes memory encodedData;

@@ -1,6 +1,6 @@
 import { expect } from "chai"
 import { ethers, toUtf8Bytes } from "ethers"
-import {loadFixture, time} from "./helpers/network-helpers"
+import {loadFixture, time} from "./helpers/network-helpers.js"
 
 import type {
 	HighLowPriceSigStruct,
@@ -9,23 +9,23 @@ import type {
 	QuoteSettlementDataStructOutput,
 	QuoteStructOutput,
 	SettlementSigStruct,
-} from "../src/types/interfaces/ISymmio"
-import { initializeFixture } from "./Initialize.fixture"
-import { PositionType, QuoteStatus } from "./models/Enums"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common"
+} from "../src/types/interfaces/ISymmio.js"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
 import {
 	getDummyCrossLiquidationSig,
 	getDummyCrossSettlementSig,
 	getDummyHighLowPriceSig,
 	getDummySettlementSig
-} from "./utils/SignatureUtils"
-import { migratePartyBToMaster } from "./utils/MasterAccount"
+} from "./utils/SignatureUtils.js"
+import { migratePartyBToMaster } from "./utils/MasterAccount.js"
 
 export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger, user2: User

@@ -1,14 +1,14 @@
-import { loadFixture } from "./helpers/network-helpers"
+import { loadFixture } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 import { ZeroAddress } from "ethers"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { RunContext } from "./models/RunContext"
-import { Hedger } from "./models/Hedger"
-import { User } from "./models/User"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { decimal } from "./utils/Common"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { RunContext } from "./models/RunContext.js"
+import { Hedger } from "./models/Hedger.js"
+import { User } from "./models/User.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { decimal } from "./utils/Common.js"
 
 export function shouldBehaveLikeMasterAccountMigration(): void {
 	let context: RunContext

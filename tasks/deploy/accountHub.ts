@@ -1,10 +1,9 @@
 import { task } from "hardhat/config"
-import { HardhatRuntimeEnvironment } from "hardhat/types"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { readData, writeData } from "../utils/fs"
-import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants"
-import { deployProxy, erc1967 } from "../../utils/upgrades-shim"
+import { readData, writeData } from "../utils/fs.js"
+import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants.js"
+import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -20,30 +19,31 @@ const ENTRY_TYPES = {
 	IMPLEMENTATION: "Implementation",
 } as const
 
-export async function deployAccountHub(
-	hre: HardhatRuntimeEnvironment,
-	{
-		admin = "",
-		affiliatehubaddress = "",
-		logData = true,
-	}: { admin?: string; affiliatehubaddress?: string; logData?: boolean } = {},
-) {
-	const { ethers } = hre
+type DeployAccountHubArgs = {
+	admin: string
+	affiliatehubaddress: string
+	logData?: boolean
+}
+
+export async function deployAccountHub(hre: any, { admin, affiliatehubaddress, logData = true }: DeployAccountHubArgs) {
+	const { ethers, upgrades } = await getConnection(hre)
 	console.log("Running deploy:accountHub")
 
 	const [deployer] = await ethers.getSigners()
 	console.log("Deploying contracts with the account:", deployer.address)
 
+	// Deploy linked libraries
+	const libQuoteParamsAddress = await deployLibQuoteParams(ethers)
+
 	// Get AccountManager bytecode
 	const accountManagerBytecode = await getAccountManagerBytecode(ethers)
 
 	// Deploy AccountHub as upgradeable proxy
-	const contract = await deployAccountHubProxy(hre, admin, affiliatehubaddress, accountManagerBytecode)
+	const contract = await deployAccountHubContract(hre, admin, affiliatehubaddress, accountManagerBytecode, libQuoteParamsAddress)
 
 	const addresses = {
 		proxy: await contract.getAddress(),
-		admin: await erc1967(hre).getAdminAddress(await contract.getAddress()),
-		implementation: await erc1967(hre).getImplementationAddress(await contract.getAddress()),
+		...(await getUpgradeAddresses(upgrades, contract)),
 	}
 	console.log("AccountHub deployed to", addresses)
 
@@ -56,12 +56,19 @@ export async function deployAccountHub(
 	return contract
 }
 
-task("deploy:accountHub", "Deploys the AccountHub")
-	.addOption({ name: "admin", description: "The admin address", defaultValue: "" })
-	.addOption({ name: "affiliatehubaddress", description: "The address of the affiliateHub contract", defaultValue: "" })
+export const accountHubTask = task("deploy:accountHub", "Deploys the AccountHub")
+	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
+	.addOption({
+		name: "affiliatehubaddress",
+		description: "The address of the affiliateHub contract",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
-	.setAction(async (taskArgs, hre) => deployAccountHub(hre, taskArgs))
-
+	.setAction(async () => ({
+		default: async ({ admin, affiliatehubaddress, logData }, hre) => deployAccountHub(hre, { admin, affiliatehubaddress, logData }),
+	}))
+	.build()
 /**
  * Gets the AccountManager contract bytecode
  */
@@ -73,31 +80,38 @@ async function getAccountManagerBytecode(ethers: any): Promise<string> {
 /**
  * Deploys the AccountHub upgradeable contract
  */
-async function deployAccountHubProxy(hre: any, admin: string, affiliateHubAddress: string, accountManagerBytecode: string) {
+async function deployAccountHubContract(
+	hre: any,
+	admin: string,
+	affiliateHubAddress: string,
+	accountManagerBytecode: string,
+	libQuoteParamsAddress: string,
+) {
+	const { ethers } = await getConnection(hre)
 	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, {
 		admin,
 		affiliateHubAddress,
 		accountManagerBytecode: `${accountManagerBytecode.slice(0, 10)}...`,
 	})
 
-	// Deploy LibQuoteParams library first
-	const LibQuoteParamsFactory = await hre.ethers.getContractFactory("LibQuoteParams")
-	const libQuoteParams = await LibQuoteParamsFactory.deploy()
-	await libQuoteParams.waitForDeployment()
-	console.log("LibQuoteParams deployed to:", await libQuoteParams.getAddress())
-
-	// Deploy AccountHub with library linked
-	const Factory = await hre.ethers.getContractFactory(CONTRACT_CONFIG.NAME, {
+	const Factory = await ethers.getContractFactory(CONTRACT_CONFIG.NAME, {
 		libraries: {
-			LibQuoteParams: await libQuoteParams.getAddress(),
+			"project/contracts/accountHub/libraries/LibQuoteParams.sol:LibQuoteParams": libQuoteParamsAddress,
 		},
 	})
-	const contract = await deployProxy(hre, Factory, [admin, affiliateHubAddress, accountManagerBytecode], {
+	const contract = await deployProxyWithFallback(hre, Factory, [admin, affiliateHubAddress, accountManagerBytecode], {
 		initializer: CONTRACT_CONFIG.INITIALIZER,
-		admin,
 	})
+	await contract.waitForDeployment()
 
 	return contract
+}
+
+async function deployLibQuoteParams(ethers: any): Promise<string> {
+	const LibQuoteParamsFactory = await ethers.getContractFactory("LibQuoteParams")
+	const libQuoteParams = await LibQuoteParamsFactory.deploy()
+	await libQuoteParams.waitForDeployment()
+	return libQuoteParams.getAddress()
 }
 
 /**

@@ -1,10 +1,9 @@
 import { task } from "hardhat/config"
-import { HardhatRuntimeEnvironment } from "hardhat/types"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { readData, writeData } from "../utils/fs"
-import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants"
-import { deployProxy, erc1967 } from "../../utils/upgrades-shim"
+import { readData, writeData } from "../utils/fs.js"
+import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants.js"
+import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -19,27 +18,25 @@ const ENTRY_TYPES = {
 	IMPLEMENTATION: "Implementation",
 } as const
 
-export async function deployAffiliateHub(
-	hre: HardhatRuntimeEnvironment,
-	{
-		admin = "",
-		symmiofeereceiver = "",
-		logData = true,
-	}: { admin?: string; symmiofeereceiver?: string; logData?: boolean } = {},
-) {
-	const { ethers } = hre
+type DeployAffiliateHubArgs = {
+	admin: string
+	symmiofeereceiver: string
+	logData?: boolean
+}
+
+export async function deployAffiliateHub(hre: any, { admin, symmiofeereceiver, logData = true }: DeployAffiliateHubArgs) {
+	const { ethers, upgrades } = await getConnection(hre)
 	console.log("Running deploy:affiliateHub")
 
 	const [deployer] = await ethers.getSigners()
 	console.log("Deploying contracts with the account:", deployer.address)
 
 	// Deploy AffiliateHub as upgradeable proxy
-	const contract = await deployAffiliateHubProxy(hre, admin, symmiofeereceiver)
+	const contract = await deployAffiliateHubContract(hre, admin, symmiofeereceiver)
 
 	const addresses = {
 		proxy: await contract.getAddress(),
-		admin: await erc1967(hre).getAdminAddress(await contract.getAddress()),
-		implementation: await erc1967(hre).getImplementationAddress(await contract.getAddress()),
+		...(await getUpgradeAddresses(upgrades, contract)),
 	}
 	console.log("AffiliateHub deployed to", addresses)
 
@@ -52,26 +49,34 @@ export async function deployAffiliateHub(
 	return contract
 }
 
-task("deploy:affiliateHub", "Deploys the AffiliateHub")
-	.addOption({ name: "admin", description: "The admin address", defaultValue: "" })
-	.addOption({ name: "symmiofeereceiver", description: "The address of the symmio fee receiver", defaultValue: "" })
+export const affiliateHubTask = task("deploy:affiliateHub", "Deploys the AffiliateHub")
+	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
+	.addOption({
+		name: "symmiofeereceiver",
+		description: "The address of the symmio fee receiver",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
-	.setAction(async (taskArgs, hre) => deployAffiliateHub(hre, taskArgs))
-
+	.setAction(async () => ({
+		default: async ({ admin, symmiofeereceiver, logData }, hre) => deployAffiliateHub(hre, { admin, symmiofeereceiver, logData }),
+	}))
+	.build()
 /**
  * Deploys the AffiliateHub upgradeable contract
  */
-async function deployAffiliateHubProxy(hre: any, admin: string, symmioFeeReceiver: string) {
+async function deployAffiliateHubContract(hre: any, admin: string, symmioFeeReceiver: string) {
+	const { ethers } = await getConnection(hre)
 	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, {
 		admin,
 		symmioFeeReceiver,
 	})
 
-	const Factory = await hre.ethers.getContractFactory("AffiliateHub")
-	const contract = await deployProxy(hre, Factory, [admin, symmioFeeReceiver], {
+	const Factory = await ethers.getContractFactory("AffiliateHub")
+	const contract = await deployProxyWithFallback(hre, Factory, [admin, symmioFeeReceiver], {
 		initializer: CONTRACT_CONFIG.INITIALIZER,
-		admin,
 	})
+	await contract.waitForDeployment()
 
 	return contract
 }
@@ -116,4 +121,4 @@ function createDeploymentEntries(addresses: any, admin: string, symmioFeeReceive
 			constructorArguments: [admin, symmioFeeReceiver],
 		},
 	]
-}	
+}

@@ -1,10 +1,10 @@
-import { loadFixture } from "./helpers/network-helpers"
+import { loadFixture } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 import sha3 from "js-sha3"
-import { initializeFixture } from "./Initialize.fixture"
-import { RunContext } from "./models/RunContext"
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { ethers } from "./helpers/hardhat-connection"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { RunContext } from "./models/RunContext.js"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { ethers } from "./helpers/hardhat-connection.js"
 
 const { keccak256 } = sha3
 
@@ -15,10 +15,10 @@ const LIQUIDATOR_ROLE = `0x${keccak256("LIQUIDATOR_ROLE")}`
 export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 	describe("AccessControl role admins", () => {
 		let context: RunContext
-		let admin: SignerWithAddress
-		let secondaryAdmin: SignerWithAddress
-		let operator: SignerWithAddress
-		let outsider: SignerWithAddress
+		let admin: HardhatEthersSigner
+		let secondaryAdmin: HardhatEthersSigner
+		let operator: HardhatEthersSigner
+		let outsider: HardhatEthersSigner
 
 		beforeEach(async function () {
 			context = await loadFixture(initializeFixture)

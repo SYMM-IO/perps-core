@@ -1,4 +1,4 @@
-import { run, ethers } from "hardhat";
+import { tasks } from "hardhat";
 import { Addresses, loadAddresses, saveAddresses } from "./utils/file";
 
 async function main() {
@@ -7,7 +7,7 @@ async function main() {
 	const admin = process.env.ADMIN_PUBLIC_KEY;
 
 	// Run the deploy:multiAccount task
-	const contract = await run("deploy:multiAccount", {
+	const contract = await tasks.getTask("deploy:multiAccount").run({
 		symmioAddress,
 		admin,
 		logData: true,

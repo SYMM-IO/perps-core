@@ -1,24 +1,24 @@
 import {expect} from "chai"
-import {ethers, hre} from "./helpers/hardhat-connection"
-import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
-import {MockSymmio, MockToken, SymmioFeeDistributor} from "../src/types"
-import {deployProxy} from "../utils/upgrades-shim"
+import {ethers, hre} from "./helpers/hardhat-connection.js"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import {MockSymmio, MockToken, SymmioFeeDistributor} from "../src/types/index.js"
+import {deployProxy} from "../utils/upgrades-shim.js"
 
 export function shouldBehaveLikeFeeDistributor() {
 	describe("FeeDistributor", function () {
 		let feeDistributor: SymmioFeeDistributor
 		let mockSymmio: MockSymmio
 		let mockToken: MockToken
-		let owner: SignerWithAddress
-		let admin: SignerWithAddress
-		let collector: SignerWithAddress
-		let setter: SignerWithAddress
-		let manager: SignerWithAddress
-		let pauser: SignerWithAddress
-		let unpauser: SignerWithAddress
-		let symmioReceiver: SignerWithAddress
-		let stakeholder1: SignerWithAddress
-		let stakeholder2: SignerWithAddress
+		let owner: HardhatEthersSigner
+		let admin: HardhatEthersSigner
+		let collector: HardhatEthersSigner
+		let setter: HardhatEthersSigner
+		let manager: HardhatEthersSigner
+		let pauser: HardhatEthersSigner
+		let unpauser: HardhatEthersSigner
+		let symmioReceiver: HardhatEthersSigner
+		let stakeholder1: HardhatEthersSigner
+		let stakeholder2: HardhatEthersSigner
 
 		const symmioShare = ethers.parseEther("0.5") // 50%
 
