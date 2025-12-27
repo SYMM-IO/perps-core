@@ -506,11 +506,7 @@ contract AccountHub is IAccountHub, IAccountHubInternal, Initializable, Pausable
 		return virtualAccounts[account].quoteIds.at(index);
 	}
 
-	function getActiveVAByKeyRaw(
-		address subAccount,
-		VirtualAccountIsolationType isolationType,
-		uint256 symbolId
-	) external view returns (address) {
+	function getActiveVAByKeyRaw(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId) external view returns (address) {
 		return activeVAByKey[subAccount][isolationType][symbolId];
 	}
 
@@ -944,16 +940,6 @@ contract AccountHub is IAccountHub, IAccountHubInternal, Initializable, Pausable
 		}
 
 		if (accountManager == address(0)) revert DeploymentFailed();
-	}
-
-	/**
-	 * @dev Generates deterministic account manager address
-	 */
-	function _generateAccountManagerAddress(address user, string memory name) private view returns (address) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
-		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
-		bytes32 initCodeHash = keccak256(bytecode);
-		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
 	}
 
 	/**
