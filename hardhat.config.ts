@@ -107,11 +107,11 @@ export default defineConfig({
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
 		},
-		docker: {
-			type: "http",
-			url: hardhatDockerUrl,
-			accounts: privateKeyList,
-		},
+		// docker: {
+		// 	type: "http",
+		// 	url: hardhatDockerUrl,
+		// 	accounts: privateKeyList,
+		// },
 		bsc: createNetworkConfig("https://binance.llamarpc.com"),
 		base: createNetworkConfig("https://api.zan.top/base-mainnet"),
 		polygon: createNetworkConfig("https://polygon-rpc.com"),

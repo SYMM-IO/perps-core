@@ -3,13 +3,24 @@ type NetworkConnection = {
 	upgrades?: any
 }
 
+// Use a consistent key for caching the connection across the entire application
+const CONNECTION_KEY = "__symmio_hardhat_connection__"
+
 export async function getConnection(hre: any): Promise<NetworkConnection> {
-	const connectionKey = Symbol.for("symmio.hardhat.connection")
-	const globalAny = globalThis as { [key: symbol]: Promise<any> | undefined }
-	if (!globalAny[connectionKey]) {
-		globalAny[connectionKey] = hre.network.connect()
+	const globalAny = globalThis as { [key: string]: Promise<any> | undefined }
+
+	// Check if connection is already cached
+	if (!globalAny[CONNECTION_KEY]) {
+		// Check if hre already has an ethers instance (e.g., from hardhat-connection.ts)
+		if (hre.ethers) {
+			// Use the existing ethers instance
+			globalAny[CONNECTION_KEY] = Promise.resolve({ ethers: hre.ethers, upgrades: hre.upgrades })
+		} else {
+			// Create a new connection and cache it
+			globalAny[CONNECTION_KEY] = hre.network.connect()
+		}
 	}
-	return globalAny[connectionKey]
+	return globalAny[CONNECTION_KEY]
 }
 
 export async function deployProxyWithFallback(
@@ -26,20 +37,16 @@ export async function deployProxyWithFallback(
 
 	const implementation = await factory.deploy()
 	await implementation.waitForDeployment()
+	const implAddress = await implementation.getAddress()
 
 	const { ethers } = await getConnection(hre)
 	const proxyFactory = await ethers.getContractFactory("LocalERC1967Proxy")
 	const initializer = options?.initializer ?? "initialize"
-	let initData = "0x"
-	if (typeof factory.interface?.encodeFunctionData === "function") {
-		try {
-			initData = factory.interface.encodeFunctionData(initializer, args)
-		} catch {
-			initData = "0x"
-		}
-	}
 
-	const proxy = await proxyFactory.deploy(await implementation.getAddress(), initData)
+	// Encode the initializer function call data
+	const initData = factory.interface.encodeFunctionData(initializer, args)
+
+	const proxy = await proxyFactory.deploy(implAddress, initData)
 	await proxy.waitForDeployment()
 
 	return factory.attach(await proxy.getAddress())
