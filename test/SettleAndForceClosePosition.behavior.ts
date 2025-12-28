@@ -230,7 +230,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 			// It can make a dead lock, where Party A want money to close position for B and B wants money to close position for A
 			await user.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
-			await expect(await context.forceActionsFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)).not.to.reverted
+			await expect(await context.forceActionsMasterAccountFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)).not.to.reverted
 		})
 
 		describe("Settlement guards", function () {
@@ -241,14 +241,14 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(await hedger.getAddress(), await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")))
 
-					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
+					await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
 						"LibSettlement: PartyB is in cross liquidation process",
 					)
 				})
 
 				it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
 					const sigEmpty = await getDummyCrossSettlementSig([0n], 0n, await hedger.getAddress(), [await user.getAddress()], [])
-					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigEmpty, [])).to.be.revertedWith(
+					await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigEmpty, [])).to.be.revertedWith(
 						"LibSettlement: Invalid length",
 					)
 
@@ -259,7 +259,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 						[await user.getAddress()],
 						[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
 					)
-					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigOne, [updatePrice, updatePrice])).to.be.revertedWith(
+					await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigOne, [updatePrice, updatePrice])).to.be.revertedWith(
 						"LibSettlement: Invalid length",
 					)
 				})
@@ -278,7 +278,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 						[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
 					)
 
-					await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
+					await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
 						"LibSettlement: Invalid quote",
 					)
 				})
@@ -286,7 +286,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 			it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
 				const sigEmpty = await getDummyCrossSettlementSig([0n], 0n, await hedger.getAddress(), [await user.getAddress()], [])
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigEmpty, [])).to.be.revertedWith(
+				await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigEmpty, [])).to.be.revertedWith(
 					"LibSettlement: Invalid length",
 				)
 
@@ -297,7 +297,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					[await user.getAddress()],
 					[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
 				)
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigOne, [updatePrice, updatePrice])).to.be.revertedWith(
+				await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigOne, [updatePrice, updatePrice])).to.be.revertedWith(
 					"LibSettlement: Invalid length",
 				)
 			})
@@ -316,7 +316,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n) } as any],
 				)
 
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
+				await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
 					"LibSettlement: Invalid quote",
 				)
 			})
@@ -339,12 +339,12 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					],
 				)
 				// invalid: updatedPrice < currentPrice
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [currentPrice])).to.be.revertedWith(
+				await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [currentPrice])).to.be.revertedWith(
 					"LibSettlement: Updated price is out of range",
 				)
 
 				// invalid: updatedPrice >= openedPrice
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [quote2ShortOpened.openedPrice])).to.be.revertedWith(
+				await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, sig, [quote2ShortOpened.openedPrice])).to.be.revertedWith(
 					"LibSettlement: Updated price is out of range",
 				)
 			})
@@ -371,7 +371,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					],
 				)
 
-				await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigInsolventA, [updatePrice])).to.be.revertedWith(
+				await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, sigInsolventA, [updatePrice])).to.be.revertedWith(
 					"LibSettlement: PartyA is insolvent",
 				)
 			})
@@ -421,7 +421,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const partyABalanceBefore2 = await user2.getBalanceInfo()
 
 			await expect(
-				context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigMulti, [updatePrice1, updatePrice2, updatePrice3]),
+				context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigMulti, [updatePrice1, updatePrice2, updatePrice3]),
 			).not.to.be.reverted
 
 			const masterBalanceAfter = await hedger.getBalanceInfo(ethers.ZeroAddress)
@@ -450,7 +450,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
 			const beforeNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
 
-			await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).not.to.be.reverted
+			await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).not.to.be.reverted
 
 			const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
 			const afterNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
@@ -465,7 +465,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const balanceInfoMasterB = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const balanceInfoUserBefore = await user.getBalanceInfo()
 
-			await expect(context.forceActionsFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).not.to.be.reverted
+			await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSigCross, [updatePrice])).not.to.be.reverted
 
 			const balanceInfoSettlementMasterSettledB = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const balanceInfoUserAfter = await user.getBalanceInfo()
@@ -477,7 +477,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(updatePrice)
 
 			// force close
-			await expect(context.forceActionsFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)).not.to.be.reverted
+			await expect(context.forceActionsMasterAccountFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)).not.to.be.reverted
 			expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
 		})
 	})
