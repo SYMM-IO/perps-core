@@ -2,7 +2,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
 import { expect } from "chai"
 import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
 
-import { IAccountHub, IAccountHubHook__factory, MockAccountHubHook } from "../src/types"
+import { IAccountHub, IAccountHubHook__factory, ISymmioHook__factory, MockAccountHubHook } from "../src/types"
 import { initializeFixture } from "./Initialize.fixture"
 import { ethers } from "./helpers/hardhat-connection"
 import { loadFixture } from "./helpers/network-helpers"
@@ -1377,11 +1377,15 @@ export function shouldBehaveLikeAccountHub(): void {
 			let hookContract: MockAccountHubHook
 			let subAccountAddress: string
 			let customSubAccountAddress: string
+			let hookEvents: any
 
 			const HOOK_SELECTORS = {
 				onAccountCreation: IAccountHubHook__factory.createInterface().getFunction("onAccountCreation").selector,
 				onVirtualAccountCreation: IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
 				onVirtualAccountDeletion: IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+			}
+			const SYMMIO_HOOK_SELECTORS = {
+				onCancelQuote: ISymmioHook__factory.createInterface().getFunction("onCancelQuote").selector,
 			}
 
 			beforeEach(async () => {
@@ -1395,6 +1399,12 @@ export function shouldBehaveLikeAccountHub(): void {
 				for (const key of Object.keys(HOOK_SELECTORS)) {
 					await context.affiliateHub.setHook(affiliateAddress, HOOK_SELECTORS[key as keyof typeof HOOK_SELECTORS], await hookContract.getAddress())
 				}
+
+				hookEvents = new ethers.Contract(
+					context.diamond,
+					["event HookFailed(address indexed hook, bytes4 indexed selector, uint256 indexed quoteId, bytes reason)"],
+					context.signers.user,
+				)
 
 				subAccountAddress = await createSubAccountAndDeposit(
 					context.signers.user,
@@ -1634,17 +1644,24 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 
 				it("should handle hook revert gracefully during deletion", async () => {
-					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountDeletion, true, "Hook rejected deletion")
+					const revertMessage = "Hook rejected deletion"
+					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountDeletion, true, revertMessage)
 
 					const quotes = await context.accountHubLens.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 					const quoteId = quotes[0]
 
 					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
 
-					// Should revert because hook rejects
+					const errorSelector = "0x08c379a0"
+					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
+					const innerReason = errorSelector + encodedString.slice(2)
+					const expectedReason = new ethers.Interface(["error HookFailed(bytes)"]).encodeErrorResult("HookFailed", [innerReason])
+
 					await expect(
 						context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]),
-					).to.be.revertedWithCustomError(context.accountHub, "HookFailed")
+					)
+						.to.emit(hookEvents, "HookFailed")
+						.withArgs(await context.accountHub.getAddress(), SYMMIO_HOOK_SELECTORS.onCancelQuote, quoteId, expectedReason)
 				})
 
 				it("should return the hook failure reason for virtual account deletion", async () => {
@@ -1660,11 +1677,12 @@ export function shouldBehaveLikeAccountHub(): void {
 					// The revert reason includes the Error(string) selector (0x08c379a0) followed by the ABI-encoded string
 					const errorSelector = "0x08c379a0"
 					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
-					const encodedReason = errorSelector + encodedString.slice(2)
+					const innerReason = errorSelector + encodedString.slice(2)
+					const expectedReason = new ethers.Interface(["error HookFailed(bytes)"]).encodeErrorResult("HookFailed", [innerReason])
 
 					await expect(context.accountHub.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]))
-						.to.be.revertedWithCustomError(context.accountHub, "HookFailed")
-						.withArgs(encodedReason)
+						.to.emit(hookEvents, "HookFailed")
+						.withArgs(await context.accountHub.getAddress(), SYMMIO_HOOK_SELECTORS.onCancelQuote, quoteId, expectedReason)
 				})
 			})
 		})

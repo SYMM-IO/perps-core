@@ -8,7 +8,6 @@ import "../../libraries/muon/LibMuonPartyA.sol";
 import "../../libraries/LibAccount.sol";
 import "../../libraries/LibQuote.sol";
 import "../../libraries/LibQuoteClose.sol";
-import "../../libraries/LibHook.sol";
 import "../../libraries/LibAccessibility.sol";
 import "../../libraries/SharedEvents.sol";
 import "../../storages/MAStorage.sol";
@@ -167,12 +166,12 @@ library PartyAFacetImpl {
 
 			if (affiliateHook != address(0)) {
 				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					LibHook.revertIfHookFailed(reason);
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
 				}
 			}
 			if (systemHook != address(0)) {
 				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					LibHook.revertIfHookFailed(reason);
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
 				}
 			}
 		} else {

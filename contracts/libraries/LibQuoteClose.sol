@@ -14,7 +14,6 @@ import "../storages/GlobalAppStorage.sol";
 import "../storages/SymbolStorage.sol";
 import "../storages/MAStorage.sol";
 import "../interfaces/ISymmioHook.sol";
-import "./LibHook.sol";
 import "./LibAccount.sol";
 
 library LibQuoteClose {
@@ -138,7 +137,7 @@ library LibQuoteClose {
 
 			if (affiliateHook != address(0)) {
 				try ISymmioHook(affiliateHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					LibHook.revertIfHookFailed(reason);
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
 				}
 				try
 					ISymmioHook(affiliateHook).onFeeCharged(
@@ -150,11 +149,13 @@ library LibQuoteClose {
 						quote.affiliate,
 						ISymmioHook.TradingFeeType.CLOSE
 					)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onFeeCharged.selector, quote.id, reason);
+				}
 			}
 			if (systemHook != address(0)) {
 				try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					LibHook.revertIfHookFailed(reason);
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
 				}
 				try
 					ISymmioHook(systemHook).onFeeCharged(
@@ -166,7 +167,9 @@ library LibQuoteClose {
 						quote.affiliate,
 						ISymmioHook.TradingFeeType.CLOSE
 					)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onFeeCharged.selector, quote.id, reason);
+				}
 			}
 		}
 
@@ -230,12 +233,12 @@ library LibQuoteClose {
 
 			if (affiliateHook != address(0)) {
 				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					LibHook.revertIfHookFailed(reason);
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
 				}
 			}
 			if (systemHook != address(0)) {
 				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					LibHook.revertIfHookFailed(reason);
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
 				}
 			}
 		} else if (quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
