@@ -4,9 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./interfaces/IAccountHubLens.sol";
-import "./interfaces/IAccountHubInternal.sol";
-import "./interfaces/IAccountHub.sol";
+import { IAccountHubLens } from "./interfaces/IAccountHubLens.sol";
+import { IAccountHubInternal } from "./interfaces/IAccountHubInternal.sol";
+import { IAccountHub } from "./interfaces/IAccountHub.sol";
 
 /**
  * @title AccountHubLens

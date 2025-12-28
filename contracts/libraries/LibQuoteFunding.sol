@@ -4,13 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./SharedEvents.sol";
-import "./LibFundingRate.sol";
-import "./LibQuote.sol";
-import "../storages/QuoteStorage.sol";
-import "../storages/AccountStorage.sol";
-import "../storages/SymbolStorage.sol";
-import "./LibAccount.sol";
+import { SharedEvents } from "./SharedEvents.sol";
+import { LibFundingRate } from "./LibFundingRate.sol";
+import { LibQuote } from "./LibQuote.sol";
+import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { SymbolStorage, FundingFee } from "../storages/SymbolStorage.sol";
+import { LibAccount } from "./LibAccount.sol";
 
 library LibQuoteFunding {
 	/**

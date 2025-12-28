@@ -1,14 +1,14 @@
-import { loadFixture, time } from "./helpers/network-helpers"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 
-import { initializeFixture } from "./Initialize.fixture"
-import { QuoteStatus } from "./models/Enums"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { SendQuoteValidator } from "./models/validators/SendQuoteValidator"
-import { decimal, getBlockTimestamp, pausePartyA } from "./utils/Common"
-import { getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { QuoteStatus } from "./models/Enums.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { SendQuoteValidator } from "./models/validators/SendQuoteValidator.js"
+import { decimal, getBlockTimestamp, pausePartyA } from "./utils/Common.js"
+import { getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils.js"
 import { ethers } from "ethers"
 import { toUtf8Bytes } from "ethers";
 

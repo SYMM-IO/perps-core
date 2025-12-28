@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/GlobalAppStorage.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 
 library LibAccessibility {
 	bytes32 public constant DEFAULT_ADMIN_ROLE = keccak256("DEFAULT_ADMIN_ROLE");

@@ -1,11 +1,11 @@
 import {expect} from "chai"
 
-import {QuoteStatus} from "../Enums"
-import {RunContext} from "../RunContext"
-import {BalanceInfo, User} from "../User"
-import {TransactionValidator} from "./TransactionValidator"
-import {logger} from "../../utils/LoggerUtils"
-import {ethers} from "../../helpers/hardhat-connection"
+import {QuoteStatus} from "../Enums.js"
+import {RunContext} from "../RunContext.js"
+import {BalanceInfo, User} from "../User.js"
+import {TransactionValidator} from "./TransactionValidator.js"
+import {logger} from "../../utils/LoggerUtils.js"
+import {ethers} from "../../helpers/hardhat-connection.js"
 
 export type UnlockQuoteValidatorBeforeArg = {
 	user: User

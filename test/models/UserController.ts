@@ -9,29 +9,29 @@ import {
 	getSymbols,
 	min,
 	unDecimal
-} from "../utils/Common"
-import {logger} from "../utils/LoggerUtils"
-import {getPrice} from "../utils/PriceUtils"
-import {pick, randomBigNumber, randomBigNumberRatio} from "../utils/RandomUtils"
-import {roundToPrecision, safeDiv} from "../utils/SafeMath"
-import {getDummySingleUpnlAndPriceSig} from "../utils/SignatureUtils"
-import {SymbolStructOutput} from "../../src/types/facets/Control/ControlFacet"
-import {Action, actionNamesMap, ActionWrapper, expandActions, userActionsMap} from "./Actions"
-import {OrderType, PositionType, QuoteStatus} from "./Enums"
-import {ManagedError} from "./ManagedError"
-import {RunContext} from "./RunContext"
-import {TestManager} from "./TestManager"
-import {User} from "./User"
-import {CloseRequest} from "./requestModels/CloseRequest"
-import {QuoteRequest} from "./requestModels/QuoteRequest"
+} from "../utils/Common.js"
+import {logger} from "../utils/LoggerUtils.js"
+import {getPrice} from "../utils/PriceUtils.js"
+import {pick, randomBigNumber, randomBigNumberRatio} from "../utils/RandomUtils.js"
+import {roundToPrecision, safeDiv} from "../utils/SafeMath.js"
+import {getDummySingleUpnlAndPriceSig} from "../utils/SignatureUtils.js"
+import {SymbolStructOutput} from "../../src/types/facets/Control/ControlFacet.js"
+import {Action, actionNamesMap, ActionWrapper, expandActions, userActionsMap} from "./Actions.js"
+import {OrderType, PositionType, QuoteStatus} from "./Enums.js"
+import {ManagedError} from "./ManagedError.js"
+import {RunContext} from "./RunContext.js"
+import {TestManager} from "./TestManager.js"
+import {User} from "./User.js"
+import {CloseRequest} from "./requestModels/CloseRequest.js"
+import {QuoteRequest} from "./requestModels/QuoteRequest.js"
 import {
 	CancelCloseRequestValidator,
 	CancelCloseRequestValidatorBeforeOutput
-} from "./validators/CancelCloseRequestValidator"
-import {CancelQuoteValidator, CancelQuoteValidatorBeforeOutput} from "./validators/CancelQuoteValidator"
-import {CloseRequestValidator, CloseRequestValidatorBeforeOutput} from "./validators/CloseRequestValidator"
-import {QuoteCheckpoint} from "./quoteCheckpoint"
-import type {QuoteStructOutput} from "../../src/types/interfaces/ISymmio"
+} from "./validators/CancelCloseRequestValidator.js"
+import {CancelQuoteValidator, CancelQuoteValidatorBeforeOutput} from "./validators/CancelQuoteValidator.js"
+import {CloseRequestValidator, CloseRequestValidatorBeforeOutput} from "./validators/CloseRequestValidator.js"
+import {QuoteCheckpoint} from "./quoteCheckpoint.js"
+import type {QuoteStructOutput} from "../../src/types/interfaces/ISymmio.js"
 
 export class UserController {
 	private readonly context: RunContext

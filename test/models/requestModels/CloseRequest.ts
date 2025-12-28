@@ -1,7 +1,7 @@
 import {Builder} from "builder-pattern"
 
-import {decimal, getBlockTimestamp} from "../../utils/Common"
-import {OrderType} from "../Enums"
+import {decimal, getBlockTimestamp} from "../../utils/Common.js"
+import {OrderType} from "../Enums.js"
 
 export interface CloseRequest {
 	quantityToClose: bigint;

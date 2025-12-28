@@ -1,11 +1,11 @@
-import {time} from "../helpers/network-helpers"
+import {time} from "../helpers/network-helpers.js"
 import {JsonSerializer} from "typescript-json-serializer"
 
-import {OrderType, QuoteStatus} from "../models/Enums"
-import {RunContext} from "../models/RunContext"
-import {safeDiv} from "./SafeMath"
-import {network} from "../helpers/hardhat-connection"
-import type { QuoteStructOutput, SymbolStructOutput} from "../../src/types/interfaces/ISymmio"
+import {OrderType, QuoteStatus} from "../models/Enums.js"
+import {RunContext} from "../models/RunContext.js"
+import {safeDiv} from "./SafeMath.js"
+import {network} from "../helpers/hardhat-connection.js"
+import type { QuoteStructOutput, SymbolStructOutput} from "../../src/types/interfaces/ISymmio.js"
 
 const defaultSerializer = new JsonSerializer()
 

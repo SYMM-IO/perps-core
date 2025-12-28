@@ -4,8 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/AccountStorage.sol";
-import "../storages/QuoteStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { Quote, LockedValues } from "../storages/QuoteStorage.sol";
+import { LockedValuesOps } from "./LibLockedValues.sol";
 
 library LibAccount {
 	using LockedValuesOps for LockedValues;

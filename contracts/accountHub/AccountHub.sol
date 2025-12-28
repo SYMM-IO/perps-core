@@ -4,19 +4,19 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "./interfaces/IAccountHub.sol";
-import "./interfaces/IAccountHubInternal.sol";
-import "./interfaces/IAffiliateHub.sol";
-import "./interfaces/ISymmio.sol";
-import "./interfaces/IAccountHubHook.sol";
-import "./interfaces/IMultiAccount.sol";
-import "./libraries/LibQuoteParams.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { SafeERC20Upgradeable, IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import { IAccountHub } from "./interfaces/IAccountHub.sol";
+import { IAccountHubInternal } from "./interfaces/IAccountHubInternal.sol";
+import { IAffiliateHub } from "./interfaces/IAffiliateHub.sol";
+import { ISymmio } from "./interfaces/ISymmio.sol";
+import { IAccountHubHook } from "./interfaces/IAccountHubHook.sol";
+import { IMultiAccount } from "./interfaces/IMultiAccount.sol";
+import { LibQuoteParams } from "./libraries/LibQuoteParams.sol";
 
 /**
  * @title AccountHub
@@ -56,6 +56,7 @@ contract AccountHub is IAccountHub, IAccountHubInternal, Initializable, Pausable
 	mapping(address => mapping(VirtualAccountIsolationType => mapping(uint256 => address))) private activeVAByKey;
 
 	address public affiliateHub;
+	address public accountHubLens;
 	address internal globalSigner;
 	uint256 public globalNonce;
 
@@ -364,22 +365,21 @@ contract AccountHub is IAccountHub, IAccountHubInternal, Initializable, Pausable
 	}
 
 	/**
-	 * @notice Generates the predicted AccountManager address for a registrant and name
-	 * @param registrant The registrant address
-	 * @param name The affiliate name
-	 * @return The predicted AccountManager address
-	 */
-	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address) {
-		return _generateAccountManagerAddress(registrant, name);
-	}
-
-	/**
 	 * @notice Sets the AffiliateHub contract address (only for emergency updates)
 	 * @param _affiliateHub The new AffiliateHub address
 	 */
 	function setAffiliateHub(address _affiliateHub) external onlyRole(SETTER_ROLE) {
 		if (_affiliateHub == address(0)) revert ZeroAddress();
 		affiliateHub = _affiliateHub;
+	}
+
+	/**
+	 * @notice Sets the AccountHubLens contract address
+	 * @param _accountHubLens The new AccountHubLens address
+	 */
+	function setAccountHubLens(address _accountHubLens) external onlyRole(SETTER_ROLE) {
+		if (_accountHubLens == address(0)) revert ZeroAddress();
+		accountHubLens = _accountHubLens;
 	}
 
 	/**
@@ -506,11 +506,7 @@ contract AccountHub is IAccountHub, IAccountHubInternal, Initializable, Pausable
 		return virtualAccounts[account].quoteIds.at(index);
 	}
 
-	function getActiveVAByKeyRaw(
-		address subAccount,
-		VirtualAccountIsolationType isolationType,
-		uint256 symbolId
-	) external view returns (address) {
+	function getActiveVAByKeyRaw(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId) external view returns (address) {
 		return activeVAByKey[subAccount][isolationType][symbolId];
 	}
 
@@ -944,16 +940,6 @@ contract AccountHub is IAccountHub, IAccountHubInternal, Initializable, Pausable
 		}
 
 		if (accountManager == address(0)) revert DeploymentFailed();
-	}
-
-	/**
-	 * @dev Generates deterministic account manager address
-	 */
-	function _generateAccountManagerAddress(address user, string memory name) private view returns (address) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
-		bytes memory bytecode = abi.encodePacked(accountManagerImplementation, abi.encode(address(this)));
-		bytes32 initCodeHash = keccak256(bytecode);
-		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
 	}
 
 	/**

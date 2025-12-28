@@ -4,8 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/QuoteStorage.sol";
-import "../storages/MuonStorage.sol";
+import { QuoteStatus, PositionType, OrderType, LockedValues } from "../storages/QuoteStorage.sol";
 
 interface IPartiesEvents {
 	event AcceptCancelRequest(uint256 quoteId, QuoteStatus quoteStatus);

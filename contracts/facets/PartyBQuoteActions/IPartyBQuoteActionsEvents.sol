@@ -4,7 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../interfaces/IPartiesEvents.sol";
+import { IPartiesEvents, QuoteStatus } from "../../interfaces/IPartiesEvents.sol";
+import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyBQuoteActionsEvents is IPartiesEvents {
 	event LockQuote(address partyB, uint256 quoteId);

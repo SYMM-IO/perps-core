@@ -4,11 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../storages/AccountStorage.sol";
-import "../../storages/BridgeStorage.sol";
-import "../../storages/MuonStorage.sol";
-import "../../storages/WithdrawStorage.sol";
-import "../../storages/MAStorage.sol";
+import { LiquidationDetail, SettlementState, CrossLiquidationDetail, BindState, ExternalTransferReq } from "../../storages/AccountStorage.sol";
+import { BridgeTransaction } from "../../storages/BridgeStorage.sol";
+import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { WithdrawRequest } from "../../storages/WithdrawStorage.sol";
+import { EntityMetadata } from "../../storages/MAStorage.sol";
+import { Fee } from "../../storages/QuoteStorage.sol";
 
 interface IViewFacet {
 	function pendingOwner() external view returns (address);

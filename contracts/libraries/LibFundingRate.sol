@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/SymbolStorage.sol";
+import { FundingFee } from "../storages/SymbolStorage.sol";
 
 library LibFundingRate {
 	function getEpochOfTimestamp(uint256 timestamp, uint256 epochDuration) internal pure returns (uint256) {

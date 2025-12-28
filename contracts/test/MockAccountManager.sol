@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-import "../accountHub/interfaces/IAccountHub.sol";
+import { IAccountHub } from "../accountHub/interfaces/IAccountHub.sol";
 
 contract MockAffiliateHubForAccountManager {
 	mapping(address => address[]) private affiliateCores;

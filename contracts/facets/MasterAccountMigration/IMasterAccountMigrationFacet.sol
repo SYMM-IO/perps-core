@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./IMasterAccountMigrationEvents.sol";
+import { IMasterAccountMigrationEvents } from "./IMasterAccountMigrationEvents.sol";
 
 interface IMasterAccountMigrationFacet is IMasterAccountMigrationEvents {
 

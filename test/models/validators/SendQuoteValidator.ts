@@ -1,11 +1,11 @@
 import {expect} from "chai"
 
-import {getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes} from "../../utils/Common"
-import {logger} from "../../utils/LoggerUtils"
-import {QuoteStatus} from "../Enums"
-import {RunContext} from "../RunContext"
-import {BalanceInfo, User} from "../User"
-import {TransactionValidator} from "./TransactionValidator"
+import {getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes} from "../../utils/Common.js"
+import {logger} from "../../utils/LoggerUtils.js"
+import {QuoteStatus} from "../Enums.js"
+import {RunContext} from "../RunContext.js"
+import {BalanceInfo, User} from "../User.js"
+import {TransactionValidator} from "./TransactionValidator.js"
 
 export type SendQuoteValidatorBeforeArg = {
 	user: User

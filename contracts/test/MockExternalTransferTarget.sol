@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../interfaces/IExternalTransferRelayer.sol";
+import { IExternalTransferRelayer } from "../interfaces/IExternalTransferRelayer.sol";
 
 /**
  * @title ExternalTransferRelayer

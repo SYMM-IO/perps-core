@@ -1,16 +1,16 @@
-import {loadFixture} from "./helpers/network-helpers"
+import {loadFixture} from "./helpers/network-helpers.js"
 import {expect} from "chai"
 
-import {initializeFixture} from "./Initialize.fixture"
-import {PositionType} from "./models/Enums"
-import {Hedger} from "./models/Hedger"
+import {initializeFixture} from "./Initialize.fixture.js"
+import {PositionType} from "./models/Enums.js"
+import {Hedger} from "./models/Hedger.js"
 import {RunContext} from "./models/RunContext.js"
-import {User} from "./models/User"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
-import {decimal, pausePartyB,} from "./utils/Common"
-import {emergencyCloseRequestBuilder} from "./models/requestModels/EmergencyCloseRequest"
-import {EmergencyCloseRequestValidator} from "./models/validators/EmergencyCloseRequestValidator"
-import type {QuoteStructOutput} from "../src/types/interfaces/ISymmio"
+import {User} from "./models/User.js"
+import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest.js"
+import {decimal, pausePartyB,} from "./utils/Common.js"
+import {emergencyCloseRequestBuilder} from "./models/requestModels/EmergencyCloseRequest.js"
+import {EmergencyCloseRequestValidator} from "./models/validators/EmergencyCloseRequestValidator.js"
+import type {QuoteStructOutput} from "../src/types/interfaces/ISymmio.js"
 
 export function shouldBehaveLikeEmergencyClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger

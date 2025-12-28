@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 interface IAffiliateHub {
 	enum AffiliateState {
@@ -150,6 +150,7 @@ interface IAffiliateHub {
 	error InvalidState();
 	error InvalidNameLength();
 	error AccountHubNotSet();
+	error AccountHubLensNotSet();
 	error InvalidCallData();
 	error SymmioCoreNotAllowed();
 }

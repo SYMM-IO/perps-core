@@ -1,21 +1,20 @@
-import { loadFixture, time } from "./helpers/network-helpers"
 import { expect } from "chai"
 import { ZeroAddress } from "ethers"
 import { toUtf8Bytes } from "ethers"
 
-
-import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types"
-import { initializeFixture, initializeExternalTransferRelayerFixture, initializeVirtualFixture } from "./Initialize.fixture"
-import { ExternalTransferStatus } from "./models/Enums"
-import { PositionType } from "./models/Enums"
-import { Hedger } from "./models/Hedger"
-import { RunContext } from "./models/RunContext"
-import { User } from "./models/User"
-import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest"
-import { decimal, getBlockTimestamp } from "./utils/Common"
-import { migratePartyBToMaster } from "./utils/MasterAccount"
-import { getDummySingleUpnlSig } from "./utils/SignatureUtils"
+import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types/index.js"
+import { initializeFixture, initializeExternalTransferRelayerFixture, initializeVirtualFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { ExternalTransferStatus } from "./models/Enums.js"
+import { PositionType } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { decimal, getBlockTimestamp } from "./utils/Common.js"
+import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"))
 
@@ -1525,6 +1524,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 	})
 
 	describe("Master account activation gating", () => {
+		beforeEach(async () => {
+			context = await loadFixture(initializeFixture)
+		})
 		it("should revert when master account activation is disabled", async () => {
 			await expect(context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()).to.be.revertedWith(
 				"AccountFacet: Master account disabled",

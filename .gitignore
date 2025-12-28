@@ -33,6 +33,5 @@ detailedDebug.log
 pnpm-lock.yaml
 .openzeppelin
 
-docs
 .yarn/
 .venv

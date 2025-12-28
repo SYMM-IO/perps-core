@@ -1,4 +1,4 @@
-import {ethers, run} from "hardhat"
+import { ethers, tasks } from "hardhat"
 
 function sleep(ms: number) {
 	return new Promise(resolve => setTimeout(resolve, ms))
@@ -24,7 +24,7 @@ async function main() {
 
 	await sleep(30000)
 
-	await run("verify:verify", {
+	await tasks.getTask("verify:verify").run({
 		address: await timelock.getAddress(),
 		constructorArguments: [minDelay, proposers, executors, multiSig],
 		contract: "contracts/SymmioTimelockController.sol:SymmioTimelockController"

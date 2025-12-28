@@ -1,28 +1,28 @@
-import {setBalance} from "../helpers/network-helpers"
+import {setBalance} from "../helpers/network-helpers.js"
 import {BigNumberish, ethers, EventLog} from "ethers"
 
-import { getPriceFetcher, serializeToJson, unDecimal } from "../utils/Common"
-import { logger } from "../utils/LoggerUtils"
-import { getPrice } from "../utils/PriceUtils"
-import { PositionType } from "./Enums"
-import { RunContext } from "./RunContext"
-import { CloseRequest, limitCloseRequestBuilder } from "./requestModels/CloseRequest"
+import { getPriceFetcher, serializeToJson, unDecimal } from "../utils/Common.js"
+import { logger } from "../utils/LoggerUtils.js"
+import { getPrice } from "../utils/PriceUtils.js"
+import { PositionType } from "./Enums.js"
+import { RunContext } from "./RunContext.js"
+import { CloseRequest, limitCloseRequestBuilder } from "./requestModels/CloseRequest.js"
 import {
 	limitQuoteRequestBuilder,
 	limitQuoteRequestWithDataBuilder,
 	QuoteRequest,
 	QuoteRequestWithData,
-} from "./requestModels/QuoteRequest";
-import { runTx } from "../utils/TxUtils"
-import { getDummyLiquidationSig } from "../utils/SignatureUtils"
-import { LiquidationSigStruct } from "../../src/types/facets/liquidation/LiquidationFacet"
-import type { QuoteStructOutput, SettlementSigStruct } from "../../src/types/interfaces/ISymmio"
-import { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet"
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
+} from "./requestModels/QuoteRequest.js";
+import { runTx } from "../utils/TxUtils.js"
+import { getDummyLiquidationSig } from "../utils/SignatureUtils.js"
+import { LiquidationSigStruct } from "../../src/types/facets/liquidation/LiquidationFacet.js"
+import type { QuoteStructOutput, SettlementSigStruct } from "../../src/types/interfaces/ISymmio.js"
+import { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet.js"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { PartyEntity } from "./partyEntitiy.js"
 
 export class User extends PartyEntity {
-	constructor(context: RunContext, signer: SignerWithAddress) {
+	constructor(context: RunContext, signer: HardhatEthersSigner) {
 		super(context, signer)
 	}
 
@@ -290,7 +290,7 @@ export class User extends PartyEntity {
 		symbolIds: bigint[],
 		prices: bigint[],
 		quoteIds: bigint[],
-		liquidator: SignerWithAddress = this.context.signers.liquidator,
+		liquidator: HardhatEthersSigner = this.context.signers.liquidator,
 	): Promise<LiquidationSigStruct> {
 		const upnl = await this.getUpnl(getPriceFetcher(symbolIds, prices)) - (await this.context.viewFacetSymbol.getSumAccumulatedFundingFees(quoteIds))
 		const totalUnrealizedLoss = await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices)) - (await this.context.viewFacetSymbol.getSumAccumulatedFundingFees(quoteIds))
@@ -305,7 +305,7 @@ export class User extends PartyEntity {
 		symbolIds: bigint[],
 		prices: bigint[],
 		quoteIds: bigint[],
-		liquidator: SignerWithAddress = this.context.signers.liquidator,
+		liquidator: HardhatEthersSigner = this.context.signers.liquidator,
 	): Promise<LiquidationSigStruct> {
 		const upnl = await this.getUpnl(getPriceFetcher(symbolIds, prices)) - (await this.context.viewFacetSymbol.getSumAccumulatedFundingFees(quoteIds))
 		const totalUnrealizedLoss = await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices))
@@ -316,11 +316,11 @@ export class User extends PartyEntity {
 		return sign
 	}
 
-	public async liquidatePendingPositions(liquidator: SignerWithAddress = this.context.signers.liquidator) {
+	public async liquidatePendingPositions(liquidator: HardhatEthersSigner = this.context.signers.liquidator) {
 		await this.context.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(this.getAddress())
 	}
 
-	public async liquidatePositions(positions: BigNumberish[] = [], liquidator: SignerWithAddress = this.context.signers.liquidator) {
+	public async liquidatePositions(positions: BigNumberish[] = [], liquidator: HardhatEthersSigner = this.context.signers.liquidator) {
 		if (positions.length == 0) positions = (await this.getOpenPositions()).map(value => value.id)
 		await this.context.liquidationFacet.connect(liquidator).liquidatePositionsPartyA(this.getAddress(), positions)
 	}
@@ -338,8 +338,8 @@ export class User extends PartyEntity {
 	}
 
 	public async settleLiquidation(
-		partyB: SignerWithAddress = this.context.signers.hedger,
-		liquidator: SignerWithAddress = this.context.signers.liquidator,
+		partyB: HardhatEthersSigner = this.context.signers.hedger,
+		liquidator: HardhatEthersSigner = this.context.signers.liquidator,
 	): Promise<void> {
 		await this.context.liquidationFacet.connect(liquidator).settlePartyALiquidation(await this.getAddress(), [await partyB.getAddress()])
 	}

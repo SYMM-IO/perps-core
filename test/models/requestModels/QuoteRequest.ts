@@ -1,11 +1,11 @@
 import { Builder } from "builder-pattern"
 import { BigNumberish, ZeroAddress } from "ethers"
 
-import type { SingleUpnlAndPriceSigStruct } from "../../../src/types/facets/PartyA/PartyAFacet"
-import { decimal, getBlockTimestamp } from "../../utils/Common"
-import { getDummySingleUpnlAndPriceSig } from "../../utils/SignatureUtils"
-import { OrderType, PositionType } from "../Enums"
-import { ethers } from "../../helpers/hardhat-connection"
+import type { SingleUpnlAndPriceSigStruct } from "../../../src/types/facets/PartyA/PartyAFacet.js"
+import { decimal, getBlockTimestamp } from "../../utils/Common.js"
+import { getDummySingleUpnlAndPriceSig } from "../../utils/SignatureUtils.js"
+import { OrderType, PositionType } from "../Enums.js"
+import { ethers } from "../../helpers/hardhat-connection.js"
 
 const data = ethers.AbiCoder.defaultAbiCoder().encode(["string"], ["hello-world"])
 

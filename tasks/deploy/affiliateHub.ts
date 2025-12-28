@@ -1,10 +1,10 @@
 import { task } from "hardhat/config"
-import { HardhatRuntimeEnvironment } from "hardhat/types"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { readData, writeData } from "../utils/fs"
-import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants"
-import { deployProxy, erc1967 } from "../../utils/upgrades-shim"
+import { readData, writeData } from "../utils/fs.js"
+import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants.js"
+import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { logger } from "./logger.js"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -19,29 +19,30 @@ const ENTRY_TYPES = {
 	IMPLEMENTATION: "Implementation",
 } as const
 
-export async function deployAffiliateHub(
-	hre: HardhatRuntimeEnvironment,
-	{
-		admin = "",
-		symmiofeereceiver = "",
-		logData = true,
-	}: { admin?: string; symmiofeereceiver?: string; logData?: boolean } = {},
-) {
-	const { ethers } = hre
-	console.log("Running deploy:affiliateHub")
+type DeployAffiliateHubArgs = {
+	admin: string
+	symmiofeereceiver: string
+	logData?: boolean
+}
+
+export async function deployAffiliateHub(hre: any, { admin, symmiofeereceiver, logData = true }: DeployAffiliateHubArgs) {
+	const { ethers, upgrades } = await getConnection(hre)
+
+	logger.section("AffiliateHub Deployment")
 
 	const [deployer] = await ethers.getSigners()
-	console.log("Deploying contracts with the account:", deployer.address)
+	logger.debug("Deployer:", deployer.address)
 
 	// Deploy AffiliateHub as upgradeable proxy
-	const contract = await deployAffiliateHubProxy(hre, admin, symmiofeereceiver)
+	logger.subsection("Proxy Contract")
+	const contract = await deployAffiliateHubContract(hre, admin, symmiofeereceiver)
 
 	const addresses = {
 		proxy: await contract.getAddress(),
-		admin: await erc1967(hre).getAdminAddress(await contract.getAddress()),
-		implementation: await erc1967(hre).getImplementationAddress(await contract.getAddress()),
+		...(await getUpgradeAddresses(upgrades, contract)),
 	}
-	console.log("AffiliateHub deployed to", addresses)
+
+	logger.complete("AffiliateHub Deployment", [{ name: "AffiliateHub", address: addresses.proxy }])
 
 	// Log deployment data if requested
 	if (logData) {
@@ -52,26 +53,30 @@ export async function deployAffiliateHub(
 	return contract
 }
 
-task("deploy:affiliateHub", "Deploys the AffiliateHub")
-	.addOption({ name: "admin", description: "The admin address", defaultValue: "" })
-	.addOption({ name: "symmiofeereceiver", description: "The address of the symmio fee receiver", defaultValue: "" })
+export const affiliateHubTask = task("deploy:affiliateHub", "Deploys the AffiliateHub")
+	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
+	.addOption({
+		name: "symmiofeereceiver",
+		description: "The address of the symmio fee receiver",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
-	.setAction(async (taskArgs, hre) => deployAffiliateHub(hre, taskArgs))
-
+	.setAction(async () => ({
+		default: async ({ admin, symmiofeereceiver, logData }, hre) => deployAffiliateHub(hre, { admin, symmiofeereceiver, logData }),
+	}))
+	.build()
 /**
  * Deploys the AffiliateHub upgradeable contract
  */
-async function deployAffiliateHubProxy(hre: any, admin: string, symmioFeeReceiver: string) {
-	console.log(`Initializing ${CONTRACT_CONFIG.NAME} with:`, {
-		admin,
-		symmioFeeReceiver,
-	})
+async function deployAffiliateHubContract(hre: any, admin: string, symmioFeeReceiver: string) {
+	const { ethers } = await getConnection(hre)
 
-	const Factory = await hre.ethers.getContractFactory("AffiliateHub")
-	const contract = await deployProxy(hre, Factory, [admin, symmioFeeReceiver], {
+	const Factory = await ethers.getContractFactory("AffiliateHub")
+	const contract = await deployProxyWithFallback(hre, Factory, [admin, symmioFeeReceiver], {
 		initializer: CONTRACT_CONFIG.INITIALIZER,
-		admin,
 	})
+	await contract.waitForDeployment()
 
 	return contract
 }
@@ -86,9 +91,8 @@ async function logDeploymentData(addresses: any, admin: string, symmioFeeReceive
 		const updatedData = [...deployedData, ...newEntries]
 
 		writeData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE, updatedData)
-		console.log("Deployed addresses written to JSON file")
 	} catch (err) {
-		console.error(`Failed to log deployment data: ${err}`)
+		logger.error(`Failed to log deployment data: ${err}`)
 		throw err
 	}
 }
@@ -100,7 +104,6 @@ function readExistingDeployments(): any[] {
 	try {
 		return readData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE)
 	} catch (err) {
-		console.warn(`Could not read existing JSON file: ${err}. Starting with empty data.`)
 		return []
 	}
 }
@@ -116,4 +119,4 @@ function createDeploymentEntries(addresses: any, admin: string, symmioFeeReceive
 			constructorArguments: [admin, symmioFeeReceiver],
 		},
 	]
-}	
+}

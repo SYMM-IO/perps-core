@@ -4,17 +4,18 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { SafeERC20Upgradeable, IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-import "./interfaces/IAffiliateHub.sol";
-import "./interfaces/IAccountHub.sol";
-import "./interfaces/ISymmio.sol";
+import { IAffiliateHub } from "./interfaces/IAffiliateHub.sol";
+import { IAccountHub } from "./interfaces/IAccountHub.sol";
+import { IAccountHubLens } from "./interfaces/IAccountHubLens.sol";
+import { ISymmio } from "./interfaces/ISymmio.sol";
 
 /**
  * @title AffiliateHub
@@ -102,7 +103,9 @@ contract AffiliateHub is IAffiliateHub, Initializable, PausableUpgradeable, Acce
 	 */
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
 		if (accountHub == address(0)) revert AccountHubNotSet();
-		affiliateAddress = IAccountHub(accountHub).generateAccountManagerAddress(msg.sender, reg.name);
+		address lens = IAccountHub(accountHub).accountHubLens();
+		if (lens == address(0)) revert AccountHubLensNotSet();
+		affiliateAddress = IAccountHubLens(lens).generateAccountManagerAddress(msg.sender, reg.name);
 
 		if (affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
 		if (reg.admin == address(0)) revert ZeroAddress();

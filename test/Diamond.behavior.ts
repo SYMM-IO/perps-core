@@ -1,10 +1,10 @@
-import {loadFixture} from "./helpers/network-helpers"
+import {loadFixture} from "./helpers/network-helpers.js"
 import {assert, expect} from "chai"
-import {ethers} from "./helpers/hardhat-connection"
+import {ethers} from "./helpers/hardhat-connection.js"
 
-import {FacetCutAction, getSelectors} from "../tasks/utils/diamondCut"
-import {initializeFixture} from "./Initialize.fixture"
-import {RunContext} from "./models/RunContext"
+import {FacetCutAction, getSelectors} from "../tasks/utils/diamondCut.js"
+import {initializeFixture} from "./Initialize.fixture.js"
+import {RunContext} from "./models/RunContext.js"
 
 function haveSameMembers(array1: any[], array2: any[]) {
 	if (array1.length !== array2.length) {
@@ -36,12 +36,12 @@ export function shouldBehaveLikeDiamond(): void {
 		this.context = await loadFixture(initializeFixture)
 	})
 
-	it("should have 21 facets", async function () {
+	it("should have 22 facets", async function () {
 		const context: RunContext = this.context
 		for (const address of await context.diamondLoupeFacet.facetAddresses()) {
 			addresses.push(address)
 		}
-		assert.equal(addresses.length, 21)
+		assert.equal(addresses.length, 22)
 	})
 
 	it("facets should have the right function selectors -- call to facetFunctionSelectors function", async function () {

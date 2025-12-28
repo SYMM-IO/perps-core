@@ -4,9 +4,10 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../storages/MuonStorage.sol";
-import "../../storages/AccountStorage.sol";
-import "./LibMuon.sol";
+import { MuonStorage, HighLowPriceSig } from "../../storages/MuonStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { LibMuon } from "./LibMuon.sol";
+import { LibAccount } from "../LibAccount.sol";
 
 library LibMuonForceActions {
 	function verifyHighLowPrice(HighLowPriceSig memory sig, address partyB, address partyA, uint256 symbolId) internal view {

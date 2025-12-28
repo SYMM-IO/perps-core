@@ -6,6 +6,11 @@
     },
     {
         "inputs": [],
+        "name": "AccountHubLensNotSet",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "AccountHubNotSet",
         "type": "error"
     },

@@ -4,7 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./SettlementFacetEvents.sol";
+import { SettlementFacetEvents } from "./SettlementFacetEvents.sol";
+import { SettlementSig } from "../../storages/MuonStorage.sol";
 
 interface ISettlementFacet is SettlementFacetEvents {
 	function settleUpnl(SettlementSig memory settleSig, uint256[] memory updatedPrices, address partyA) external;

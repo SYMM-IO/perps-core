@@ -4,11 +4,11 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/MAStorage.sol";
-import "../storages/AccountStorage.sol";
-import "../storages/QuoteStorage.sol";
-import "../libraries/LibAccessibility.sol";
-import "../libraries/LibSigner.sol";
+import { MAStorage } from "../storages/MAStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { Quote, QuoteStatus, QuoteStorage } from "../storages/QuoteStorage.sol";
+import { LibAccessibility } from "../libraries/LibAccessibility.sol";
+import { LibSigner } from "../libraries/LibSigner.sol";
 
 abstract contract Accessibility {
 	modifier onlyPartyB() {

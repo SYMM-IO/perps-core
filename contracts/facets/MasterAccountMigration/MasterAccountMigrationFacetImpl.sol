@@ -4,10 +4,10 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibLockedValues.sol";
-import "../../storages/AccountStorage.sol";
-import "../../storages/MAStorage.sol";
-import "../../storages/MasterAccountMigrationStorage.sol";
+import { LockedValuesOps, LockedValues } from "../../libraries/LibLockedValues.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
+import { MasterAccountMigrationStorage } from "../../storages/MasterAccountMigrationStorage.sol";
 
 library MasterAccountMigrationFacetImpl {
 	using LockedValuesOps for LockedValues;

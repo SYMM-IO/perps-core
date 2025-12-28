@@ -1,6 +1,6 @@
-import { loadFixture } from "./helpers/network-helpers"
+import { loadFixture } from "./helpers/network-helpers.js"
 import { expect } from "chai"
-import { ethers } from "./helpers/hardhat-connection"
+import { ethers } from "./helpers/hardhat-connection.js"
 
 const symmioInterface = new ethers.Interface([
 	"function depositFor(address account,uint256 amount)",

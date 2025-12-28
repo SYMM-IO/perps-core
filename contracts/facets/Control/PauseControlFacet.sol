@@ -4,10 +4,11 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../utils/Accessibility.sol";
-import "../../storages/GlobalAppStorage.sol";
-import "../../storages/AccountStorage.sol";
-import "./IPauseControlFacet.sol";
+import { Accessibility } from "../../utils/Accessibility.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { IPauseControlFacet } from "./IPauseControlFacet.sol";
+import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 
 contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	/// @notice Pauses all protocol operations globally. No trading, deposits, or withdrawals will be possible.

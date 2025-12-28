@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "./ISymmio.sol";
+import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import { ISymmio } from "./ISymmio.sol";
 
 interface IAccountHub {
 	enum VirtualAccountIsolationType {
@@ -126,6 +126,7 @@ interface IAccountHub {
 
 	// View functions
 	function affiliateHub() external view returns (address);
+	function accountHubLens() external view returns (address);
 	function accountManagerImplementation() external view returns (bytes memory);
 	function getSigner() external view returns (address);
 	function getRelatedCore(address account) external view returns (address);
@@ -134,7 +135,6 @@ interface IAccountHub {
 
 	// AccountManager management
 	function deployAccountManager(address affiliate, address registrant, string memory name) external returns (address accountManager);
-	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address);
 	function setAccountManagerImplementation(bytes memory implementation) external;
 
 	function addMargin(address virtualAccount, uint256 amount) external;
