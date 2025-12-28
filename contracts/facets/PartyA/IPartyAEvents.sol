@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../interfaces/IPartiesEvents.sol";
+import { IPartiesEvents, QuoteStatus, OrderType } from "../../interfaces/IPartiesEvents.sol";
 
 interface IPartyAEvents is IPartiesEvents {
 	event RequestToCancelQuote(address partyA, address partyB, QuoteStatus quoteStatus, uint256 quoteId);

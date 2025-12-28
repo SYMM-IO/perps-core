@@ -4,11 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/muon/LibMuonLiquidation.sol";
-import "../../libraries/LibAccount.sol";
-import "../../storages/MAStorage.sol";
-import "../../storages/QuoteStorage.sol";
-import "../../storages/AccountStorage.sol";
+import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
+import { LockedValues, QuoteStorage } from "../../storages/QuoteStorage.sol";
+import { LiquidationType, LiquidationDetail, Price, AccountStorage } from "../../storages/AccountStorage.sol";
+import { DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
 
 library DeferredLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;

@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../storages/WithdrawStorage.sol";
+import { WithdrawReceiverPart } from "../../storages/WithdrawStorage.sol";
 
 interface IWithdrawEvents {
 	event WithdrawInitiated(uint256 indexed requestId, address indexed user, WithdrawReceiverPart[] parts, bool speedUp, bytes providerData);

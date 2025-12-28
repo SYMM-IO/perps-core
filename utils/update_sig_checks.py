@@ -32,7 +32,7 @@ def modify_signature_checks(file_path: str, flag: int) -> None:
                 modified_lines.append("// " + line)
             elif flag == 0 and line.strip().startswith("//"):
                 # Uncomment the line by removing "// "
-                modified_lines.append(line[line.index("// ") + 3:])
+                modified_lines.append(line[line.index("// ") + 3 :])
             else:
                 modified_lines.append(line)
         else:
@@ -41,7 +41,10 @@ def modify_signature_checks(file_path: str, flag: int) -> None:
     with open(file_path, "w", encoding="utf-8") as file:
         file.writelines(modified_lines)
 
-    print(f"Updated file saved to {file_path}")
+    print(
+        f"{'Added' if flag == 0 else 'Removed'}"
+        + f" Muon signature checks in {file_path}"
+    )
 
 
 def process_directory(directory_path: str, flag: int) -> None:

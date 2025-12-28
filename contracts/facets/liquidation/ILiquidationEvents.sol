@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../interfaces/IPartiesEvents.sol";
+import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
 
 interface ILiquidationEvents is IPartiesEvents {
 	event LiquidatePartyA(address liquidator, address partyA, uint256 allocatedBalance, int256 upnl, int256 totalUnrealizedLoss, bytes liquidationId);

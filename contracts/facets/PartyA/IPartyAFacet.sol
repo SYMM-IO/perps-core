@@ -4,7 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./IPartyAEvents.sol";
+import { IPartyAEvents } from "./IPartyAEvents.sol";
+import { PositionType, OrderType } from "../../storages/QuoteStorage.sol";
+import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyAFacet is IPartyAEvents {
 	function sendQuote(

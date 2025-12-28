@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./IWithdrawEvents.sol";
-import "../../storages/WithdrawStorage.sol";
+import { IWithdrawEvents } from "./IWithdrawEvents.sol";
+import { WithdrawReceiverPart } from "../../storages/WithdrawStorage.sol";
 
 interface IWithdrawFacet is IWithdrawEvents {
 	function initiateWithdraw(WithdrawReceiverPart[] memory parts,bool speedUp, bytes memory data) external;

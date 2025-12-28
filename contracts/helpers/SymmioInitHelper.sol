@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
-import "../interfaces/ISymmio.sol";
+import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
+import { ISymmio } from "../interfaces/ISymmio.sol";
 
 contract SymmioInitHelper is AccessControlEnumerable {
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");

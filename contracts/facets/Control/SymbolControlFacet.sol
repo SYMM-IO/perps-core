@@ -4,10 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../utils/Accessibility.sol";
-import "../../storages/SymbolStorage.sol";
-import "../../storages/AccountStorage.sol";
-import "./ISymbolControlFacet.sol";
+import { Accessibility } from "../../utils/Accessibility.sol";
+import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { ISymbolControlFacet } from "./ISymbolControlFacet.sol";
+import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
 
 contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @notice Adds a new trading symbol (e.g., BTC/USD, ETH/USD) to the protocol with its trading parameters.

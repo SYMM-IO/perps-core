@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/WithdrawStorage.sol";
+import { WithdrawRequest } from "../storages/WithdrawStorage.sol";
 
 interface IExpressProvider {
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address collateral) external;

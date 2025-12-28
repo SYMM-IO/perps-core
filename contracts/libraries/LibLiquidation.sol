@@ -4,12 +4,14 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/QuoteStorage.sol";
-import "../storages/MAStorage.sol";
-import "../libraries/SharedEvents.sol";
-import "./LibAccount.sol";
-import "./LibQuote.sol";
-import {LibSigner} from "./LibSigner.sol";
+import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { MAStorage } from "../storages/MAStorage.sol";
+import { SharedEvents } from "../libraries/SharedEvents.sol";
+import { LibAccount } from "./LibAccount.sol";
+import { LibQuote } from "./LibQuote.sol";
+import { LibSigner } from "./LibSigner.sol";
+import { LockedValuesOps } from "./LibLockedValues.sol";
 
 library LibLiquidation {
 	using LockedValuesOps for LockedValues;

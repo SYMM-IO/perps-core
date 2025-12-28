@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../interfaces/IAccountHub.sol";
-import "../interfaces/ISymmio.sol";
+import { IAccountHub } from "../interfaces/IAccountHub.sol";
+import { ISymmio } from "../interfaces/ISymmio.sol";
 
 /**
  * @title LibQuoteParams

@@ -4,7 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../interfaces/IPartiesEvents.sol";
+import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
+import { QuoteSettlementData, MasterAccountQuoteSettlementData } from "../../storages/MuonStorage.sol";
 
 interface SettlementFacetEvents is IPartiesEvents {
 	event SettleUpnl(

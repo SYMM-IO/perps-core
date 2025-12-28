@@ -4,7 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./IPartyBBatchActionsEvents.sol";
+import { IPartyBBatchActionsEvents } from "./IPartyBBatchActionsEvents.sol";
+import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyBBatchActionsFacet is IPartyBBatchActionsEvents {
 	function openPositions(

@@ -4,9 +4,11 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/QuoteStorage.sol";
-import "./LibAccount.sol";
-import "./LibQuote.sol";
+import { QuoteStorage, Quote, LockedValues, PositionType } from "../storages/QuoteStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { LibAccount } from "./LibAccount.sol";
+import { LibQuote } from "./LibQuote.sol";
+import { LockedValuesOps } from "./LibLockedValues.sol";
 
 library LibSolvency {
 	using LockedValuesOps for LockedValues;

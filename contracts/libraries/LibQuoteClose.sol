@@ -4,17 +4,18 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./SharedEvents.sol";
-import "./LibQuote.sol";
-import "./LibQuoteFunding.sol";
-import "./LibConnections.sol";
-import "../storages/QuoteStorage.sol";
-import "../storages/AccountStorage.sol";
-import "../storages/GlobalAppStorage.sol";
-import "../storages/SymbolStorage.sol";
-import "../storages/MAStorage.sol";
-import "../interfaces/ISymmioHook.sol";
-import "./LibAccount.sol";
+import { SharedEvents } from "./SharedEvents.sol";
+import { LibQuote } from "./LibQuote.sol";
+import { LibQuoteFunding } from "./LibQuoteFunding.sol";
+import { LibConnections } from "./LibConnections.sol";
+import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { SymbolStorage } from "../storages/SymbolStorage.sol";
+import { MAStorage } from "../storages/MAStorage.sol";
+import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
+import { LibAccount } from "./LibAccount.sol";
+import { LockedValuesOps } from "./LibLockedValues.sol";
 
 library LibQuoteClose {
 	using LockedValuesOps for LockedValues;

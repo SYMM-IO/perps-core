@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
 pragma solidity >=0.8.18;
 
-import "../interfaces/IVirtualProvider.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IVirtualProvider } from "../interfaces/IVirtualProvider.sol";
+import { WithdrawRequest, WithdrawReceiverPart, WithdrawStatus } from "../storages/WithdrawStorage.sol";
+import { ExternalTransferReq } from "../storages/AccountStorage.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;

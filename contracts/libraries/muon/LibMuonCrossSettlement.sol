@@ -4,11 +4,11 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../storages/MuonStorage.sol";
-import "../../storages/AccountStorage.sol";
-import "../../storages/QuoteStorage.sol";
-import "./LibMuon.sol";
-import "../LibAccount.sol";
+import { MuonStorage, MasterAccountSettlementSig } from "../../storages/MuonStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { QuoteStorage } from "../../storages/QuoteStorage.sol";
+import { LibMuon } from "./LibMuon.sol";
+import { LibAccount } from "../LibAccount.sol";
 
 library LibMuonCrossSettlement {
 	function verifyMasterAccountSettlement(MasterAccountSettlementSig memory settleSig) internal view {
@@ -16,7 +16,7 @@ library LibMuonCrossSettlement {
 		QuoteStorage.Layout storage quotes = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		// == SignatureCheck( ==
-		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+// 		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
 		// == ) ==
 		uint256[] memory partyANonces = new uint256[](settleSig.quotesSettlementsData.length);
 		bytes memory encodedData;

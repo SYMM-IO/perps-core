@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../storages/MuonStorage.sol";
-import "./IClearingHouseFacetEvents.sol";
+import { CrossLiquidationSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
+import { IClearingHouseFacetEvents } from "./IClearingHouseFacetEvents.sol";
 
 interface IClearingHouseFacet is IClearingHouseFacetEvents {
 	function liquidateCrossPartyB(address partyB, CrossLiquidationSig memory liquidationSig) external;

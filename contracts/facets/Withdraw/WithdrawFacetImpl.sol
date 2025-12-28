@@ -4,14 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "../../storages/AccountStorage.sol";
-import "../../storages/GlobalAppStorage.sol";
-import "../../storages/MAStorage.sol";
-import "../../storages/WithdrawStorage.sol";
-import "../../libraries/LibSigner.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { WithdrawStorage, WithdrawReceiverPart, WithdrawRequest, WithdrawStatus } from "../../storages/WithdrawStorage.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
 import { IExpressProvider } from "../../interfaces/IExpressProvider.sol";
 

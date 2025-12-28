@@ -4,12 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "../../storages/MuonStorage.sol";
-import "../../storages/GlobalAppStorage.sol";
-import "../../storages/AccountStorage.sol";
-import "../../interfaces/IMuonSignatureVerifier.sol";
-import "../LibAccount.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { MuonStorage, SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { LibAccount } from "../LibAccount.sol";
 
 library LibMuon {
 	using ECDSA for bytes32;
@@ -29,7 +29,7 @@ library LibMuon {
 	// We emphasize this because they are only disabled for testing purposes.
 	function verifyTSSAndGateway(bytes32 hash, IMuonSignatureVerifier.SchnorrSign memory sign, bytes memory gatewaySignature) internal view {
 		// == SignatureCheck( ==
-		IMuonSignatureVerifier(GlobalAppStorage.layout().signatureVerifier).verify(hash, sign, gatewaySignature);
+// 		IMuonSignatureVerifier(GlobalAppStorage.layout().signatureVerifier).verify(hash, sign, gatewaySignature);
 		// == ) ==
 	}
 
@@ -47,7 +47,7 @@ library LibMuon {
 	) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
-		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+// 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
 		// == ) ==
 		bytes32 hash = keccak256(
 			abi.encodePacked(

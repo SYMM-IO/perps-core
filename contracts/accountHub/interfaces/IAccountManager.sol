@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./IAccountHub.sol";
+import { IAccountHub } from "./IAccountHub.sol";
 
 interface IAccountManager {
 	event AddAccount(address indexed user, address indexed account, string name);

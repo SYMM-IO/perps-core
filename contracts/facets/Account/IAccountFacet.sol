@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./IAccountEvents.sol";
-import "../../storages/MuonStorage.sol";
+import { IAccountEvents } from "./IAccountEvents.sol";
+import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 
 interface IAccountFacet is IAccountEvents {
 	//Party A

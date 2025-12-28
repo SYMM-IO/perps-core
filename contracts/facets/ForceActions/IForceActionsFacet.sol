@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./ForceActionsFacetEvents.sol";
-import "../../storages/MuonStorage.sol";
+import { ForceActionsFacetEvents } from "./ForceActionsFacetEvents.sol";
+import { HighLowPriceSig, SettlementSig, MasterAccountSettlementSig } from "../../storages/MuonStorage.sol";
 
 /// @title ForceActionsFacet Interface
 /// @notice Defines the user-side (PartyA) force-action workflows that apply when

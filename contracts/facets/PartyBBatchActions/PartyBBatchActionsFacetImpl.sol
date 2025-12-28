@@ -4,17 +4,21 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/muon/LibMuonPartyBBatchActions.sol";
-import "../../libraries/LibSolvency.sol";
-import "../../libraries/LibPartyBPositionsActions.sol";
-import "../../libraries/LibQuoteClose.sol";
-import "../../storages/MAStorage.sol";
-import "../../storages/QuoteStorage.sol";
-import "../../storages/AccountStorage.sol";
-import "../../libraries/LibConnections.sol";
-
-import "../../interfaces/IPartiesEvents.sol";
-import {LibSigner} from "../../libraries/LibSigner.sol";
+import { LibMuonPartyBBatchActions } from "../../libraries/muon/LibMuonPartyBBatchActions.sol";
+import { LibSolvency } from "../../libraries/LibSolvency.sol";
+import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
+import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
+import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
+import { SymbolStorage } from "../../storages/SymbolStorage.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
+import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;

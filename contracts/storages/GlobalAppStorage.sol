@@ -4,8 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../libraries/LibLockedValues.sol";
-import "./QuoteStorage.sol";
+import { Fee } from "./QuoteStorage.sol";
 
 library GlobalAppStorage {
 	bytes32 internal constant GLOBAL_APP_STORAGE_SLOT = keccak256("diamond.standard.storage.global");

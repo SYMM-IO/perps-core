@@ -4,10 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "./PartyBBatchActionsFacetImpl.sol";
-import "../../utils/Accessibility.sol";
-import "../../utils/Pausable.sol";
-import "./IPartyBBatchActionsFacet.sol";
+import { PartyBBatchActionsFacetImpl } from "./PartyBBatchActionsFacetImpl.sol";
+import { Accessibility } from "../../utils/Accessibility.sol";
+import { Pausable } from "../../utils/Pausable.sol";
+import { IPartyBBatchActionsFacet } from "./IPartyBBatchActionsFacet.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
 
 contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActionsFacet {
 	/**

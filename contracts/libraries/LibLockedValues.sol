@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "../storages/QuoteStorage.sol";
+import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import { LockedValues, Quote } from "../storages/QuoteStorage.sol";
 
 library LockedValuesOps {
 	using SafeMath for uint256;
