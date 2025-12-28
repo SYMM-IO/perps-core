@@ -20,7 +20,7 @@ library LibSettlement {
 		uint256[] memory updatedPrices,
 		address partyA,
 		bool isForceClose
-	) internal returns (uint256[] memory newPartyBsAllocatedBalances) {
+	) public returns (uint256[] memory newPartyBsAllocatedBalances) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -137,7 +137,7 @@ library LibSettlement {
 	function settleUpnlMasterAccount(
 		MasterAccountSettlementSig memory settleSig,
 		uint256[] memory updatedPrices
-	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
+	) public returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address partyB = settleSig.partyB;
