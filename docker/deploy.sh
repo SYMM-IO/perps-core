@@ -1,4 +1,4 @@
 #!/bin/bash -e
 set -x
 
-npx hardhat deploy:system --network --network docker
+npx hardhat deploy:system --network docker
