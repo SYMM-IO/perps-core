@@ -1,7 +1,7 @@
 import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers"
 import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers"
 import { config as dotenvConfig } from "dotenv"
-import { defineConfig } from "hardhat/config";
+import { defineConfig } from "hardhat/config"
 import { resolve } from "node:path"
 
 import { deployTasks } from "./tasks/deploy/index.js"
@@ -12,7 +12,6 @@ dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
 const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
 const privateKey = process.env.PRIVATE_KEY || DUMMY_PRIVATE_KEY
 const etherscanApiKey = process.env.ETHERSCAN_API_KEY || ""
-const hardhatDockerUrl = process.env.HARDHAT_DOCKER_URL || ""
 
 const createNetworkConfig = (url: string) =>
 	({
@@ -106,11 +105,10 @@ export default defineConfig({
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
 		},
-		// docker: {
-		// 	type: "http",
-		// 	url: hardhatDockerUrl,
-		// 	accounts: privateKeyList,
-		// },
+		docker: {
+			type: "http",
+			url: process.env.HARDHAT_DOCKER_URL || "http://localhost:8545",
+		},
 		bsc: createNetworkConfig("https://binance.llamarpc.com"),
 		base: createNetworkConfig("https://api.zan.top/base-mainnet"),
 		polygon: createNetworkConfig("https://polygon-rpc.com"),
