@@ -1,6 +1,7 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { AffiliateHub, ControlFacet } from "../../src/types/index.js"
 import { writeData } from "../utils/fs.js"
 import { deployAccountHub } from "./accountHub.js"
 import { deployAffiliateHub } from "./affiliateHub.js"
@@ -110,7 +111,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					console.log(`FakeStablecoin deployed at: ${deployedContracts.collateral}`)
 					deploymentResults.push({
 						contract: "FakeStablecoin",
-						address: deployedContracts.collateral,
+						address: deployedContracts.collateral!,
 						status: "success",
 						timestamp: new Date().toISOString(),
 					})
@@ -342,7 +343,7 @@ async function setupSystem(hre: any, deployedContracts: DeployedContracts, confi
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
 
-	const controlFacet = await ethers.getContractAt("ControlFacet", deployedContracts.diamond!)
+	const controlFacet: ControlFacet = await ethers.getContractAt("ControlFacet", deployedContracts.diamond!)
 	const accountHub = await ethers.getContractAt("AccountHub", deployedContracts.accountHub!)
 	const affiliateHub = await ethers.getContractAt("AffiliateHub", deployedContracts.affiliateHub!)
 	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
@@ -401,6 +402,8 @@ async function setupSystem(hre: any, deployedContracts: DeployedContracts, confi
 	console.log("  Granting INSTANT_LAYER_ROLE to InstantLayer on Diamond...")
 	await controlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("INSTANT_LAYER_ROLE"))
 
+	// await controlFacet.setSignatureVerifierAddress("")
+
 	// Setup AffiliateHub
 	console.log("  Setting up AffiliateHub...")
 	await affiliateHub.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin)
@@ -458,7 +461,7 @@ async function registerDummyAffiliate(
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
 
-	const affiliateHub = await ethers.getContractAt("AffiliateHub", deployedContracts.affiliateHub!)
+	const affiliateHub: AffiliateHub = await ethers.getContractAt("AffiliateHub", deployedContracts.affiliateHub!)
 
 	console.log("  Registering dummy affiliate...")
 
