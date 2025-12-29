@@ -18,7 +18,7 @@ interface ISymmio {
 	struct Fee {
 		uint256 openFee;
 		uint256 closeFee;
-		bool isSet; // true if the fee is explicitly set, false if default (unset/zero)
+		bool isSet;
 	}
 
 	struct SchnorrSign {
@@ -45,17 +45,17 @@ interface ISymmio {
 	}
 
 	enum QuoteStatus {
-		PENDING, //0
-		LOCKED, //1
-		CANCEL_PENDING, //2
-		CANCELED, //3
-		OPENED, //4
-		CLOSE_PENDING, //5
-		CANCEL_CLOSE_PENDING, //6
-		CLOSED, //7
-		LIQUIDATED, //8
-		EXPIRED, //9
-		LIQUIDATED_PENDING //10
+		PENDING,
+		LOCKED,
+		CANCEL_PENDING,
+		CANCELED,
+		OPENED,
+		CLOSE_PENDING,
+		CANCEL_CLOSE_PENDING,
+		CLOSED,
+		LIQUIDATED,
+		EXPIRED,
+		LIQUIDATED_PENDING
 	}
 
 	struct LockedValues {
@@ -71,15 +71,11 @@ interface ISymmio {
 		uint256 symbolId;
 		PositionType positionType;
 		OrderType orderType;
-		// Price of quote which PartyB opened in 18 decimals
 		uint256 openedPrice;
 		uint256 initialOpenedPrice;
-		// Price of quote which PartyA requested in 18 decimals
 		uint256 requestedOpenPrice;
 		uint256 marketPrice;
-		// Quantity of quote which PartyA requested in 18 decimals
 		uint256 quantity;
-		// Quantity of quote which PartyB has closed until now in 18 decimals
 		uint256 closedAmount;
 		LockedValues initialLockedValues;
 		LockedValues lockedValues;
@@ -90,13 +86,12 @@ interface ISymmio {
 		uint256 avgClosedPrice;
 		uint256 requestedClosePrice;
 		uint256 quantityToClose;
-		// handle partially open position
 		uint256 parentId;
 		uint256 createTimestamp;
 		uint256 statusModifyTimestamp;
 		uint256 lastFundingPaymentTimestamp;
 		uint256 deadline;
-		uint256 tradingFee; // openFee
+		uint256 tradingFee;
 		address affiliate;
 		int256 accumulatedPaidFunding;
 		uint256 closeFee;
@@ -116,42 +111,23 @@ interface ISymmio {
 	}
 
 	function depositFor(address user, uint256 amount) external;
-
 	function depositAndAllocateFor(address user, uint256 amount) external;
-
 	function withdrawTo(address user, uint256 amount) external;
-
 	function allocate(uint256 amount) external;
-
 	function deallocate(uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
-
 	function getCollateral() external view returns (address);
-
 	function balanceOf(address user) external view returns (uint256);
-
 	function setSigner(address signer) external;
-
 	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
-
 	function internalTransfer(address user, uint256 amount) external;
-
 	function internalTransferToBalance(address user, uint256 amount) external;
-
 	function zeroUpnlDeallocate(uint256 amount) external;
-
 	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory);
-
 	function isCallFromInstantLayer() external view returns (bool);
-
 	function setFeeCollector(address affiliate, address feeCollector) external;
-
 	function getNextQuoteId() external returns (uint256);
-
 	function registerAffiliate(address affiliate) external;
-
 	function getFee(address affiliate, uint256 symbolId) external returns (Fee memory);
-
 	function bindToPartyB(address partyB) external;
-
 	function getBindState(address user) external view returns (BindState memory);
 }

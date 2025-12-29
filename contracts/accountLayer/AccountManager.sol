@@ -5,10 +5,9 @@
 pragma solidity >=0.8.18;
 
 import { SafeERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { IAccountManager } from "./interfaces/IAccountManager.sol";
-import { IAccountHub } from "./interfaces/IAccountHub.sol";
-import { IAccountHubInternal } from "./interfaces/IAccountHubInternal.sol";
-import { IAffiliateHub } from "./interfaces/IAffiliateHub.sol";
+import { IAccountManager, Account } from "./interfaces/IAccountManager.sol";
+import { IAccountLayerDiamond } from "./interfaces/IAccountLayerDiamond.sol";
+import { SubAccountCreationData, SubAccountDetail, SubAccountIsolationType } from "./storages/AccountHubStorage.sol";
 import { ISymmio } from "./interfaces/ISymmio.sol";
 
 contract AccountManager is IAccountManager {
@@ -16,15 +15,10 @@ contract AccountManager is IAccountManager {
 
 	address public accountHub;
 
-	modifier onlyHub() {
-		require(msg.sender == accountHub, "AccountManager: Only account hub");
-		_;
-	}
-
 	modifier withSigner() {
-		IAccountHub(accountHub).setSigner(msg.sender);
+		IAccountLayerDiamond(accountHub).setSigner(msg.sender);
 		_;
-		IAccountHub(accountHub).setSigner(address(0));
+		IAccountLayerDiamond(accountHub).setSigner(address(0));
 	}
 
 	constructor(address _accountHub) {
@@ -33,37 +27,36 @@ contract AccountManager is IAccountManager {
 	}
 
 	function addAccount(string memory name) external withSigner returns (address[] memory subAccountAddress) {
-		address affiliateHub = IAccountHub(accountHub).affiliateHub();
-		address[] memory cores = IAffiliateHub(affiliateHub).getAffiliateSymmioCores(address(this));
+		address[] memory cores = IAccountLayerDiamond(accountHub).getAffiliateSymmioCores(address(this));
 
-		IAccountHub.SubAccountCreationData memory acc = IAccountHub.SubAccountCreationData({
+		SubAccountCreationData memory acc = SubAccountCreationData({
 			name: name,
 			metadata: hex"",
 			symmioCore: cores[0],
-			isolationType: IAccountHub.SubAccountIsolationType.CUSTOM,
+			isolationType: SubAccountIsolationType.CUSTOM,
 			singleVAMode: false
 		});
 
-		IAccountHub.SubAccountCreationData[] memory arr = new IAccountHub.SubAccountCreationData[](1);
+		SubAccountCreationData[] memory arr = new SubAccountCreationData[](1);
 		arr[0] = acc;
 
-		subAccountAddress = IAccountHub(accountHub).createSubAccounts(address(this), arr);
+		subAccountAddress = IAccountLayerDiamond(accountHub).createSubAccounts(address(this), arr);
 		emit AddAccount(msg.sender, subAccountAddress[0], name);
 	}
 
 	function depositForAccount(address account, uint256 amount) external withSigner {
-		address core = IAccountHub(accountHub).getRelatedCore(account);
+		address core = IAccountLayerDiamond(accountHub).getRelatedCore(account);
 		address collateral = ISymmio(core).getCollateral();
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20(collateral).safeIncreaseAllowance(accountHub, amount);
 
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = abi.encodeWithSelector(ISymmio.depositFor.selector, account, amount);
-		IAccountHub(accountHub)._call(account, callDatas);
+		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 
 	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner {
-		address core = IAccountHub(accountHub).getRelatedCore(account);
+		address core = IAccountLayerDiamond(accountHub).getRelatedCore(account);
 
 		address collateral = ISymmio(core).getCollateral();
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
@@ -71,44 +64,43 @@ contract AccountManager is IAccountManager {
 
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = abi.encodeWithSelector(ISymmio.depositAndAllocateFor.selector, account, amount);
-		IAccountHub(accountHub)._call(account, callDatas);
+		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 
 	function withdrawFromAccount(address account, uint256 amount) external withSigner {
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = abi.encodeWithSelector(ISymmio.withdrawTo.selector, account, amount);
-		IAccountHub(accountHub)._call(account, callDatas);
+		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 
 	function _call(address account, bytes[] memory callDatas) external withSigner {
-		IAccountHub(accountHub)._call(account, callDatas);
+		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 
 	function getAccountHub() external view returns (address) {
 		return accountHub;
 	}
 
-	function getAccounts(address user, uint256 start, uint256 size) external view returns (IAccountHub.Account[] memory) {
-		IAccountHubInternal hub = IAccountHubInternal(accountHub);
-		uint256 total = hub.getUserSubAccountsCount(user);
+	function getAccounts(address user, uint256 start, uint256 size) external view returns (Account[] memory) {
+		uint256 total = IAccountLayerDiamond(accountHub).getSubAccountsCountOfUser(user);
 
 		if (start >= total) {
-			return new IAccountHub.Account[](0);
+			return new Account[](0);
 		}
 
 		uint256 remaining = total - start;
 		uint256 resultSize = remaining < size ? remaining : size;
 
-		IAccountHub.Account[] memory accounts = new IAccountHub.Account[](resultSize);
+		SubAccountDetail[] memory details = IAccountLayerDiamond(accountHub).getUserSubAccounts(user, start, resultSize);
+
+		Account[] memory accounts = new Account[](resultSize);
 		for (uint256 i = 0; i < resultSize; i++) {
-			address accountAddr = hub.getUserSubAccountAt(user, start + i);
-			IAccountHub.SubAccountDetail memory detail = hub.getSubAccountRaw(accountAddr);
-			accounts[i] = IAccountHub.Account({ accountAddress: accountAddr, name: detail.name });
+			accounts[i] = Account({ accountAddress: details[i].accountAddress, name: details[i].name });
 		}
 		return accounts;
 	}
 
 	function getAccountsLength(address user) external view returns (uint256) {
-		return IAccountHubInternal(accountHub).getUserSubAccountsCount(user);
+		return IAccountLayerDiamond(accountHub).getSubAccountsCountOfUser(user);
 	}
 }

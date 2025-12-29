@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-import { IAccountHub } from "../accountHub/interfaces/IAccountHub.sol";
+import { SubAccountCreationData } from "../accountLayer/storages/AccountHubStorage.sol";
 
 contract MockAffiliateHubForAccountManager {
 	mapping(address => address[]) private affiliateCores;
@@ -24,10 +24,11 @@ contract MockAccountHubForAccountManager {
 	address public affiliateHub;
 
 	mapping(address => address) public relatedCores;
+	mapping(address => address[]) public affiliateCores;
 
 	address[] private signerLog;
 	address[] private pendingCreateResult;
-	IAccountHub.SubAccountCreationData[] private lastCreateData;
+	SubAccountCreationData[] private lastCreateData;
 	bytes[] private lastCallData;
 	uint256 private autoNonce;
 	bool private revertOnCreate;
@@ -66,7 +67,17 @@ contract MockAccountHubForAccountManager {
 		requireRelatedCore = status;
 	}
 
-	function createSubAccounts(address affiliate, IAccountHub.SubAccountCreationData[] memory data) external returns (address[] memory) {
+	function setAffiliateCores(address affiliate, address[] memory cores) external {
+		affiliateCores[affiliate] = cores;
+	}
+
+	function getAffiliateSymmioCores(address affiliate) external view returns (address[] memory) {
+		address[] memory cores = affiliateCores[affiliate];
+		require(cores.length > 0, "MockAffiliateHub: no cores configured");
+		return cores;
+	}
+
+	function createSubAccounts(address affiliate, SubAccountCreationData[] memory data) external returns (address[] memory) {
 		if (revertOnCreate) {
 			revertOnCreate = false;
 			revert("MockAccountHub: create reverted");
@@ -113,8 +124,8 @@ contract MockAccountHubForAccountManager {
 		return relatedCores[account];
 	}
 
-	function getLastCreateData() external view returns (IAccountHub.SubAccountCreationData[] memory) {
-		IAccountHub.SubAccountCreationData[] memory copy = new IAccountHub.SubAccountCreationData[](lastCreateData.length);
+	function getLastCreateData() external view returns (SubAccountCreationData[] memory) {
+		SubAccountCreationData[] memory copy = new SubAccountCreationData[](lastCreateData.length);
 		for (uint256 i = 0; i < lastCreateData.length; i++) {
 			copy[i] = lastCreateData[i];
 		}

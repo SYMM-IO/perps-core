@@ -2,10 +2,11 @@ import { toUtf8Bytes } from "ethers";
 
 
 
-import { AccountHub, AccountHubLens, AffiliateHub } from "../src/types/index.js";
+import type { AccountHub, AccountHubLens, AffiliateHub } from "../src/types/index.js";
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types/index.js";
 import { deployAccountHub } from "../tasks/deploy/accountHub.js";
 import { deployAffiliateHub } from "../tasks/deploy/affiliateHub.js";
+import { deployAccountLayerDiamond } from "../tasks/deploy/accountLayerDiamond.js";
 import { deployDiamond } from "../tasks/deploy/diamond.js";
 import { deployInstantLayer } from "../tasks/deploy/instantLayer.js";
 import { deploySymmioPartyB } from "../tasks/deploy/partyB.js";
@@ -174,40 +175,29 @@ export async function initializeFixture(): Promise<RunContext> {
 
 	const context = await createRunContext(await diamond.getAddress(), await collateral.getAddress(), true)
 
-	const affiliateHub: AffiliateHub = await deployAffiliateHub(hre, {
-		admin: context.signers.admin.address,
-		symmiofeereceiver: context.signers.symmioFeeReceiver.address,
+	// Deploy AccountLayer Diamond (replaces AccountHub + AffiliateHub)
+	const accountLayerResult = await deployAccountLayerDiamond(hre, {
+		admin: context.signers.admin,
+		symmioFeeReceiver: context.signers.symmioFeeReceiver,
 		logData: false,
 	})
 
-	const accountHub: AccountHub = await deployAccountHub(hre, {
-		admin: context.signers.admin.address,
-		affiliatehubaddress: await affiliateHub.getAddress(),
-		logData: false,
-	})
+	const accountLayerDiamondAddress = accountLayerResult.diamond
 
-	// Grant roles to affiliate hub
-	await affiliateHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
-	await affiliateHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("APPROVER_ROLE")), context.signers.admin.address)
+	// Attach AccountLayer facets to context
+	context.accountLayerDiamond = accountLayerDiamondAddress
+	context.alCoreFacet = await ethers.getContractAt("contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet", accountLayerDiamondAddress)
+	context.alMarginFacet = await ethers.getContractAt("contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet", accountLayerDiamondAddress)
+	context.alSymmioHookFacet = await ethers.getContractAt("contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet", accountLayerDiamondAddress)
+	context.alControlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", accountLayerDiamondAddress)
+	context.alViewFacet = await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", accountLayerDiamondAddress)
+	context.alAffiliateFacet = await ethers.getContractAt("contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet", accountLayerDiamondAddress)
 
+	// Grant additional roles via AccountLayer ControlFacet (admin already has DEFAULT_ADMIN_ROLE, SETTER_ROLE, PAUSER_ROLE, UNPAUSER_ROLE, APPROVER_ROLE from init)
+	await context.alControlFacet.connect(context.signers.admin).grantRole(await instantLayer.getAddress(), ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 
-	await affiliateHub.connect(context.signers.admin).setWhitelistedSymmioCore(diamond, true)
-	const accountHubAddress = await accountHub.getAddress()
-	await affiliateHub.connect(context.signers.admin).setAccountHub(accountHubAddress)
-
-	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("SETTER_ROLE")), context.signers.admin.address)
-	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("PAUSER_ROLE")), context.signers.admin.address)
-	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE")), context.signers.admin.address)
-	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")), await instantLayer.getAddress())
-	// Grant AffiliateHub DEPLOYER_ROLE on AccountHub so it can deploy AccountManagers
-	await accountHub.connect(context.signers.admin).grantRole(ethers.keccak256(toUtf8Bytes("DEPLOYER_ROLE")), await affiliateHub.getAddress())
-
-	// Deploy AccountHubLens and set it on AccountHub (required for affiliate registration)
-	const AccountHubLensFactory = await ethers.getContractFactory("AccountHubLens")
-	const accountHubLens = (await AccountHubLensFactory.deploy(await accountHub.getAddress())) as AccountHubLens
-	await accountHubLens.waitForDeployment()
-	await accountHub.connect(context.signers.admin).setAccountHubLens(await accountHubLens.getAddress())
-	context.accountHubLens = accountHubLens
+	// Whitelist the Symmio core
+	await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(await diamond.getAddress(), true)
 
 	const MockMultiAccount = await ethers.getContractFactory("MockMultiAccount")
 	const multiAccountMock = await MockMultiAccount.deploy(diamond)
@@ -229,8 +219,8 @@ export async function initializeFixture(): Promise<RunContext> {
 		symmioCores: [await diamond.getAddress()],
 	}
 
-	const affiliateAddress = await affiliateHub.requestToRegisterAffiliate.staticCall(affiliateData)
-	await affiliateHub.requestToRegisterAffiliate(affiliateData)
+	const affiliateAddress = await context.alAffiliateFacet.requestToRegisterAffiliate.staticCall(affiliateData)
+	await context.alAffiliateFacet.requestToRegisterAffiliate(affiliateData)
 
 	// Register second affiliate
 	const affiliate2Data = {
@@ -249,29 +239,27 @@ export async function initializeFixture(): Promise<RunContext> {
 		symmioCores: [await diamond.getAddress()],
 	}
 
-	const affiliate2Address = await affiliateHub.requestToRegisterAffiliate.staticCall(affiliate2Data)
-	await affiliateHub.requestToRegisterAffiliate(affiliate2Data)
+	const affiliate2Address = await context.alAffiliateFacet.requestToRegisterAffiliate.staticCall(affiliate2Data)
+	await context.alAffiliateFacet.requestToRegisterAffiliate(affiliate2Data)
 
-	// Approve affiliates
+	// Approve affiliates - grant AFFILIATE_MANAGER_ROLE to accountLayer diamond on core diamond first
 	await context.controlFacet.connect(context.signers.admin).setAdmin(context.signers.admin.address)
 	await context.controlFacet
 		.connect(context.signers.admin)
-		.grantRole(await affiliateHub.getAddress(), ethers.keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
-	await affiliateHub.connect(context.signers.admin).approveAffiliate(affiliateAddress)
-	await affiliateHub.connect(context.signers.admin).approveAffiliate(affiliate2Address)
+		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
+	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliateAddress)
+	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate2Address)
 
-	// Set up account managers (stored in AffiliateHub)
-	const accManagerAddress = await affiliateHub.getAffiliateAccountManager(affiliateAddress)
-	const accManager2Address = await affiliateHub.getAffiliateAccountManager(affiliate2Address)
-	context.accountManager = await ethers.getContractAt("AccountManager", accManagerAddress)
-	context.accountManager2 = await ethers.getContractAt("AccountManager", accManager2Address)
-	context.accountHub = accountHub
-	context.affiliateHub = affiliateHub
+	// Set up account managers (via ViewFacet)
+	const accManagerAddress = await context.alViewFacet.getAffiliateAccountManager(affiliateAddress)
+	const accManager2Address = await context.alViewFacet.getAffiliateAccountManager(affiliate2Address)
+	context.accountManager = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", accManagerAddress)
+	context.accountManager2 = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", accManager2Address)
 	context.symmioPartyB = symmioPartyB
 	context.instantLayer = instantLayer
 
-	// set AccountHub for InstantLayer
-	await instantLayer.setAccountHub(await accountHub.getAddress())
+	// set AccountLayer diamond address for InstantLayer
+	await instantLayer.setAccountHub(accountLayerDiamondAddress)
 
 	// Grant roles to admin
 	const rolesToGrant = [
@@ -311,10 +299,10 @@ export async function initializeFixture(): Promise<RunContext> {
 		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
-		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
+		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
-		.grantRole(await accountHub.getAddress(), ethers.keccak256(toUtf8Bytes("INTERNAL_TRANSFER_TO_BALANCE_ROLE")))
+		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("INTERNAL_TRANSFER_TO_BALANCE_ROLE")))
 
 	// Configure system
 	await context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress())
