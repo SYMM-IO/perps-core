@@ -29,7 +29,7 @@ async function accountManagerFixture() {
 	const AccountManager = await ethers.getContractFactory("AccountManager")
 	const accountManager = await AccountManager.deploy(await accountHubMock.getAddress())
 
-	await affiliateHubMock.setAffiliateCores(await accountManager.getAddress(), [await symmioCore.getAddress()])
+	await accountHubMock.setAffiliateCores(await accountManager.getAddress(), [await symmioCore.getAddress()])
 
 	return {
 		token,
@@ -80,7 +80,7 @@ export function shouldBehaveLikeAccountManager(): void {
 				const context = await loadFixture(accountManagerFixture)
 				const coreA = ethers.Wallet.createRandom().address
 				const coreB = ethers.Wallet.createRandom().address
-				await context.affiliateHubMock.setAffiliateCores(await context.accountManager.getAddress(), [coreA, coreB])
+				await context.accountHubMock.setAffiliateCores(await context.accountManager.getAddress(), [coreA, coreB])
 
 				await context.accountHubMock.resetTracking()
 				await context.accountManager.connect(context.signers.user).addAccount("Desk-2")
@@ -91,7 +91,7 @@ export function shouldBehaveLikeAccountManager(): void {
 
 			it("reverts if affiliate hub has no configured cores", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				await context.affiliateHubMock.setAffiliateCores(await context.accountManager.getAddress(), [])
+				await context.accountHubMock.setAffiliateCores(await context.accountManager.getAddress(), [])
 				await expect(context.accountManager.connect(context.signers.user).addAccount("Desk-3")).to.be.revertedWith("MockAffiliateHub: no cores configured")
 			})
 
