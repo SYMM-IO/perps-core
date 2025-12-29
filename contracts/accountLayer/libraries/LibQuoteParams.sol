@@ -4,14 +4,21 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { IAccountHub } from "../interfaces/IAccountHub.sol";
 import { ISymmio } from "../interfaces/ISymmio.sol";
 
-/**
- * @title LibQuoteParams
- * @notice Library for decoding quote parameters from calldata
- * @dev Extracted to reduce AccountHub contract size
- */
+struct QuoteParams {
+	uint256 symbolId;
+	ISymmio.PositionType positionType;
+	uint256 cva;
+	uint256 lf;
+	uint256 partyAmm;
+	uint256 quantity;
+	uint256 price;
+	ISymmio.OrderType orderType;
+	ISymmio.SingleUpnlAndPriceSig sig;
+	address affiliate;
+}
+
 library LibQuoteParams {
 	bytes4 internal constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
 	bytes4 internal constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
@@ -19,7 +26,7 @@ library LibQuoteParams {
 
 	error InvalidSelector();
 
-	function decodeQuoteParams(bytes calldata cd) external pure returns (IAccountHub.QuoteParams memory) {
+	function decodeQuoteParams(bytes calldata cd) external pure returns (QuoteParams memory) {
 		bytes4 selector = bytes4(cd[:4]);
 
 		if (selector == SEND_QUOTE_WITH_AFFILIATE_SELECTOR) {
@@ -57,7 +64,7 @@ library LibQuoteParams {
 						ISymmio.SingleUpnlAndPriceSig
 					)
 				);
-			return IAccountHub.QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, affiliate);
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, affiliate);
 		} else if (selector == SEND_QUOTE_SELECTOR) {
 			(
 				,
@@ -91,7 +98,7 @@ library LibQuoteParams {
 						ISymmio.SingleUpnlAndPriceSig
 					)
 				);
-			return IAccountHub.QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
 		} else if (selector == SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR) {
 			(
 				,
@@ -129,7 +136,7 @@ library LibQuoteParams {
 						bytes
 					)
 				);
-			return IAccountHub.QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
 		}
 		revert InvalidSelector();
 	}

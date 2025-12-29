@@ -41,8 +41,9 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuar
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { IAccountHub } from "../accountHub/interfaces/IAccountHub.sol";
-import { IAccountHubInternal } from "../accountHub/interfaces/IAccountHubInternal.sol";
+import { VirtualAccountDetail } from "../accountLayer/storages/AccountHubStorage.sol";
+import { IViewFacet } from "../accountLayer/facets/View/IViewFacet.sol";
+import { ICoreFacet } from "../accountLayer/facets/Core/ICoreFacet.sol";
 
 /* ════════════════════════════ EXTERNAL INTERFACES ════════════════════════════ */
 
@@ -845,7 +846,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				assembly ("memory-safe") {
 					selector := calldataload(callData.offset) // Extract first 4 bytes
 				}
-				IAccountHub.VirtualAccountDetail memory virtualAccount = IAccountHubInternal(accountHub).getVirtualAccountRaw(signedOp.signerAccount.addr);
+				VirtualAccountDetail memory virtualAccount = IViewFacet(accountHub).getVirtualAccount(signedOp.signerAccount.addr);
 				address delegator = signedOp.signerAccount.addr;
 				if (virtualAccount.isExists) delegator = virtualAccount.parentAccount;
 				if (!isDelegationActive(delegator, signedOp.signer, selector)) {
@@ -894,7 +895,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		} else if (signedOp.target == address(symmio)) {
 			// Route to AccountHub
 			if (accountHub == address(0)) revert AccountHubNotSet();
-			(success, result) = accountHub.call(abi.encodeWithSelector(IAccountHub._call.selector, signedOp.signerAccount.addr, callDatas));
+			(success, result) = accountHub.call(abi.encodeWithSelector(ICoreFacet._call.selector, signedOp.signerAccount.addr, callDatas));
 			decodeNestedResult = true;
 		} else {
 			// Route to a whitelisted target
@@ -1166,7 +1167,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	function _getAccountOwner(address account) private view returns (address) {
 		if (accountHub == address(0)) revert AccountHubNotSet();
-		return IAccountHub(accountHub).ownerOf(account);
+		return IViewFacet(accountHub).ownerOf(account);
 	}
 
 	function _isAccountOwner(Account memory account) internal view returns (bool) {

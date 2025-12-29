@@ -2,7 +2,7 @@ import { ethers } from "./helpers/hardhat-connection"
 
 async function main() {
 	let symmioAddress = ""
-	let ViewFacet = await ethers.getContractAt("ViewFacet", symmioAddress)
+	let ViewFacet = await ethers.getContractAt("contracts/facets/ViewFacet/ViewFacet.sol:ViewFacet", symmioAddress)
 	console.log(await ViewFacet.getQuote(564))
 }
 

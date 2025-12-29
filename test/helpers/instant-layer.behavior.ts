@@ -136,7 +136,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		await context.controlFacet.connect(context.signers.admin).registerPartyB(await context.symmioPartyB.getAddress())
 		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress(), true)
 
-		await context.instantLayer.setAccountHub(await context.accountHub.getAddress())
+		await context.instantLayer.setAccountHub(context.accountLayerDiamond)
 
 		const requestSendQuote = limitQuoteRequestBuilder()
 			.partyBWhiteList([await context.symmioPartyB.getAddress()])
@@ -398,7 +398,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			it("updates accountHub address", async function () {
-				const hubAddress = await ctx.context.accountHub.getAddress()
+				const hubAddress = ctx.context.accountLayerDiamond
 				await expect(ctx.context.instantLayer.setAccountHub(hubAddress)).not.to.be.reverted
 				expect(await ctx.context.instantLayer.accountHub()).to.equal(hubAddress)
 			})
@@ -424,7 +424,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			it("removes whitelist from old accountHub", async function () {
-				const hub1 = await ctx.context.accountHub.getAddress()
+				const hub1 = ctx.context.accountLayerDiamond
 				const hub2 = ethers.Wallet.createRandom().address
 
 				await ctx.context.instantLayer.setAccountHub(hub1)
@@ -1864,8 +1864,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 					singleVAMode: false,
 				},
 			]
-			await ctx.context.accountHub.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), subAccountData)
-			const accounts = await ctx.context.accountHubLens.getUserSubAccountsAddresses(ctx.partyA1.address, 0, 100)
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), subAccountData)
+			const accounts = await ctx.context.alViewFacet.getUserSubAccountsAddresses(ctx.partyA1.address, 0, 100)
 			subAccountAddress = accounts[0]
 
 			// Fund sub-account
@@ -1874,7 +1874,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositFor(subAccountAddress, decimal(3000n))
 
 			// Bind to PartyB
-			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [ctx.bindToPartyBCallData])
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer)._call(subAccountAddress, [ctx.bindToPartyBCallData])
 
 			// Whitelist symbol
 			await ctx.context.symbolControlFacet.whitelistSymbolType(ctx.context.symmioPartyB.getAddress(), 1)
@@ -1899,15 +1899,15 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// Pre-fund the VA before sending quote (since automatic transfer was removed)
 			// MARKET isolation (1) -> VirtualAccountIsolationType.MARKET (1)
-			const predictedVA = await ctx.context.accountHubLens.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
+			const predictedVA = await ctx.context.alViewFacet.predictNextVirtualAccountAddress(subAccountAddress, 1, ctx.requestSendQuote.symbolId)
 			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, decimal(500n))
 			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositAndAllocateFor(predictedVA, decimal(500n))
 
 			// Create virtual account by sending a quote
-			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [quoteCallDataLocal])
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer)._call(subAccountAddress, [quoteCallDataLocal])
 
 			// Get virtual account address
-			const virtualAccounts = await ctx.context.accountHubLens.getVirtualAccountsAddressesOfSubAccount(subAccountAddress, 0, 10)
+			const virtualAccounts = await ctx.context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(subAccountAddress, 0, 10)
 			virtualAccountAddress = virtualAccounts[0]
 
 			// Grant delegation on parent sub-account
@@ -1928,7 +1928,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				virtualAccountAddress,
 				decimal(500n),
 			])
-			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [internalTransferCallData])
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer)._call(subAccountAddress, [internalTransferCallData])
 
 			// Create operation targeting virtual account
 			const op = createSignedOperation(
@@ -1944,7 +1944,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
 
-			const quoteIds = await ctx.context.accountHubLens.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+			const quoteIds = await ctx.context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 			expect(quoteIds.length).to.equal(2)
 		})
 
@@ -1973,7 +1973,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				virtualAccountAddress,
 				decimal(500n),
 			])
-			await ctx.context.accountHub.connect(ctx.partyA1.signer)._call(subAccountAddress, [internalTransferCallData])
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer)._call(subAccountAddress, [internalTransferCallData])
 
 			const op = createSignedOperation(
 				ctx.partyA1.address,
@@ -1990,7 +1990,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		it("correctly identifies parent account for delegation", async function () {
-			const virtualAccountDetail = await ctx.context.accountHubLens.getVirtualAccount(virtualAccountAddress)
+			const virtualAccountDetail = await ctx.context.alViewFacet.getVirtualAccount(virtualAccountAddress)
 			expect(virtualAccountDetail.isExists).to.be.true
 			expect(virtualAccountDetail.parentAccount).to.equal(subAccountAddress)
 
