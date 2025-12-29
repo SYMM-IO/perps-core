@@ -44,7 +44,7 @@ export interface QuoteRequestWithData {
 	data: any
 }
 
-const limitDefaultQuoteRequest: QuoteRequest = {
+const buildLimitDefaultQuoteRequest = (): QuoteRequest => ({
 	partyBWhiteList: [],
 	symbolId: 1,
 	positionType: PositionType.LONG,
@@ -59,9 +59,9 @@ const limitDefaultQuoteRequest: QuoteRequest = {
 	deadline: getBlockTimestamp(500n),
 	affiliate: ZeroAddress,
 	upnlSig: getDummySingleUpnlAndPriceSig(decimal(1n)),
-}
+})
 
-const limitDataQuoteRequest: QuoteRequestWithData = {
+const buildLimitDataQuoteRequest = (): QuoteRequestWithData => ({
 	partyBWhiteList: [],
 	symbolId: 1,
 	positionType: PositionType.LONG,
@@ -77,9 +77,9 @@ const limitDataQuoteRequest: QuoteRequestWithData = {
 	affiliate: "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d", //FIXME find a better way
 	upnlSig: getDummySingleUpnlAndPriceSig(decimal(1n)),
 	data: data,
-}
+})
 
-const marketDefaultQuoteRequest: QuoteRequest = {
+const buildMarketDefaultQuoteRequest = (): QuoteRequest => ({
 	partyBWhiteList: [],
 	symbolId: 1,
 	positionType: PositionType.LONG,
@@ -94,8 +94,8 @@ const marketDefaultQuoteRequest: QuoteRequest = {
 	deadline: getBlockTimestamp(500n),
 	affiliate: "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d", //FIXME find a better way
 	upnlSig: getDummySingleUpnlAndPriceSig(decimal(1n)),
-}
+})
 
-export const limitQuoteRequestBuilder = () => Builder(limitDefaultQuoteRequest)
-export const limitQuoteRequestWithDataBuilder = () => Builder(limitDataQuoteRequest)
-export const marketQuoteRequestBuilder = () => Builder(marketDefaultQuoteRequest)
+export const limitQuoteRequestBuilder = () => Builder(buildLimitDefaultQuoteRequest())
+export const limitQuoteRequestWithDataBuilder = () => Builder(buildLimitDataQuoteRequest())
+export const marketQuoteRequestBuilder = () => Builder(buildMarketDefaultQuoteRequest())
