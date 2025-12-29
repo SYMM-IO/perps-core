@@ -1669,7 +1669,8 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					await expect(
 						context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
+					).to.emit(hookEvents, "HookFailed")
+					.withArgs(await context.accountHub.getAddress(), SYMMIO_HOOK_SELECTORS.onCancelQuote, quoteId, expectedReason)
 				})
 
 				it("should return the hook failure reason for virtual account deletion", async () => {
@@ -1689,8 +1690,8 @@ export function shouldBehaveLikeAccountHub(): void {
 					const expectedReason = new ethers.Interface(["error HookFailed(bytes)"]).encodeErrorResult("HookFailed", [innerReason])
 
 					await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]))
-						.to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
-						.withArgs(encodedReason)
+						.to.emit(hookEvents, "HookFailed")
+						.withArgs(await context.accountHub.getAddress(), SYMMIO_HOOK_SELECTORS.onCancelQuote, quoteId, expectedReason)
 				})
 			})
 		})
