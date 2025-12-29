@@ -1,6 +1,4 @@
-import { accountHubTask } from "./accountHub.js"
 import { accountLayerDiamondTask } from "./accountLayerDiamond.js"
-import { affiliateHubTask } from "./affiliateHub.js"
 import { deployAllTask } from "./deployAll.js"
 import { diamondTask } from "./diamond.js"
 import { feeDistributorTask } from "./feeDistributor.js"
@@ -12,9 +10,7 @@ import { stablecoinTask } from "./stablecoin.js"
 import { verifyAccountHubTask, verifyAccountLayerTask, verifyAffiliateHubTask, verifyDeploymentTask, verifyInstantLayerTask } from "./verify.js"
 
 export const deployTasks = [
-	accountHubTask,
 	accountLayerDiamondTask,
-	affiliateHubTask,
 	deployAllTask,
 	diamondTask,
 	feeDistributorTask,
