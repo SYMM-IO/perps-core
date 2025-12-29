@@ -28,6 +28,9 @@ COLLATERAL_ADDRESS=""
 # Deploy SymmioPartyB contract (default: true, set to "false" to skip)
 DEPLOY_PARTYB="true"
 
+# Optional: Signer address for SymmioPartyB (ERC-1271 signature verification)
+PARTYB_SIGNER=""
+
 # Register a dummy affiliate for testing (default: true, set to "false" to skip)
 REGISTER_DUMMY_AFFILIATE="true"
 ```
@@ -99,10 +102,21 @@ The task automatically configures:
 - AffiliateHub receives DEPLOYER_ROLE on AccountHub
 - InstantLayer receives INSTANT_LAYER_ROLE on AccountHub
 
+### InstantLayer Setup
+
+- Admin receives SETTER_ROLE on InstantLayer
+- Diamond (Symmio) is whitelisted on InstantLayer (setTargetWhitelist)
+- AccountLayerDiamond is whitelisted on InstantLayer (setTargetWhitelist)
+
 ### PartyB Setup (if deployed)
 
 - SymmioPartyB is registered in Diamond
 - InstantLayer receives TRUSTED_ROLE on SymmioPartyB
+- Admin receives MANAGER_ROLE on SymmioPartyB (for setMulticastWhitelist)
+- Admin receives SETTER_ROLE on SymmioPartyB (for setSigner)
+- InstantLayer is added to multicastWhitelist on SymmioPartyB
+- Signer is set on SymmioPartyB (if PARTYB_SIGNER is configured)
+- SymmioPartyB is registered on InstantLayer (registerPartyBs - also grants OPERATOR_ROLE)
 
 ## System Parameters
 

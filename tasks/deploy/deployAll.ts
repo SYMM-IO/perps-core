@@ -54,6 +54,8 @@ async function getEnvConfig(hre: any) {
 	// Default to true unless explicitly set to "false"
 	const deployPartyB = process.env.DEPLOY_PARTYB !== "false"
 	const registerDummyAffiliate = process.env.REGISTER_DUMMY_AFFILIATE !== "false"
+	// Optional signer address for SymmioPartyB (ERC-1271 signature verification)
+	const partyBSigner = process.env.PARTYB_SIGNER || ""
 
 	return {
 		admin,
@@ -61,6 +63,7 @@ async function getEnvConfig(hre: any) {
 		collateralAddress,
 		deployPartyB,
 		registerDummyAffiliate,
+		partyBSigner,
 	}
 }
 
@@ -81,6 +84,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			console.log(`Symmio Fee Receiver: ${config.symmioFeeReceiver}`)
 			console.log(`Collateral Address: ${config.collateralAddress || "(will deploy FakeStablecoin)"}`)
 			console.log(`Deploy PartyB: ${config.deployPartyB}`)
+			console.log(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
 			console.log(`Register Dummy Affiliate: ${config.registerDummyAffiliate}`)
 			console.log("=".repeat(80))
 			console.log()
@@ -366,14 +370,43 @@ async function setupSystem(hre: any, deployedContracts: DeployedContracts, confi
 	await controlFacet.connect(deployer).setMaxPartyAConnectionLimit(5)
 	await controlFacet.connect(deployer).setInvalidBridgedAmountsPool(config.admin)
 
+	// Setup InstantLayer roles and whitelist
+	console.log("  Granting SETTER_ROLE on InstantLayer to admin...")
+	await instantLayer.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin)
+
+	console.log("  Whitelisting Symmio (Diamond) on InstantLayer...")
+	await instantLayer.connect(deployer).setTargetWhitelist(deployedContracts.diamond!, true)
+
+	console.log("  Whitelisting AccountLayerDiamond on InstantLayer...")
+	await instantLayer.connect(deployer).setTargetWhitelist(deployedContracts.accountLayerDiamond!, true)
+
 	// Register and setup PartyB if deployed
 	if (deployedContracts.symmioPartyB) {
 		console.log("  Registering SymmioPartyB in Diamond...")
 		await controlFacet.connect(deployer).registerPartyB(deployedContracts.symmioPartyB)
 
-		console.log("  Granting TRUSTED_ROLE to InstantLayer in SymmioPartyB...")
 		const symmioPartyB = await ethers.getContractAt("SymmioPartyB", deployedContracts.symmioPartyB)
+
+		console.log("  Granting TRUSTED_ROLE to InstantLayer on SymmioPartyB...")
 		await symmioPartyB.connect(deployer).grantRole(roleHash("TRUSTED_ROLE"), deployedContracts.instantLayer!)
+
+		console.log("  Granting MANAGER_ROLE to admin on SymmioPartyB...")
+		await symmioPartyB.connect(deployer).grantRole(roleHash("MANAGER_ROLE"), config.admin)
+
+		console.log("  Granting SETTER_ROLE to admin on SymmioPartyB...")
+		await symmioPartyB.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin)
+
+		console.log("  Setting multicastWhitelist for InstantLayer on SymmioPartyB...")
+		await symmioPartyB.connect(deployer).setMulticastWhitelist(deployedContracts.instantLayer!, true)
+
+		// Set signer on SymmioPartyB if configured
+		if (config.partyBSigner) {
+			console.log("  Setting signer on SymmioPartyB...")
+			await symmioPartyB.connect(deployer).setSigner(config.partyBSigner)
+		}
+
+		console.log("  Registering SymmioPartyB on InstantLayer (also grants OPERATOR_ROLE)...")
+		await instantLayer.connect(deployer).registerPartyBs([deployedContracts.symmioPartyB])
 	}
 
 	console.log("  System setup complete!")

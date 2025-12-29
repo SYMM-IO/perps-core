@@ -103,14 +103,22 @@ def main():
     print("\n=== Generating Symmio ABI ===")
     generate_diamond_abi(["facets", "libraries", "utils"], "symmio")
 
+    # Generate AccountLayer diamond ABI (combines accountLayer facets, libraries, utils)
+    print("\n=== Generating AccountLayer ABI ===")
+    generate_diamond_abi(
+        [
+            "accountLayer/facets",
+            "accountLayer/libraries",
+            "accountLayer/utils",
+        ],
+        "accountLayer",
+    )
+
     # Generate ABIs for standalone contracts
     standalone_contracts = [
-        ("accountHub/SymmioPartyB.sol", "SymmioPartyB", "partyB"),
+        ("helpers/SymmioPartyB.sol", "SymmioPartyB", "partyB"),
         ("helpers/InstantLayer.sol", "InstantLayer", "instantLayer"),
-        ("accountHub/AccountHub.sol", "AccountHub", "accountHub"),
-        ("accountHub/AccountHubLens.sol", "AccountHubLens", "accountHubLens"),
-        ("accountHub/AffiliateHub.sol", "AffiliateHub", "affiliateHub"),
-        ("accountHub/AccountManager.sol", "AccountManager", "accountManager"),
+        ("accountLayer/AccountManager.sol", "AccountManager", "accountManager"),
         ("multiAccount/MultiAccount.sol", "MultiAccount", "multiAccount"),
     ]
 

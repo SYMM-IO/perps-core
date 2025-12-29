@@ -167,7 +167,7 @@
                         "type": "string"
                     }
                 ],
-                "internalType": "struct IAccountHub.Account[]",
+                "internalType": "struct Account[]",
                 "name": "",
                 "type": "tuple[]"
             }
