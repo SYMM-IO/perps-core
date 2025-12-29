@@ -1,4 +1,6 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { task } from "hardhat/config"
+import { ArgumentType } from "hardhat/types/arguments"
 import { ContractTransactionReceipt } from "ethers"
 
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
@@ -177,3 +179,27 @@ export async function deployAccountLayerDiamond(
 		deployedFacets,
 	}
 }
+
+export const accountLayerDiamondTask = task("deploy:accountLayer", "Deploys the AccountLayer diamond (unified AccountHub + AffiliateHub)")
+	.addOption({ name: "logData", description: "Log deployment data to file", type: ArgumentType.BOOLEAN, defaultValue: true })
+	.setAction(async () => ({
+		default: async ({ logData }, hre) => {
+			const { ethers } = await getConnection(hre)
+			const [deployer] = await ethers.getSigners()
+
+			console.log("Deploying AccountLayer Diamond...")
+			console.log(`Deployer: ${deployer.address}`)
+
+			const result = await deployAccountLayerDiamond(hre, {
+				admin: deployer,
+				symmioFeeReceiver: deployer,
+				logData,
+			})
+
+			console.log("\nAccountLayer Diamond deployed successfully!")
+			console.log(`Diamond Address: ${result.diamond}`)
+
+			return result
+		},
+	}))
+	.build()
