@@ -4,7 +4,7 @@ import { expect } from "chai"
 import { ZeroAddress, toUtf8Bytes, TypedDataDomain } from "ethers"
 import { ethers } from "./hardhat-connection.js"
 
-import { InstantLayer } from "../../src/types/index.js"
+import type { InstantLayer } from "../../src/types/index.js"
 import { initializeFixture } from "../Initialize.fixture.js"
 import { QuoteStatus } from "../models/Enums.js"
 import { Hedger } from "../models/Hedger.js"
