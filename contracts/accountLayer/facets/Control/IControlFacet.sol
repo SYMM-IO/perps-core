@@ -43,8 +43,6 @@ interface IControlFacet is IControlFacetEvents {
 
 	function setSigner(address _signer) external;
 
-	function deployAccountManager(address affiliate, address registrant, string memory name) external returns (address accountManager);
-
 	// ==================== AffiliateHub Configuration ====================
 
 	function setSymmioFeeReceiver(address receiver) external;

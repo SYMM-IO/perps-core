@@ -1698,8 +1698,6 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 
 			describe("executeForAccount hook callback", async () => {
-				const BIND_TO_PARTYB_SELECTOR = "0xbdd96b88" // bindToPartyB(address)
-
 				beforeEach(async () => {
 					// Set the AccountHub address in the mock hook
 					await hookContract.setAccountHub(context.accountLayerDiamond)

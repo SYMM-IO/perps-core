@@ -13,6 +13,7 @@ import { AccountHubStorage, SubAccountData, VirtualAccountData, SubAccountCreati
 import { AffiliateHubStorage, AffiliateState, HookContext } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
+import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
@@ -34,7 +35,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		if (accountsData.length == 0) revert EmptyArray();
 
 		address[] memory createdAccounts = new address[](accountsData.length);
-		address signer = _getSigner();
+		address signer = LibAccountLayerUtils.getSigner();
 
 		for (uint256 i = 0; i < accountsData.length; i++) {
 			createdAccounts[i] = _createSubAccount(affiliate, signer, accountsData[i]);
@@ -93,7 +94,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant returns (bytes[] memory) {
 		if (callDatas.length == 0) revert EmptyArray();
 
-		address signer = _getSigner();
+		address signer = LibAccountLayerUtils.getSigner();
 		if (!_isOwnerOf(account, signer) && !LibAccountLayerAccessibility.hasRole(msg.sender, LibAccountLayerAccessibility.INSTANT_LAYER_ROLE)) {
 			revert NotOwner();
 		}
@@ -157,11 +158,6 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	}
 
 	// ==================== Internal Functions ====================
-
-	function _getSigner() internal view returns (address) {
-		address signer = AccountHubStorage.layout().globalSigner;
-		return signer == address(0) ? msg.sender : signer;
-	}
 
 	function _validateName(string memory name) private pure {
 		if (bytes(name).length == 0 || bytes(name).length > MAX_NAME_LENGTH) {
@@ -410,45 +406,15 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	}
 
 	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
-		address signer = _getSigner();
+		address signer = LibAccountLayerUtils.getSigner();
 		address core = _getRelatedCore(account);
-
-		ISymmio(core).setSigner(account);
-		(bool success, bytes memory result) = core.call(callData);
-		ISymmio(core).setSigner(address(0));
-
-		if (!success) {
-			assembly {
-				revert(add(result, 32), mload(result))
-			}
-		}
-
+		bytes memory result = LibAccountLayerUtils.executeWithSigner(account, callData, core);
 		emit Call(signer, account, callData, true, result);
 		return result;
 	}
 
 	function _getRelatedCore(address account) internal view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-
-		if (ahLayout.subAccounts[account].isExists) {
-			return ahLayout.subAccounts[account].symmioCore;
-		}
-
-		address parent = ahLayout.virtualAccounts[account].parentAccount;
-		if (parent != address(0)) {
-			return _getRelatedCore(parent);
-		}
-
-		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (owner != address(0)) {
-				return IMultiAccount(legacyAccounts[i]).symmioAddress();
-			}
-		}
-
-		revert("CoreFacet: Unable to retrieve core");
+		return LibAccountLayerUtils.getRelatedCore(account, "CoreFacet: Unable to retrieve core");
 	}
 
 	function _getAffiliateForAccount(address account) private view returns (address) {

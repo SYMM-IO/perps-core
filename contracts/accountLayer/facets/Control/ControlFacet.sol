@@ -75,19 +75,6 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		emit SignerUpdated(oldSigner, _signer);
 	}
 
-	function deployAccountManager(
-		address affiliate,
-		address registrant,
-		string memory name
-	) external onlyRole(LibAccountLayerAccessibility.DEPLOYER_ROLE) whenNotPaused returns (address accountManager) {
-		accountManager = _deployAccountManager(registrant, name);
-		if (affiliate != accountManager) revert DeploymentFailed();
-
-		LibAccountLayerAccessibility.grantRole(accountManager, LibAccountLayerAccessibility.SIGNER_SETTER_ROLE);
-
-		emit AccountManagerDeployed(affiliate, accountManager);
-	}
-
 	// ==================== AffiliateHub Configuration ====================
 
 	function setSymmioFeeReceiver(address receiver) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {

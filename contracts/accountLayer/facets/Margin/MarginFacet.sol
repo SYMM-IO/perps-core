@@ -9,9 +9,10 @@ import { IMarginFacet } from "./IMarginFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
-import { AccountHubStorage, SubAccountData, VirtualAccountData, VirtualAccountIsolationType } from "../../storages/AccountHubStorage.sol";
-import { AffiliateHubStorage } from "../../storages/AffiliateHubStorage.sol";
+import { AccountHubStorage, VirtualAccountIsolationType } from "../../storages/AccountHubStorage.sol";
+import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
+import { AffiliateHubStorage } from "../../storages/AffiliateHubStorage.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
@@ -68,49 +69,8 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 
 	// ==================== Internal Functions ====================
 
-	function _getSigner() internal view returns (address) {
-		address signer = AccountHubStorage.layout().globalSigner;
-		return signer == address(0) ? msg.sender : signer;
-	}
-
 	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
-		address core = _getRelatedCore(account);
-
-		ISymmio(core).setSigner(account);
-		(bool success, bytes memory result) = core.call(callData);
-		ISymmio(core).setSigner(address(0));
-
-		if (!success) {
-			assembly {
-				revert(add(result, 32), mload(result))
-			}
-		}
-
-		return result;
-	}
-
-	function _getRelatedCore(address account) internal view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-
-		if (ahLayout.subAccounts[account].isExists) {
-			return ahLayout.subAccounts[account].symmioCore;
-		}
-
-		address parent = ahLayout.virtualAccounts[account].parentAccount;
-		if (parent != address(0)) {
-			return _getRelatedCore(parent);
-		}
-
-		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (owner != address(0)) {
-				return IMultiAccount(legacyAccounts[i]).symmioAddress();
-			}
-		}
-
-		revert("MarginFacet: Unable to retrieve core");
+		return LibAccountLayerUtils.executeWithSigner(account, callData, "MarginFacet: Unable to retrieve core");
 	}
 
 	function _predictNextVirtualAccountAddress(

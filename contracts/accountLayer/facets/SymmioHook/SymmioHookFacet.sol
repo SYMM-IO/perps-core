@@ -11,9 +11,9 @@ import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
 import { AccountHubStorage, VirtualAccountData } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage } from "../../storages/AffiliateHubStorage.sol";
+import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
-import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
@@ -91,41 +91,11 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	}
 
 	function _executeWithSigner(address account, bytes memory callData, address core) private returns (bytes memory) {
-		ISymmio(core).setSigner(account);
-		(bool success, bytes memory result) = core.call(callData);
-		ISymmio(core).setSigner(address(0));
-
-		if (!success) {
-			assembly {
-				revert(add(result, 32), mload(result))
-			}
-		}
-
-		return result;
+		return LibAccountLayerUtils.executeWithSigner(account, callData, core);
 	}
 
 	function _getRelatedCore(address account) internal view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-
-		if (ahLayout.subAccounts[account].isExists) {
-			return ahLayout.subAccounts[account].symmioCore;
-		}
-
-		address parent = ahLayout.virtualAccounts[account].parentAccount;
-		if (parent != address(0)) {
-			return _getRelatedCore(parent);
-		}
-
-		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (owner != address(0)) {
-				return IMultiAccount(legacyAccounts[i]).symmioAddress();
-			}
-		}
-
-		revert("SymmioHookFacet: Unable to retrieve core");
+		return LibAccountLayerUtils.getRelatedCore(account, "SymmioHookFacet: Unable to retrieve core");
 	}
 
 	function _getAffiliateForAccount(address account) private view returns (address) {
