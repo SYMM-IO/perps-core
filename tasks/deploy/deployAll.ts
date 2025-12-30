@@ -1,7 +1,7 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { AffiliateHub, ControlFacet } from "../../src/types/index.js"
+import { ControlFacet } from "../../src/types/index.js"
 import { writeData } from "../utils/fs.js"
 import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"
 import { deployDiamond } from "./diamond.js"
