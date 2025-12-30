@@ -300,6 +300,99 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
+	 * @notice Returns total open amounts and average open prices for a party B across symbols, grouped by position type.
+	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
+	 * @param partyB The address of party B.
+	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
+	 * @param limit Maximum symbols to process starting at offset.
+	 */
+	function getPartyBTotalPositionAmounts(
+		address partyB,
+		uint256 offset,
+		uint256 limit
+	) external view returns (PartyBPositionBySymbol[] memory results) {
+		return _getPartyBTotalPositionAmounts(partyB, offset, limit);
+	}
+
+	/**
+	 * @notice returns totals for all symbols (full list).
+	 * @dev Zero-amount entries are removed.
+	 * @param partyB The address of party B.
+	 */
+	function getPartyBTotalPositionAmounts(address partyB) external view returns (PartyBPositionBySymbol[] memory results) {
+		uint256 lastId = SymbolStorage.layout().lastId;
+		if (lastId == 0) {
+			return new PartyBPositionBySymbol[](0);
+		}
+		return _getPartyBTotalPositionAmounts(partyB, 0, lastId);
+	}
+
+	function _getPartyBTotalPositionAmounts(
+		address partyB,
+		uint256 offset,
+		uint256 limit
+	) internal view returns (PartyBPositionBySymbol[] memory results) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		uint256 totalSymbols = symbolLayout.lastId;
+		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
+			return new PartyBPositionBySymbol[](0);
+		}
+
+		uint256 end = offset + limit;
+		if (end > totalSymbols) end = totalSymbols;
+
+		// pre allocate two slots per symbol (long + short)
+		uint256 maxItems = (end - offset) * 2;
+		results = new PartyBPositionBySymbol[](maxItems);
+		uint256 count;
+
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
+			uint256 symbolId = symbolIndex;
+
+			// LONG
+			uint256 longAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalAmounts;
+			if (longAmount > 0) {
+				uint256 longNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalNotionals;
+				results[count] = PartyBPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					totalOpenAmount: longAmount,
+					avgOpenPrice: longNotional / longAmount
+				});
+				count++;
+			}
+
+			// SHORT
+			uint256 shortAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalAmounts;
+			if (shortAmount > 0) {
+				uint256 shortNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalNotionals;
+				results[count] = PartyBPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					totalOpenAmount: shortAmount,
+					avgOpenPrice: shortNotional / shortAmount
+				});
+				count++;
+			}
+
+			unchecked {
+				++symbolIndex;
+			}
+		}
+
+		if (count == results.length) {
+			return results;
+		}
+
+		// trim the pre allocated array to the actual number of results
+		assembly {
+			mstore(results, count)
+		}
+	}
+
+	/**
 	 * @notice Returns an array of pending quotes associated with a party A address.
 	 * @param partyA The address of party A.
 	 * @return An array of pending quotes.

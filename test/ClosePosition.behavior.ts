@@ -1,5 +1,6 @@
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
+import { ethers, toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
 import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
@@ -8,6 +9,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import {
 	decimal,
 	getBlockTimestamp,
@@ -24,6 +26,8 @@ import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./m
 import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator.js"
 import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator.js"
 import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
+import { getDummyHighLowPriceSig, getDummyLiquidationSig, getDummyPairUpnlSig, getDummySettlementSig } from "./utils/SignatureUtils.js"
+import type { QuoteSettlementDataStructOutput } from "../src/types/facets/Settlement/ISettlementFacet.js"
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 
 
@@ -99,6 +103,266 @@ export function shouldBehaveLikeClosePosition(): void {
 		expect(amounts[1].positionType).to.equal(BigInt(PositionType.SHORT))
 		expect(amounts[1].totalOpenAmount).to.equal(expectedShort)
 		expect(amounts[1].avgOpenPrice).to.equal(expectedShort === 0n ? 0n : expectedShortNotional / expectedShort)
+	})
+
+	describe("PartyB accumulated positions view", function () {
+		it("computes weighted averages across multiple fills per side", async function () {
+			await user.setBalances(decimal(1000n), decimal(1000n), decimal(1000n))
+
+			// open an extra LONG at a different price to shift the average
+			const extraLongId = await user.sendQuote(limitQuoteRequestBuilder().build())
+			const extraLong = await context.viewFacetQuote.getQuote(extraLongId)
+			await hedger.lockQuote(extraLong.id)
+			await hedger.openPosition(extraLong.id, limitOpenRequestBuilder().openPrice(decimal(5n, 17)).build())
+
+			const quoteIds = [quote1LongOpened.id, quote4LongOpened.id, extraLong.id, quote2ShortOpened.id]
+			let longAmount = 0n
+			let longNotional = 0n
+			let shortAmount = 0n
+			let shortNotional = 0n
+
+			for (const qid of quoteIds) {
+				const q = await context.viewFacetQuote.getQuote(qid)
+				const amount = q.quantity - q.closedAmount
+				if (q.positionType === BigInt(PositionType.LONG)) {
+					longAmount += amount
+					longNotional += amount * q.openedPrice
+				} else {
+					shortAmount += amount
+					shortNotional += amount * q.openedPrice
+				}
+			}
+
+			const view = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+			expect(view[0].totalOpenAmount).to.equal(longAmount)
+			expect(view[0].avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
+			expect(view[1].totalOpenAmount).to.equal(shortAmount)
+			expect(view[1].avgOpenPrice).to.equal(shortAmount === 0n ? 0n : shortNotional / shortAmount)
+		})
+
+		it("wrapper without pagination returns same result as explicit full range", async function () {
+			const wrapperTotals = await (context.viewFacetQuote as any)["getPartyBTotalPositionAmounts(address)"](hedger.address)
+			const pagedTotals = await (context.viewFacetQuote as any)["getPartyBTotalPositionAmounts(address,uint256,uint256)"](
+				hedger.address,
+				0,
+				5,
+			)
+
+			expect(wrapperTotals.length).to.equal(pagedTotals.length)
+			for (let i = 0; i < wrapperTotals.length; i++) {
+				expect(wrapperTotals[i].symbolId).to.equal(pagedTotals[i].symbolId)
+				expect(wrapperTotals[i].positionType).to.equal(pagedTotals[i].positionType)
+				expect(wrapperTotals[i].totalOpenAmount).to.equal(pagedTotals[i].totalOpenAmount)
+				expect(wrapperTotals[i].avgOpenPrice).to.equal(pagedTotals[i].avgOpenPrice)
+			}
+		})
+
+		describe("pagination and zero filtering", function () {
+			let symbol2: bigint
+			let symbol3: bigint
+
+			beforeEach(async function () {
+				// add two extra symbols and map them to the already whitelisted type 1
+				await context.symbolControlFacet
+					.connect(context.signers.admin)
+					.addSymbol("SYMBOL1", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+				await context.symbolControlFacet
+					.connect(context.signers.admin)
+					.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+				await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2, 3], [1, 1])
+
+				symbol2 = 2n
+				symbol3 = 3n
+
+				// Top up PartyA so the extra quote on the new symbol can be sent
+				await user.setBalances(decimal(1000n), decimal(1000n), decimal(1000n))
+
+				// Open a SHORT on the second symbol. leave the third untouched to assert its skipped
+				const sym2QuoteId = await user.sendQuote(
+					limitQuoteRequestBuilder().symbolId(symbol2).positionType(PositionType.SHORT).build(),
+				)
+				const sym2Quote = await context.viewFacetQuote.getQuote(sym2QuoteId)
+				await hedger.lockQuote(sym2Quote.id)
+				await hedger.openPosition(sym2Quote.id)
+			})
+
+			it("returns non-zero symbols with pagination and omits empty symbols", async function () {
+				const sym1Totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+				const sym2Totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, Number(symbol2))
+
+				const aggregates = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger.address, 0, 5)
+
+				const findEntry = (sid: bigint, posType: PositionType) =>
+					aggregates.find(
+						(entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType),
+					)
+
+				const sym1Long = findEntry(1n, PositionType.LONG)
+				const sym1Short = findEntry(1n, PositionType.SHORT)
+				const sym2Short = findEntry(symbol2, PositionType.SHORT)
+
+				expect(sym1Long?.totalOpenAmount).to.equal(sym1Totals[0].totalOpenAmount)
+				expect(sym1Long?.avgOpenPrice).to.equal(sym1Totals[0].avgOpenPrice)
+				expect(sym1Short?.totalOpenAmount).to.equal(sym1Totals[1].totalOpenAmount)
+				expect(sym1Short?.avgOpenPrice).to.equal(sym1Totals[1].avgOpenPrice)
+
+				// sym2 only has a short entry
+				expect(sym2Short?.totalOpenAmount).to.equal(sym2Totals[1].totalOpenAmount)
+				expect(sym2Short?.avgOpenPrice).to.equal(sym2Totals[1].avgOpenPrice)
+
+				// symbol3 has no open positions and should not appear
+				const sym3Entry = aggregates.find((entry: any) => BigInt(entry.symbolId) === symbol3)
+				expect(sym3Entry).to.be.undefined
+			})
+
+			it("returns empty for offsets past the last symbol and for zero limits", async function () {
+				const tooFar = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger.address, 10, 5)
+				expect(tooFar.length).to.equal(0)
+
+				const zeroLimit = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger.address, 0, 0)
+				expect(zeroLimit.length).to.equal(0)
+			})
+
+			it("returns mid range pagination slices", async function () {
+				// slice starting at symbol2 with limit 1 should only include that symbol
+				const slice = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger.address, 1, 1)
+				expect(slice.length).to.equal(1)
+				expect(BigInt(slice[0].symbolId)).to.equal(symbol2)
+				expect(BigInt(slice[0].positionType)).to.equal(BigInt(PositionType.SHORT))
+			})
+
+			it("by symbol view returns zero entries when no positions exist", async function () {
+				const totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, Number(symbol3))
+				expect(totals.length).to.equal(2)
+				expect(totals[0].totalOpenAmount).to.equal(0n)
+				expect(totals[1].totalOpenAmount).to.equal(0n)
+				expect(totals[0].avgOpenPrice).to.equal(0n)
+				expect(totals[1].avgOpenPrice).to.equal(0n)
+			})
+		})
+
+		it("keeps totals consistent after funding accrual and charge", async function () {
+			const before = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+
+			await context.pauseControlFacet.enableNewFundingFee()
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolFundingState(1, 3600, 1200)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [3600])
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.updateAccumulatedFundingFee([1], [decimal(2n, 14)], [-decimal(2n, 14)], [decimal(1n)])
+
+			await time.increase(7200)
+
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.chargeAccumulatedFundingFee(
+					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
+					[quote1LongOpened.id],
+					await getDummyPairUpnlSig(),
+				)
+
+			const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+			expect(after[0].totalOpenAmount).to.equal(before[0].totalOpenAmount)
+			expect(after[0].avgOpenPrice).to.equal(before[0].avgOpenPrice)
+			expect(after[1].totalOpenAmount).to.equal(before[1].totalOpenAmount)
+			expect(after[1].avgOpenPrice).to.equal(before[1].avgOpenPrice)
+		})
+
+		it("resets totals after full liquidation flow", async function () {
+			const liquidator = context.signers.liquidator
+			const sig = await getDummyLiquidationSig(
+				"0x10",
+				-decimal(1_000_000n),
+				[1n],
+				[decimal(1n)],
+				decimal(1_000_000n),
+				0n,
+			)
+
+			await context.liquidationFacet.connect(liquidator).liquidatePartyA(await user.getAddress(), sig)
+			await context.liquidationFacet.connect(liquidator).setSymbolsPrice(await user.getAddress(), sig)
+			await context.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(await user.getAddress())
+			await context.liquidationFacet
+				.connect(liquidator)
+				.liquidatePositionsPartyA(await user.getAddress(), [quote1LongOpened.id, quote2ShortOpened.id, quote4LongOpened.id])
+
+			const totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+			expect(totals[0].totalOpenAmount).to.equal(0n)
+			expect(totals[1].totalOpenAmount).to.equal(0n)
+		})
+
+		it("stays consistent after settlement adjustments", async function () {
+			const before = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+			const updatedPrice = decimal(5n, 17)
+
+			const settlementEntry = Object.assign(
+				[quote1LongOpened.id, updatedPrice, 0n],
+				{ quoteId: quote1LongOpened.id, currentPrice: updatedPrice, partyBUpnlIndex: 0n },
+			) as QuoteSettlementDataStructOutput
+			const settlementSig = await getDummySettlementSig(0n, [0n], [settlementEntry])
+
+			await hedger.settleUpnl(await context.signers.user.getAddress(), [updatedPrice], settlementSig)
+
+			const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+			expect(after[0].totalOpenAmount).to.equal(before[0].totalOpenAmount)
+			expect(after[0].avgOpenPrice).to.equal(before[0].avgOpenPrice)
+			expect(after[1].totalOpenAmount).to.equal(before[1].totalOpenAmount)
+			expect(after[1].avgOpenPrice).to.equal(before[1].avgOpenPrice)
+		})
+
+		it("removes totals after force close", async function () {
+			const before = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+			const quoteBefore = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+			const openAmountBefore = quoteBefore.quantity - quoteBefore.closedAmount
+
+			// Set parameters to make force close possible
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(
+					await context.signers.admin.getAddress(),
+					ethers.keccak256(toUtf8Bytes("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")),
+				)
+			await context.controlFacet.setForceCloseMinSigPeriod(10)
+			await context.controlFacet.setForceCloseGapRatio((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).symbolId, decimal(1n, 17))
+
+			// Create a close request for quote1
+			const closeReq = limitCloseRequestBuilder()
+				.quantityToClose(await getQuoteQuantity(context, quote1LongOpened.id))
+				.closePrice(decimal(1n))
+				.deadline(BigInt(await time.latest()) + 100000n)
+				.build()
+			await user.requestToClosePosition(quote1LongOpened.id, closeReq)
+
+			const cooldowns = await context.viewFacet.forceCloseCooldowns()
+			const firstCooldown = BigInt(cooldowns[0])
+			const secondCooldown = BigInt(cooldowns[1])
+			const quote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+
+			const period = 60n
+			const now = BigInt(await time.latest())
+			const startTime = now + firstCooldown
+			const endTime = startTime + period
+
+			// Wait out the cooldowns and signature window
+			await time.increase(firstCooldown + period + secondCooldown + 5n)
+
+			const sig = await getDummyHighLowPriceSig(
+				startTime,
+				endTime,
+				decimal(1n),
+				decimal(5n),
+				decimal(3n),
+				decimal(3n),
+				quote.symbolId,
+			)
+
+			await user.forceClosePosition(quote1LongOpened.id, sig)
+
+			const totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, quote.symbolId)
+			expect(totals[0].totalOpenAmount).to.equal(before[0].totalOpenAmount - openAmountBefore)
+			expect(totals[1].totalOpenAmount).to.equal(before[1].totalOpenAmount)
+		})
 	})
 
 	it("Should fail on invalid partyA", async function () {

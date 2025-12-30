@@ -13,6 +13,13 @@ interface IViewFacetQuote {
 		uint256 avgOpenPrice;
 	}
 
+	struct PartyBPositionBySymbol {
+		uint256 symbolId;
+		PositionType positionType;
+		uint256 totalOpenAmount;
+		uint256 avgOpenPrice;
+	}
+
 	struct Bitmap {
 		uint256 size;
 		BitmapElement[] elements;
@@ -48,6 +55,10 @@ interface IViewFacetQuote {
 	function partyBPositionsCount(address partyB, address partyA) external view returns (uint256);
 
 	function getPartyBTotalPositionAmountsBySymbol(address partyB, uint256 symbolId) external view returns (TotalPositionAmount[] memory);
+
+	function getPartyBTotalPositionAmounts(address partyB) external view returns (PartyBPositionBySymbol[] memory);
+
+	function getPartyBTotalPositionAmounts(address partyB, uint256 offset, uint256 limit) external view returns (PartyBPositionBySymbol[] memory);
 
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 
