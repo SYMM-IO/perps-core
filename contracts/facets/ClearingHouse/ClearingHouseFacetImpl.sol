@@ -165,10 +165,16 @@ library ClearingHouseFacetImpl {
 			if (affiliateHook != address(0)) {
 				try
 					ISymmioHook(affiliateHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, quote.partyB) {} catch (
+					bytes memory reason
+				) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 			}
 			if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
 				LibAccount.increasePartyBNonce(partyB, partyA);

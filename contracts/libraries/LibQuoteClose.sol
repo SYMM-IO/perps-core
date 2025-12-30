@@ -137,7 +137,9 @@ library LibQuoteClose {
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
 			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(affiliateHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 				try
 					ISymmioHook(affiliateHook).onFeeCharged(
 						quote.id,
@@ -148,10 +150,14 @@ library LibQuoteClose {
 						quote.affiliate,
 						ISymmioHook.TradingFeeType.CLOSE
 					)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onFeeCharged.selector, quote.id, reason);
+				}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 				try
 					ISymmioHook(systemHook).onFeeCharged(
 						quote.id,
@@ -162,7 +168,9 @@ library LibQuoteClose {
 						quote.affiliate,
 						ISymmioHook.TradingFeeType.CLOSE
 					)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onFeeCharged.selector, quote.id, reason);
+				}
 			}
 		}
 
@@ -225,10 +233,14 @@ library LibQuoteClose {
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
 			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
+				}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
+				}
 			}
 		} else if (quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
 			quote.statusModifyTimestamp = block.timestamp;

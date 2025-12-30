@@ -1,6 +1,6 @@
 import { ethers } from "../helpers/hardhat-connection.js"
 
-import {
+import type {
 	AccountFacet,
 	BridgeFacet,
 	ClearingHouseFacet,

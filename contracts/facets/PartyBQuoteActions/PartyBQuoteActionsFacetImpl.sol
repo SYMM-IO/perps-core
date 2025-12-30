@@ -79,10 +79,14 @@ library PartyBQuoteActionsFacetImpl {
 		address systemHook = accountLayout.affiliateHooks[address(0)];
 
 		if (affiliateHook != address(0)) {
-			try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+				emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
+			}
 		}
 		if (systemHook != address(0)) {
-			try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+				emit SharedEvents.HookFailed(systemHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
+			}
 		}
 	}
 }

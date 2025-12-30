@@ -246,12 +246,16 @@ library LiquidationFacetImpl {
 			if (affiliateHook != address(0)) {
 				try
 					ISymmioHook(affiliateHook).onClosePosition(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 			}
 			if (systemHook != address(0)) {
 				try
 					ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 			}
 			averageClosedPrices[index] = quote.avgClosedPrice;
 
@@ -438,10 +442,16 @@ library LiquidationFacetImpl {
 			if (affiliateHook != address(0)) {
 				try
 					ISymmioHook(affiliateHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB) {} catch (
+					bytes memory reason
+				) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 			}
 			averageClosedPrices[i] = quote.avgClosedPrice;
 		}

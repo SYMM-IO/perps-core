@@ -2,7 +2,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
 import { expect } from "chai"
 import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
 
-import { IAccountHubHook__factory, MockAccountHubHook } from "../src/types/index.js"
+import { IAccountHubHook__factory, ISymmioHook__factory, MockAccountHubHook } from "../src/types/index.js"
 import { SubAccountCreationData } from "../src/types/accountLayer/storages/AccountHubStorage.sol/AccountHubStorage.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
@@ -1387,11 +1387,15 @@ export function shouldBehaveLikeAccountHub(): void {
 			let hookContract: MockAccountHubHook
 			let subAccountAddress: string
 			let customSubAccountAddress: string
+			let hookEvents: any
 
 			const HOOK_SELECTORS = {
 				onAccountCreation: IAccountHubHook__factory.createInterface().getFunction("onAccountCreation").selector,
 				onVirtualAccountCreation: IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
 				onVirtualAccountDeletion: IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+			}
+			const SYMMIO_HOOK_SELECTORS = {
+				onCancelQuote: ISymmioHook__factory.createInterface().getFunction("onCancelQuote").selector,
 			}
 
 			beforeEach(async () => {
@@ -1405,6 +1409,12 @@ export function shouldBehaveLikeAccountHub(): void {
 				for (const key of Object.keys(HOOK_SELECTORS)) {
 					await context.alAffiliateFacet.setHook(affiliateAddress, HOOK_SELECTORS[key as keyof typeof HOOK_SELECTORS], await hookContract.getAddress())
 				}
+
+				hookEvents = new ethers.Contract(
+					context.diamond,
+					["event HookFailed(address indexed hook, bytes4 indexed selector, uint256 indexed quoteId, bytes reason)"],
+					context.signers.user,
+				)
 
 				subAccountAddress = await createSubAccountAndDeposit(
 					context.signers.user,
@@ -1643,24 +1653,26 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(virtualAccountData.isExists).to.be.true
 				})
 
-				// Note: These tests are skipped because the beforeEach in this describe block
-				// fails with "Transaction reverted without a reason string" when trying to
-				// create a virtual account via sendQuote. This is a pre-existing issue.
-				it.skip("should handle hook revert gracefully during deletion", async () => {
-					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountDeletion, true, "Hook rejected deletion")
+				it("should handle hook revert gracefully during deletion", async () => {
+					const revertMessage = "Hook rejected deletion"
+					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountDeletion, true, revertMessage)
 
 					const quotes = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 					const quoteId = quotes[0]
 
 					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
 
-					// Should revert because hook rejects
-					await expect(
-						context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
+					const errorSelector = "0x08c379a0"
+					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
+					const innerReason = errorSelector + encodedString.slice(2)
+					const expectedReason = new ethers.Interface(["error HookFailed(bytes)"]).encodeErrorResult("HookFailed", [innerReason])
+
+					await expect(context.accountManager.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]))
+						.to.emit(hookEvents, "HookFailed")
+						.withArgs(context.accountLayerDiamond, SYMMIO_HOOK_SELECTORS.onCancelQuote, quoteId, expectedReason)
 				})
 
-				it.skip("should return the hook failure reason for virtual account deletion", async () => {
+				it("should return the hook failure reason for virtual account deletion", async () => {
 					const revertMessage = "Deletion blocked: account has pending rewards"
 
 					const quotes = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
@@ -1673,11 +1685,12 @@ export function shouldBehaveLikeAccountHub(): void {
 					// The revert reason includes the Error(string) selector (0x08c379a0) followed by the ABI-encoded string
 					const errorSelector = "0x08c379a0"
 					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
-					const encodedReason = errorSelector + encodedString.slice(2)
+					const innerReason = errorSelector + encodedString.slice(2)
+					const expectedReason = new ethers.Interface(["error HookFailed(bytes)"]).encodeErrorResult("HookFailed", [innerReason])
 
-					await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]))
-						.to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
-						.withArgs(encodedReason)
+					await expect(context.accountManager.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]))
+						.to.emit(hookEvents, "HookFailed")
+						.withArgs(context.accountLayerDiamond, SYMMIO_HOOK_SELECTORS.onCancelQuote, quoteId, expectedReason)
 				})
 			})
 		})
