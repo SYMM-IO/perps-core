@@ -15,10 +15,12 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyBPositionActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBQuoteActionsFacet: ["LibQuoteClose"],
-	ForceActionsFacet: ["LibQuoteClose"],
+	ForceActionsFacet: ["LibQuoteClose", "LibSettlement"],
+	ForceActionsMasterAccountFacet: ["LibQuoteClose", "LibSettlement"],
 	ViewFacetSymbol: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
 	LiquidationFacet: ["LibQuoteFunding"],
+	SettlementFacet: ["LibSettlement"],
 }
 
 type DeployDiamondArgs = {
@@ -86,6 +88,15 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
 	libraryAddresses["LibQuoteClose"] = await libQuoteClose.getAddress()
 	logger.deployed("LibQuoteClose", libraryAddresses["LibQuoteClose"])
+
+	// Deploy LibSettlement (no dependencies)
+	const LibSettlementFactory = await ethers.getContractFactory("LibSettlement")
+	const libSettlement = await LibSettlementFactory.deploy()
+	await libSettlement.waitForDeployment()
+	receipt = (await libSettlement.deploymentTransaction()!.wait())!
+	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+	libraryAddresses["LibSettlement"] = await libSettlement.getAddress()
+	logger.deployed("LibSettlement", libraryAddresses["LibSettlement"])
 
 	// Deploy Facets
 	const cut: Array<{
@@ -194,6 +205,11 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 			{
 				name: "LibQuoteFunding",
 				address: libraryAddresses["LibQuoteFunding"],
+				constructorArguments: [],
+			},
+			{
+				name: "LibSettlement",
+				address: libraryAddresses["LibSettlement"],
 				constructorArguments: [],
 			},
 			...deployedFacets.map(facet => ({

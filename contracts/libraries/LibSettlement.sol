@@ -4,12 +4,14 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/MAStorage.sol";
-import "../storages/AccountStorage.sol";
-import "./LibQuote.sol";
-import "./LibAccount.sol";
-import "./muon/LibMuonCrossSettlement.sol";
-import "./SharedEvents.sol";
+import { MAStorage } from "../storages/MAStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { QuoteStorage, Quote, PositionType, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { SettlementSig, MasterAccountSettlementSig, QuoteSettlementData, MasterAccountQuoteSettlementData } from "../storages/MuonStorage.sol";
+import { LibQuote } from "./LibQuote.sol";
+import { LibAccount } from "./LibAccount.sol";
+import { LibMuonCrossSettlement } from "./muon/LibMuonCrossSettlement.sol";
+import { SharedEvents } from "./SharedEvents.sol";
 import { LibSigner } from "./LibSigner.sol";
 
 library LibSettlement {
@@ -18,7 +20,7 @@ library LibSettlement {
 		uint256[] memory updatedPrices,
 		address partyA,
 		bool isForceClose
-	) internal returns (uint256[] memory newPartyBsAllocatedBalances) {
+	) public returns (uint256[] memory newPartyBsAllocatedBalances) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -135,7 +137,7 @@ library LibSettlement {
 	function settleUpnlMasterAccount(
 		MasterAccountSettlementSig memory settleSig,
 		uint256[] memory updatedPrices
-	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
+	) public returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address partyB = settleSig.partyB;

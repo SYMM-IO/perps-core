@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier } from "../interfaces/IMuonSignatureVerifier.sol";
 
 struct SingleUpnlSig {
 	bytes reqId;

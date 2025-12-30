@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../storages/QuoteStorage.sol";
+import { QuoteStatus } from "../../storages/QuoteStorage.sol";
 
 interface ForceActionsFacetEvents {
 	event ForceCancelQuote(uint256 quoteId, QuoteStatus quoteStatus);
@@ -19,22 +19,4 @@ interface ForceActionsFacetEvents {
 		uint256 closeId
 	);
 	event ForceFetchAllocated(address partyB, address[] partyAs, uint256[] FetchedAmount, uint256[] newPartyBsAllocatedBalances);
-	event ForceCloseInitialized(
-		address indexed initiator,
-		address indexed partyB,
-		uint256 quoteId,
-		bytes highLowPriceSigId,
-		uint256 closePrice,
-		uint256 timestamp
-	);
-	event ForceClosePositionMasterAccount(
-		uint256 quoteId,
-		address partyA,
-		address partyB,
-		uint256 filledAmount,
-		uint256 closedPrice,
-		QuoteStatus quoteStatus,
-		uint256 closeId,
-		bool isSolvent
-	);
 }

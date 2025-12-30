@@ -2,7 +2,7 @@ import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import { task } from "hardhat/config"
 
 import { readData } from "../utils/fs.js"
-import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE, AFFILIATEHUB_DEPLOYMENT_FILE, DEPLOYMENT_LOG_FILE, INSTANTLAYER_DEPLOYMENT_FILE } from "./constants.js"
+import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE, ACCOUNTLAYER_DEPLOYMENT_FILE, AFFILIATEHUB_DEPLOYMENT_FILE, DEPLOYMENT_LOG_FILE, INSTANTLAYER_DEPLOYMENT_FILE } from "./constants.js"
 
 const verifyDeploymentAction = async (_: unknown, hre: any) => {
 	const deployedAddresses = readData(DEPLOYMENT_LOG_FILE)
@@ -80,6 +80,22 @@ const verifyInstantLayerAction = async (_: unknown, hre: any) => {
 	}
 }
 
+const verifyAccountLayerAction = async (_: unknown, hre: any) => {
+	const deployedAddresses = readData(ACCOUNTLAYER_DEPLOYMENT_FILE)
+
+	for (const address of deployedAddresses) {
+		try {
+			console.log(`Verifying ${address.address}`)
+			await hre.tasks.getTask("verify:verify").run({
+				address: address.address,
+				constructorArguments: address.constructorArguments,
+			})
+		} catch (err) {
+			console.error(err)
+		}
+	}
+}
+
 export const verifyDeploymentTask = task("verify:deployment", "Verifies the deployed contracts")
 	.setAction(async () => ({ default: verifyDeploymentAction }))
 	.build()
@@ -94,4 +110,8 @@ export const verifyAccountHubTask = task("verify:accountHub", "Verifies the depl
 
 export const verifyInstantLayerTask = task("verify:instantLayer", "Verifies the deployed contracts")
 	.setAction(async () => ({ default: verifyInstantLayerAction }))
+	.build()
+
+export const verifyAccountLayerTask = task("verify:accountLayer", "Verifies the AccountLayer diamond contracts")
+	.setAction(async () => ({ default: verifyAccountLayerAction }))
 	.build()

@@ -4,12 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibQuoteFunding.sol";
-import "../../libraries/LibConnections.sol";
-import "../../storages/AccountStorage.sol";
-import "../../storages/QuoteStorage.sol";
-import "../../storages/SymbolStorage.sol";
-import "./IViewFacetSymbol.sol";
+import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { QuoteStorage } from "../../storages/QuoteStorage.sol";
+import { SymbolStorage, Symbol, SymbolWithType, FundingFee } from "../../storages/SymbolStorage.sol";
+import { IViewFacetSymbol } from "./IViewFacetSymbol.sol";
 
 contract ViewFacetSymbol is IViewFacetSymbol {
 	/**

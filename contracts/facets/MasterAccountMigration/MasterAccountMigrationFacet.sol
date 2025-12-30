@@ -4,11 +4,11 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../utils/Accessibility.sol";
-import "../../libraries/LibAccessibility.sol";
-import "../../storages/GlobalAppStorage.sol";
-import "./IMasterAccountMigrationFacet.sol";
-import "./MasterAccountMigrationFacetImpl.sol";
+import { Accessibility } from "../../utils/Accessibility.sol";
+import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { IMasterAccountMigrationFacet } from "./IMasterAccountMigrationFacet.sol";
+import { MasterAccountMigrationFacetImpl } from "./MasterAccountMigrationFacetImpl.sol";
 
 contract MasterAccountMigrationFacet is Accessibility, IMasterAccountMigrationFacet {
 	/**

@@ -4,10 +4,10 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../storages/AccountStorage.sol";
-import "../../storages/QuoteStorage.sol";
-import "../../storages/SymbolStorage.sol";
-import "./IViewFacetQuote.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { QuoteStorage, Quote, PositionType, QuoteStatus } from "../../storages/QuoteStorage.sol";
+import { SymbolStorage } from "../../storages/SymbolStorage.sol";
+import { IViewFacetQuote } from "./IViewFacetQuote.sol";
 
 contract ViewFacetQuote is IViewFacetQuote {
 	/**

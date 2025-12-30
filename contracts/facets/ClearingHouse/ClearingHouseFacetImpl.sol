@@ -4,15 +4,16 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../storages/AccountStorage.sol";
-import "../../storages/MAStorage.sol";
-import "../../storages/QuoteStorage.sol";
-
-import "../../libraries/SharedEvents.sol";
-import "../../libraries/LibQuote.sol";
-import "../../libraries/muon/LibMuonLiquidation.sol";
-import "../../interfaces/ISymmioHook.sol";
-import "../../libraries/LibAccount.sol";
+import { AccountStorage, CrossLiquidationDetail } from "../../storages/AccountStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
+import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
+import { CrossLiquidationSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 
 library ClearingHouseFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -164,10 +165,16 @@ library ClearingHouseFacetImpl {
 			if (affiliateHook != address(0)) {
 				try
 					ISymmioHook(affiliateHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, quote.partyB) {} catch (
+					bytes memory reason
+				) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
+				}
 			}
 			if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
 				LibAccount.increasePartyBNonce(partyB, partyA);

@@ -4,12 +4,18 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/muon/LibMuonPartyB.sol";
-import "../../libraries/LibQuote.sol";
-import "../../libraries/LibQuoteClose.sol";
-import "../../libraries/LibPartyBQuoteActions.sol";
-import "../../storages/AccountStorage.sol";
-import {LibSigner} from "../../libraries/LibSigner.sol";
+import { LibMuonPartyB } from "../../libraries/muon/LibMuonPartyB.sol";
+import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
+import { LibPartyBQuoteActions } from "../../libraries/LibPartyBQuoteActions.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
+import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 
 library PartyBQuoteActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -73,10 +79,14 @@ library PartyBQuoteActionsFacetImpl {
 		address systemHook = accountLayout.affiliateHooks[address(0)];
 
 		if (affiliateHook != address(0)) {
-			try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+				emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
+			}
 		}
 		if (systemHook != address(0)) {
-			try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
+			try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+				emit SharedEvents.HookFailed(systemHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
+			}
 		}
 	}
 }

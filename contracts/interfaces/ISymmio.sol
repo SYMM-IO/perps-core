@@ -4,24 +4,24 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../facets/Account/IAccountFacet.sol";
-import "../facets/Control/IControlFacet.sol";
-import "../facets/Control/ISymbolControlFacet.sol";
-import "../facets/Control/IPauseControlFacet.sol";
-import "../facets/FundingRate/IFundingRateFacet.sol";
-import "../facets/liquidation/ILiquidationFacet.sol";
-import "../facets/PartyA/IPartyAFacet.sol";
-import "../facets/Bridge/IBridgeFacet.sol";
-import "../facets/ViewFacet/IViewFacet.sol";
-import "../facets/ViewFacet/IViewFacetSymbol.sol";
-import "../facets/ViewFacet/IViewFacetQuote.sol";
-import "../facets/DiamondCut/IDiamondCut.sol";
-import "../facets/DiamondLoup/IDiamondLoupe.sol";
-import "../facets/PartyBQuoteActions/IPartyBQuoteActionsFacet.sol";
-import "../facets/PartyBPositionActions/IPartyBPositionActionsFacet.sol";
-import "../facets/ForceActions/IForceActionsFacet.sol";
-import "../facets/Settlement/ISettlementFacet.sol";
-import "../facets/PartyBBatchActions/IPartyBBatchActionsFacet.sol";
+import { IAccountFacet } from "../facets/Account/IAccountFacet.sol";
+import { IControlFacet } from "../facets/Control/IControlFacet.sol";
+import { ISymbolControlFacet } from "../facets/Control/ISymbolControlFacet.sol";
+import { IPauseControlFacet } from "../facets/Control/IPauseControlFacet.sol";
+import { IFundingRateFacet } from "../facets/FundingRate/IFundingRateFacet.sol";
+import { ILiquidationFacet } from "../facets/liquidation/ILiquidationFacet.sol";
+import { IPartyAFacet } from "../facets/PartyA/IPartyAFacet.sol";
+import { IBridgeFacet } from "../facets/Bridge/IBridgeFacet.sol";
+import { IViewFacet } from "../facets/ViewFacet/IViewFacet.sol";
+import { IViewFacetSymbol } from "../facets/ViewFacet/IViewFacetSymbol.sol";
+import { IViewFacetQuote } from "../facets/ViewFacet/IViewFacetQuote.sol";
+import { IDiamondCut } from "../facets/DiamondCut/IDiamondCut.sol";
+import { IDiamondLoupe } from "../facets/DiamondLoup/IDiamondLoupe.sol";
+import { IPartyBQuoteActionsFacet } from "../facets/PartyBQuoteActions/IPartyBQuoteActionsFacet.sol";
+import { IPartyBPositionActionsFacet } from "../facets/PartyBPositionActions/IPartyBPositionActionsFacet.sol";
+import { IForceActionsFacet } from "../facets/ForceActions/IForceActionsFacet.sol";
+import { ISettlementFacet } from "../facets/Settlement/ISettlementFacet.sol";
+import { IPartyBBatchActionsFacet } from "../facets/PartyBBatchActions/IPartyBBatchActionsFacet.sol";
 
 interface ISymmio is
 	IAccountFacet,

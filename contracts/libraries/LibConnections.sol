@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
 pragma solidity >=0.8.18;
 
-import "../storages/AccountStorage.sol";
-import "../storages/QuoteStorage.sol";
-import "../storages/SymbolStorage.sol";
-import "../storages/MAStorage.sol";
+import { AccountStorage, BindStatus } from "../storages/AccountStorage.sol";
+import { QuoteStorage } from "../storages/QuoteStorage.sol";
+import { SymbolStorage } from "../storages/SymbolStorage.sol";
+import { MAStorage } from "../storages/MAStorage.sol";
 
 library LibConnections {
 	/**

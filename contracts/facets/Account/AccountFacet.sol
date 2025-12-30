@@ -4,13 +4,17 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../utils/Accessibility.sol";
-import "../../utils/Pausable.sol";
-import "./IAccountFacet.sol";
-import "./AccountFacetImpl.sol";
-import "../../storages/GlobalAppStorage.sol";
-import "../../libraries/SharedEvents.sol";
-import "../../libraries/LibSigner.sol";
+import { Accessibility } from "../../utils/Accessibility.sol";
+import { Pausable } from "../../utils/Pausable.sol";
+import { IAccountFacet } from "./IAccountFacet.sol";
+import { AccountFacetImpl } from "./AccountFacetImpl.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
+import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows either PartyA or PartyB to deposit collateral.

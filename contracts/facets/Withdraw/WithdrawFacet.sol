@@ -5,14 +5,14 @@
 
 pragma solidity >=0.8.18;
 
-import "../../utils/Accessibility.sol";
-import "../../utils/Pausable.sol";
-import "../../storages/GlobalAppStorage.sol";
-import "../../libraries/SharedEvents.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import { Accessibility } from "../../utils/Accessibility.sol";
+import { Pausable } from "../../utils/Pausable.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
+import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { IWithdrawFacet } from "./IWithdrawFacet.sol";
 import { WithdrawFacetImpl } from "./WithdrawFacetImpl.sol";
-import "../../storages/WithdrawStorage.sol";
+import { WithdrawReceiverPart } from "../../storages/WithdrawStorage.sol";
 
 /// @title WithdrawFacet
 /// @notice Handles user-initiated withdrawals across classic, virtual-provider, and express-provider paths.

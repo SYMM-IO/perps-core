@@ -4,11 +4,17 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../storages/QuoteStorage.sol";
-import "./LibQuote.sol";
-import "./LibQuoteClose.sol";
-import "./LibQuoteFunding.sol";
-import "./LibAccount.sol";
+import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { SymbolStorage } from "../storages/SymbolStorage.sol";
+import { SharedEvents } from "./SharedEvents.sol";
+import { LibQuote } from "./LibQuote.sol";
+import { LibQuoteClose } from "./LibQuoteClose.sol";
+import { LibQuoteFunding } from "./LibQuoteFunding.sol";
+import { LibAccount } from "./LibAccount.sol";
+import { LockedValuesOps } from "./LibLockedValues.sol";
+import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 
 library LibPartyBPositionsActions {
 	using LockedValuesOps for LockedValues;
@@ -187,7 +193,9 @@ library LibPartyBPositionsActions {
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
 			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(affiliateHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onOpenPosition.selector, quoteId, reason);
+				}
 				try
 					ISymmioHook(affiliateHook).onFeeCharged(
 						quoteId,
@@ -198,10 +206,14 @@ library LibPartyBPositionsActions {
 						quote.affiliate,
 						ISymmioHook.TradingFeeType.OPEN
 					)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onFeeCharged.selector, quoteId, reason);
+				}
 			}
 			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch {}
+				try ISymmioHook(systemHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onOpenPosition.selector, quoteId, reason);
+				}
 				try
 					ISymmioHook(systemHook).onFeeCharged(
 						quoteId,
@@ -212,7 +224,9 @@ library LibPartyBPositionsActions {
 						quote.affiliate,
 						ISymmioHook.TradingFeeType.OPEN
 					)
-				{} catch {}
+				{} catch (bytes memory reason) {
+					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onFeeCharged.selector, quoteId, reason);
+				}
 			}
 		}
 

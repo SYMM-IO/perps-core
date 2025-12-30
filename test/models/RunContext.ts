@@ -1,15 +1,15 @@
 import { ethers } from "../helpers/hardhat-connection.js"
 
-import {
+import type {
 	AccountFacet,
 	BridgeFacet,
 	ClearingHouseFacet,
-	ControlFacet,
 	SymbolControlFacet,
 	PauseControlFacet,
 	DiamondCutFacet,
 	DiamondLoupeFacet,
 	ForceActionsFacet,
+	ForceActionsMasterAccountFacet,
 	FundingRateFacet,
 	LiquidationFacet,
 	PartyAFacet,
@@ -17,7 +17,6 @@ import {
 	PartyBPositionActionsFacet,
 	PartyBQuoteActionsFacet,
 	SettlementFacet,
-	ViewFacet,
 	ViewFacetSymbol,
 	ViewFacetQuote,
 	InstantLayer,
@@ -30,11 +29,22 @@ import {
 	SymmioPartyA,
 	WithdrawFacet,
 	MasterAccountMigrationFacet,
-} from "../../src/types/index.js";
+	// AccountLayer facets
+	CoreFacet as ALCoreFacet,
+	MarginFacet as ALMarginFacet,
+	SymmioHookFacet as ALSymmioHookFacet,
+	ControlFacet as ALControlFacet,
+	ViewFacet as ALViewFacet,
+	AffiliateFacet as ALAffiliateFacet,
+} from "../../src/types/index.js"
+// Import core diamond's ControlFacet and ViewFacet from specific paths
+import type { ControlFacet } from "../../src/types/facets/Control/ControlFacet.js"
+import type { ViewFacet } from "../../src/types/facets/ViewFacet/ViewFacet.js";
 import { TestManager } from "./TestManager.js"
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
 export class RunContext {
+	// Core Diamond facets
 	accountFacet!: AccountFacet
 	diamondCutFacet!: DiamondCutFacet
 	diamondLoupeFacet!: DiamondLoupeFacet
@@ -53,9 +63,20 @@ export class RunContext {
 	fundingRateFacet!: FundingRateFacet
 	settlementFacet!: SettlementFacet
 	forceActionsFacet!: ForceActionsFacet
+	forceActionsMasterAccountFacet!: ForceActionsMasterAccountFacet
 	clearingHouseFacet!: ClearingHouseFacet
 	withdrawFacet!: WithdrawFacet
 	masterAccountMigrationFacet!: MasterAccountMigrationFacet
+
+	// AccountLayer Diamond facets
+	alCoreFacet!: ALCoreFacet
+	alMarginFacet!: ALMarginFacet
+	alSymmioHookFacet!: ALSymmioHookFacet
+	alControlFacet!: ALControlFacet
+	alViewFacet!: ALViewFacet
+	alAffiliateFacet!: ALAffiliateFacet
+	accountLayerDiamond!: string
+
 	signers!: {
 		admin: HardhatEthersSigner
 		user: HardhatEthersSigner
@@ -74,12 +95,13 @@ export class RunContext {
 	accountManager!: AccountManager
 	accountManager2!: AccountManager
 	instantLayer!: InstantLayer
+	// Legacy - kept for backward compatibility during migration
 	accountHub!: AccountHub
 	accountHubLens!: AccountHubLens
+	affiliateHub!: AffiliateHub
 	symmioPartyB!: SymmioPartyB
 	collateral!: FakeStablecoin
 	manager!: TestManager
-	affiliateHub!: AffiliateHub
 }
 
 export async function createRunContext(diamond: string, collateral: string, onlyInitialize: boolean = false): Promise<RunContext> {
@@ -112,16 +134,17 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.partyBQuoteActionsFacet = await ethers.getContractAt("PartyBQuoteActionsFacet", diamond)
 	context.partyBPositionActionsFacet = await ethers.getContractAt("PartyBPositionActionsFacet", diamond)
 	context.bridgeFacet = await ethers.getContractAt("BridgeFacet", diamond)
-	context.viewFacet = await ethers.getContractAt("ViewFacet", diamond)
+	context.viewFacet = await ethers.getContractAt("contracts/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamond)
 	context.viewFacetSymbol = await ethers.getContractAt("ViewFacetSymbol", diamond)
 	context.viewFacetQuote = await ethers.getContractAt("ViewFacetQuote", diamond)
 	context.liquidationFacet = await ethers.getContractAt("LiquidationFacet", diamond)
-	context.controlFacet = await ethers.getContractAt("ControlFacet", diamond)
+	context.controlFacet = await ethers.getContractAt("contracts/facets/Control/ControlFacet.sol:ControlFacet", diamond)
 	context.symbolControlFacet = await ethers.getContractAt("SymbolControlFacet", diamond)
 	context.pauseControlFacet = await ethers.getContractAt("PauseControlFacet", diamond)
 	context.fundingRateFacet = await ethers.getContractAt("FundingRateFacet", diamond)
 	context.settlementFacet = await ethers.getContractAt("SettlementFacet", diamond)
 	context.forceActionsFacet = await ethers.getContractAt("ForceActionsFacet", diamond)
+	context.forceActionsMasterAccountFacet = await ethers.getContractAt("ForceActionsMasterAccountFacet", diamond)
 	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
 	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
 	context.masterAccountMigrationFacet = await ethers.getContractAt("MasterAccountMigrationFacet", diamond)

@@ -4,8 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/muon/LibMuonSettlement.sol";
-import "../../libraries/LibSettlement.sol";
+import { LibMuonSettlement } from "../../libraries/muon/LibMuonSettlement.sol";
+import { LibSettlement } from "../../libraries/LibSettlement.sol";
+import { SettlementSig } from "../../storages/MuonStorage.sol";
 
 library SettlementFacetImpl {
 	function settleUpnl(

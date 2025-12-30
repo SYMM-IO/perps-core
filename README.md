@@ -7,7 +7,7 @@ meta-derivatives engine, with its first use case being a new type of hyper-effic
 ## Code Architecture
 
 This project utilizes the Diamond Proxy pattern ([EIP-2535](https://eips.ethereum.org/EIPS/eip-2535)) for upgradability
-and modularity. Currently, we have 21 facets:
+and modularity. Currently, we have 22 facets:
 
 1. **AccountFacet** - Account management operations
 2. **MasterAccountMigrationFacet** - Master account migration functionality
@@ -22,13 +22,14 @@ and modularity. Currently, we have 21 facets:
 11. **ViewFacetSymbol** - Symbol-related queries
 12. **ViewFacetQuote** - Quote-related queries
 13. **FundingRateFacet** - Funding rate calculations
-14. **ForceActionsFacet** - Force close and cancel operations
-15. **SettlementFacet** - Trade settlement logic
-16. **PartyBPositionActionsFacet** - PartyB position operations
-17. **PartyBQuoteActionsFacet** - PartyB quote operations
-18. **ClearingHouseFacet** - Clearing house functionality
-19. **PartyBBatchActionsFacet** - Batch operations for PartyB
-20. **WithdrawFacet** - Withdrawal operations
+14. **ForceActionsFacet** - Force close and cancel operations for normal partyB accounts
+15. **ForceActionsMasterAccountFacet** - Force close operations for partyBs in master account mode
+16. **SettlementFacet** - Trade settlement logic
+17. **PartyBPositionActionsFacet** - PartyB position operations
+18. **PartyBQuoteActionsFacet** - PartyB quote operations
+19. **ClearingHouseFacet** - Clearing house functionality
+20. **PartyBBatchActionsFacet** - Batch operations for PartyB
+21. **WithdrawFacet** - Withdrawal operations
 
 There are also some additional second-layer contracts required by hedgers and frontends:
 

@@ -105,6 +105,7 @@ export default defineConfig({
 			type: "edr-simulated",
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
+			hardfork: "shanghai",
 		},
 		docker: {
 			type: "http",

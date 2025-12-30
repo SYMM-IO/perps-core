@@ -4,20 +4,22 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "../../libraries/LibDiamond.sol";
-import "../../libraries/muon/LibMuon.sol";
-import "../../libraries/LibAccount.sol";
-import "../../storages/AccountStorage.sol";
-import "../../storages/WithdrawStorage.sol";
-import "../../storages/GlobalAppStorage.sol";
-import "../../storages/MAStorage.sol";
-import "../../storages/QuoteStorage.sol";
-import "../../storages/SymbolStorage.sol";
-import "../../storages/MuonStorage.sol";
-import "../../storages/MasterAccountMigrationStorage.sol";
-import "../../storages/BridgeStorage.sol";
-import "../../libraries/LibAccessibility.sol";
-import "./IViewFacet.sol";
+import { LibDiamond } from "../../libraries/LibDiamond.sol";
+import { LibMuon } from "../../libraries/muon/LibMuon.sol";
+import { AccountStorage, LiquidationDetail, SettlementState, CrossLiquidationDetail, BindState, ExternalTransferReq, ForceCloseDetail } from "../../storages/AccountStorage.sol";
+import { WithdrawStorage, WithdrawRequest } from "../../storages/WithdrawStorage.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { MAStorage, EntityMetadata } from "../../storages/MAStorage.sol";
+import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol";
+import { SymbolStorage } from "../../storages/SymbolStorage.sol";
+import { MuonStorage } from "../../storages/MuonStorage.sol";
+import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { MasterAccountMigrationStorage } from "../../storages/MasterAccountMigrationStorage.sol";
+import { BridgeStorage, BridgeTransaction } from "../../storages/BridgeStorage.sol";
+import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
+import { IViewFacet } from "./IViewFacet.sol";
+
 contract ViewFacet is IViewFacet {
 	using LockedValuesOps for LockedValues;
 

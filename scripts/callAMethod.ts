@@ -3,6 +3,7 @@ import { toUtf8Bytes } from "ethers"
 import { ethers } from "../test/helpers/hardhat-connection.js"
 
 async function main() {
+<<<<<<< HEAD
 	const symmioAddress = "0xeBf201d84CddC358C93450EC33c58D320B0c1d2A"
 
 	const [signer] = await ethers.getSigners()
@@ -44,6 +45,11 @@ async function main() {
 			console.log(err)
 		}
 	}
+=======
+	let symmioAddress = ""
+	let ViewFacet = await ethers.getContractAt("contracts/facets/ViewFacet/ViewFacet.sol:ViewFacet", symmioAddress)
+	console.log(await ViewFacet.getQuote(564))
+>>>>>>> version_0.8.5
 }
 
 main().catch(error => {

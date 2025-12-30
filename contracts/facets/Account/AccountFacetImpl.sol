@@ -4,20 +4,22 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "../../storages/AccountStorage.sol";
-import "../../storages/QuoteStorage.sol";
-import "../../storages/GlobalAppStorage.sol";
-import "../../storages/MAStorage.sol";
-import "../../storages/MasterAccountMigrationStorage.sol";
-import "../../libraries/muon/LibMuonAccount.sol";
-import "../../libraries/LibAccount.sol";
-import "../../interfaces/IExternalTransferRelayer.sol";
-import "../../libraries/LibSigner.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { AccountStorage, BindState, BindStatus, ExternalTransferReq, ExternalTransferStatus } from "../../storages/AccountStorage.sol";
+import { QuoteStorage } from "../../storages/QuoteStorage.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
+import { MasterAccountMigrationStorage } from "../../storages/MasterAccountMigrationStorage.sol";
+import { LibMuonAccount } from "../../libraries/muon/LibMuonAccount.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
+import { IExternalTransferRelayer } from "../../interfaces/IExternalTransferRelayer.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
-import "../../libraries/muon/LibMuon.sol";
+import { LibMuon } from "../../libraries/muon/LibMuon.sol";
+import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 
 library AccountFacetImpl {
 	using SafeERC20 for IERC20;
