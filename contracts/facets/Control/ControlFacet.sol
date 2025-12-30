@@ -13,7 +13,7 @@ import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { IControlEvents } from "./IControlEvents.sol";
+import { IControlFacet } from "./IControlFacet.sol";
 import { LibDiamond } from "../../libraries/LibDiamond.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
@@ -22,7 +22,7 @@ import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 
-contract ControlFacet is Accessibility, Ownable, IControlEvents {
+contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Initiates a two-step ownership transfer to a new address. The new owner must call acceptOwnership() to complete the transfer.
 	/// @param owner The address of the pending new owner.
 	function transferOwnership(address owner) external onlyOwner {
