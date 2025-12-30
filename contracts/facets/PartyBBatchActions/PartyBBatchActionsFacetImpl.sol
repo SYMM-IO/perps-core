@@ -232,19 +232,17 @@ library PartyBBatchActionsFacetImpl {
 			}
 
 			bool wasClosePending = quote.quoteStatus == QuoteStatus.CLOSE_PENDING;
-			uint256 userRequestedClosePrice = wasClosePending ? quote.requestedClosePrice : 0;
-			uint256 userRequestedQuantityToClose = wasClosePending ? quote.quantityToClose : 0;
+			bool wasCancelClosePending = quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING;
+			bool hadPendingClose = wasClosePending || wasCancelClosePending;
+			uint256 prevRequestedClosePrice = hadPendingClose ? quote.requestedClosePrice : 0;
+			uint256 prevRequestedQuantityToClose = hadPendingClose ? quote.quantityToClose : 0;
 			uint256 previousCloseId = quoteLayout.closeIds[quote.id];
 
-			if (quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
-				emit LibPartyBBatchEvents.AcceptCancelCloseRequest(quote.id, QuoteStatus.OPENED, previousCloseId);
-				quote.statusModifyTimestamp = block.timestamp;
-				quote.quoteStatus = QuoteStatus.OPENED;
-				quote.requestedClosePrice = 0;
-				quote.quantityToClose = 0;
-			}
-
-			if (quote.quoteStatus == QuoteStatus.OPENED || quote.quoteStatus == QuoteStatus.CLOSE_PENDING) {
+			if (
+				quote.quoteStatus == QuoteStatus.OPENED ||
+				quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
+				quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING
+			) {
 				uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 				uint256 adlAmount = (openAmount * ratio) / 1e18;
 
@@ -279,31 +277,20 @@ library PartyBBatchActionsFacetImpl {
 					continue;
 				}
 
-				if (wasClosePending) {
-					emit LibPartyBBatchEvents.RequestToCancelCloseRequest(
-						quote.partyA,
-						quote.partyB,
-						quote.id,
-						QuoteStatus.CANCEL_CLOSE_PENDING,
-						previousCloseId
-					);
-					quote.statusModifyTimestamp = block.timestamp;
-					quote.quoteStatus = QuoteStatus.OPENED;
-					emit LibPartyBBatchEvents.AcceptCancelCloseRequest(quote.id, QuoteStatus.OPENED, previousCloseId);
-				}
-
 				uint256 adlCloseId = ++quoteLayout.lastCloseId;
 				closeIds[i] = adlCloseId;
 				quoteLayout.closeIds[quote.id] = adlCloseId;
 				quote.quantityToClose = adlAmount;
 				quote.requestedClosePrice = price;
+				QuoteStatus originalStatus = quote.quoteStatus;
+				quote.quoteStatus = QuoteStatus.CLOSE_PENDING;
 				emit LibPartyBBatchEvents.RequestToClosePosition(
 					quote.partyA,
 					quote.partyB,
 					quote.id,
 					price,
 					adlAmount,
-					quote.orderType,
+					OrderType.MARKET,
 					block.timestamp,
 					QuoteStatus.CLOSE_PENDING,
 					adlCloseId
@@ -314,7 +301,7 @@ library PartyBBatchActionsFacetImpl {
 					quote.id,
 					price,
 					adlAmount,
-					quote.orderType,
+					OrderType.MARKET,
 					block.timestamp,
 					QuoteStatus.CLOSE_PENDING
 				);
@@ -322,42 +309,81 @@ library PartyBBatchActionsFacetImpl {
 				LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
 				accountLayout.partyANonces[quote.partyA] += 1;
 				LibQuoteClose.closeQuote(quote.id, adlAmount, price);
+				uint256 remainingOpen = LibQuote.quoteOpenAmount(quote);
 				closedAmount += adlAmount;
 				filledAmounts[i] = adlAmount;
 
 				if (wasClosePending) {
-					uint256 remainingOpen = LibQuote.quoteOpenAmount(quote);
-					if (remainingOpen > 0 && userRequestedQuantityToClose > 0) {
-						uint256 newQuantity = remainingOpen >= userRequestedQuantityToClose ? userRequestedQuantityToClose : remainingOpen;
+					if (remainingOpen > 0 && prevRequestedQuantityToClose > 0) {
+						uint256 newQuantity = remainingOpen >= prevRequestedQuantityToClose ? prevRequestedQuantityToClose : remainingOpen;
 						quote.quantityToClose = newQuantity;
-						quote.requestedClosePrice = userRequestedClosePrice;
+						quote.requestedClosePrice = prevRequestedClosePrice;
 						quote.quoteStatus = QuoteStatus.CLOSE_PENDING;
 						quote.statusModifyTimestamp = block.timestamp;
-
-						uint256 newCloseId = ++quoteLayout.lastCloseId;
-						quoteLayout.closeIds[quote.id] = newCloseId;
+						quoteLayout.closeIds[quote.id] = previousCloseId;
 						emit LibPartyBBatchEvents.RequestToClosePosition(
 							quote.partyA,
 							quote.partyB,
 							quote.id,
-							userRequestedClosePrice,
+							prevRequestedClosePrice,
 							newQuantity,
 							quote.orderType,
 							block.timestamp,
 							QuoteStatus.CLOSE_PENDING,
-							newCloseId
+							previousCloseId
 						);
 						emit LibPartyBBatchEvents.RequestToClosePosition(
 							quote.partyA,
 							quote.partyB,
 							quote.id,
-							userRequestedClosePrice,
+							prevRequestedClosePrice,
 							newQuantity,
 							quote.orderType,
 							block.timestamp,
 							QuoteStatus.CLOSE_PENDING
 						);
 					}
+				} else if (wasCancelClosePending && remainingOpen > 0) {
+					uint256 newQuantity = remainingOpen >= prevRequestedQuantityToClose ? prevRequestedQuantityToClose : remainingOpen;
+					if (newQuantity > 0) {
+						quote.quantityToClose = newQuantity;
+						quote.requestedClosePrice = prevRequestedClosePrice;
+						quote.quoteStatus = QuoteStatus.CANCEL_CLOSE_PENDING;
+						quote.statusModifyTimestamp = block.timestamp;
+						quoteLayout.closeIds[quote.id] = previousCloseId;
+
+						emit LibPartyBBatchEvents.RequestToClosePosition(
+							quote.partyA,
+							quote.partyB,
+							quote.id,
+							prevRequestedClosePrice,
+							newQuantity,
+							quote.orderType,
+							block.timestamp,
+							QuoteStatus.CLOSE_PENDING,
+							previousCloseId
+						);
+						emit LibPartyBBatchEvents.RequestToClosePosition(
+							quote.partyA,
+							quote.partyB,
+							quote.id,
+							prevRequestedClosePrice,
+							newQuantity,
+							quote.orderType,
+							block.timestamp,
+							QuoteStatus.CLOSE_PENDING
+						);
+						emit LibPartyBBatchEvents.RequestToCancelCloseRequest(
+							quote.partyA,
+							quote.partyB,
+							quote.id,
+							QuoteStatus.CANCEL_CLOSE_PENDING,
+							previousCloseId
+						);
+					}
+				}
+				if (originalStatus == QuoteStatus.OPENED && quote.quoteStatus != QuoteStatus.CLOSED) {
+					quoteLayout.closeIds[quote.id] = previousCloseId;
 				}
 			}
 			unchecked {
