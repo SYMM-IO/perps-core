@@ -10,7 +10,7 @@ import { Pausable } from "../../utils/Pausable.sol";
 import { IPartyBBatchActionsFacet } from "./IPartyBBatchActionsFacet.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
-
+import { LibPartyBBatchEvents } from "../../libraries/PartysEvents.sol";
 contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActionsFacet {
 	/**
 	 * @notice Opens positions for the specified quotes. The opened position's size can't be excessively small or large.
@@ -69,17 +69,45 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 		}
 	}
 
-	function adlClosePositions(
-		uint256[] memory quoteIds,
-		uint256[] memory filledAmounts,
-		uint256[] memory closedPrices,
-		PairUpnlAndPricesSig memory upnlSig
-	) external whenNotPartyBActionsPaused {
+	/**
+	 * @notice close the positions with specified price to ADL on same symbol.
+	 * @param quoteIds The ID of the quotes for which the ADL is happening.
+	 * @param ratio The ratio of open amounts to be closed.
+	 * @param price The closed price for the positions.
+	 */
+	function adlClose(uint256[] calldata quoteIds, uint256 ratio, uint256 price) external whenNotPartyBActionsPaused returns (uint256) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		(QuoteStatus[] memory quoteStatuses, ) = PartyBBatchActionsFacetImpl.closePositions(quoteIds, filledAmounts, closedPrices, upnlSig, true);
-		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
-		for (uint256 i = 0; i < quoteIds.length; i++) {
-			emit AdlClosePositions(quoteIds[i], firstQuote.partyA, firstQuote.partyB, filledAmounts[i], closedPrices[i], quoteStatuses[i]);
-		}
+		uint256 len = quoteIds.length;
+
+		(uint256[] memory filledAmounts, uint256 closedAmount, uint256[] memory closeIds) = PartyBBatchActionsFacetImpl.adlClose(
+			quoteIds,
+			ratio,
+			price
+		);
+
+		for (uint256 i = 0; i < len; ) {
+			uint256 filledAmount = filledAmounts[i];
+			if (filledAmount > 0) {
+				uint256 quoteId = quoteIds[i];
+				Quote storage quote = quoteLayout.quotes[quoteId];
+				uint256 closeIdToUse = closeIds[i] == 0 ? quoteLayout.closeIds[quoteId] : closeIds[i];
+
+					// Emit FillCloseRequest with the selected closeId
+					emit FillCloseRequest(
+						quoteId,
+						quote.partyA,
+						quote.partyB,
+						filledAmount,
+						price,
+						quote.quoteStatus,
+						closeIdToUse
+					);
+				}
+				unchecked {
+					++i;
+				}
+			}
+		emit LibPartyBBatchEvents.ADLClose(quoteIds, ratio, price, closedAmount);
+		return closedAmount;
 	}
 }

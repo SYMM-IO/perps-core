@@ -17,36 +17,13 @@ import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+import { LibPartyBBatchEvents } from "../../libraries/PartysEvents.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
-
-	// NOTE: Solidity v0.8.18 doesn't support emitting events via qualified identifiers
-	// like `emit IPartiesEvents.OpenPosition(...)`. To keep event signatures consistent
-	// with `IPartiesEvents`, we redeclare the required events here and emit them unqualified.
-	event AcceptCancelRequest(uint256 quoteId, QuoteStatus quoteStatus);
-	event SendQuote(
-		address partyA,
-		uint256 quoteId,
-		address[] partyBsWhiteList,
-		uint256 symbolId,
-		PositionType positionType,
-		OrderType orderType,
-		uint256 price,
-		uint256 marketPrice,
-		uint256 quantity,
-		uint256 cva,
-		uint256 lf,
-		uint256 partyAmm,
-		uint256 partyBmm,
-		uint256 tradingFee,
-		uint256 deadline
-	);
-	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice); // for backward compatibility
-	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
-
 	function openPositions(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -104,12 +81,12 @@ library PartyBBatchActionsFacetImpl {
 			}
 			// Emitting events here in the impl is against our standards in these contracts,
 			// but given that this contract is getting too large and we can't return the ids, we are allowing it here.
-			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
-			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
+			emit LibPartyBBatchEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
+			emit LibPartyBBatchEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
 			if (newId != 0) {
 				Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-					emit SendQuote(
+					emit LibPartyBBatchEvents.SendQuote(
 						newQuote.partyA,
 						newQuote.id,
 						newQuote.partyBsWhiteList,
@@ -127,7 +104,7 @@ library PartyBBatchActionsFacetImpl {
 						newQuote.deadline
 					);
 				} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
-					emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
+					emit LibPartyBBatchEvents.AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
 				}
 			}
 		}
@@ -163,7 +140,7 @@ library PartyBBatchActionsFacetImpl {
 		address firstQuotePartyA = firstQuote.partyA;
 		address firstQuotePartyB = firstQuote.partyB;
 
-		if (accountLayout.bindState[firstQuote.partyA].partyB != LibSigner.getSigner()|| !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
+		if (accountLayout.bindState[firstQuote.partyA].partyB != LibSigner.getSigner() || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
 		}
@@ -219,6 +196,172 @@ library PartyBBatchActionsFacetImpl {
 				LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);
 				quoteStatuses[i] = quote.quoteStatus;
 				closeIds[i] = quoteLayout.closeIds[quoteId];
+			}
+		}
+	}
+
+	function adlClose(
+		uint256[] calldata quoteIds,
+		uint256 ratio,
+		uint256 price
+	) internal returns (uint256[] memory filledAmounts, uint256 closedAmount, uint256[] memory closeIds) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256 firstSymbolId;
+		uint256 len = quoteIds.length;
+		filledAmounts = new uint256[](len);
+		closeIds = new uint256[](len);
+
+		require(ratio > 0 && ratio <= 1e18, "PartyBBatchActionsFacet: Invalid ratio");
+		require(quoteIds.length > 0, "PartyBBatchActionsFacet: invalid array length");
+		require(
+			!accountLayout.crossLiquidationDetails[quoteLayout.quotes[quoteIds[0]].partyB].inProgress,
+			"PartyBFacet: PartyB is in cross liquidation process"
+		);
+
+		for (uint256 i = 0; i < len; ) {
+			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+
+			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender isn't partyB of quote");
+			require(!MAStorage.layout().liquidationStatus[quote.partyA], "PartyBFacet: PartyA is liquidated");
+			require(!MAStorage.layout().partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
+			if (i == 0) {
+				firstSymbolId = quote.symbolId;
+			} else {
+				require(quote.symbolId == firstSymbolId, "PartyBFacet: Symbols not match");
+			}
+
+			bool wasClosePending = quote.quoteStatus == QuoteStatus.CLOSE_PENDING;
+			uint256 userRequestedClosePrice = wasClosePending ? quote.requestedClosePrice : 0;
+			uint256 userRequestedQuantityToClose = wasClosePending ? quote.quantityToClose : 0;
+			uint256 previousCloseId = quoteLayout.closeIds[quote.id];
+
+			if (quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
+				emit LibPartyBBatchEvents.AcceptCancelCloseRequest(quote.id, QuoteStatus.OPENED, previousCloseId);
+				quote.statusModifyTimestamp = block.timestamp;
+				quote.quoteStatus = QuoteStatus.OPENED;
+				quote.requestedClosePrice = 0;
+				quote.quantityToClose = 0;
+			}
+
+			if (quote.quoteStatus == QuoteStatus.OPENED || quote.quoteStatus == QuoteStatus.CLOSE_PENDING) {
+				uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+				uint256 adlAmount = (openAmount * ratio) / 1e18;
+
+				require(adlAmount > 0 && openAmount >= adlAmount, "PartyBFacet: Invalid filled amount");
+
+				int256 fundingFee = LibQuoteFunding.getAccumulatedFundingFee(quote.id);
+				uint256 maintenance = ((quote.lockedValues.cva + quote.lockedValues.lf) * adlAmount) / openAmount;
+				uint256 requiredA = maintenance;
+				uint256 requiredB = maintenance;
+				address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
+				if (fundingFee > 0) {
+					requiredA += uint256(fundingFee);
+				} else if (fundingFee < 0) {
+					requiredB += uint256(-fundingFee);
+				}
+
+				bool partyAOk = accountLayout.allocatedBalances[quote.partyA] >= requiredA;
+				if (!partyAOk) {
+					emit LibPartyBBatchEvents.ADLSkip(quote.id, quote.partyA, quote.partyB, 1, int256(requiredA));
+					unchecked {
+						++i;
+					}
+					continue;
+				}
+
+				bool partyBOk = accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] >= requiredB;
+				if (!partyBOk) {
+					emit LibPartyBBatchEvents.ADLSkip(quote.id, quote.partyA, quote.partyB, 2, int256(requiredB));
+					unchecked {
+						++i;
+					}
+					continue;
+				}
+
+				if (wasClosePending) {
+					emit LibPartyBBatchEvents.RequestToCancelCloseRequest(
+						quote.partyA,
+						quote.partyB,
+						quote.id,
+						QuoteStatus.CANCEL_CLOSE_PENDING,
+						previousCloseId
+					);
+					quote.statusModifyTimestamp = block.timestamp;
+					quote.quoteStatus = QuoteStatus.OPENED;
+					emit LibPartyBBatchEvents.AcceptCancelCloseRequest(quote.id, QuoteStatus.OPENED, previousCloseId);
+				}
+
+				uint256 adlCloseId = ++quoteLayout.lastCloseId;
+				closeIds[i] = adlCloseId;
+				quoteLayout.closeIds[quote.id] = adlCloseId;
+				quote.quantityToClose = adlAmount;
+				quote.requestedClosePrice = price;
+				emit LibPartyBBatchEvents.RequestToClosePosition(
+					quote.partyA,
+					quote.partyB,
+					quote.id,
+					price,
+					adlAmount,
+					quote.orderType,
+					block.timestamp,
+					QuoteStatus.CLOSE_PENDING,
+					adlCloseId
+				);
+				emit LibPartyBBatchEvents.RequestToClosePosition(
+					quote.partyA,
+					quote.partyB,
+					quote.id,
+					price,
+					adlAmount,
+					quote.orderType,
+					block.timestamp,
+					QuoteStatus.CLOSE_PENDING
+				);
+
+				LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
+				accountLayout.partyANonces[quote.partyA] += 1;
+				LibQuoteClose.closeQuote(quote.id, adlAmount, price);
+				closedAmount += adlAmount;
+				filledAmounts[i] = adlAmount;
+
+				if (wasClosePending) {
+					uint256 remainingOpen = LibQuote.quoteOpenAmount(quote);
+					if (remainingOpen > 0 && userRequestedQuantityToClose > 0) {
+						uint256 newQuantity = remainingOpen >= userRequestedQuantityToClose ? userRequestedQuantityToClose : remainingOpen;
+						quote.quantityToClose = newQuantity;
+						quote.requestedClosePrice = userRequestedClosePrice;
+						quote.quoteStatus = QuoteStatus.CLOSE_PENDING;
+						quote.statusModifyTimestamp = block.timestamp;
+
+						uint256 newCloseId = ++quoteLayout.lastCloseId;
+						quoteLayout.closeIds[quote.id] = newCloseId;
+						emit LibPartyBBatchEvents.RequestToClosePosition(
+							quote.partyA,
+							quote.partyB,
+							quote.id,
+							userRequestedClosePrice,
+							newQuantity,
+							quote.orderType,
+							block.timestamp,
+							QuoteStatus.CLOSE_PENDING,
+							newCloseId
+						);
+						emit LibPartyBBatchEvents.RequestToClosePosition(
+							quote.partyA,
+							quote.partyB,
+							quote.id,
+							userRequestedClosePrice,
+							newQuantity,
+							quote.orderType,
+							block.timestamp,
+							QuoteStatus.CLOSE_PENDING
+						);
+					}
+				}
+			}
+			unchecked {
+				++i;
 			}
 		}
 	}

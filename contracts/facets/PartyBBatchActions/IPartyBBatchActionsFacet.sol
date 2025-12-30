@@ -21,4 +21,6 @@ interface IPartyBBatchActionsFacet is IPartyBBatchActionsEvents {
 		uint256[] memory closedPrices,
 		PairUpnlAndPricesSig memory upnlSig
 	) external;
+
+	function adlClose(uint256[] calldata quoteIds, uint256 ratio, uint256 price) external returns (uint256);
 }
