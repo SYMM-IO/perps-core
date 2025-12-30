@@ -2971,7 +2971,7 @@
                     {
                         "internalType": "enum ISymmio.PositionType",
                         "name": "positionType",
-                        "type": "ISymmio.PositionType"
+                        "type": "uint8"
                     },
                     {
                         "internalType": "uint256",
@@ -3001,7 +3001,7 @@
                     {
                         "internalType": "enum ISymmio.OrderType",
                         "name": "orderType",
-                        "type": "ISymmio.OrderType"
+                        "type": "uint8"
                     },
                     {
                         "components": [
