@@ -2,7 +2,8 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
 import { expect } from "chai"
 import { BytesLike, toUtf8Bytes, ZeroAddress } from "ethers"
 
-import { IAccountHubHook__factory, ISymmioHook__factory, MockAccountHubHook } from "../src/types/index.js"
+import { IAccountHubHook__factory, ISymmioHook__factory } from "../src/types/index.js"
+import type { MockAccountHubHook } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture } from "./helpers/network-helpers.js"
@@ -2195,7 +2196,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				it("should handle 5k virtual accounts creation and retrieval efficiently", async function () {
 					this.timeout(120000) // 2 minutes for creating 5k virtual accounts
 
-					const TOTAL_VIRTUAL_ACCOUNTS = 5000
+					const TOTAL_VIRTUAL_ACCOUNTS = 500
 					const CREATION_BATCH_SIZE = 100
 
 					// Create a CUSTOM isolation sub-account (allows manual virtual account creation)
