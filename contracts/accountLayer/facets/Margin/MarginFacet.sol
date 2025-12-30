@@ -70,7 +70,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	// ==================== Internal Functions ====================
 
 	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
-		return LibAccountLayerUtils.executeWithSigner(account, callData, "MarginFacet: Unable to retrieve core");
+		return LibAccountLayerUtils.executeWithSigner(account, callData);
 	}
 
 	function _predictNextVirtualAccountAddress(
@@ -107,31 +107,4 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 			);
 	}
 
-	function _resolveAccountOwner(address account) internal view override returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-
-		address owner = ahLayout.subAccounts[account].owner;
-		if (owner != address(0)) {
-			return owner;
-		}
-
-		address parent = ahLayout.virtualAccounts[account].parentAccount;
-		if (parent != address(0)) {
-			address parentOwner = ahLayout.subAccounts[parent].owner;
-			if (parentOwner != address(0)) {
-				return parentOwner;
-			}
-		}
-
-		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address legacyOwner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (legacyOwner != address(0)) {
-				return legacyOwner;
-			}
-		}
-
-		return address(0);
-	}
 }

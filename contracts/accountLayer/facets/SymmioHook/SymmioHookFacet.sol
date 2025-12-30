@@ -81,21 +81,21 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
 		if (allocatedBalance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance), core);
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance));
 		}
 
 		uint256 balance = ISymmio(core).balanceOf(account);
 		if (balance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance), core);
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance));
 		}
 	}
 
-	function _executeWithSigner(address account, bytes memory callData, address core) private returns (bytes memory) {
-		return LibAccountLayerUtils.executeWithSigner(account, callData, core);
+	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
+		return LibAccountLayerUtils.executeWithSigner(account, callData);
 	}
 
 	function _getRelatedCore(address account) internal view returns (address) {
-		return LibAccountLayerUtils.getRelatedCore(account, "SymmioHookFacet: Unable to retrieve core");
+		return LibAccountLayerUtils.getRelatedCore(account);
 	}
 
 	function _getAffiliateForAccount(address account) private view returns (address) {
@@ -120,9 +120,5 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		if (!success) {
 			revert HookFailed(result);
 		}
-	}
-
-	function _resolveAccountOwner(address) internal pure override returns (address) {
-		return address(0);
 	}
 }

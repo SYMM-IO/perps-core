@@ -24,8 +24,10 @@ const AffiliateState = {
     DEACTIVATED: 4n,
 } as const
 
+const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+
 // SIGNER_SETTER_ROLE was renamed to SIGNER_ADMIN_ROLE
-const SIGNER_ADMIN_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ADMIN_ROLE"))
+const SIGNER_ADMIN_ROLE = roleHash("SIGNER_ADMIN_ROLE")
 
 export function shouldBehaveLikeAffiliateHub() {
     describe("AffiliateHub", function () {
@@ -86,7 +88,7 @@ export function shouldBehaveLikeAffiliateHub() {
         }
 
         const pauseAffiliateHub = async () => {
-            const pauserRole = await context.alViewFacet.PAUSER_ROLE()
+            const pauserRole = roleHash("PAUSER_ROLE")
             await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, pauserRole)
             await context.alControlFacet.connect(context.signers.admin).pause()
         }
@@ -181,8 +183,9 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("allows only the affiliate admin to cancel", async function () {
                     // cancel by non admin
-                    await expect(context.alAffiliateFacet.connect(context.signers.others[0]).cancelRegistration(affiliate)).to.be.revertedWith(
-                        "AccountLayer: Not affiliate admin"
+                    await expect(context.alAffiliateFacet.connect(context.signers.others[0]).cancelRegistration(affiliate)).to.be.revertedWithCustomError(
+                        context.alAffiliateFacet,
+                        "NotAffiliateAdmin",
                     )
                     // cancel by admin
                     await expect(context.alAffiliateFacet.connect(context.signers.user).cancelRegistration(affiliate))
@@ -216,7 +219,7 @@ export function shouldBehaveLikeAffiliateHub() {
                 })
 
                 it("lets the protocol admin reject a pending registration", async function () {
-                    const adminRole = await context.alViewFacet.APPROVER_ROLE()
+                    const adminRole = roleHash("APPROVER_ROLE")
                     expect(await context.alControlFacet.hasRole(context.signers.admin.address, adminRole)).to.equal(true)
                     await expect(context.alAffiliateFacet.connect(context.signers.admin).rejectRegistration(affiliate))
                         .to.emit(context.alAffiliateFacet, "RegistrationRejected")
@@ -225,8 +228,9 @@ export function shouldBehaveLikeAffiliateHub() {
                 })
 
                 it("reverts rejects from non-admin or non-pending entries", async function () {
-                    await expect(context.alAffiliateFacet.connect(context.signers.user).rejectRegistration(affiliate)).to.be.revertedWith(
-                        "AccountLayer: Must have role",
+                    await expect(context.alAffiliateFacet.connect(context.signers.user).rejectRegistration(affiliate)).to.be.revertedWithCustomError(
+                        context.alAffiliateFacet,
+                        "MustHaveRole",
                     )
                     await context.alAffiliateFacet.connect(context.signers.admin).rejectRegistration(affiliate)
                     await expect(context.alAffiliateFacet.connect(context.signers.admin).rejectRegistration(affiliate)).to.be.revertedWithCustomError(
@@ -245,8 +249,9 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("requires approver role and pending state", async function () {
                     // approve without role
-                    await expect(context.alAffiliateFacet.connect(context.signers.user).approveAffiliate(affiliate)).to.be.revertedWith(
-                        "AccountLayer: Must have role",
+                    await expect(context.alAffiliateFacet.connect(context.signers.user).approveAffiliate(affiliate)).to.be.revertedWithCustomError(
+                        context.alAffiliateFacet,
+                        "MustHaveRole",
                     )
 
                     await approveAffiliate(affiliate)
@@ -273,7 +278,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     expect(manager).to.not.equal(ethers.ZeroAddress)
                     expect(manager).to.equal(affiliate)
                     // SIGNER_SETTER_ROLE is granted during deployment
-                    expect(await context.alControlFacet.hasRole(manager, await context.alViewFacet.SIGNER_SETTER_ROLE())).to.equal(true)
+                    expect(await context.alControlFacet.hasRole(manager, roleHash("SIGNER_SETTER_ROLE"))).to.equal(true)
                 })
 
                 it("cannot be called while the hub is paused", async function () {
@@ -300,7 +305,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     // non admin cant propose a new admin
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user2).proposeAdminTransfer(affiliate, context.signers.user.address),
-                    ).to.be.revertedWith("AccountLayer: Not affiliate admin")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "NotAffiliateAdmin")
                 })
 
                 it("reverts when the contract is paused", async function () {
@@ -314,7 +319,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user).proposeAdminTransfer(affiliate, context.signers.user2.address),
-                    ).to.be.revertedWith("AccountLayer: Affiliate not active")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "AffiliateNotActive")
                 })
             })
 
@@ -379,7 +384,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     // non admin still blocked
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user2).updateAffiliateDetails(affiliate, newDetails.name, newDetails.brandColor),
-                    ).to.be.revertedWith("AccountLayer: Not affiliate admin")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "NotAffiliateAdmin")
                     // admin can update
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user).updateAffiliateDetails(affiliate, newDetails.name, newDetails.brandColor),
@@ -390,7 +395,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user).updateAffiliateDetails(affiliate, "x", "#fff"),
-                    ).to.be.revertedWith("AccountLayer: Affiliate not active")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "AffiliateNotActive")
                 })
 
                 it("reverts when the hub is paused", async function () {
@@ -412,7 +417,7 @@ export function shouldBehaveLikeAffiliateHub() {
 
             describe("pauseAffiliate", function () {
                 it("allows authorized callers to pause", async function () {
-                    const pauserRole = await context.alViewFacet.PAUSER_ROLE()
+                    const pauserRole = roleHash("PAUSER_ROLE")
                     await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.liquidator.address, pauserRole)
 
                     // random accounts cant pause
@@ -430,8 +435,8 @@ export function shouldBehaveLikeAffiliateHub() {
 
             describe("unpauseAffiliate", function () {
                 beforeEach(async function () {
-                    const pauserRole = await context.alViewFacet.PAUSER_ROLE()
-                    const unpauserRole = await context.alViewFacet.UNPAUSER_ROLE()
+                    const pauserRole = roleHash("PAUSER_ROLE")
+                    const unpauserRole = roleHash("UNPAUSER_ROLE")
                     await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.liquidator.address, pauserRole)
                     await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.hedger.address, unpauserRole)
                     // start from paused state
@@ -440,8 +445,9 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("requires the unpauser role", async function () {
                     // missing role means revert
-                    await expect(context.alAffiliateFacet.connect(context.signers.others[0]).unpauseAffiliate(affiliate)).to.be.revertedWith(
-                        "AccountLayer: Must have role",
+                    await expect(context.alAffiliateFacet.connect(context.signers.others[0]).unpauseAffiliate(affiliate)).to.be.revertedWithCustomError(
+                        context.alAffiliateFacet,
+                        "MustHaveRole",
                     )
                     // unpauser role restores active state
                     await expect(context.alAffiliateFacet.connect(context.signers.hedger).unpauseAffiliate(affiliate))
@@ -453,8 +459,8 @@ export function shouldBehaveLikeAffiliateHub() {
 
             describe("contract pause state", function () {
                 beforeEach(async function () {
-                    const pauserRole = await context.alViewFacet.PAUSER_ROLE()
-                    const unpauserRole = await context.alViewFacet.UNPAUSER_ROLE()
+                    const pauserRole = roleHash("PAUSER_ROLE")
+                    const unpauserRole = roleHash("UNPAUSER_ROLE")
                     await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, pauserRole)
                     await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, unpauserRole)
                 })
@@ -475,11 +481,13 @@ export function shouldBehaveLikeAffiliateHub() {
                 })
 
                 it("enforces role checks on pause toggles", async function () {
-                    await expect(context.alControlFacet.connect(context.signers.user).pause()).to.be.revertedWith(
-                        "AccountLayer: Must have role",
+                    await expect(context.alControlFacet.connect(context.signers.user).pause()).to.be.revertedWithCustomError(
+                        context.alControlFacet,
+                        "MustHaveRole",
                     )
-                    await expect(context.alControlFacet.connect(context.signers.user).unpause()).to.be.revertedWith(
-                        "AccountLayer: Must have role",
+                    await expect(context.alControlFacet.connect(context.signers.user).unpause()).to.be.revertedWithCustomError(
+                        context.alControlFacet,
+                        "MustHaveRole",
                     )
                 })
             })
@@ -510,7 +518,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     const newStakeholders = [{ receiver: context.signers.feeCollector.address, share: ethers.parseEther("0.8") }]
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user2).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2")),
-                    ).to.be.revertedWith("AccountLayer: Not affiliate admin")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "NotAffiliateAdmin")
                 })
 
                 it("requires an active affiliate and unpaused hub", async function () {
@@ -518,10 +526,10 @@ export function shouldBehaveLikeAffiliateHub() {
                     await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2")),
-                    ).to.be.revertedWith("AccountLayer: Affiliate not active")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "AffiliateNotActive")
 
                     // resume affiliate for next assertion
-                    await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, await context.alViewFacet.UNPAUSER_ROLE())
+                    await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("UNPAUSER_ROLE"))
                     await context.alAffiliateFacet.connect(context.signers.admin).unpauseAffiliate(affiliate)
                     await pauseAffiliateHub()
                     await expect(
@@ -558,8 +566,9 @@ export function shouldBehaveLikeAffiliateHub() {
                 })
 
                 it("blocks non-admin users", async function () {
-                    await expect(context.alAffiliateFacet.connect(context.signers.user2).cancelFeeUpdate(affiliate)).to.be.revertedWith(
-                        "AccountLayer: Not affiliate admin"
+                    await expect(context.alAffiliateFacet.connect(context.signers.user2).cancelFeeUpdate(affiliate)).to.be.revertedWithCustomError(
+                        context.alAffiliateFacet,
+                        "NotAffiliateAdmin",
                     )
                 })
 
@@ -581,8 +590,9 @@ export function shouldBehaveLikeAffiliateHub() {
                 })
 
                 it("requires the approver role", async function () {
-                    await expect(context.alAffiliateFacet.connect(context.signers.user).approveFeeUpdate(affiliate)).to.be.revertedWith(
-                        "AccountLayer: Must have role",
+                    await expect(context.alAffiliateFacet.connect(context.signers.user).approveFeeUpdate(affiliate)).to.be.revertedWithCustomError(
+                        context.alAffiliateFacet,
+                        "MustHaveRole",
                     )
                 })
 
@@ -642,7 +652,7 @@ export function shouldBehaveLikeAffiliateHub() {
                 })
 
                 it("allows accounts with the distributor role to claim", async function () {
-                    const distributorRole = await context.alViewFacet.DISTRIBUTOR_ROLE()
+                    const distributorRole = roleHash("DISTRIBUTOR_ROLE")
                     const distributor = context.signers.others[1]
                     await context.alControlFacet.connect(context.signers.admin).grantRole(distributor.address, distributorRole)
 
@@ -713,12 +723,12 @@ export function shouldBehaveLikeAffiliateHub() {
                     const mockHook = await (await ethers.getContractFactory("MockHook")).deploy()
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user2).setHook(affiliate, "0x12345678", await mockHook.getAddress()),
-                    ).to.be.revertedWith("AccountLayer: Not affiliate admin")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "NotAffiliateAdmin")
 
                     await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user).setHook(affiliate, "0x12345678", await mockHook.getAddress()),
-                    ).to.be.revertedWith("AccountLayer: Affiliate not active")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "AffiliateNotActive")
                 })
 
                 it("cannot be called while the contract is paused", async function () {
@@ -745,8 +755,9 @@ export function shouldBehaveLikeAffiliateHub() {
                 })
 
                 it("requires admin privileges and unpaused hub", async function () {
-                    await expect(context.alAffiliateFacet.connect(context.signers.user2).removeHook(affiliate, "0x12345678")).to.be.revertedWith(
-                        "AccountLayer: Not affiliate admin"
+                    await expect(context.alAffiliateFacet.connect(context.signers.user2).removeHook(affiliate, "0x12345678")).to.be.revertedWithCustomError(
+                        context.alAffiliateFacet,
+                        "NotAffiliateAdmin",
                     )
                     await pauseAffiliateHub()
                     await expect(context.alAffiliateFacet.connect(context.signers.user).removeHook(affiliate, "0x12345678")).to.be.revertedWith("AccountLayer: Paused")
@@ -782,13 +793,15 @@ export function shouldBehaveLikeAffiliateHub() {
                 const operator = context.signers.others[0]
                 const selector = context.controlFacet.interface.getFunction("setAffiliateFee").selector
 
-                await expect(context.alAffiliateFacet.connect(context.signers.user2).setOperator(affiliate, selector, operator.address, true)).to.be.revertedWith(
-                    "AccountLayer: Not affiliate admin"
+                await expect(context.alAffiliateFacet.connect(context.signers.user2).setOperator(affiliate, selector, operator.address, true)).to.be.revertedWithCustomError(
+                    context.alAffiliateFacet,
+                    "NotAffiliateAdmin",
                 )
 
                 await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
-                await expect(context.alAffiliateFacet.connect(context.signers.user).setOperator(affiliate, selector, operator.address, true)).to.be.revertedWith(
-                    "AccountLayer: Affiliate not active"
+                await expect(context.alAffiliateFacet.connect(context.signers.user).setOperator(affiliate, selector, operator.address, true)).to.be.revertedWithCustomError(
+                    context.alAffiliateFacet,
+                    "AffiliateNotActive",
                 )
             })
 
@@ -824,8 +837,9 @@ export function shouldBehaveLikeAffiliateHub() {
                 await context.alAffiliateFacet.connect(context.signers.user).setOperator(affiliate, selector, operator.address, true)
                 await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
 
-                await expect(context.alAffiliateFacet.connect(operator).callAsAffiliate(affiliate, context.diamond, callData)).to.be.revertedWith(
-                    "AccountLayer: Affiliate not active"
+                await expect(context.alAffiliateFacet.connect(operator).callAsAffiliate(affiliate, context.diamond, callData)).to.be.revertedWithCustomError(
+                    context.alAffiliateFacet,
+                    "AffiliateNotActive",
                 )
             })
 
@@ -844,7 +858,7 @@ export function shouldBehaveLikeAffiliateHub() {
         describe("Configuration", function () {
             beforeEach(async function () {
                 // give admin the setter role
-                const setterRole = await context.alViewFacet.SETTER_ROLE()
+                const setterRole = roleHash("SETTER_ROLE")
                 await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, setterRole)
             })
 
@@ -863,7 +877,7 @@ export function shouldBehaveLikeAffiliateHub() {
                 it("requires the setter role", async function () {
                     await expect(
                         context.alControlFacet.connect(context.signers.user).setSymmioFeeReceiver(context.signers.symmioFeeReceiver.address),
-                    ).to.be.revertedWith("AccountLayer: Must have role")
+                    ).to.be.revertedWithCustomError(context.alControlFacet, "MustHaveRole")
                 })
             })
 
@@ -881,7 +895,7 @@ export function shouldBehaveLikeAffiliateHub() {
                 it("requires setter role", async function () {
                     await expect(
                         context.alControlFacet.connect(context.signers.user).setWhitelistedSymmioCore(context.signers.others[0].address, true),
-                    ).to.be.revertedWith("AccountLayer: Must have role")
+                    ).to.be.revertedWithCustomError(context.alControlFacet, "MustHaveRole")
                 })
             })
         })
