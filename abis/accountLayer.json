@@ -32,6 +32,17 @@
                 "type": "bytes"
             }
         ],
+        "name": "HookActionFailed",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes",
+                "name": "reason",
+                "type": "bytes"
+            }
+        ],
         "name": "HookFailed",
         "type": "error"
     },
@@ -43,6 +54,11 @@
     {
         "inputs": [],
         "name": "InvalidParent",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "NoActiveHookContext",
         "type": "error"
     },
     {
@@ -68,6 +84,17 @@
     {
         "inputs": [],
         "name": "PositionTypeNotAllowedForThisAccount",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "SelectorNotAllowed",
         "type": "error"
     },
     {
@@ -139,6 +166,31 @@
             }
         ],
         "name": "EditAccountName",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "HookActionExecuted",
         "type": "event"
     },
     {
@@ -397,6 +449,19 @@
             }
         ],
         "name": "editAccountName",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes",
+                "name": "callData",
+                "type": "bytes"
+            }
+        ],
+        "name": "executeForAccount",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -2465,6 +2530,31 @@
         "inputs": [
             {
                 "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "allowed",
+                "type": "bool"
+            }
+        ],
+        "name": "HookAllowedSelectorsSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
                 "internalType": "bytes32",
                 "name": "role",
                 "type": "bytes32"
@@ -2755,6 +2845,29 @@
             }
         ],
         "name": "setAccountManagerImplementation",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            },
+            {
+                "internalType": "bool",
+                "name": "allowed",
+                "type": "bool"
+            }
+        ],
+        "name": "setHookAllowedSelectors",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

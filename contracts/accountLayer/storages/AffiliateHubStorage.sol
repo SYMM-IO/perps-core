@@ -58,6 +58,13 @@ struct PendingFeeUpdate {
 	Stakeholder[] stakeholders;
 }
 
+struct HookContext {
+	address account;
+	address affiliate;
+	address symmioCore;
+	bool isActive;
+}
+
 library AffiliateHubStorage {
 	bytes32 internal constant AFFILIATE_HUB_STORAGE_SLOT = keccak256("diamond.standard.storage.affiliatehub");
 
@@ -75,6 +82,10 @@ library AffiliateHubStorage {
 		address symmioFeeReceiver;
 		// Nonce for fee distributor address generation
 		uint256 globalNonce;
+		// Hook execution context
+		HookContext hookContext;
+		// Allowed selectors for hooks per affiliate: affiliate => selector => allowed
+		mapping(address => mapping(bytes4 => bool)) hookAllowedSelectors;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

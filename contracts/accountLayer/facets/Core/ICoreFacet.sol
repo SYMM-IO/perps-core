@@ -14,6 +14,7 @@ interface ICoreFacetEvents {
 	event SingleVAModeChanged(address indexed subAccount, bool enabled);
 	event EditAccountName(address indexed account, string name);
 	event Call(address indexed sender, address indexed account, bytes callData, bool success, bytes resultData);
+	event HookActionExecuted(address indexed account, address indexed affiliate, bytes4 selector);
 }
 
 interface ICoreFacet is ICoreFacetEvents {
@@ -38,6 +39,10 @@ interface ICoreFacet is ICoreFacetEvents {
 
 	function _call(address account, bytes[] calldata callDatas) external returns (bytes[] memory);
 
+	// ==================== Hook Callback ====================
+
+	function executeForAccount(bytes calldata callData) external;
+
 	// ==================== Custom Errors ====================
 
 	error ZeroAddress();
@@ -56,4 +61,7 @@ interface ICoreFacet is ICoreFacetEvents {
 	error SymbolNotAllowedForThisAccount();
 	error AlreadyDeleted();
 	error OpenPositionsExist();
+	error NoActiveHookContext();
+	error SelectorNotAllowed(bytes4 selector);
+	error HookActionFailed(bytes reason);
 }

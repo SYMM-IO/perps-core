@@ -13,6 +13,7 @@ interface IControlFacetEvents {
 	event SymmioFeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
 	event WhitelistedSymmioCoreSet(address indexed core, bool status);
 	event AccountManagerDeployed(address indexed affiliate, address indexed accountManager);
+	event HookAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
 }
 
 interface IControlFacet is IControlFacetEvents {
@@ -49,6 +50,8 @@ interface IControlFacet is IControlFacetEvents {
 	function setSymmioFeeReceiver(address receiver) external;
 
 	function setWhitelistedSymmioCore(address core, bool status) external;
+
+	function setHookAllowedSelectors(address affiliate, bytes4[] calldata selectors, bool allowed) external;
 
 	// ==================== Custom Errors ====================
 

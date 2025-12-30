@@ -15870,6 +15870,37 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "address",
+                "name": "hook",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "reason",
+                "type": "bytes"
+            }
+        ],
+        "name": "HookFailed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "uint256",
                 "name": "quoteId",

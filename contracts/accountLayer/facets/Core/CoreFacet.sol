@@ -10,7 +10,7 @@ import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
 import { AccountHubStorage, SubAccountData, VirtualAccountData, SubAccountCreationData, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountHubStorage.sol";
-import { AffiliateHubStorage, AffiliateState } from "../../storages/AffiliateHubStorage.sol";
+import { AffiliateHubStorage, AffiliateState, HookContext } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
@@ -129,6 +129,33 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		return results;
 	}
 
+	// ==================== Hook Callback ====================
+
+	function executeForAccount(bytes calldata callData) external {
+		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		HookContext memory ctx = afLayout.hookContext;
+
+		if (!ctx.isActive) revert NoActiveHookContext();
+
+		// Validate selector is whitelisted for this affiliate
+		bytes4 selector = bytes4(callData[:4]);
+		if (!afLayout.hookAllowedSelectors[ctx.affiliate][selector]) {
+			revert SelectorNotAllowed(selector);
+		}
+
+		// Execute on symmioCore on behalf of account
+		ISymmio symmio = ISymmio(ctx.symmioCore);
+		symmio.setSigner(ctx.account);
+		(bool success, bytes memory result) = ctx.symmioCore.call(callData);
+		symmio.setSigner(address(0));
+
+		if (!success) {
+			revert HookActionFailed(result);
+		}
+
+		emit HookActionExecuted(ctx.account, ctx.affiliate, selector);
+	}
+
 	// ==================== Internal Functions ====================
 
 	function _getSigner() internal view returns (address) {
@@ -175,6 +202,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		_callHook(
 			affiliate,
+			subAccountAddress,
+			data.symmioCore,
 			IAccountHubHook.onAccountCreation.selector,
 			abi.encodeWithSelector(IAccountHubHook.onAccountCreation.selector, sender, subAccountAddress, data.metadata)
 		);
@@ -223,6 +252,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		_callHook(
 			parent.affiliate,
+			reusedAccount,
+			parent.symmioCore,
 			IAccountHubHook.onVirtualAccountCreation.selector,
 			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount, v.metadata)
 		);
@@ -269,6 +300,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		_callHook(
 			parent.affiliate,
+			virtualAccount,
+			parent.symmioCore,
 			IAccountHubHook.onVirtualAccountCreation.selector,
 			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount, metadata)
 		);
@@ -300,6 +333,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		_callHook(
 			affiliate,
+			account,
+			core,
 			IAccountHubHook.onVirtualAccountDeletion.selector,
 			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountDeletion.selector, account)
 		);
@@ -430,11 +465,19 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		return address(0);
 	}
 
-	function _callHook(address affiliate, bytes4 selector, bytes memory data) private {
+	function _callHook(address affiliate, address account, address symmioCore, bytes4 selector, bytes memory data) private {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		address hook = afLayout.affiliates[affiliate].hooks[selector];
 		if (hook == address(0)) return;
+
+		// Set hook context before calling
+		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true });
+
 		(bool success, bytes memory result) = hook.call(data);
+
+		// Clear hook context after call
+		delete afLayout.hookContext;
+
 		if (!success) {
 			revert HookFailed(result);
 		}

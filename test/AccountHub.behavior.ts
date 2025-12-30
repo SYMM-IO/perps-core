@@ -1,9 +1,8 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
 import { expect } from "chai"
-import { BytesLike, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers"
+import { BytesLike, toUtf8Bytes, ZeroAddress } from "ethers"
 
 import { IAccountHubHook__factory, ISymmioHook__factory, MockAccountHubHook } from "../src/types/index.js"
-import { SubAccountCreationData } from "../src/types/accountLayer/storages/AccountHubStorage.sol/AccountHubStorage.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture } from "./helpers/network-helpers.js"
@@ -1416,6 +1415,9 @@ export function shouldBehaveLikeAccountHub(): void {
 					context.signers.user,
 				)
 
+				// Reset any executeForAccount callbacks to ensure clean state
+				await hookContract.resetExecuteForAccountTracking()
+
 				subAccountAddress = await createSubAccountAndDeposit(
 					context.signers.user,
 					[createSubAccountData("HOOK_TEST_ACCOUNT", 0)],
@@ -1691,6 +1693,144 @@ export function shouldBehaveLikeAccountHub(): void {
 					await expect(context.accountManager.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]))
 						.to.emit(hookEvents, "HookFailed")
 						.withArgs(context.accountLayerDiamond, SYMMIO_HOOK_SELECTORS.onCancelQuote, quoteId, expectedReason)
+				})
+			})
+
+			describe("executeForAccount hook callback", async () => {
+				const BIND_TO_PARTYB_SELECTOR = "0xbdd96b88" // bindToPartyB(address)
+
+				beforeEach(async () => {
+					// Set the AccountHub address in the mock hook
+					await hookContract.setAccountHub(context.accountLayerDiamond)
+
+					// Make hedger bindable
+					await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
+				})
+
+				it("should allow hook to execute action on behalf of account when selector is whitelisted", async () => {
+					// Whitelist bindToPartyB selector for this affiliate
+					const affiliateAddress = await context.accountManager.getAddress()
+					const bindToPartyBSelector = context.accountFacet.interface.getFunction("bindToPartyB").selector
+					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], true)
+
+					// Configure hook to call bindToPartyB
+					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
+
+					// Create a sub-account - hook should bind it to partyB
+					const subAccountData = [createSubAccountData("AUTO_BIND_ACCOUNT", 0)]
+					await context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, subAccountData)
+
+					const accounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const newAccount = accounts[accounts.length - 1]
+
+					// Verify the account was bound to partyB
+					const bindState = await context.viewFacet.getBindState(newAccount)
+					expect(bindState.status).to.equal(1) // BOUND
+					expect(bindState.partyB).to.equal(context.signers.hedger.address)
+
+					// Verify executeForAccount was called
+					expect(await hookContract.executeForAccountCallCount()).to.equal(1n)
+				})
+
+				it("should revert when hook tries to execute non-whitelisted selector", async () => {
+					// Do NOT whitelist the selector
+					const affiliateAddress = await context.accountManager.getAddress()
+
+					// Configure hook to call bindToPartyB (not whitelisted)
+					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
+
+					const subAccountData = [createSubAccountData("SHOULD_FAIL_ACCOUNT", 0)]
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, subAccountData),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
+				})
+
+				it("should revert when no active hook context", async () => {
+					// Try to call executeForAccount directly (not from a hook)
+					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+
+					await expect(context.alCoreFacet.executeForAccount(bindCallData)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"NoActiveHookContext",
+					)
+				})
+
+				it("should emit HookActionExecuted event on successful callback", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+					const bindToPartyBSelector = context.accountFacet.interface.getFunction("bindToPartyB").selector
+					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], true)
+
+					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
+
+					const subAccountData = [createSubAccountData("EVENT_TEST_ACCOUNT", 0)]
+
+					await expect(context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, subAccountData)).to.emit(
+						context.alCoreFacet,
+						"HookActionExecuted",
+					)
+				})
+
+				it("should allow admin to whitelist multiple selectors at once", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+					const bindToPartyBSelector = context.accountFacet.interface.getFunction("bindToPartyB").selector
+					const allocateSelector = context.accountFacet.interface.getFunction("allocate").selector
+
+					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector, allocateSelector], true)
+
+					// Both should be whitelisted now - verify by using bindToPartyB
+					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
+
+					const subAccountData = [createSubAccountData("MULTI_SELECTOR_ACCOUNT", 0)]
+					await expect(context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, subAccountData)).to.not.be
+						.reverted
+				})
+
+				it("should allow admin to revoke whitelisted selectors", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+					const bindToPartyBSelector = context.accountFacet.interface.getFunction("bindToPartyB").selector
+
+					// First whitelist
+					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], true)
+
+					// Then revoke
+					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], false)
+
+					// Configure hook to call bindToPartyB (now revoked)
+					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
+
+					const subAccountData = [createSubAccountData("REVOKED_SELECTOR_ACCOUNT", 0)]
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, subAccountData),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
+				})
+
+				it("should revert with SelectorNotAllowed when onVirtualAccountCreation hook uses non-whitelisted selector", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+					// Do NOT whitelist any selector
+
+					// Create a sub-account first without the callback (with deposit)
+					const parentAccount = await createSubAccountAndDeposit(
+						context.signers.user,
+						[createSubAccountData("PARENT_ACCOUNT_VA", 0)],
+						BALANCES.DEPOSIT_AMOUNT,
+					)
+
+					// Configure callback for virtual account creation with a non-whitelisted selector
+					const allocateCallData = context.accountFacet.interface.encodeFunctionData("allocate", [decimal(1n)])
+					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onVirtualAccountCreation, allocateCallData, true)
+
+					// Send quote which will create a virtual account - should fail because selector not whitelisted
+					await expect(sendQuoteAndGetVirtualAccount(parentAccount)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"HookFailed",
+					)
 				})
 			})
 		})

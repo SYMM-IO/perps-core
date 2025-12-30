@@ -105,6 +105,18 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		emit WhitelistedSymmioCoreSet(core, status);
 	}
 
+	function setHookAllowedSelectors(
+		address affiliate,
+		bytes4[] calldata selectors,
+		bool allowed
+	) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
+		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		for (uint256 i = 0; i < selectors.length; i++) {
+			afLayout.hookAllowedSelectors[affiliate][selectors[i]] = allowed;
+		}
+		emit HookAllowedSelectorsSet(affiliate, selectors, allowed);
+	}
+
 	// ==================== Internal Functions ====================
 
 	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
