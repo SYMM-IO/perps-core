@@ -19,6 +19,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
+import { LibHook } from "../../libraries/LibHook.sol";
 
 library PartyAFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -167,16 +168,8 @@ library PartyAFacetImpl {
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
-			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
-				}
-			}
-			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onCancelQuote.selector, quoteId, reason);
-				}
-			}
+			LibHook.safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
+			LibHook.safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
 		} else {
 			// Quote is locked
 			quote.quoteStatus = QuoteStatus.CANCEL_PENDING;

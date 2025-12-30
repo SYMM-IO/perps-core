@@ -426,5 +426,133 @@ export function shouldBehaveLikeHooks(): void {
       expect(closeFeeDiff).to.be.lte(closeFeeTolerance)
     })
   })
+
+  describe("hook signer protection (LibHook.safeCall)", () => {
+    it("Should prevent hook from impersonating user on openPosition", async function () {
+      const MaliciousHook = await ethers.getContractFactory("MaliciousHook")
+      const maliciousHook = await MaliciousHook.deploy()
+      await maliciousHook.waitForDeployment()
+
+      // Configure malicious hook
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await maliciousHook.getAddress())
+
+      // Set up the hook to try to deallocate user funds
+      await maliciousHook.setSymmioCore(context.diamond)
+      await maliciousHook.setDeallocateAmount(decimal(100n))
+
+      // Prepare a LONG quote
+      await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+      await hedger.lockQuote(1)
+
+      const openPrice = decimal(1n)
+      const filledAmount = await getQuoteQuantity(context, 1n)
+
+      // Open position - hook will try to deallocate as user
+      await expect(
+        hedger.openPosition(
+          1,
+          limitOpenRequestBuilder()
+            .filledAmount(filledAmount)
+            .openPrice(openPrice)
+            .price(decimal(1n, 17))
+            .build(),
+        ),
+      ).to.not.reverted
+
+      // Verify that the hook attempted reentry but failed
+      expect(await maliciousHook.attemptedReentry()).to.equal(true)
+      expect(await maliciousHook.reentrySucceeded()).to.equal(false)
+      expect(await maliciousHook.openCallCount()).to.equal(1n)
+
+      // Verify the hook emitted ReentryAttempted event with success=false
+      const filter = maliciousHook.filters.ReentryAttempted()
+      const events = await maliciousHook.queryFilter(filter)
+      expect(events.length).to.equal(1)
+      expect(events[0].args.success).to.equal(false)
+      expect(events[0].args.error.length).to.be.gt(0)
+    })
+
+    it("Should prevent hook from impersonating user on closePosition", async function () {
+      const MaliciousHook = await ethers.getContractFactory("MaliciousHook")
+      const maliciousHook = await MaliciousHook.deploy()
+      await maliciousHook.waitForDeployment()
+
+      // First, open a position without the malicious hook
+      await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+      await hedger.lockQuote(1)
+      const openPrice = decimal(1n)
+      const filledAmount = await getQuoteQuantity(context, 1n)
+      await hedger.openPosition(
+        1,
+        limitOpenRequestBuilder().filledAmount(filledAmount).openPrice(openPrice).price(decimal(1n, 17)).build(),
+      )
+
+      // Now configure malicious hook for the close
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await maliciousHook.getAddress())
+      await maliciousHook.setSymmioCore(context.diamond)
+      await maliciousHook.setDeallocateAmount(decimal(50n))
+
+      // Request close
+      await user.requestToClosePosition(1)
+
+      const closeFilled = filledAmount
+      const closePrice = decimal(1n)
+
+      // Fill close request - hook will try to deallocate as user
+      await expect(
+        hedger.fillCloseRequest(
+          1,
+          limitFillCloseRequestBuilder().filledAmount(closeFilled).closedPrice(closePrice).price(decimal(1n)).build(),
+        ),
+      ).to.not.reverted
+
+      // Verify that the hook attempted reentry but failed
+      expect(await maliciousHook.attemptedReentry()).to.equal(true)
+      expect(await maliciousHook.reentrySucceeded()).to.equal(false)
+      expect(await maliciousHook.closeCallCount()).to.equal(1n)
+
+      // Verify the hook emitted ReentryAttempted event with success=false
+      const filter = maliciousHook.filters.ReentryAttempted()
+      const events = await maliciousHook.queryFilter(filter)
+      expect(events.length).to.equal(1)
+      expect(events[0].args.success).to.equal(false)
+      expect(events[0].args.error.length).to.be.gt(0)
+    })
+
+    it("Should allow normal hook functionality while preventing impersonation", async function () {
+      const MockHook = await ethers.getContractFactory("MockHook")
+      const mockHook = await MockHook.deploy()
+      await mockHook.waitForDeployment()
+
+      await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await mockHook.getAddress())
+
+      // Prepare and open a position
+      await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+      await hedger.lockQuote(1)
+
+      const openPrice = decimal(1n)
+      const filledAmount = await getQuoteQuantity(context, 1n)
+
+      await hedger.openPosition(
+        1,
+        limitOpenRequestBuilder()
+          .filledAmount(filledAmount)
+          .openPrice(openPrice)
+          .price(decimal(1n, 17))
+          .build(),
+      )
+
+      // Verify normal hook functionality still works
+      const [oq, oamount, oprice, opartyA, opartyB, ocalls] = await mockHook.getLastOpenCall()
+      expect(oq).to.equal(1n)
+      expect(oamount).to.equal(filledAmount)
+      expect(oprice).to.equal(openPrice)
+      expect(ocalls).to.equal(1n)
+
+      // Verify fee callback also works
+      const [, , , , , , , feeCalls] = await mockHook.getLastOpenFeeCall()
+      expect(feeCalls).to.equal(1n)
+    })
+  })
 }
 
