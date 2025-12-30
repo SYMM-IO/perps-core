@@ -1,6 +1,5 @@
 import { toUtf8Bytes } from "ethers";
 
-import { AccountHub, AccountHubLens, AffiliateHub } from "../src/types/index.js";
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types/index.js";
 import { deployAccountHub } from "../tasks/deploy/accountHub.js";
 import { deployAffiliateHub } from "../tasks/deploy/affiliateHub.js";
