@@ -75,19 +75,6 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		emit SignerUpdated(oldSigner, _signer);
 	}
 
-	function deployAccountManager(
-		address affiliate,
-		address registrant,
-		string memory name
-	) external onlyRole(LibAccountLayerAccessibility.DEPLOYER_ROLE) whenNotPaused returns (address accountManager) {
-		accountManager = _deployAccountManager(registrant, name);
-		if (affiliate != accountManager) revert DeploymentFailed();
-
-		LibAccountLayerAccessibility.grantRole(accountManager, LibAccountLayerAccessibility.SIGNER_SETTER_ROLE);
-
-		emit AccountManagerDeployed(affiliate, accountManager);
-	}
-
 	// ==================== AffiliateHub Configuration ====================
 
 	function setSymmioFeeReceiver(address receiver) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
@@ -115,23 +102,5 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 			afLayout.hookAllowedSelectors[affiliate][selectors[i]] = allowed;
 		}
 		emit HookAllowedSelectorsSet(affiliate, selectors, allowed);
-	}
-
-	// ==================== Internal Functions ====================
-
-	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
-		bytes memory bytecode = abi.encodePacked(ahLayout.accountManagerImplementation, abi.encode(address(this)));
-
-		assembly {
-			accountManager := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
-		}
-
-		if (accountManager == address(0)) revert DeploymentFailed();
-	}
-
-	function _resolveAccountOwner(address) internal pure override returns (address) {
-		return address(0);
 	}
 }

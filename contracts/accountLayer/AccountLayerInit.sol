@@ -12,10 +12,9 @@ import { AccountLayerStorage } from "./storages/AccountLayerStorage.sol";
 import { AccountHubStorage } from "./storages/AccountHubStorage.sol";
 import { AffiliateHubStorage } from "./storages/AffiliateHubStorage.sol";
 import { LibAccountLayerAccessibility } from "./libraries/LibAccountLayerAccessibility.sol";
+import { IAccountLayerErrors } from "./interfaces/IAccountLayerErrors.sol";
 
-contract AccountLayerInit {
-	error ZeroAddress();
-	error EmptyArray();
+contract AccountLayerInit is IAccountLayerErrors {
 
 	function init(address admin, address symmioFeeReceiver, bytes calldata accountManagerImplementation) external {
 		if (admin == address(0)) revert ZeroAddress();

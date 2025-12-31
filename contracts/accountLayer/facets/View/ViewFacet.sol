@@ -9,6 +9,7 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 import { IViewFacet } from "./IViewFacet.sol";
 import { AccountHubStorage, SubAccountData, SubAccountDetail, VirtualAccountData, VirtualAccountDetail, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage, AffiliateData, AffiliateState, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
+import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
@@ -227,27 +228,15 @@ contract ViewFacet is IViewFacet {
 	// ==================== Signer and Core ====================
 
 	function getSigner() public view returns (address) {
-		address signer = AccountHubStorage.layout().globalSigner;
-		return signer == address(0) ? msg.sender : signer;
+		return LibAccountLayerUtils.getSigner();
 	}
 
 	function getRelatedCore(address account) public view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-
-		if (ahLayout.subAccounts[account].isExists) {
-			return ahLayout.subAccounts[account].symmioCore;
-		}
-
-		address parent = ahLayout.virtualAccounts[account].parentAccount;
-		if (parent != address(0)) {
-			return getRelatedCore(parent);
-		}
-
-		return _getLegacyCore(account);
+		return LibAccountLayerUtils.getRelatedCore(account);
 	}
 
 	function ownerOf(address account) external view returns (address) {
-		return _resolveAccountOwner(account);
+		return LibAccountLayerUtils.resolveAccountOwner(account);
 	}
 
 	function globalNonce() external view returns (uint256) {
@@ -350,46 +339,6 @@ contract ViewFacet is IViewFacet {
 			);
 	}
 
-	function _resolveAccountOwner(address account) internal view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-
-		address owner = ahLayout.subAccounts[account].owner;
-		if (owner != address(0)) {
-			return owner;
-		}
-
-		address parent = ahLayout.virtualAccounts[account].parentAccount;
-		if (parent != address(0)) {
-			address parentOwner = ahLayout.subAccounts[parent].owner;
-			if (parentOwner != address(0)) {
-				return parentOwner;
-			}
-		}
-
-		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address legacyOwner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (legacyOwner != address(0)) {
-				return legacyOwner;
-			}
-		}
-
-		return address(0);
-	}
-
-	function _getLegacyCore(address account) private view returns (address) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (owner != address(0)) {
-				return IMultiAccount(legacyAccounts[i]).symmioAddress();
-			}
-		}
-		revert("ViewFacet: Unable to retrieve core");
-	}
-
 	function _getClaimableFee(address affiliate, address symmio) private view returns (uint256) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		uint8 decimals = IERC20Metadata(ISymmio(symmio).getCollateral()).decimals();
@@ -397,44 +346,7 @@ contract ViewFacet is IViewFacet {
 		return balance / (10 ** (18 - decimals));
 	}
 
-	// ==================== Role Constants ====================
-
-	function DEFAULT_ADMIN_ROLE() external pure returns (bytes32) {
-		return keccak256("DEFAULT_ADMIN_ROLE");
-	}
-
-	function SETTER_ROLE() external pure returns (bytes32) {
-		return keccak256("SETTER_ROLE");
-	}
-
-	function PAUSER_ROLE() external pure returns (bytes32) {
-		return keccak256("PAUSER_ROLE");
-	}
-
-	function UNPAUSER_ROLE() external pure returns (bytes32) {
-		return keccak256("UNPAUSER_ROLE");
-	}
-
-	function SIGNER_SETTER_ROLE() external pure returns (bytes32) {
-		return keccak256("SIGNER_SETTER_ROLE");
-	}
-
-	function INSTANT_LAYER_ROLE() external pure returns (bytes32) {
-		return keccak256("INSTANT_LAYER_ROLE");
-	}
-
-	function DEPLOYER_ROLE() external pure returns (bytes32) {
-		return keccak256("DEPLOYER_ROLE");
-	}
-
-	function APPROVER_ROLE() external pure returns (bytes32) {
-		return keccak256("APPROVER_ROLE");
-	}
-
-	function DISTRIBUTOR_ROLE() external pure returns (bytes32) {
-		return keccak256("DISTRIBUTOR_ROLE");
-	}
-
+	// ==================== Constants ====================
 	function MAX_NAME_LENGTH() external pure returns (uint256) {
 		return 100;
 	}

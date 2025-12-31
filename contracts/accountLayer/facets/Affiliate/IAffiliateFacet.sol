@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { AffiliateRegistration, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
+import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
 
 interface IAffiliateFacetEvents {
 	event AffiliateRegistered(address indexed affiliate, string name);
@@ -27,7 +28,7 @@ interface IAffiliateFacetEvents {
 	event OperatorSet(address indexed affiliate, bytes4 indexed selector, address indexed operator, bool status);
 }
 
-interface IAffiliateFacet is IAffiliateFacetEvents {
+interface IAffiliateFacet is IAffiliateFacetEvents, IAccountLayerErrors {
 	// ==================== Affiliate Registration ====================
 
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external returns (address affiliateAddress);
@@ -78,20 +79,4 @@ interface IAffiliateFacet is IAffiliateFacetEvents {
 
 	function callAsAffiliate(address affiliate, address symmio, bytes calldata callData) external returns (bytes memory result);
 
-	// ==================== Custom Errors ====================
-
-	error ZeroAddress();
-	error InvalidShare();
-	error SharesMustSumTo100();
-	error AlreadyRegistered();
-	error NotAdmin();
-	error NotPending();
-	error AffiliateNotActive();
-	error NoWhitelistedSymmioCore();
-	error NoPendingUpdate();
-	error Unauthorized();
-	error InvalidState();
-	error InvalidNameLength();
-	error InvalidCallData();
-	error SymmioCoreNotAllowed();
 }

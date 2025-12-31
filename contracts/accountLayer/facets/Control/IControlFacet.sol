@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
+
 interface IControlFacetEvents {
 	event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
 	event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
@@ -16,7 +18,7 @@ interface IControlFacetEvents {
 	event HookAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
 }
 
-interface IControlFacet is IControlFacetEvents {
+interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	// ==================== Role Management ====================
 
 	function grantRole(address user, bytes32 role) external;
@@ -43,8 +45,6 @@ interface IControlFacet is IControlFacetEvents {
 
 	function setSigner(address _signer) external;
 
-	function deployAccountManager(address affiliate, address registrant, string memory name) external returns (address accountManager);
-
 	// ==================== AffiliateHub Configuration ====================
 
 	function setSymmioFeeReceiver(address receiver) external;
@@ -53,11 +53,4 @@ interface IControlFacet is IControlFacetEvents {
 
 	function setHookAllowedSelectors(address affiliate, bytes4[] calldata selectors, bool allowed) external;
 
-	// ==================== Custom Errors ====================
-
-	error ZeroAddress();
-	error EmptyArray();
-	error DeploymentFailed();
-	error MustHaveRole();
-	error MustBeRoleAdmin();
 }
