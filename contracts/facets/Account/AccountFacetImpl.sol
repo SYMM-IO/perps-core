@@ -398,9 +398,13 @@ library AccountFacetImpl {
 		layout.instantActionsModeDeactivateTime[signer] = 0;
 	}
 
-	// ---------------- ADL collateral lifecycle ----------------
+	// ---------------- Assurance collateral lifecycle ----------------
+	/**
+	 * @notice Handles collateral dedicated to ADL/assurance operations for PartyB.
+	 * @dev Allows deposit, withdrawal requests/approval, cancellation, and penalty application against assurance funds.
+	 */
 
-	function depositAdlCollateral(uint256 amount, address token) internal {
+	function depositAssuranceCollateral(uint256 amount, address token) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 
@@ -410,7 +414,7 @@ library AccountFacetImpl {
 		accountLayout.adlCollateral[signer][token] += amount;
 	}
 
-	function requestAdlWithdraw(uint256 amount, address token, address recipient) internal {
+	function requestAssuranceWithdraw(uint256 amount, address token, address recipient) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 
@@ -428,7 +432,7 @@ library AccountFacetImpl {
 		});
 	}
 
-	function acceptAdlWithdraw(address partyB, uint256 amount, address token) internal {
+	function acceptAssuranceWithdraw(address partyB, uint256 amount, address token) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		AdlWithdrawalRequest storage req = accountLayout.adlWithdrawalRequests[partyB];
 
@@ -448,7 +452,7 @@ library AccountFacetImpl {
 		IERC20(token).safeTransfer(recipient, amount);
 	}
 
-	function cancelAdlWithdraw() internal returns (address token, uint256 amount) {
+	function cancelAssuranceWithdraw() internal returns (address token, uint256 amount) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		AdlWithdrawalRequest storage req = accountLayout.adlWithdrawalRequests[signer];
@@ -464,7 +468,7 @@ library AccountFacetImpl {
 		req.token = address(0);
 	}
 
-	function applyAdlPenalty(address partyB, address token, uint256 amount, address recipient) internal {
+	function performSolverPenalty(address partyB, address token, uint256 amount, address recipient) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(amount > 0, "AccountFacet: invalid penalty");

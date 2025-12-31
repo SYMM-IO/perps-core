@@ -404,45 +404,62 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit DeactivateInstantActionMode(LibSigner.getSigner(), block.timestamp);
 	}
 
-	// ---------------- ADL collateral lifecycle ----------------
+	// ---------------- Assurance collateral lifecycle ----------------
 
-	function depositAdlCollateral(address token, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
+	/// @notice Deposit assurance collateral (PartyB-only) used to enable ADL.
+	/// @param token ERC20 token to deposit (token decimals, not normalized).
+	/// @param amount Amount to deposit.
+	function depositAssuranceCollateral(address token, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
 		address signer = LibSigner.getSigner();
-		AccountFacetImpl.depositAdlCollateral(amount, token);
-		emit AdlCollateralDeposited(signer, token, amount);
+		AccountFacetImpl.depositAssuranceCollateral(amount, token);
+		emit AssuranceCollateralDeposited(signer, token, amount);
 	}
 
-	function requestAdlWithdraw(address token, uint256 amount, address recipient)
+	/// @notice Request to withdraw assurance collateral to a specific recipient.
+	/// @param token ERC20 token to withdraw.
+	/// @param amount Amount to withdraw.
+	/// @param recipient Address receiving the withdrawal if approved.
+	function requestAssuranceWithdraw(address token, uint256 amount, address recipient)
 		external
 		whenNotAccountingPaused
 		notSuspended(LibSigner.getSigner())
 		onlyPartyB
 	{
-		AccountFacetImpl.requestAdlWithdraw(amount, token, recipient);
-		emit AdlWithdrawRequested(LibSigner.getSigner(), token, amount, recipient);
+		AccountFacetImpl.requestAssuranceWithdraw(amount, token, recipient);
+		emit AssuranceWithdrawRequested(LibSigner.getSigner(), token, amount, recipient);
 	}
 
-	function cancelAdlWithdraw() external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
-		(address token, uint256 amount) = AccountFacetImpl.cancelAdlWithdraw();
-		emit AdlWithdrawCancelled(LibSigner.getSigner(), token, amount);
+	/// @notice Cancel a pending assurance withdrawal request.
+	function cancelAssuranceWithdraw() external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
+		(address token, uint256 amount) = AccountFacetImpl.cancelAssuranceWithdraw();
+		emit AssuranceWithdrawCancelled(LibSigner.getSigner(), token, amount);
 	}
 
-	function acceptAdlWithdraw(address partyB, uint256 amount, address token)
+	/// @notice Approve a pending assurance withdrawal and transfer funds to the requested recipient.
+	/// @param partyB PartyB whose request is being approved.
+	/// @param amount Amount to withdraw.
+	/// @param token ERC20 token to withdraw.
+	function acceptAssuranceWithdraw(address partyB, uint256 amount, address token)
 		external
 		whenNotAccountingPaused
 		onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE)
 	{
-		AccountFacetImpl.acceptAdlWithdraw(partyB, amount, token);
-		emit AdlWithdrawApproved(partyB, token, amount);
+		AccountFacetImpl.acceptAssuranceWithdraw(partyB, amount, token);
+		emit AssuranceWithdrawApproved(partyB, token, amount);
 	}
 
-	function applyAdlPenalty(
+	/// @notice Apply a solver penalty against a PartyB's assurance collateral.
+	/// @param partyB Penalized PartyB.
+	/// @param token Token to deduct.
+	/// @param amount Penalty amount.
+	/// @param recipient Address receiving the penalty funds.
+	function performSolverPenalty(
 		address partyB,
 		address token,
 		uint256 amount,
 		address recipient
 	) external whenNotAccountingPaused onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		AccountFacetImpl.applyAdlPenalty(partyB, token, amount, recipient);
-		emit AdlPenaltyApplied(partyB, token, amount, recipient);
+		AccountFacetImpl.performSolverPenalty(partyB, token, amount, recipient);
+		emit SolverPenaltyApplied(partyB, token, amount, recipient);
 	}
 }

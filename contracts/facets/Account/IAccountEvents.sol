@@ -38,10 +38,10 @@ interface IAccountEvents {
 	event InitiateVirtualExternalTransfer(uint256 id, address sender, address receiver, uint256 amount,address target, address provider);
 	event AcceptVirtualExternalTransfer(uint256 id);
 	event CancelVirtualExternalTransfer(uint256 id);
-	// ADL collateral lifecycle
-	event AdlCollateralDeposited(address indexed partyB, address indexed token, uint256 amount);
-	event AdlWithdrawRequested(address indexed partyB, address indexed token, uint256 amount, address recipient);
-	event AdlWithdrawApproved(address indexed partyB, address indexed token, uint256 amount);
-	event AdlWithdrawCancelled(address indexed partyB, address indexed token, uint256 amount);
-	event AdlPenaltyApplied(address indexed partyB, address indexed token, uint256 amount, address recipient);
+	// Assurance collateral lifecycle
+	event AssuranceCollateralDeposited(address indexed partyB, address indexed token, uint256 amount);
+	event AssuranceWithdrawRequested(address indexed partyB, address indexed token, uint256 amount, address recipient);
+	event AssuranceWithdrawApproved(address indexed partyB, address indexed token, uint256 amount);
+	event AssuranceWithdrawCancelled(address indexed partyB, address indexed token, uint256 amount);
+	event SolverPenaltyApplied(address indexed partyB, address indexed token, uint256 amount, address recipient);
 }
