@@ -12,6 +12,7 @@ import { shouldBehaveLikeEmergencyClosePosition } from "./EmergencyClosePosition
 import { shouldBehaveLikeForceClosePosition } from "./ForceClosePosition.behavior.js"
 import { shouldBehaveLikeLiquidationFacet } from "./LiquidationFacet.behavior.js"
 import { shouldBehaveLikeFundingRate } from "./FundingRate.behavior.js"
+import { shouldBehaveLikePartyBPositionViews } from "./PartyBPositionViews.behavior.js"
 import { shouldBehaveLikeSpecificScenario } from "./SpecificScenario.behavior.js"
 import { shouldBehaveLikeBridgeFacet } from "./BridgeFacet.behavior.js"
 import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
@@ -76,6 +77,10 @@ describe("UnitTests", function () {
 
 		describe("FundingRate", async function () {
 			shouldBehaveLikeFundingRate()
+		})
+
+		describe("PartyBPositionViews", async function () {
+			shouldBehaveLikePartyBPositionViews()
 		})
 
 		describe("SpecificScenario", async function () {

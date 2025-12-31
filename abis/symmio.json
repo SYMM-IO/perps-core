@@ -5496,6 +5496,57 @@
             },
             {
                 "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyBTotalPositionAmounts",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.PartyBPositionBySymbol[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
                 "name": "symbolId",
                 "type": "uint256"
             }
@@ -5520,9 +5571,31 @@
                         "type": "uint256"
                     }
                 ],
-                "internalType": "struct IViewFacetQuote.TotalPositionAmount[]",
-                "name": "",
-                "type": "tuple[]"
+                "internalType": "struct IViewFacetQuote.TotalPositionAmount",
+                "name": "longPosition",
+                "type": "tuple"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.TotalPositionAmount",
+                "name": "shortPosition",
+                "type": "tuple"
             }
         ],
         "stateMutability": "view",
