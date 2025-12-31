@@ -4,7 +4,6 @@ import type {
 	AccountFacet,
 	BridgeFacet,
 	ClearingHouseFacet,
-	ControlFacet,
 	ADLFacet,
 	SymbolControlFacet,
 	PauseControlFacet,
