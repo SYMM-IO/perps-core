@@ -2371,4 +2371,82 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 		})
 	})
+
+	// ════════════════════════════════════════════════════════════════════════════
+	// ACCOUNT LAYER OPERATIONS VIA INSTANT LAYER
+	// ════════════════════════════════════════════════════════════════════════════
+
+	describe("AccountLayer Operations via InstantLayer", function () {
+		let subAccountAddress: string
+
+		beforeEach(async function () {
+			// Create a sub-account
+			await ctx.context.accountManager.connect(ctx.partyA1.signer).addAccount("testSubAccount")
+			const accounts = await ctx.context.accountManager.getAccounts(ctx.partyA1.address, 0, 100)
+			subAccountAddress = accounts[0].accountAddress
+
+			// Fund the sub-account with collateral
+			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, ethers.MaxUint256)
+			await ctx.context.collateral.connect(ctx.partyA1.signer).mint(subAccountAddress, decimal(100n))
+			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositFor(subAccountAddress, decimal(100n))
+		})
+
+		describe("addMarginToNextVA via signature", function () {
+			it("executes addMarginToNextVA when signed by account owner", async function () {
+				const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+				const amount = decimal(50n)
+				const isolationType = 1 // VirtualAccountIsolationType.MARKET
+				const symbolId = 1
+
+				// Encode the addMarginToNextVA call
+				const addMarginCallData = ctx.context.alMarginFacet.interface.encodeFunctionData("addMarginToNextVA", [
+					subAccountAddress,
+					isolationType,
+					symbolId,
+					amount,
+				])
+
+				// Create signed operation targeting AccountLayerDiamond
+				const op = createSignedOperation(
+					ctx.partyA1.address,
+					ctx.context.accountLayerDiamond,
+					addMarginCallData,
+					{ addr: subAccountAddress, isPartyB: false },
+					1n,
+					deadline,
+				)
+
+				const sig = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, op)
+
+				// Get balance before
+				const subAccountBalanceBefore = await ctx.context.viewFacet.balanceOf(subAccountAddress)
+
+				// Execute via InstantLayer and capture the transaction
+				const tx = await ctx.context.instantLayer.executeBatch([op], [sig])
+				const receipt = await tx.wait()
+
+				// Parse AddMargin event to get the predicted VA address
+				const addMarginEvent = receipt!.logs
+					.map((log: any) => {
+						try {
+							return ctx.context.alMarginFacet.interface.parseLog({ topics: [...log.topics], data: log.data })
+						} catch {
+							return null
+						}
+					})
+					.find((parsed: any) => parsed?.name === "AddMargin")
+
+				expect(addMarginEvent).to.not.be.undefined
+				const predictedVA = addMarginEvent!.args[0]
+
+				// Verify sub-account balance decreased
+				const subAccountBalanceAfter = await ctx.context.viewFacet.balanceOf(subAccountAddress)
+				expect(subAccountBalanceAfter).to.equal(subAccountBalanceBefore - amount)
+
+				// Verify virtual account received the funds (as allocated balance)
+				const vaAllocatedBalance = await ctx.context.viewFacet.allocatedBalanceOfPartyA(predictedVA)
+				expect(vaAllocatedBalance).to.equal(amount)
+			})
+		})
+	})
 }
