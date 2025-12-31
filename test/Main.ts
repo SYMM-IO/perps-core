@@ -1,32 +1,33 @@
-import { shouldBehaveLikeFuzzTest } from "./FuzzTest.behavior.js"
-import { shouldBehaveLikeSettleAndForceClosePosition } from "./SettleAndForceClosePosition.behavior.js"
-import { shouldBehaveLikeFeeDistributor } from "./FeeDistributor.behavior.js"
-import { shouldBehaveLikeDiamond } from "./Diamond.behavior.js"
-import { shouldBehaveLikeAccountFacet } from "./AccountFacet.behavior.js"
-import { shouldBehaveLikeSendQuote } from "./SendQuote.behavior.js"
-import { shouldBehaveLikeLockQuote } from "./LockQuote.behavior.js"
-import { shouldBehaveLikeOpenPosition } from "./OpenPosition.behavior.js"
-import { shouldBehaveLikeCancelQuote } from "./CancelQuote.behavior.js"
-import { shouldBehaveLikeClosePosition } from "./ClosePosition.behavior.js"
-import { shouldBehaveLikeEmergencyClosePosition } from "./EmergencyClosePosition.behavior.js"
-import { shouldBehaveLikeForceClosePosition } from "./ForceClosePosition.behavior.js"
-import { shouldBehaveLikeLiquidationFacet } from "./LiquidationFacet.behavior.js"
-import { shouldBehaveLikeFundingRate } from "./FundingRate.behavior.js"
-import { shouldBehaveLikeSpecificScenario } from "./SpecificScenario.behavior.js"
-import { shouldBehaveLikeBridgeFacet } from "./BridgeFacet.behavior.js"
-import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
-import { shouldBehaveLikeControlFacet } from "./ControlFacet.behavior.js"
-import { shouldBehaveLikeHooks } from "./Hooks.behavior.js"
-import { shouldBehaveLikeSettlement } from "./Settlement.behavior.js"
-import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior.js"
-import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior.js"
-import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior.js"
-import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior.js"
-import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior.js"
-import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior.js"
-import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior.js";
+import { shouldBehaveLikeADLFacet } from "./ADLFacet.behavior.js"
 import { shouldBehaveLikeAccessControlRoleAdmins } from "./AccessControlRoleAdmins.behavior.js"
+import { shouldBehaveLikeAccountFacet } from "./AccountFacet.behavior.js"
+import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior.js"
+import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior.js"
+import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior.js"
+import { shouldBehaveLikeBridgeFacet } from "./BridgeFacet.behavior.js"
+import { shouldBehaveLikeCancelQuote } from "./CancelQuote.behavior.js"
+import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior.js"
+import { shouldBehaveLikeClosePosition } from "./ClosePosition.behavior.js"
+import { shouldBehaveLikeControlFacet } from "./ControlFacet.behavior.js"
+import { shouldBehaveLikeDiamond } from "./Diamond.behavior.js"
+import { shouldBehaveLikeEmergencyClosePosition } from "./EmergencyClosePosition.behavior.js"
+import { shouldBehaveLikeFeeDistributor } from "./FeeDistributor.behavior.js"
+import { shouldBehaveLikeForceClosePosition } from "./ForceClosePosition.behavior.js"
+import { shouldBehaveLikeFundingRate } from "./FundingRate.behavior.js"
+import { shouldBehaveLikeFuzzTest } from "./FuzzTest.behavior.js"
+import { shouldBehaveLikeHooks } from "./Hooks.behavior.js"
+import { shouldBehaveLikeLiquidationFacet } from "./LiquidationFacet.behavior.js"
+import { shouldBehaveLikeLockQuote } from "./LockQuote.behavior.js"
 import { shouldBehaveLikeMasterAccountMigration } from "./MasterAccountMigration.behavior.js"
+import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
+import { shouldBehaveLikeOpenPosition } from "./OpenPosition.behavior.js"
+import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior.js"
+import { shouldBehaveLikeSendQuote } from "./SendQuote.behavior.js"
+import { shouldBehaveLikeSettleAndForceClosePosition } from "./SettleAndForceClosePosition.behavior.js"
+import { shouldBehaveLikeSettlement } from "./Settlement.behavior.js"
+import { shouldBehaveLikeSpecificScenario } from "./SpecificScenario.behavior.js"
+import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior.js"
+import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior.js"
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
@@ -34,7 +35,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeDiamond()
 		})
 
-		describe("AccountFacet", async function () {
+		describe.only("AccountFacet", async function () {
 			shouldBehaveLikeAccountFacet()
 		})
 
@@ -116,6 +117,10 @@ describe("UnitTests", function () {
 
 		describe("ClearingHouseFacet", async function () {
 			shouldBehaveLikeClearingHouseFacet()
+		})
+
+		describe("ADLFacet", async function () {
+			shouldBehaveLikeADLFacet()
 		})
 
 		describe("PartyBBatchActionsFacet", async function () {
