@@ -24,11 +24,7 @@ interface IViewFacet {
 
 	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory);
 
-	function getVirtualAccountsOfSubAccount(
-		address subAccount,
-		uint256 offset,
-		uint256 limit
-	) external view returns (VirtualAccountDetail[] memory);
+	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (VirtualAccountDetail[] memory);
 
 	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory);
 
@@ -93,8 +89,4 @@ interface IViewFacet {
 	function symmioFeeReceiver() external view returns (address);
 
 	function dryClaimAllFees(address affiliate, address symmio) external view returns (address[] memory holders, uint256[] memory shares);
-
-	// ==================== Constants ====================
-
-	function MAX_NAME_LENGTH() external pure returns (uint256);
 }

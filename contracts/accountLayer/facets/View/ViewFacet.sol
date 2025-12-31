@@ -7,10 +7,16 @@ pragma solidity >=0.8.18;
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { IViewFacet } from "./IViewFacet.sol";
-import { AccountHubStorage, SubAccountData, SubAccountDetail, VirtualAccountData, VirtualAccountDetail, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountHubStorage.sol";
-import { AffiliateHubStorage, AffiliateData, AffiliateState, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
+import {
+	AccountHubStorage,
+	SubAccountData,
+	SubAccountDetail,
+	VirtualAccountData,
+	VirtualAccountDetail,
+	VirtualAccountIsolationType
+} from "../../storages/AccountHubStorage.sol";
+import { AffiliateHubStorage, AffiliateState, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
-import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 contract ViewFacet is IViewFacet {
@@ -344,10 +350,5 @@ contract ViewFacet is IViewFacet {
 		uint8 decimals = IERC20Metadata(ISymmio(symmio).getCollateral()).decimals();
 		uint256 balance = ISymmio(symmio).balanceOf(afLayout.affiliates[affiliate].feeDetails.feeDistributor);
 		return balance / (10 ** (18 - decimals));
-	}
-
-	// ==================== Constants ====================
-	function MAX_NAME_LENGTH() external pure returns (uint256) {
-		return 100;
 	}
 }

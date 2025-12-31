@@ -54,7 +54,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		if (vData.quoteIds.length() != 0) revert OpenPositionsExist();
 
 		address parentAccount = vData.parentAccount;
-		address core = _getRelatedCore(parentAccount);
+		address core = LibAccountLayerUtils.getRelatedCore(parentAccount);
 
 		_deallocateAndTransferBalance(account, parentAccount, core);
 
@@ -81,21 +81,16 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
 		if (allocatedBalance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance));
+			LibAccountLayerUtils.executeWithSigner(account, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance));
 		}
 
 		uint256 balance = ISymmio(core).balanceOf(account);
 		if (balance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance));
+			LibAccountLayerUtils.executeWithSigner(
+				account,
+				abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance)
+			);
 		}
-	}
-
-	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
-		return LibAccountLayerUtils.executeWithSigner(account, callData);
-	}
-
-	function _getRelatedCore(address account) internal view returns (address) {
-		return LibAccountLayerUtils.getRelatedCore(account);
 	}
 
 	function _getAffiliateForAccount(address account) private view returns (address) {

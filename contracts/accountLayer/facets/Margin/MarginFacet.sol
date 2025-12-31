@@ -25,7 +25,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
 		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
 
-		_executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
+		LibAccountLayerUtils.executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
 
 		emit AddMargin(virtualAccount, parent, amount);
 	}
@@ -43,7 +43,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 
 		address predictedVA = _predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
 
-		_executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
+		LibAccountLayerUtils.executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
 
 		emit AddMargin(predictedVA, subAccount, amount);
 	}
@@ -59,17 +59,13 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
 		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
 
-		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.deallocate.selector, amount, upnlSig));
-		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parent, amount));
+		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.deallocate.selector, amount, upnlSig));
+		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parent, amount));
 
 		emit RemoveMargin(virtualAccount, parent, amount);
 	}
 
 	// ==================== Internal Functions ====================
-
-	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
-		return LibAccountLayerUtils.executeWithSigner(account, callData);
-	}
 
 	function _predictNextVirtualAccountAddress(
 		address subAccount,
