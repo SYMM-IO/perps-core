@@ -54,9 +54,10 @@ interface IViewFacetQuote {
 
 	function partyBPositionsCount(address partyB, address partyA) external view returns (uint256);
 
-	function getPartyBTotalPositionAmountsBySymbol(address partyB, uint256 symbolId) external view returns (TotalPositionAmount[] memory);
-
-	function getPartyBTotalPositionAmounts(address partyB) external view returns (PartyBPositionBySymbol[] memory);
+	function getPartyBTotalPositionAmountsBySymbol(
+		address partyB,
+		uint256 symbolId
+	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition);
 
 	function getPartyBTotalPositionAmounts(address partyB, uint256 offset, uint256 limit) external view returns (PartyBPositionBySymbol[] memory);
 

@@ -275,28 +275,20 @@ contract ViewFacetQuote is IViewFacetQuote {
 	 * @notice Returns total open position amounts and average open prices for a party B and symbol, grouped by position type.
 	 * @param partyB The address of party B.
 	 * @param symbolId The symbol ID.
-	 * @return amounts An array of position types with total open amounts and average open prices (LONG, SHORT).
+	 * @return longPosition Total open amount and avg open price for LONG positions.
+	 * @return shortPosition Total open amount and avg open price for SHORT positions.
 	 */
 	function getPartyBTotalPositionAmountsBySymbol(
 		address partyB,
 		uint256 symbolId
-	) external view returns (TotalPositionAmount[] memory amounts) {
+	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		amounts = new TotalPositionAmount[](2);
 		uint256 longAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalAmounts;
 		uint256 shortAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalAmounts;
 		uint256 longNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalNotionals;
 		uint256 shortNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalNotionals;
-		amounts[0] = TotalPositionAmount(
-			PositionType.LONG,
-			longAmount,
-			longAmount == 0 ? 0 : longNotional / longAmount
-		);
-		amounts[1] = TotalPositionAmount(
-			PositionType.SHORT,
-			shortAmount,
-			shortAmount == 0 ? 0 : shortNotional / shortAmount
-		);
+		longPosition = TotalPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
+		shortPosition = TotalPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
 	}
 
 	/**
@@ -311,27 +303,6 @@ contract ViewFacetQuote is IViewFacetQuote {
 		uint256 offset,
 		uint256 limit
 	) external view returns (PartyBPositionBySymbol[] memory results) {
-		return _getPartyBTotalPositionAmounts(partyB, offset, limit);
-	}
-
-	/**
-	 * @notice returns totals for all symbols (full list).
-	 * @dev Zero-amount entries are removed.
-	 * @param partyB The address of party B.
-	 */
-	function getPartyBTotalPositionAmounts(address partyB) external view returns (PartyBPositionBySymbol[] memory results) {
-		uint256 lastId = SymbolStorage.layout().lastId;
-		if (lastId == 0) {
-			return new PartyBPositionBySymbol[](0);
-		}
-		return _getPartyBTotalPositionAmounts(partyB, 0, lastId);
-	}
-
-	function _getPartyBTotalPositionAmounts(
-		address partyB,
-		uint256 offset,
-		uint256 limit
-	) internal view returns (PartyBPositionBySymbol[] memory results) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		uint256 totalSymbols = symbolLayout.lastId;
 		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {

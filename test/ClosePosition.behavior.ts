@@ -95,14 +95,13 @@ export function shouldBehaveLikeClosePosition(): void {
 			}
 		}
 
-		const amounts = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, symbolId)
-		expect(amounts.length).to.equal(2)
-		expect(amounts[0].positionType).to.equal(BigInt(PositionType.LONG))
-		expect(amounts[0].totalOpenAmount).to.equal(expectedLong)
-		expect(amounts[0].avgOpenPrice).to.equal(expectedLong === 0n ? 0n : expectedLongNotional / expectedLong)
-		expect(amounts[1].positionType).to.equal(BigInt(PositionType.SHORT))
-		expect(amounts[1].totalOpenAmount).to.equal(expectedShort)
-		expect(amounts[1].avgOpenPrice).to.equal(expectedShort === 0n ? 0n : expectedShortNotional / expectedShort)
+		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, symbolId)
+		expect(longPosition.positionType).to.equal(BigInt(PositionType.LONG))
+		expect(longPosition.totalOpenAmount).to.equal(expectedLong)
+		expect(longPosition.avgOpenPrice).to.equal(expectedLong === 0n ? 0n : expectedLongNotional / expectedLong)
+		expect(shortPosition.positionType).to.equal(BigInt(PositionType.SHORT))
+		expect(shortPosition.totalOpenAmount).to.equal(expectedShort)
+		expect(shortPosition.avgOpenPrice).to.equal(expectedShort === 0n ? 0n : expectedShortNotional / expectedShort)
 	})
 
 	describe("PartyB accumulated positions view", function () {
@@ -133,28 +132,11 @@ export function shouldBehaveLikeClosePosition(): void {
 				}
 			}
 
-			const view = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
-			expect(view[0].totalOpenAmount).to.equal(longAmount)
-			expect(view[0].avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
-			expect(view[1].totalOpenAmount).to.equal(shortAmount)
-			expect(view[1].avgOpenPrice).to.equal(shortAmount === 0n ? 0n : shortNotional / shortAmount)
-		})
-
-		it("wrapper without pagination returns same result as explicit full range", async function () {
-			const wrapperTotals = await (context.viewFacetQuote as any)["getPartyBTotalPositionAmounts(address)"](hedger.address)
-			const pagedTotals = await (context.viewFacetQuote as any)["getPartyBTotalPositionAmounts(address,uint256,uint256)"](
-				hedger.address,
-				0,
-				5,
-			)
-
-			expect(wrapperTotals.length).to.equal(pagedTotals.length)
-			for (let i = 0; i < wrapperTotals.length; i++) {
-				expect(wrapperTotals[i].symbolId).to.equal(pagedTotals[i].symbolId)
-				expect(wrapperTotals[i].positionType).to.equal(pagedTotals[i].positionType)
-				expect(wrapperTotals[i].totalOpenAmount).to.equal(pagedTotals[i].totalOpenAmount)
-				expect(wrapperTotals[i].avgOpenPrice).to.equal(pagedTotals[i].avgOpenPrice)
-			}
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+			expect(longPosition.totalOpenAmount).to.equal(longAmount)
+			expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
+			expect(shortPosition.totalOpenAmount).to.equal(shortAmount)
+			expect(shortPosition.avgOpenPrice).to.equal(shortAmount === 0n ? 0n : shortNotional / shortAmount)
 		})
 
 		describe("pagination and zero filtering", function () {
@@ -201,14 +183,14 @@ export function shouldBehaveLikeClosePosition(): void {
 				const sym1Short = findEntry(1n, PositionType.SHORT)
 				const sym2Short = findEntry(symbol2, PositionType.SHORT)
 
-				expect(sym1Long?.totalOpenAmount).to.equal(sym1Totals[0].totalOpenAmount)
-				expect(sym1Long?.avgOpenPrice).to.equal(sym1Totals[0].avgOpenPrice)
-				expect(sym1Short?.totalOpenAmount).to.equal(sym1Totals[1].totalOpenAmount)
-				expect(sym1Short?.avgOpenPrice).to.equal(sym1Totals[1].avgOpenPrice)
+				expect(sym1Long?.totalOpenAmount).to.equal(sym1Totals.longPosition.totalOpenAmount)
+				expect(sym1Long?.avgOpenPrice).to.equal(sym1Totals.longPosition.avgOpenPrice)
+				expect(sym1Short?.totalOpenAmount).to.equal(sym1Totals.shortPosition.totalOpenAmount)
+				expect(sym1Short?.avgOpenPrice).to.equal(sym1Totals.shortPosition.avgOpenPrice)
 
 				// sym2 only has a short entry
-				expect(sym2Short?.totalOpenAmount).to.equal(sym2Totals[1].totalOpenAmount)
-				expect(sym2Short?.avgOpenPrice).to.equal(sym2Totals[1].avgOpenPrice)
+				expect(sym2Short?.totalOpenAmount).to.equal(sym2Totals.shortPosition.totalOpenAmount)
+				expect(sym2Short?.avgOpenPrice).to.equal(sym2Totals.shortPosition.avgOpenPrice)
 
 				// symbol3 has no open positions and should not appear
 				const sym3Entry = aggregates.find((entry: any) => BigInt(entry.symbolId) === symbol3)
@@ -232,12 +214,11 @@ export function shouldBehaveLikeClosePosition(): void {
 			})
 
 			it("by symbol view returns zero entries when no positions exist", async function () {
-				const totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, Number(symbol3))
-				expect(totals.length).to.equal(2)
-				expect(totals[0].totalOpenAmount).to.equal(0n)
-				expect(totals[1].totalOpenAmount).to.equal(0n)
-				expect(totals[0].avgOpenPrice).to.equal(0n)
-				expect(totals[1].avgOpenPrice).to.equal(0n)
+				const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, Number(symbol3))
+				expect(longPosition.totalOpenAmount).to.equal(0n)
+				expect(shortPosition.totalOpenAmount).to.equal(0n)
+				expect(longPosition.avgOpenPrice).to.equal(0n)
+				expect(shortPosition.avgOpenPrice).to.equal(0n)
 			})
 		})
 
@@ -263,10 +244,10 @@ export function shouldBehaveLikeClosePosition(): void {
 				)
 
 			const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
-			expect(after[0].totalOpenAmount).to.equal(before[0].totalOpenAmount)
-			expect(after[0].avgOpenPrice).to.equal(before[0].avgOpenPrice)
-			expect(after[1].totalOpenAmount).to.equal(before[1].totalOpenAmount)
-			expect(after[1].avgOpenPrice).to.equal(before[1].avgOpenPrice)
+			expect(after.longPosition.totalOpenAmount).to.equal(before.longPosition.totalOpenAmount)
+			expect(after.longPosition.avgOpenPrice).to.equal(before.longPosition.avgOpenPrice)
+			expect(after.shortPosition.totalOpenAmount).to.equal(before.shortPosition.totalOpenAmount)
+			expect(after.shortPosition.avgOpenPrice).to.equal(before.shortPosition.avgOpenPrice)
 		})
 
 		it("resets totals after full liquidation flow", async function () {
@@ -287,9 +268,9 @@ export function shouldBehaveLikeClosePosition(): void {
 				.connect(liquidator)
 				.liquidatePositionsPartyA(await user.getAddress(), [quote1LongOpened.id, quote2ShortOpened.id, quote4LongOpened.id])
 
-			const totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
-			expect(totals[0].totalOpenAmount).to.equal(0n)
-			expect(totals[1].totalOpenAmount).to.equal(0n)
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+			expect(longPosition.totalOpenAmount).to.equal(0n)
+			expect(shortPosition.totalOpenAmount).to.equal(0n)
 		})
 
 		it("stays consistent after settlement adjustments", async function () {
@@ -305,10 +286,10 @@ export function shouldBehaveLikeClosePosition(): void {
 			await hedger.settleUpnl(await context.signers.user.getAddress(), [updatedPrice], settlementSig)
 
 			const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
-			expect(after[0].totalOpenAmount).to.equal(before[0].totalOpenAmount)
-			expect(after[0].avgOpenPrice).to.equal(before[0].avgOpenPrice)
-			expect(after[1].totalOpenAmount).to.equal(before[1].totalOpenAmount)
-			expect(after[1].avgOpenPrice).to.equal(before[1].avgOpenPrice)
+			expect(after.longPosition.totalOpenAmount).to.equal(before.longPosition.totalOpenAmount)
+			expect(after.longPosition.avgOpenPrice).to.equal(before.longPosition.avgOpenPrice)
+			expect(after.shortPosition.totalOpenAmount).to.equal(before.shortPosition.totalOpenAmount)
+			expect(after.shortPosition.avgOpenPrice).to.equal(before.shortPosition.avgOpenPrice)
 		})
 
 		it("removes totals after force close", async function () {
@@ -359,9 +340,9 @@ export function shouldBehaveLikeClosePosition(): void {
 
 			await user.forceClosePosition(quote1LongOpened.id, sig)
 
-			const totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, quote.symbolId)
-			expect(totals[0].totalOpenAmount).to.equal(before[0].totalOpenAmount - openAmountBefore)
-			expect(totals[1].totalOpenAmount).to.equal(before[1].totalOpenAmount)
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, quote.symbolId)
+			expect(longPosition.totalOpenAmount).to.equal(before.longPosition.totalOpenAmount - openAmountBefore)
+			expect(shortPosition.totalOpenAmount).to.equal(before.shortPosition.totalOpenAmount)
 		})
 	})
 
