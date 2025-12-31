@@ -69,6 +69,8 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 
 		LibAccountLayerUtils.callHook(
 			affiliate,
+			account,
+			core,
 			IAccountHubHook.onVirtualAccountDeletion.selector,
 			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountDeletion.selector, account)
 		);

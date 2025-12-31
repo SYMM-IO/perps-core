@@ -128,20 +128,15 @@ library LibAccountLayerUtils {
 		return address(0);
 	}
 
-	function callHook(address affiliate, bytes4 selector, bytes memory data) internal {
+	function callHook(address affiliate, address account, address symmioCore, bytes4 selector, bytes memory data) internal {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		address hook = afLayout.affiliates[affiliate].hooks[selector];
 		if (hook == address(0)) return;
-		(bool success, bytes memory result) = hook.call(data);
-		if (!success) {
-			revert IAccountLayerErrors.HookFailed(result);
-		}
-	}
 
-	function callHookWithContext(address affiliate, address account, address symmioCore, bytes4 selector, bytes memory data) internal {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		address hook = afLayout.affiliates[affiliate].hooks[selector];
-		if (hook == address(0)) return;
+		// Save and clear signer before external call to prevent hook from impersonating user
+		address previousSigner = ahLayout.globalSigner;
+		ahLayout.globalSigner = address(0);
 
 		// Set hook context before calling
 		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true });
@@ -150,6 +145,9 @@ library LibAccountLayerUtils {
 
 		// Clear hook context after call
 		delete afLayout.hookContext;
+
+		// Restore signer after hook call
+		ahLayout.globalSigner = previousSigner;
 
 		if (!success) {
 			revert IAccountLayerErrors.HookFailed(result);

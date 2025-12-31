@@ -191,7 +191,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		ahLayout.userToSubAccounts[sender].add(subAccountAddress);
 
-		LibAccountLayerUtils.callHookWithContext(
+		LibAccountLayerUtils.callHook(
 			affiliate,
 			subAccountAddress,
 			data.symmioCore,
@@ -241,7 +241,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			ahLayout.activeVAByKey[parentAccount][isolationType][symbolId] = reusedAccount;
 		}
 
-		LibAccountLayerUtils.callHookWithContext(
+		LibAccountLayerUtils.callHook(
 			parent.affiliate,
 			reusedAccount,
 			parent.symmioCore,
@@ -289,7 +289,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			symmio.setSigner(address(0));
 		}
 
-		LibAccountLayerUtils.callHookWithContext(
+		LibAccountLayerUtils.callHook(
 			parent.affiliate,
 			virtualAccount,
 			parent.symmioCore,
@@ -322,7 +322,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
 
-		LibAccountLayerUtils.callHookWithContext(
+		LibAccountLayerUtils.callHook(
 			affiliate,
 			account,
 			core,
