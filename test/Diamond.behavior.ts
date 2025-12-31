@@ -55,7 +55,7 @@ export function shouldBehaveLikeDiamond(): void {
 
 	it("should remove a function from ViewFacet -- getAccountBalance()", async function () {
 		const context: RunContext = this.context
-		const viewFacet = await ethers.getContractFactory("ViewFacet")
+		const viewFacet = await ethers.getContractFactory("contracts/facets/ViewFacet/ViewFacet.sol:ViewFacet")
 		const selectors = getSelectors(ethers, viewFacet as any).get(["balanceOf(address)"])
 		const viewFacetAddress = await context.diamondLoupeFacet.facetAddress(selectors[0])
 
@@ -83,7 +83,7 @@ export function shouldBehaveLikeDiamond(): void {
 
 	it("should add the getAccountBalance() function back", async function () {
 		const context: RunContext = this.context
-		const viewFacet = await ethers.getContractFactory("ViewFacet")
+		const viewFacet = await ethers.getContractFactory("contracts/facets/ViewFacet/ViewFacet.sol:ViewFacet")
 		const selectors = getSelectors(ethers, viewFacet as any).get(["balanceOf(address)"])
 		const allSelectors = getSelectors(ethers, viewFacet as any).selectors
 		const fallbackSelector = allSelectors.find(selector => selector !== selectors[0])

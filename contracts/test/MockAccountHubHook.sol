@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.18;
 
+interface ICoreFacetCallback {
+	function executeForAccount(bytes calldata callData) external;
+}
+
 /**
  * @title MockAccountHubHook
  * @notice Mock implementation of IAccountHubHook for testing AccountHub hook functionality
@@ -42,6 +46,21 @@ contract MockAccountHubHook {
 	/// @notice Whether to record calls (can be disabled for gas testing)
 	bool public recordCalls;
 
+	/// @notice AccountHub address for executeForAccount callback
+	address public accountHub;
+
+	/// @notice Maps selector to calldata to execute via executeForAccount
+	mapping(bytes4 => bytes) public executeForAccountCallData;
+
+	/// @notice Maps selector to whether executeForAccount should be called
+	mapping(bytes4 => bool) public shouldExecuteForAccount;
+
+	/// @notice Tracks successful executeForAccount calls
+	uint256 public executeForAccountCallCount;
+
+	/// @notice Last executeForAccount result
+	bool public lastExecuteForAccountSuccess;
+
 	// ==================== Events ===================
 
 	// ==================== Constructor ====================
@@ -73,6 +92,16 @@ contract MockAccountHubHook {
 			);
 		}
 
+		// Execute callback if configured
+		if (shouldExecuteForAccount[selector] && accountHub != address(0)) {
+			bytes memory callData = executeForAccountCallData[selector];
+			if (callData.length > 0) {
+				ICoreFacetCallback(accountHub).executeForAccount(callData);
+				executeForAccountCallCount++;
+				lastExecuteForAccountSuccess = true;
+			}
+		}
+
 		return returnValues[selector];
 	}
 
@@ -102,6 +131,16 @@ contract MockAccountHubHook {
 					callCount: selectorCallCount[selector]
 				})
 			);
+		}
+
+		// Execute callback if configured
+		if (shouldExecuteForAccount[selector] && accountHub != address(0)) {
+			bytes memory callData = executeForAccountCallData[selector];
+			if (callData.length > 0) {
+				ICoreFacetCallback(accountHub).executeForAccount(callData);
+				executeForAccountCallCount++;
+				lastExecuteForAccountSuccess = true;
+			}
 		}
 
 		return returnValues[selector];
@@ -188,6 +227,33 @@ contract MockAccountHubHook {
 	 */
 	function setRecordCalls(bool _recordCalls) external {
 		recordCalls = _recordCalls;
+	}
+
+	/**
+	 * @notice Sets the AccountHub address for executeForAccount callbacks
+	 * @param _accountHub The AccountHub contract address
+	 */
+	function setAccountHub(address _accountHub) external {
+		accountHub = _accountHub;
+	}
+
+	/**
+	 * @notice Configures a hook to call executeForAccount with specific calldata
+	 * @param selector The hook selector that should trigger the callback
+	 * @param callData The calldata to pass to executeForAccount
+	 * @param enabled Whether to enable the callback
+	 */
+	function setExecuteForAccountCallback(bytes4 selector, bytes memory callData, bool enabled) external {
+		executeForAccountCallData[selector] = callData;
+		shouldExecuteForAccount[selector] = enabled;
+	}
+
+	/**
+	 * @notice Resets executeForAccount tracking
+	 */
+	function resetExecuteForAccountTracking() external {
+		executeForAccountCallCount = 0;
+		lastExecuteForAccountSuccess = false;
 	}
 
 	/**

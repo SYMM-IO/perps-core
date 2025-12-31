@@ -12,23 +12,23 @@ export interface CloseRequest {
 	deadline: Promise<bigint> | bigint;
 }
 
-const limitDefaultCloseRequest: CloseRequest = {
+const buildLimitDefaultCloseRequest = (): CloseRequest => ({
 	quantityToClose: decimal(100n),
 	closePrice: decimal(1n),
 	price: decimal(1n),
 	upnl: 0n,
 	orderType: OrderType.LIMIT,
 	deadline: getBlockTimestamp(500n) as Promise<bigint>,
-}
+})
 
-const marketDefaultCloseRequest: CloseRequest = {
+const buildMarketDefaultCloseRequest = (): CloseRequest => ({
 	quantityToClose: decimal(1000n),
 	closePrice: decimal(1n),
 	price: decimal(1n),
 	upnl: 0n,
 	orderType: OrderType.MARKET,
 	deadline: getBlockTimestamp(500n) as Promise<bigint>,
-}
+})
 
-export const limitCloseRequestBuilder = () => Builder(limitDefaultCloseRequest)
-export const marketCloseRequestBuilder = () => Builder(marketDefaultCloseRequest)
+export const limitCloseRequestBuilder = () => Builder(buildLimitDefaultCloseRequest())
+export const marketCloseRequestBuilder = () => Builder(buildMarketDefaultCloseRequest())

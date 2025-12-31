@@ -1,9 +1,9 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { ControlFacet } from "../../src/types/index.js"
 import { writeData } from "../utils/fs.js"
-import { deployAccountHub } from "./accountHub.js"
-import { deployAffiliateHub } from "./affiliateHub.js"
+import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"
 import { deployDiamond } from "./diamond.js"
 import { getConnection } from "./helpers.js"
 import { deployInstantLayer } from "./instantLayer.js"
@@ -38,9 +38,7 @@ interface SystemDeploymentReport {
 interface DeployedContracts {
 	collateral?: string
 	diamond?: string
-	affiliateHub?: string
-	accountHub?: string
-	accountHubLens?: string
+	accountLayerDiamond?: string
 	instantLayer?: string
 	symmioPartyB?: string
 	accountManager?: string
@@ -57,6 +55,8 @@ async function getEnvConfig(hre: any) {
 	// Default to true unless explicitly set to "false"
 	const deployPartyB = process.env.DEPLOY_PARTYB !== "false"
 	const registerDummyAffiliate = process.env.REGISTER_DUMMY_AFFILIATE !== "false"
+	// Optional signer address for SymmioPartyB (ERC-1271 signature verification)
+	const partyBSigner = process.env.PARTYB_SIGNER || ""
 
 	return {
 		admin,
@@ -64,6 +64,7 @@ async function getEnvConfig(hre: any) {
 		collateralAddress,
 		deployPartyB,
 		registerDummyAffiliate,
+		partyBSigner,
 	}
 }
 
@@ -84,6 +85,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			console.log(`Symmio Fee Receiver: ${config.symmioFeeReceiver}`)
 			console.log(`Collateral Address: ${config.collateralAddress || "(will deploy FakeStablecoin)"}`)
 			console.log(`Deploy PartyB: ${config.deployPartyB}`)
+			console.log(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
 			console.log(`Register Dummy Affiliate: ${config.registerDummyAffiliate}`)
 			console.log("=".repeat(80))
 			console.log()
@@ -110,7 +112,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					console.log(`FakeStablecoin deployed at: ${deployedContracts.collateral}`)
 					deploymentResults.push({
 						contract: "FakeStablecoin",
-						address: deployedContracts.collateral,
+						address: deployedContracts.collateral!,
 						status: "success",
 						timestamp: new Date().toISOString(),
 					})
@@ -153,26 +155,26 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			}
 			console.log()
 
-			// Step 3: Deploy AffiliateHub
-			console.log("Step 3: Deploying AffiliateHub...")
+			// Step 3: Deploy AccountLayer Diamond (replaces AccountHub + AffiliateHub)
+			console.log("Step 3: Deploying AccountLayer Diamond...")
 			try {
-				const affiliateHub = await deployAffiliateHub(hre, {
-					admin: config.admin,
-					symmiofeereceiver: config.symmioFeeReceiver,
+				const accountLayerResult = await deployAccountLayerDiamond(hre, {
+					admin: deployer,
+					symmioFeeReceiver: deployer,
 					logData,
 				})
-				deployedContracts.affiliateHub = await affiliateHub.getAddress()
-				console.log(`AffiliateHub deployed at: ${deployedContracts.affiliateHub}`)
+				deployedContracts.accountLayerDiamond = accountLayerResult.diamond
+				console.log(`AccountLayerDiamond deployed at: ${deployedContracts.accountLayerDiamond}`)
 				deploymentResults.push({
-					contract: "AffiliateHub",
-					address: deployedContracts.affiliateHub,
+					contract: "AccountLayerDiamond",
+					address: deployedContracts.accountLayerDiamond,
 					status: "success",
 					timestamp: new Date().toISOString(),
 				})
 			} catch (err: any) {
-				console.error(`Failed to deploy AffiliateHub: ${err.message}`)
+				console.error(`Failed to deploy AccountLayerDiamond: ${err.message}`)
 				deploymentResults.push({
-					contract: "AffiliateHub",
+					contract: "AccountLayerDiamond",
 					address: "N/A",
 					status: "failed",
 					error: err.message,
@@ -182,64 +184,8 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			}
 			console.log()
 
-			// Step 4: Deploy AccountHub
-			console.log("Step 4: Deploying AccountHub...")
-			try {
-				const accountHub = await deployAccountHub(hre, {
-					admin: config.admin,
-					affiliatehubaddress: deployedContracts.affiliateHub!,
-					logData,
-				})
-				deployedContracts.accountHub = await accountHub.getAddress()
-				console.log(`AccountHub deployed at: ${deployedContracts.accountHub}`)
-				deploymentResults.push({
-					contract: "AccountHub",
-					address: deployedContracts.accountHub,
-					status: "success",
-					timestamp: new Date().toISOString(),
-				})
-			} catch (err: any) {
-				console.error(`Failed to deploy AccountHub: ${err.message}`)
-				deploymentResults.push({
-					contract: "AccountHub",
-					address: "N/A",
-					status: "failed",
-					error: err.message,
-					timestamp: new Date().toISOString(),
-				})
-				throw err
-			}
-			console.log()
-
-			// Step 5: Deploy AccountHubLens
-			console.log("Step 5: Deploying AccountHubLens...")
-			try {
-				const AccountHubLensFactory = await ethers.getContractFactory("AccountHubLens")
-				const accountHubLens = await AccountHubLensFactory.deploy(deployedContracts.accountHub!)
-				await accountHubLens.waitForDeployment()
-				deployedContracts.accountHubLens = await accountHubLens.getAddress()
-				console.log(`AccountHubLens deployed at: ${deployedContracts.accountHubLens}`)
-				deploymentResults.push({
-					contract: "AccountHubLens",
-					address: deployedContracts.accountHubLens,
-					status: "success",
-					timestamp: new Date().toISOString(),
-				})
-			} catch (err: any) {
-				console.error(`Failed to deploy AccountHubLens: ${err.message}`)
-				deploymentResults.push({
-					contract: "AccountHubLens",
-					address: "N/A",
-					status: "failed",
-					error: err.message,
-					timestamp: new Date().toISOString(),
-				})
-				throw err
-			}
-			console.log()
-
-			// Step 6: Deploy InstantLayer
-			console.log("Step 6: Deploying InstantLayer...")
+			// Step 4: Deploy InstantLayer
+			console.log("Step 4: Deploying InstantLayer...")
 			try {
 				const instantLayer = await deployInstantLayer(hre, {
 					symmioaddress: deployedContracts.diamond!,
@@ -267,9 +213,9 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			}
 			console.log()
 
-			// Step 7: Optionally Deploy SymmioPartyB
+			// Step 5: Optionally Deploy SymmioPartyB
 			if (config.deployPartyB) {
-				console.log("Step 7: Deploying SymmioPartyB...")
+				console.log("Step 5: Deploying SymmioPartyB...")
 				try {
 					const symmioPartyB = await deploySymmioPartyB(hre, {
 						symmioAddress: deployedContracts.diamond!,
@@ -298,14 +244,14 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				console.log()
 			}
 
-			// Step 8: Setup system - roles and connections
-			console.log("Step 8: Setting up system roles and connections...")
+			// Step 6: Setup system - roles and connections
+			console.log("Step 6: Setting up system roles and connections...")
 			await setupSystem(hre, deployedContracts, config)
 			console.log()
 
-			// Step 9: Optionally register dummy affiliate
+			// Step 7: Optionally register dummy affiliate
 			if (config.registerDummyAffiliate) {
-				console.log("Step 9: Registering dummy affiliate...")
+				console.log("Step 7: Registering dummy affiliate...")
 				const accountManagerAddress = await registerDummyAffiliate(hre, deployedContracts, config)
 				if (accountManagerAddress) {
 					deployedContracts.accountManager = accountManagerAddress
@@ -342,9 +288,8 @@ async function setupSystem(hre: any, deployedContracts: DeployedContracts, confi
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
 
-	const controlFacet = await ethers.getContractAt("ControlFacet", deployedContracts.diamond!)
-	const accountHub = await ethers.getContractAt("AccountHub", deployedContracts.accountHub!)
-	const affiliateHub = await ethers.getContractAt("AffiliateHub", deployedContracts.affiliateHub!)
+	const controlFacet = await ethers.getContractAt("contracts/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
+	const alControlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.accountLayerDiamond!)
 	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
 
 	// Helper to get role hash
@@ -387,39 +332,28 @@ async function setupSystem(hre: any, deployedContracts: DeployedContracts, confi
 		await controlFacet.connect(deployer).grantRole(config.admin, roleHash(role))
 	}
 
-	// Grant SIGNER_ADMIN_ROLE and AFFILIATE_MANAGER_ROLE to AffiliateHub
-	console.log("  Granting roles to AffiliateHub on Diamond...")
-	await controlFacet.connect(deployer).grantRole(deployedContracts.affiliateHub!, roleHash("SIGNER_ADMIN_ROLE"))
-	await controlFacet.connect(deployer).grantRole(deployedContracts.affiliateHub!, roleHash("AFFILIATE_MANAGER_ROLE"))
-
-	// Grant SIGNER_ADMIN_ROLE and INTERNAL_TRANSFER_TO_BALANCE_ROLE to AccountHub
-	console.log("  Granting roles to AccountHub on Diamond...")
-	await controlFacet.connect(deployer).grantRole(deployedContracts.accountHub!, roleHash("SIGNER_ADMIN_ROLE"))
-	await controlFacet.connect(deployer).grantRole(deployedContracts.accountHub!, roleHash("INTERNAL_TRANSFER_TO_BALANCE_ROLE"))
+	// Grant roles to AccountLayerDiamond on Core Diamond
+	console.log("  Granting roles to AccountLayerDiamond on Diamond...")
+	await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("SIGNER_ADMIN_ROLE"))
+	await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("AFFILIATE_MANAGER_ROLE"))
+	await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("INTERNAL_TRANSFER_TO_BALANCE_ROLE"))
 
 	// Grant INSTANT_LAYER_ROLE to InstantLayer on Diamond
 	console.log("  Granting INSTANT_LAYER_ROLE to InstantLayer on Diamond...")
 	await controlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("INSTANT_LAYER_ROLE"))
 
-	// Setup AffiliateHub
-	console.log("  Setting up AffiliateHub...")
-	await affiliateHub.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin)
-	await affiliateHub.connect(deployer).grantRole(roleHash("APPROVER_ROLE"), config.admin)
-	await affiliateHub.connect(deployer).setAccountHub(deployedContracts.accountHub!)
-	await affiliateHub.connect(deployer).setWhitelistedSymmioCore(deployedContracts.diamond!, true)
-
-	// Setup AccountHub
-	console.log("  Setting up AccountHub...")
-	await accountHub.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin)
-	await accountHub.connect(deployer).grantRole(roleHash("PAUSER_ROLE"), config.admin)
-	await accountHub.connect(deployer).grantRole(roleHash("UNPAUSER_ROLE"), config.admin)
-	await accountHub.connect(deployer).grantRole(roleHash("DEPLOYER_ROLE"), deployedContracts.affiliateHub!)
-	await accountHub.connect(deployer).grantRole(roleHash("INSTANT_LAYER_ROLE"), deployedContracts.instantLayer!)
-	await accountHub.connect(deployer).setAccountHubLens(deployedContracts.accountHubLens!)
+	// Setup AccountLayerDiamond
+	console.log("  Setting up AccountLayerDiamond...")
+	await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("SETTER_ROLE"))
+	await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("APPROVER_ROLE"))
+	await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("PAUSER_ROLE"))
+	await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("UNPAUSER_ROLE"))
+	await alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("INSTANT_LAYER_ROLE"))
+	await alControlFacet.connect(deployer).setWhitelistedSymmioCore(deployedContracts.diamond!, true)
 
 	// Setup InstantLayer
 	console.log("  Setting up InstantLayer...")
-	await instantLayer.connect(deployer).setAccountHub(deployedContracts.accountHub!)
+	await instantLayer.connect(deployer).setAccountHub(deployedContracts.accountLayerDiamond!)
 
 	// Configure Diamond system parameters (like in tests)
 	console.log("  Configuring Diamond system parameters...")
@@ -437,14 +371,43 @@ async function setupSystem(hre: any, deployedContracts: DeployedContracts, confi
 	await controlFacet.connect(deployer).setMaxPartyAConnectionLimit(5)
 	await controlFacet.connect(deployer).setInvalidBridgedAmountsPool(config.admin)
 
+	// Setup InstantLayer roles and whitelist
+	console.log("  Granting SETTER_ROLE on InstantLayer to admin...")
+	await instantLayer.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin)
+
+	console.log("  Whitelisting Symmio (Diamond) on InstantLayer...")
+	await instantLayer.connect(deployer).setTargetWhitelist(deployedContracts.diamond!, true)
+
+	console.log("  Whitelisting AccountLayerDiamond on InstantLayer...")
+	await instantLayer.connect(deployer).setTargetWhitelist(deployedContracts.accountLayerDiamond!, true)
+
 	// Register and setup PartyB if deployed
 	if (deployedContracts.symmioPartyB) {
 		console.log("  Registering SymmioPartyB in Diamond...")
 		await controlFacet.connect(deployer).registerPartyB(deployedContracts.symmioPartyB)
 
-		console.log("  Granting TRUSTED_ROLE to InstantLayer in SymmioPartyB...")
 		const symmioPartyB = await ethers.getContractAt("SymmioPartyB", deployedContracts.symmioPartyB)
+
+		console.log("  Granting TRUSTED_ROLE to InstantLayer on SymmioPartyB...")
 		await symmioPartyB.connect(deployer).grantRole(roleHash("TRUSTED_ROLE"), deployedContracts.instantLayer!)
+
+		console.log("  Granting MANAGER_ROLE to admin on SymmioPartyB...")
+		await symmioPartyB.connect(deployer).grantRole(roleHash("MANAGER_ROLE"), config.admin)
+
+		console.log("  Granting SETTER_ROLE to admin on SymmioPartyB...")
+		await symmioPartyB.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin)
+
+		console.log("  Setting multicastWhitelist for InstantLayer on SymmioPartyB...")
+		await symmioPartyB.connect(deployer).setMulticastWhitelist(deployedContracts.instantLayer!, true)
+
+		// Set signer on SymmioPartyB if configured
+		if (config.partyBSigner) {
+			console.log("  Setting signer on SymmioPartyB...")
+			await symmioPartyB.connect(deployer).setSigner(config.partyBSigner)
+		}
+
+		console.log("  Registering SymmioPartyB on InstantLayer (also grants OPERATOR_ROLE)...")
+		await instantLayer.connect(deployer).registerPartyBs([deployedContracts.symmioPartyB])
 	}
 
 	console.log("  System setup complete!")
@@ -458,7 +421,7 @@ async function registerDummyAffiliate(
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
 
-	const affiliateHub = await ethers.getContractAt("AffiliateHub", deployedContracts.affiliateHub!)
+	const alAffiliateFacet = await ethers.getContractAt("contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet", deployedContracts.accountLayerDiamond!)
 
 	console.log("  Registering dummy affiliate...")
 
@@ -479,13 +442,13 @@ async function registerDummyAffiliate(
 	}
 
 	// Get predicted account manager address
-	const accountManagerAddress = await affiliateHub.connect(deployer).requestToRegisterAffiliate.staticCall(affiliateData)
+	const accountManagerAddress = await alAffiliateFacet.connect(deployer).requestToRegisterAffiliate.staticCall(affiliateData)
 
 	// Actually register
-	await affiliateHub.connect(deployer).requestToRegisterAffiliate(affiliateData)
+	await alAffiliateFacet.connect(deployer).requestToRegisterAffiliate(affiliateData)
 
 	console.log("  Approving affiliate...")
-	await affiliateHub.connect(deployer).approveAffiliate(accountManagerAddress)
+	await alAffiliateFacet.connect(deployer).approveAffiliate(accountManagerAddress)
 
 	console.log(`  Dummy affiliate registered! AccountManager: ${accountManagerAddress}`)
 
@@ -524,14 +487,12 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 
 	console.log("DEPLOYED ADDRESSES")
 	console.log("-".repeat(80))
-	if (deployedContracts.collateral) console.log(`Collateral:       ${deployedContracts.collateral}`)
-	if (deployedContracts.diamond) console.log(`Diamond:          ${deployedContracts.diamond}`)
-	if (deployedContracts.affiliateHub) console.log(`AffiliateHub:     ${deployedContracts.affiliateHub}`)
-	if (deployedContracts.accountHub) console.log(`AccountHub:       ${deployedContracts.accountHub}`)
-	if (deployedContracts.accountHubLens) console.log(`AccountHubLens:   ${deployedContracts.accountHubLens}`)
-	if (deployedContracts.instantLayer) console.log(`InstantLayer:     ${deployedContracts.instantLayer}`)
-	if (deployedContracts.symmioPartyB) console.log(`SymmioPartyB:     ${deployedContracts.symmioPartyB}`)
-	if (deployedContracts.accountManager) console.log(`AccountManager:   ${deployedContracts.accountManager}`)
+	if (deployedContracts.collateral) console.log(`Collateral:           ${deployedContracts.collateral}`)
+	if (deployedContracts.diamond) console.log(`Diamond:              ${deployedContracts.diamond}`)
+	if (deployedContracts.accountLayerDiamond) console.log(`AccountLayerDiamond:  ${deployedContracts.accountLayerDiamond}`)
+	if (deployedContracts.instantLayer) console.log(`InstantLayer:         ${deployedContracts.instantLayer}`)
+	if (deployedContracts.symmioPartyB) console.log(`SymmioPartyB:         ${deployedContracts.symmioPartyB}`)
+	if (deployedContracts.accountManager) console.log(`AccountManager:       ${deployedContracts.accountManager}`)
 	console.log()
 
 	console.log("CONFIGURATION")

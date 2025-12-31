@@ -15,7 +15,7 @@ import { marketOpenRequestBuilder, OpenRequest } from "./models/requestModels/Op
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
 import { decimal, PromiseOrValue } from "./utils/Common.js"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
-import { SymmioPartyB } from "../src/types/index.js"
+import type { SymmioPartyB } from "../src/types/index.js"
 
 async function getListFormatOfQuoteRequest(request: QuoteRequest): Promise<any> {
 	return [

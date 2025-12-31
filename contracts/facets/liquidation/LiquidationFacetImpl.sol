@@ -17,7 +17,7 @@ import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/Q
 import { LiquidationSig, SingleUpnlSig, QuotePriceSig, MuonStorage } from "../../storages/MuonStorage.sol";
 import { LiquidationType, LiquidationDetail, SettlementState, Price, AccountStorage } from "../../storages/AccountStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
-
+import { LibHook } from "../../libraries/LibHook.sol";
 
 library LiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -194,8 +194,8 @@ library LiquidationFacetImpl {
 				settlementState.actualAmount += pnlWithFunding;
 				settlementState.expectedAmount = settlementState.actualAmount;
 			} else if (liquidationDetail.liquidationType == LiquidationType.LATE) {
-				settlementState.cva += quote.lockedValues.cva -
-					((quote.lockedValues.cva * liquidationDetail.deficit) / accountLayout.lockedBalances[partyA].cva);
+				settlementState.cva +=
+					quote.lockedValues.cva - ((quote.lockedValues.cva * liquidationDetail.deficit) / accountLayout.lockedBalances[partyA].cva);
 
 				settlementState.actualAmount += pnlWithFunding;
 				settlementState.expectedAmount = settlementState.actualAmount;
@@ -205,8 +205,7 @@ library LiquidationFacetImpl {
 					settlementState.expectedAmount += pnlWithFunding;
 				} else {
 					uint256 lossAmount = uint256(-pnlWithFunding);
-					uint256 adjustedLoss = lossAmount -
-						((lossAmount * liquidationDetail.deficit) / uint256(-liquidationDetail.totalUnrealizedLoss));
+					uint256 adjustedLoss = lossAmount - ((lossAmount * liquidationDetail.deficit) / uint256(-liquidationDetail.totalUnrealizedLoss));
 					settlementState.actualAmount -= int256(adjustedLoss);
 					settlementState.expectedAmount -= int256(lossAmount);
 				}
@@ -214,9 +213,7 @@ library LiquidationFacetImpl {
 			accountLayout.partyBLockedBalances[quote.partyB][partyA].subQuote(quote);
 			uint256 liquidationPrice = accountLayout.symbolsPrices[partyA][quote.symbolId].price;
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			quote.avgClosedPrice =
-				(quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) /
-				(quote.closedAmount + openAmount);
+			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) / (quote.closedAmount + openAmount);
 
 			LibQuote.subFromPartyBOpenPositionAmounts(quote, openAmount);
 			quote.closedAmount = quote.quantity;
@@ -243,16 +240,16 @@ library LiquidationFacetImpl {
 
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
-			if (affiliateHook != address(0)) {
-				try
-					ISymmioHook(affiliateHook).onClosePosition(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)
-				{} catch {}
-			}
-			if (systemHook != address(0)) {
-				try
-					ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)
-				{} catch {}
-			}
+			LibHook.safeCall(
+				affiliateHook,
+				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)),
+				quote.id
+			);
+			LibHook.safeCall(
+				systemHook,
+				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)),
+				quote.id
+			);
 			averageClosedPrices[index] = quote.avgClosedPrice;
 
 			// Track unique partyBs
@@ -421,9 +418,7 @@ library LiquidationFacetImpl {
 
 			uint256 liquidationPrice = priceSig.prices[i];
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			quote.avgClosedPrice =
-				(quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) /
-				(quote.closedAmount + openAmount);
+			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) / (quote.closedAmount + openAmount);
 			LibQuote.subFromPartyBOpenPositionAmounts(quote, openAmount);
 			quote.closedAmount = quote.quantity;
 
@@ -435,14 +430,16 @@ library LiquidationFacetImpl {
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
-			if (affiliateHook != address(0)) {
-				try
-					ISymmioHook(affiliateHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)
-				{} catch {}
-			}
-			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB) {} catch {}
-			}
+			LibHook.safeCall(
+				affiliateHook,
+				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)),
+				quote.id
+			);
+			LibHook.safeCall(
+				systemHook,
+				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)),
+				quote.id
+			);
 			averageClosedPrices[i] = quote.avgClosedPrice;
 		}
 		if (maLayout.partyBPositionLiquidatorsShare[partyB][partyA] > 0) {

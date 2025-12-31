@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus, PartyBPositionsInfo } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
@@ -86,6 +86,27 @@ library LibQuote {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalAmounts -= amount;
 		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalNotionals -= amount * quote.openedPrice;
+	}
+
+	function updatePartyBOpenPositionNotional(Quote storage quote, uint256 oldOpenedPrice) internal {
+		if (oldOpenedPrice == quote.openedPrice) return;
+		if (
+			quote.quoteStatus != QuoteStatus.OPENED &&
+			quote.quoteStatus != QuoteStatus.CLOSE_PENDING &&
+			quote.quoteStatus != QuoteStatus.CANCEL_CLOSE_PENDING
+		) {
+			return;
+		}
+		uint256 openAmount = quoteOpenAmount(quote);
+		if (openAmount == 0) return;
+
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		PartyBPositionsInfo storage info = quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType];
+		if (quote.openedPrice > oldOpenedPrice) {
+			info.totalNotionals += openAmount * (quote.openedPrice - oldOpenedPrice);
+		} else {
+			info.totalNotionals -= openAmount * (oldOpenedPrice - quote.openedPrice);
+		}
 	}
 
 	/**

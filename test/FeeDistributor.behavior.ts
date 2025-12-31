@@ -1,8 +1,7 @@
 import {expect} from "chai"
 import {ethers, hre} from "./helpers/hardhat-connection.js"
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
-import type {MockSymmio, MockToken, SymmioFeeDistributor} from "../src/types/index.js"
-
+import type { MockSymmio, MockToken, SymmioFeeDistributor } from "../src/types/index.js"
 import {deployProxy} from "../utils/upgrades-shim.js"
 
 export function shouldBehaveLikeFeeDistributor() {

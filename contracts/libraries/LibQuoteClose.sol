@@ -16,6 +16,7 @@ import { MAStorage } from "../storages/MAStorage.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
+import { LibHook } from "./LibHook.sol";
 
 library LibQuoteClose {
 	using LockedValuesOps for LockedValues;
@@ -27,7 +28,6 @@ library LibQuoteClose {
 	 * @param closedPrice The price at which the quote is closed.
 	 */
 	function closeQuote(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) public {
-		
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
@@ -136,34 +136,32 @@ library LibQuoteClose {
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
-			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
-				try
-					ISymmioHook(affiliateHook).onFeeCharged(
-						quote.id,
-						fee,
-						quote.partyA,
-						quote.partyB,
-						quote.symbolId,
-						quote.affiliate,
-						ISymmioHook.TradingFeeType.CLOSE
-					)
-				{} catch {}
-			}
-			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onClosePosition(quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB) {} catch {}
-				try
-					ISymmioHook(systemHook).onFeeCharged(
-						quote.id,
-						fee,
-						quote.partyA,
-						quote.partyB,
-						quote.symbolId,
-						quote.affiliate,
-						ISymmioHook.TradingFeeType.CLOSE
-					)
-				{} catch {}
-			}
+			LibHook.safeCall(
+				affiliateHook,
+				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB)),
+				quote.id
+			);
+			LibHook.safeCall(
+				affiliateHook,
+				abi.encodeCall(
+					ISymmioHook.onFeeCharged,
+					(quote.id, fee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.CLOSE)
+				),
+				quote.id
+			);
+			LibHook.safeCall(
+				systemHook,
+				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, filledAmount, closedPrice, quote.partyA, quote.partyB)),
+				quote.id
+			);
+			LibHook.safeCall(
+				systemHook,
+				abi.encodeCall(
+					ISymmioHook.onFeeCharged,
+					(quote.id, fee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.CLOSE)
+				),
+				quote.id
+			);
 		}
 
 		emit SharedEvents.TradeVolumeRecorded(
@@ -215,8 +213,7 @@ library LibQuoteClose {
 				LibQuote.removeFromPartyBPendingQuotes(quote);
 			}
 
-			if(quote.quoteStatus == QuoteStatus.LOCKED)
-				quoteLayout.partyALockQuotesCount[quote.partyA]--;
+			if (quote.quoteStatus == QuoteStatus.LOCKED) quoteLayout.partyALockQuotesCount[quote.partyA]--;
 
 			quote.quoteStatus = QuoteStatus.EXPIRED;
 			result = QuoteStatus.EXPIRED;
@@ -224,12 +221,8 @@ library LibQuoteClose {
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
-			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
-			}
-			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onCancelQuote(quoteId, quote.partyA, quote.partyB) {} catch {}
-			}
+			LibHook.safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
+			LibHook.safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
 		} else if (quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
 			quote.statusModifyTimestamp = block.timestamp;
 			quote.requestedClosePrice = 0;

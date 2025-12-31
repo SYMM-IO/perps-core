@@ -11,6 +11,41 @@ def scandir(directory_name):
     return sub_folders
 
 
+def normalize_enum_type(type_str, internal_type_str):
+    """
+    Normalize enum types to uint8.
+    Hardhat sometimes preserves qualified enum type names (e.g., ISymmio.PositionType)
+    instead of resolving them to their underlying uint8 type.
+    """
+    if internal_type_str and internal_type_str.startswith("enum "):
+        return "uint8"
+    return type_str
+
+
+def normalize_abi_types(item):
+    """
+    Recursively normalize all enum types in an ABI item to uint8.
+    """
+    if isinstance(item, dict):
+        result = {}
+        for key, value in item.items():
+            if key == "type" and "internalType" in item:
+                result[key] = normalize_enum_type(value, item.get("internalType", ""))
+            elif key == "components" and isinstance(value, list):
+                result[key] = [normalize_abi_types(comp) for comp in value]
+            elif isinstance(value, list):
+                result[key] = [normalize_abi_types(v) for v in value]
+            elif isinstance(value, dict):
+                result[key] = normalize_abi_types(value)
+            else:
+                result[key] = value
+        return result
+    elif isinstance(item, list):
+        return [normalize_abi_types(i) for i in item]
+    else:
+        return item
+
+
 def get_abi_signature(item):
     """
     Generate a unique signature for an ABI item based on type, name, and inputs.
@@ -65,7 +100,9 @@ def generate_diamond_abi(subdirs, output_name):
                 with open(file) as f:
                     data = json.load(f)
                     if "abi" in data:
-                        abi_data += data["abi"]
+                        # Normalize enum types to uint8
+                        normalized_abi = [normalize_abi_types(item) for item in data["abi"]]
+                        abi_data += normalized_abi
 
     # Remove duplicates
     unique_abi_data = remove_duplicates(abi_data)
@@ -89,8 +126,10 @@ def generate_single_contract_abi(contract_path, contract_name, output_name):
     with open(artifact_path) as f:
         data = json.load(f)
         if "abi" in data:
+            # Normalize enum types to uint8
+            normalized_abi = [normalize_abi_types(item) for item in data["abi"]]
             with open(f"abis/{output_name}.json", "w") as out_f:
-                json.dump(data["abi"], out_f, indent=4)
+                json.dump(normalized_abi, out_f, indent=4)
             print(f"Generated abis/{output_name}.json")
         else:
             print(f"No ABI found in {artifact_path}")
@@ -103,14 +142,22 @@ def main():
     print("\n=== Generating Symmio ABI ===")
     generate_diamond_abi(["facets", "libraries", "utils"], "symmio")
 
+    # Generate AccountLayer diamond ABI (combines accountLayer facets, libraries, utils)
+    print("\n=== Generating AccountLayer ABI ===")
+    generate_diamond_abi(
+        [
+            "accountLayer/facets",
+            "accountLayer/libraries",
+            "accountLayer/utils",
+        ],
+        "accountLayer",
+    )
+
     # Generate ABIs for standalone contracts
     standalone_contracts = [
-        ("accountHub/SymmioPartyB.sol", "SymmioPartyB", "partyB"),
+        ("helpers/SymmioPartyB.sol", "SymmioPartyB", "partyB"),
         ("helpers/InstantLayer.sol", "InstantLayer", "instantLayer"),
-        ("accountHub/AccountHub.sol", "AccountHub", "accountHub"),
-        ("accountHub/AccountHubLens.sol", "AccountHubLens", "accountHubLens"),
-        ("accountHub/AffiliateHub.sol", "AffiliateHub", "affiliateHub"),
-        ("accountHub/AccountManager.sol", "AccountManager", "accountManager"),
+        ("accountLayer/AccountManager.sol", "AccountManager", "accountManager"),
         ("multiAccount/MultiAccount.sol", "MultiAccount", "multiAccount"),
     ]
 

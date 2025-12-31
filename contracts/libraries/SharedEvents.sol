@@ -54,4 +54,6 @@ library SharedEvents {
 		address affiliate,
 		TradingFeeType _type
 	);
+
+	event HookFailed(address indexed hook, bytes4 indexed selector, uint256 indexed quoteId, bytes reason);
 }
