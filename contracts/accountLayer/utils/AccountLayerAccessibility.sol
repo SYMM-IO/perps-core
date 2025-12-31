@@ -7,7 +7,6 @@ pragma solidity >=0.8.18;
 import { LibAccountLayerAccessibility } from "../libraries/LibAccountLayerAccessibility.sol";
 import { LibAccountLayerUtils } from "../libraries/LibAccountLayerUtils.sol";
 import { AffiliateHubStorage, AffiliateState } from "../storages/AffiliateHubStorage.sol";
-import { AccountHubStorage } from "../storages/AccountHubStorage.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
 
 abstract contract AccountLayerAccessibility is IAccountLayerErrors {
@@ -40,7 +39,9 @@ abstract contract AccountLayerAccessibility is IAccountLayerErrors {
 	}
 
 	modifier onlyAccountOwner(address account) {
-		if (!_isOwnerOf(account, msg.sender)) revert NotOwner();
+		address signer = LibAccountLayerUtils.getSigner();
+		if (!_isOwnerOf(account, signer) && !LibAccountLayerAccessibility.hasRole(signer, LibAccountLayerAccessibility.INSTANT_LAYER_ROLE))
+			revert NotOwner();
 		_;
 	}
 

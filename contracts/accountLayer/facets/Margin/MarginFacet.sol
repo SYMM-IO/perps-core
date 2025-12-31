@@ -12,8 +12,6 @@ import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyG
 import { AccountHubStorage, VirtualAccountIsolationType } from "../../storages/AccountHubStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
-import { AffiliateHubStorage } from "../../storages/AffiliateHubStorage.sol";
-import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
@@ -106,5 +104,4 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 				)
 			);
 	}
-
 }

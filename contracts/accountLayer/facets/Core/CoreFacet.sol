@@ -9,14 +9,20 @@ import { ICoreFacet } from "./ICoreFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
-import { AccountHubStorage, SubAccountData, VirtualAccountData, SubAccountCreationData, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountHubStorage.sol";
+import {
+	AccountHubStorage,
+	SubAccountData,
+	VirtualAccountData,
+	SubAccountCreationData,
+	VirtualAccountIsolationType,
+	SubAccountIsolationType
+} from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage, AffiliateState, HookContext } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
-import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
@@ -91,13 +97,11 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	// ==================== Call Execution ====================
 
-	function _call(address account, bytes[] calldata callDatas) external whenNotPaused nonReentrant returns (bytes[] memory) {
+	function _call(
+		address account,
+		bytes[] calldata callDatas
+	) external whenNotPaused nonReentrant onlyAccountOwner(account) returns (bytes[] memory) {
 		if (callDatas.length == 0) revert EmptyArray();
-
-		address signer = LibAccountLayerUtils.getSigner();
-		if (!_isOwnerOf(account, signer) && !LibAccountLayerAccessibility.hasRole(msg.sender, LibAccountLayerAccessibility.INSTANT_LAYER_ROLE)) {
-			revert NotOwner();
-		}
 
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		bytes[] memory results = new bytes[](callDatas.length);
