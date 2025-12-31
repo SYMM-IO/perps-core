@@ -7,7 +7,6 @@ pragma solidity >=0.8.18;
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { IAffiliateFacet } from "./IAffiliateFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
@@ -15,6 +14,7 @@ import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyG
 import { AccountHubStorage } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage, AffiliateData, AffiliateRegistration, AffiliateState, Stakeholder, PendingFeeUpdate } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
+import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
@@ -23,7 +23,6 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
 	uint256 private constant SHARE_PRECISION = 1e18;
-	uint256 private constant MAX_NAME_LENGTH = 100;
 
 	// ==================== Affiliate Registration ====================
 
@@ -36,7 +35,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		if (afLayout.affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
 		if (reg.admin == address(0)) revert ZeroAddress();
 
-		_validateName(reg.name);
+		LibAccountLayerUtils.validateName(reg.name);
 		_validateFeeShares(reg.stakeholders, reg.symmioShare);
 
 		AffiliateData storage affiliate = afLayout.affiliates[affiliateAddress];
@@ -131,7 +130,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		string memory name,
 		string memory brandColor
 	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
-		_validateName(name);
+		LibAccountLayerUtils.validateName(name);
 
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		afLayout.affiliates[affiliate].name = name;
@@ -198,7 +197,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	}
 
 	function claimAllFees(address affiliate, address symmio) external whenNotPaused nonReentrant {
-		_claimFees(affiliate, symmio, _getClaimableFee(affiliate, symmio), msg.sender);
+		_claimFees(affiliate, symmio, LibAccountLayerUtils.getClaimableFee(affiliate, symmio), msg.sender);
 	}
 
 	function claimFees(address affiliate, address symmio, uint256 amount) external whenNotPaused nonReentrant {
@@ -259,12 +258,6 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Internal Functions ====================
 
-	function _validateName(string memory name) private pure {
-		if (bytes(name).length == 0 || bytes(name).length > MAX_NAME_LENGTH) {
-			revert InvalidNameLength();
-		}
-	}
-
 	function _validateFeeShares(Stakeholder[] memory stakeholders, uint256 symmioShare) private pure {
 		if (symmioShare > SHARE_PRECISION) revert InvalidShare();
 
@@ -320,13 +313,6 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		}
 
 		emit FeesClaimed(affiliate, symmio, amount);
-	}
-
-	function _getClaimableFee(address affiliate, address symmio) private view returns (uint256) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		uint8 decimals = IERC20Metadata(ISymmio(symmio).getCollateral()).decimals();
-		uint256 balance = ISymmio(symmio).balanceOf(afLayout.affiliates[affiliate].feeDetails.feeDistributor);
-		return balance / (10 ** (18 - decimals));
 	}
 
 	function _generateFeeDistributorAddress(address affiliate, uint256 nonce) private pure returns (address) {

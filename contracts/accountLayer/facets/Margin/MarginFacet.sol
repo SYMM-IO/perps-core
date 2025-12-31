@@ -16,8 +16,6 @@ import { ISymmio } from "../../interfaces/ISymmio.sol";
 contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
 
-	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
-
 	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
@@ -87,17 +85,6 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		}
 
 		uint256 nextNonce = ahLayout.subAccountVirtualNonces[subAccount] + 1;
-		return _generateVirtualAccountAddress(subAccount, nextNonce);
-	}
-
-	function _generateVirtualAccountAddress(address parentAccount, uint256 nonce) private pure returns (address) {
-		return
-			address(
-				uint160(
-					uint256(
-						keccak256(abi.encodePacked(bytes1(0xff), parentAccount, keccak256(abi.encodePacked(nonce)), VIRTUAL_ACCOUNT_INIT_CODE_HASH))
-					)
-				)
-			);
+		return LibAccountLayerUtils.generateVirtualAccountAddress(subAccount, nextNonce);
 	}
 }

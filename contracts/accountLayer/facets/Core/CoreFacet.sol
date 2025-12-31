@@ -28,8 +28,6 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	using EnumerableSet for EnumerableSet.UintSet;
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
-	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
-	uint256 private constant MAX_NAME_LENGTH = 100;
 
 	// ==================== Sub-Account Management ====================
 
@@ -50,7 +48,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	}
 
 	function editAccountName(address account, string memory name) external whenNotPaused onlyAccountOwner(account) {
-		_validateName(name);
+		LibAccountLayerUtils.validateName(name);
 
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		if (!ahLayout.subAccounts[account].isExists) revert AccountDoesNotExist();
@@ -162,17 +160,11 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	// ==================== Internal Functions ====================
 
-	function _validateName(string memory name) private pure {
-		if (bytes(name).length == 0 || bytes(name).length > MAX_NAME_LENGTH) {
-			revert InvalidNameLength();
-		}
-	}
-
 	function _createSubAccount(address affiliate, address sender, SubAccountCreationData memory data) private returns (address subAccountAddress) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 
-		_validateName(data.name);
+		LibAccountLayerUtils.validateName(data.name);
 		if (!afLayout.whitelistedSymmioCores[data.symmioCore]) revert NotSymmioCore();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
 
@@ -199,7 +191,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		ahLayout.userToSubAccounts[sender].add(subAccountAddress);
 
-		_callHook(
+		LibAccountLayerUtils.callHookWithContext(
 			affiliate,
 			subAccountAddress,
 			data.symmioCore,
@@ -249,7 +241,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			ahLayout.activeVAByKey[parentAccount][isolationType][symbolId] = reusedAccount;
 		}
 
-		_callHook(
+		LibAccountLayerUtils.callHookWithContext(
 			parent.affiliate,
 			reusedAccount,
 			parent.symmioCore,
@@ -273,7 +265,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		if (!parent.isExists) revert InvalidParent();
 
 		uint256 nonce = ++ahLayout.subAccountVirtualNonces[parentAccount];
-		virtualAccount = _generateVirtualAccountAddress(parentAccount, nonce);
+		virtualAccount = LibAccountLayerUtils.generateVirtualAccountAddress(parentAccount, nonce);
 
 		VirtualAccountData storage v = ahLayout.virtualAccounts[virtualAccount];
 		v.isExists = true;
@@ -297,7 +289,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			symmio.setSigner(address(0));
 		}
 
-		_callHook(
+		LibAccountLayerUtils.callHookWithContext(
 			parent.affiliate,
 			virtualAccount,
 			parent.symmioCore,
@@ -328,9 +320,9 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		ahLayout.deletedVirtualAccountsPool[parentAccount][vData.isolationType][vData.symbolId].push(account);
 		ahLayout.subAccountToVirtualAccounts[parentAccount].remove(account);
 
-		address affiliate = _getAffiliateForAccount(account);
+		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
 
-		_callHook(
+		LibAccountLayerUtils.callHookWithContext(
 			affiliate,
 			account,
 			core,
@@ -415,54 +407,11 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		return result;
 	}
 
-	function _getAffiliateForAccount(address account) private view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-
-		if (ahLayout.subAccounts[account].isExists) {
-			return ahLayout.subAccounts[account].affiliate;
-		}
-
-		if (ahLayout.virtualAccounts[account].parentAccount != address(0)) {
-			return _getAffiliateForAccount(ahLayout.virtualAccounts[account].parentAccount);
-		}
-
-		return address(0);
-	}
-
-	function _callHook(address affiliate, address account, address symmioCore, bytes4 selector, bytes memory data) private {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		address hook = afLayout.affiliates[affiliate].hooks[selector];
-		if (hook == address(0)) return;
-
-		// Set hook context before calling
-		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true });
-
-		(bool success, bytes memory result) = hook.call(data);
-
-		// Clear hook context after call
-		delete afLayout.hookContext;
-
-		if (!success) {
-			revert HookFailed(result);
-		}
-	}
-
 	function _generateSubAccountAddress(address affiliate, address user, uint256 nonce) private pure returns (address) {
 		return
 			address(
 				uint160(
 					uint256(keccak256(abi.encodePacked(bytes1(0xff), affiliate, keccak256(abi.encodePacked(user, nonce)), ACCOUNT_INIT_CODE_HASH)))
-				)
-			);
-	}
-
-	function _generateVirtualAccountAddress(address parentAccount, uint256 nonce) private pure returns (address) {
-		return
-			address(
-				uint160(
-					uint256(
-						keccak256(abi.encodePacked(bytes1(0xff), parentAccount, keccak256(abi.encodePacked(nonce)), VIRTUAL_ACCOUNT_INIT_CODE_HASH))
-					)
 				)
 			);
 	}

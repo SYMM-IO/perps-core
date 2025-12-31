@@ -89,4 +89,6 @@ interface IViewFacet {
 	function symmioFeeReceiver() external view returns (address);
 
 	function dryClaimAllFees(address affiliate, address symmio) external view returns (address[] memory holders, uint256[] memory shares);
+
+	function MAX_NAME_LENGTH() external view returns (uint256);
 }

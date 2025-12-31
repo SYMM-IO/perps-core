@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { IViewFacet } from "./IViewFacet.sol";
 import {
 	AccountHubStorage,
@@ -24,7 +23,6 @@ contract ViewFacet is IViewFacet {
 	using EnumerableSet for EnumerableSet.UintSet;
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
-	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
 	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
 	uint256 private constant SHARE_PRECISION = 1e18;
 
@@ -218,7 +216,7 @@ contract ViewFacet is IViewFacet {
 
 		// If no deleted account exists, generate and return a new virtual account address
 		uint256 nextNonce = ahLayout.subAccountVirtualNonces[subAccount] + 1;
-		return _generateVirtualAccountAddress(subAccount, nextNonce);
+		return LibAccountLayerUtils.generateVirtualAccountAddress(subAccount, nextNonce);
 	}
 
 	// ==================== AccountManager ====================
@@ -317,7 +315,7 @@ contract ViewFacet is IViewFacet {
 
 	function dryClaimAllFees(address affiliate, address symmio) external view returns (address[] memory holders, uint256[] memory shares) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		uint256 totalClaimable = _getClaimableFee(affiliate, symmio);
+		uint256 totalClaimable = LibAccountLayerUtils.getClaimableFee(affiliate, symmio);
 		Stakeholder[] memory stakeholders = afLayout.affiliates[affiliate].feeDetails.stakeholders;
 
 		uint256 len = stakeholders.length;
@@ -332,23 +330,9 @@ contract ViewFacet is IViewFacet {
 		return (holders, shares);
 	}
 
-	// ==================== Internal Functions ====================
+	// ==================== Constants ====================
 
-	function _generateVirtualAccountAddress(address parentAccount, uint256 nonce) private pure returns (address) {
-		return
-			address(
-				uint160(
-					uint256(
-						keccak256(abi.encodePacked(bytes1(0xff), parentAccount, keccak256(abi.encodePacked(nonce)), VIRTUAL_ACCOUNT_INIT_CODE_HASH))
-					)
-				)
-			);
-	}
-
-	function _getClaimableFee(address affiliate, address symmio) private view returns (uint256) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		uint8 decimals = IERC20Metadata(ISymmio(symmio).getCollateral()).decimals();
-		uint256 balance = ISymmio(symmio).balanceOf(afLayout.affiliates[affiliate].feeDetails.feeDistributor);
-		return balance / (10 ** (18 - decimals));
+	function MAX_NAME_LENGTH() external pure returns (uint256) {
+		return LibAccountLayerUtils.MAX_NAME_LENGTH;
 	}
 }
