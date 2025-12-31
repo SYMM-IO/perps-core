@@ -8,12 +8,12 @@ import { LibMuonPartyBBatchActions } from "../../libraries/muon/LibMuonPartyBBat
 import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
@@ -207,6 +207,7 @@ library PartyBBatchActionsFacetImpl {
 	) internal returns (uint256[] memory filledAmounts, uint256 closedAmount, uint256[] memory closeIds) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
 		uint256 firstSymbolId;
 		uint256 len = quoteIds.length;
 		filledAmounts = new uint256[](len);
@@ -221,10 +222,10 @@ library PartyBBatchActionsFacetImpl {
 
 		for (uint256 i = 0; i < len; ) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
-
+			require(maLayout.adlEnabled[quote.partyB], "PartyBFacet: ADL disabled");
 			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender isn't partyB of quote");
-			require(!MAStorage.layout().liquidationStatus[quote.partyA], "PartyBFacet: PartyA is liquidated");
-			require(!MAStorage.layout().partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
+			require(!maLayout.liquidationStatus[quote.partyA], "PartyBFacet: PartyA is liquidated");
+			require(!maLayout.partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
 			if (i == 0) {
 				firstSymbolId = quote.symbolId;
 			} else {

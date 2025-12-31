@@ -403,4 +403,46 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		AccountFacetImpl.deactivateInstantActionMode();
 		emit DeactivateInstantActionMode(LibSigner.getSigner(), block.timestamp);
 	}
+
+	// ---------------- ADL collateral lifecycle ----------------
+
+	function depositAdlCollateral(address token, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
+		address signer = LibSigner.getSigner();
+		AccountFacetImpl.depositAdlCollateral(amount, token);
+		emit AdlCollateralDeposited(signer, token, amount);
+	}
+
+	function requestAdlWithdraw(address token, uint256 amount, address recipient)
+		external
+		whenNotAccountingPaused
+		notSuspended(LibSigner.getSigner())
+		onlyPartyB
+	{
+		AccountFacetImpl.requestAdlWithdraw(amount, token, recipient);
+		emit AdlWithdrawRequested(LibSigner.getSigner(), token, amount, recipient);
+	}
+
+	function cancelAdlWithdraw() external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
+		(address token, uint256 amount) = AccountFacetImpl.cancelAdlWithdraw();
+		emit AdlWithdrawCancelled(LibSigner.getSigner(), token, amount);
+	}
+
+	function acceptAdlWithdraw(address partyB, uint256 amount, address token)
+		external
+		whenNotAccountingPaused
+		onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE)
+	{
+		AccountFacetImpl.acceptAdlWithdraw(partyB, amount, token);
+		emit AdlWithdrawApproved(partyB, token, amount);
+	}
+
+	function applyAdlPenalty(
+		address partyB,
+		address token,
+		uint256 amount,
+		address recipient
+	) external whenNotAccountingPaused onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		AccountFacetImpl.applyAdlPenalty(partyB, token, amount, recipient);
+		emit AdlPenaltyApplied(partyB, token, amount, recipient);
+	}
 }

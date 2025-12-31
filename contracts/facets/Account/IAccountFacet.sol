@@ -71,4 +71,11 @@ interface IAccountFacet is IAccountEvents {
 	function acceptVirtualExternalTransfer(uint256 id) external;
 
 	function cancelVirtualExternalTransfer(uint256 id) external;
+
+	// ADL collateral management
+	function depositAdlCollateral(address token, uint256 amount) external;
+	function requestAdlWithdraw(address token, uint256 amount, address recipient) external;
+	function cancelAdlWithdraw() external;
+	function acceptAdlWithdraw(address partyB, uint256 amount, address token) external;
+	function applyAdlPenalty(address partyB, address token, uint256 amount, address recipient) external;
 }

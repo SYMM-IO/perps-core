@@ -7,7 +7,15 @@ pragma solidity >=0.8.18;
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { AccountStorage, BindState, BindStatus, ExternalTransferReq, ExternalTransferStatus } from "../../storages/AccountStorage.sol";
+import {
+	AccountStorage,
+	AdlWithdrawalRequest,
+	AdlWithdrawStatus,
+	BindState,
+	BindStatus,
+	ExternalTransferReq,
+	ExternalTransferStatus
+} from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
@@ -20,9 +28,17 @@ import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 
 library AccountFacetImpl {
 	using SafeERC20 for IERC20;
+
+	function _normalizeTo18(address token, uint256 amount) internal view returns (uint256) {
+		uint256 decimals = IERC20Metadata(token).decimals();
+		require(decimals <= 18, "AccountFacet: token decimals > 18");
+		return (amount * 1e18) / (10 ** decimals);
+	}
 
 	function deposit(address user, uint256 amount) internal {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
@@ -32,10 +48,7 @@ library AccountFacetImpl {
 	}
 
 	function virtualDepositFor(address user, uint256 amount) internal {
-		require(
-			GlobalAppStorage.layout().virtualProviders[msg.sender],
-			"AccountFacet : msg.sender not registered as virtual provider"
-		);
+		require(GlobalAppStorage.layout().virtualProviders[msg.sender], "AccountFacet : msg.sender not registered as virtual provider");
 		AccountStorage.layout().balances[user] += amount;
 	}
 
@@ -165,12 +178,10 @@ library AccountFacetImpl {
 	function allocateForPartyB(uint256 amount, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(!accountLayout.masterAccountMode[signer] || partyA == address(0),
-			"PartyBFacet: Master account mode is active");
+		require(!accountLayout.masterAccountMode[signer] || partyA == address(0), "PartyBFacet: Master account mode is active");
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
 		require(
-			!MAStorage.layout().partyBLiquidationStatus[signer][partyA]
-			&& !accountLayout.crossLiquidationDetails[signer].inProgress,
+			!MAStorage.layout().partyBLiquidationStatus[signer][partyA] && !accountLayout.crossLiquidationDetails[signer].inProgress,
 			"AccountFacet: PartyB isn't solvent"
 		);
 		accountLayout.balances[signer] -= amount;
@@ -213,10 +224,7 @@ library AccountFacetImpl {
 		require(GlobalAppStorage.layout().masterAccountEnabled, "AccountFacet: Master account disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(
-			MasterAccountMigrationStorage.layout().partyBMigrationComplete[signer],
-			"AccountFacet: Master account migration incomplete"
-		);
+		require(MasterAccountMigrationStorage.layout().partyBMigrationComplete[signer], "AccountFacet: Master account migration incomplete");
 		require(!accountLayout.masterAccountMode[signer], "AccountFacet: Master account mode is active");
 		accountLayout.masterAccountMode[signer] = true;
 	}
@@ -388,5 +396,81 @@ library AccountFacetImpl {
 
 		layout.instantActionsMode[signer] = false;
 		layout.instantActionsModeDeactivateTime[signer] = 0;
+	}
+
+	// ---------------- ADL collateral lifecycle ----------------
+
+	function depositAdlCollateral(uint256 amount, address token) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+
+		require(amount > 0, "AccountFacet: invalid amount");
+
+		IERC20(token).safeTransferFrom(signer, address(this), amount);
+		accountLayout.adlCollateral[signer][token] += amount;
+	}
+
+	function requestAdlWithdraw(uint256 amount, address token, address recipient) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+
+		require(amount > 0, "AccountFacet: invalid amount");
+		require(recipient != address(0), "AccountFacet: invalid recipient");
+		require(accountLayout.adlWithdrawalRequests[signer].status == AdlWithdrawStatus.NONE, "AccountFacet: withdraw pending");
+		require(accountLayout.adlCollateral[signer][token] >= amount, "AccountFacet: insufficient ADL collateral");
+
+		accountLayout.adlWithdrawalRequests[signer] = AdlWithdrawalRequest({
+			token: token,
+			amount: amount,
+			recipient: recipient,
+			requester: signer,
+			status: AdlWithdrawStatus.PENDING
+		});
+	}
+
+	function acceptAdlWithdraw(address partyB, uint256 amount, address token) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		AdlWithdrawalRequest storage req = accountLayout.adlWithdrawalRequests[partyB];
+
+		require(req.status == AdlWithdrawStatus.PENDING, "AccountFacet: no pending ADL withdraw");
+		require(req.requester == partyB, "AccountFacet: requester mismatch");
+		require(req.token == token && req.amount == amount, "AccountFacet: params mismatch");
+		require(accountLayout.adlCollateral[partyB][token] >= amount, "AccountFacet: insufficient ADL collateral");
+
+		address recipient = req.recipient;
+		accountLayout.adlCollateral[partyB][token] -= amount;
+		req.status = AdlWithdrawStatus.NONE;
+		req.amount = 0;
+		req.token = address(0);
+		req.recipient = address(0);
+		req.requester = address(0);
+
+		IERC20(token).safeTransfer(recipient, amount);
+	}
+
+	function cancelAdlWithdraw() internal returns (address token, uint256 amount) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+		AdlWithdrawalRequest storage req = accountLayout.adlWithdrawalRequests[signer];
+
+		require(req.status == AdlWithdrawStatus.PENDING, "AccountFacet: no pending ADL withdraw");
+
+		token = req.token;
+		amount = req.amount;
+		req.recipient = address(0);
+		req.requester = address(0);
+		req.status = AdlWithdrawStatus.NONE;
+		req.amount = 0;
+		req.token = address(0);
+	}
+
+	function applyAdlPenalty(address partyB, address token, uint256 amount, address recipient) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		require(amount > 0, "AccountFacet: invalid penalty");
+		require(accountLayout.adlCollateral[partyB][token] >= amount, "AccountFacet: insufficient ADL collateral");
+
+		accountLayout.adlCollateral[partyB][token] -= amount;
+		IERC20(token).safeTransfer(recipient, amount);
 	}
 }
