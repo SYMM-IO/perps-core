@@ -16,18 +16,14 @@ contract ADLFacet is Accessibility, Pausable, IADLFacet {
 	 * @notice Performs ADL closes for quotes on the same symbol, emitting fill events per quote.
 	 * @dev Uses ADLFacetImpl to handle balance checks, nonce bumps, and quote status/closeId management.
 	 * @param quoteIds Quotes to ADL close (must share partyA/partyB/symbol).
-	 * @param ratio Portion of the open amount to close (1e18 = 100%).
-	 * @param price Execution price for the ADL close.
+	 * @param amounts Amounts to close per quote (token decimals).
+	 * @param prices Execution prices per quote.
 	 */
-	function adlClose(uint256[] calldata quoteIds, uint256 ratio, uint256 price) external whenNotPartyBActionsPaused returns (uint256) {
+	function adlClose(uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) external whenNotPartyBActionsPaused returns (uint256) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		uint256 len = quoteIds.length;
 
-		(uint256[] memory filledAmounts, uint256 closedAmount, uint256[] memory closeIds) = ADLFacetImpl.adlClose(
-			quoteIds,
-			ratio,
-			price
-		);
+		(uint256[] memory filledAmounts, uint256 closedAmount, uint256[] memory closeIds) = ADLFacetImpl.adlClose(quoteIds, amounts, prices);
 
 		for (uint256 i = 0; i < len; ) {
 			uint256 filledAmount = filledAmounts[i];
@@ -36,13 +32,13 @@ contract ADLFacet is Accessibility, Pausable, IADLFacet {
 				Quote storage quote = quoteLayout.quotes[quoteId];
 				uint256 closeIdToUse = closeIds[i] == 0 ? quoteLayout.closeIds[quoteId] : closeIds[i];
 
-				emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, price, quote.quoteStatus, closeIdToUse);
+				emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, prices[i], quote.quoteStatus, closeIdToUse);
 			}
 			unchecked {
 				++i;
 			}
 		}
-		emit LibPartyBBatchEvents.ADLClose(quoteIds, ratio, price, closedAmount);
+		emit LibPartyBBatchEvents.ADLClose(quoteIds, amounts, prices, closedAmount);
 		return closedAmount;
 	}
 }

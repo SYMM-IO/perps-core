@@ -19,13 +19,13 @@ library ADLFacetImpl {
 	 * @notice Auto-deleverages a set of quotes proportionally, checking solvency buffers and preserving pending close intents.
 	 * @dev Keeps quote closeIds/status consistent with existing CLOSE_PENDING/CANCEL_CLOSE_PENDING flows and emits ADL events.
 	 * @param quoteIds Quotes to ADL close (same partyA/partyB/symbol).
-	 * @param ratio Portion of open amount to close (1e18 = 100%).
-	 * @param price Execution price used for the ADL close.
+	 * @param amounts Amounts to close per quote (token decimals).
+	 * @param prices Execution prices per quote used for the ADL close.
 	 */
 	function adlClose(
 		uint256[] calldata quoteIds,
-		uint256 ratio,
-		uint256 price
+		uint256[] calldata amounts,
+		uint256[] calldata prices
 	) internal returns (uint256[] memory filledAmounts, uint256 closedAmount, uint256[] memory closeIds) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -35,8 +35,12 @@ library ADLFacetImpl {
 		filledAmounts = new uint256[](len);
 		closeIds = new uint256[](len);
 
-		require(ratio > 0 && ratio <= 1e18, "PartyBBatchActionsFacet: Invalid ratio");
 		require(quoteIds.length > 0, "PartyBBatchActionsFacet: invalid array length");
+		Quote memory firstQuote = quoteLayout.quotes[quoteIds[0]];
+		require(firstQuote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender isn't partyB of quote");
+		require(maLayout.adlEnabled[firstQuote.partyB], "PartyBFacet: ADL disabled");
+		require(quoteIds.length > 0, "PartyBBatchActionsFacet: invalid array length");
+		require(amounts.length == len && prices.length == len, "PartyBBatchActionsFacet: invalid array length");
 		require(
 			!accountLayout.crossLiquidationDetails[quoteLayout.quotes[quoteIds[0]].partyB].inProgress,
 			"PartyBFacet: PartyB is in cross liquidation process"
@@ -44,7 +48,6 @@ library ADLFacetImpl {
 
 		for (uint256 i = 0; i < len; ) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
-			require(maLayout.adlEnabled[quote.partyB], "PartyBFacet: ADL disabled");
 			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender isn't partyB of quote");
 			require(!maLayout.liquidationStatus[quote.partyA], "PartyBFacet: PartyA is liquidated");
 			require(!maLayout.partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
@@ -66,8 +69,26 @@ library ADLFacetImpl {
 				quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
 				quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING
 			) {
+				if (wasClosePending || wasCancelClosePending) {
+					if (wasClosePending) {
+						emit LibPartyBBatchEvents.RequestToCancelCloseRequest(
+							quote.partyA,
+							quote.partyB,
+							quote.id,
+							QuoteStatus.CANCEL_CLOSE_PENDING,
+							previousCloseId
+						);
+					}
+					emit LibPartyBBatchEvents.AcceptCancelCloseRequest(quote.id, QuoteStatus.CANCELED, previousCloseId);
+					quote.quantityToClose = 0;
+					quote.requestedClosePrice = 0;
+					quote.quoteStatus = QuoteStatus.OPENED;
+					quote.statusModifyTimestamp = block.timestamp;
+				}
+
 				uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-				uint256 adlAmount = (openAmount * ratio) / 1e18;
+				uint256 adlAmount = amounts[i];
+				uint256 adlPrice = prices[i];
 
 				require(adlAmount > 0 && openAmount >= adlAmount, "PartyBFacet: Invalid filled amount");
 
@@ -104,14 +125,14 @@ library ADLFacetImpl {
 				closeIds[i] = adlCloseId;
 				quoteLayout.closeIds[quote.id] = adlCloseId;
 				quote.quantityToClose = adlAmount;
-				quote.requestedClosePrice = price;
+				quote.requestedClosePrice = adlPrice;
 				QuoteStatus originalStatus = quote.quoteStatus;
 				quote.quoteStatus = QuoteStatus.CLOSE_PENDING;
 				emit LibPartyBBatchEvents.RequestToClosePosition(
 					quote.partyA,
 					quote.partyB,
 					quote.id,
-					price,
+					adlPrice,
 					adlAmount,
 					OrderType.MARKET,
 					block.timestamp,
@@ -122,7 +143,7 @@ library ADLFacetImpl {
 					quote.partyA,
 					quote.partyB,
 					quote.id,
-					price,
+					adlPrice,
 					adlAmount,
 					OrderType.MARKET,
 					block.timestamp,
@@ -131,50 +152,20 @@ library ADLFacetImpl {
 
 				LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
 				accountLayout.partyANonces[quote.partyA] += 1;
-				LibQuoteClose.closeQuote(quote.id, adlAmount, price);
+				LibQuoteClose.closeQuote(quote.id, adlAmount, adlPrice);
 				uint256 remainingOpen = LibQuote.quoteOpenAmount(quote);
 				closedAmount += adlAmount;
 				filledAmounts[i] = adlAmount;
 
-				if (wasClosePending) {
-					if (remainingOpen > 0 && prevRequestedQuantityToClose > 0) {
-						uint256 newQuantity = remainingOpen >= prevRequestedQuantityToClose ? prevRequestedQuantityToClose : remainingOpen;
-						quote.quantityToClose = newQuantity;
-						quote.requestedClosePrice = prevRequestedClosePrice;
-						quote.quoteStatus = QuoteStatus.CLOSE_PENDING;
-						quote.statusModifyTimestamp = block.timestamp;
-						quoteLayout.closeIds[quote.id] = previousCloseId;
-						emit LibPartyBBatchEvents.RequestToClosePosition(
-							quote.partyA,
-							quote.partyB,
-							quote.id,
-							prevRequestedClosePrice,
-							newQuantity,
-							quote.orderType,
-							block.timestamp,
-							QuoteStatus.CLOSE_PENDING,
-							previousCloseId
-						);
-						emit LibPartyBBatchEvents.RequestToClosePosition(
-							quote.partyA,
-							quote.partyB,
-							quote.id,
-							prevRequestedClosePrice,
-							newQuantity,
-							quote.orderType,
-							block.timestamp,
-							QuoteStatus.CLOSE_PENDING
-						);
-					}
-				} else if (wasCancelClosePending && remainingOpen > 0) {
+				if ((wasClosePending || wasCancelClosePending) && remainingOpen > 0 && prevRequestedQuantityToClose > 0) {
 					uint256 newQuantity = remainingOpen >= prevRequestedQuantityToClose ? prevRequestedQuantityToClose : remainingOpen;
 					if (newQuantity > 0) {
+						uint256 newCloseId = ++quoteLayout.lastCloseId;
 						quote.quantityToClose = newQuantity;
 						quote.requestedClosePrice = prevRequestedClosePrice;
-						quote.quoteStatus = QuoteStatus.CANCEL_CLOSE_PENDING;
+						quote.quoteStatus = wasCancelClosePending ? QuoteStatus.CANCEL_CLOSE_PENDING : QuoteStatus.CLOSE_PENDING;
 						quote.statusModifyTimestamp = block.timestamp;
-						quoteLayout.closeIds[quote.id] = previousCloseId;
-
+						quoteLayout.closeIds[quote.id] = newCloseId;
 						emit LibPartyBBatchEvents.RequestToClosePosition(
 							quote.partyA,
 							quote.partyB,
@@ -184,7 +175,7 @@ library ADLFacetImpl {
 							quote.orderType,
 							block.timestamp,
 							QuoteStatus.CLOSE_PENDING,
-							previousCloseId
+							newCloseId
 						);
 						emit LibPartyBBatchEvents.RequestToClosePosition(
 							quote.partyA,
@@ -196,17 +187,16 @@ library ADLFacetImpl {
 							block.timestamp,
 							QuoteStatus.CLOSE_PENDING
 						);
-						emit LibPartyBBatchEvents.RequestToCancelCloseRequest(
-							quote.partyA,
-							quote.partyB,
-							quote.id,
-							QuoteStatus.CANCEL_CLOSE_PENDING,
-							previousCloseId
-						);
+						if (wasCancelClosePending) {
+							emit LibPartyBBatchEvents.RequestToCancelCloseRequest(
+								quote.partyA,
+								quote.partyB,
+								quote.id,
+								QuoteStatus.CANCEL_CLOSE_PENDING,
+								newCloseId
+							);
+						}
 					}
-				}
-				if (originalStatus == QuoteStatus.OPENED && quote.quoteStatus != QuoteStatus.CLOSED) {
-					quoteLayout.closeIds[quote.id] = previousCloseId;
 				}
 			}
 			unchecked {
