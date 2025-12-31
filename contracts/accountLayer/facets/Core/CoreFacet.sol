@@ -18,7 +18,6 @@ import {
 	SubAccountIsolationType
 } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage, AffiliateState, HookContext } from "../../storages/AffiliateHubStorage.sol";
-import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
@@ -316,7 +315,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		if (vData.quoteIds.length() != 0) revert OpenPositionsExist();
 
 		address parentAccount = vData.parentAccount;
-		address core = _getRelatedCore(parentAccount);
+		address core = LibAccountLayerUtils.getRelatedCore(parentAccount);
 
 		_deallocateAndTransferBalance(account, parentAccount, core);
 
@@ -364,7 +363,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		}
 
 		bytes memory result = _executeWithSigner(account, cd);
-		accountData.quoteIds.add(ISymmio(_getRelatedCore(account)).getNextQuoteId());
+		accountData.quoteIds.add(ISymmio(LibAccountLayerUtils.getRelatedCore(account)).getNextQuoteId());
 		return result;
 	}
 
@@ -393,7 +392,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		}
 
 		bytes memory result = _executeWithSigner(virtualAccount, cd);
-		ahLayout.virtualAccounts[virtualAccount].quoteIds.add(ISymmio(_getRelatedCore(virtualAccount)).getNextQuoteId());
+		ahLayout.virtualAccounts[virtualAccount].quoteIds.add(ISymmio(LibAccountLayerUtils.getRelatedCore(virtualAccount)).getNextQuoteId());
 		return result;
 	}
 
@@ -414,10 +413,6 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		bytes memory result = LibAccountLayerUtils.executeWithSigner(account, callData);
 		emit Call(signer, account, callData, true, result);
 		return result;
-	}
-
-	function _getRelatedCore(address account) internal view returns (address) {
-		return LibAccountLayerUtils.getRelatedCore(account);
 	}
 
 	function _getAffiliateForAccount(address account) private view returns (address) {
