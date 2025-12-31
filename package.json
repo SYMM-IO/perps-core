@@ -15,6 +15,7 @@
 		"@ethersproject/providers": "^5.7.2",
 		"@nomicfoundation/hardhat-ethers": "^4.0.3",
 		"@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.2",
+		"@nomicfoundation/hardhat-verify": "^3.0.8",
 		"@openzeppelin/contracts": "^4.9.6",
 		"@openzeppelin/contracts-upgradeable": "^4.9.6",
 		"@trivago/prettier-plugin-sort-imports": "^6.0.0",

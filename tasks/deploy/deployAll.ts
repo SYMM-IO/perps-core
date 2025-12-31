@@ -1,6 +1,7 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { ControlFacet } from "../../src/types/index.js"
 import { writeData } from "../utils/fs.js"
 import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"
 import { deployDiamond } from "./diamond.js"
@@ -111,7 +112,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					console.log(`FakeStablecoin deployed at: ${deployedContracts.collateral}`)
 					deploymentResults.push({
 						contract: "FakeStablecoin",
-						address: deployedContracts.collateral,
+						address: deployedContracts.collateral!,
 						status: "success",
 						timestamp: new Date().toISOString(),
 					})

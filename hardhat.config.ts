@@ -1,5 +1,6 @@
 import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers"
 import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers"
+import hardhatVerify from "@nomicfoundation/hardhat-verify"
 import { config as dotenvConfig } from "dotenv"
 import { defineConfig } from "hardhat/config"
 import { resolve } from "node:path"
@@ -84,7 +85,7 @@ const customChains = [
 ]
 
 export default defineConfig({
-	plugins: [hardhatToolboxMochaEthers, hardhatEthersPlugin],
+	plugins: [hardhatToolboxMochaEthers, hardhatEthersPlugin, hardhatVerify],
 	tasks: deployTasks,
 	solidity: {
 		version: "0.8.18",
@@ -94,7 +95,7 @@ export default defineConfig({
 			},
 			optimizer: {
 				enabled: true,
-				runs: 200,
+				runs: 1,
 			},
 			viaIR: true,
 		},
