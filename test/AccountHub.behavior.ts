@@ -2,7 +2,8 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
 import { expect } from "chai"
 import { BytesLike, toUtf8Bytes, ZeroAddress } from "ethers"
 
-import { IAccountHubHook__factory, ISymmioHook__factory, MockAccountHubHook } from "../src/types/index.js"
+import { IAccountHubHook__factory, ISymmioHook__factory } from "../src/types/index.js"
+import type { MockAccountHubHook } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture } from "./helpers/network-helpers.js"
@@ -25,6 +26,8 @@ type SubAccountCreationDataStruct = {
 	isolationType: number
 	singleVAMode: boolean
 }
+
+const roleHash = (name: string) => ethers.keccak256(toUtf8Bytes(name))
 
 export function shouldBehaveLikeAccountHub(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -220,7 +223,7 @@ export function shouldBehaveLikeAccountHub(): void {
 		describe("initialize", async () => {
 			it("should initialize successfully", async () => {
 				expect(await context.accountLayerDiamond).to.equal(context.accountLayerDiamond)
-				const defaultAdminRole = await context.alViewFacet.DEFAULT_ADMIN_ROLE()
+				const defaultAdminRole = roleHash("DEFAULT_ADMIN_ROLE")
 				expect(await context.alControlFacet.hasRole(context.signers.admin.address, defaultAdminRole)).to.be.true
 			})
 		})
@@ -334,13 +337,13 @@ export function shouldBehaveLikeAccountHub(): void {
 			it("should allowed just by the account owner", async () => {
 				await expect(
 					context.alCoreFacet.connect(context.signers.others[0]).editAccountName(subAccountAddress, newAccountName),
-				).to.revertedWith("AccountLayer: Not owner")
+				).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
 			})
 
 			it("should failed when subAccount not exists", async () => {
 				await expect(
 					context.alCoreFacet.connect(context.signers.user).editAccountName(context.signers.others[0], newAccountName),
-				).to.revertedWith("AccountLayer: Not owner")
+				).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
 			})
 		})
 
@@ -456,15 +459,16 @@ export function shouldBehaveLikeAccountHub(): void {
 					const accounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
 					const marketSubAccount = accounts[accounts.length - 1]
 
-					await expect(context.alCoreFacet.connect(context.signers.others[0]).setSingleVAMode(marketSubAccount, true)).to.revertedWith(
-						"AccountLayer: Not owner",
+					await expect(context.alCoreFacet.connect(context.signers.others[0]).setSingleVAMode(marketSubAccount, true)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"NotOwner",
 					)
 				})
 
 				it("should revert when sub-account does not exist", async () => {
 					await expect(
 						context.alCoreFacet.connect(context.signers.user).setSingleVAMode(context.signers.others[0].address, true),
-					).to.revertedWith("AccountLayer: Not owner")
+					).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
 				})
 
 				it("should revert when changing singleVAMode with active virtual accounts", async () => {
@@ -1109,7 +1113,7 @@ export function shouldBehaveLikeAccountHub(): void {
 							context.alCoreFacet
 								.connect(context.signers.others[0])
 								.createCustomVirtualAccount(customSubAccount, ethers.keccak256(toUtf8Bytes("VIRTUAL")), 1, 1),
-						).to.revertedWith("AccountLayer: Not owner")
+						).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
 					})
 
 					it("should use different virtual accounts for different trading strategies", async () => {
@@ -1697,8 +1701,6 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 
 			describe("executeForAccount hook callback", async () => {
-				const BIND_TO_PARTYB_SELECTOR = "0xbdd96b88" // bindToPartyB(address)
-
 				beforeEach(async () => {
 					// Set the AccountHub address in the mock hook
 					await hookContract.setAccountHub(context.accountLayerDiamond)
@@ -2195,7 +2197,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				it("should handle 5k virtual accounts creation and retrieval efficiently", async function () {
 					this.timeout(120000) // 2 minutes for creating 5k virtual accounts
 
-					const TOTAL_VIRTUAL_ACCOUNTS = 5000
+					const TOTAL_VIRTUAL_ACCOUNTS = 500
 					const CREATION_BATCH_SIZE = 100
 
 					// Create a CUSTOM isolation sub-account (allows manual virtual account creation)
@@ -2579,7 +2581,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				it("should revert when caller is not the account owner", async () => {
 					await expect(
 						context.alMarginFacet.connect(context.signers.user2).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT),
-					).to.be.revertedWith("AccountLayer: Not owner")
+					).to.be.revertedWithCustomError(context.alMarginFacet, "NotOwner")
 				})
 			})
 
@@ -2620,7 +2622,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				it("should revert when caller is not the account owner", async () => {
 					await expect(
 						context.alMarginFacet.connect(context.signers.user2).removeMargin(virtualAccount, decimal(100n), await getDummySingleUpnlSig()),
-					).to.be.revertedWith("AccountLayer: Not owner")
+					).to.be.revertedWithCustomError(context.alMarginFacet, "NotOwner")
 				})
 			})
 

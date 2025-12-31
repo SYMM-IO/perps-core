@@ -11,9 +11,9 @@ import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
 import { AccountHubStorage, VirtualAccountData } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage } from "../../storages/AffiliateHubStorage.sol";
+import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
-import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
@@ -81,51 +81,21 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
 		if (allocatedBalance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance), core);
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance));
 		}
 
 		uint256 balance = ISymmio(core).balanceOf(account);
 		if (balance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance), core);
+			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance));
 		}
 	}
 
-	function _executeWithSigner(address account, bytes memory callData, address core) private returns (bytes memory) {
-		ISymmio(core).setSigner(account);
-		(bool success, bytes memory result) = core.call(callData);
-		ISymmio(core).setSigner(address(0));
-
-		if (!success) {
-			assembly {
-				revert(add(result, 32), mload(result))
-			}
-		}
-
-		return result;
+	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
+		return LibAccountLayerUtils.executeWithSigner(account, callData);
 	}
 
 	function _getRelatedCore(address account) internal view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-
-		if (ahLayout.subAccounts[account].isExists) {
-			return ahLayout.subAccounts[account].symmioCore;
-		}
-
-		address parent = ahLayout.virtualAccounts[account].parentAccount;
-		if (parent != address(0)) {
-			return _getRelatedCore(parent);
-		}
-
-		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
-		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (owner != address(0)) {
-				return IMultiAccount(legacyAccounts[i]).symmioAddress();
-			}
-		}
-
-		revert("SymmioHookFacet: Unable to retrieve core");
+		return LibAccountLayerUtils.getRelatedCore(account);
 	}
 
 	function _getAffiliateForAccount(address account) private view returns (address) {
@@ -150,9 +120,5 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		if (!success) {
 			revert HookFailed(result);
 		}
-	}
-
-	function _resolveAccountOwner(address) internal pure override returns (address) {
-		return address(0);
 	}
 }

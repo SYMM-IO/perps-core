@@ -5,46 +5,47 @@
 pragma solidity >=0.8.18;
 
 import { LibAccountLayerAccessibility } from "../libraries/LibAccountLayerAccessibility.sol";
+import { LibAccountLayerUtils } from "../libraries/LibAccountLayerUtils.sol";
 import { AffiliateHubStorage, AffiliateState } from "../storages/AffiliateHubStorage.sol";
-import { AccountHubStorage } from "../storages/AccountHubStorage.sol";
+import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
 
-abstract contract AccountLayerAccessibility {
+abstract contract AccountLayerAccessibility is IAccountLayerErrors {
 	modifier onlyRole(bytes32 role) {
-		require(LibAccountLayerAccessibility.hasRole(msg.sender, role), "AccountLayer: Must have role");
+		if (!LibAccountLayerAccessibility.hasRole(msg.sender, role)) revert MustHaveRole();
 		_;
 	}
 
 	modifier onlyRoleAdmin(bytes32 role) {
-		require(LibAccountLayerAccessibility.isRoleAdmin(msg.sender, role), "AccountLayer: Must be role admin");
+		if (!LibAccountLayerAccessibility.isRoleAdmin(msg.sender, role)) revert MustBeRoleAdmin();
 		_;
 	}
 
 	modifier onlyAffiliateAdmin(address affiliate) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		require(afLayout.affiliates[affiliate].admin == msg.sender, "AccountLayer: Not affiliate admin");
+		if (afLayout.affiliates[affiliate].admin != msg.sender) revert NotAffiliateAdmin();
 		_;
 	}
 
 	modifier onlyIfAffiliateIsActive(address affiliate) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		require(afLayout.affiliates[affiliate].state == AffiliateState.ACTIVE, "AccountLayer: Affiliate not active");
+		if (afLayout.affiliates[affiliate].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
 		_;
 	}
 
 	modifier onlySymmio() {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		require(afLayout.whitelistedSymmioCores[msg.sender], "AccountLayer: Not Symmio core");
+		if (!afLayout.whitelistedSymmioCores[msg.sender]) revert NotSymmioCore();
 		_;
 	}
 
 	modifier onlyAccountOwner(address account) {
-		require(_isOwnerOf(account, msg.sender), "AccountLayer: Not owner");
+		address signer = LibAccountLayerUtils.getSigner();
+		if (!_isOwnerOf(account, signer) && !LibAccountLayerAccessibility.hasRole(signer, LibAccountLayerAccessibility.INSTANT_LAYER_ROLE))
+			revert NotOwner();
 		_;
 	}
 
 	function _isOwnerOf(address account, address user) internal view returns (bool) {
-		return _resolveAccountOwner(account) == user;
+		return LibAccountLayerUtils.resolveAccountOwner(account) == user;
 	}
-
-	function _resolveAccountOwner(address account) internal view virtual returns (address);
 }

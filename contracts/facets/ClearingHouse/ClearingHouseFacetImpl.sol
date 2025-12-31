@@ -12,6 +12,7 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibHook } from "../../libraries/LibHook.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { CrossLiquidationSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 
@@ -49,10 +50,7 @@ library ClearingHouseFacetImpl {
 			address partyA = partyAs[i];
 			uint256 amount = amounts[i];
 			address allocationKey = LibAccount.partyBAllocationKey(partyB, partyA);
-			require(
-				accountLayout.partyBAllocatedBalances[partyB][allocationKey] >= amount,
-				"ClearingHouseFacet: Insufficient allocated balance"
-			);
+			require(accountLayout.partyBAllocatedBalances[partyB][allocationKey] >= amount, "ClearingHouseFacet: Insufficient allocated balance");
 			accountLayout.partyBAllocatedBalances[partyB][allocationKey] -= amount;
 			crossLiquidationDetail.deallocateForLiquidation += amount;
 		}
@@ -149,33 +147,27 @@ library ClearingHouseFacetImpl {
 
 			uint256 liquidationPrice = priceSig.prices[i];
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			quote.avgClosedPrice =
-				(quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) /
-				(quote.closedAmount + openAmount);
+			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) / (quote.closedAmount + openAmount);
 			LibQuote.subFromPartyBOpenPositionAmounts(quote, openAmount);
 			quote.closedAmount = quote.quantity;
 
 			LibQuote.removeFromOpenPositions(quote.id);
 			quoteLayout.partyAPositionsCount[partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
-			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1; // total positions for partyB in master account mode	
+			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1; // total positions for partyB in master account mode
 
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
-			if (affiliateHook != address(0)) {
-				try
-					ISymmioHook(affiliateHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)
-				{} catch (bytes memory reason) {
-					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
-				}
-			}
-			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onClosePosition(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, quote.partyB) {} catch (
-					bytes memory reason
-				) {
-					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onClosePosition.selector, quote.id, reason);
-				}
-			}
+			LibHook.safeCall(
+				affiliateHook,
+				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)),
+				quote.id
+			);
+			LibHook.safeCall(
+				systemHook,
+				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[i], liquidationPrice, partyA, quote.partyB)),
+				quote.id
+			);
 			if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
 				LibAccount.increasePartyBNonce(partyB, partyA);
 			}
@@ -190,12 +182,12 @@ library ClearingHouseFacetImpl {
 		return (liquidatedAmounts, closeIds);
 	}
 
-	function softPartyBLiquidation(address partyB,uint256 penalty) internal {
+	function softPartyBLiquidation(address partyB, uint256 penalty) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(accountLayout.masterAccountMode[partyB], "ClearingHouseFacet: partyB is not using master account mode");
-		if(penalty != 0){
+		if (penalty != 0) {
 			require(MAStorage.layout().softLiquidationPenaltyCollector != address(0), "ClearingHouse: No Penalty Collector");
-			require(penalty <= accountLayout.partyBAllocatedBalances[partyB][address(0)] , "ClearingHouse: Insufficient Balance");
+			require(penalty <= accountLayout.partyBAllocatedBalances[partyB][address(0)], "ClearingHouse: Insufficient Balance");
 			accountLayout.partyBAllocatedBalances[partyB][address(0)] -= penalty;
 			accountLayout.balances[MAStorage.layout().softLiquidationPenaltyCollector] += penalty;
 		}

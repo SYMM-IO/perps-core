@@ -94,25 +94,7 @@ interface IViewFacet {
 
 	function dryClaimAllFees(address affiliate, address symmio) external view returns (address[] memory holders, uint256[] memory shares);
 
-	// ==================== Role Constants ====================
-
-	function DEFAULT_ADMIN_ROLE() external pure returns (bytes32);
-
-	function SETTER_ROLE() external pure returns (bytes32);
-
-	function PAUSER_ROLE() external pure returns (bytes32);
-
-	function UNPAUSER_ROLE() external pure returns (bytes32);
-
-	function SIGNER_SETTER_ROLE() external pure returns (bytes32);
-
-	function INSTANT_LAYER_ROLE() external pure returns (bytes32);
-
-	function DEPLOYER_ROLE() external pure returns (bytes32);
-
-	function APPROVER_ROLE() external pure returns (bytes32);
-
-	function DISTRIBUTOR_ROLE() external pure returns (bytes32);
+	// ==================== Constants ====================
 
 	function MAX_NAME_LENGTH() external pure returns (uint256);
 }

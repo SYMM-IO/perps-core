@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { SubAccountCreationData, VirtualAccountIsolationType } from "../../storages/AccountHubStorage.sol";
+import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
 
 interface ICoreFacetEvents {
 	event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
@@ -17,7 +18,7 @@ interface ICoreFacetEvents {
 	event HookActionExecuted(address indexed account, address indexed affiliate, bytes4 selector);
 }
 
-interface ICoreFacet is ICoreFacetEvents {
+interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	// ==================== Sub-Account Management ====================
 
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
@@ -43,25 +44,4 @@ interface ICoreFacet is ICoreFacetEvents {
 
 	function executeForAccount(bytes calldata callData) external;
 
-	// ==================== Custom Errors ====================
-
-	error ZeroAddress();
-	error NotSymmioCore();
-	error EmptyArray();
-	error NotOwner();
-	error InvalidParent();
-	error AccountDoesNotExist();
-	error InvalidNameLength();
-	error AffiliateNotActive();
-	error OnlyCustomIsolationCanCreateManually();
-	error HookFailed(bytes reason);
-	error HasActiveVirtualAccounts();
-	error SingleVAModeNotApplicable();
-	error PositionTypeNotAllowedForThisAccount();
-	error SymbolNotAllowedForThisAccount();
-	error AlreadyDeleted();
-	error OpenPositionsExist();
-	error NoActiveHookContext();
-	error SelectorNotAllowed(bytes4 selector);
-	error HookActionFailed(bytes reason);
 }

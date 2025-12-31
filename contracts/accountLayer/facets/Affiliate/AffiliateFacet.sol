@@ -359,8 +359,4 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 		if (accountManager == address(0)) revert("AffiliateFacet: Deployment failed");
 	}
-
-	function _resolveAccountOwner(address) internal pure override returns (address) {
-		return address(0);
-	}
 }

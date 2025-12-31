@@ -6,23 +6,18 @@ pragma solidity >=0.8.18;
 
 import { VirtualAccountIsolationType } from "../../storages/AccountHubStorage.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
+import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
 
 interface IMarginFacetEvents {
 	event AddMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
 	event RemoveMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
 }
 
-interface IMarginFacet is IMarginFacetEvents {
+interface IMarginFacet is IMarginFacetEvents, IAccountLayerErrors {
 	function addMargin(address virtualAccount, uint256 amount) external;
 
 	function addMarginToNextVA(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId, uint256 amount) external;
 
 	function removeMargin(address virtualAccount, uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
 
-	// ==================== Custom Errors ====================
-
-	error ZeroAmount();
-	error NotVirtualAccount();
-	error AccountDoesNotExist();
-	error NotOwner();
 }

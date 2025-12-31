@@ -1,3 +1,4 @@
+import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import { task } from "hardhat/config"
 
 import { readData } from "../utils/fs.js"
@@ -9,10 +10,13 @@ const verifyDeploymentAction = async (_: unknown, hre: any) => {
 	for (const address of deployedAddresses) {
 		try {
 			console.log(`Verifying ${address.address}`)
-			await hre.tasks.getTask("verify:verify").run({
-				address: address.address,
-				constructorArguments: address.constructorArguments,
-			})
+			await verifyContract(
+				{
+					address: address.address,
+					constructorArgs: address.constructorArguments,
+				},
+				hre,
+			)
 		} catch (err) {
 			console.error(err)
 		}
@@ -25,10 +29,13 @@ const verifyAffiliateHubAction = async (_: unknown, hre: any) => {
 	for (const address of deployedAddresses) {
 		try {
 			console.log(`Verifying ${address.address}`)
-			await hre.tasks.getTask("verify:verify").run({
-				address: address.address,
-				constructorArguments: address.constructorArguments,
-			})
+			await verifyContract(
+				{
+					address: address.address,
+					constructorArgs: address.constructorArguments,
+				},
+				hre,
+			)
 		} catch (err) {
 			console.error(err)
 		}
@@ -41,10 +48,13 @@ const verifyAccountHubAction = async (_: unknown, hre: any) => {
 	for (const address of deployedAddresses) {
 		try {
 			console.log(`Verifying ${address.address}`)
-			await hre.tasks.getTask("verify:verify").run({
-				address: address.address,
-				constructorArguments: address.constructorArguments,
-			})
+			await verifyContract(
+				{
+					address: address.address,
+					constructorArgs: address.constructorArguments,
+				},
+				hre,
+			)
 		} catch (err) {
 			console.error(err)
 		}
@@ -57,10 +67,13 @@ const verifyInstantLayerAction = async (_: unknown, hre: any) => {
 	for (const address of deployedAddresses) {
 		try {
 			console.log(`Verifying ${address.address}`)
-			await hre.tasks.getTask("verify:verify").run({
-				address: address.address,
-				constructorArguments: address.constructorArguments,
-			})
+			await verifyContract(
+				{
+					address: address.address,
+					constructorArgs: address.constructorArguments,
+				},
+				hre,
+			)
 		} catch (err) {
 			console.error(err)
 		}

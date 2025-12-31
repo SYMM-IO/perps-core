@@ -1,4 +1,6 @@
-import { ethers, tasks } from "hardhat"
+import hre from "hardhat"
+import { ethers } from "hardhat"
+import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 
 function sleep(ms: number) {
 	return new Promise(resolve => setTimeout(resolve, ms))
@@ -24,11 +26,13 @@ async function main() {
 
 	await sleep(30000)
 
-	await tasks.getTask("verify:verify").run({
-		address: await timelock.getAddress(),
-		constructorArguments: [minDelay, proposers, executors, multiSig],
-		contract: "contracts/SymmioTimelockController.sol:SymmioTimelockController"
-	})
+	await verifyContract(
+		{
+			address: await timelock.getAddress(),
+			constructorArgs: [minDelay, proposers, executors, multiSig],
+		},
+		hre,
+	)
 }
 
 main()

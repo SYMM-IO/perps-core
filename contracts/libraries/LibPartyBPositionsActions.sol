@@ -14,6 +14,7 @@ import { LibQuoteClose } from "./LibQuoteClose.sol";
 import { LibQuoteFunding } from "./LibQuoteFunding.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
+import { LibHook } from "./LibHook.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 
 library LibPartyBPositionsActions {
@@ -166,7 +167,7 @@ library LibPartyBPositionsActions {
 				accountLayout.pendingLockedBalances[quote.partyA].sub(filledLockedValues);
 			}
 			// update partyB pending locked balances
-			LibAccount.subFromPartyBPendingLockedBalances( quote);
+			LibAccount.subFromPartyBPendingLockedBalances(quote);
 
 			newQuote.lockedValues = quote.lockedValues.sub(filledLockedValues);
 			newQuote.initialLockedValues = newQuote.lockedValues;
@@ -192,42 +193,32 @@ library LibPartyBPositionsActions {
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
 
-			if (affiliateHook != address(0)) {
-				try ISymmioHook(affiliateHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onOpenPosition.selector, quoteId, reason);
-				}
-				try
-					ISymmioHook(affiliateHook).onFeeCharged(
-						quoteId,
-						openFee,
-						quote.partyA,
-						quote.partyB,
-						quote.symbolId,
-						quote.affiliate,
-						ISymmioHook.TradingFeeType.OPEN
-					)
-				{} catch (bytes memory reason) {
-					emit SharedEvents.HookFailed(affiliateHook, ISymmioHook.onFeeCharged.selector, quoteId, reason);
-				}
-			}
-			if (systemHook != address(0)) {
-				try ISymmioHook(systemHook).onOpenPosition(quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB) {} catch (bytes memory reason) {
-					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onOpenPosition.selector, quoteId, reason);
-				}
-				try
-					ISymmioHook(systemHook).onFeeCharged(
-						quoteId,
-						openFee,
-						quote.partyA,
-						quote.partyB,
-						quote.symbolId,
-						quote.affiliate,
-						ISymmioHook.TradingFeeType.OPEN
-					)
-				{} catch (bytes memory reason) {
-					emit SharedEvents.HookFailed(systemHook, ISymmioHook.onFeeCharged.selector, quoteId, reason);
-				}
-			}
+			LibHook.safeCall(
+				affiliateHook,
+				abi.encodeCall(ISymmioHook.onOpenPosition, (quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB)),
+				quoteId
+			);
+			LibHook.safeCall(
+				affiliateHook,
+				abi.encodeCall(
+					ISymmioHook.onFeeCharged,
+					(quoteId, openFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
+				),
+				quoteId
+			);
+			LibHook.safeCall(
+				systemHook,
+				abi.encodeCall(ISymmioHook.onOpenPosition, (quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB)),
+				quoteId
+			);
+			LibHook.safeCall(
+				systemHook,
+				abi.encodeCall(
+					ISymmioHook.onFeeCharged,
+					(quoteId, openFee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)
+				),
+				quoteId
+			);
 		}
 
 		emit SharedEvents.TradeVolumeRecorded(

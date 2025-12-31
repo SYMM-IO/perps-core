@@ -1,157 +1,16 @@
-import { toUtf8Bytes } from "ethers";
-
-
-
-import type { AccountHub, AccountHubLens, AffiliateHub } from "../src/types/index.js";
-import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types/index.js";
-import { deployAccountHub } from "../tasks/deploy/accountHub.js";
-import { deployAffiliateHub } from "../tasks/deploy/affiliateHub.js";
-import { deployAccountLayerDiamond } from "../tasks/deploy/accountLayerDiamond.js";
-import { deployDiamond } from "../tasks/deploy/diamond.js";
-import { deployInstantLayer } from "../tasks/deploy/instantLayer.js";
-import { deploySymmioPartyB } from "../tasks/deploy/partyB.js";
-import { deployStablecoin } from "../tasks/deploy/stablecoin.js";
-import { ethers, hre } from "./helpers/hardhat-connection.js";
-import { createRunContext, RunContext } from "./models/RunContext.js";
-import { decimal } from "./utils/Common.js";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+import { toUtf8Bytes } from "ethers"
+
+import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types/index.js"
+import { deployAccountHub } from "../tasks/deploy/accountHub.js"
+import { deployAccountLayerDiamond } from "../tasks/deploy/accountLayerDiamond.js"
+import { deployAffiliateHub } from "../tasks/deploy/affiliateHub.js"
+import { deployDiamond } from "../tasks/deploy/diamond.js"
+import { deployInstantLayer } from "../tasks/deploy/instantLayer.js"
+import { deploySymmioPartyB } from "../tasks/deploy/partyB.js"
+import { deployStablecoin } from "../tasks/deploy/stablecoin.js"
+import { ethers, hre } from "./helpers/hardhat-connection.js"
+import { createRunContext, RunContext } from "./models/RunContext.js"
+import { decimal } from "./utils/Common.js"
 
 export async function initializeFixture(): Promise<RunContext> {
 	const collateral = await deployStablecoin(hre, { logData: false })
@@ -188,13 +47,24 @@ export async function initializeFixture(): Promise<RunContext> {
 	context.accountLayerDiamond = accountLayerDiamondAddress
 	context.alCoreFacet = await ethers.getContractAt("contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet", accountLayerDiamondAddress)
 	context.alMarginFacet = await ethers.getContractAt("contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet", accountLayerDiamondAddress)
-	context.alSymmioHookFacet = await ethers.getContractAt("contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet", accountLayerDiamondAddress)
-	context.alControlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", accountLayerDiamondAddress)
+	context.alSymmioHookFacet = await ethers.getContractAt(
+		"contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
+		accountLayerDiamondAddress,
+	)
+	context.alControlFacet = await ethers.getContractAt(
+		"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+		accountLayerDiamondAddress,
+	)
 	context.alViewFacet = await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", accountLayerDiamondAddress)
-	context.alAffiliateFacet = await ethers.getContractAt("contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet", accountLayerDiamondAddress)
+	context.alAffiliateFacet = await ethers.getContractAt(
+		"contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
+		accountLayerDiamondAddress,
+	)
 
 	// Grant additional roles via AccountLayer ControlFacet (admin already has DEFAULT_ADMIN_ROLE, SETTER_ROLE, PAUSER_ROLE, UNPAUSER_ROLE, APPROVER_ROLE from init)
-	await context.alControlFacet.connect(context.signers.admin).grantRole(await instantLayer.getAddress(), ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
+	await context.alControlFacet
+		.connect(context.signers.admin)
+		.grantRole(await instantLayer.getAddress(), ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 
 	// Whitelist the Symmio core
 	await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(await diamond.getAddress(), true)
@@ -297,9 +167,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("PARTYB_LIQUIDATOR_ROLE")))
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
+	await context.controlFacet.connect(context.signers.admin).grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("INTERNAL_TRANSFER_TO_BALANCE_ROLE")))
