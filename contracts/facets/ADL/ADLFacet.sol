@@ -30,9 +30,7 @@ contract ADLFacet is Accessibility, Pausable, IADLFacet {
 			if (filledAmount > 0) {
 				uint256 quoteId = quoteIds[i];
 				Quote storage quote = quoteLayout.quotes[quoteId];
-				uint256 closeIdToUse = closeIds[i] == 0 ? quoteLayout.closeIds[quoteId] : closeIds[i];
-
-				emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, prices[i], quote.quoteStatus, closeIdToUse);
+				emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, prices[i], quote.quoteStatus, closeIds[i]);
 			}
 			unchecked {
 				++i;
