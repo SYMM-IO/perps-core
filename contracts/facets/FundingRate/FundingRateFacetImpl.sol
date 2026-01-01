@@ -133,6 +133,7 @@ library FundingRateFacetImpl {
 			}
 
 			LibQuote.updatePartyBOpenPositionNotional(quote, oldOpenedPrice);
+			LibQuote.updatePartyAOpenPositionNotional(quote, oldOpenedPrice);
 
 			// Mark this epoch as paid
 			quote.lastFundingPaymentTimestamp = paidTimestamp;

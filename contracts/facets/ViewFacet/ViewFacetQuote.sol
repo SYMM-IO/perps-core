@@ -292,6 +292,26 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
+	 * @notice Returns total open position amounts and average open prices for a party A and symbol, grouped by position type.
+	 * @param partyA The address of party A.
+	 * @param symbolId The symbol ID.
+	 * @return longPosition Total open amount and avg open price for LONG positions.
+	 * @return shortPosition Total open amount and avg open price for SHORT positions.
+	 */
+	function getPartyATotalPositionAmountsBySymbol(
+		address partyA,
+		uint256 symbolId
+	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256 longAmount = quoteLayout.partyATotalPositionsInfo[partyA][symbolId][PositionType.LONG].totalAmounts;
+		uint256 shortAmount = quoteLayout.partyATotalPositionsInfo[partyA][symbolId][PositionType.SHORT].totalAmounts;
+		uint256 longNotional = quoteLayout.partyATotalPositionsInfo[partyA][symbolId][PositionType.LONG].totalNotionals;
+		uint256 shortNotional = quoteLayout.partyATotalPositionsInfo[partyA][symbolId][PositionType.SHORT].totalNotionals;
+		longPosition = TotalPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
+		shortPosition = TotalPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
+	}
+
+	/**
 	 * @notice Returns total open amounts and average open prices for a party B across symbols, grouped by position type.
 	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
 	 * @param partyB The address of party B.
