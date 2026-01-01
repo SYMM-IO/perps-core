@@ -9,8 +9,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {
 	AccountStorage,
-	AdlWithdrawalRequest,
-	AdlWithdrawStatus,
+	AssuranceWithdrawalRequest,
+	AssuranceWithdrawStatus,
 	BindState,
 	BindStatus,
 	ExternalTransferReq,
@@ -411,7 +411,7 @@ library AccountFacetImpl {
 		require(amount > 0, "AccountFacet: invalid amount");
 
 		IERC20(token).safeTransferFrom(signer, address(this), amount);
-		accountLayout.adlCollateral[signer][token] += amount;
+		accountLayout.assuranceCollateral[signer][token] += amount;
 	}
 
 	function requestAssuranceWithdraw(uint256 amount, address token, address recipient) internal {
@@ -420,30 +420,30 @@ library AccountFacetImpl {
 
 		require(amount > 0, "AccountFacet: invalid amount");
 		require(recipient != address(0), "AccountFacet: invalid recipient");
-		require(accountLayout.adlWithdrawalRequests[signer].status == AdlWithdrawStatus.NONE, "AccountFacet: withdraw pending");
-		require(accountLayout.adlCollateral[signer][token] >= amount, "AccountFacet: insufficient ADL collateral");
+		require(accountLayout.assuranceWithdrawalRequests[signer].status == AssuranceWithdrawStatus.NONE, "AccountFacet: withdraw pending");
+		require(accountLayout.assuranceCollateral[signer][token] >= amount, "AccountFacet: insufficient ADL collateral");
 
-		accountLayout.adlWithdrawalRequests[signer] = AdlWithdrawalRequest({
+		accountLayout.assuranceWithdrawalRequests[signer] = AssuranceWithdrawalRequest({
 			token: token,
 			amount: amount,
 			recipient: recipient,
 			requester: signer,
-			status: AdlWithdrawStatus.PENDING
+			status: AssuranceWithdrawStatus.PENDING
 		});
 	}
 
 	function acceptAssuranceWithdraw(address partyB, uint256 amount, address token) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		AdlWithdrawalRequest storage req = accountLayout.adlWithdrawalRequests[partyB];
+		AssuranceWithdrawalRequest storage req = accountLayout.assuranceWithdrawalRequests[partyB];
 
-		require(req.status == AdlWithdrawStatus.PENDING, "AccountFacet: no pending ADL withdraw");
+		require(req.status == AssuranceWithdrawStatus.PENDING, "AccountFacet: no pending ADL withdraw");
 		require(req.requester == partyB, "AccountFacet: requester mismatch");
 		require(req.token == token && req.amount == amount, "AccountFacet: params mismatch");
-		require(accountLayout.adlCollateral[partyB][token] >= amount, "AccountFacet: insufficient ADL collateral");
+		require(accountLayout.assuranceCollateral[partyB][token] >= amount, "AccountFacet: insufficient ADL collateral");
 
 		address recipient = req.recipient;
-		accountLayout.adlCollateral[partyB][token] -= amount;
-		req.status = AdlWithdrawStatus.NONE;
+		accountLayout.assuranceCollateral[partyB][token] -= amount;
+		req.status = AssuranceWithdrawStatus.NONE;
 		req.amount = 0;
 		req.token = address(0);
 		req.recipient = address(0);
@@ -455,15 +455,15 @@ library AccountFacetImpl {
 	function cancelAssuranceWithdraw() internal returns (address token, uint256 amount) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		AdlWithdrawalRequest storage req = accountLayout.adlWithdrawalRequests[signer];
+		AssuranceWithdrawalRequest storage req = accountLayout.assuranceWithdrawalRequests[signer];
 
-		require(req.status == AdlWithdrawStatus.PENDING, "AccountFacet: no pending ADL withdraw");
+		require(req.status == AssuranceWithdrawStatus.PENDING, "AccountFacet: no pending ADL withdraw");
 
 		token = req.token;
 		amount = req.amount;
 		req.recipient = address(0);
 		req.requester = address(0);
-		req.status = AdlWithdrawStatus.NONE;
+		req.status = AssuranceWithdrawStatus.NONE;
 		req.amount = 0;
 		req.token = address(0);
 	}
@@ -472,9 +472,9 @@ library AccountFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(amount > 0, "AccountFacet: invalid penalty");
-		require(accountLayout.adlCollateral[partyB][token] >= amount, "AccountFacet: insufficient ADL collateral");
+		require(accountLayout.assuranceCollateral[partyB][token] >= amount, "AccountFacet: insufficient ADL collateral");
 
-		accountLayout.adlCollateral[partyB][token] -= amount;
+		accountLayout.assuranceCollateral[partyB][token] -= amount;
 		IERC20(token).safeTransfer(recipient, amount);
 	}
 }

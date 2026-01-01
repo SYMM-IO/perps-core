@@ -266,11 +266,11 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(token, amount)
 			await context.accountFacet.connect(hedger.signer).requestAssuranceWithdraw(token, amount, recipient)
 
-			// Corrupt `adlWithdrawalRequests[partyB].requester` in diamond storage to hit the `requester mismatch` require.
+			// Corrupt `assuranceWithdrawalRequests[partyB].requester` in diamond storage to hit the `requester mismatch` require.
 			const accountStorageBaseSlot = BigInt(ethers.keccak256(toUtf8Bytes("diamond.standard.storage.account")))
-			const adlWithdrawalRequestsSlot = accountStorageBaseSlot + 35n
+			const assuranceWithdrawalRequestsSlot = accountStorageBaseSlot + 35n
 			const entryBase = BigInt(
-				ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [partyB, adlWithdrawalRequestsSlot])),
+				ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [partyB, assuranceWithdrawalRequestsSlot])),
 			)
 			const requesterAndStatusSlot = ethers.toBeHex(entryBase + 3n, 32)
 			const packedRequesterAndStatus = ethers.toBeHex(0n + (1n << 160n), 32) // requester=0x0, status=PENDING(1)

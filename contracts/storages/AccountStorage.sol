@@ -112,18 +112,18 @@ enum ExternalTransferStatus {
 	CANCELED
 }
 
-enum AdlWithdrawStatus {
+enum AssuranceWithdrawStatus {
 	NONE,
 	PENDING,
 	APPROVED
 }
 
-struct AdlWithdrawalRequest {
+struct AssuranceWithdrawalRequest {
 	address token;
 	uint256 amount;
 	address recipient;
 	address requester;
-	AdlWithdrawStatus status;
+	AssuranceWithdrawStatus status;
 }
 
 // External Transfer : Symmio1(user1) balance -> Symmio2(user2) balance
@@ -183,9 +183,9 @@ library AccountStorage {
 		uint256 lastExternalTransferId;
 		mapping(uint256 => ExternalTransferReq) externalTransfers;
 		mapping(address => bool) isPartyBBindable;
-		// ---- ADL collateral ----
-		mapping(address => mapping(address => uint256)) adlCollateral; // partyB => token => amount (token decimals)
-		mapping(address => AdlWithdrawalRequest) adlWithdrawalRequests;
+		// ---- Assurance collateral (token decimals) ----
+		mapping(address => mapping(address => uint256)) assuranceCollateral; // partyB => token => amount (token decimals)
+		mapping(address => AssuranceWithdrawalRequest) assuranceWithdrawalRequests;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
