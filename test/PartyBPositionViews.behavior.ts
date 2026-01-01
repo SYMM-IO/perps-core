@@ -1,26 +1,44 @@
-import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 
+import type { QuoteSettlementDataStructOutput } from "../src/types/facets/Settlement/ISettlementFacet.js"
+import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getQuoteQuantity, unDecimal } from "./utils/Common.js"
 import { getDummyLiquidationSig, getDummyPairUpnlSig, getDummySettlementSig } from "./utils/SignatureUtils.js"
-import type { QuoteSettlementDataStructOutput } from "../src/types/facets/Settlement/ISettlementFacet.js"
-import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 
 export function shouldBehaveLikePartyBPositionViews(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
 	let context: RunContext
-	let quote1LongOpened: QuoteStructOutput,
-		quote2ShortOpened: QuoteStructOutput,
-		quote3LongOpened: QuoteStructOutput
+	let quote1LongOpened: QuoteStructOutput, quote2ShortOpened: QuoteStructOutput, quote3LongOpened: QuoteStructOutput
+	const getExpectedTotals = async (quoteIds: bigint[]) => {
+		let longAmount = 0n
+		let longNotional = 0n
+		let shortAmount = 0n
+		let shortNotional = 0n
+
+		for (const quoteId of quoteIds) {
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const amount = quote.quantity - quote.closedAmount
+			if (quote.positionType === BigInt(PositionType.LONG)) {
+				longAmount += amount
+				longNotional += amount * quote.openedPrice
+			} else {
+				shortAmount += amount
+				shortNotional += amount * quote.openedPrice
+			}
+		}
+
+		return { longAmount, longNotional, shortAmount, shortNotional }
+	}
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -45,7 +63,9 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		await hedger.openPosition(quote1LongOpened.id)
 
 		// Quote2 SHORT opened
-		quote2ShortOpened = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()),
+		)
 		await hedger.lockQuote(quote2ShortOpened.id)
 		await hedger.openPosition(quote2ShortOpened.id)
 
@@ -59,8 +79,8 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		it("returns correct totals and average prices for LONG and SHORT positions", async function () {
 			const symbolId = quote1LongOpened.symbolId
 			const quoteIds = [quote1LongOpened.id, quote2ShortOpened.id, quote3LongOpened.id]
-			let expectedLong = 0n
-			let expectedShort = 0n
+			let expectedLongOpenAmount = 0n
+			let expectedShortOpenAmount = 0n
 			let expectedLongNotional = 0n
 			let expectedShortNotional = 0n
 
@@ -69,33 +89,33 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 				if (quote.symbolId !== symbolId) continue
 				const openAmount = quote.quantity - quote.closedAmount
 				if (quote.positionType === BigInt(PositionType.LONG)) {
-					expectedLong += openAmount
+					expectedLongOpenAmount += openAmount
 					expectedLongNotional += openAmount * quote.openedPrice
 				} else {
-					expectedShort += openAmount
+					expectedShortOpenAmount += openAmount
 					expectedShortNotional += openAmount * quote.openedPrice
 				}
 			}
 
 			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, symbolId)
 			expect(longPosition.positionType).to.equal(BigInt(PositionType.LONG))
-			expect(longPosition.totalOpenAmount).to.equal(expectedLong)
-			expect(longPosition.avgOpenPrice).to.equal(expectedLong === 0n ? 0n : expectedLongNotional / expectedLong)
+			expect(longPosition.totalOpenAmount).to.equal(expectedLongOpenAmount)
+			expect(longPosition.avgOpenPrice).to.equal(expectedLongOpenAmount === 0n ? 0n : expectedLongNotional / expectedLongOpenAmount)
 			expect(shortPosition.positionType).to.equal(BigInt(PositionType.SHORT))
-			expect(shortPosition.totalOpenAmount).to.equal(expectedShort)
-			expect(shortPosition.avgOpenPrice).to.equal(expectedShort === 0n ? 0n : expectedShortNotional / expectedShort)
+			expect(shortPosition.totalOpenAmount).to.equal(expectedShortOpenAmount)
+			expect(shortPosition.avgOpenPrice).to.equal(expectedShortOpenAmount === 0n ? 0n : expectedShortNotional / expectedShortOpenAmount)
 		})
 
 		it("computes weighted averages across multiple fills at different prices", async function () {
 			await user.setBalances(decimal(1000n), decimal(1000n), decimal(1000n))
 
 			// open an extra LONG at a different price to shift the average
-			const extraLongId = await user.sendQuote(limitQuoteRequestBuilder().build())
-			const extraLong = await context.viewFacetQuote.getQuote(extraLongId)
-			await hedger.lockQuote(extraLong.id)
-			await hedger.openPosition(extraLong.id, limitOpenRequestBuilder().openPrice(decimal(5n, 17)).build())
+			const extraLongQuoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+			const extraLongQuote = await context.viewFacetQuote.getQuote(extraLongQuoteId)
+			await hedger.lockQuote(extraLongQuote.id)
+			await hedger.openPosition(extraLongQuote.id, limitOpenRequestBuilder().openPrice(decimal(5n, 17)).build())
 
-			const quoteIds = [quote1LongOpened.id, quote3LongOpened.id, extraLong.id, quote2ShortOpened.id]
+			const quoteIds = [quote1LongOpened.id, quote3LongOpened.id, quote2ShortOpened.id, extraLongQuote.id]
 			let longAmount = 0n
 			let longNotional = 0n
 			let shortAmount = 0n
@@ -183,12 +203,9 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 
 			await user.requestToClosePosition(
 				quote1LongOpened.id,
-				limitCloseRequestBuilder().quantityToClose(closeQuantity).closePrice(decimal(1n)).build()
+				limitCloseRequestBuilder().quantityToClose(closeQuantity).closePrice(decimal(1n)).build(),
 			)
-			await hedger.fillCloseRequest(
-				quote1LongOpened.id,
-				limitFillCloseRequestBuilder().filledAmount(closeQuantity).closedPrice(decimal(1n)).build()
-			)
+			await hedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().filledAmount(closeQuantity).closedPrice(decimal(1n)).build())
 
 			const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 
@@ -200,14 +217,8 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 			const before = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 			const fullQuantity = await getQuoteQuantity(context, quote1LongOpened.id)
 
-			await user.requestToClosePosition(
-				quote1LongOpened.id,
-				limitCloseRequestBuilder().quantityToClose(fullQuantity).closePrice(decimal(1n)).build()
-			)
-			await hedger.fillCloseRequest(
-				quote1LongOpened.id,
-				limitFillCloseRequestBuilder().filledAmount(fullQuantity).closedPrice(decimal(1n)).build()
-			)
+			await user.requestToClosePosition(quote1LongOpened.id, limitCloseRequestBuilder().quantityToClose(fullQuantity).closePrice(decimal(1n)).build())
+			await hedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().filledAmount(fullQuantity).closedPrice(decimal(1n)).build())
 
 			const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 
@@ -216,14 +227,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 
 		it("resets totals after full liquidation flow", async function () {
 			const liquidator = context.signers.liquidator
-			const sig = await getDummyLiquidationSig(
-				"0x10",
-				-decimal(1_000_000n),
-				[1n],
-				[decimal(1n)],
-				decimal(1_000_000n),
-				0n,
-			)
+			const sig = await getDummyLiquidationSig("0x10", -decimal(1_000_000n), [1n], [decimal(1n)], decimal(1_000_000n), 0n)
 
 			await context.liquidationFacet.connect(liquidator).liquidatePartyA(await user.getAddress(), sig)
 			await context.liquidationFacet.connect(liquidator).setSymbolsPrice(await user.getAddress(), sig)
@@ -237,23 +241,30 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 			expect(shortPosition.totalOpenAmount).to.equal(0n)
 		})
 
-		it("stays consistent after settlement adjustments", async function () {
+		it("updates averages after settlement adjustments", async function () {
 			const before = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 			const updatedPrice = decimal(5n, 17)
 
-			const settlementEntry = Object.assign(
-				[quote1LongOpened.id, updatedPrice, 0n],
-				{ quoteId: quote1LongOpened.id, currentPrice: updatedPrice, partyBUpnlIndex: 0n },
-			) as QuoteSettlementDataStructOutput
+			const settlementEntry = Object.assign([quote1LongOpened.id, updatedPrice, 0n], {
+				quoteId: quote1LongOpened.id,
+				currentPrice: updatedPrice,
+				partyBUpnlIndex: 0n,
+			}) as QuoteSettlementDataStructOutput
 			const settlementSig = await getDummySettlementSig(0n, [0n], [settlementEntry])
 
 			await hedger.settleUpnl(await context.signers.user.getAddress(), [updatedPrice], settlementSig)
 
 			const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
+			const { longAmount, longNotional, shortAmount, shortNotional } = await getExpectedTotals([
+				quote1LongOpened.id,
+				quote2ShortOpened.id,
+				quote3LongOpened.id,
+			])
+
 			expect(after.longPosition.totalOpenAmount).to.equal(before.longPosition.totalOpenAmount)
-			expect(after.longPosition.avgOpenPrice).to.equal(before.longPosition.avgOpenPrice)
+			expect(after.longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
 			expect(after.shortPosition.totalOpenAmount).to.equal(before.shortPosition.totalOpenAmount)
-			expect(after.shortPosition.avgOpenPrice).to.equal(before.shortPosition.avgOpenPrice)
+			expect(after.shortPosition.avgOpenPrice).to.equal(shortAmount === 0n ? 0n : shortNotional / shortAmount)
 		})
 	})
 
@@ -278,9 +289,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 			await user.setBalances(decimal(1000n), decimal(1000n), decimal(1000n))
 
 			// Open a SHORT on the second symbol, leave the third untouched
-			const sym2QuoteId = await user.sendQuote(
-				limitQuoteRequestBuilder().symbolId(symbol2).positionType(PositionType.SHORT).build(),
-			)
+			const sym2QuoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbol2).positionType(PositionType.SHORT).build())
 			const sym2Quote = await context.viewFacetQuote.getQuote(sym2QuoteId)
 			await hedger.lockQuote(sym2Quote.id)
 			await hedger.openPosition(sym2Quote.id)
@@ -290,12 +299,10 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 			const sym1Totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 			const sym2Totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, Number(symbol2))
 
-			const aggregates = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger.address, 0, 5)
+			const aggregates = await context.viewFacetQuote.getPartyBTotalPositionAmounts(hedger.address, 0, 5)
 
 			const findEntry = (sid: bigint, posType: PositionType) =>
-				aggregates.find(
-					(entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType),
-				)
+				aggregates.find((entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType))
 
 			const sym1Long = findEntry(1n, PositionType.LONG)
 			const sym1Short = findEntry(1n, PositionType.SHORT)
@@ -379,20 +386,13 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		})
 
 		describe("iterative funding fee (old method - changes openedPrice)", function () {
-			// NOTE: The old chargeFundingRate method modifies quote.openedPrice but does NOT update
-			// the aggregate partyBTotalPositionsInfo storage. The view methods read from that
-			// aggregate storage, so they won't reflect price changes from the old funding method.
-			// This is expected behavior - the aggregate storage was added later and the old
-			// funding method was not updated to maintain it.
-
-			it("changes individual quote openedPrice but does NOT update aggregate view", async function () {
+			it("changes individual quote openedPrice and updates aggregate view", async function () {
 				const symbol = await context.viewFacetSymbol.getSymbol(1)
 				const duration = symbol.fundingRateEpochDuration
 				const window = symbol.fundingRateWindowTime
 				const currentEpoch = (BigInt(await time.latest()) / duration) * duration
 				const targetTime = duration * 2n + window - 1n + currentEpoch
 
-				const before = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 				const oldQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
 
 				const rate = decimal(1n, 16) // 1% funding rate
@@ -401,26 +401,29 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 
 				const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 				const newQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+				const { longAmount, longNotional, shortAmount, shortNotional } = await getExpectedTotals([
+					quote1LongOpened.id,
+					quote2ShortOpened.id,
+					quote3LongOpened.id,
+				])
 
 				// Individual quote's openedPrice IS updated (LONG with positive rate increases)
 				const expectedNewPrice = unDecimal(oldQuote.openedPrice * (decimal(1n) + rate))
 				expect(newQuote.openedPrice).to.equal(expectedNewPrice)
 
-				// But the aggregate view is NOT updated - amounts and avg prices remain the same
-				expect(after.longPosition.totalOpenAmount).to.equal(before.longPosition.totalOpenAmount)
-				expect(after.longPosition.avgOpenPrice).to.equal(before.longPosition.avgOpenPrice)
-				expect(after.shortPosition.totalOpenAmount).to.equal(before.shortPosition.totalOpenAmount)
-				expect(after.shortPosition.avgOpenPrice).to.equal(before.shortPosition.avgOpenPrice)
+				expect(after.longPosition.totalOpenAmount).to.equal(longAmount)
+				expect(after.longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
+				expect(after.shortPosition.totalOpenAmount).to.equal(shortAmount)
+				expect(after.shortPosition.avgOpenPrice).to.equal(shortAmount === 0n ? 0n : shortNotional / shortAmount)
 			})
 
-			it("SHORT position openedPrice changes but aggregate view unchanged", async function () {
+			it("SHORT position openedPrice changes and aggregate view updates", async function () {
 				const symbol = await context.viewFacetSymbol.getSymbol(1)
 				const duration = symbol.fundingRateEpochDuration
 				const window = symbol.fundingRateWindowTime
 				const currentEpoch = (BigInt(await time.latest()) / duration) * duration
 				const targetTime = duration * 2n + window - 1n + currentEpoch
 
-				const before = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 				const oldQuote = await context.viewFacetQuote.getQuote(quote2ShortOpened.id)
 
 				const rate = decimal(1n, 16) // 1% funding rate
@@ -429,24 +432,29 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 
 				const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 				const newQuote = await context.viewFacetQuote.getQuote(quote2ShortOpened.id)
+				const { longAmount, longNotional, shortAmount, shortNotional } = await getExpectedTotals([
+					quote1LongOpened.id,
+					quote2ShortOpened.id,
+					quote3LongOpened.id,
+				])
 
 				// Individual quote's openedPrice IS updated (SHORT with positive rate decreases)
 				const expectedNewPrice = unDecimal(oldQuote.openedPrice * (decimal(1n) - rate))
 				expect(newQuote.openedPrice).to.equal(expectedNewPrice)
 
-				// Aggregate view is NOT updated
-				expect(after.shortPosition.totalOpenAmount).to.equal(before.shortPosition.totalOpenAmount)
-				expect(after.shortPosition.avgOpenPrice).to.equal(before.shortPosition.avgOpenPrice)
+				expect(after.longPosition.totalOpenAmount).to.equal(longAmount)
+				expect(after.longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
+				expect(after.shortPosition.totalOpenAmount).to.equal(shortAmount)
+				expect(after.shortPosition.avgOpenPrice).to.equal(shortAmount === 0n ? 0n : shortNotional / shortAmount)
 			})
 
-			it("multiple positions charged - quotes change but aggregate unchanged", async function () {
+			it("multiple positions charged - quotes and aggregate update", async function () {
 				const symbol = await context.viewFacetSymbol.getSymbol(1)
 				const duration = symbol.fundingRateEpochDuration
 				const window = symbol.fundingRateWindowTime
 				const currentEpoch = (BigInt(await time.latest()) / duration) * duration
 				const targetTime = duration * 2n + window - 1n + currentEpoch
 
-				const before = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 				const oldQuote1 = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
 				const oldQuote3 = await context.viewFacetQuote.getQuote(quote3LongOpened.id)
 
@@ -457,20 +465,26 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 					await context.signers.user.getAddress(),
 					[quote1LongOpened.id, quote3LongOpened.id],
 					[rate, rate],
-					await getDummyPairUpnlSig()
+					await getDummyPairUpnlSig(),
 				)
 
 				const after = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, 1)
 				const newQuote1 = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
 				const newQuote3 = await context.viewFacetQuote.getQuote(quote3LongOpened.id)
+				const { longAmount, longNotional, shortAmount, shortNotional } = await getExpectedTotals([
+					quote1LongOpened.id,
+					quote2ShortOpened.id,
+					quote3LongOpened.id,
+				])
 
 				// Both individual quotes' prices ARE updated
 				expect(newQuote1.openedPrice).to.equal(unDecimal(oldQuote1.openedPrice * (decimal(1n) + rate)))
 				expect(newQuote3.openedPrice).to.equal(unDecimal(oldQuote3.openedPrice * (decimal(1n) + rate)))
 
-				// But aggregate view is NOT updated
-				expect(after.longPosition.totalOpenAmount).to.equal(before.longPosition.totalOpenAmount)
-				expect(after.longPosition.avgOpenPrice).to.equal(before.longPosition.avgOpenPrice)
+				expect(after.longPosition.totalOpenAmount).to.equal(longAmount)
+				expect(after.longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
+				expect(after.shortPosition.totalOpenAmount).to.equal(shortAmount)
+				expect(after.shortPosition.avgOpenPrice).to.equal(shortAmount === 0n ? 0n : shortNotional / shortAmount)
 			})
 		})
 	})

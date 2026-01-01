@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus, PartyBPositionsInfo } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
@@ -97,9 +97,8 @@ library LibQuote {
 		) {
 			return;
 		}
-		uint256 openAmount = quoteOpenAmount(quote);
-		if (openAmount == 0) return;
 
+		uint256 openAmount = quoteOpenAmount(quote);
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		PartyBPositionsInfo storage info = quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType];
 		if (quote.openedPrice > oldOpenedPrice) {
