@@ -4,8 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
@@ -13,9 +11,10 @@ import { WithdrawStorage, WithdrawReceiverPart, WithdrawRequest, WithdrawStatus 
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
 import { IExpressProvider } from "../../interfaces/IExpressProvider.sol";
+import { LibSafeCall } from "../../libraries/LibSafeCall.sol";
+import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 
 library WithdrawFacetImpl {
-	using SafeERC20 for IERC20;
 
 	event Withdraw(address sender, address user, uint256 amount);
 
@@ -167,9 +166,15 @@ library WithdrawFacetImpl {
 
 		// Provider callbacks
 		if (hasExpress) {
-			IExpressProvider(expressProvider).onWithdrawRequest(withdrawRequest, collateral);
+			LibSafeCall.safeExternalCall(
+				expressProvider,
+				abi.encodeCall(IExpressProvider.onWithdrawRequest, (withdrawRequest, collateral))
+			);
 		} else if (hasVirtual) {
-			IVirtualProvider(virtualProvider).onWithdrawRequest(withdrawRequest);
+			LibSafeCall.safeExternalCall(
+				virtualProvider,
+				abi.encodeCall(IVirtualProvider.onWithdrawRequest, (withdrawRequest))
+			);
 		}
 
 		return currentId;
@@ -210,7 +215,8 @@ library WithdrawFacetImpl {
 
 			// Classic withdraw
 			if (!isExpress && !isVirtual) {
-				IERC20(collateral).safeTransfer(
+				LibSafeERC20.safeTransfer(
+					collateral,
 					_bytesToAddress(withdrawal.receiver),
 					withdrawal.amount
 				);
@@ -225,13 +231,19 @@ library WithdrawFacetImpl {
 		}
 
 		if (totalExpressAmount > 0) {
-			IERC20(collateral).safeTransfer(withdrawRequest.provider, totalExpressAmount);
+			LibSafeERC20.safeTransfer(collateral, withdrawRequest.provider, totalExpressAmount);
 			withdrawLayout.withdrawLockedBalance -= totalExpressAmount;
-			IExpressProvider(withdrawRequest.provider).onWithdrawComplete(withdrawRequest);
+			LibSafeCall.safeExternalCall(
+				withdrawRequest.provider,
+				abi.encodeCall(IExpressProvider.onWithdrawComplete, (withdrawRequest))
+			);
 		}
 
 		if (withdrawRequest.isPureVirtual) {
-			IVirtualProvider(withdrawRequest.provider).onWithdrawComplete(withdrawRequest);
+			LibSafeCall.safeExternalCall(
+				withdrawRequest.provider,
+				abi.encodeCall(IVirtualProvider.onWithdrawComplete, (withdrawRequest))
+			);
 		}
 
 		withdrawRequest.status = WithdrawStatus.COMPLETED;
@@ -301,12 +313,14 @@ library WithdrawFacetImpl {
 			withdrawRequest.status = WithdrawStatus.CANCEL_REQUESTED;
 
 			if (!withdrawRequest.isPureVirtual) {
-				IExpressProvider(withdrawRequest.provider).onWithdrawCancelRequest(
-					withdrawRequest
+				LibSafeCall.safeExternalCall(
+					withdrawRequest.provider,
+					abi.encodeCall(IExpressProvider.onWithdrawCancelRequest, (withdrawRequest))
 				);
 			} else {
-				IVirtualProvider(withdrawRequest.provider).onWithdrawCancelRequest(
-					withdrawRequest
+				LibSafeCall.safeExternalCall(
+					withdrawRequest.provider,
+					abi.encodeCall(IVirtualProvider.onWithdrawCancelRequest, (withdrawRequest))
 				);
 			}
 		}
@@ -335,8 +349,9 @@ library WithdrawFacetImpl {
 		_unlockAndRefund(withdrawRequest);
 		withdrawRequest.status = WithdrawStatus.CANCELLED;
 
-		IVirtualProvider(withdrawRequest.provider).onForceWithdrawCancel(
-			withdrawRequest
+		LibSafeCall.safeExternalCall(
+			withdrawRequest.provider,
+			abi.encodeCall(IVirtualProvider.onForceWithdrawCancel, (withdrawRequest))
 		);
 	}
 
@@ -412,9 +427,9 @@ library WithdrawFacetImpl {
 		withdrawRequest.isCooldownModified = true;
 
 		if (withdrawRequest.isPureVirtual) {
-			IVirtualProvider(withdrawRequest.provider).onSpeedUpWithdrawRequest(
-				withdrawRequest,
-				newCooldown
+			LibSafeCall.safeExternalCall(
+				withdrawRequest.provider,
+				abi.encodeCall(IVirtualProvider.onSpeedUpWithdrawRequest, (withdrawRequest, newCooldown))
 			);
 		}
 	}
