@@ -16,7 +16,6 @@ import {
 } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage, AffiliateState, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
-import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 contract ViewFacet is IViewFacet {
 	using EnumerableSet for EnumerableSet.AddressSet;
