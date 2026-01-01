@@ -400,7 +400,7 @@ library AccountFacetImpl {
 
 	// ---------------- Assurance collateral lifecycle ----------------
 	/**
-	 * @notice Handles collateral dedicated to ADL/assurance operations for PartyB.
+	 * @notice Handles collateral dedicated to Assurance operations for PartyB.
 	 * @dev Allows deposit, withdrawal requests/approval, cancellation, and penalty application against assurance funds.
 	 */
 
@@ -421,7 +421,7 @@ library AccountFacetImpl {
 		require(amount > 0, "AccountFacet: invalid amount");
 		require(recipient != address(0), "AccountFacet: invalid recipient");
 		require(accountLayout.assuranceWithdrawalRequests[signer].status == AssuranceWithdrawStatus.NONE, "AccountFacet: withdraw pending");
-		require(accountLayout.assuranceCollateral[signer][token] >= amount, "AccountFacet: insufficient ADL collateral");
+		require(accountLayout.assuranceCollateral[signer][token] >= amount, "AccountFacet: insufficient Assurance collateral");
 
 		accountLayout.assuranceWithdrawalRequests[signer] = AssuranceWithdrawalRequest({
 			token: token,
@@ -432,22 +432,18 @@ library AccountFacetImpl {
 		});
 	}
 
-	function acceptAssuranceWithdraw(address partyB, uint256 amount, address token) internal {
+	function acceptAssuranceWithdraw(address user, uint256 amount, address token) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		AssuranceWithdrawalRequest storage req = accountLayout.assuranceWithdrawalRequests[partyB];
+		AssuranceWithdrawalRequest storage req = accountLayout.assuranceWithdrawalRequests[user];
 
-		require(req.status == AssuranceWithdrawStatus.PENDING, "AccountFacet: no pending ADL withdraw");
-		require(req.requester == partyB, "AccountFacet: requester mismatch");
-		require(req.token == token && req.amount == amount, "AccountFacet: params mismatch");
-		require(accountLayout.assuranceCollateral[partyB][token] >= amount, "AccountFacet: insufficient ADL collateral");
+		require(req.status == AssuranceWithdrawStatus.PENDING, "AccountFacet: no pending Assurance withdraw");
+		require(req.requester == user, "AccountFacet: requester mismatch");
+		require(req.token == token, "AccountFacet: params mismatch");
+		require(accountLayout.assuranceCollateral[user][token] >= amount, "AccountFacet: insufficient Assurance collateral");
 
 		address recipient = req.recipient;
-		accountLayout.assuranceCollateral[partyB][token] -= amount;
-		req.status = AssuranceWithdrawStatus.NONE;
-		req.amount = 0;
-		req.token = address(0);
-		req.recipient = address(0);
-		req.requester = address(0);
+		accountLayout.assuranceCollateral[user][token] -= amount;
+		delete accountLayout.assuranceWithdrawalRequests[user];
 
 		IERC20(token).safeTransfer(recipient, amount);
 	}
@@ -457,24 +453,20 @@ library AccountFacetImpl {
 		address signer = LibSigner.getSigner();
 		AssuranceWithdrawalRequest storage req = accountLayout.assuranceWithdrawalRequests[signer];
 
-		require(req.status == AssuranceWithdrawStatus.PENDING, "AccountFacet: no pending ADL withdraw");
+		require(req.status == AssuranceWithdrawStatus.PENDING, "AccountFacet: no pending Assurance withdraw");
 
 		token = req.token;
 		amount = req.amount;
-		req.recipient = address(0);
-		req.requester = address(0);
-		req.status = AssuranceWithdrawStatus.NONE;
-		req.amount = 0;
-		req.token = address(0);
+		delete accountLayout.assuranceWithdrawalRequests[signer];
 	}
 
-	function performSolverPenalty(address partyB, address token, uint256 amount, address recipient) internal {
+	function slashUser(address user, address token, uint256 amount, address recipient) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(amount > 0, "AccountFacet: invalid penalty");
-		require(accountLayout.assuranceCollateral[partyB][token] >= amount, "AccountFacet: insufficient ADL collateral");
+		require(accountLayout.assuranceCollateral[user][token] >= amount, "AccountFacet: insufficient Assurance collateral");
 
-		accountLayout.assuranceCollateral[partyB][token] -= amount;
+		accountLayout.assuranceCollateral[user][token] -= amount;
 		IERC20(token).safeTransfer(recipient, amount);
 	}
 }

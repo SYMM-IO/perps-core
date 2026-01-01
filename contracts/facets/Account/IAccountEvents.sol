@@ -39,9 +39,9 @@ interface IAccountEvents {
 	event AcceptVirtualExternalTransfer(uint256 id);
 	event CancelVirtualExternalTransfer(uint256 id);
 	// Assurance collateral lifecycle
-	event AssuranceCollateralDeposited(address indexed partyB, address indexed token, uint256 amount);
-	event AssuranceWithdrawRequested(address indexed partyB, address indexed token, uint256 amount, address recipient);
-	event AssuranceWithdrawApproved(address indexed partyB, address indexed token, uint256 amount);
-	event AssuranceWithdrawCancelled(address indexed partyB, address indexed token, uint256 amount);
-	event SolverPenaltyApplied(address indexed partyB, address indexed token, uint256 amount, address recipient);
+	event AssuranceCollateralDeposited(address indexed user, address indexed token, uint256 amount);
+	event AssuranceWithdrawRequested(address indexed user, address indexed token, uint256 amount, address recipient);
+	event AssuranceWithdrawApproved(address indexed user, address indexed token, uint256 amount);
+	event AssuranceWithdrawCancelled(address indexed user, address indexed token, uint256 amount);
+	event UserSlashed(address indexed user, address indexed token, uint256 amount, address recipient);
 }

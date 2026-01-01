@@ -77,5 +77,5 @@ interface IAccountFacet is IAccountEvents {
 	function requestAssuranceWithdraw(address token, uint256 amount, address recipient) external;
 	function cancelAssuranceWithdraw() external;
 	function acceptAssuranceWithdraw(address partyB, uint256 amount, address token) external;
-	function performSolverPenalty(address partyB, address token, uint256 amount, address recipient) external;
+	function slashUser(address user, address token, uint256 amount, address recipient) external;
 }

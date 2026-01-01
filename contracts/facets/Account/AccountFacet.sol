@@ -406,10 +406,10 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 	// ---------------- Assurance collateral lifecycle ----------------
 
-	/// @notice Deposit assurance collateral (PartyB-only) used to enable ADL.
+	/// @notice Deposit assurance collateral (PartyB-only) used to enable Assurance.
 	/// @param token ERC20 token to deposit (token decimals, not normalized).
 	/// @param amount Amount to deposit.
-	function depositAssuranceCollateral(address token, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
+	function depositAssuranceCollateral(address token, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
 		address signer = LibSigner.getSigner();
 		AccountFacetImpl.depositAssuranceCollateral(amount, token);
 		emit AssuranceCollateralDeposited(signer, token, amount);
@@ -423,43 +423,42 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		external
 		whenNotAccountingPaused
 		notSuspended(LibSigner.getSigner())
-		onlyPartyB
 	{
 		AccountFacetImpl.requestAssuranceWithdraw(amount, token, recipient);
 		emit AssuranceWithdrawRequested(LibSigner.getSigner(), token, amount, recipient);
 	}
 
 	/// @notice Cancel a pending assurance withdrawal request.
-	function cancelAssuranceWithdraw() external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
+	function cancelAssuranceWithdraw() external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
 		(address token, uint256 amount) = AccountFacetImpl.cancelAssuranceWithdraw();
 		emit AssuranceWithdrawCancelled(LibSigner.getSigner(), token, amount);
 	}
 
 	/// @notice Approve a pending assurance withdrawal and transfer funds to the requested recipient.
-	/// @param partyB PartyB whose request is being approved.
+	/// @param user User whose request is being approved.
 	/// @param amount Amount to withdraw.
 	/// @param token ERC20 token to withdraw.
-	function acceptAssuranceWithdraw(address partyB, uint256 amount, address token)
+	function acceptAssuranceWithdraw(address user, uint256 amount, address token)
 		external
 		whenNotAccountingPaused
 		onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE)
 	{
-		AccountFacetImpl.acceptAssuranceWithdraw(partyB, amount, token);
-		emit AssuranceWithdrawApproved(partyB, token, amount);
+		AccountFacetImpl.acceptAssuranceWithdraw(user, amount, token);
+		emit AssuranceWithdrawApproved(user, token, amount);
 	}
 
-	/// @notice Apply a solver penalty against a PartyB's assurance collateral.
-	/// @param partyB Penalized PartyB.
+	/// @notice Apply a solver penalty against a user's assurance collateral.
+	/// @param user Penalized user.
 	/// @param token Token to deduct.
 	/// @param amount Penalty amount.
 	/// @param recipient Address receiving the penalty funds.
-	function performSolverPenalty(
-		address partyB,
+	function slashUser(
+		address user,
 		address token,
 		uint256 amount,
 		address recipient
 	) external whenNotAccountingPaused onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		AccountFacetImpl.performSolverPenalty(partyB, token, amount, recipient);
-		emit SolverPenaltyApplied(partyB, token, amount, recipient);
+		AccountFacetImpl.slashUser(user, token, amount, recipient);
+		emit UserSlashed(user, token, amount, recipient);
 	}
 }
