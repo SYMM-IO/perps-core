@@ -172,10 +172,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 		const bindToPartyBCallData = accountFacet.interface.encodeFunctionData("bindToPartyB", [await context.symmioPartyB.getAddress()])
 
 		const ops: InstantLayer.OperationStruct[] = [
-			{ sourceIndices: [], insertionPoints: [] },
-			{ sourceIndices: [], insertionPoints: [] },
-			{ sourceIndices: [0], insertionPoints: [0] },
-			{ sourceIndices: [0], insertionPoints: [0] },
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] },
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] },
+			{ sourceIndices: [0], insertionPoints: [0], sourceOffsets: [0] },
+			{ sourceIndices: [0], insertionPoints: [0], sourceOffsets: [0] },
 		]
 
 		ctx = {
@@ -508,10 +508,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 					{
 						sourceIndices: [0, 2],
 						insertionPoints: [12, 36],
+						sourceOffsets: [0, 0],
 					},
 					{
 						sourceIndices: [0],
 						insertionPoints: [64],
+						sourceOffsets: [0],
 					},
 				]
 				await ctx.context.instantLayer.addTemplate("test", customOps)
@@ -522,6 +524,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				for (let i = 0; i < template.operations.length; i++) {
 					expect(template.operations[i].sourceIndices).to.deep.equal(customOps[i].sourceIndices)
 					expect(template.operations[i].insertionPoints).to.deep.equal(customOps[i].insertionPoints)
+					expect(template.operations[i].sourceOffsets).to.deep.equal(customOps[i].sourceOffsets)
 				}
 			})
 
@@ -963,8 +966,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// Add templates
 			await ctx.context.instantLayer.addTemplate("fullTemplate", ctx.ops)
 			await ctx.context.instantLayer.addTemplate("basicTemplate", [
-				{ insertionPoints: [], sourceIndices: [] },
-				{ insertionPoints: [0], sourceIndices: [0] },
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] },
 			])
 
 			execCtx = { ...ctx, accounts, symmioAddress, deadline }
@@ -1005,7 +1008,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			it("reverts when operation count doesn't match template", async function () {
-				await ctx.context.instantLayer.addTemplate("singleOp", [{ sourceIndices: [], insertionPoints: [1] }])
+				await ctx.context.instantLayer.addTemplate("singleOp", [{ sourceIndices: [], insertionPoints: [1], sourceOffsets: [] }])
 				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
 				await expect(ctx.context.instantLayer.executeTemplate(templateId, [], [])).to.be.revertedWithCustomError(
@@ -1034,7 +1037,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		describe("executeTemplate - Result Injection", function () {
 			it("reverts with MissingSourceResult when operation self-references", async function () {
-				await ctx.context.instantLayer.addTemplate("selfRef", [{ insertionPoints: [0], sourceIndices: [0] }])
+				await ctx.context.instantLayer.addTemplate("selfRef", [{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] }])
 				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
 				const op = createSignedOperation(
@@ -1054,7 +1057,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			it("reverts with InvalidSourceIndex for out of bounds reference", async function () {
-				await ctx.context.instantLayer.addTemplate("badRef", [{ insertionPoints: [0], sourceIndices: [1] }])
+				await ctx.context.instantLayer.addTemplate("badRef", [{ insertionPoints: [0], sourceIndices: [1], sourceOffsets: [0] }])
 				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
 				const op = createSignedOperation(
@@ -1092,8 +1095,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				// Create template with insertion point beyond calldata length
 				await ctx.context.instantLayer.addTemplate("oobInsert", [
-					{ insertionPoints: [], sourceIndices: [] },
-					{ insertionPoints: [op1.callData.length], sourceIndices: [0] },
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+					{ insertionPoints: [op1.callData.length], sourceIndices: [0], sourceOffsets: [0] },
 				])
 				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
@@ -1119,9 +1122,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 				await execCtx.context.accountFacet.connect(execCtx.context.signers.hedger).depositFor(partyBAddress, partyBDepositAmount)
 
 				await ctx.context.instantLayer.addTemplate("sendQuoteThenAllocateWithPartyAFromView", [
-					{ insertionPoints: [], sourceIndices: [] }, // sendQuote
-					{ insertionPoints: [], sourceIndices: [] }, // getSigner (returns partyA account address)
-					{ insertionPoints: [32], sourceIndices: [1] }, // allocateForPartyB(amount, partyA) inject partyA
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // sendQuote
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // getSigner (returns partyA account address)
+					{ insertionPoints: [32], sourceIndices: [1], sourceOffsets: [0] }, // allocateForPartyB(amount, partyA) inject partyA
 				])
 				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
@@ -1279,10 +1282,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 
 				await ctx.context.instantLayer.addTemplate("nonceTest", [
-					{ insertionPoints: [], sourceIndices: [] },
-					{ insertionPoints: [], sourceIndices: [] },
-					{ insertionPoints: [], sourceIndices: [] },
-					{ insertionPoints: [0], sourceIndices: [0] },
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+					{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] },
 				])
 				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
@@ -2268,8 +2271,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
 
 			await ctx.context.instantLayer.addTemplate("externalOnly", [
-				{ insertionPoints: [], sourceIndices: [] },
-				{ insertionPoints: [], sourceIndices: [] },
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
 			])
 			const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
@@ -2304,8 +2307,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
 
 			await ctx.context.instantLayer.addTemplate("mixedTemplate", [
-				{ insertionPoints: [], sourceIndices: [] },
-				{ insertionPoints: [], sourceIndices: [] },
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
 			])
 			const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
@@ -2336,12 +2339,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
 		})
 
-		it("reverts when injecting from external target result (unsupported)", async function () {
+		it("successfully injects result from external target into subsequent operation", async function () {
 			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
 
+			// store(444n) returns bytes32(444n), which we inject into the next operation's calldata
 			await ctx.context.instantLayer.addTemplate("injectFromExternal", [
-				{ insertionPoints: [], sourceIndices: [] },
-				{ insertionPoints: [0], sourceIndices: [0] },
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] },
 			])
 			const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
@@ -2353,22 +2357,215 @@ export function shouldBehaveLikeInstantLayer(): void {
 				0n,
 				deadline,
 			)
-			const symmioOp = createSignedOperation(
+			// Create a second external op that will receive the injected value
+			const secondExternalOp = createSignedOperation(
 				ctx.partyA1.address,
-				ctx.context.diamond,
-				ctx.quoteCallData,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("store", [0n]), // placeholder, will be replaced with 444
 				{ addr: accountAddress, isPartyB: false },
 				1n,
 				deadline,
 			)
 
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, externalOp)
-			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, symmioOp)
+			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, secondExternalOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, symmioOp], [sig1, sig2])).to.be.revertedWithCustomError(
-				ctx.context.instantLayer,
-				"MissingSourceResult",
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, secondExternalOp], [sig1, sig2])).not.to.be.reverted
+
+			// The second operation should have received 444 as its value (injected from first op's result)
+			expect(await mockTarget.lastValue()).to.equal(444n)
+		})
+
+		it("extracts first value from tuple return using sourceOffset 0", async function () {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+
+			// getTuple(100, 200) returns (100, 200) - we extract first value (offset 0)
+			await ctx.context.instantLayer.addTemplate("tupleFirstValue", [
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] }, // extract first uint256
+			])
+			const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+
+			const getTupleOp = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("getTuple", [100n, 200n]),
+				{ addr: accountAddress, isPartyB: false },
+				0n,
+				deadline,
 			)
+			const storeOp = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("store", [0n]), // placeholder
+				{ addr: accountAddress, isPartyB: false },
+				1n,
+				deadline,
+			)
+
+			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTupleOp)
+			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp)
+
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2])).not.to.be.reverted
+
+			// Should have stored 100 (first value from tuple)
+			expect(await mockTarget.lastValue()).to.equal(100n)
+		})
+
+		it("extracts second value from tuple return using sourceOffset 32", async function () {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+
+			// getTuple(100, 200) returns (100, 200) - we extract second value (offset 32)
+			await ctx.context.instantLayer.addTemplate("tupleSecondValue", [
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [32] }, // extract second uint256
+			])
+			const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+
+			const getTupleOp = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("getTuple", [100n, 200n]),
+				{ addr: accountAddress, isPartyB: false },
+				0n,
+				deadline,
+			)
+			const storeOp = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("store", [0n]), // placeholder
+				{ addr: accountAddress, isPartyB: false },
+				1n,
+				deadline,
+			)
+
+			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTupleOp)
+			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp)
+
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2])).not.to.be.reverted
+
+			// Should have stored 200 (second value from tuple)
+			expect(await mockTarget.lastValue()).to.equal(200n)
+		})
+
+		it("extracts multiple values from same tuple using different sourceOffsets", async function () {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+
+			// getTuple returns (100, 200), we inject both into separate operations
+			await ctx.context.instantLayer.addTemplate("tupleMultiExtract", [
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }, // getTuple
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] }, // store first value
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [32] }, // store second value
+			])
+			const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+
+			const getTupleOp = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("getTuple", [111n, 222n]),
+				{ addr: accountAddress, isPartyB: false },
+				0n,
+				deadline,
+			)
+			const storeFirstOp = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("store", [0n]),
+				{ addr: accountAddress, isPartyB: false },
+				1n,
+				deadline,
+			)
+			const storeSecondOp = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("store", [0n]),
+				{ addr: accountAddress, isPartyB: false },
+				2n,
+				deadline,
+			)
+
+			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTupleOp)
+			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeFirstOp)
+			const sig3 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeSecondOp)
+
+			await expect(
+				ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeFirstOp, storeSecondOp], [sig1, sig2, sig3]),
+			).not.to.be.reverted
+
+			// Last store was second value (222)
+			expect(await mockTarget.lastValue()).to.equal(222n)
+		})
+
+		it("extracts address from triple return using sourceOffset 32", async function () {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+			const testAddress = "0x1234567890123456789012345678901234567890"
+
+			// getTriple returns (uint256, address, bytes32) - extract the address at offset 32
+			await ctx.context.instantLayer.addTemplate("tripleAddress", [
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [32] }, // extract address
+			])
+			const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+
+			const getTripleOp = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("getTriple", [999n, testAddress, ethers.zeroPadValue("0xabcd", 32)]),
+				{ addr: accountAddress, isPartyB: false },
+				0n,
+				deadline,
+			)
+			const storeOp = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("store", [0n]),
+				{ addr: accountAddress, isPartyB: false },
+				1n,
+				deadline,
+			)
+
+			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTripleOp)
+			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp)
+
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTripleOp, storeOp], [sig1, sig2])).not.to.be.reverted
+
+			// Address is stored as uint256 representation
+			expect(await mockTarget.lastValue()).to.equal(BigInt(testAddress))
+		})
+
+		it("reverts with BadSourceResultLength when sourceOffset exceeds result length", async function () {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+
+			// store returns 32 bytes, but we try to extract at offset 64
+			await ctx.context.instantLayer.addTemplate("badOffset", [
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [64] }, // invalid offset
+			])
+			const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+
+			const storeOp1 = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("store", [123n]),
+				{ addr: accountAddress, isPartyB: false },
+				0n,
+				deadline,
+			)
+			const storeOp2 = createSignedOperation(
+				ctx.partyA1.address,
+				targetAddress,
+				mockTarget.interface.encodeFunctionData("store", [0n]),
+				{ addr: accountAddress, isPartyB: false },
+				1n,
+				deadline,
+			)
+
+			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp1)
+			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp2)
+
+			await expect(
+				ctx.context.instantLayer.executeTemplate(templateId, [storeOp1, storeOp2], [sig1, sig2]),
+			).to.be.revertedWithCustomError(ctx.context.instantLayer, "BadSourceResultLength")
 		})
 	})
 

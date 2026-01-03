@@ -24,4 +24,19 @@ contract MockInstantTarget {
 		emit Called(msg.sender, value);
 		return bytes32(value);
 	}
+
+	/// @notice Returns a tuple of two uint256 values for testing sourceOffsets
+	function getTuple(uint256 a, uint256 b) external pure returns (uint256, uint256) {
+		return (a, b);
+	}
+
+	/// @notice Returns a tuple of three values for testing sourceOffsets with different types
+	function getTriple(uint256 a, address b, bytes32 c) external pure returns (uint256, address, bytes32) {
+		return (a, b, c);
+	}
+
+	/// @notice View function that returns the caller's address
+	function getCallerAddress() external view returns (address) {
+		return msg.sender;
+	}
 }

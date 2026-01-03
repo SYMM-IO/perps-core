@@ -490,9 +490,10 @@ async function setupInstantLayerTemplates(hre: any, deployedContracts: DeployedC
 
 	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
 
-	// Operation structure: { sourceIndices: uint256[], insertionPoints: uint256[] }
+	// Operation structure: { sourceIndices: uint256[], insertionPoints: uint256[], sourceOffsets: uint256[] }
 	// insertionPoints: byte offset after the 4-byte selector where to insert the value
 	// sourceIndices: which previous operation's result to use
+	// sourceOffsets: byte offset within the source result to extract the 32-byte value (for tuple returns)
 
 	// OpenPosition Template
 	// Op 0: predictNextVirtualAccountAddress - no dependencies
@@ -502,12 +503,12 @@ async function setupInstantLayerTemplates(hre: any, deployedContracts: DeployedC
 	// Op 4: lockQuote(quoteId, upnlSig) - quoteId at offset 0 from op 2
 	// Op 5: openPosition(quoteId, filledAmount, openedPrice, upnlSig) - quoteId at offset 0 from op 2
 	const openPositionOps = [
-		{ sourceIndices: [], insertionPoints: [] }, // op 0: predictNextVirtualAccountAddress
-		{ sourceIndices: [0], insertionPoints: [0] }, // op 1: addMargin - first param from op 0
-		{ sourceIndices: [], insertionPoints: [] }, // op 2: sendQuoteWithAffiliateAndData
-		{ sourceIndices: [0], insertionPoints: [32] }, // op 3: allocateForPartyB - second param from op 0
-		{ sourceIndices: [2], insertionPoints: [0] }, // op 4: lockQuote - first param from op 2
-		{ sourceIndices: [2], insertionPoints: [0] }, // op 5: openPosition - first param from op 2
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: predictNextVirtualAccountAddress
+		{ sourceIndices: [0], insertionPoints: [0], sourceOffsets: [0] }, // op 1: addMargin - first param from op 0
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: sendQuoteWithAffiliateAndData
+		{ sourceIndices: [0], insertionPoints: [32], sourceOffsets: [0] }, // op 3: allocateForPartyB - second param from op 0
+		{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 4: lockQuote - first param from op 2
+		{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 5: openPosition - first param from op 2
 	]
 
 	console.log("  Adding OpenPosition template...")
@@ -519,10 +520,10 @@ async function setupInstantLayerTemplates(hre: any, deployedContracts: DeployedC
 	// Op 2: fillCloseRequest - no dependencies (quoteId provided by user)
 	// Op 3: deallocateForPartyB(amount, partyA, upnlSig) - partyA at offset 32 from op 0
 	const closePositionOps = [
-		{ sourceIndices: [], insertionPoints: [] }, // op 0: predictNextVirtualAccountAddress
-		{ sourceIndices: [], insertionPoints: [] }, // op 1: requestToClosePosition
-		{ sourceIndices: [], insertionPoints: [] }, // op 2: fillCloseRequest
-		{ sourceIndices: [0], insertionPoints: [32] }, // op 3: deallocateForPartyB - second param from op 0
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: predictNextVirtualAccountAddress
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: requestToClosePosition
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: fillCloseRequest
+		{ sourceIndices: [0], insertionPoints: [32], sourceOffsets: [0] }, // op 3: deallocateForPartyB - second param from op 0
 	]
 
 	console.log("  Adding ClosePosition template...")
