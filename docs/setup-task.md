@@ -33,6 +33,10 @@ PARTYB_SIGNER=""
 
 # Register a dummy affiliate for testing (default: true, set to "false" to skip)
 REGISTER_DUMMY_AFFILIATE="true"
+
+# Setup InstantLayer templates for OpenPosition and ClosePosition flows
+# (default: true, set to "false" to skip)
+SETUP_INSTANT_LAYER_TEMPLATES="true"
 ```
 
 ## Deployment
@@ -107,6 +111,30 @@ The task automatically configures:
 - Admin receives SETTER_ROLE on InstantLayer
 - Diamond (Symmio) is whitelisted on InstantLayer (setTargetWhitelist)
 - AccountLayerDiamond is whitelisted on InstantLayer (setTargetWhitelist)
+
+### InstantLayer Templates (if `SETUP_INSTANT_LAYER_TEMPLATES=true`)
+
+Two templates are registered on InstantLayer to facilitate common trading flows:
+
+#### OpenPosition Template (6 operations)
+
+| Op | Function                         | Target             | Dependencies                      |
+| -- | -------------------------------- | ------------------ | --------------------------------- |
+| 0  | `predictNextVirtualAccountAddress` | AccountLayerDiamond | None (returns virtualAccount)   |
+| 1  | `addMargin`                      | AccountLayerDiamond | virtualAccount from op 0 (param 1) |
+| 2  | `sendQuoteWithAffiliateAndData`  | Diamond            | None (returns quoteId)           |
+| 3  | `allocateForPartyB`              | Diamond            | partyA from op 0 (param 2)       |
+| 4  | `lockQuote`                      | Diamond            | quoteId from op 2 (param 1)      |
+| 5  | `openPosition`                   | Diamond            | quoteId from op 2 (param 1)      |
+
+#### ClosePosition Template (4 operations)
+
+| Op | Function                         | Target             | Dependencies                      |
+| -- | -------------------------------- | ------------------ | --------------------------------- |
+| 0  | `predictNextVirtualAccountAddress` | AccountLayerDiamond | None (returns virtualAccount)   |
+| 1  | `requestToClosePosition`         | Diamond            | None (quoteId provided by user)  |
+| 2  | `fillCloseRequest`               | Diamond            | None (quoteId provided by user)  |
+| 3  | `deallocateForPartyB`            | Diamond            | partyA from op 0 (param 2)       |
 
 ### PartyB Setup (if deployed)
 

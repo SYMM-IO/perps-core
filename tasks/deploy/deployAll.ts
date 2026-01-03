@@ -26,6 +26,7 @@ interface SystemDeploymentReport {
 		collateralAddress: string
 		deployPartyB: boolean
 		registerDummyAffiliate: boolean
+		setupInstantLayerTemplates: boolean
 	}
 	summary: {
 		totalContracts: number
@@ -57,6 +58,8 @@ async function getEnvConfig(hre: any) {
 	const registerDummyAffiliate = process.env.REGISTER_DUMMY_AFFILIATE !== "false"
 	// Optional signer address for SymmioPartyB (ERC-1271 signature verification)
 	const partyBSigner = process.env.PARTYB_SIGNER || ""
+	// Setup InstantLayer templates (default: true, set to "false" to skip)
+	const setupInstantLayerTemplates = process.env.SETUP_INSTANT_LAYER_TEMPLATES !== "false"
 
 	return {
 		admin,
@@ -65,6 +68,7 @@ async function getEnvConfig(hre: any) {
 		deployPartyB,
 		registerDummyAffiliate,
 		partyBSigner,
+		setupInstantLayerTemplates,
 	}
 }
 
@@ -87,6 +91,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			console.log(`Deploy PartyB: ${config.deployPartyB}`)
 			console.log(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
 			console.log(`Register Dummy Affiliate: ${config.registerDummyAffiliate}`)
+			console.log(`Setup InstantLayer Templates: ${config.setupInstantLayerTemplates}`)
 			console.log("=".repeat(80))
 			console.log()
 
@@ -249,9 +254,16 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			await setupSystem(hre, deployedContracts, config)
 			console.log()
 
-			// Step 7: Optionally register dummy affiliate
+			// Step 7: Optionally setup InstantLayer templates
+			if (config.setupInstantLayerTemplates) {
+				console.log("Step 7: Setting up InstantLayer templates...")
+				await setupInstantLayerTemplates(hre, deployedContracts)
+				console.log()
+			}
+
+			// Step 8: Optionally register dummy affiliate
 			if (config.registerDummyAffiliate) {
-				console.log("Step 7: Registering dummy affiliate...")
+				console.log("Step 8: Registering dummy affiliate...")
 				const accountManagerAddress = await registerDummyAffiliate(hre, deployedContracts, config)
 				if (accountManagerAddress) {
 					deployedContracts.accountManager = accountManagerAddress
@@ -455,6 +467,70 @@ async function registerDummyAffiliate(
 	return accountManagerAddress
 }
 
+/**
+ * Sets up InstantLayer templates for OpenPosition and ClosePosition flows
+ *
+ * OpenPosition Template (6 operations):
+ * 0. predictNextVirtualAccountAddress -> returns virtualAccount address
+ * 1. addMargin(virtualAccount, amount) -> virtualAccount from op 0
+ * 2. sendQuoteWithAffiliateAndData -> returns quoteId
+ * 3. allocateForPartyB(amount, partyA) -> partyA from op 0
+ * 4. lockQuote(quoteId, upnlSig) -> quoteId from op 2
+ * 5. openPosition(quoteId, filledAmount, openedPrice, upnlSig) -> quoteId from op 2
+ *
+ * ClosePosition Template (4 operations):
+ * 0. predictNextVirtualAccountAddress -> returns virtualAccount address
+ * 1. requestToClosePosition(quoteId, closePrice, quantityToClose, orderType, deadline) -> no dependencies
+ * 2. fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig) -> no dependencies
+ * 3. deallocateForPartyB(amount, partyA, upnlSig) -> partyA from op 0
+ */
+async function setupInstantLayerTemplates(hre: any, deployedContracts: DeployedContracts): Promise<void> {
+	const { ethers } = await getConnection(hre)
+	const [deployer] = await ethers.getSigners()
+
+	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
+
+	// Operation structure: { sourceIndices: uint256[], insertionPoints: uint256[] }
+	// insertionPoints: byte offset after the 4-byte selector where to insert the value
+	// sourceIndices: which previous operation's result to use
+
+	// OpenPosition Template
+	// Op 0: predictNextVirtualAccountAddress - no dependencies
+	// Op 1: addMargin(virtualAccount, amount) - virtualAccount at offset 0 from op 0
+	// Op 2: sendQuoteWithAffiliateAndData - no dependencies, returns quoteId
+	// Op 3: allocateForPartyB(amount, partyA) - partyA at offset 32 from op 0
+	// Op 4: lockQuote(quoteId, upnlSig) - quoteId at offset 0 from op 2
+	// Op 5: openPosition(quoteId, filledAmount, openedPrice, upnlSig) - quoteId at offset 0 from op 2
+	const openPositionOps = [
+		{ sourceIndices: [], insertionPoints: [] }, // op 0: predictNextVirtualAccountAddress
+		{ sourceIndices: [0], insertionPoints: [0] }, // op 1: addMargin - first param from op 0
+		{ sourceIndices: [], insertionPoints: [] }, // op 2: sendQuoteWithAffiliateAndData
+		{ sourceIndices: [0], insertionPoints: [32] }, // op 3: allocateForPartyB - second param from op 0
+		{ sourceIndices: [2], insertionPoints: [0] }, // op 4: lockQuote - first param from op 2
+		{ sourceIndices: [2], insertionPoints: [0] }, // op 5: openPosition - first param from op 2
+	]
+
+	console.log("  Adding OpenPosition template...")
+	await instantLayer.connect(deployer).addTemplate("OpenPosition", openPositionOps)
+
+	// ClosePosition Template
+	// Op 0: predictNextVirtualAccountAddress - no dependencies
+	// Op 1: requestToClosePosition - no dependencies (quoteId provided by user)
+	// Op 2: fillCloseRequest - no dependencies (quoteId provided by user)
+	// Op 3: deallocateForPartyB(amount, partyA, upnlSig) - partyA at offset 32 from op 0
+	const closePositionOps = [
+		{ sourceIndices: [], insertionPoints: [] }, // op 0: predictNextVirtualAccountAddress
+		{ sourceIndices: [], insertionPoints: [] }, // op 1: requestToClosePosition
+		{ sourceIndices: [], insertionPoints: [] }, // op 2: fillCloseRequest
+		{ sourceIndices: [0], insertionPoints: [32] }, // op 3: deallocateForPartyB - second param from op 0
+	]
+
+	console.log("  Adding ClosePosition template...")
+	await instantLayer.connect(deployer).addTemplate("ClosePosition", closePositionOps)
+
+	console.log("  InstantLayer templates setup complete!")
+}
+
 function generateReport(deployments: DeploymentResult[], config: ReturnType<typeof getEnvConfig>): SystemDeploymentReport {
 	const successfulDeployments = deployments.filter(d => d.status === "success").length
 	const failedDeployments = deployments.filter(d => d.status === "failed").length
@@ -467,6 +543,7 @@ function generateReport(deployments: DeploymentResult[], config: ReturnType<type
 			collateralAddress: config.collateralAddress,
 			deployPartyB: config.deployPartyB,
 			registerDummyAffiliate: config.registerDummyAffiliate,
+			setupInstantLayerTemplates: config.setupInstantLayerTemplates,
 		},
 		summary: {
 			totalContracts: deployments.length,
@@ -497,10 +574,11 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 
 	console.log("CONFIGURATION")
 	console.log("-".repeat(80))
-	console.log(`Admin:                    ${report.config.admin}`)
-	console.log(`Symmio Fee Receiver:      ${report.config.symmioFeeReceiver}`)
-	console.log(`Deploy PartyB:            ${report.config.deployPartyB}`)
-	console.log(`Register Dummy Affiliate: ${report.config.registerDummyAffiliate}`)
+	console.log(`Admin:                       ${report.config.admin}`)
+	console.log(`Symmio Fee Receiver:         ${report.config.symmioFeeReceiver}`)
+	console.log(`Deploy PartyB:               ${report.config.deployPartyB}`)
+	console.log(`Register Dummy Affiliate:    ${report.config.registerDummyAffiliate}`)
+	console.log(`Setup InstantLayer Templates: ${report.config.setupInstantLayerTemplates}`)
 	console.log()
 
 	console.log("=".repeat(80))
