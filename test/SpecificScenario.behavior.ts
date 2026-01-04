@@ -2,7 +2,10 @@ import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { Builder } from "builder-pattern"
 import { expect } from "chai"
 
-import type { QuoteSettlementDataStructOutput } from "../src/types/facets/Settlement/ISettlementFacet.js"
+import type {
+	MasterAccountQuoteSettlementDataStructOutput,
+	QuoteSettlementDataStructOutput,
+} from "../src/types/facets/Settlement/ISettlementFacet.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
@@ -18,10 +21,12 @@ import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
 import {
 	getDummyHighLowPriceSig,
 	getDummyLiquidationSig,
+	getDummyMasterAccountSettlementSig,
 	getDummyPairUpnlSig,
 	getDummySettlementSig,
 	getDummySingleUpnlAndPriceSig,
 } from "./utils/SignatureUtils.js"
+import { migratePartyBToMaster } from "./utils/MasterAccount.js"
 
 export function shouldBehaveLikeSpecificScenario(): void {
 	let uSigner: HardhatEthersSigner
@@ -344,6 +349,110 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		await expectPartyBTotalsByPartyA(context, userAddress, 0n, 0n, 0n, 0n)
 		await expectPartyBTotalsByPartyA(context, user2Address, user2LongAmountAfterForceClose, price5, amount3, updatedShortPrice)
+	})
+
+	it("Updates partyB notionals after master-account settlement", async function () {
+		const context: RunContext = this.context
+
+		const user = new User(context, context.signers.user)
+		await user.setup()
+		await user.setBalances(decimal(10000n), decimal(10000n), decimal(5000n))
+
+		const user2 = new User(context, context.signers.user2)
+		await user2.setup()
+		await user2.setBalances(decimal(10000n), decimal(10000n), decimal(5000n))
+
+		const hedger = new Hedger(context, context.signers.hedger)
+		await hedger.setup()
+		await hedger.setBalances(decimal(10000n), decimal(10000n))
+
+		const amount1 = decimal(10n)
+		const price1 = decimal(10n)
+		const amount2 = decimal(20n)
+		const price2 = decimal(12n)
+
+		const userAddress = await user.getAddress()
+		const user2Address = await user2.getAddress()
+
+		const quote1 = await context.viewFacetQuote.getQuote(
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.positionType(PositionType.LONG)
+					.price(price1)
+					.quantity(amount1)
+					.deadline(getBlockTimestamp(10000n))
+					.build(),
+			),
+		)
+		const quote2 = await context.viewFacetQuote.getQuote(
+			await user2.sendQuote(
+				limitQuoteRequestBuilder()
+					.positionType(PositionType.LONG)
+					.price(price2)
+					.quantity(amount2)
+					.deadline(getBlockTimestamp(10000n))
+					.build(),
+			),
+		)
+
+		await hedger.lockQuote(quote1.id)
+		await hedger.lockQuote(quote2.id)
+
+		await hedger.openPosition(quote1.id, limitOpenRequestBuilder().filledAmount(amount1).openPrice(price1).price(price1).build())
+		await hedger.openPosition(quote2.id, limitOpenRequestBuilder().filledAmount(amount2).openPrice(price2).price(price2).build())
+
+		await migratePartyBToMaster(context, hedger, [quote1.id, quote2.id])
+
+		const totalAmount = amount1 + amount2
+		const avgBefore = avgPrice(totalAmount, amount1 * price1 + amount2 * price2)
+		await expectPartyBTotals(context, totalAmount, avgBefore, 0n, 0n)
+
+		await user.requestToClosePosition(
+			quote1.id,
+			limitCloseRequestBuilder().quantityToClose(amount1).closePrice(decimal(11n)).deadline(getBlockTimestamp(10000n)).build(),
+		)
+
+		const now = await getBlockTimestamp()
+		const cooldowns = await context.viewFacet.forceCloseCooldowns()
+		const firstCooldown = cooldowns[0]
+		const secondCooldown = cooldowns[1]
+		const sigStart = firstCooldown + now
+		const sigEnd = firstCooldown + now + 10n
+		await time.increase(firstCooldown + 10n + secondCooldown + 1n)
+
+		const highLowSig = await getDummyHighLowPriceSig(
+			sigStart,
+			sigEnd,
+			decimal(9n),
+			decimal(15n),
+			decimal(13n),
+			decimal(12n),
+			quote1.symbolId,
+			0n,
+			0n,
+		)
+		await context.forceActionsMasterAccountFacet.initializeMasterAccountForceClose(quote1.id, highLowSig)
+
+		const currentPrice = decimal(14n)
+		const updatedPrice = decimal(13n)
+		const settlementEntry = Object.assign([quote2.id, currentPrice], {
+			quoteId: quote2.id,
+			currentPrice: currentPrice,
+		}) as MasterAccountQuoteSettlementDataStructOutput
+		const settlementSig = await getDummyMasterAccountSettlementSig(
+			[settlementEntry],
+			await hedger.getAddress(),
+			0n,
+			[user2Address],
+			[0n],
+		)
+
+		await context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1.id, settlementSig, [updatedPrice])
+
+		const avgAfter = avgPrice(totalAmount, amount1 * price1 + amount2 * updatedPrice)
+		await expectPartyBTotals(context, totalAmount, avgAfter, 0n, 0n)
+		await expectPartyBTotalsByPartyA(context, userAddress, amount1, price1, 0n, 0n)
+		await expectPartyBTotalsByPartyA(context, user2Address, amount2, updatedPrice, 0n, 0n)
 	})
 
 	it("Tracks partyB totals across funding epoch charge (iterative method)", async function () {

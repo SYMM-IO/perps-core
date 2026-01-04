@@ -166,6 +166,11 @@ library LibQuote {
 		}
 	}
 
+	function updatePartiesOpenPositionNotional(Quote storage quote, uint256 oldOpenedPrice) internal {
+		updatePartyBOpenPositionNotional(quote, oldOpenedPrice);
+		updatePartyAOpenPositionNotional(quote, oldOpenedPrice);
+	}
+
 	/**
 	 * @notice Adds a quote to the open positions.
 	 * @param quoteId The ID of the quote to add to the open positions.

@@ -79,7 +79,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeFundingRate()
 		})
 
-		describe("PartyBPositionViews", async function () {
+		describe.only("PartyBPositionViews", async function () {
 			shouldBehaveLikePartyBPositionViews()
 		})
 

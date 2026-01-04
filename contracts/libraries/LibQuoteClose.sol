@@ -113,8 +113,7 @@ library LibQuoteClose {
 			: appLayout.affiliateFeeCollector[quote.affiliate];
 		accountLayout.balances[feeCollector] += fee;
 		quote.closedAmount += filledAmount;
-		LibQuote.subFromPartyBOpenPositionAmounts(quote, filledAmount);
-		LibQuote.subFromPartyAOpenPositionAmounts(quote, filledAmount);
+		LibQuote.subFromPartiesOpenPositionAmounts(quote, filledAmount);
 		quote.quantityToClose -= filledAmount;
 
 		if (quote.closedAmount == quote.quantity) {
