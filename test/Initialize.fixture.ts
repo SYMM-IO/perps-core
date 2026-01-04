@@ -1,9 +1,7 @@
 import { toUtf8Bytes } from "ethers"
 
 import type { ExternalTransferRelayer as SymmioExternalTransferRelayer, VirtualProvider } from "../src/types/index.js"
-import { deployAccountHub } from "../tasks/deploy/accountHub.js"
 import { deployAccountLayerDiamond } from "../tasks/deploy/accountLayerDiamond.js"
-import { deployAffiliateHub } from "../tasks/deploy/affiliateHub.js"
 import { deployDiamond } from "../tasks/deploy/diamond.js"
 import { deployInstantLayer } from "../tasks/deploy/instantLayer.js"
 import { deploySymmioPartyB } from "../tasks/deploy/partyB.js"

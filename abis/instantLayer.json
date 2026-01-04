@@ -835,6 +835,11 @@
                         "internalType": "uint256[]",
                         "name": "sourceIndices",
                         "type": "uint256[]"
+                    },
+                    {
+                        "internalType": "uint256[]",
+                        "name": "sourceOffsets",
+                        "type": "uint256[]"
                     }
                 ],
                 "internalType": "struct InstantLayer.Operation[]",
@@ -1474,6 +1479,11 @@
                                 "internalType": "uint256[]",
                                 "name": "sourceIndices",
                                 "type": "uint256[]"
+                            },
+                            {
+                                "internalType": "uint256[]",
+                                "name": "sourceOffsets",
+                                "type": "uint256[]"
                             }
                         ],
                         "internalType": "struct InstantLayer.Operation[]",
@@ -1514,6 +1524,11 @@
                     {
                         "internalType": "uint256[]",
                         "name": "sourceIndices",
+                        "type": "uint256[]"
+                    },
+                    {
+                        "internalType": "uint256[]",
+                        "name": "sourceOffsets",
                         "type": "uint256[]"
                     }
                 ],

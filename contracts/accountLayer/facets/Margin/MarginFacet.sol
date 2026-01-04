@@ -16,8 +16,6 @@ import { ISymmio } from "../../interfaces/ISymmio.sol";
 contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
 
-	bytes32 private constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
-
 	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
@@ -25,7 +23,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
 		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
 
-		_executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
+		LibAccountLayerUtils.executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
 
 		emit AddMargin(virtualAccount, parent, amount);
 	}
@@ -43,7 +41,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 
 		address predictedVA = _predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
 
-		_executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
+		LibAccountLayerUtils.executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
 
 		emit AddMargin(predictedVA, subAccount, amount);
 	}
@@ -59,17 +57,13 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
 		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
 
-		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.deallocate.selector, amount, upnlSig));
-		_executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parent, amount));
+		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.deallocate.selector, amount, upnlSig));
+		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parent, amount));
 
 		emit RemoveMargin(virtualAccount, parent, amount);
 	}
 
 	// ==================== Internal Functions ====================
-
-	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
-		return LibAccountLayerUtils.executeWithSigner(account, callData);
-	}
 
 	function _predictNextVirtualAccountAddress(
 		address subAccount,
@@ -91,17 +85,6 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		}
 
 		uint256 nextNonce = ahLayout.subAccountVirtualNonces[subAccount] + 1;
-		return _generateVirtualAccountAddress(subAccount, nextNonce);
-	}
-
-	function _generateVirtualAccountAddress(address parentAccount, uint256 nonce) private pure returns (address) {
-		return
-			address(
-				uint160(
-					uint256(
-						keccak256(abi.encodePacked(bytes1(0xff), parentAccount, keccak256(abi.encodePacked(nonce)), VIRTUAL_ACCOUNT_INIT_CODE_HASH))
-					)
-				)
-			);
+		return LibAccountLayerUtils.generateVirtualAccountAddress(subAccount, nextNonce);
 	}
 }

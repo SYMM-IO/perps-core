@@ -239,12 +239,17 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/**
 	 * @notice Configuration for result injection between operations.
 	 * @dev    Enables chaining operation results within templates.
-	 * @param insertionPoints Array of byte offsets where results should be inserted
+	 *         IMPORTANT: Only 32-byte return values are supported (uint256, address, bytes32, bool, etc.).
+	 *         For functions returning tuples like (uint256, uint256), use sourceOffsets to specify
+	 *         which 32-byte slot to extract (e.g., offset 0 for first value, 32 for second).
+	 * @param insertionPoints Array of byte offsets where results should be inserted in calldata
 	 * @param sourceIndices   Array of operation indices whose results to inject
+	 * @param sourceOffsets   Array of byte offsets within each source result to extract the 32-byte value
 	 */
 	struct Operation {
 		uint256[] insertionPoints;
 		uint256[] sourceIndices;
+		uint256[] sourceOffsets;
 	}
 
 	/**
@@ -750,7 +755,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			_verifyOperation(signedOp, signatures[i]);
 
 			// Inject results from previous operations into calldata
-			bytes memory finalCallData = _insertResults(signedOp.callData, op.insertionPoints, op.sourceIndices, results);
+			bytes memory finalCallData = _insertResults(signedOp.callData, op.insertionPoints, op.sourceIndices, op.sourceOffsets, results);
 
 			// Execute the operation and capture result
 			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData);
@@ -900,7 +905,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		} else {
 			// Route to a whitelisted target
 			(success, result) = signedOp.target.call(callData);
-			if (success) result = ""; // ignore result
 		}
 
 		// Decode nested result array
@@ -920,18 +924,20 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	 * @param callData        Original calldata with placeholder values
 	 * @param insertionPoints Array of byte offsets for insertions
 	 * @param sourceIndices   Array of result indices to use
+	 * @param sourceOffsets   Array of byte offsets within each source result to extract from
 	 * @param results         Array of all previous operation results
 	 * @return Modified calldata with injected values
 	 *
 	 * @custom:example
-	 * If operation 0 returns 0x0000...0123 (uint256(291))
-	 * And operation 1 has insertionPoint=[36] and sourceIndex=[0]
-	 * Then bytes 36-67 of operation 1's calldata will be replaced with 0x0000...0123
+	 * If operation 0 returns (uint256, uint256) = (100, 200) which is 64 bytes
+	 * And operation 1 has insertionPoint=[36], sourceIndex=[0], sourceOffset=[32]
+	 * Then bytes 36-67 of operation 1's calldata will be replaced with 200 (the second uint256)
 	 */
 	function _insertResults(
 		bytes calldata callData,
 		uint256[] memory insertionPoints,
 		uint256[] memory sourceIndices,
+		uint256[] memory sourceOffsets,
 		bytes[] memory results
 	) private pure returns (bytes memory) {
 		if (insertionPoints.length == 0) return callData;
@@ -943,14 +949,19 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		for (uint256 i = 0; i < insertionPoints.length; i++) {
 			if (sourceIndices[i] < results.length) {
 				bytes memory res = results[sourceIndices[i]];
-				if (res.length == 0) revert MissingSourceResult(); // nothing was written
-				if (res.length != 32) revert BadSourceResultLength(res, res.length); // if you expect bytes32
+				uint256 sourceOffset = sourceOffsets[i];
 
-				// Decode result as 32-byte value
-				bytes32 value = abi.decode(results[sourceIndices[i]], (bytes32));
+				if (res.length == 0) revert MissingSourceResult();
+				if (res.length < sourceOffset + 32) revert BadSourceResultLength(res, res.length);
+
+				// Extract 32 bytes from the result at the specified offset
+				bytes32 value;
+				assembly {
+					value := mload(add(add(res, 32), sourceOffset))
+				}
 
 				uint256 offset = insertionPoints[i];
-				if (offset + 36 >= modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 32, modifiedCallData.length);
+				if (offset + 36 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 32, modifiedCallData.length);
 
 				// Insert at calldata offset + 4 (selector) + 32 (length)
 				assembly {

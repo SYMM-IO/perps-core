@@ -10,9 +10,7 @@ import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
 import { AccountHubStorage, VirtualAccountData } from "../../storages/AccountHubStorage.sol";
-import { AffiliateHubStorage } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
-import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
 
 contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
@@ -54,9 +52,9 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		if (vData.quoteIds.length() != 0) revert OpenPositionsExist();
 
 		address parentAccount = vData.parentAccount;
-		address core = _getRelatedCore(parentAccount);
+		address core = LibAccountLayerUtils.getRelatedCore(parentAccount);
 
-		_deallocateAndTransferBalance(account, parentAccount, core);
+		LibAccountLayerUtils.deallocateAndTransferBalance(account, parentAccount, core);
 
 		vData.isExists = false;
 
@@ -67,58 +65,16 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		ahLayout.deletedVirtualAccountsPool[parentAccount][vData.isolationType][vData.symbolId].push(account);
 		ahLayout.subAccountToVirtualAccounts[parentAccount].remove(account);
 
-		address affiliate = _getAffiliateForAccount(account);
+		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
 
-		_callHook(
+		LibAccountLayerUtils.callHook(
 			affiliate,
+			account,
+			core,
 			IAccountHubHook.onVirtualAccountDeletion.selector,
 			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountDeletion.selector, account)
 		);
 
 		emit VirtualAccountDeleted(account, parentAccount);
-	}
-
-	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
-		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
-		if (allocatedBalance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance));
-		}
-
-		uint256 balance = ISymmio(core).balanceOf(account);
-		if (balance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance));
-		}
-	}
-
-	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
-		return LibAccountLayerUtils.executeWithSigner(account, callData);
-	}
-
-	function _getRelatedCore(address account) internal view returns (address) {
-		return LibAccountLayerUtils.getRelatedCore(account);
-	}
-
-	function _getAffiliateForAccount(address account) private view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-
-		if (ahLayout.subAccounts[account].isExists) {
-			return ahLayout.subAccounts[account].affiliate;
-		}
-
-		if (ahLayout.virtualAccounts[account].parentAccount != address(0)) {
-			return _getAffiliateForAccount(ahLayout.virtualAccounts[account].parentAccount);
-		}
-
-		return address(0);
-	}
-
-	function _callHook(address affiliate, bytes4 selector, bytes memory data) private {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		address hook = afLayout.affiliates[affiliate].hooks[selector];
-		if (hook == address(0)) return;
-		(bool success, bytes memory result) = hook.call(data);
-		if (!success) {
-			revert HookFailed(result);
-		}
 	}
 }

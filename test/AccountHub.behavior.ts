@@ -1835,6 +1835,148 @@ export function shouldBehaveLikeAccountHub(): void {
 					)
 				})
 			})
+
+			describe("signer reset security", async () => {
+				let maliciousHook: any
+
+				beforeEach(async () => {
+					// Deploy malicious hook contract
+					const MaliciousHook = await ethers.getContractFactory("MaliciousAccountHubHook")
+					maliciousHook = await MaliciousHook.deploy()
+					await maliciousHook.waitForDeployment()
+
+					// Set the AccountHub address in the malicious hook
+					await maliciousHook.setAccountHub(context.accountLayerDiamond)
+				})
+
+				it("should prevent hook from impersonating user during onAccountCreation", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+
+					// Register the malicious hook for onAccountCreation
+					await context.alAffiliateFacet.setHook(affiliateAddress, HOOK_SELECTORS.onAccountCreation, await maliciousHook.getAddress())
+
+					// First create a sub-account that the malicious hook will try to modify
+					const targetAccountData = [createSubAccountData("TARGET_ACCOUNT", 0)]
+					await context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, targetAccountData)
+					const accounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const targetAccount = accounts[accounts.length - 1]
+
+					// Configure malicious hook to try to edit the target account's name
+					// This would succeed if the signer wasn't cleared, because the user is the signer during createSubAccounts
+					const editNameCallData = context.alCoreFacet.interface.encodeFunctionData("editAccountName", [targetAccount, "HACKED"])
+					await maliciousHook.setReentryCallData(editNameCallData)
+					await maliciousHook.setShouldAttemptReentry(true)
+					await maliciousHook.setTargetAccount(targetAccount)
+
+					// Create another sub-account - this triggers the hook
+					const newAccountData = [createSubAccountData("NEW_ACCOUNT", 0)]
+					await context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, newAccountData)
+
+					// Verify the hook attempted reentry but failed
+					expect(await maliciousHook.attemptedReentry()).to.be.true
+					expect(await maliciousHook.reentrySucceeded()).to.be.false
+
+					// Verify the target account name was NOT changed
+					const targetAccountData2 = await context.alViewFacet.getSubAccount(targetAccount)
+					expect(targetAccountData2.name).to.equal("TARGET_ACCOUNT")
+				})
+
+				it("should prevent hook from impersonating user during onVirtualAccountCreation", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+
+					// Register the malicious hook for onVirtualAccountCreation
+					await context.alAffiliateFacet.setHook(
+						affiliateAddress,
+						HOOK_SELECTORS.onVirtualAccountCreation,
+						await maliciousHook.getAddress(),
+					)
+
+					// Create a sub-account and deposit
+					const parentAccount = await createSubAccountAndDeposit(
+						context.signers.user,
+						[createSubAccountData("PARENT_FOR_VA", 0)],
+						BALANCES.DEPOSIT_AMOUNT,
+					)
+
+					// Configure malicious hook to try to edit the parent account's name
+					const editNameCallData = context.alCoreFacet.interface.encodeFunctionData("editAccountName", [parentAccount, "HACKED"])
+					await maliciousHook.setReentryCallData(editNameCallData)
+					await maliciousHook.setShouldAttemptReentry(true)
+					await maliciousHook.setTargetAccount(parentAccount)
+
+					// Send quote which creates a virtual account - this triggers the hook
+					await sendQuoteAndGetVirtualAccount(parentAccount)
+
+					// Verify the hook attempted reentry but failed
+					expect(await maliciousHook.attemptedReentry()).to.be.true
+					expect(await maliciousHook.reentrySucceeded()).to.be.false
+
+					// Verify the parent account name was NOT changed
+					const parentAccountData = await context.alViewFacet.getSubAccount(parentAccount)
+					expect(parentAccountData.name).to.equal("PARENT_FOR_VA")
+				})
+
+				it("should prevent hook from impersonating user during onVirtualAccountDeletion", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+
+					// Register the malicious hook for onVirtualAccountDeletion
+					await context.alAffiliateFacet.setHook(
+						affiliateAddress,
+						HOOK_SELECTORS.onVirtualAccountDeletion,
+						await maliciousHook.getAddress(),
+					)
+
+					// Create a sub-account and deposit
+					const parentAccount = await createSubAccountAndDeposit(
+						context.signers.user,
+						[createSubAccountData("PARENT_FOR_DELETE", 0)],
+						BALANCES.DEPOSIT_AMOUNT,
+					)
+
+					// Send quote to create virtual account
+					const virtualAccounts = await sendQuoteAndGetVirtualAccount(parentAccount)
+					const virtualAccount = virtualAccounts[0]
+
+					// Configure malicious hook to try to edit the parent account's name
+					const editNameCallData = context.alCoreFacet.interface.encodeFunctionData("editAccountName", [parentAccount, "HACKED"])
+					await maliciousHook.setReentryCallData(editNameCallData)
+					await maliciousHook.setShouldAttemptReentry(true)
+					await maliciousHook.setTargetAccount(parentAccount)
+
+					// Cancel the quote to trigger virtual account deletion (which triggers the hook)
+					await cancelVirtualAccountQuote(virtualAccount)
+
+					// Verify the hook attempted reentry but failed
+					expect(await maliciousHook.attemptedReentry()).to.be.true
+					expect(await maliciousHook.reentrySucceeded()).to.be.false
+
+					// Verify the parent account name was NOT changed
+					const parentAccountData = await context.alViewFacet.getSubAccount(parentAccount)
+					expect(parentAccountData.name).to.equal("PARENT_FOR_DELETE")
+				})
+
+				it("should restore signer after hook execution completes", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+
+					// Register the malicious hook (but don't configure reentry)
+					await context.alAffiliateFacet.setHook(affiliateAddress, HOOK_SELECTORS.onAccountCreation, await maliciousHook.getAddress())
+					await maliciousHook.setShouldAttemptReentry(false)
+
+					// Create a sub-account
+					const accountData = [createSubAccountData("SIGNER_RESTORE_TEST", 0)]
+					await context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, accountData)
+
+					const accounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const newAccount = accounts[accounts.length - 1]
+
+					// Verify that after the hook, the user can still perform actions on their account
+					// This proves the signer was properly restored after hook execution
+					await expect(context.alCoreFacet.connect(context.signers.user).editAccountName(newAccount, "RENAMED")).to.not.be.reverted
+
+					const accountDetail = await context.alViewFacet.getSubAccount(newAccount)
+					expect(accountDetail.name).to.equal("RENAMED")
+				})
+			})
 		})
 
 		describe("Getter Methods", async () => {
