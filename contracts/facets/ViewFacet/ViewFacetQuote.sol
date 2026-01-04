@@ -292,6 +292,28 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
+	 * @notice Returns total open position amounts and average open prices for a party B, party A, and symbol, grouped by position type.
+	 * @param partyB The address of party B.
+	 * @param partyA The address of party A.
+	 * @param symbolId The symbol ID.
+	 * @return longPosition Total open amount and avg open price for LONG positions.
+	 * @return shortPosition Total open amount and avg open price for SHORT positions.
+	 */
+	function getPartyBTotalPositionAmountsBySymbolPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 symbolId
+	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256 longAmount = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.LONG].totalAmounts;
+		uint256 shortAmount = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].totalAmounts;
+		uint256 longNotional = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.LONG].totalNotionals;
+		uint256 shortNotional = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].totalNotionals;
+		longPosition = TotalPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
+		shortPosition = TotalPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
+	}
+
+	/**
 	 * @notice Returns total open position amounts and average open prices for a party A and symbol, grouped by position type.
 	 * @param partyA The address of party A.
 	 * @param symbolId The symbol ID.
@@ -378,6 +400,76 @@ contract ViewFacetQuote is IViewFacetQuote {
 		}
 
 		// trim the pre allocated array to the actual number of results
+		assembly {
+			mstore(results, count)
+		}
+	}
+
+	/**
+	 * @notice Returns total open amounts and average open prices for a party B per party A across symbols, grouped by position type.
+	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
+	 * @param partyB The address of party B.
+	 * @param partyA The address of party A.
+	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
+	 * @param limit Maximum symbols to process starting at offset.
+	 */
+	function getPartyBTotalPositionAmountsPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 offset,
+		uint256 limit
+	) external view returns (PartyBPositionBySymbol[] memory results) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		uint256 totalSymbols = symbolLayout.lastId;
+		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
+			return new PartyBPositionBySymbol[](0);
+		}
+
+		uint256 end = offset + limit;
+		if (end > totalSymbols) end = totalSymbols;
+
+		uint256 maxItems = (end - offset) * 2;
+		results = new PartyBPositionBySymbol[](maxItems);
+		uint256 count;
+
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
+			uint256 symbolId = symbolIndex;
+
+			uint256 longAmount = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.LONG].totalAmounts;
+			if (longAmount > 0) {
+				uint256 longNotional = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.LONG].totalNotionals;
+				results[count] = PartyBPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					totalOpenAmount: longAmount,
+					avgOpenPrice: longNotional / longAmount
+				});
+				count++;
+			}
+
+			uint256 shortAmount = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].totalAmounts;
+			if (shortAmount > 0) {
+				uint256 shortNotional = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].totalNotionals;
+				results[count] = PartyBPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					totalOpenAmount: shortAmount,
+					avgOpenPrice: shortNotional / shortAmount
+				});
+				count++;
+			}
+
+			unchecked {
+				++symbolIndex;
+			}
+		}
+
+		if (count == results.length) {
+			return results;
+		}
+
 		assembly {
 			mstore(results, count)
 		}

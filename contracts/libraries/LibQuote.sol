@@ -5,8 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus, PartiesPositionsInfo } from "../storages/QuoteStorage.sol";
-import { AccountStorage } from "../storages/AccountStorage.sol";
-import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 
 library LibQuote {
@@ -78,8 +76,15 @@ library LibQuote {
 	 */
 	function addToPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalAmounts += amount;
-		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalNotionals += amount * quote.openedPrice;
+		PartiesPositionsInfo storage totalInfo = quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesPositionsInfo storage perPartyAInfo = quoteLayout.partyBTotalPositionsInfoPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
+			quote.positionType
+		];
+		uint256 notional = amount * quote.openedPrice;
+		totalInfo.totalAmounts += amount;
+		totalInfo.totalNotionals += notional;
+		perPartyAInfo.totalAmounts += amount;
+		perPartyAInfo.totalNotionals += notional;
 	}
 
 	function addToPartyAOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
@@ -90,8 +95,15 @@ library LibQuote {
 
 	function subFromPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalAmounts -= amount;
-		quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType].totalNotionals -= amount * quote.openedPrice;
+		PartiesPositionsInfo storage totalInfo = quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesPositionsInfo storage perPartyAInfo = quoteLayout.partyBTotalPositionsInfoPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
+			quote.positionType
+		];
+		uint256 notional = amount * quote.openedPrice;
+		totalInfo.totalAmounts -= amount;
+		totalInfo.totalNotionals -= notional;
+		perPartyAInfo.totalAmounts -= amount;
+		perPartyAInfo.totalNotionals -= notional;
 	}
 
 	function subFromPartyAOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
@@ -113,10 +125,17 @@ library LibQuote {
 		uint256 openAmount = quoteOpenAmount(quote);
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		PartiesPositionsInfo storage info = quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesPositionsInfo storage perPartyAInfo = quoteLayout.partyBTotalPositionsInfoPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
+			quote.positionType
+		];
 		if (quote.openedPrice > oldOpenedPrice) {
-			info.totalNotionals += openAmount * (quote.openedPrice - oldOpenedPrice);
+			uint256 delta = openAmount * (quote.openedPrice - oldOpenedPrice);
+			info.totalNotionals += delta;
+			perPartyAInfo.totalNotionals += delta;
 		} else {
-			info.totalNotionals -= openAmount * (oldOpenedPrice - quote.openedPrice);
+			uint256 delta = openAmount * (oldOpenedPrice - quote.openedPrice);
+			info.totalNotionals -= delta;
+			perPartyAInfo.totalNotionals -= delta;
 		}
 	}
 

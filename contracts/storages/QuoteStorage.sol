@@ -104,6 +104,7 @@ library QuoteStorage {
 		mapping(address => uint256) partyALockQuotesCount;
 		mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo))) partyBTotalPositionsInfo; // partyB => symbolId => positionType => struct with totalAmounts and totalNotionals
 		mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo))) partyATotalPositionsInfo; // partyA => symbolId => positionType => struct with totalAmounts and totalNotionals
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo)))) partyBTotalPositionsInfoPerPartyA; // partyB => partyA => symbolId => positionType => struct with totalAmounts and totalNotionals
 	}
 
 	function layout() internal pure returns (Layout storage l) {

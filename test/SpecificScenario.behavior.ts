@@ -45,6 +45,52 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		expect(shortPosition.totalOpenAmount).to.equal(shortAmount)
 		expect(shortPosition.avgOpenPrice).to.equal(shortAvgPrice)
 	}
+
+	const expectPartyBTotalsByPartyA = async (
+		context: RunContext,
+		partyA: string,
+		longAmount: bigint,
+		longAvgPrice: bigint,
+		shortAmount: bigint,
+		shortAvgPrice: bigint,
+	) => {
+		const assertPosition = (position: any, amount: bigint, avg: bigint) => {
+			expect(position.totalOpenAmount).to.equal(amount)
+			expect(position.avgOpenPrice).to.equal(avg)
+		}
+
+		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbolPerPartyA(
+			context.signers.hedger.address,
+			partyA,
+			1,
+		)
+		assertPosition(longPosition, longAmount, longAvgPrice)
+		assertPosition(shortPosition, shortAmount, shortAvgPrice)
+
+		const aggregates = await context.viewFacetQuote.getPartyBTotalPositionAmountsPerPartyA(context.signers.hedger.address, partyA, 0, 5)
+		const findAggregate = (posType: PositionType) =>
+			aggregates.find((entry: any) => BigInt(entry.symbolId) === 1n && BigInt(entry.positionType) === BigInt(posType))
+		const assertAggregate = (entry: any, amount: bigint, avg: bigint) => {
+			if (amount === 0n) {
+				if (entry) {
+					expect(entry.totalOpenAmount).to.equal(0n)
+					expect(entry.avgOpenPrice).to.equal(0n)
+				}
+				return
+			}
+			expect(entry).to.not.equal(undefined)
+			expect(entry.totalOpenAmount).to.equal(amount)
+			expect(entry.avgOpenPrice).to.equal(avg)
+		}
+
+		assertAggregate(findAggregate(PositionType.LONG), longAmount, longAvgPrice)
+		assertAggregate(findAggregate(PositionType.SHORT), shortAmount, shortAvgPrice)
+		if (longAmount === 0n && shortAmount === 0n) {
+			expect(aggregates.length).to.equal(0)
+		}
+	}
+
+	const avgPrice = (amount: bigint, notional: bigint) => (amount === 0n ? 0n : notional / amount)
 	it("Closing position with allocated less than quote value and with positive upnl", async function () {
 		const context: RunContext = this.context
 
@@ -140,6 +186,9 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		await hedger.setup()
 		await hedger.setBalances(decimal(10000n), decimal(10000n))
 
+		const userAddress = await user.getAddress()
+		const user2Address = await user2.getAddress()
+
 		const amount1 = decimal(10n)
 		const price1 = decimal(10n)
 		const amount2 = decimal(5n)
@@ -203,6 +252,11 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		await hedger.openPosition(quote5.id, limitOpenRequestBuilder().filledAmount(amount5).openPrice(price5).price(price5).build())
 		await expectPartyBTotals(context, decimal(45n), 8_777_777_777_777_777_777n, decimal(70n), 20_285_714_285_714_285_714n)
 
+		const user2LongAmountAfterOpen = amount2 + amount5
+		const user2LongAvgAfterOpen = avgPrice(user2LongAmountAfterOpen, amount2 * price2 + amount5 * price5)
+		await expectPartyBTotalsByPartyA(context, userAddress, amount1, price1, amount4, price4)
+		await expectPartyBTotalsByPartyA(context, user2Address, user2LongAmountAfterOpen, user2LongAvgAfterOpen, amount3, price3)
+
 		const close5Amount = decimal(20n)
 		const close5Price = decimal(15n)
 		await user2.requestToClosePosition(
@@ -216,6 +270,11 @@ export function shouldBehaveLikeSpecificScenario(): void {
 			limitFillCloseRequestBuilder().filledAmount(close5Amount).closedPrice(close5Price).price(close5Price).build(),
 		)
 		await expectPartyBTotals(context, decimal(25n), 9_400_000_000_000_000_000n, decimal(70n), 20_285_714_285_714_285_714n)
+
+		const user2LongAmountAfterClose5 = amount2 + (amount5 - close5Amount)
+		const user2LongAvgAfterClose5 = avgPrice(user2LongAmountAfterClose5, amount2 * price2 + (amount5 - close5Amount) * price5)
+		await expectPartyBTotalsByPartyA(context, userAddress, amount1, price1, amount4, price4)
+		await expectPartyBTotalsByPartyA(context, user2Address, user2LongAmountAfterClose5, user2LongAvgAfterClose5, amount3, price3)
 
 		const close4Amount = amount4
 		const close4Price = decimal(15n)
@@ -231,6 +290,9 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		)
 		await expectPartyBTotals(context, decimal(25n), 9_400_000_000_000_000_000n, decimal(50n), decimal(20n))
 		expect((await context.viewFacetQuote.getQuote(quote4.id)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+
+		await expectPartyBTotalsByPartyA(context, userAddress, amount1, price1, 0n, 0n)
+		await expectPartyBTotalsByPartyA(context, user2Address, user2LongAmountAfterClose5, user2LongAvgAfterClose5, amount3, price3)
 
 		const close2Price = decimal(12n)
 		await user2.requestToClosePosition(
@@ -252,6 +314,10 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		await expectPartyBTotals(context, decimal(20n), decimal(9n), decimal(50n), decimal(20n))
 		expect((await context.viewFacetQuote.getQuote(quote2.id)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
 
+		const user2LongAmountAfterForceClose = amount5 - close5Amount
+		await expectPartyBTotalsByPartyA(context, userAddress, amount1, price1, 0n, 0n)
+		await expectPartyBTotalsByPartyA(context, user2Address, user2LongAmountAfterForceClose, price5, amount3, price3)
+
 		const updatedShortPrice = decimal(15n)
 		const settlementEntry = Object.assign([quote3.id, updatedShortPrice, 0n], {
 			quoteId: quote3.id,
@@ -263,6 +329,9 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		await expectPartyBTotals(context, decimal(20n), decimal(9n), decimal(50n), decimal(15n))
 
+		await expectPartyBTotalsByPartyA(context, userAddress, amount1, price1, 0n, 0n)
+		await expectPartyBTotalsByPartyA(context, user2Address, user2LongAmountAfterForceClose, price5, amount3, updatedShortPrice)
+
 		const liquidator = context.signers.liquidator
 		const liquidationSig = await getDummyLiquidationSig("0x10", -decimal(1_000_000n), [1n], [decimal(3n)], decimal(1_000_000n), 0n)
 		await context.liquidationFacet.connect(liquidator).liquidatePartyA(user.address, liquidationSig)
@@ -272,6 +341,9 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		await expectPartyBTotals(context, decimal(10n), decimal(8n), decimal(50n), decimal(15n))
 		expect((await context.viewFacetQuote.getQuote(quote1.id)).quoteStatus).to.equal(BigInt(QuoteStatus.LIQUIDATED))
+
+		await expectPartyBTotalsByPartyA(context, userAddress, 0n, 0n, 0n, 0n)
+		await expectPartyBTotalsByPartyA(context, user2Address, user2LongAmountAfterForceClose, price5, amount3, updatedShortPrice)
 	})
 
 	it("Tracks partyB totals across funding epoch charge (iterative method)", async function () {
@@ -352,7 +424,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		await expectPartyBTotals(context, decimal(10n), decimal(10n), 0n, 0n)
 	})
 
-	it.only("Tracks partyB totals across a multi-party, multi-action flow", async function () {
+	it("Tracks PartyA totals across a multi-party, multi-action flow", async function () {
 		const context: RunContext = this.context
 
 		const user = new User(context, context.signers.user)

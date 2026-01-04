@@ -268,6 +268,84 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		})
 	})
 
+	describe("getPartyBTotalPositionAmountsBySymbolPerPartyA", function () {
+		const getExpectedPartyBTotalsByPartyA = async (quoteIds: bigint[], partyA: string) => {
+			let longAmount = 0n
+			let longNotional = 0n
+			let shortAmount = 0n
+			let shortNotional = 0n
+
+			for (const quoteId of quoteIds) {
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				if (quote.partyA !== partyA) continue
+				const amount = quote.quantity - quote.closedAmount
+				if (quote.positionType === BigInt(PositionType.LONG)) {
+					longAmount += amount
+					longNotional += amount * quote.openedPrice
+				} else {
+					shortAmount += amount
+					shortNotional += amount * quote.openedPrice
+				}
+			}
+
+			return { longAmount, longNotional, shortAmount, shortNotional }
+		}
+
+		it("returns correct totals for partyB and partyA", async function () {
+			const partyA = await user.getAddress()
+			const { longAmount, longNotional, shortAmount, shortNotional } = await getExpectedPartyBTotalsByPartyA(
+				[quote1LongOpened.id, quote2ShortOpened.id, quote3LongOpened.id],
+				partyA,
+			)
+
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbolPerPartyA(hedger.address, partyA, 1)
+
+			expect(longPosition.totalOpenAmount).to.equal(longAmount)
+			expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
+			expect(shortPosition.totalOpenAmount).to.equal(shortAmount)
+			expect(shortPosition.avgOpenPrice).to.equal(shortAmount === 0n ? 0n : shortNotional / shortAmount)
+		})
+
+		it("isolates totals between different partyAs for same partyB", async function () {
+			const user2 = new User(context, context.signers.user2)
+			await user2.setup()
+			await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+			const user2Quote = await context.viewFacetQuote.getQuote(await user2.sendQuote())
+			await hedger.lockQuote(user2Quote.id)
+			await hedger.openPosition(user2Quote.id)
+
+			const partyA1 = await user.getAddress()
+			const partyA2 = await user2.getAddress()
+
+			const {
+				longAmount: long1,
+				longNotional: longN1,
+				shortAmount: short1,
+				shortNotional: shortN1,
+			} = await getExpectedPartyBTotalsByPartyA([quote1LongOpened.id, quote2ShortOpened.id, quote3LongOpened.id], partyA1)
+			const {
+				longAmount: long2,
+				longNotional: longN2,
+				shortAmount: short2,
+				shortNotional: shortN2,
+			} = await getExpectedPartyBTotalsByPartyA([user2Quote.id], partyA2)
+
+			const userTotals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbolPerPartyA(hedger.address, partyA1, 1)
+			const user2Totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbolPerPartyA(hedger.address, partyA2, 1)
+
+			expect(userTotals.longPosition.totalOpenAmount).to.equal(long1)
+			expect(userTotals.longPosition.avgOpenPrice).to.equal(long1 === 0n ? 0n : longN1 / long1)
+			expect(userTotals.shortPosition.totalOpenAmount).to.equal(short1)
+			expect(userTotals.shortPosition.avgOpenPrice).to.equal(short1 === 0n ? 0n : shortN1 / short1)
+
+			expect(user2Totals.longPosition.totalOpenAmount).to.equal(long2)
+			expect(user2Totals.longPosition.avgOpenPrice).to.equal(long2 === 0n ? 0n : longN2 / long2)
+			expect(user2Totals.shortPosition.totalOpenAmount).to.equal(short2)
+			expect(user2Totals.shortPosition.avgOpenPrice).to.equal(short2 === 0n ? 0n : shortN2 / short2)
+		})
+	})
+
 	describe("getPartyATotalPositionAmountsBySymbol", function () {
 		it("updates totals after opening new position", async function () {
 			const before = await context.viewFacetQuote.getPartyATotalPositionAmountsBySymbol(user.address, 1)
@@ -284,7 +362,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 				newQuote.id,
 			])
 
-			const { longPosition, shortPosition } = await (context.viewFacetQuote as any).getPartyATotalPositionAmountsBySymbol(user.address, 1)
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyATotalPositionAmountsBySymbol(user.address, 1)
 
 			expect(longPosition.totalOpenAmount).to.equal(longAmount)
 			expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
@@ -310,7 +388,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 				quote3LongOpened.id,
 			])
 
-			const { longPosition, shortPosition } = await (context.viewFacetQuote as any).getPartyATotalPositionAmountsBySymbol(user.address, 1)
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyATotalPositionAmountsBySymbol(user.address, 1)
 
 			expect(longPosition.totalOpenAmount).to.equal(longAmount)
 			expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
@@ -330,7 +408,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 				quote3LongOpened.id,
 			])
 
-			const { longPosition, shortPosition } = await (context.viewFacetQuote as any).getPartyATotalPositionAmountsBySymbol(user.address, 1)
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyATotalPositionAmountsBySymbol(user.address, 1)
 
 			expect(longPosition.totalOpenAmount).to.equal(longAmount)
 			expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
@@ -358,7 +436,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 				quote3LongOpened.id,
 			])
 
-			const { longPosition, shortPosition } = await (context.viewFacetQuote as any).getPartyATotalPositionAmountsBySymbol(user.address, 1)
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyATotalPositionAmountsBySymbol(user.address, 1)
 
 			expect(newQuote.openedPrice).to.equal(unDecimal(oldQuote.openedPrice * (decimal(1n) + rate)))
 			expect(longPosition.totalOpenAmount).to.equal(longAmount)
@@ -378,7 +456,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 				.connect(liquidator)
 				.liquidatePositionsPartyA(await user.getAddress(), [quote1LongOpened.id, quote2ShortOpened.id, quote3LongOpened.id])
 
-			const { longPosition, shortPosition } = await (context.viewFacetQuote as any).getPartyATotalPositionAmountsBySymbol(user.address, 1)
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyATotalPositionAmountsBySymbol(user.address, 1)
 			expect(longPosition.totalOpenAmount).to.equal(0n)
 			expect(shortPosition.totalOpenAmount).to.equal(0n)
 			expect(longPosition.avgOpenPrice).to.equal(0n)
@@ -403,7 +481,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 				quote3LongOpened.id,
 			])
 
-			const { longPosition, shortPosition } = await (context.viewFacetQuote as any).getPartyATotalPositionAmountsBySymbol(user.address, 1)
+			const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyATotalPositionAmountsBySymbol(user.address, 1)
 
 			expect(longPosition.totalOpenAmount).to.equal(longAmount)
 			expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
@@ -467,18 +545,18 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		})
 
 		it("returns empty for offsets past the last symbol", async function () {
-			const tooFar = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger.address, 10, 5)
+			const tooFar = await context.viewFacetQuote.getPartyBTotalPositionAmounts(hedger.address, 10, 5)
 			expect(tooFar.length).to.equal(0)
 		})
 
 		it("returns empty for zero limit", async function () {
-			const zeroLimit = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger.address, 0, 0)
+			const zeroLimit = await context.viewFacetQuote.getPartyBTotalPositionAmounts(hedger.address, 0, 0)
 			expect(zeroLimit.length).to.equal(0)
 		})
 
 		it("returns mid-range pagination slices", async function () {
 			// slice starting at symbol2 with limit 1 should only include that symbol
-			const slice = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger.address, 1, 1)
+			const slice = await context.viewFacetQuote.getPartyBTotalPositionAmounts(hedger.address, 1, 1)
 			expect(slice.length).to.equal(1)
 			expect(BigInt(slice[0].symbolId)).to.equal(symbol2)
 			expect(BigInt(slice[0].positionType)).to.equal(BigInt(PositionType.SHORT))
@@ -486,13 +564,64 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 
 		it("handles offset + limit exceeding total symbols", async function () {
 			// We have 3 symbols, requesting offset=2, limit=5 should only return symbol3's entries (which are empty)
-			const slice = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger.address, 2, 5)
+			const slice = await context.viewFacetQuote.getPartyBTotalPositionAmounts(hedger.address, 2, 5)
 			// symbol3 has no positions, so should be empty
 			expect(slice.length).to.equal(0)
 		})
 
 		it("returns empty for partyB with no positions", async function () {
-			const result = await (context.viewFacetQuote as any).getPartyBTotalPositionAmounts(hedger2.address, 0, 5)
+			const result = await context.viewFacetQuote.getPartyBTotalPositionAmounts(hedger2.address, 0, 5)
+			expect(result.length).to.equal(0)
+		})
+	})
+
+	describe("getPartyBTotalPositionAmountsPerPartyA (paginated)", function () {
+		let symbol2: bigint
+
+		beforeEach(async function () {
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("PER_PARTY_A_SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+
+			symbol2 = 2n
+
+			await user.setBalances(decimal(1000n), decimal(1000n), decimal(1000n))
+			const sym2QuoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbol2).positionType(PositionType.SHORT).build())
+			const sym2Quote = await context.viewFacetQuote.getQuote(sym2QuoteId)
+			await hedger.lockQuote(sym2Quote.id)
+			await hedger.openPosition(sym2Quote.id)
+		})
+
+		it("returns non-zero symbols for a specific partyA", async function () {
+			const partyA = await user.getAddress()
+			const sym1Totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbolPerPartyA(hedger.address, partyA, 1)
+			const sym2Totals = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbolPerPartyA(hedger.address, partyA, Number(symbol2))
+
+			const aggregates = await context.viewFacetQuote.getPartyBTotalPositionAmountsPerPartyA(hedger.address, partyA, 0, 5)
+
+			const findEntry = (sid: bigint, posType: PositionType) =>
+				aggregates.find((entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType))
+
+			const sym1Long = findEntry(1n, PositionType.LONG)
+			const sym1Short = findEntry(1n, PositionType.SHORT)
+			const sym2Short = findEntry(symbol2, PositionType.SHORT)
+
+			expect(sym1Long?.totalOpenAmount).to.equal(sym1Totals.longPosition.totalOpenAmount)
+			expect(sym1Long?.avgOpenPrice).to.equal(sym1Totals.longPosition.avgOpenPrice)
+			expect(sym1Short?.totalOpenAmount).to.equal(sym1Totals.shortPosition.totalOpenAmount)
+			expect(sym1Short?.avgOpenPrice).to.equal(sym1Totals.shortPosition.avgOpenPrice)
+
+			expect(sym2Short?.totalOpenAmount).to.equal(sym2Totals.shortPosition.totalOpenAmount)
+			expect(sym2Short?.avgOpenPrice).to.equal(sym2Totals.shortPosition.avgOpenPrice)
+		})
+
+		it("returns empty for partyA with no positions", async function () {
+			const user2 = new User(context, context.signers.user2)
+			await user2.setup()
+			await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+			const result = await context.viewFacetQuote.getPartyBTotalPositionAmountsPerPartyA(hedger.address, await user2.getAddress(), 0, 5)
 			expect(result.length).to.equal(0)
 		})
 	})

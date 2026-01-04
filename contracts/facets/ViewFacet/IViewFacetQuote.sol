@@ -59,12 +59,25 @@ interface IViewFacetQuote {
 		uint256 symbolId
 	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition);
 
+	function getPartyBTotalPositionAmountsBySymbolPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 symbolId
+	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition);
+
 	function getPartyATotalPositionAmountsBySymbol(
 		address partyA,
 		uint256 symbolId
 	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition);
 
 	function getPartyBTotalPositionAmounts(address partyB, uint256 offset, uint256 limit) external view returns (PartyBPositionBySymbol[] memory);
+
+	function getPartyBTotalPositionAmountsPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 offset,
+		uint256 limit
+	) external view returns (PartyBPositionBySymbol[] memory);
 
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 
