@@ -114,6 +114,11 @@ library LibQuote {
 		quoteLayout.partyATotalPositionsInfo[quote.partyA][quote.symbolId][quote.positionType].totalNotionals -= amount * quote.openedPrice;
 	}
 
+	function subFromPartiesOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
+		subFromPartyBOpenPositionAmounts(quote, amount);
+		subFromPartyAOpenPositionAmounts(quote, amount);
+	}
+
 	function updatePartyBOpenPositionNotional(Quote storage quote, uint256 oldOpenedPrice) internal {
 		if (oldOpenedPrice == quote.openedPrice) return;
 		if (
@@ -199,8 +204,8 @@ library LibQuote {
 
 		lastOpenPositionIndex = quoteLayout.partyBPositionsCount[quote.partyB][quote.partyA] - 1;
 		quoteLayout.partyBOpenPositions[quote.partyB][quote.partyA][indexOfPartyBPosition] = quoteLayout.partyBOpenPositions[quote.partyB][
-						quote.partyA
-			][lastOpenPositionIndex];
+			quote.partyA
+		][lastOpenPositionIndex];
 		quoteLayout.partyBPositionsIndex[quoteLayout.partyBOpenPositions[quote.partyB][quote.partyA][lastOpenPositionIndex]] = indexOfPartyBPosition;
 		quoteLayout.partyBOpenPositions[quote.partyB][quote.partyA].pop();
 
