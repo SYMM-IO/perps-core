@@ -5,6 +5,8 @@
 pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import { SafeERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { ICoreFacet } from "./ICoreFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
@@ -22,10 +24,12 @@ import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol"
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
+import { IVirtualProvider } from "../../../interfaces/IVirtualProvider.sol";
 
 contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
+	using SafeERC20 for IERC20;
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 
@@ -90,6 +94,52 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		}
 
 		return _getOrCreateVirtualAccount(parentAccount, metadata, isolationType, symbolId);
+	}
+
+	// ==================== Deposit Functions ====================
+
+	function depositForAccountWithExpressRate(
+		address account,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
+		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		
+		// Get expressRate and virtualProvider from affiliate data
+		uint256 expressRate = afLayout.affiliates[affiliate].expressRate;
+		address virtualProvider = afLayout.affiliates[affiliate].virtualProvider;
+		
+		address core = LibAccountLayerUtils.getRelatedCore(account);
+		address collateral = ISymmio(core).getCollateral();
+		uint256 collateralDecimals = IERC20Metadata(collateral).decimals();
+		
+		// Get balance before deposit to calculate increase
+		uint256 balanceBefore = ISymmio(core).balanceOf(account);
+		
+		// Transfer total amount from user
+		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+
+		// Calculate split: virtualAmount = amount * expressRate / 1e18
+		uint256 virtualAmount = (amount * expressRate) / 1e18;
+		uint256 realAmount = amount - virtualAmount;
+
+		// Deposit real portion to Symmio Diamond
+		if (realAmount > 0) {
+			IERC20(collateral).safeIncreaseAllowance(core, realAmount);
+			LibAccountLayerUtils.executeWithSigner(account, abi.encodeWithSelector(ISymmio.depositFor.selector, account, realAmount));
+		}
+
+		// Transfer virtual portion to Virtual Provider and invoke callback
+		if (virtualAmount > 0 && virtualProvider != address(0)) {
+			IERC20(collateral).safeTransfer(virtualProvider, virtualAmount);
+			IVirtualProvider(virtualProvider).onVirtualDeposit(account, virtualAmount, core);
+		}
+
+		// Enforce invariant: input_amount == balanceOf(user) increase
+		uint256 balanceAfter = ISymmio(core).balanceOf(account);
+		uint256 balanceIncrease = balanceAfter - balanceBefore;
+		uint256 expectedIncrease = (amount * 1e18) / (10 ** collateralDecimals);
+		require(balanceIncrease == expectedIncrease, "CoreFacet: Balance invariant violation");
 	}
 
 	// ==================== Call Execution ====================

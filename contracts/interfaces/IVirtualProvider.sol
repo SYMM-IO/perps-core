@@ -15,4 +15,5 @@ interface IVirtualProvider {
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory withdrawRequest, uint256 newCooldown) external;
 	function onExternalTransfer(ExternalTransferReq memory externalTransfer) external;
 	function onCancelExternalTransfer(uint256 id) external;
+	function onVirtualDeposit(address user, uint256 amount, address symmioCore) external;
 }

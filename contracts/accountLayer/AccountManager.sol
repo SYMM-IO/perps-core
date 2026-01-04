@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { SafeERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IAccountManager, Account } from "./interfaces/IAccountManager.sol";
 import { IAccountLayerDiamond } from "./interfaces/IAccountLayerDiamond.sol";
+import { ICoreFacet } from "./facets/Core/ICoreFacet.sol";
 import { SubAccountCreationData, SubAccountDetail, SubAccountIsolationType } from "./storages/AccountHubStorage.sol";
 import { ISymmio } from "./interfaces/ISymmio.sol";
 
@@ -52,6 +53,19 @@ contract AccountManager is IAccountManager {
 
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = abi.encodeWithSelector(ISymmio.depositFor.selector, account, amount);
+		IAccountLayerDiamond(accountHub)._call(account, callDatas);
+	}
+
+	function depositForAccountWithExpressRate(
+		address account,
+		uint256 amount
+	) external withSigner {
+		bytes[] memory callDatas = new bytes[](1);
+		callDatas[0] = abi.encodeWithSelector(
+			ICoreFacet.depositForAccountWithExpressRate.selector,
+			account,
+			amount
+		);
 		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 

@@ -15,6 +15,8 @@ interface IAccountFacet is IAccountEvents {
 
 	function virtualDepositFor(address user, uint256 amount) external;
 
+	function depositVirtualFunds(uint256 amount) external;
+
 	function withdraw(uint256 amount) external;
 
 	function withdrawTo(address user, uint256 amount) external;

@@ -229,6 +229,19 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit OperatorSet(affiliate, selector, operator, status);
 	}
 
+	// ==================== Express Withdraw Configuration ====================
+
+	function setExpressRate(address affiliate, uint256 expressRate) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+		if (expressRate > SHARE_PRECISION) revert InvalidShare();
+		AffiliateHubStorage.layout().affiliates[affiliate].expressRate = expressRate;
+		emit ExpressRateSet(affiliate, expressRate);
+	}
+
+	function setVirtualProvider(address affiliate, address virtualProvider) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+		AffiliateHubStorage.layout().affiliates[affiliate].virtualProvider = virtualProvider;
+		emit VirtualProviderSet(affiliate, virtualProvider);
+	}
+
 	// ==================== Delegated Calls ====================
 
 	function callAsAffiliate(

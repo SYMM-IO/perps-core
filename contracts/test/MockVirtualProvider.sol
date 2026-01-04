@@ -5,6 +5,7 @@ import { IVirtualProvider } from "../interfaces/IVirtualProvider.sol";
 import { WithdrawRequest, WithdrawReceiverPart, WithdrawStatus } from "../storages/WithdrawStorage.sol";
 import { ExternalTransferReq } from "../storages/AccountStorage.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
@@ -12,6 +13,7 @@ interface ISymmioCore {
 	function rejectWithdrawRequest(address user, uint256 requestId) external;
 	function acceptVirtualExternalTransfer(uint256 id) external;
 	function virtualDepositFor(address user, uint256 amount) external;
+	function getCollateral() external view returns (address);
 }
 
 contract VirtualProvider is IVirtualProvider {
@@ -95,4 +97,11 @@ contract VirtualProvider is IVirtualProvider {
 		id;
 	}
 
+	function onVirtualDeposit(address user, uint256 amount, address symmioCore) external override {
+		uint256 collateralDecimals = IERC20Metadata(ISymmioCore(symmioCore).getCollateral()).decimals();
+		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** collateralDecimals);
+		
+		// Call virtualDepositFor on the Symmio
+		ISymmioCore(symmioCore).virtualDepositFor(user, amountWith18Decimals);
+	}
 }

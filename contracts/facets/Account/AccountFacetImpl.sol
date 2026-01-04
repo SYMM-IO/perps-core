@@ -39,6 +39,17 @@ library AccountFacetImpl {
 		AccountStorage.layout().balances[user] += amount;
 	}
 
+	function depositVirtualFunds(uint256 amount) internal {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		require(
+			appLayout.virtualProviders[LibSigner.getSigner()],
+			"AccountFacet: signer not registered as virtual provider"
+		);
+		// Transfer funds from virtual provider to Symmio
+		address collateral = appLayout.collateral;
+		LibSafeERC20.safeTransferFrom(collateral, LibSigner.getSigner(), address(this), amount);
+	}
+
 	function withdraw(address user, uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
