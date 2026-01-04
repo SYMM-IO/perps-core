@@ -32,6 +32,7 @@ contract ADLFacet is Accessibility, Pausable, IADLFacet {
 				Quote storage quote = quoteLayout.quotes[quoteId];
 				emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, prices[i], quote.quoteStatus, closeIds[i]);
 			}
+			else{}
 			unchecked {
 				++i;
 			}

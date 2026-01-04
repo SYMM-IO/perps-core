@@ -15,6 +15,13 @@ import { getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
 export function shouldBehaveLikeADLFacet(): void {
 	let context: RunContext, user: User, hedger: Hedger
 
+	const ADLReason = {
+		NOT_IN_CLOSE_STATE: 0n,
+		PARTY_A_INSUFFICIENT_BALANCE: 1n,
+		PARTY_B_INSUFFICIENT_BALANCE: 2n,
+		INVALID_FILLED_AMOUNT: 3n,
+	} as const
+
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
 		this.user_allocated = decimal(500n)
@@ -90,9 +97,27 @@ export function shouldBehaveLikeADLFacet(): void {
 
 			it("fails on zero amount", async function () {
 				const quoteId = await openWith(hedger)
-				await expect(
-					context.adlFacet.connect(hedger.signer).adlClose([quoteId], [0n], [decimal(1n)]),
-				).to.be.revertedWith("PartyBFacet: Invalid filled amount")
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+				const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [0n], [decimal(1n)])
+				const events = await parseEvents(tx)
+				const skip = events.find((e: any) => e!.name === "ADLSkip" && e!.args.quoteId === quoteId)
+				expect(skip).to.not.equal(undefined)
+				expect(skip!.args.reason).to.equal(ADLReason.INVALID_FILLED_AMOUNT)
+
+				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount)
+				expect(quoteAfter.quoteStatus).to.equal(quoteBefore.quoteStatus)
+			})
+
+			it("skips when ADL amount exceeds open amount", async function () {
+				const quoteId = await openWith(hedger)
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+				const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
+				const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [openAmount + 1n], [quoteBefore.openedPrice])
+				const events = await parseEvents(tx)
+				const skip = events.find((e: any) => e!.name === "ADLSkip" && e!.args.quoteId === quoteId)
+				expect(skip).to.not.equal(undefined)
+				expect(skip!.args.reason).to.equal(ADLReason.INVALID_FILLED_AMOUNT)
 			})
 		})
 

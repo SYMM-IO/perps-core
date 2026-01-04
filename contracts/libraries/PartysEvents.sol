@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { QuoteStatus, OrderType, PositionType, LockedValues } from "../storages/QuoteStorage.sol";
+import { ADLReason } from "./ADLTypes.sol";
 
 
 
@@ -60,6 +61,6 @@ library LibPartyBBatchEvents {
 	event RequestToCancelCloseRequest(address partyA, address partyB, uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId);
 	event AcceptCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId);
 	// reason: 1 => insufficient balance for funding + maintenance for partyA, 2 => insufficient for partyB
-	event ADLSkip(uint256 quoteId, address partyA, address partyB, uint8 reason, int256 requiredFundingFee);
+	event ADLSkip(uint256 quoteId, address partyA, address partyB, ADLReason reason, int256 requiredFundingFee);
 	event ADLClose(uint256[] quoteIds, uint256[] amounts, uint256[] prices, uint256 closedAmount);
 }
