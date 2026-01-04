@@ -79,7 +79,7 @@ struct Fee {
 	bool isSet; // true if the fee is explicitly set, false if default (unset/zero)
 }
 
-struct PartiesPositionsInfo {
+struct PartiesAggregatedPositions {
 	uint256 aggregatedAmounts;
 	uint256 aggregatedNotionals;
 }
@@ -102,9 +102,9 @@ library QuoteStorage {
 		uint256 lastCloseId;
 		mapping(uint256 => uint256) closeIds;
 		mapping(address => uint256) partyALockQuotesCount;
-		mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo))) partyBAggregatedPositions; // partyB => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
-		mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo))) partyAAggregatedPositions; // partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
-		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo)))) partyBAggregatedPositionsPerPartyA; // partyB => partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
+		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyBAggregatedPositions; // partyB => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
+		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyAAggregatedPositions; // partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyBAggregatedPositionsPerPartyA; // partyB => partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
 	}
 
 	function layout() internal pure returns (Layout storage l) {

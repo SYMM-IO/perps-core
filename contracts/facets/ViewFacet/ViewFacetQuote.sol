@@ -344,11 +344,11 @@ contract ViewFacetQuote is IViewFacetQuote {
 		address partyB,
 		uint256 offset,
 		uint256 limit
-	) external view returns (PartyBPositionBySymbol[] memory results) {
+	) external view returns (PartiesAggregatedPositionBySymbol[] memory results) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		uint256 totalSymbols = symbolLayout.lastId;
 		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new PartyBPositionBySymbol[](0);
+			return new PartiesAggregatedPositionBySymbol[](0);
 		}
 
 		uint256 end = offset + limit;
@@ -356,7 +356,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 		// pre allocate two slots per symbol (long + short)
 		uint256 maxItems = (end - offset) * 2;
-		results = new PartyBPositionBySymbol[](maxItems);
+		results = new PartiesAggregatedPositionBySymbol[](maxItems);
 		uint256 count;
 
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -368,7 +368,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 			uint256 longAmount = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmounts;
 			if (longAmount > 0) {
 				uint256 longNotional = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedNotionals;
-				results[count] = PartyBPositionBySymbol({
+				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
 					aggregatedOpenAmount: longAmount,
@@ -381,7 +381,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 			uint256 shortAmount = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedAmounts;
 			if (shortAmount > 0) {
 				uint256 shortNotional = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedNotionals;
-				results[count] = PartyBPositionBySymbol({
+				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
 					aggregatedOpenAmount: shortAmount,
@@ -406,6 +406,74 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
+	 * @notice Returns Aggregated open amounts and average open prices for a party A across symbols, grouped by position type.
+	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
+	 * @param partyA The address of party A.
+	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
+	 * @param limit Maximum symbols to process starting at offset.
+	 */
+	function getPartyAAggregatedPosition(
+		address partyA,
+		uint256 offset,
+		uint256 limit
+	) external view returns (PartiesAggregatedPositionBySymbol[] memory results) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		uint256 totalSymbols = symbolLayout.lastId;
+		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
+			return new PartiesAggregatedPositionBySymbol[](0);
+		}
+
+		uint256 end = offset + limit;
+		if (end > totalSymbols) end = totalSymbols;
+
+		uint256 maxItems = (end - offset) * 2;
+		results = new PartiesAggregatedPositionBySymbol[](maxItems);
+		uint256 count;
+
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
+			uint256 symbolId = symbolIndex;
+
+			uint256 longAmount = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.LONG].aggregatedAmounts;
+			if (longAmount > 0) {
+				uint256 longNotional = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.LONG].aggregatedNotionals;
+				results[count] = PartiesAggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedOpenAmount: longAmount,
+					avgOpenPrice: longNotional / longAmount
+				});
+				count++;
+			}
+
+			uint256 shortAmount = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.SHORT].aggregatedAmounts;
+			if (shortAmount > 0) {
+				uint256 shortNotional = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.SHORT].aggregatedNotionals;
+				results[count] = PartiesAggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedOpenAmount: shortAmount,
+					avgOpenPrice: shortNotional / shortAmount
+				});
+				count++;
+			}
+
+			unchecked {
+				++symbolIndex;
+			}
+		}
+
+		if (count == results.length) {
+			return results;
+		}
+
+		assembly {
+			mstore(results, count)
+		}
+	}
+
+	/**
 	 * @notice Returns total open amounts and average open prices for a party B per party A across symbols, grouped by position type.
 	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
 	 * @param partyB The address of party B.
@@ -418,18 +486,18 @@ contract ViewFacetQuote is IViewFacetQuote {
 		address partyA,
 		uint256 offset,
 		uint256 limit
-	) external view returns (PartyBPositionBySymbol[] memory results) {
+	) external view returns (PartiesAggregatedPositionBySymbol[] memory results) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		uint256 totalSymbols = symbolLayout.lastId;
 		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new PartyBPositionBySymbol[](0);
+			return new PartiesAggregatedPositionBySymbol[](0);
 		}
 
 		uint256 end = offset + limit;
 		if (end > totalSymbols) end = totalSymbols;
 
 		uint256 maxItems = (end - offset) * 2;
-		results = new PartyBPositionBySymbol[](maxItems);
+		results = new PartiesAggregatedPositionBySymbol[](maxItems);
 		uint256 count;
 
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -440,7 +508,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 			uint256 longAmount = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmounts;
 			if (longAmount > 0) {
 				uint256 longNotional = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedNotionals;
-				results[count] = PartyBPositionBySymbol({
+				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
 					aggregatedOpenAmount: longAmount,
@@ -452,7 +520,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 			uint256 shortAmount = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedAmounts;
 			if (shortAmount > 0) {
 				uint256 shortNotional = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedNotionals;
-				results[count] = PartyBPositionBySymbol({
+				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
 					aggregatedOpenAmount: shortAmount,

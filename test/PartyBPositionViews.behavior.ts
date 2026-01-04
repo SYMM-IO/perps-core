@@ -575,6 +575,92 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		})
 	})
 
+	describe.only("getPartyAAggregatedPosition (paginated)", function () {
+		let symbol2: bigint
+		let symbol3: bigint
+
+		beforeEach(async function () {
+			// add two extra symbols and map them to the already whitelisted type 1
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("PARTY_A_SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("PARTY_A_SYMBOL3", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2, 3], [1, 1])
+
+			symbol2 = 2n
+			symbol3 = 3n
+
+			await user.setBalances(decimal(1000n), decimal(1000n), decimal(1000n))
+
+			// Open a SHORT on the second symbol, leave the third untouched
+			const sym2QuoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbol2).positionType(PositionType.SHORT).build())
+			const sym2Quote = await context.viewFacetQuote.getQuote(sym2QuoteId)
+			await hedger.lockQuote(sym2Quote.id)
+			await hedger.openPosition(sym2Quote.id)
+		})
+
+		it("returns non-zero symbols with pagination and omits empty symbols", async function () {
+			const sym1Totals = await context.viewFacetQuote.getPartyAAggregatedPositionBySymbol(user.address, 1)
+			const sym2Totals = await context.viewFacetQuote.getPartyAAggregatedPositionBySymbol(user.address, Number(symbol2))
+
+			const aggregates = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 0, 5)
+
+			const findEntry = (sid: bigint, posType: PositionType) =>
+				aggregates.find((entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType))
+
+			const sym1Long = findEntry(1n, PositionType.LONG)
+			const sym1Short = findEntry(1n, PositionType.SHORT)
+			const sym2Short = findEntry(symbol2, PositionType.SHORT)
+
+			expect(sym1Long?.aggregatedOpenAmount).to.equal(sym1Totals.longPosition.aggregatedOpenAmount)
+			expect(sym1Long?.avgOpenPrice).to.equal(sym1Totals.longPosition.avgOpenPrice)
+			expect(sym1Short?.aggregatedOpenAmount).to.equal(sym1Totals.shortPosition.aggregatedOpenAmount)
+			expect(sym1Short?.avgOpenPrice).to.equal(sym1Totals.shortPosition.avgOpenPrice)
+
+			// sym2 only has a short entry
+			expect(sym2Short?.aggregatedOpenAmount).to.equal(sym2Totals.shortPosition.aggregatedOpenAmount)
+			expect(sym2Short?.avgOpenPrice).to.equal(sym2Totals.shortPosition.avgOpenPrice)
+
+			// symbol3 has no open positions and should not appear
+			const sym3Entry = aggregates.find((entry: any) => BigInt(entry.symbolId) === symbol3)
+			expect(sym3Entry).to.be.undefined
+		})
+
+		it("returns empty for offsets past the last symbol", async function () {
+			const tooFar = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 10, 5)
+			expect(tooFar.length).to.equal(0)
+		})
+
+		it("returns empty for zero limit", async function () {
+			const zeroLimit = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 0, 0)
+			expect(zeroLimit.length).to.equal(0)
+		})
+
+		it("returns mid-range pagination slices", async function () {
+			// slice starting at symbol2 with limit 1 should only include that symbol
+			const slice = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 1, 1)
+			expect(slice.length).to.equal(1)
+			expect(BigInt(slice[0].symbolId)).to.equal(symbol2)
+			expect(BigInt(slice[0].positionType)).to.equal(BigInt(PositionType.SHORT))
+		})
+
+		it("handles offset + limit exceeding total symbols", async function () {
+			const slice = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 2, 5)
+			expect(slice.length).to.equal(0)
+		})
+
+		it("returns empty for partyA with no positions", async function () {
+			const user2 = new User(context, context.signers.user2)
+			await user2.setup()
+			await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+			const result = await context.viewFacetQuote.getPartyAAggregatedPosition(await user2.getAddress(), 0, 5)
+			expect(result.length).to.equal(0)
+		})
+	})
+
 	describe("getPartyBAggregatedPositionPerPartyA (paginated)", function () {
 		let symbol2: bigint
 
