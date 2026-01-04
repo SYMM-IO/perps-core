@@ -5505,7 +5505,7 @@
                 "type": "uint256"
             }
         ],
-        "name": "getPartyBTotalPositionAmounts",
+        "name": "getPartyBAggregatedPosition",
         "outputs": [
             {
                 "components": [
@@ -5521,7 +5521,7 @@
                     },
                     {
                         "internalType": "uint256",
-                        "name": "totalOpenAmount",
+                        "name": "aggregatedOpenAmount",
                         "type": "uint256"
                     },
                     {
@@ -5551,7 +5551,7 @@
                 "type": "uint256"
             }
         ],
-        "name": "getPartyBTotalPositionAmountsBySymbol",
+        "name": "getPartyBAggregatedPositionBySymbol",
         "outputs": [
             {
                 "components": [
@@ -5562,7 +5562,7 @@
                     },
                     {
                         "internalType": "uint256",
-                        "name": "totalOpenAmount",
+                        "name": "aggregatedOpenAmount",
                         "type": "uint256"
                     },
                     {
@@ -5571,7 +5571,7 @@
                         "type": "uint256"
                     }
                 ],
-                "internalType": "struct IViewFacetQuote.TotalPositionAmount",
+                "internalType": "struct IViewFacetQuote.AggregatedPositionAmount",
                 "name": "longPosition",
                 "type": "tuple"
             },
@@ -5584,7 +5584,7 @@
                     },
                     {
                         "internalType": "uint256",
-                        "name": "totalOpenAmount",
+                        "name": "aggregatedOpenAmount",
                         "type": "uint256"
                     },
                     {
@@ -5593,7 +5593,7 @@
                         "type": "uint256"
                     }
                 ],
-                "internalType": "struct IViewFacetQuote.TotalPositionAmount",
+                "internalType": "struct IViewFacetQuote.AggregatedPositionAmount",
                 "name": "shortPosition",
                 "type": "tuple"
             }

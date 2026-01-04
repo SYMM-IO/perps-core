@@ -7,16 +7,16 @@ pragma solidity >=0.8.18;
 import { Quote, PositionType } from "../../storages/QuoteStorage.sol";
 
 interface IViewFacetQuote {
-	struct TotalPositionAmount {
+	struct AggregatedPositionAmount {
 		PositionType positionType;
-		uint256 totalOpenAmount;
+		uint256 aggregatedOpenAmount;
 		uint256 avgOpenPrice;
 	}
 
 	struct PartyBPositionBySymbol {
 		uint256 symbolId;
 		PositionType positionType;
-		uint256 totalOpenAmount;
+		uint256 aggregatedOpenAmount;
 		uint256 avgOpenPrice;
 	}
 
@@ -54,25 +54,25 @@ interface IViewFacetQuote {
 
 	function partyBPositionsCount(address partyB, address partyA) external view returns (uint256);
 
-	function getPartyBTotalPositionAmountsBySymbol(
+	function getPartyBAggregatedPositionBySymbol(
 		address partyB,
 		uint256 symbolId
-	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition);
+	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
 
-	function getPartyBTotalPositionAmountsBySymbolPerPartyA(
+	function getPartyBAggregatedPositionBySymbolPerPartyA(
 		address partyB,
 		address partyA,
 		uint256 symbolId
-	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition);
+	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
 
-	function getPartyATotalPositionAmountsBySymbol(
+	function getPartyAAggregatedPositionBySymbol(
 		address partyA,
 		uint256 symbolId
-	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition);
+	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
 
-	function getPartyBTotalPositionAmounts(address partyB, uint256 offset, uint256 limit) external view returns (PartyBPositionBySymbol[] memory);
+	function getPartyBAggregatedPosition(address partyB, uint256 offset, uint256 limit) external view returns (PartyBPositionBySymbol[] memory);
 
-	function getPartyBTotalPositionAmountsPerPartyA(
+	function getPartyBAggregatedPositionPerPartyA(
 		address partyB,
 		address partyA,
 		uint256 offset,

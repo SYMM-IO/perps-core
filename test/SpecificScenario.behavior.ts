@@ -36,18 +36,18 @@ export function shouldBehaveLikeSpecificScenario(): void {
 	})
 
 	const expectPartyBTotals = async (context: RunContext, longAmount: bigint, longAvgPrice: bigint, shortAmount: bigint, shortAvgPrice: bigint) => {
-		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(context.signers.hedger.address, 1)
-		expect(longPosition.totalOpenAmount).to.equal(longAmount)
+		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbol(context.signers.hedger.address, 1)
+		expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
 		expect(longPosition.avgOpenPrice).to.equal(longAvgPrice)
-		expect(shortPosition.totalOpenAmount).to.equal(shortAmount)
+		expect(shortPosition.aggregatedOpenAmount).to.equal(shortAmount)
 		expect(shortPosition.avgOpenPrice).to.equal(shortAvgPrice)
 	}
 
 	const expectPartyATotals = async (context: RunContext, longAmount: bigint, longAvgPrice: bigint, shortAmount: bigint, shortAvgPrice: bigint) => {
-		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyATotalPositionAmountsBySymbol(context.signers.user.address, 1)
-		expect(longPosition.totalOpenAmount).to.equal(longAmount)
+		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyAAggregatedPositionBySymbol(context.signers.user.address, 1)
+		expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
 		expect(longPosition.avgOpenPrice).to.equal(longAvgPrice)
-		expect(shortPosition.totalOpenAmount).to.equal(shortAmount)
+		expect(shortPosition.aggregatedOpenAmount).to.equal(shortAmount)
 		expect(shortPosition.avgOpenPrice).to.equal(shortAvgPrice)
 	}
 
@@ -60,11 +60,11 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		shortAvgPrice: bigint,
 	) => {
 		const assertPosition = (position: any, amount: bigint, avg: bigint) => {
-			expect(position.totalOpenAmount).to.equal(amount)
+			expect(position.aggregatedOpenAmount).to.equal(amount)
 			expect(position.avgOpenPrice).to.equal(avg)
 		}
 
-		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbolPerPartyA(
+		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(
 			context.signers.hedger.address,
 			partyA,
 			1,
@@ -72,19 +72,19 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		assertPosition(longPosition, longAmount, longAvgPrice)
 		assertPosition(shortPosition, shortAmount, shortAvgPrice)
 
-		const aggregates = await context.viewFacetQuote.getPartyBTotalPositionAmountsPerPartyA(context.signers.hedger.address, partyA, 0, 5)
+		const aggregates = await context.viewFacetQuote.getPartyBAggregatedPositionPerPartyA(context.signers.hedger.address, partyA, 0, 5)
 		const findAggregate = (posType: PositionType) =>
 			aggregates.find((entry: any) => BigInt(entry.symbolId) === 1n && BigInt(entry.positionType) === BigInt(posType))
 		const assertAggregate = (entry: any, amount: bigint, avg: bigint) => {
 			if (amount === 0n) {
 				if (entry) {
-					expect(entry.totalOpenAmount).to.equal(0n)
+					expect(entry.aggregatedOpenAmount).to.equal(0n)
 					expect(entry.avgOpenPrice).to.equal(0n)
 				}
 				return
 			}
 			expect(entry).to.not.equal(undefined)
-			expect(entry.totalOpenAmount).to.equal(amount)
+			expect(entry.aggregatedOpenAmount).to.equal(amount)
 			expect(entry.avgOpenPrice).to.equal(avg)
 		}
 

@@ -80,8 +80,8 @@ struct Fee {
 }
 
 struct PartiesPositionsInfo {
-	uint256 totalAmounts;
-	uint256 totalNotionals;
+	uint256 aggregatedAmounts;
+	uint256 aggregatedNotionals;
 }
 
 library QuoteStorage {
@@ -102,9 +102,9 @@ library QuoteStorage {
 		uint256 lastCloseId;
 		mapping(uint256 => uint256) closeIds;
 		mapping(address => uint256) partyALockQuotesCount;
-		mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo))) partyBTotalPositionsInfo; // partyB => symbolId => positionType => struct with totalAmounts and totalNotionals
-		mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo))) partyATotalPositionsInfo; // partyA => symbolId => positionType => struct with totalAmounts and totalNotionals
-		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo)))) partyBTotalPositionsInfoPerPartyA; // partyB => partyA => symbolId => positionType => struct with totalAmounts and totalNotionals
+		mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo))) partyBAggregatedPositions; // partyB => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
+		mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo))) partyAAggregatedPositions; // partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesPositionsInfo)))) partyBAggregatedPositionsPerPartyA; // partyB => partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
 	}
 
 	function layout() internal pure returns (Layout storage l) {

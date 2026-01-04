@@ -272,75 +272,75 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
-	 * @notice Returns total open position amounts and average open prices for a party B and symbol, grouped by position type.
+	 * @notice Returns Aggregated open position amounts and average open prices for a party B and symbol, grouped by position type.
 	 * @param partyB The address of party B.
 	 * @param symbolId The symbol ID.
-	 * @return longPosition Total open amount and avg open price for LONG positions.
-	 * @return shortPosition Total open amount and avg open price for SHORT positions.
+	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
+	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
 	 */
-	function getPartyBTotalPositionAmountsBySymbol(
+	function getPartyBAggregatedPositionBySymbol(
 		address partyB,
 		uint256 symbolId
-	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition) {
+	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256 longAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalAmounts;
-		uint256 shortAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalAmounts;
-		uint256 longNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalNotionals;
-		uint256 shortNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalNotionals;
-		longPosition = TotalPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
-		shortPosition = TotalPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
+		uint256 longAmount = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmounts;
+		uint256 shortAmount = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedAmounts;
+		uint256 longNotional = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedNotionals;
+		uint256 shortNotional = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedNotionals;
+		longPosition = AggregatedPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
+		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
 	}
 
 	/**
-	 * @notice Returns total open position amounts and average open prices for a party B, party A, and symbol, grouped by position type.
+	 * @notice Returns Aggregated open position amounts and average open prices for a party B, party A, and symbol, grouped by position type.
 	 * @param partyB The address of party B.
 	 * @param partyA The address of party A.
 	 * @param symbolId The symbol ID.
-	 * @return longPosition Total open amount and avg open price for LONG positions.
-	 * @return shortPosition Total open amount and avg open price for SHORT positions.
+	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
+	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
 	 */
-	function getPartyBTotalPositionAmountsBySymbolPerPartyA(
+	function getPartyBAggregatedPositionBySymbolPerPartyA(
 		address partyB,
 		address partyA,
 		uint256 symbolId
-	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition) {
+	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256 longAmount = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.LONG].totalAmounts;
-		uint256 shortAmount = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].totalAmounts;
-		uint256 longNotional = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.LONG].totalNotionals;
-		uint256 shortNotional = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].totalNotionals;
-		longPosition = TotalPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
-		shortPosition = TotalPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
+		uint256 longAmount = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmounts;
+		uint256 shortAmount = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedAmounts;
+		uint256 longNotional = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedNotionals;
+		uint256 shortNotional = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedNotionals;
+		longPosition = AggregatedPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
+		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
 	}
 
 	/**
-	 * @notice Returns total open position amounts and average open prices for a party A and symbol, grouped by position type.
+	 * @notice Returns Aggregated open position amounts and average open prices for a party A and symbol, grouped by position type.
 	 * @param partyA The address of party A.
 	 * @param symbolId The symbol ID.
-	 * @return longPosition Total open amount and avg open price for LONG positions.
-	 * @return shortPosition Total open amount and avg open price for SHORT positions.
+	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
+	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
 	 */
-	function getPartyATotalPositionAmountsBySymbol(
+	function getPartyAAggregatedPositionBySymbol(
 		address partyA,
 		uint256 symbolId
-	) external view returns (TotalPositionAmount memory longPosition, TotalPositionAmount memory shortPosition) {
+	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256 longAmount = quoteLayout.partyATotalPositionsInfo[partyA][symbolId][PositionType.LONG].totalAmounts;
-		uint256 shortAmount = quoteLayout.partyATotalPositionsInfo[partyA][symbolId][PositionType.SHORT].totalAmounts;
-		uint256 longNotional = quoteLayout.partyATotalPositionsInfo[partyA][symbolId][PositionType.LONG].totalNotionals;
-		uint256 shortNotional = quoteLayout.partyATotalPositionsInfo[partyA][symbolId][PositionType.SHORT].totalNotionals;
-		longPosition = TotalPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
-		shortPosition = TotalPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
+		uint256 longAmount = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.LONG].aggregatedAmounts;
+		uint256 shortAmount = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.SHORT].aggregatedAmounts;
+		uint256 longNotional = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.LONG].aggregatedNotionals;
+		uint256 shortNotional = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.SHORT].aggregatedNotionals;
+		longPosition = AggregatedPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
+		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
 	}
 
 	/**
-	 * @notice Returns total open amounts and average open prices for a party B across symbols, grouped by position type.
+	 * @notice Returns Aggregated open amounts and average open prices for a party B across symbols, grouped by position type.
 	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
 	 * @param partyB The address of party B.
 	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
 	 * @param limit Maximum symbols to process starting at offset.
 	 */
-	function getPartyBTotalPositionAmounts(
+	function getPartyBAggregatedPosition(
 		address partyB,
 		uint256 offset,
 		uint256 limit
@@ -365,26 +365,26 @@ contract ViewFacetQuote is IViewFacetQuote {
 			uint256 symbolId = symbolIndex;
 
 			// LONG
-			uint256 longAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalAmounts;
+			uint256 longAmount = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmounts;
 			if (longAmount > 0) {
-				uint256 longNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.LONG].totalNotionals;
+				uint256 longNotional = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedNotionals;
 				results[count] = PartyBPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
-					totalOpenAmount: longAmount,
+					aggregatedOpenAmount: longAmount,
 					avgOpenPrice: longNotional / longAmount
 				});
 				count++;
 			}
 
 			// SHORT
-			uint256 shortAmount = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalAmounts;
+			uint256 shortAmount = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedAmounts;
 			if (shortAmount > 0) {
-				uint256 shortNotional = quoteLayout.partyBTotalPositionsInfo[partyB][symbolId][PositionType.SHORT].totalNotionals;
+				uint256 shortNotional = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedNotionals;
 				results[count] = PartyBPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
-					totalOpenAmount: shortAmount,
+					aggregatedOpenAmount: shortAmount,
 					avgOpenPrice: shortNotional / shortAmount
 				});
 				count++;
@@ -413,7 +413,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
 	 * @param limit Maximum symbols to process starting at offset.
 	 */
-	function getPartyBTotalPositionAmountsPerPartyA(
+	function getPartyBAggregatedPositionPerPartyA(
 		address partyB,
 		address partyA,
 		uint256 offset,
@@ -437,25 +437,25 @@ contract ViewFacetQuote is IViewFacetQuote {
 		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
 			uint256 symbolId = symbolIndex;
 
-			uint256 longAmount = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.LONG].totalAmounts;
+			uint256 longAmount = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmounts;
 			if (longAmount > 0) {
-				uint256 longNotional = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.LONG].totalNotionals;
+				uint256 longNotional = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedNotionals;
 				results[count] = PartyBPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
-					totalOpenAmount: longAmount,
+					aggregatedOpenAmount: longAmount,
 					avgOpenPrice: longNotional / longAmount
 				});
 				count++;
 			}
 
-			uint256 shortAmount = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].totalAmounts;
+			uint256 shortAmount = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedAmounts;
 			if (shortAmount > 0) {
-				uint256 shortNotional = quoteLayout.partyBTotalPositionsInfoPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].totalNotionals;
+				uint256 shortNotional = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedNotionals;
 				results[count] = PartyBPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
-					totalOpenAmount: shortAmount,
+					aggregatedOpenAmount: shortAmount,
 					avgOpenPrice: shortNotional / shortAmount
 				});
 				count++;

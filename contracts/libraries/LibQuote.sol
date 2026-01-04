@@ -78,40 +78,40 @@ library LibQuote {
 	 */
 	function addToPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesPositionsInfo storage totalInfo = quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType];
-		PartiesPositionsInfo storage perPartyAInfo = quoteLayout.partyBTotalPositionsInfoPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
+		PartiesPositionsInfo storage totalInfo = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesPositionsInfo storage perPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
 			quote.positionType
 		];
 		uint256 notional = amount * quote.openedPrice;
-		totalInfo.totalAmounts += amount;
-		totalInfo.totalNotionals += notional;
-		perPartyAInfo.totalAmounts += amount;
-		perPartyAInfo.totalNotionals += notional;
+		totalInfo.aggregatedAmounts += amount;
+		totalInfo.aggregatedNotionals += notional;
+		perPartyAInfo.aggregatedAmounts += amount;
+		perPartyAInfo.aggregatedNotionals += notional;
 	}
 
 	function addToPartyAOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		quoteLayout.partyATotalPositionsInfo[quote.partyA][quote.symbolId][quote.positionType].totalAmounts += amount;
-		quoteLayout.partyATotalPositionsInfo[quote.partyA][quote.symbolId][quote.positionType].totalNotionals += amount * quote.openedPrice;
+		quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType].aggregatedAmounts += amount;
+		quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType].aggregatedNotionals += amount * quote.openedPrice;
 	}
 
 	function subFromPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesPositionsInfo storage totalInfo = quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType];
-		PartiesPositionsInfo storage perPartyAInfo = quoteLayout.partyBTotalPositionsInfoPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
+		PartiesPositionsInfo storage totalInfo = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesPositionsInfo storage perPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
 			quote.positionType
 		];
 		uint256 notional = amount * quote.openedPrice;
-		totalInfo.totalAmounts -= amount;
-		totalInfo.totalNotionals -= notional;
-		perPartyAInfo.totalAmounts -= amount;
-		perPartyAInfo.totalNotionals -= notional;
+		totalInfo.aggregatedAmounts -= amount;
+		totalInfo.aggregatedNotionals -= notional;
+		perPartyAInfo.aggregatedAmounts -= amount;
+		perPartyAInfo.aggregatedNotionals -= notional;
 	}
 
 	function subFromPartyAOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		quoteLayout.partyATotalPositionsInfo[quote.partyA][quote.symbolId][quote.positionType].totalAmounts -= amount;
-		quoteLayout.partyATotalPositionsInfo[quote.partyA][quote.symbolId][quote.positionType].totalNotionals -= amount * quote.openedPrice;
+		quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType].aggregatedAmounts -= amount;
+		quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType].aggregatedNotionals -= amount * quote.openedPrice;
 	}
 
 	function subFromPartiesOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
@@ -131,18 +131,18 @@ library LibQuote {
 
 		uint256 openAmount = quoteOpenAmount(quote);
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesPositionsInfo storage info = quoteLayout.partyBTotalPositionsInfo[quote.partyB][quote.symbolId][quote.positionType];
-		PartiesPositionsInfo storage perPartyAInfo = quoteLayout.partyBTotalPositionsInfoPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
+		PartiesPositionsInfo storage info = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesPositionsInfo storage perPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
 			quote.positionType
 		];
 		if (quote.openedPrice > oldOpenedPrice) {
 			uint256 delta = openAmount * (quote.openedPrice - oldOpenedPrice);
-			info.totalNotionals += delta;
-			perPartyAInfo.totalNotionals += delta;
+			info.aggregatedNotionals += delta;
+			perPartyAInfo.aggregatedNotionals += delta;
 		} else {
 			uint256 delta = openAmount * (oldOpenedPrice - quote.openedPrice);
-			info.totalNotionals -= delta;
-			perPartyAInfo.totalNotionals -= delta;
+			info.aggregatedNotionals -= delta;
+			perPartyAInfo.aggregatedNotionals -= delta;
 		}
 	}
 
@@ -158,11 +158,11 @@ library LibQuote {
 
 		uint256 openAmount = quoteOpenAmount(quote);
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesPositionsInfo storage info = quoteLayout.partyATotalPositionsInfo[quote.partyA][quote.symbolId][quote.positionType];
+		PartiesPositionsInfo storage info = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
 		if (quote.openedPrice > oldOpenedPrice) {
-			info.totalNotionals += openAmount * (quote.openedPrice - oldOpenedPrice);
+			info.aggregatedNotionals += openAmount * (quote.openedPrice - oldOpenedPrice);
 		} else {
-			info.totalNotionals -= openAmount * (oldOpenedPrice - quote.openedPrice);
+			info.aggregatedNotionals -= openAmount * (oldOpenedPrice - quote.openedPrice);
 		}
 	}
 
