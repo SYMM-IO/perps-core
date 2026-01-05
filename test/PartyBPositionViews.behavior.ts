@@ -575,7 +575,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		})
 	})
 
-	describe.only("getPartyAAggregatedPosition (paginated)", function () {
+	describe("getPartyAAggregatedPosition (paginated)", function () {
 		let symbol2: bigint
 		let symbol3: bigint
 

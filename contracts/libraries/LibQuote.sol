@@ -91,8 +91,10 @@ library LibQuote {
 
 	function addToPartyAOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType].aggregatedAmounts += amount;
-		quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType].aggregatedNotionals += amount * quote.openedPrice;
+		PartiesAggregatedPositions storage info = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
+		uint256 notional = amount * quote.openedPrice;
+		info.aggregatedAmounts += amount;
+		info.aggregatedNotionals += notional;
 	}
 
 	function subFromPartyBOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
@@ -110,8 +112,10 @@ library LibQuote {
 
 	function subFromPartyAOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType].aggregatedAmounts -= amount;
-		quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType].aggregatedNotionals -= amount * quote.openedPrice;
+		PartiesAggregatedPositions storage info = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
+		uint256 notional = amount * quote.openedPrice;
+		info.aggregatedAmounts -= amount;
+		info.aggregatedNotionals -= notional;
 	}
 
 	function subFromPartiesOpenPositionAmounts(Quote storage quote, uint256 amount) internal {
