@@ -8,7 +8,7 @@ import { ISettlementFacet } from "./ISettlementFacet.sol";
 import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
 import { SettlementFacetImpl } from "./SettlementFacetImpl.sol";
-import { SettlementSig } from "../../storages/MuonStorage.sol";
+import { SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 
 contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
@@ -30,6 +30,34 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 			partyA,
 			AccountStorage.layout().allocatedBalances[partyA],
 			newPartyBsAllocatedBalances
+		);
+	}
+
+	/**
+	 * @notice Unified settlement function that works for both masterAccount and normal partyB modes
+	 * @dev Settles quotes for a single partyB across one or more partyAs
+	 * @param sig The unified settlement signature containing quote data and UPNLs
+	 * @param updatedPrices Array of new prices to set as openedPrice for each quote
+	 */
+	function settleUpnlUnified(
+		UnifiedSettlementSig memory sig,
+		uint256[] memory updatedPrices
+	) external whenNotPartyBActionsPaused onlyPartyB {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		uint256[] memory newPartyAsAllocatedBalances = SettlementFacetImpl.settleUpnlUnified(sig, updatedPrices);
+
+		// Get partyB allocated balance based on mode
+		address allocKey = accountLayout.masterAccountMode[sig.partyB] ? address(0) : sig.partyAs[0];
+		uint256 newPartyBAllocatedBalance = accountLayout.partyBAllocatedBalances[sig.partyB][allocKey];
+
+		emit SettleUpnlUnified(
+			sig.reqId,
+			sig.quotesSettlementsData,
+			updatedPrices,
+			sig.partyB,
+			sig.partyAs,
+			newPartyAsAllocatedBalances,
+			newPartyBAllocatedBalance
 		);
 	}
 }

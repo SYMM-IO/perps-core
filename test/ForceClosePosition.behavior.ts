@@ -18,7 +18,7 @@ import {
 	calculateExpectedClosePriceForForceClose,
 	calculateExpectedClosePriceForForceCloseWithAvg,
 } from "./utils/PriceUtils.js"
-import { getDummyCrossSettlementSig, getDummyHighLowPriceSig, getDummyMasterAccountSettlementSig, getDummyPriceSig } from "./utils/SignatureUtils.js"
+import { getDummyHighLowPriceSig, getDummyPriceSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
 import { migratePartyBToMaster } from "./utils/MasterAccount.js"
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
@@ -559,17 +559,19 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				penalty = await context.viewFacet.forceClosePricePenalty()
 
 				updatePrice = decimal(5n)
-				settlementSig = await getDummyMasterAccountSettlementSig(
+				settlementSig = await getDummyUnifiedSettlementSig(
+					await hedger.getAddress(), // partyB
+					0n, // upnlPartyB
+					[], // upnlPartyBPerPartyA (empty for masterAccount mode)
+					[await user.getAddress()], // partyAs
+					[0n], // upnlPartyAs
 					[
 						{
 							quoteId: quote2ShortOpened.id,
 							currentPrice: decimal(7n),
+							partyAIndex: 0,
 						} as any,
 					],
-					await hedger.getAddress(), // partyB
-					0n, // upnlPartyB
-					[await user.getAddress()], // partyAs
-					[0n], // upnlPartyAs
 				)
 			})
 
@@ -589,10 +591,10 @@ export function shouldBehaveLikeForceClosePosition(): void {
 						)
 					})
 
-					it("reverts settleUpnlMasterAccount if it has not been initialized", async function () {
-						const dummyMasterSig = await getDummyMasterAccountSettlementSig()
+					it("reverts settleUpnlForForceClose if it has not been initialized", async function () {
+						const dummyMasterSig = await getDummyUnifiedSettlementSig()
 
-						await expect(context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, dummyMasterSig, [])).to.be.revertedWith(
+						await expect(context.forceActionsMasterAccountFacet.settleUpnlForForceClose(quote1LongOpened.id, dummyMasterSig, [])).to.be.revertedWith(
 							"ForceActionsFacet: Invalid state",
 						)
 					})
@@ -612,15 +614,17 @@ export function shouldBehaveLikeForceClosePosition(): void {
 						await hedger2.openPosition(quoteNotOpened.id)
 						await migratePartyBToMaster(context, hedger2, [quoteNotOpened.id])
 
-						const settlementSigCross = await getDummyCrossSettlementSig(
-							[0n],
-							0n,
-							await hedger2.getAddress(),
-							[await user.getAddress()],
+						const settlementSigCross = await getDummyUnifiedSettlementSig(
+							await hedger2.getAddress(), // partyB
+							0n, // upnlPartyB
+							[], // upnlPartyBPerPartyA (empty for masterAccount mode)
+							[await user.getAddress()], // partyAs
+							[0n], // upnlPartyAs
 							[
 								{
 									quoteId: quoteNotOpened.id,
 									currentPrice: decimal(7n),
+									partyAIndex: 0,
 								} as any,
 							],
 						)
@@ -658,12 +662,12 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					})
 
 					describe("ForceCloseDetail flags settlement", function () {
-						it("sets settlementState to REALIZED_MASTER_ACCOUNT on settleUpnlMasterAccount", async function () {
+						it("sets settlementState to REALIZED_MASTER_ACCOUNT on settleUpnlForForceClose", async function () {
 							// init master account force close
 							await context.forceActionsMasterAccountFacet.initializeMasterAccountForceClose(quote1LongOpened.id, highLowSig)
 							const detailBefore = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 
-							await context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSig, [updatePrice])
+							await context.forceActionsMasterAccountFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSig, [updatePrice])
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 
@@ -678,7 +682,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							const detailBefore = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							expect(detailBefore.inProgress).to.equal(true)
 
-							await context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1LongOpened.id, settlementSig, [updatePrice])
+							await context.forceActionsMasterAccountFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSig, [updatePrice])
 							await context.forceActionsMasterAccountFacet.finalizeMasterAccountForceClose(quote1LongOpened.id)
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
@@ -703,7 +707,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							await expect(tx)
 								.to.emit(context.forceActionsMasterAccountFacet, "ForceCloseInitialized")
 								.withArgs(anyValue, anyValue, quote1LongOpened.id, anyValue, anyValue, anyValue)
-							await expect(tx).to.emit(context.forceActionsMasterAccountFacet, "SettleUpnlMasterAccount")
+							await expect(tx).to.emit(context.forceActionsMasterAccountFacet, "SettleUpnlUnified")
 							await expect(tx)
 								.to.emit(context.forceActionsMasterAccountFacet, "ForceClosePositionMasterAccount")
 								.withArgs(
@@ -742,7 +746,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							)
 
 							await expect(tx).to.emit(context.forceActionsMasterAccountFacet, "ForceCloseInitialized")
-							await expect(tx).to.not.emit(context.forceActionsMasterAccountFacet, "SettleUpnlMasterAccount")
+							await expect(tx).to.not.emit(context.forceActionsMasterAccountFacet, "SettleUpnlUnified")
 							await expect(tx).to.emit(context.forceActionsMasterAccountFacet, "ForceClosePositionMasterAccount")
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)

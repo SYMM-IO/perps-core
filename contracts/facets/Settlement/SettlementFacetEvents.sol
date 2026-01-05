@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
-import { QuoteSettlementData, MasterAccountQuoteSettlementData } from "../../storages/MuonStorage.sol";
+import { QuoteSettlementData, UnifiedQuoteSettlementData } from "../../storages/MuonStorage.sol";
 
 interface SettlementFacetEvents is IPartiesEvents {
 	event SettleUpnl(
@@ -16,14 +16,13 @@ interface SettlementFacetEvents is IPartiesEvents {
 		uint256[] newPartyBsAllocatedBalances
 	);
 
-	event SettleUpnlMasterAccount(
+	event SettleUpnlUnified(
 		bytes settlementId,
-		MasterAccountQuoteSettlementData[] settlementData,
+		UnifiedQuoteSettlementData[] settlementData,
 		uint256[] updatedPrices,
 		address partyB,
 		address[] partyAs,
 		uint256[] newPartyAsAllocatedBalances,
-		uint256 newPartyBMasterBalance,
-		uint256 forceCloseId
+		uint256 newPartyBAllocatedBalance
 	);
 }

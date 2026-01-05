@@ -2,10 +2,7 @@ import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { Builder } from "builder-pattern"
 import { expect } from "chai"
 
-import type {
-	MasterAccountQuoteSettlementDataStructOutput,
-	QuoteSettlementDataStructOutput,
-} from "../src/types/facets/Settlement/ISettlementFacet.js"
+import type { QuoteSettlementDataStructOutput } from "../src/types/facets/Settlement/ISettlementFacet.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
@@ -21,10 +18,10 @@ import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
 import {
 	getDummyHighLowPriceSig,
 	getDummyLiquidationSig,
-	getDummyMasterAccountSettlementSig,
 	getDummyPairUpnlSig,
 	getDummySettlementSig,
 	getDummySingleUpnlAndPriceSig,
+	getDummyUnifiedSettlementSig,
 } from "./utils/SignatureUtils.js"
 import { migratePartyBToMaster } from "./utils/MasterAccount.js"
 
@@ -435,19 +432,22 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		const currentPrice = decimal(14n)
 		const updatedPrice = decimal(13n)
-		const settlementEntry = Object.assign([quote2.id, currentPrice], {
-			quoteId: quote2.id,
-			currentPrice: currentPrice,
-		}) as MasterAccountQuoteSettlementDataStructOutput
-		const settlementSig = await getDummyMasterAccountSettlementSig(
-			[settlementEntry],
-			await hedger.getAddress(),
-			0n,
-			[user2Address],
-			[0n],
+		const settlementSig = await getDummyUnifiedSettlementSig(
+			await hedger.getAddress(), // partyB
+			0n, // upnlPartyB
+			[], // upnlPartyBPerPartyA (empty for masterAccount mode)
+			[user2Address], // partyAs
+			[0n], // upnlPartyAs
+			[
+				{
+					quoteId: quote2.id,
+					currentPrice: currentPrice,
+					partyAIndex: 0,
+				} as any,
+			],
 		)
 
-		await context.forceActionsMasterAccountFacet.settleUpnlMasterAccount(quote1.id, settlementSig, [updatedPrice])
+		await context.forceActionsMasterAccountFacet.settleUpnlForForceClose(quote1.id, settlementSig, [updatedPrice])
 
 		const avgAfter = avgPrice(totalAmount, amount1 * price1 + amount2 * updatedPrice)
 		await expectPartyBTotals(context, totalAmount, avgAfter, 0n, 0n)

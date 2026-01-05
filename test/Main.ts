@@ -19,6 +19,7 @@ import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
 import { shouldBehaveLikeControlFacet } from "./ControlFacet.behavior.js"
 import { shouldBehaveLikeHooks } from "./Hooks.behavior.js"
 import { shouldBehaveLikeSettlement } from "./Settlement.behavior.js"
+import { shouldBehaveLikeSettlementUnified } from "./SettlementUnified.behavior.js"
 import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior.js"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior.js"
 import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior.js"
@@ -113,6 +114,10 @@ describe("UnitTests", function () {
 
 		describe("Settlement", async function () {
 			shouldBehaveLikeSettlement()
+		})
+
+		describe("SettlementUnified", async function () {
+			shouldBehaveLikeSettlementUnified()
 		})
 
 		describe("FeeDistributor", async function () {

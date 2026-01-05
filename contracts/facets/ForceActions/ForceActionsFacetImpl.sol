@@ -14,7 +14,8 @@ import { AccountStorage, ForceCloseDetail, UPNLSettlementState, PartyBForceClose
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
-import { HighLowPriceSig, SettlementSig, MasterAccountSettlementSig } from "../../storages/MuonStorage.sol";
+import { HighLowPriceSig, SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
+import { LibMuonUnifiedSettlement } from "../../libraries/muon/LibMuonUnifiedSettlement.sol";
 
 library ForceActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -147,16 +148,22 @@ library ForceActionsFacetImpl {
 		detail.settlementState = UPNLSettlementState.REALIZED;
 	}
 
-	function settleUpnlMasterAccount(
+	function settleUpnlUnified(
 		uint256 quoteId,
-		MasterAccountSettlementSig memory sig,
+		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices
-	) internal returns (uint256[] memory newPartyAsAllocatedBalances, address[] memory partyAs) {
+	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
-		(newPartyAsAllocatedBalances, partyAs) = LibSettlement.settleUpnlMasterAccount(sig, updatedPrices);
+
+		// Verify signature using unified settlement verification
+		bool isMasterAccountMode = accountLayout.masterAccountMode[sig.partyB];
+		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isMasterAccountMode);
+
+		// Use the unified settlement function with isForceClose=true
+		newPartyAsAllocatedBalances = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
 		detail.timestamp = block.timestamp;
 	}
 }

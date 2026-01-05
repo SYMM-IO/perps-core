@@ -821,10 +821,15 @@
                         "internalType": "uint256",
                         "name": "currentPrice",
                         "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "partyAIndex",
+                        "type": "uint8"
                     }
                 ],
                 "indexed": false,
-                "internalType": "struct MasterAccountQuoteSettlementData[]",
+                "internalType": "struct UnifiedQuoteSettlementData[]",
                 "name": "settlementData",
                 "type": "tuple[]"
             },
@@ -855,17 +860,11 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "newPartyBMasterBalance",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "forceCloseId",
+                "name": "newPartyBAllocatedBalance",
                 "type": "uint256"
             }
         ],
-        "name": "SettleUpnlMasterAccount",
+        "name": "SettleUpnlUnified",
         "type": "event"
     },
     {
@@ -958,6 +957,110 @@
             }
         ],
         "name": "settleUpnl",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "quoteId",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "currentPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint8",
+                                "name": "partyAIndex",
+                                "type": "uint8"
+                            }
+                        ],
+                        "internalType": "struct UnifiedQuoteSettlementData[]",
+                        "name": "quotesSettlementsData",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "partyB",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyB",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256[]",
+                        "name": "upnlPartyBPerPartyA",
+                        "type": "int256[]"
+                    },
+                    {
+                        "internalType": "address[]",
+                        "name": "partyAs",
+                        "type": "address[]"
+                    },
+                    {
+                        "internalType": "int256[]",
+                        "name": "upnlPartyAs",
+                        "type": "int256[]"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct UnifiedSettlementSig",
+                "name": "sig",
+                "type": "tuple"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "updatedPrices",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "settleUpnlUnified",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -8557,9 +8660,14 @@
                                 "internalType": "uint256",
                                 "name": "currentPrice",
                                 "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint8",
+                                "name": "partyAIndex",
+                                "type": "uint8"
                             }
                         ],
-                        "internalType": "struct MasterAccountQuoteSettlementData[]",
+                        "internalType": "struct UnifiedQuoteSettlementData[]",
                         "name": "quotesSettlementsData",
                         "type": "tuple[]"
                     },
@@ -8572,6 +8680,11 @@
                         "internalType": "int256",
                         "name": "upnlPartyB",
                         "type": "int256"
+                    },
+                    {
+                        "internalType": "int256[]",
+                        "name": "upnlPartyBPerPartyA",
+                        "type": "int256[]"
                     },
                     {
                         "internalType": "address[]",
@@ -8611,7 +8724,7 @@
                         "type": "tuple"
                     }
                 ],
-                "internalType": "struct MasterAccountSettlementSig",
+                "internalType": "struct UnifiedSettlementSig",
                 "name": "settlementSig",
                 "type": "tuple"
             },
@@ -8758,9 +8871,14 @@
                                 "internalType": "uint256",
                                 "name": "currentPrice",
                                 "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint8",
+                                "name": "partyAIndex",
+                                "type": "uint8"
                             }
                         ],
-                        "internalType": "struct MasterAccountQuoteSettlementData[]",
+                        "internalType": "struct UnifiedQuoteSettlementData[]",
                         "name": "quotesSettlementsData",
                         "type": "tuple[]"
                     },
@@ -8773,6 +8891,11 @@
                         "internalType": "int256",
                         "name": "upnlPartyB",
                         "type": "int256"
+                    },
+                    {
+                        "internalType": "int256[]",
+                        "name": "upnlPartyBPerPartyA",
+                        "type": "int256[]"
                     },
                     {
                         "internalType": "address[]",
@@ -8812,7 +8935,7 @@
                         "type": "tuple"
                     }
                 ],
-                "internalType": "struct MasterAccountSettlementSig",
+                "internalType": "struct UnifiedSettlementSig",
                 "name": "settlementSig",
                 "type": "tuple"
             },
@@ -8822,7 +8945,7 @@
                 "type": "uint256[]"
             }
         ],
-        "name": "settleUpnlMasterAccount",
+        "name": "settleUpnlForForceClose",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

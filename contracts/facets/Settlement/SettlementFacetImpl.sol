@@ -5,8 +5,10 @@
 pragma solidity >=0.8.18;
 
 import { LibMuonSettlement } from "../../libraries/muon/LibMuonSettlement.sol";
+import { LibMuonUnifiedSettlement } from "../../libraries/muon/LibMuonUnifiedSettlement.sol";
 import { LibSettlement } from "../../libraries/LibSettlement.sol";
-import { SettlementSig } from "../../storages/MuonStorage.sol";
+import { SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
 
 library SettlementFacetImpl {
 	function settleUpnl(
@@ -16,5 +18,14 @@ library SettlementFacetImpl {
 	) internal returns (uint256[] memory newPartyBsAllocatedBalances) {
 		LibMuonSettlement.verifySettlement(settleSig, partyA);
 		return LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, false);
+	}
+
+	function settleUpnlUnified(
+		UnifiedSettlementSig memory sig,
+		uint256[] memory updatedPrices
+	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
+		bool isMasterAccountMode = AccountStorage.layout().masterAccountMode[sig.partyB];
+		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isMasterAccountMode);
+		return LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
 	}
 }
