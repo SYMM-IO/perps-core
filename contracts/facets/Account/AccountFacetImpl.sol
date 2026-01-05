@@ -418,7 +418,7 @@ library AccountFacetImpl {
 
 		require(amount > 0, "AccountFacet: invalid amount");
 
-		IERC20(token).safeTransferFrom(signer, address(this), amount);
+		LibSafeERC20.safeTransferFrom(token, signer, address(this), amount);
 		accountLayout.assuranceCollateral[signer][token] += amount;
 	}
 
@@ -453,7 +453,7 @@ library AccountFacetImpl {
 		accountLayout.assuranceCollateral[user][token] -= amount;
 		delete accountLayout.assuranceWithdrawalRequests[user];
 
-		IERC20(token).safeTransfer(recipient, amount);
+		LibSafeERC20.safeTransfer(token, recipient, amount);
 	}
 
 	function cancelAssuranceWithdraw() internal returns (address token, uint256 amount) {
@@ -475,6 +475,6 @@ library AccountFacetImpl {
 		require(accountLayout.assuranceCollateral[user][token] >= amount, "AccountFacet: insufficient Assurance collateral");
 
 		accountLayout.assuranceCollateral[user][token] -= amount;
-		IERC20(token).safeTransfer(recipient, amount);
+		LibSafeERC20.safeTransfer(token, recipient, amount);
 	}
 }
