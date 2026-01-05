@@ -490,7 +490,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		})
 	})
 
-	describe("getPartyBAggregatedPosition (paginated)", function () {
+	describe("getPartyBAggregatedPositions (paginated)", function () {
 		let symbol2: bigint
 		let symbol3: bigint
 
@@ -521,7 +521,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 			const sym1Totals = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbol(hedger.address, 1)
 			const sym2Totals = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbol(hedger.address, Number(symbol2))
 
-			const aggregates = await context.viewFacetQuote.getPartyBAggregatedPosition(hedger.address, 0, 5)
+			const aggregates = await context.viewFacetQuote.getPartyBAggregatedPositions(hedger.address, 0, 5)
 
 			const findEntry = (sid: bigint, posType: PositionType) =>
 				aggregates.find((entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType))
@@ -545,18 +545,18 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		})
 
 		it("returns empty for offsets past the last symbol", async function () {
-			const tooFar = await context.viewFacetQuote.getPartyBAggregatedPosition(hedger.address, 10, 5)
+			const tooFar = await context.viewFacetQuote.getPartyBAggregatedPositions(hedger.address, 10, 5)
 			expect(tooFar.length).to.equal(0)
 		})
 
 		it("returns empty for zero limit", async function () {
-			const zeroLimit = await context.viewFacetQuote.getPartyBAggregatedPosition(hedger.address, 0, 0)
+			const zeroLimit = await context.viewFacetQuote.getPartyBAggregatedPositions(hedger.address, 0, 0)
 			expect(zeroLimit.length).to.equal(0)
 		})
 
 		it("returns mid-range pagination slices", async function () {
 			// slice starting at symbol2 with limit 1 should only include that symbol
-			const slice = await context.viewFacetQuote.getPartyBAggregatedPosition(hedger.address, 1, 1)
+			const slice = await context.viewFacetQuote.getPartyBAggregatedPositions(hedger.address, 1, 1)
 			expect(slice.length).to.equal(1)
 			expect(BigInt(slice[0].symbolId)).to.equal(symbol2)
 			expect(BigInt(slice[0].positionType)).to.equal(BigInt(PositionType.SHORT))
@@ -564,18 +564,18 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 
 		it("handles offset + limit exceeding total symbols", async function () {
 			// We have 3 symbols, requesting offset=2, limit=5 should only return symbol3's entries (which are empty)
-			const slice = await context.viewFacetQuote.getPartyBAggregatedPosition(hedger.address, 2, 5)
+			const slice = await context.viewFacetQuote.getPartyBAggregatedPositions(hedger.address, 2, 5)
 			// symbol3 has no positions, so should be empty
 			expect(slice.length).to.equal(0)
 		})
 
 		it("returns empty for partyB with no positions", async function () {
-			const result = await context.viewFacetQuote.getPartyBAggregatedPosition(hedger2.address, 0, 5)
+			const result = await context.viewFacetQuote.getPartyBAggregatedPositions(hedger2.address, 0, 5)
 			expect(result.length).to.equal(0)
 		})
 	})
 
-	describe("getPartyAAggregatedPosition (paginated)", function () {
+	describe("getPartyAAggregatedPositions (paginated)", function () {
 		let symbol2: bigint
 		let symbol3: bigint
 
@@ -605,7 +605,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 			const sym1Totals = await context.viewFacetQuote.getPartyAAggregatedPositionBySymbol(user.address, 1)
 			const sym2Totals = await context.viewFacetQuote.getPartyAAggregatedPositionBySymbol(user.address, Number(symbol2))
 
-			const aggregates = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 0, 5)
+			const aggregates = await context.viewFacetQuote.getPartyAAggregatedPositions(user.address, 0, 5)
 
 			const findEntry = (sid: bigint, posType: PositionType) =>
 				aggregates.find((entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType))
@@ -629,25 +629,25 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 		})
 
 		it("returns empty for offsets past the last symbol", async function () {
-			const tooFar = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 10, 5)
+			const tooFar = await context.viewFacetQuote.getPartyAAggregatedPositions(user.address, 10, 5)
 			expect(tooFar.length).to.equal(0)
 		})
 
 		it("returns empty for zero limit", async function () {
-			const zeroLimit = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 0, 0)
+			const zeroLimit = await context.viewFacetQuote.getPartyAAggregatedPositions(user.address, 0, 0)
 			expect(zeroLimit.length).to.equal(0)
 		})
 
 		it("returns mid-range pagination slices", async function () {
 			// slice starting at symbol2 with limit 1 should only include that symbol
-			const slice = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 1, 1)
+			const slice = await context.viewFacetQuote.getPartyAAggregatedPositions(user.address, 1, 1)
 			expect(slice.length).to.equal(1)
 			expect(BigInt(slice[0].symbolId)).to.equal(symbol2)
 			expect(BigInt(slice[0].positionType)).to.equal(BigInt(PositionType.SHORT))
 		})
 
 		it("handles offset + limit exceeding total symbols", async function () {
-			const slice = await context.viewFacetQuote.getPartyAAggregatedPosition(user.address, 2, 5)
+			const slice = await context.viewFacetQuote.getPartyAAggregatedPositions(user.address, 2, 5)
 			expect(slice.length).to.equal(0)
 		})
 
@@ -656,12 +656,12 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 			await user2.setup()
 			await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
 
-			const result = await context.viewFacetQuote.getPartyAAggregatedPosition(await user2.getAddress(), 0, 5)
+			const result = await context.viewFacetQuote.getPartyAAggregatedPositions(await user2.getAddress(), 0, 5)
 			expect(result.length).to.equal(0)
 		})
 	})
 
-	describe("getPartyBAggregatedPositionPerPartyA (paginated)", function () {
+	describe("getPartyBAggregatedPositionsPerPartyA (paginated)", function () {
 		let symbol2: bigint
 
 		beforeEach(async function () {
@@ -684,7 +684,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 			const sym1Totals = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(hedger.address, partyA, 1)
 			const sym2Totals = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(hedger.address, partyA, Number(symbol2))
 
-			const aggregates = await context.viewFacetQuote.getPartyBAggregatedPositionPerPartyA(hedger.address, partyA, 0, 5)
+			const aggregates = await context.viewFacetQuote.getPartyBAggregatedPositionsPerPartyA(hedger.address, partyA, 0, 5)
 
 			const findEntry = (sid: bigint, posType: PositionType) =>
 				aggregates.find((entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType))
@@ -707,7 +707,7 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 			await user2.setup()
 			await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
 
-			const result = await context.viewFacetQuote.getPartyBAggregatedPositionPerPartyA(hedger.address, await user2.getAddress(), 0, 5)
+			const result = await context.viewFacetQuote.getPartyBAggregatedPositionsPerPartyA(hedger.address, await user2.getAddress(), 0, 5)
 			expect(result.length).to.equal(0)
 		})
 	})

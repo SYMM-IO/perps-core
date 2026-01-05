@@ -13,7 +13,7 @@ interface IViewFacetQuote {
 		uint256 avgOpenPrice;
 	}
 
-	struct PartiesAggregatedPositionBySymbol {
+	struct AggregatedPositionBySymbol {
 		uint256 symbolId;
 		PositionType positionType;
 		uint256 aggregatedOpenAmount;
@@ -70,16 +70,16 @@ interface IViewFacetQuote {
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
 
-	function getPartyBAggregatedPosition(address partyB, uint256 offset, uint256 limit) external view returns (PartiesAggregatedPositionBySymbol[] memory);
+	function getPartyBAggregatedPositions(address partyB, uint256 offset, uint256 limit) external view returns (AggregatedPositionBySymbol[] memory);
 
-	function getPartyAAggregatedPosition(address partyA, uint256 offset, uint256 limit) external view returns (PartiesAggregatedPositionBySymbol[] memory);
+	function getPartyAAggregatedPositions(address partyA, uint256 offset, uint256 limit) external view returns (AggregatedPositionBySymbol[] memory);
 
-	function getPartyBAggregatedPositionPerPartyA(
+	function getPartyBAggregatedPositionsPerPartyA(
 		address partyB,
 		address partyA,
 		uint256 offset,
 		uint256 limit
-	) external view returns (PartiesAggregatedPositionBySymbol[] memory);
+	) external view returns (AggregatedPositionBySymbol[] memory);
 
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 

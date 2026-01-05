@@ -78,15 +78,15 @@ library LibQuote {
 	 */
 	function addToPartyBAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage totalInfo = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
-		PartiesAggregatedPositions storage perPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
-			quote.positionType
-		];
+		PartiesAggregatedPositions storage partyBInfo = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyBPerPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][
+			quote.symbolId
+		][quote.positionType];
 		uint256 notional = amount * quote.openedPrice;
-		totalInfo.aggregatedAmount += amount;
-		totalInfo.aggregatedNotional += notional;
-		perPartyAInfo.aggregatedAmount += amount;
-		perPartyAInfo.aggregatedNotional += notional;
+		partyBInfo.aggregatedAmount += amount;
+		partyBInfo.aggregatedNotional += notional;
+		partyBPerPartyAInfo.aggregatedAmount += amount;
+		partyBPerPartyAInfo.aggregatedNotional += notional;
 	}
 
 	/**
@@ -96,10 +96,10 @@ library LibQuote {
 	 */
 	function addToPartyAAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage info = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyAInfo = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
 		uint256 notional = amount * quote.openedPrice;
-		info.aggregatedAmount += amount;
-		info.aggregatedNotional += notional;
+		partyAInfo.aggregatedAmount += amount;
+		partyAInfo.aggregatedNotional += notional;
 	}
 
 	/**
@@ -109,15 +109,15 @@ library LibQuote {
 	 */
 	function subFromPartyBAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage totalInfo = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
-		PartiesAggregatedPositions storage perPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
-			quote.positionType
-		];
+		PartiesAggregatedPositions storage partyBInfo = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyBPerPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][
+			quote.symbolId
+		][quote.positionType];
 		uint256 notional = amount * quote.openedPrice;
-		totalInfo.aggregatedAmount -= amount;
-		totalInfo.aggregatedNotional -= notional;
-		perPartyAInfo.aggregatedAmount -= amount;
-		perPartyAInfo.aggregatedNotional -= notional;
+		partyBInfo.aggregatedAmount -= amount;
+		partyBInfo.aggregatedNotional -= notional;
+		partyBPerPartyAInfo.aggregatedAmount -= amount;
+		partyBPerPartyAInfo.aggregatedNotional -= notional;
 	}
 
 	/**
@@ -127,10 +127,10 @@ library LibQuote {
 	 */
 	function subFromPartyAAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage info = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyAInfo = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
 		uint256 notional = amount * quote.openedPrice;
-		info.aggregatedAmount -= amount;
-		info.aggregatedNotional -= notional;
+		partyAInfo.aggregatedAmount -= amount;
+		partyAInfo.aggregatedNotional -= notional;
 	}
 
 	/**
@@ -160,18 +160,18 @@ library LibQuote {
 
 		uint256 openAmount = quoteOpenAmount(quote);
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage info = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
-		PartiesAggregatedPositions storage perPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][quote.symbolId][
-			quote.positionType
-		];
+		PartiesAggregatedPositions storage partyBInfo = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyBPerPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][
+			quote.symbolId
+		][quote.positionType];
 		if (quote.openedPrice > oldOpenedPrice) {
 			uint256 delta = openAmount * (quote.openedPrice - oldOpenedPrice);
-			info.aggregatedNotional += delta;
-			perPartyAInfo.aggregatedNotional += delta;
+			partyBInfo.aggregatedNotional += delta;
+			partyBPerPartyAInfo.aggregatedNotional += delta;
 		} else {
 			uint256 delta = openAmount * (oldOpenedPrice - quote.openedPrice);
-			info.aggregatedNotional -= delta;
-			perPartyAInfo.aggregatedNotional -= delta;
+			partyBInfo.aggregatedNotional -= delta;
+			partyBPerPartyAInfo.aggregatedNotional -= delta;
 		}
 	}
 
@@ -192,11 +192,11 @@ library LibQuote {
 
 		uint256 openAmount = quoteOpenAmount(quote);
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage info = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyAInfo = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
 		if (quote.openedPrice > oldOpenedPrice) {
-			info.aggregatedNotional += openAmount * (quote.openedPrice - oldOpenedPrice);
+			partyAInfo.aggregatedNotional += openAmount * (quote.openedPrice - oldOpenedPrice);
 		} else {
-			info.aggregatedNotional -= openAmount * (oldOpenedPrice - quote.openedPrice);
+			partyAInfo.aggregatedNotional -= openAmount * (oldOpenedPrice - quote.openedPrice);
 		}
 	}
 

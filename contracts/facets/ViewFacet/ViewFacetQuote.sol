@@ -345,15 +345,15 @@ contract ViewFacetQuote is IViewFacetQuote {
 	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
 	 * @param limit Maximum symbols to process starting at offset.
 	 */
-	function getPartyBAggregatedPosition(
+	function getPartyBAggregatedPositions(
 		address partyB,
 		uint256 offset,
 		uint256 limit
-	) external view returns (PartiesAggregatedPositionBySymbol[] memory results) {
+	) external view returns (AggregatedPositionBySymbol[] memory results) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		uint256 totalSymbols = symbolLayout.lastId;
 		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new PartiesAggregatedPositionBySymbol[](0);
+			return new AggregatedPositionBySymbol[](0);
 		}
 
 		uint256 end = offset + limit;
@@ -361,7 +361,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 		// pre allocate two slots per symbol (long + short)
 		uint256 maxItems = (end - offset) * 2;
-		results = new PartiesAggregatedPositionBySymbol[](maxItems);
+		results = new AggregatedPositionBySymbol[](maxItems);
 		uint256 count;
 
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -373,7 +373,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 			// LONG
 			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
 			if (longPos.aggregatedAmount > 0) {
-				results[count] = PartiesAggregatedPositionBySymbol({
+				results[count] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
 					aggregatedOpenAmount: longPos.aggregatedAmount,
@@ -385,7 +385,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 			// SHORT
 			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
-				results[count] = PartiesAggregatedPositionBySymbol({
+				results[count] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
 					aggregatedOpenAmount: shortPos.aggregatedAmount,
@@ -416,22 +416,22 @@ contract ViewFacetQuote is IViewFacetQuote {
 	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
 	 * @param limit Maximum symbols to process starting at offset.
 	 */
-	function getPartyAAggregatedPosition(
+	function getPartyAAggregatedPositions(
 		address partyA,
 		uint256 offset,
 		uint256 limit
-	) external view returns (PartiesAggregatedPositionBySymbol[] memory results) {
+	) external view returns (AggregatedPositionBySymbol[] memory results) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		uint256 totalSymbols = symbolLayout.lastId;
 		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new PartiesAggregatedPositionBySymbol[](0);
+			return new AggregatedPositionBySymbol[](0);
 		}
 
 		uint256 end = offset + limit;
 		if (end > totalSymbols) end = totalSymbols;
 
 		uint256 maxItems = (end - offset) * 2;
-		results = new PartiesAggregatedPositionBySymbol[](maxItems);
+		results = new AggregatedPositionBySymbol[](maxItems);
 		uint256 count;
 
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -442,7 +442,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
 			if (longPos.aggregatedAmount > 0) {
-				results[count] = PartiesAggregatedPositionBySymbol({
+				results[count] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
 					aggregatedOpenAmount: longPos.aggregatedAmount,
@@ -453,7 +453,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
-				results[count] = PartiesAggregatedPositionBySymbol({
+				results[count] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
 					aggregatedOpenAmount: shortPos.aggregatedAmount,
@@ -484,23 +484,23 @@ contract ViewFacetQuote is IViewFacetQuote {
 	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
 	 * @param limit Maximum symbols to process starting at offset.
 	 */
-	function getPartyBAggregatedPositionPerPartyA(
+	function getPartyBAggregatedPositionsPerPartyA(
 		address partyB,
 		address partyA,
 		uint256 offset,
 		uint256 limit
-	) external view returns (PartiesAggregatedPositionBySymbol[] memory results) {
+	) external view returns (AggregatedPositionBySymbol[] memory results) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		uint256 totalSymbols = symbolLayout.lastId;
 		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new PartiesAggregatedPositionBySymbol[](0);
+			return new AggregatedPositionBySymbol[](0);
 		}
 
 		uint256 end = offset + limit;
 		if (end > totalSymbols) end = totalSymbols;
 
 		uint256 maxItems = (end - offset) * 2;
-		results = new PartiesAggregatedPositionBySymbol[](maxItems);
+		results = new AggregatedPositionBySymbol[](maxItems);
 		uint256 count;
 
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -513,7 +513,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
 			if (longPos.aggregatedAmount > 0) {
-				results[count] = PartiesAggregatedPositionBySymbol({
+				results[count] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
 					aggregatedOpenAmount: longPos.aggregatedAmount,
@@ -524,7 +524,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
-				results[count] = PartiesAggregatedPositionBySymbol({
+				results[count] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
 					aggregatedOpenAmount: shortPos.aggregatedAmount,

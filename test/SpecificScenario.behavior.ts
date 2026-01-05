@@ -72,7 +72,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		assertPosition(longPosition, longAmount, longAvgPrice)
 		assertPosition(shortPosition, shortAmount, shortAvgPrice)
 
-		const aggregates = await context.viewFacetQuote.getPartyBAggregatedPositionPerPartyA(context.signers.hedger.address, partyA, 0, 5)
+		const aggregates = await context.viewFacetQuote.getPartyBAggregatedPositionsPerPartyA(context.signers.hedger.address, partyA, 0, 5)
 		const findAggregate = (posType: PositionType) =>
 			aggregates.find((entry: any) => BigInt(entry.symbolId) === 1n && BigInt(entry.positionType) === BigInt(posType))
 		const assertAggregate = (entry: any, amount: bigint, avg: bigint) => {
