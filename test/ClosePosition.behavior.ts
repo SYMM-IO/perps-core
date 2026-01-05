@@ -24,6 +24,7 @@ import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./m
 import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator.js"
 import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator.js"
 import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
+import { getDummyPairUpnlSig } from "./utils/SignatureUtils.js"
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 
 
@@ -69,36 +70,6 @@ export function shouldBehaveLikeClosePosition(): void {
 		quote4LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote4LongOpened.id)
 		await hedger.openPosition(quote4LongOpened.id)
-	})
-
-	it("Should return total open amounts and average open prices by position type for partyB and symbol", async function () {
-		const symbolId = (await context.viewFacetQuote.getQuote(quote1LongOpened.id)).symbolId
-		const quoteIds = [quote1LongOpened.id, quote2ShortOpened.id, quote4LongOpened.id]
-		let expectedLong = 0n
-		let expectedShort = 0n
-		let expectedLongNotional = 0n
-		let expectedShortNotional = 0n
-		for (const quoteId of quoteIds) {
-			const quote = await context.viewFacetQuote.getQuote(quoteId)
-			if (quote.symbolId !== symbolId) continue
-			const openAmount = quote.quantity - quote.closedAmount
-			if (quote.positionType === BigInt(PositionType.LONG)) {
-				expectedLong += openAmount
-				expectedLongNotional += openAmount * quote.openedPrice
-			} else {
-				expectedShort += openAmount
-				expectedShortNotional += openAmount * quote.openedPrice
-			}
-		}
-
-		const amounts = await context.viewFacetQuote.getPartyBTotalPositionAmountsBySymbol(hedger.address, symbolId)
-		expect(amounts.length).to.equal(2)
-		expect(amounts[0].positionType).to.equal(BigInt(PositionType.LONG))
-		expect(amounts[0].totalOpenAmount).to.equal(expectedLong)
-		expect(amounts[0].avgOpenPrice).to.equal(expectedLong === 0n ? 0n : expectedLongNotional / expectedLong)
-		expect(amounts[1].positionType).to.equal(BigInt(PositionType.SHORT))
-		expect(amounts[1].totalOpenAmount).to.equal(expectedShort)
-		expect(amounts[1].avgOpenPrice).to.equal(expectedShort === 0n ? 0n : expectedShortNotional / expectedShort)
 	})
 
 	it("Should fail on invalid partyA", async function () {

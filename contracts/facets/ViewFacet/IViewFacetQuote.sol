@@ -7,9 +7,16 @@ pragma solidity >=0.8.18;
 import { Quote, PositionType } from "../../storages/QuoteStorage.sol";
 
 interface IViewFacetQuote {
-	struct TotalPositionAmount {
+	struct AggregatedPositionAmount {
 		PositionType positionType;
-		uint256 totalOpenAmount;
+		uint256 aggregatedOpenAmount;
+		uint256 avgOpenPrice;
+	}
+
+	struct AggregatedPositionBySymbol {
+		uint256 symbolId;
+		PositionType positionType;
+		uint256 aggregatedOpenAmount;
 		uint256 avgOpenPrice;
 	}
 
@@ -47,7 +54,32 @@ interface IViewFacetQuote {
 
 	function partyBPositionsCount(address partyB, address partyA) external view returns (uint256);
 
-	function getPartyBTotalPositionAmountsBySymbol(address partyB, uint256 symbolId) external view returns (TotalPositionAmount[] memory);
+	function getPartyBAggregatedPositionBySymbol(
+		address partyB,
+		uint256 symbolId
+	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
+
+	function getPartyBAggregatedPositionBySymbolPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 symbolId
+	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
+
+	function getPartyAAggregatedPositionBySymbol(
+		address partyA,
+		uint256 symbolId
+	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
+
+	function getPartyBAggregatedPositions(address partyB, uint256 offset, uint256 limit) external view returns (AggregatedPositionBySymbol[] memory);
+
+	function getPartyAAggregatedPositions(address partyA, uint256 offset, uint256 limit) external view returns (AggregatedPositionBySymbol[] memory);
+
+	function getPartyBAggregatedPositionsPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 offset,
+		uint256 limit
+	) external view returns (AggregatedPositionBySymbol[] memory);
 
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 

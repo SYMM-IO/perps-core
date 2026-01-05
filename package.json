@@ -65,7 +65,7 @@
 		"lint:sol": "solhint --config ./.solhint.json --solcoverjs ./.solcover.js --max-warnings 0 \"contracts/**/*.sol\"",
 		"test": "./utils/runTests.sh",
 		"typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
-		"test:uncheck-muon": "./test_runner",
+		"test:uncheck-muon": "./utils/runTests.sh",
 		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol"
 	},
 	"dependencies": {

@@ -4924,6 +4924,120 @@
             },
             {
                 "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyAAggregatedPositionBySymbol",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.AggregatedPositionAmount",
+                "name": "longPosition",
+                "type": "tuple"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.AggregatedPositionAmount",
+                "name": "shortPosition",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyAAggregatedPositions",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.AggregatedPositionBySymbol[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
                 "name": "start",
                 "type": "uint256"
             },
@@ -5241,6 +5355,244 @@
                 "type": "address"
             },
             {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyBAggregatedPositionBySymbol",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.AggregatedPositionAmount",
+                "name": "longPosition",
+                "type": "tuple"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.AggregatedPositionAmount",
+                "name": "shortPosition",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyBAggregatedPositionBySymbolPerPartyA",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.AggregatedPositionAmount",
+                "name": "longPosition",
+                "type": "tuple"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.AggregatedPositionAmount",
+                "name": "shortPosition",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyBAggregatedPositions",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.AggregatedPositionBySymbol[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyBAggregatedPositionsPerPartyA",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedOpenAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct IViewFacetQuote.AggregatedPositionBySymbol[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
                 "internalType": "address",
                 "name": "partyA",
                 "type": "address"
@@ -5482,47 +5834,6 @@
                 "internalType": "uint256[]",
                 "name": "",
                 "type": "uint256[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getPartyBTotalPositionAmountsBySymbol",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "enum PositionType",
-                        "name": "positionType",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "totalOpenAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "avgOpenPrice",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct IViewFacetQuote.TotalPositionAmount[]",
-                "name": "",
-                "type": "tuple[]"
             }
         ],
         "stateMutability": "view",
