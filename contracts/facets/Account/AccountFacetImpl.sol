@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {
@@ -29,10 +28,10 @@ import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
+import { LibSafeCall } from "../../libraries/LibSafeCall.sol";
+import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 
 library AccountFacetImpl {
-	using SafeERC20 for IERC20;
 
 	function _normalizeTo18(address token, uint256 amount) internal view returns (uint256) {
 		uint256 decimals = IERC20Metadata(token).decimals();
@@ -42,7 +41,7 @@ library AccountFacetImpl {
 
 	function deposit(address user, uint256 amount) internal {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		IERC20(appLayout.collateral).safeTransferFrom(LibSigner.getSigner(), address(this), amount);
+		LibSafeERC20.safeTransferFrom(appLayout.collateral, LibSigner.getSigner(), address(this), amount);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		AccountStorage.layout().balances[user] += amountWith18Decimals;
 	}
@@ -63,7 +62,7 @@ library AccountFacetImpl {
 		);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		accountLayout.balances[signer] -= amountWith18Decimals;
-		IERC20(appLayout.collateral).safeTransfer(user, amount);
+		LibSafeERC20.safeTransfer(appLayout.collateral, user, amount);
 	}
 
 	function withdrawSuspendedUser(address user, address recipient, uint256 amount) internal {
@@ -245,9 +244,12 @@ library AccountFacetImpl {
 			IERC20(appLayout.collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= amount,
 			"AccountFacet: Insufficient contract balance"
 		);
-		IERC20(appLayout.collateral).safeTransfer(relayer, amount);
+		LibSafeERC20.safeTransfer(appLayout.collateral, relayer, amount);
 
-		IExternalTransferRelayer(relayer).onTransfer(appLayout.collateral, sender, receiver, amount, target);
+		LibSafeCall.safeExternalCall(
+			relayer,
+			abi.encodeCall(IExternalTransferRelayer.onTransfer, (appLayout.collateral, sender, receiver, amount, target))
+		);
 	}
 
 	function virtualExternalTransfer(
@@ -286,7 +288,10 @@ library AccountFacetImpl {
 		accountLayout.externalTransfers[currentId] = externalTransferReq;
 
 		// Callback to Virtual Provider
-		IVirtualProvider(virtualProvider).onExternalTransfer(externalTransferReq);
+		LibSafeCall.safeExternalCall(
+			virtualProvider,
+			abi.encodeCall(IVirtualProvider.onExternalTransfer, (externalTransferReq))
+		);
 		return currentId;
 	}
 
@@ -314,7 +319,10 @@ library AccountFacetImpl {
 
 		externalTransferReq.status = ExternalTransferStatus.CANCELED;
 
-		IVirtualProvider(externalTransferReq.provider).onCancelExternalTransfer(id);
+		LibSafeCall.safeExternalCall(
+			externalTransferReq.provider,
+			abi.encodeCall(IVirtualProvider.onCancelExternalTransfer, (id))
+		);
 	}
 
 	function bindToPartyB(address partyB) internal {

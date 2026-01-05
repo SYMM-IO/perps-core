@@ -31,16 +31,24 @@ and modularity. Currently, we have 22 facets:
 20. **PartyBBatchActionsFacet** - Batch operations for PartyB
 21. **WithdrawFacet** - Withdrawal operations
 
+### AccountLayer Diamond
+
+The AccountLayer is a separate Diamond contract that manages account abstraction and affiliate functionality. It has 6 facets:
+
+1. **ControlFacet** - Role management, pause control, and protocol configuration
+2. **CoreFacet** - Sub-account and virtual account management, call execution
+3. **MarginFacet** - Margin addition and removal operations
+4. **AffiliateFacet** - Affiliate registration, management, fee distribution, and hook configuration
+5. **ViewFacet** - Read-only queries for accounts, affiliates, and system state
+6. **SymmioHookFacet** - Callback hooks for position close and quote cancel events from Symmio core
+
+### Additional Contracts
+
 There are also some additional second-layer contracts required by hedgers and frontends:
 
-1. **AccountHub**:
-   This contract manages account creation and configuration, allowing each wallet to have multiple accounts within
-   the system. Features like instant open/close and stop-loss bots require the `delegateAccess` feature.
-2. **AffiliateHub**:
-   This contract manages affiliate relationships and fee distribution for frontend partners.
-3. **InstantLayer**:
+1. **InstantLayer**:
    This contract enables instant trade execution and settlement features.
-4. **SymmioPartyB**:
+2. **SymmioPartyB**:
    This contract enables hedgers to have multiple private keys behind their bots.
 
 ## Getting Started
@@ -61,6 +69,29 @@ Run the test suite with:
 
 The reason we cannot simply use `npx hardhat test` is that there are some Muon signature verification parts in the code
 that need to be commented out for the tests to run without issues. This script automates that task.
+
+#### Test Options
+
+```bash
+# Run all tests
+./utils/runTests.sh
+
+# Run with coverage
+./utils/runTests.sh --coverage
+
+# Run specific tests
+./utils/runTests.sh --grep "MyTest"
+
+# Run specific tests with coverage
+./utils/runTests.sh --coverage --grep "MyTest"
+```
+
+#### Environment Configuration
+
+The test script supports the following environment configurations:
+
+- **`.env` file**: Automatically sourced if present in the project root
+- **`PYTHON_VENV`**: Set this to your Python virtual environment path to auto-activate it
 
 ### Log Levels
 

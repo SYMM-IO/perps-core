@@ -8,15 +8,13 @@ import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { BridgeStorage, BridgeTransaction, BridgeTransactionStatus } from "../../storages/BridgeStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 
 
 library BridgeFacetImpl {
-	using SafeERC20 for IERC20;
 
 	function _createBridgeTransaction(address user, uint256 amount, address bridge) private returns (uint256 currentId) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
@@ -68,7 +66,7 @@ library BridgeFacetImpl {
 		require(block.timestamp >= MAStorage.layout().deallocateCooldown + bridgeTransaction.timestamp, "BridgeFacet: Cooldown hasn't reached");
 		if (bridgeLayout.bridges[bridgeTransaction.bridge]) {
 			require(msg.sender == bridgeTransaction.bridge, "BridgeFacet: Sender is not the transaction's bridge");
-			IERC20(appLayout.collateral).safeTransfer(bridgeTransaction.bridge, bridgeTransaction.amount);
+			LibSafeERC20.safeTransfer(appLayout.collateral, bridgeTransaction.bridge, bridgeTransaction.amount);
 		} else {
 			revert("BridgeFacet: Invalid bridge");
 		}
@@ -105,7 +103,7 @@ library BridgeFacetImpl {
 
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		withdrawLayout.withdrawLockedBalance -= totalAmount;
-		IERC20(appLayout.collateral).safeTransfer(msg.sender, totalAmount);
+		LibSafeERC20.safeTransfer(appLayout.collateral, msg.sender, totalAmount);
 	}
 
 	function suspendBridgeTransaction(uint256 transactionId) internal {

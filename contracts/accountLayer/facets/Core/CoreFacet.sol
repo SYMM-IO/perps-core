@@ -300,39 +300,6 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		emit VirtualAccountCreated(virtualAccount, parentAccount);
 	}
 
-	function _deleteVirtualAccount(address account) internal {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		VirtualAccountData storage vData = ahLayout.virtualAccounts[account];
-		if (!vData.isExists) revert AlreadyDeleted();
-		if (vData.quoteIds.length() != 0) revert OpenPositionsExist();
-
-		address parentAccount = vData.parentAccount;
-		address core = LibAccountLayerUtils.getRelatedCore(parentAccount);
-
-		_deallocateAndTransferBalance(account, parentAccount, core);
-
-		vData.isExists = false;
-
-		if (ahLayout.activeVAByKey[parentAccount][vData.isolationType][vData.symbolId] == account) {
-			delete ahLayout.activeVAByKey[parentAccount][vData.isolationType][vData.symbolId];
-		}
-
-		ahLayout.deletedVirtualAccountsPool[parentAccount][vData.isolationType][vData.symbolId].push(account);
-		ahLayout.subAccountToVirtualAccounts[parentAccount].remove(account);
-
-		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
-
-		LibAccountLayerUtils.callHook(
-			affiliate,
-			account,
-			core,
-			IAccountHubHook.onVirtualAccountDeletion.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountDeletion.selector, account)
-		);
-
-		emit VirtualAccountDeleted(account, parentAccount);
-	}
-
 	function _handleVirtualAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private returns (bytes memory) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		VirtualAccountData storage accountData = ahLayout.virtualAccounts[account];
@@ -386,18 +353,6 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		bytes memory result = _executeWithSigner(virtualAccount, cd);
 		ahLayout.virtualAccounts[virtualAccount].quoteIds.add(ISymmio(LibAccountLayerUtils.getRelatedCore(virtualAccount)).getNextQuoteId());
 		return result;
-	}
-
-	function _deallocateAndTransferBalance(address account, address parentAccount, address core) private {
-		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
-		if (allocatedBalance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance));
-		}
-
-		uint256 balance = ISymmio(core).balanceOf(account);
-		if (balance > 0) {
-			_executeWithSigner(account, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parentAccount, balance));
-		}
 	}
 
 	function _executeWithSigner(address account, bytes memory callData) private returns (bytes memory) {
