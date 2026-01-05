@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { IPartyBBatchActionsEvents } from "../PartyBBatchActions/IPartyBBatchActionsEvents.sol";
-import { ADLReason } from "../../libraries/ADLTypes.sol";
+import { ADLReason } from "../../libraries/LibPartiesEvents.sol";
 
 interface IADLFacet is IPartyBBatchActionsEvents {
 	event ADLSkip(uint256 quoteId, address partyA, address partyB, ADLReason reason, int256 requiredFundingFee);

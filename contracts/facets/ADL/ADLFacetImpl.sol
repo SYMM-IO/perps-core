@@ -12,7 +12,7 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
-import { ADLReason } from "../../libraries/ADLTypes.sol";
+import { ADLReason } from "../../libraries/LibPartiesEvents.sol";
 
 library ADLFacetImpl {
 	/**

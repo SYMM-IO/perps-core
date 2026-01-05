@@ -55,7 +55,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeCancelQuote()
 		})
 
-		describe("ClosePosition", async function () {
+		describe.only("ClosePosition", async function () {
 			shouldBehaveLikeClosePosition()
 		})
 
@@ -119,7 +119,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeClearingHouseFacet()
 		})
 
-		describe("ADLFacet", async function () {
+		describe.only("ADLFacet", async function () {
 			shouldBehaveLikeADLFacet()
 		})
 
