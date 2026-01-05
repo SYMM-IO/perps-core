@@ -13,6 +13,7 @@ import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRe
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getQuoteQuantity, unDecimal } from "./utils/Common.js"
+import { emergencyCloseRequestBuilder } from "./models/requestModels/EmergencyCloseRequest.js"
 import { getDummyLiquidationSig, getDummyPairUpnlSig, getDummySettlementSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikePartyBPositionViews(): void {
@@ -709,6 +710,45 @@ export function shouldBehaveLikePartyBPositionViews(): void {
 
 			const result = await context.viewFacetQuote.getPartyBAggregatedPositionsPerPartyA(hedger.address, await user2.getAddress(), 0, 5)
 			expect(result.length).to.equal(0)
+		})
+
+		it("returns empty for offsets past the last symbol", async function () {
+			const partyA = await user.getAddress()
+			const tooFar = await context.viewFacetQuote.getPartyBAggregatedPositionsPerPartyA(hedger.address, partyA, 10, 5)
+			expect(tooFar.length).to.equal(0)
+		})
+
+		it("returns empty for zero limit", async function () {
+			const partyA = await user.getAddress()
+			const zeroLimit = await context.viewFacetQuote.getPartyBAggregatedPositionsPerPartyA(hedger.address, partyA, 0, 0)
+			expect(zeroLimit.length).to.equal(0)
+		})
+
+		it("returns mid-range pagination slices", async function () {
+			const partyA = await user.getAddress()
+			// slice starting at symbol2 with limit 1 should only include that symbol
+			const slice = await context.viewFacetQuote.getPartyBAggregatedPositionsPerPartyA(hedger.address, partyA, 1, 1)
+			expect(slice.length).to.equal(1)
+			expect(BigInt(slice[0].symbolId)).to.equal(symbol2)
+			expect(BigInt(slice[0].positionType)).to.equal(BigInt(PositionType.SHORT))
+		})
+	})
+
+	describe("emergency close impact on aggregated positions", function () {
+		it("reduces totals after emergency close", async function () {
+			const before = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbol(hedger.address, 1)
+			const quoteQuantity = await getQuoteQuantity(context, quote1LongOpened.id)
+
+			// Enable emergency mode for partyB
+			await context.pauseControlFacet.connect(context.signers.admin).setPartyBEmergencyStatus([hedger.address], [true])
+
+			// Emergency close the position
+			await hedger.emergencyClosePosition(quote1LongOpened.id, emergencyCloseRequestBuilder().build())
+
+			const after = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbol(hedger.address, 1)
+
+			// Verify totals are reduced
+			expect(after.longPosition.aggregatedOpenAmount).to.equal(before.longPosition.aggregatedOpenAmount - quoteQuantity)
 		})
 	})
 
