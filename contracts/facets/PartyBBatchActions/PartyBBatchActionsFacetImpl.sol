@@ -20,7 +20,7 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
-import { LibPartyBBatchEvents } from "../../libraries/PartysEvents.sol";
+import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -81,12 +81,12 @@ library PartyBBatchActionsFacetImpl {
 			}
 			// Emitting events here in the impl is against our standards in these contracts,
 			// but given that this contract is getting too large and we can't return the ids, we are allowing it here.
-			emit LibPartyBBatchEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
-			emit LibPartyBBatchEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
+			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
+			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
 			if (newId != 0) {
 				Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-					emit LibPartyBBatchEvents.SendQuote(
+					emit LibPartiesEvents.SendQuote(
 						newQuote.partyA,
 						newQuote.id,
 						newQuote.partyBsWhiteList,
@@ -104,7 +104,7 @@ library PartyBBatchActionsFacetImpl {
 						newQuote.deadline
 					);
 				} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
-					emit LibPartyBBatchEvents.AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
+					emit LibPartiesEvents.AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
 				}
 			}
 		}

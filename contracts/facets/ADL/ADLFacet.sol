@@ -8,8 +8,7 @@ import { ADLFacetImpl } from "./ADLFacetImpl.sol";
 import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
 import { IADLFacet } from "./IADLFacet.sol";
-import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
-import { LibPartyBBatchEvents } from "../../libraries/PartysEvents.sol";
+import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 
 contract ADLFacet is Accessibility, Pausable, IADLFacet {
 	/**
@@ -20,24 +19,8 @@ contract ADLFacet is Accessibility, Pausable, IADLFacet {
 	 * @param prices Execution prices per quote.
 	 */
 	function adlClose(uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) external whenNotPartyBActionsPaused returns (uint256) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256 len = quoteIds.length;
-
-		(uint256[] memory filledAmounts, uint256 closedAmount, uint256[] memory closeIds) = ADLFacetImpl.adlClose(quoteIds, amounts, prices);
-
-		for (uint256 i = 0; i < len; ) {
-			uint256 filledAmount = filledAmounts[i];
-			if (filledAmount > 0) {
-				uint256 quoteId = quoteIds[i];
-				Quote storage quote = quoteLayout.quotes[quoteId];
-				emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, prices[i], quote.quoteStatus, closeIds[i]);
-			}
-			else{}
-			unchecked {
-				++i;
-			}
-		}
-		emit LibPartyBBatchEvents.ADLClose(quoteIds, amounts, prices, closedAmount);
+		uint256 closedAmount = ADLFacetImpl.adlClose(quoteIds, amounts, prices);
+		emit LibPartiesEvents.ADLClose(quoteIds, amounts, prices, closedAmount);
 		return closedAmount;
 	}
 }

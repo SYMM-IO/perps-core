@@ -21,6 +21,90 @@ import { LibHook } from "./LibHook.sol";
 library LibQuoteClose {
 	using LockedValuesOps for LockedValues;
 
+	/// @dev Helper enum for callers that want to pre-validate `closeQuote` without risking a full-tx revert.
+	enum CloseQuoteCheckResult {
+		OK,
+		INVALID_FILLED_AMOUNT,
+		LOW_FILLED_AMOUNT,
+		PARTY_A_INSUFFICIENT_BALANCE,
+		PARTY_B_INSUFFICIENT_BALANCE
+	}
+
+	/**
+	 * @notice Checks whether `closeQuote` would succeed without reverting.
+	 * @dev Mirrors the balance/rounding constraints in `closeQuote` and `chargeAccumulatedFundingFee`.
+	 * @param quoteId The quote to close.
+	 * @param filledAmount The amount to close.
+	 * @param closedPrice The close price.
+	 * @return result The first failing check (or OK).
+	 * @return requiredAmount The amount required to satisfy the failing check (0 when not applicable).
+	 */
+	function checkCloseQuote(uint256 quoteId, uint256 filledAmount, uint256 closedPrice)
+		internal
+		view
+		returns (CloseQuoteCheckResult result, uint256 requiredAmount)
+	{
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		Quote storage quote = quoteLayout.quotes[quoteId];
+		uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+
+		if (filledAmount == 0 || filledAmount > openAmount) {
+			return (CloseQuoteCheckResult.INVALID_FILLED_AMOUNT, 0);
+		}
+
+		// Same rounding constraints as in `closeQuote` ("Low filled amount")
+		if (quote.lockedValues.cva != 0 && (quote.lockedValues.cva * filledAmount) / openAmount == 0) {
+			return (CloseQuoteCheckResult.LOW_FILLED_AMOUNT, 0);
+		}
+		if (quote.lockedValues.partyAmm != 0 && (quote.lockedValues.partyAmm * filledAmount) / openAmount == 0) {
+			return (CloseQuoteCheckResult.LOW_FILLED_AMOUNT, 0);
+		}
+		if (quote.lockedValues.partyBmm != 0 && (quote.lockedValues.partyBmm * filledAmount) / openAmount == 0) {
+			return (CloseQuoteCheckResult.LOW_FILLED_AMOUNT, 0);
+		}
+		if ((quote.lockedValues.lf * filledAmount) / openAmount == 0) {
+			return (CloseQuoteCheckResult.LOW_FILLED_AMOUNT, 0);
+		}
+
+		uint256 partyAAllocated = accountLayout.allocatedBalances[quote.partyA];
+		address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
+		uint256 partyBAllocated = accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey];
+
+		// Funding fee is charged before PnL/fee in `closeQuote`
+		int256 fundingFee = LibQuoteFunding.getAccumulatedFundingFee(quoteId);
+		if (fundingFee > 0) {
+			uint256 feeInUint = uint256(fundingFee);
+			if (partyAAllocated < feeInUint) return (CloseQuoteCheckResult.PARTY_A_INSUFFICIENT_BALANCE, feeInUint);
+			partyAAllocated -= feeInUint;
+			partyBAllocated += feeInUint;
+		} else if (fundingFee < 0) {
+			uint256 feeInUint = uint256(-fundingFee);
+			if (partyBAllocated < feeInUint) return (CloseQuoteCheckResult.PARTY_B_INSUFFICIENT_BALANCE, feeInUint);
+			partyBAllocated -= feeInUint;
+			partyAAllocated += feeInUint;
+		}
+
+		// Realized PnL
+		(bool hasMadeProfit, uint256 pnl) = LibQuote.getValueOfQuoteForPartyA(closedPrice, filledAmount, quote);
+		if (hasMadeProfit) {
+			if (partyBAllocated < pnl) return (CloseQuoteCheckResult.PARTY_B_INSUFFICIENT_BALANCE, pnl);
+			partyBAllocated -= pnl;
+			partyAAllocated += pnl;
+		} else {
+			if (partyAAllocated < pnl) return (CloseQuoteCheckResult.PARTY_A_INSUFFICIENT_BALANCE, pnl);
+			partyAAllocated -= pnl;
+			partyBAllocated += pnl;
+		}
+
+		// Close trading fee is charged after PnL in `closeQuote`
+		uint256 fee = (filledAmount * closedPrice * quote.closeFee) / 1e36;
+		if (partyAAllocated < fee) return (CloseQuoteCheckResult.PARTY_A_INSUFFICIENT_BALANCE, fee);
+
+		return (CloseQuoteCheckResult.OK, 0);
+	}
+
 	/**
 	 * @notice Closes a quote.
 	 * @param quoteId The ID of the quote to close.
