@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Check if any .sol files are staged
+if git diff --cached --name-only | grep -q '\.sol$'; then
+    echo "Solidity files changed. Compiling and regenerating ABIs..."
+
+    # Compile contracts
+    npx hardhat compile
+    if [ $? -ne 0 ]; then
+        echo "Compilation failed. Aborting commit."
+        exit 1
+    fi
+
+    # Generate ABIs
+    python3 ./utils/make_abi.py
+    if [ $? -ne 0 ]; then
+        echo "ABI generation failed. Aborting commit."
+        exit 1
+    fi
+
+    # Stage the updated ABI files
+    git add abis/
+
+    echo "ABIs updated and staged."
+fi
