@@ -81,7 +81,7 @@ library LibSettlement {
 					((int256(quote.openedPrice) - int256(updatedPrices[i])) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
 			}
 			quote.openedPrice = updatedPrices[i];
-			LibQuote.updatePartiesOpenPositionNotional(quote, oldOpenedPrice);
+			LibQuote.updatePartiesAggregatedPositionsNotional(quote, oldOpenedPrice);
 		}
 
 		int256 totalSettlementAmount;
@@ -192,7 +192,7 @@ library LibSettlement {
 
 			// Update quote's opened price
 			quote.openedPrice = updatedPrices[i];
-			LibQuote.updatePartiesOpenPositionNotional(quote, oldOpenedPrice);
+			LibQuote.updatePartiesAggregatedPositionsNotional(quote, oldOpenedPrice);
 		}
 
 		// Check solvency of all Party As before proceeding with settlements

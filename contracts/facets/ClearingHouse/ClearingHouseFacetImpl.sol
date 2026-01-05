@@ -148,7 +148,7 @@ library ClearingHouseFacetImpl {
 			uint256 liquidationPrice = priceSig.prices[i];
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) / (quote.closedAmount + openAmount);
-			LibQuote.subFromPartiesOpenPositionAmounts(quote, openAmount);
+			LibQuote.subFromPartiesAggregatedPositions(quote, openAmount);
 			quote.closedAmount = quote.quantity;
 
 			LibQuote.removeFromOpenPositions(quote.id);

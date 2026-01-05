@@ -284,10 +284,10 @@ contract ViewFacetQuote is IViewFacetQuote {
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyBAggregatedPositions[partyB][symbolId];
-		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmounts;
-		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmounts;
-		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotionals;
-		uint256 shortNotional = aggregatedPositions[PositionType.SHORT].aggregatedNotionals;
+		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
+		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
+		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
+		uint256 shortNotional = aggregatedPositions[PositionType.SHORT].aggregatedNotional;
 		longPosition = AggregatedPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
 		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
 	}
@@ -309,10 +309,10 @@ contract ViewFacetQuote is IViewFacetQuote {
 		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][
 			partyA
 		][symbolId];
-		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmounts;
-		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmounts;
-		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotionals;
-		uint256 shortNotional = aggregatedPositions[PositionType.SHORT].aggregatedNotionals;
+		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
+		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
+		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
+		uint256 shortNotional = aggregatedPositions[PositionType.SHORT].aggregatedNotional;
 		longPosition = AggregatedPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
 		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
 	}
@@ -330,10 +330,10 @@ contract ViewFacetQuote is IViewFacetQuote {
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyAAggregatedPositions[partyA][symbolId];
-		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmounts;
-		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmounts;
-		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotionals;
-		uint256 shortNotional = aggregatedPositions[PositionType.SHORT].aggregatedNotionals;
+		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
+		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
+		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
+		uint256 shortNotional = aggregatedPositions[PositionType.SHORT].aggregatedNotional;
 		longPosition = AggregatedPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
 		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
 	}
@@ -372,24 +372,24 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 			// LONG
 			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
-			if (longPos.aggregatedAmounts > 0) {
+			if (longPos.aggregatedAmount > 0) {
 				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmounts,
-					avgOpenPrice: longPos.aggregatedNotionals / longPos.aggregatedAmounts
+					aggregatedOpenAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
 				});
 				count++;
 			}
 
 			// SHORT
 			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
-			if (shortPos.aggregatedAmounts > 0) {
+			if (shortPos.aggregatedAmount > 0) {
 				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmounts,
-					avgOpenPrice: shortPos.aggregatedNotionals / shortPos.aggregatedAmounts
+					aggregatedOpenAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
 				});
 				count++;
 			}
@@ -441,23 +441,23 @@ contract ViewFacetQuote is IViewFacetQuote {
 			mapping(PositionType => PartiesAggregatedPositions) storage positionsByType = quoteLayout.partyAAggregatedPositions[partyA][symbolId];
 
 			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
-			if (longPos.aggregatedAmounts > 0) {
+			if (longPos.aggregatedAmount > 0) {
 				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmounts,
-					avgOpenPrice: longPos.aggregatedNotionals / longPos.aggregatedAmounts
+					aggregatedOpenAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
 				});
 				count++;
 			}
 
 			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
-			if (shortPos.aggregatedAmounts > 0) {
+			if (shortPos.aggregatedAmount > 0) {
 				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmounts,
-					avgOpenPrice: shortPos.aggregatedNotionals / shortPos.aggregatedAmounts
+					aggregatedOpenAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
 				});
 				count++;
 			}
@@ -512,23 +512,23 @@ contract ViewFacetQuote is IViewFacetQuote {
 			][symbolId];
 
 			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
-			if (longPos.aggregatedAmounts > 0) {
+			if (longPos.aggregatedAmount > 0) {
 				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmounts,
-					avgOpenPrice: longPos.aggregatedNotionals / longPos.aggregatedAmounts
+					aggregatedOpenAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
 				});
 				count++;
 			}
 
 			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
-			if (shortPos.aggregatedAmounts > 0) {
+			if (shortPos.aggregatedAmount > 0) {
 				results[count] = PartiesAggregatedPositionBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmounts,
-					avgOpenPrice: shortPos.aggregatedNotionals / shortPos.aggregatedAmounts
+					aggregatedOpenAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
 				});
 				count++;
 			}

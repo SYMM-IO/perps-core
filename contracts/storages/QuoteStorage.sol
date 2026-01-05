@@ -80,8 +80,8 @@ struct Fee {
 }
 
 struct PartiesAggregatedPositions {
-	uint256 aggregatedAmounts;
-	uint256 aggregatedNotionals;
+	uint256 aggregatedAmount;
+	uint256 aggregatedNotional;
 }
 
 library QuoteStorage {
