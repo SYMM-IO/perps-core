@@ -47,7 +47,14 @@ library ADLFacetImpl {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
 
 			require(quote.partyB == signer, "PartyBFacet: Sender isn't partyB of quote");
-			require(!maLayout.liquidationStatus[quote.partyA], "PartyBFacet: PartyA is liquidated");
+			// If PartyA is already in liquidation process, ADL should skip (positions must be handled via liquidation/settlement flow).
+			if (maLayout.liquidationStatus[quote.partyA]) {
+				emit LibPartiesEvents.ADLSkip(quote.id, quote.partyA, quote.partyB, ADLReason.NOT_IN_CLOSE_STATE, 0);
+				unchecked {
+					++i;
+				}
+				continue;
+			}
 			require(!maLayout.partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
 			require(quote.symbolId == firstQuote.symbolId, "PartyBFacet: Symbols not match");
 

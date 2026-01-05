@@ -119,6 +119,34 @@ export function shouldBehaveLikeADLFacet(): void {
 				expect(skip).to.not.equal(undefined)
 				expect(skip!.args.reason).to.equal(ADLReason.INVALID_FILLED_AMOUNT)
 			})
+
+			it("skips when close would make partyB use locked CVA/LF (should settle/close others first)", async function () {
+				await user.sendQuote(
+					limitQuoteRequestBuilder()
+						.partyBWhiteList([await hedger.getAddress()])
+						.build(),
+				)
+				const quoteId = await context.viewFacetQuote.getNextQuoteId()
+				const q = await context.viewFacetQuote.getQuote(quoteId)
+
+				// Allocate only the bare minimum for PartyB: totalForPartyB = CVA + LF + partyBmm = 65
+				await context.accountFacet.connect(hedger.signer).allocateForPartyB(decimal(65n), await user.getAddress())
+				await hedger.lockQuote(quoteId, 0n, null)
+
+				const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])
+				await context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([quoteId], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
+
+				// Close half with enough profit for PartyA so PartyB would pay pnl and dip below remaining locked CVA+LF.
+				const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [decimal(50n)], [decimal(22n, 17)]) // 2.2
+				const events = await parseEvents(tx)
+				const skip = events.find((e: any) => e!.name === "ADLSkip" && e!.args.quoteId === quoteId)
+				expect(skip).to.not.equal(undefined)
+				expect(skip!.args.reason).to.equal(ADLReason.PARTY_B_INSUFFICIENT_BALANCE)
+
+				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfter.closedAmount).to.equal(0n)
+				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+			})
 		})
 
 		it("keeps existing close request intact after ADL when enough remains to fulfill it", async function () {
@@ -250,10 +278,11 @@ export function shouldBehaveLikeADLFacet(): void {
 			expect(followUpReq).to.equal(undefined)
 
 			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
-			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
-			expect(quoteAfter.quantityToClose).to.equal(0n)
-			expect(quoteAfter.requestedClosePrice).to.equal(0n)
-			expect(await context.viewFacetQuote.getQuoteCloseId(quoteId)).to.equal(oldCloseId + 1n) // ADL closeId consumed the close
+				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+				expect(quoteAfter.quantityToClose).to.equal(0n)
+				expect(quoteAfter.requestedClosePrice).to.equal(0n)
+				expect(await context.viewFacetQuote.getQuoteCloseId(quoteId)).to.equal(oldCloseId + 1n) // ADL closeId consumed the close
+			})
+
 		})
-	})
-}
+	}

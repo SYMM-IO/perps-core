@@ -71,31 +71,53 @@ library LibQuoteClose {
 		uint256 partyAAllocated = accountLayout.allocatedBalances[quote.partyA];
 		address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
 		uint256 partyBAllocated = accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey];
+		uint256 partyBLockedCva = accountLayout.partyBLockedBalances[quote.partyB][allocationKey].cva;
+		uint256 partyBLockedLf = accountLayout.partyBLockedBalances[quote.partyB][allocationKey].lf;
 
-		// Funding fee is charged before PnL/fee in `closeQuote`
+		// Aggregate A<->B transfers (funding + realized PnL) so opposing flows can net out.
+		// This mirrors the net settlement logic in `closeQuote`.
+		uint256 partyAToB;
+		uint256 partyBToA;
+
+		// Funding fee (positive = PartyA pays PartyB, negative = PartyB pays PartyA)
 		int256 fundingFee = LibQuoteFunding.getAccumulatedFundingFee(quoteId);
 		if (fundingFee > 0) {
-			uint256 feeInUint = uint256(fundingFee);
-			if (partyAAllocated < feeInUint) return (CloseQuoteCheckResult.PARTY_A_INSUFFICIENT_BALANCE, feeInUint);
-			partyAAllocated -= feeInUint;
-			partyBAllocated += feeInUint;
+			partyAToB += uint256(fundingFee);
 		} else if (fundingFee < 0) {
-			uint256 feeInUint = uint256(-fundingFee);
-			if (partyBAllocated < feeInUint) return (CloseQuoteCheckResult.PARTY_B_INSUFFICIENT_BALANCE, feeInUint);
-			partyBAllocated -= feeInUint;
-			partyAAllocated += feeInUint;
+			partyBToA += uint256(-fundingFee);
 		}
 
 		// Realized PnL
 		(bool hasMadeProfit, uint256 pnl) = LibQuote.getValueOfQuoteForPartyA(closedPrice, filledAmount, quote);
 		if (hasMadeProfit) {
-			if (partyBAllocated < pnl) return (CloseQuoteCheckResult.PARTY_B_INSUFFICIENT_BALANCE, pnl);
-			partyBAllocated -= pnl;
-			partyAAllocated += pnl;
+			partyBToA += pnl;
 		} else {
-			if (partyAAllocated < pnl) return (CloseQuoteCheckResult.PARTY_A_INSUFFICIENT_BALANCE, pnl);
-			partyAAllocated -= pnl;
-			partyBAllocated += pnl;
+			partyAToB += pnl;
+		}
+
+		// Net settlement between PartyA and PartyB
+		if (partyAToB > partyBToA) {
+			uint256 netToB = partyAToB - partyBToA;
+			if (partyAAllocated < netToB) return (CloseQuoteCheckResult.PARTY_A_INSUFFICIENT_BALANCE, netToB);
+			partyAAllocated -= netToB;
+			partyBAllocated += netToB;
+		} else if (partyBToA > partyAToB) {
+			uint256 netToA = partyBToA - partyAToB;
+			if (partyBAllocated < netToA) return (CloseQuoteCheckResult.PARTY_B_INSUFFICIENT_BALANCE, netToA);
+			partyBAllocated -= netToA;
+			partyAAllocated += netToA;
+		}
+
+		// PartyB must remain solvent w.r.t. its locked CVA/LF after this close.
+		// (i.e., don't allow paying out using locked CVA/LF)
+		{
+			uint256 unlockedCva = (quote.lockedValues.cva * filledAmount) / openAmount;
+			uint256 unlockedLf = (quote.lockedValues.lf * filledAmount) / openAmount;
+			if (partyBLockedCva < unlockedCva || partyBLockedLf < unlockedLf) {
+				return (CloseQuoteCheckResult.PARTY_B_INSUFFICIENT_BALANCE, 0);
+			}
+			uint256 lockedAfter = (partyBLockedCva - unlockedCva) + (partyBLockedLf - unlockedLf);
+			if (partyBAllocated < lockedAfter) return (CloseQuoteCheckResult.PARTY_B_INSUFFICIENT_BALANCE, lockedAfter - partyBAllocated);
 		}
 
 		// Close trading fee is charged after PnL in `closeQuote`
@@ -152,29 +174,86 @@ library LibQuoteClose {
 		}
 
 		if (symbolLayout.fundingFees[quote.symbolId][quote.partyB].epochDuration > 0) {
-			LibQuoteFunding.chargeAccumulatedFundingFee(quoteId);
+			// Mirror `LibQuoteFunding.chargeAccumulatedFundingFee` bookkeeping, but defer balance updates
+			// to a net settlement step together with realized PnL.
+			int256 fundingFee = LibQuoteFunding.getAccumulatedFundingFee(quoteId);
+			quote.lastFundingPaymentTimestamp = block.timestamp;
+			LibQuoteFunding.updateAccumulatedPaidFunding(quoteId);
+
+			address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
+			uint256 partyAToB;
+			uint256 partyBToA;
+
+			if (fundingFee > 0) {
+				uint256 feeInUint = uint256(fundingFee);
+				partyAToB += feeInUint;
+				emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
+				emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
+			} else if (fundingFee < 0) {
+				uint256 feeInUint = uint256(-fundingFee);
+				partyBToA += feeInUint;
+				emit SharedEvents.BalanceChangePartyA(quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_IN);
+				emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, feeInUint, SharedEvents.BalanceChangeType.FUNDING_FEE_OUT);
+			}
+
+			(bool hasMadeProfit, uint256 pnl) = LibQuote.getValueOfQuoteForPartyA(closedPrice, filledAmount, quote);
+			if (hasMadeProfit) {
+				partyBToA += pnl;
+				emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			} else {
+				partyAToB += pnl;
+				emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			}
+
+			if (partyAToB > partyBToA) {
+				uint256 netToB = partyAToB - partyBToA;
+				require(
+					accountLayout.allocatedBalances[quote.partyA] >= netToB,
+					"LibQuote: PartyA should first exit its positions that are currently in profit."
+				);
+				accountLayout.allocatedBalances[quote.partyA] -= netToB;
+				accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] += netToB;
+			} else if (partyBToA > partyAToB) {
+				uint256 netToA = partyBToA - partyAToB;
+				require(
+					accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] >= netToA,
+					"LibQuote: PartyA should first exit its positions that are incurring losses"
+				);
+				accountLayout.allocatedBalances[quote.partyA] += netToA;
+				accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] -= netToA;
+			}
+		} else {
+			(bool hasMadeProfit, uint256 pnl) = LibQuote.getValueOfQuoteForPartyA(closedPrice, filledAmount, quote);
+			address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
+			if (hasMadeProfit) {
+				require(
+					accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] >= pnl,
+					"LibQuote: PartyA should first exit its positions that are incurring losses"
+				);
+				accountLayout.allocatedBalances[quote.partyA] += pnl;
+				emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] -= pnl;
+				emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			} else {
+				require(
+					accountLayout.allocatedBalances[quote.partyA] >= pnl,
+					"LibQuote: PartyA should first exit its positions that are currently in profit."
+				);
+				accountLayout.allocatedBalances[quote.partyA] -= pnl;
+				emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] += pnl;
+				emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			}
 		}
 
-		(bool hasMadeProfit, uint256 pnl) = LibQuote.getValueOfQuoteForPartyA(closedPrice, filledAmount, quote);
-		address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
-		if (hasMadeProfit) {
-			require(
-				accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] >= pnl,
-				"LibQuote: PartyA should first exit its positions that are incurring losses"
-			);
-			accountLayout.allocatedBalances[quote.partyA] += pnl;
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] -= pnl;
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-		} else {
-			require(
-				accountLayout.allocatedBalances[quote.partyA] >= pnl,
-				"LibQuote: PartyA should first exit its positions that are currently in profit."
-			);
-			accountLayout.allocatedBalances[quote.partyA] -= pnl;
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey] += pnl;
-			emit SharedEvents.BalanceChangePartyB(quote.partyB, quote.partyA, pnl, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+		{
+			address allocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
+			uint256 partyBAllocated = accountLayout.partyBAllocatedBalances[quote.partyB][allocationKey];
+			uint256 partyBLocked = accountLayout.partyBLockedBalances[quote.partyB][allocationKey].cva +
+				accountLayout.partyBLockedBalances[quote.partyB][allocationKey].lf;
+			require(partyBAllocated >= partyBLocked, "LibQuote: PartyB should be solvent");
 		}
 
 		quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + filledAmount * closedPrice) / (quote.closedAmount + filledAmount);

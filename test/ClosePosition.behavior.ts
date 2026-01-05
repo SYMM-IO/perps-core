@@ -26,6 +26,8 @@ import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequ
 import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 
+const WAD = 10n ** 18n
+const WAD_36 = 10n ** 36n
 
 export function shouldBehaveLikeClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -99,6 +101,61 @@ export function shouldBehaveLikeClosePosition(): void {
 		expect(amounts[1].positionType).to.equal(BigInt(PositionType.SHORT))
 		expect(amounts[1].totalOpenAmount).to.equal(expectedShort)
 		expect(amounts[1].avgOpenPrice).to.equal(expectedShort === 0n ? 0n : expectedShortNotional / expectedShort)
+	})
+
+	it("Should net funding fee and realized PnL on close (no intermediate balance requirement)", async function () {
+		await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
+
+		const epochDurationSec = 3600
+		const latest = BigInt(await time.latest())
+		const aligned = (latest / BigInt(epochDurationSec) + 1n) * BigInt(epochDurationSec)
+		await time.setNextBlockTimestamp(Number(aligned))
+
+		await context.fundingRateFacet.connect(hedger.signer).setEpochDurations([1], [epochDurationSec])
+		await context.fundingRateFacet.connect(hedger.signer).setFundingFee([1], [decimal(8n)], [0], [decimal(1n)])
+
+		// Ensure PartyA has enough available balance to create an extra position
+		await context.accountFacet.connect(user.signer).allocate(decimal(250n))
+
+		const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1000n)).build())
+		await hedger.lockQuote(quoteId, 0n, decimal(20n))
+		await hedger.openPosition(quoteId)
+
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const filledAmount = quote.quantity - quote.closedAmount
+
+		await time.increase(epochDurationSec)
+
+		const fundingFee = (await context.viewFacetSymbol.getAccumulatedFundingFees([quoteId]))[0]
+		expect(fundingFee).to.be.gt(0n)
+
+		const closedPrice = decimal(20n)
+		await user.requestToClosePosition(
+			quoteId,
+			limitCloseRequestBuilder().quantityToClose(filledAmount).closePrice(closedPrice).build(),
+		)
+
+		const partyAAllocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+		const partyBAllocatedBefore = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
+
+		expect(partyAAllocatedBefore).to.be.lt(fundingFee)
+
+		await expect(
+			hedger.fillCloseRequest(
+				quoteId,
+				limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(closedPrice).price(closedPrice).build(),
+			),
+		).to.not.be.reverted
+
+		const partyAAllocatedAfter = (await user.getBalanceInfo()).allocatedBalances
+		const partyBAllocatedAfter = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
+
+		const pnl = ((closedPrice - quote.openedPrice) * filledAmount) / WAD
+		const netToPartyA = pnl - fundingFee
+		const closeFee = (filledAmount * closedPrice * quote.closeFee) / WAD_36
+
+		expect(partyAAllocatedAfter - partyAAllocatedBefore).to.equal(netToPartyA - closeFee)
+		expect(partyBAllocatedAfter - partyBAllocatedBefore).to.equal(-netToPartyA)
 	})
 
 	it("Should fail on invalid partyA", async function () {
