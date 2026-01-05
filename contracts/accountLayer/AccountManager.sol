@@ -56,6 +56,18 @@ contract AccountManager is IAccountManager {
 		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 
+	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner {
+		address core = IAccountLayerDiamond(accountHub).getRelatedCore(account);
+
+		address collateral = ISymmio(core).getCollateral();
+		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+		IERC20(collateral).safeIncreaseAllowance(accountHub, amount);
+
+		bytes[] memory callDatas = new bytes[](1);
+		callDatas[0] = abi.encodeWithSelector(ISymmio.depositAndAllocateFor.selector, account, amount);
+		IAccountLayerDiamond(accountHub)._call(account, callDatas);
+	}
+
 	function depositForAccountWithExpressRate(
 		address account,
 		uint256 amount
@@ -69,15 +81,16 @@ contract AccountManager is IAccountManager {
 		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 
-	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner {
-		address core = IAccountLayerDiamond(accountHub).getRelatedCore(account);
-
-		address collateral = ISymmio(core).getCollateral();
-		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
-		IERC20(collateral).safeIncreaseAllowance(accountHub, amount);
-
+	function depositAndAllocateForAccountWithExpressRate(
+		address account,
+		uint256 amount
+	) external withSigner {
 		bytes[] memory callDatas = new bytes[](1);
-		callDatas[0] = abi.encodeWithSelector(ISymmio.depositAndAllocateFor.selector, account, amount);
+		callDatas[0] = abi.encodeWithSelector(
+			ICoreFacet.depositAndAllocateForAccountWithExpressRate.selector,
+			account,
+			amount
+		);
 		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 

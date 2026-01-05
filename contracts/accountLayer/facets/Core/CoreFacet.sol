@@ -102,6 +102,21 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		address account,
 		uint256 amount
 	) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+		_depositForAccountWithExpressRate(account, amount, ISymmio.depositFor.selector);
+	}
+
+	function depositAndAllocateForAccountWithExpressRate(
+		address account,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+		_depositForAccountWithExpressRate(account, amount, ISymmio.depositAndAllocateFor.selector);
+	}
+
+	function _depositForAccountWithExpressRate(
+		address account,
+		uint256 amount,
+		bytes4 depositSelector
+	) private {
 		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		
@@ -123,16 +138,16 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		uint256 virtualAmount = (amount * expressRate) / 1e18;
 		uint256 realAmount = amount - virtualAmount;
 
-		// Deposit real portion to Symmio Diamond
+		// Deposit (and optionally allocate) real portion to Symmio Diamond
 		if (realAmount > 0) {
 			IERC20(collateral).safeIncreaseAllowance(core, realAmount);
-			LibAccountLayerUtils.executeWithSigner(account, abi.encodeWithSelector(ISymmio.depositFor.selector, account, realAmount));
+			LibAccountLayerUtils.executeWithSigner(account, abi.encodeWithSelector(depositSelector, account, realAmount));
 		}
 
 		// Transfer virtual portion to Virtual Provider and invoke callback
 		if (virtualAmount > 0 && virtualProvider != address(0)) {
 			IERC20(collateral).safeTransfer(virtualProvider, virtualAmount);
-			IVirtualProvider(virtualProvider).onVirtualDeposit(account, virtualAmount, core);
+			IVirtualProvider(virtualProvider).onExpressDeposit(account, virtualAmount, core);
 		}
 
 		// Enforce invariant: input_amount == balanceOf(user) increase

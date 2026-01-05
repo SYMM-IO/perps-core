@@ -57,6 +57,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param amount The amount of collateral to transfer, specified in collateral decimals.
 	function depositVirtualFunds(uint256 amount) external whenNotAccountingPaused {
 		AccountFacetImpl.depositVirtualFunds(amount);
+		emit DepositVirtualFunds(msg.sender, amount);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer and allocate them.

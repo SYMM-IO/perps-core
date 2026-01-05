@@ -97,7 +97,7 @@ contract VirtualProvider is IVirtualProvider {
 		id;
 	}
 
-	function onVirtualDeposit(address user, uint256 amount, address symmioCore) external override {
+	function onExpressDeposit(address user, uint256 amount, address symmioCore) external override {
 		uint256 collateralDecimals = IERC20Metadata(ISymmioCore(symmioCore).getCollateral()).decimals();
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** collateralDecimals);
 		
