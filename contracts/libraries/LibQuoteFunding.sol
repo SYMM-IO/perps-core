@@ -14,6 +14,17 @@ import { LibAccount } from "./LibAccount.sol";
 
 library LibQuoteFunding {
 	/**
+	 * @dev Updates funding payment bookkeeping (timestamp + accumulated paid funding) and returns the currently unpaid fee.
+	 * Callers can then decide how to settle the returned amount between parties (e.g., netting with PnL on close).
+	 */
+	function settleAccumulatedFundingFee(uint256 quoteId) public returns (int256 fee) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		fee = getAccumulatedFundingFee(quoteId);
+		quote.lastFundingPaymentTimestamp = block.timestamp;
+		updateAccumulatedPaidFunding(quoteId);
+	}
+
+	/**
 	 * @notice Calculates the accumulated funding fee for a position
 	 * @dev Uses weighted average funding rates over time
 	 * @param quoteId The quote ID to calculate funding for
@@ -66,11 +77,8 @@ library LibQuoteFunding {
 		// Load the position
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
-		// Calculate the unpaid funding fee
-		int256 fee = getAccumulatedFundingFee(quoteId);
-
-		quote.lastFundingPaymentTimestamp = block.timestamp;
-		updateAccumulatedPaidFunding(quoteId);
+		// Calculate the unpaid funding fee and update funding bookkeeping
+		int256 fee = settleAccumulatedFundingFee(quoteId);
 		address partyBAllocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
 		if (fee > 0) {
 			// Positive fee: Trader (PartyA) pays Market Maker (PartyB)
