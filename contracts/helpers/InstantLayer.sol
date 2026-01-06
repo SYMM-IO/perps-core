@@ -1100,6 +1100,26 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		return templates[templateId].operations;
 	}
 
+	/**
+	 * @notice Get templates by ID range.
+	 * @dev    Returns templates from startId to startId + limit. Caller can filter active ones off-chain.
+	 * @param startId Starting template ID
+	 * @param limit   Maximum number of templates to return
+	 * @return Array of templates in the specified range
+	 */
+	function getTemplates(uint256 startId, uint256 limit) external view returns (Template[] memory) {
+		if (startId >= nextTemplateId) return new Template[](0);
+
+		uint256 end = startId + limit;
+		if (end > nextTemplateId) end = nextTemplateId;
+
+		Template[] memory result = new Template[](end - startId);
+		for (uint256 i = startId; i < end; i++) {
+			result[i - startId] = templates[i];
+		}
+		return result;
+	}
+
 	/* ═════════════════════ EIP-712 HASH FUNCTIONS ═════════════════════ */
 
 	/**
