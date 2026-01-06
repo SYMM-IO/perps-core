@@ -88,7 +88,7 @@ export function shouldBehaveLikeADLFacet(): void {
 				)
 			})
 
-			it("fails when sender is not partyB", async function () {
+			it("fails when sender is not partyB of quote", async function () {
 				const quoteId = await openWith(hedger)
 				await expect(context.adlFacet.connect(context.signers.hedger2).adlClose([quoteId], [decimal(10n)], [decimal(1n)])).to.be.revertedWith(
 					"PartyBFacet: Sender isn't partyB of quote",
@@ -118,6 +118,10 @@ export function shouldBehaveLikeADLFacet(): void {
 				const skip = events.find((e: any) => e!.name === "ADLSkip" && e!.args.quoteId === quoteId)
 				expect(skip).to.not.equal(undefined)
 				expect(skip!.args.reason).to.equal(ADLReason.INVALID_FILLED_AMOUNT)
+
+				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount)
+				expect(quoteAfter.quoteStatus).to.equal(quoteBefore.quoteStatus)
 			})
 
 			it("skips when close would make partyB use locked CVA/LF (should settle/close others first)", async function () {
@@ -150,14 +154,14 @@ export function shouldBehaveLikeADLFacet(): void {
 		})
 
 		it("keeps existing close request intact after ADL when enough remains to fulfill it", async function () {
-			const quoteId = await openWith(hedger)
 			const userClosePrice = decimal(2n)
 			const userCloseQty = decimal(60n)
+			const quoteId = await openWith(hedger)
 			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(userCloseQty).closePrice(userClosePrice).build())
 
 			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
 			const oldCloseId = await context.viewFacetQuote.getQuoteCloseId(quoteId)
-			const adlAmount = decimal(30n)
+			const adlAmount = decimal(30n) // means we have still amount = 70 after ADL close
 
 			await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [adlAmount], [quoteBefore.openedPrice])
 
