@@ -60,12 +60,13 @@ library ForceActionsFacetImpl {
 		quote.quantityToClose = 0;
 	}
 
-	function forceCloseMasterAccountInit(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice) {
-		require(
-			AccountStorage.layout().masterAccountMode[QuoteStorage.layout().quotes[quoteId].partyB],
-			"ForceActionsFacet: Master account mode inactive"
-		);
-
+	/**
+	 * @notice Initializes the 3-step force close flow (works for both normal and master account modes).
+	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 * @param sig The Muon signature to calculate the close price.
+	 * @return closePrice The calculated close price.
+	 */
+	function forceCloseInit(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice) {
 		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
@@ -87,19 +88,61 @@ library ForceActionsFacetImpl {
 		detail.inProgress = true;
 	}
 
-	function finalizeMasterAccountForceClose(uint256 quoteId) internal returns (bool isSolvent) {
-		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
-
+	/**
+	 * @notice Finalizes the 3-step force close flow (handles both normal and master account modes).
+	 * @dev For normal partyB: Uses reserveVault fallback and triggers liquidation if needed.
+	 *      For master account: Uses SOLVENT/INSOLVENT marking without liquidation.
+	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 * @return succeed Whether the close was successful without liquidation/insolvency.
+	 * @return upnlPartyB The upnl used for liquidation (only set for normal partyB when succeed is false).
+	 */
+	function finalizeForceClose(uint256 quoteId) internal returns (bool succeed, int256 upnlPartyB) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
-		(isSolvent, detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteMasterAccountWithRespectToUpnl(
-			quoteId,
-			detail.currentPrice,
-			detail.upnlPartyB,
-			detail.closePrice
-		);
+		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
+		bool isMasterAccountMode = accountLayout.masterAccountMode[partyB];
 
-		detail.partyBState = isSolvent ? PartyBForceCloseState.SOLVENT : PartyBForceCloseState.INSOLVENT;
+		if (isMasterAccountMode) {
+			// Master account mode: Use SOLVENT/INSOLVENT marking without liquidation
+			(succeed, detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteMasterAccountWithRespectToUpnl(
+				quoteId,
+				detail.currentPrice,
+				detail.upnlPartyB,
+				detail.closePrice
+			);
+			detail.partyBState = succeed ? PartyBForceCloseState.SOLVENT : PartyBForceCloseState.INSOLVENT;
+		} else {
+			// Normal partyB mode: Use reserveVault fallback and liquidation
+			uint256 reservedBalance = accountLayout.reserveVault[partyB];
+
+			(int256 partyBAvailableBalance, ) = LibForceActions.getAvailableBalancesAfterClose(
+				quoteId,
+				detail.currentPrice,
+				0,
+				detail.upnlPartyB,
+				detail.closePrice
+			);
+
+			succeed = LibForceActions.closeQuote(quoteId, detail.closePrice, partyBAvailableBalance, reservedBalance);
+			detail.partyBAvailableAfterClose = partyBAvailableBalance;
+
+			if (succeed) {
+				detail.partyBState = PartyBForceCloseState.SOLVENT;
+			} else {
+				upnlPartyB = LibForceActions.liquidatePartyB(
+					quoteId,
+					detail.closePrice,
+					reservedBalance,
+					detail.upnlPartyB,
+					detail.currentPrice
+				);
+				detail.partyBState = PartyBForceCloseState.LIQUIDATED;
+			}
+		}
+
+		// Clean up
 		detail.inProgress = false;
 		detail.timestamp = block.timestamp;
 		detail.upnlPartyB = 0;
@@ -135,6 +178,10 @@ library ForceActionsFacetImpl {
 
 	/* Force Close Settlement Functions*/
 
+	/**
+	 * @dev DEPRECATED: This function is kept for backward compatibility. Use settleUpnlUnified instead,
+	 *      which supports both masterAccount and normal partyB modes with a unified signature format.
+	 */
 	function settleUPNL(uint256 quoteId, SettlementSig memory sig, uint256[] memory updatedPrices) internal {
 		address partyA = QuoteStorage.layout().quotes[quoteId].partyA;
 

@@ -9,6 +9,14 @@ import { QuoteStatus } from "../../storages/QuoteStorage.sol";
 interface ForceActionsFacetEvents {
 	event ForceCancelQuote(uint256 quoteId, QuoteStatus quoteStatus);
 	event ForceCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId);
+	event ForceCloseInitialized(
+		address indexed initiator,
+		address indexed partyB,
+		uint256 quoteId,
+		bytes highLowPriceSigId,
+		uint256 closePrice,
+		uint256 timestamp
+	);
 	event ForceClosePosition(
 		uint256 quoteId,
 		address partyA,
@@ -17,6 +25,17 @@ interface ForceActionsFacetEvents {
 		uint256 closedPrice,
 		QuoteStatus quoteStatus,
 		uint256 closeId
+	);
+	// Master account mode force close event with solvency flag
+	event ForceClosePositionMasterAccount(
+		uint256 quoteId,
+		address partyA,
+		address partyB,
+		uint256 filledAmount,
+		uint256 closedPrice,
+		QuoteStatus quoteStatus,
+		uint256 closeId,
+		bool isSolvent
 	);
 	event ForceFetchAllocated(address partyB, address[] partyAs, uint256[] FetchedAmount, uint256[] newPartyBsAllocatedBalances);
 }
