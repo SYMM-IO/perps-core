@@ -121,17 +121,24 @@ struct SettlementSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
-struct MasterAccountQuoteSettlementData {
+struct UnifiedQuoteSettlementData {
 	uint256 quoteId;
-	uint256 currentPrice; //market price
+	uint256 currentPrice;
+	uint8 partyAIndex; // Maps quote to partyAs array index
 }
 
-struct MasterAccountSettlementSig {
+struct UnifiedSettlementSig {
 	bytes reqId;
 	uint256 timestamp;
-	MasterAccountQuoteSettlementData[] quotesSettlementsData;
+	UnifiedQuoteSettlementData[] quotesSettlementsData;
+	// PartyB being settled (single - all quotes belong to this partyB)
 	address partyB;
-	int256 upnlPartyB; //Party B UPNLs for all party As in master account mode enabled
+	// PartyB UPNL - structure depends on mode
+	// For masterAccount: use upnlPartyB (aggregated)
+	// For normal: use upnlPartyBPerPartyA[partyAIndex]
+	int256 upnlPartyB; // Aggregated UPNL (masterAccount mode)
+	int256[] upnlPartyBPerPartyA; // Per-partyA UPNLs (normal mode)
+	// PartyA data (supports multiple)
 	address[] partyAs;
 	int256[] upnlPartyAs;
 	bytes gatewaySignature;

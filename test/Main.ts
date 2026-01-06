@@ -22,9 +22,11 @@ import { shouldBehaveLikeMasterAccountMigration } from "./MasterAccountMigration
 import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
 import { shouldBehaveLikeOpenPosition } from "./OpenPosition.behavior.js"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior.js"
+import { shouldBehaveLikePartyBPositionViews } from "./PartyBPositionViews.behavior.js"
 import { shouldBehaveLikeSendQuote } from "./SendQuote.behavior.js"
 import { shouldBehaveLikeSettleAndForceClosePosition } from "./SettleAndForceClosePosition.behavior.js"
 import { shouldBehaveLikeSettlement } from "./Settlement.behavior.js"
+import { shouldBehaveLikeSettlementUnified } from "./SettlementUnified.behavior.js"
 import { shouldBehaveLikeSpecificScenario } from "./SpecificScenario.behavior.js"
 import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior.js"
 import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior.js"
@@ -55,7 +57,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeCancelQuote()
 		})
 
-		describe.only("ClosePosition", async function () {
+		describe("ClosePosition", async function () {
 			shouldBehaveLikeClosePosition()
 		})
 
@@ -77,6 +79,10 @@ describe("UnitTests", function () {
 
 		describe("FundingRate", async function () {
 			shouldBehaveLikeFundingRate()
+		})
+
+		describe("PartyBPositionViews", async function () {
+			shouldBehaveLikePartyBPositionViews()
 		})
 
 		describe("SpecificScenario", async function () {
@@ -111,6 +117,10 @@ describe("UnitTests", function () {
 			shouldBehaveLikeSettlement()
 		})
 
+		describe("SettlementUnified", async function () {
+			shouldBehaveLikeSettlementUnified()
+		})
+
 		describe("FeeDistributor", async function () {
 			shouldBehaveLikeFeeDistributor()
 		})
@@ -119,7 +129,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeClearingHouseFacet()
 		})
 
-		describe.only("ADLFacet", async function () {
+		describe("ADLFacet", async function () {
 			shouldBehaveLikeADLFacet()
 		})
 

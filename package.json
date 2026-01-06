@@ -1,7 +1,7 @@
 {
 	"name": "symmio",
 	"description": "Symmio platform contracts",
-	"version": "0.8.4",
+	"version": "0.8.5",
 	"type": "module",
 	"author": {
 		"name": "MoonKnight/Naveedinno",
@@ -40,7 +40,8 @@
 		"typechain": "^8.3.2",
 		"typescript": "^5.5.4",
 		"typescript-json-serializer": "^6.0.1",
-		"winston": "^3.13.1"
+		"winston": "^3.13.1",
+		"husky": "^9.1.7"
 	},
 	"files": [
 		"/contracts"
@@ -65,7 +66,7 @@
 		"lint:sol": "solhint --config ./.solhint.json --solcoverjs ./.solcover.js --max-warnings 0 \"contracts/**/*.sol\"",
 		"test": "./utils/runTests.sh",
 		"typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
-		"test:uncheck-muon": "./test_runner",
+		"test:uncheck-muon": "./utils/runTests.sh",
 		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol"
 	},
 	"dependencies": {

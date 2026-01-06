@@ -5,8 +5,10 @@
 pragma solidity >=0.8.18;
 
 import { SettlementFacetEvents } from "./SettlementFacetEvents.sol";
-import { SettlementSig } from "../../storages/MuonStorage.sol";
+import { SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 interface ISettlementFacet is SettlementFacetEvents {
 	function settleUpnl(SettlementSig memory settleSig, uint256[] memory updatedPrices, address partyA) external;
+
+	function settleUpnlUnified(UnifiedSettlementSig memory sig, uint256[] memory updatedPrices) external;
 }

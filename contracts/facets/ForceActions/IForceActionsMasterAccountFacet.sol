@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { ForceActionsMasterAccountFacetEvents } from "./ForceActionsMasterAccountFacetEvents.sol";
-import { HighLowPriceSig, MasterAccountSettlementSig } from "../../storages/MuonStorage.sol";
+import { HighLowPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 /// @title ForceActionsMasterAccountFacet Interface
 /// @notice Defines the user-side (PartyA) force-action workflows for master account mode
@@ -16,9 +16,9 @@ import { HighLowPriceSig, MasterAccountSettlementSig } from "../../storages/Muon
 interface IForceActionsMasterAccountFacet is ForceActionsMasterAccountFacetEvents {
 	function initializeMasterAccountForceClose(uint256 quoteId, HighLowPriceSig memory sig) external;
 
-	function settleUpnlMasterAccount(
+	function settleUpnlForForceClose(
 		uint256 forceCloseQuoteId,
-		MasterAccountSettlementSig memory settlementSig,
+		UnifiedSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
 	) external;
 
@@ -27,7 +27,7 @@ interface IForceActionsMasterAccountFacet is ForceActionsMasterAccountFacetEvent
 	function forceCloseAndSettlePositionsMasterAccount(
 		uint256 quoteId,
 		HighLowPriceSig memory sig,
-		MasterAccountSettlementSig memory settlementSig,
+		UnifiedSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
 	) external;
 }

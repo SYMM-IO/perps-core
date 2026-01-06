@@ -131,8 +131,8 @@ library FundingRateFacetImpl {
 				partyAAvailableBalance += int256((LibQuote.quoteOpenAmount(quote) * priceAdjustment) / 1e18);
 				partyBAvailableBalance -= int256((LibQuote.quoteOpenAmount(quote) * priceAdjustment) / 1e18);
 			}
-
-			LibQuote.updatePartyBOpenPositionNotional(quote, oldOpenedPrice);
+			// Update open position notionals for both PartiesAggregatedPositions
+			LibQuote.updatePartiesAggregatedPositionsNotional(quote, oldOpenedPrice);
 
 			// Mark this epoch as paid
 			quote.lastFundingPaymentTimestamp = paidTimestamp;

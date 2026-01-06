@@ -3,12 +3,12 @@ import { BigNumberish, ethers } from "ethers"
 import { setBalance } from "../helpers/network-helpers.js"
 
 import type { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet.js"
-import type { SettlementSigStructOutput } from "../../src/types/facets/Settlement/SettlementFacet.js"
+import type { SettlementSigStructOutput, UnifiedSettlementSigStruct } from "../../src/types/facets/Settlement/SettlementFacet.js"
 import type { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/interfaces/ISymmio.js"
 import { decimal, serializeToJson, unDecimal } from "../utils/Common.js"
 import { logger } from "../utils/LoggerUtils.js"
 import { getPrice } from "../utils/PriceUtils.js"
-import { getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlSig } from "../utils/SignatureUtils.js"
+import { getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "../utils/SignatureUtils.js"
 import { runTx } from "../utils/TxUtils.js"
 import { PositionType } from "./Enums.js"
 import { RunContext } from "./RunContext.js"
@@ -208,6 +208,23 @@ export class Hedger extends PartyEntity {
 			}),
 		)
 		await runTx(this.context.settlementFacet.connect(this.signer).settleUpnl(signature, updatedPrices, partyA))
+	}
+
+	public async settleUpnlUnified(
+		updatedPrices: bigint[],
+		sig: Promise<UnifiedSettlementSigStruct> | UnifiedSettlementSigStruct = getDummyUnifiedSettlementSig(),
+	) {
+		let signature = sig instanceof Promise ? await sig : sig
+
+		logger.detailedDebug(
+			serializeToJson({
+				partyB: signature.partyB,
+				partyAs: signature.partyAs,
+				updatedPrices: updatedPrices,
+				sig: sig,
+			}),
+		)
+		await runTx(this.context.settlementFacet.connect(this.signer).settleUpnlUnified(signature, updatedPrices))
 	}
 
 	public async getAddress() {
