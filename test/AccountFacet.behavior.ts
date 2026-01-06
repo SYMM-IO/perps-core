@@ -126,6 +126,49 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const afterBalance = await context.viewFacet.balanceOf(userAddress)
 			expect(afterBalance - beforeBalance).to.equal(depositAmount)
 		})
+
+		it("Should transfer funds with depositVirtualFunds", async function () {
+			const provider = context.signers.admin
+			await context.controlFacet.connect(provider).registerVirtualProvider(provider.address)
+
+			const amount = decimal(2n)
+			await context.collateral.mint(provider.address, amount)
+			await context.collateral.connect(provider).approve(context.diamond, amount)
+
+			const contractBalanceBefore = await context.collateral.balanceOf(context.diamond)
+			const providerBalanceBefore = await context.collateral.balanceOf(provider.address)
+			const providerSymmioBalanceBefore = await context.viewFacet.balanceOf(provider.address)
+
+			await expect(context.accountFacet.connect(provider).depositVirtualFunds(amount))
+				.to.emit(context.accountFacet, "DepositVirtualFunds")
+				.withArgs(provider.address, amount)
+
+			const contractBalanceAfter = await context.collateral.balanceOf(context.diamond)
+			const providerBalanceAfter = await context.collateral.balanceOf(provider.address)
+			const providerSymmioBalanceAfter = await context.viewFacet.balanceOf(provider.address)
+
+			expect(contractBalanceAfter - contractBalanceBefore).to.equal(amount)
+			expect(providerBalanceBefore - providerBalanceAfter).to.equal(amount)
+			expect(providerSymmioBalanceAfter).to.equal(providerSymmioBalanceBefore)
+		})
+
+		it("Should fail depositVirtualFunds for non-registered provider", async function () {
+			await expect(context.accountFacet.connect(context.signers.user).depositVirtualFunds(decimal(1n))).to.be.revertedWith(
+				"AccountFacet: signer not registered as virtual provider",
+			)
+		})
+
+		it("Should rely on msg.sender for depositVirtualFunds", async function () {
+			const provider = context.signers.admin
+			await context.controlFacet.connect(provider).registerVirtualProvider(provider.address)
+			await context.controlFacet.connect(provider).setSigner(provider.address)
+
+			await expect(context.accountFacet.connect(context.signers.user).depositVirtualFunds(decimal(1n))).to.be.revertedWith(
+				"AccountFacet: signer not registered as virtual provider",
+			)
+
+			await context.controlFacet.connect(provider).setSigner(ZeroAddress)
+		})
 	})
 
 	describe("Withdraw", async function () {

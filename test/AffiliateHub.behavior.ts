@@ -855,6 +855,60 @@ export function shouldBehaveLikeAffiliateHub() {
             })
         })
 
+        describe("Express configuration", function () {
+            let affiliate: string
+
+            beforeEach(async function () {
+                affiliate = (await activateAffiliate()).affiliate
+            })
+
+            it("lets affiliate admin set express rate", async function () {
+                const rate = ethers.parseEther("0.25")
+                await expect(context.alAffiliateFacet.connect(context.signers.user).setExpressRate(affiliate, rate))
+                    .to.emit(context.alAffiliateFacet, "ExpressRateSet")
+                    .withArgs(affiliate, rate)
+            })
+
+            it("rejects express rates above 100%", async function () {
+                const rate = ethers.parseEther("1.1")
+                await expect(context.alAffiliateFacet.connect(context.signers.user).setExpressRate(affiliate, rate)).to.be.revertedWithCustomError(
+                    context.alAffiliateFacet,
+                    "InvalidShare",
+                )
+            })
+
+            it("lets affiliate admin set virtual provider", async function () {
+                const provider = context.signers.others[0].address
+                await expect(context.alAffiliateFacet.connect(context.signers.user).setVirtualProvider(affiliate, provider))
+                    .to.emit(context.alAffiliateFacet, "VirtualProviderSet")
+                    .withArgs(affiliate, provider)
+            })
+
+            it("requires affiliate admin and active state", async function () {
+                const rate = ethers.parseEther("0.1")
+                const provider = context.signers.others[0].address
+
+                await expect(context.alAffiliateFacet.connect(context.signers.user2).setExpressRate(affiliate, rate)).to.be.revertedWithCustomError(
+                    context.alAffiliateFacet,
+                    "NotAffiliateAdmin",
+                )
+                await expect(context.alAffiliateFacet.connect(context.signers.user2).setVirtualProvider(affiliate, provider)).to.be.revertedWithCustomError(
+                    context.alAffiliateFacet,
+                    "NotAffiliateAdmin",
+                )
+
+                await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
+                await expect(context.alAffiliateFacet.connect(context.signers.user).setExpressRate(affiliate, rate)).to.be.revertedWithCustomError(
+                    context.alAffiliateFacet,
+                    "AffiliateNotActive",
+                )
+                await expect(context.alAffiliateFacet.connect(context.signers.user).setVirtualProvider(affiliate, provider)).to.be.revertedWithCustomError(
+                    context.alAffiliateFacet,
+                    "AffiliateNotActive",
+                )
+            })
+        })
+
         describe("Configuration", function () {
             beforeEach(async function () {
                 // give admin the setter role

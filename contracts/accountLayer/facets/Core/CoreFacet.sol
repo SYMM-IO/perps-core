@@ -127,12 +127,16 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		address core = LibAccountLayerUtils.getRelatedCore(account);
 		address collateral = ISymmio(core).getCollateral();
 		uint256 collateralDecimals = IERC20Metadata(collateral).decimals();
-		
-		// Get balance before deposit to calculate increase
+
+		address signer = LibAccountLayerUtils.getSigner();
+		bool usesAllocation = depositSelector == ISymmio.depositAndAllocateFor.selector;
+
+		// Get balances before deposit to calculate increase
 		uint256 balanceBefore = ISymmio(core).balanceOf(account);
-		
+		uint256 allocatedBefore = usesAllocation ? ISymmio(core).allocatedBalanceOfPartyA(account) : 0;
+
 		// Transfer total amount from user
-		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+		IERC20(collateral).safeTransferFrom(signer, address(this), amount);
 
 		// Calculate split: virtualAmount = amount * expressRate / 1e18
 		uint256 virtualAmount = (amount * expressRate) / 1e18;
@@ -141,7 +145,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		// Deposit (and optionally allocate) real portion to Symmio Diamond
 		if (realAmount > 0) {
 			IERC20(collateral).safeIncreaseAllowance(core, realAmount);
-			LibAccountLayerUtils.executeWithSigner(account, abi.encodeWithSelector(depositSelector, account, realAmount));
+			_executeWithSymmioSigner(core, address(this), abi.encodeWithSelector(depositSelector, account, realAmount));
 		}
 
 		// Transfer virtual portion to Virtual Provider and invoke callback
@@ -150,11 +154,27 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			IVirtualProvider(virtualProvider).onExpressDeposit(account, virtualAmount, core);
 		}
 
-		// Enforce invariant: input_amount == balanceOf(user) increase
+		// Enforce invariant: input_amount == balanceOf(user) increase (including allocation if used)
 		uint256 balanceAfter = ISymmio(core).balanceOf(account);
+		uint256 allocatedAfter = usesAllocation ? ISymmio(core).allocatedBalanceOfPartyA(account) : 0;
 		uint256 balanceIncrease = balanceAfter - balanceBefore;
+		uint256 allocatedIncrease = usesAllocation ? allocatedAfter - allocatedBefore : 0;
 		uint256 expectedIncrease = (amount * 1e18) / (10 ** collateralDecimals);
-		require(balanceIncrease == expectedIncrease, "CoreFacet: Balance invariant violation");
+		require(balanceIncrease + allocatedIncrease == expectedIncrease, "CoreFacet: Balance invariant violation");
+	}
+
+	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
+		ISymmio(symmio).setSigner(signer);
+		(bool success, bytes memory result) = symmio.call(callData);
+		ISymmio(symmio).setSigner(address(0));
+
+		if (!success) {
+			assembly {
+				revert(add(result, 32), mload(result))
+			}
+		}
+
+		return result;
 	}
 
 	// ==================== Call Execution ====================
