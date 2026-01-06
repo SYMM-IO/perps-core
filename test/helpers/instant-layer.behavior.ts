@@ -239,6 +239,65 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 		})
 
+		describe("getTemplates", function () {
+			it("returns empty array when no templates exist", async function () {
+				const templates = await ctx.context.instantLayer.getTemplates(0, 10)
+				expect(templates.length).to.equal(0)
+			})
+
+			it("returns all templates within range", async function () {
+				await ctx.context.instantLayer.addTemplate("template1", ctx.ops)
+				await ctx.context.instantLayer.addTemplate("template2", ctx.ops)
+				await ctx.context.instantLayer.addTemplate("template3", ctx.ops)
+
+				const templates = await ctx.context.instantLayer.getTemplates(0, 10)
+				expect(templates.length).to.equal(3)
+				expect(templates[0].name).to.equal("template1")
+				expect(templates[1].name).to.equal("template2")
+				expect(templates[2].name).to.equal("template3")
+			})
+
+			it("respects limit parameter", async function () {
+				await ctx.context.instantLayer.addTemplate("template1", ctx.ops)
+				await ctx.context.instantLayer.addTemplate("template2", ctx.ops)
+				await ctx.context.instantLayer.addTemplate("template3", ctx.ops)
+
+				const templates = await ctx.context.instantLayer.getTemplates(0, 2)
+				expect(templates.length).to.equal(2)
+				expect(templates[0].name).to.equal("template1")
+				expect(templates[1].name).to.equal("template2")
+			})
+
+			it("respects startId parameter", async function () {
+				await ctx.context.instantLayer.addTemplate("template1", ctx.ops)
+				await ctx.context.instantLayer.addTemplate("template2", ctx.ops)
+				await ctx.context.instantLayer.addTemplate("template3", ctx.ops)
+
+				const templates = await ctx.context.instantLayer.getTemplates(1, 10)
+				expect(templates.length).to.equal(2)
+				expect(templates[0].name).to.equal("template2")
+				expect(templates[1].name).to.equal("template3")
+			})
+
+			it("returns empty array when startId exceeds template count", async function () {
+				await ctx.context.instantLayer.addTemplate("template1", ctx.ops)
+
+				const templates = await ctx.context.instantLayer.getTemplates(5, 10)
+				expect(templates.length).to.equal(0)
+			})
+
+			it("includes both active and inactive templates", async function () {
+				await ctx.context.instantLayer.addTemplate("active", ctx.ops)
+				await ctx.context.instantLayer.addTemplate("inactive", ctx.ops)
+				await ctx.context.instantLayer.setTemplateActive(1, false)
+
+				const templates = await ctx.context.instantLayer.getTemplates(0, 10)
+				expect(templates.length).to.equal(2)
+				expect(templates[0].active).to.be.true
+				expect(templates[1].active).to.be.false
+			})
+		})
+
 		describe("isDelegationActive", function () {
 			let accountAddress: string
 

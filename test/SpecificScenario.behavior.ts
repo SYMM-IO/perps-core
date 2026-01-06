@@ -428,7 +428,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 			0n,
 			0n,
 		)
-		await context.forceActionsMasterAccountFacet.initializeMasterAccountForceClose(quote1.id, highLowSig)
+		await context.forceActionsFacet.initializeForceClose(quote1.id, highLowSig)
 
 		const currentPrice = decimal(14n)
 		const updatedPrice = decimal(13n)
@@ -447,7 +447,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 			],
 		)
 
-		await context.forceActionsMasterAccountFacet.settleUpnlForForceClose(quote1.id, settlementSig, [updatedPrice])
+		await context.forceActionsFacet.settleUpnlForForceClose(quote1.id, settlementSig, [updatedPrice])
 
 		const avgAfter = avgPrice(totalAmount, amount1 * price1 + amount2 * updatedPrice)
 		await expectPartyBTotals(context, totalAmount, avgAfter, 0n, 0n)
