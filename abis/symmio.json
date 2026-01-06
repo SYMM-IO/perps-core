@@ -8225,19 +8225,6 @@
                 "type": "uint256"
             }
         ],
-        "name": "finalizeForceClose",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            }
-        ],
         "name": "forceCancelCloseRequest",
         "outputs": [],
         "stateMutability": "nonpayable",
@@ -8252,6 +8239,304 @@
             }
         ],
         "name": "forceCancelQuote",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "highest",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "lowest",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "averagePrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "startTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "endTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyB",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyA",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "currentPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct HighLowPriceSig",
+                "name": "sig",
+                "type": "tuple"
+            }
+        ],
+        "name": "forceClosePosition",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "highest",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "lowest",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "averagePrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "startTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "endTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyB",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyA",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "currentPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct HighLowPriceSig",
+                "name": "sig",
+                "type": "tuple"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "quoteId",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "currentPrice",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint8",
+                                "name": "partyBUpnlIndex",
+                                "type": "uint8"
+                            }
+                        ],
+                        "internalType": "struct QuoteSettlementData[]",
+                        "name": "quotesSettlementsData",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "int256[]",
+                        "name": "upnlPartyBs",
+                        "type": "int256[]"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyA",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct SettlementSig",
+                "name": "settleSig",
+                "type": "tuple"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "updatedPrices",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "settleAndForceClosePosition",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            }
+        ],
+        "name": "finalizeForceClose",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -8551,292 +8836,7 @@
                 "type": "tuple"
             }
         ],
-        "name": "forceClosePosition",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "bytes",
-                        "name": "reqId",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "symbolId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "highest",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "lowest",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "averagePrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "startTime",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "endTime",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyB",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyA",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "currentPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "gatewaySignature",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "signature",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "owner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "nonce",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
-                        "name": "sigs",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct HighLowPriceSig",
-                "name": "sig",
-                "type": "tuple"
-            }
-        ],
         "name": "initializeForceClose",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "bytes",
-                        "name": "reqId",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "symbolId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "highest",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "lowest",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "averagePrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "startTime",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "endTime",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyB",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyA",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "currentPrice",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "gatewaySignature",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "signature",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "owner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "nonce",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
-                        "name": "sigs",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct HighLowPriceSig",
-                "name": "sig",
-                "type": "tuple"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "bytes",
-                        "name": "reqId",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "quoteId",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "currentPrice",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint8",
-                                "name": "partyBUpnlIndex",
-                                "type": "uint8"
-                            }
-                        ],
-                        "internalType": "struct QuoteSettlementData[]",
-                        "name": "quotesSettlementsData",
-                        "type": "tuple[]"
-                    },
-                    {
-                        "internalType": "int256[]",
-                        "name": "upnlPartyBs",
-                        "type": "int256[]"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnlPartyA",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "gatewaySignature",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "signature",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "owner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "nonce",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
-                        "name": "sigs",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct SettlementSig",
-                "name": "settleSig",
-                "type": "tuple"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "updatedPrices",
-                "type": "uint256[]"
-            }
-        ],
-        "name": "settleAndForceClosePosition",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

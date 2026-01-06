@@ -9,6 +9,7 @@ import type {
 	DiamondCutFacet,
 	DiamondLoupeFacet,
 	ForceActionsFacet,
+	ForceCloseStepsFacet,
 	FundingRateFacet,
 	LiquidationFacet,
 	PartyAFacet,
@@ -62,6 +63,7 @@ export class RunContext {
 	fundingRateFacet!: FundingRateFacet
 	settlementFacet!: SettlementFacet
 	forceActionsFacet!: ForceActionsFacet
+	forceCloseStepsFacet!: ForceCloseStepsFacet
 	clearingHouseFacet!: ClearingHouseFacet
 	withdrawFacet!: WithdrawFacet
 	masterAccountMigrationFacet!: MasterAccountMigrationFacet
@@ -142,6 +144,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.fundingRateFacet = await ethers.getContractAt("FundingRateFacet", diamond)
 	context.settlementFacet = await ethers.getContractAt("SettlementFacet", diamond)
 	context.forceActionsFacet = await ethers.getContractAt("ForceActionsFacet", diamond)
+	context.forceCloseStepsFacet = await ethers.getContractAt("ForceCloseStepsFacet", diamond)
 	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
 	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
 	context.masterAccountMigrationFacet = await ethers.getContractAt("MasterAccountMigrationFacet", diamond)

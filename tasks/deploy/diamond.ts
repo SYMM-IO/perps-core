@@ -16,6 +16,7 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBQuoteActionsFacet: ["LibQuoteClose"],
 	ForceActionsFacet: ["LibQuoteClose", "LibSettlement"],
+	ForceCloseStepsFacet: ["LibQuoteClose", "LibSettlement"],
 	ViewFacetSymbol: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
 	LiquidationFacet: ["LibQuoteFunding"],
