@@ -39,11 +39,11 @@ library LibQuoteClose {
 	 * @return result The first failing check (or OK).
 	 * @return requiredAmount The amount required to satisfy the failing check (0 when not applicable).
 	 */
-	function checkCloseQuote(uint256 quoteId, uint256 filledAmount, uint256 closedPrice)
-		internal
-		view
-		returns (CloseQuoteCheckResult result, uint256 requiredAmount)
-	{
+	function checkCloseQuote(
+		uint256 quoteId,
+		uint256 filledAmount,
+		uint256 closedPrice
+	) internal view returns (CloseQuoteCheckResult result, uint256 requiredAmount) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -142,18 +142,9 @@ library LibQuoteClose {
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 
-		require(
-			quote.lockedValues.cva == 0 || (quote.lockedValues.cva * filledAmount) / openAmount > 0,
-			"LibQuote: Low filled amount"
-		);
-		require(
-			quote.lockedValues.partyAmm == 0 || (quote.lockedValues.partyAmm * filledAmount) / openAmount > 0,
-			"LibQuote: Low filled amount"
-		);
-		require(
-			quote.lockedValues.partyBmm == 0 || (quote.lockedValues.partyBmm * filledAmount) / openAmount > 0,
-			"LibQuote: Low filled amount"
-		);
+		require(quote.lockedValues.cva == 0 || (quote.lockedValues.cva * filledAmount) / openAmount > 0, "LibQuote: Low filled amount");
+		require(quote.lockedValues.partyAmm == 0 || (quote.lockedValues.partyAmm * filledAmount) / openAmount > 0, "LibQuote: Low filled amount");
+		require(quote.lockedValues.partyBmm == 0 || (quote.lockedValues.partyBmm * filledAmount) / openAmount > 0, "LibQuote: Low filled amount");
 		require((quote.lockedValues.lf * filledAmount) / openAmount > 0, "LibQuote: Low filled amount");
 
 		uint256 unlockedCva = (quote.lockedValues.cva * filledAmount) / openAmount;

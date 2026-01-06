@@ -22,11 +22,7 @@ library ADLFacetImpl {
 	 * @param amounts Amounts to close per quote (token decimals).
 	 * @param prices Execution prices per quote used for the ADL close.
 	 */
-	function adlClose(
-		uint256[] calldata quoteIds,
-		uint256[] calldata amounts,
-		uint256[] calldata prices
-	) internal returns (uint256 closedAmount) {
+	function adlClose(uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) internal returns (uint256 closedAmount) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -175,15 +171,7 @@ library ADLFacetImpl {
 			accountLayout.partyANonces[quote.partyA] += 1;
 
 			LibQuoteClose.closeQuote(quote.id, adlAmount, adlPrice);
-			emit LibPartiesEvents.FillCloseRequest(
-				quote.id,
-				quote.partyA,
-				quote.partyB,
-				adlAmount,
-				adlPrice,
-				quote.quoteStatus,
-				adlCloseId
-			);
+			emit LibPartiesEvents.FillCloseRequest(quote.id, quote.partyA, quote.partyB, adlAmount, adlPrice, quote.quoteStatus, adlCloseId);
 			emit LibPartiesEvents.FillCloseRequest(
 				quote.id,
 				quote.partyA,

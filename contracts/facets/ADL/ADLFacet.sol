@@ -18,7 +18,11 @@ contract ADLFacet is Accessibility, Pausable, IADLFacet {
 	 * @param amounts Amounts to close per quote (token decimals).
 	 * @param prices Execution prices per quote.
 	 */
-	function adlClose(uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) external whenNotPartyBActionsPaused returns (uint256) {
+	function adlClose(
+		uint256[] calldata quoteIds,
+		uint256[] calldata amounts,
+		uint256[] calldata prices
+	) external whenNotPartyBActionsPaused returns (uint256) {
 		uint256 closedAmount = ADLFacetImpl.adlClose(quoteIds, amounts, prices);
 		emit LibPartiesEvents.ADLClose(quoteIds, amounts, prices, closedAmount);
 		return closedAmount;

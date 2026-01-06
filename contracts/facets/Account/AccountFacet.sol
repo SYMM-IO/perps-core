@@ -419,11 +419,11 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param token ERC20 token to withdraw.
 	/// @param amount Amount to withdraw.
 	/// @param recipient Address receiving the withdrawal if approved.
-	function requestAssuranceWithdraw(address token, uint256 amount, address recipient)
-		external
-		whenNotAccountingPaused
-		notSuspended(LibSigner.getSigner())
-	{
+	function requestAssuranceWithdraw(
+		address token,
+		uint256 amount,
+		address recipient
+	) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
 		AccountFacetImpl.requestAssuranceWithdraw(amount, token, recipient);
 		emit AssuranceWithdrawRequested(LibSigner.getSigner(), token, amount, recipient);
 	}
@@ -438,11 +438,11 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param user User whose request is being approved.
 	/// @param amount Amount to withdraw.
 	/// @param token ERC20 token to withdraw.
-	function acceptAssuranceWithdraw(address user, uint256 amount, address token)
-		external
-		whenNotAccountingPaused
-		onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE)
-	{
+	function acceptAssuranceWithdraw(
+		address user,
+		uint256 amount,
+		address token
+	) external whenNotAccountingPaused onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		AccountFacetImpl.acceptAssuranceWithdraw(user, amount, token);
 		emit AssuranceWithdrawApproved(user, token, amount);
 	}

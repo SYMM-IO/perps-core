@@ -83,16 +83,16 @@ export function shouldBehaveLikeADLFacet(): void {
 			it("fails when ADL is disabled for partyB", async function () {
 				const quoteId = await openWith(hedger)
 				await context.controlFacet.connect(context.signers.admin).setADLEnabled(await hedger.getAddress(), false)
-				await expect(
-					context.adlFacet.connect(hedger.signer).adlClose([quoteId], [decimal(10n)], [decimal(1n)]),
-				).to.be.revertedWith("PartyBFacet: ADL disabled")
+				await expect(context.adlFacet.connect(hedger.signer).adlClose([quoteId], [decimal(10n)], [decimal(1n)])).to.be.revertedWith(
+					"PartyBFacet: ADL disabled",
+				)
 			})
 
 			it("fails when sender is not partyB", async function () {
 				const quoteId = await openWith(hedger)
-				await expect(
-					context.adlFacet.connect(context.signers.hedger2).adlClose([quoteId], [decimal(10n)], [decimal(1n)]),
-				).to.be.revertedWith("PartyBFacet: Sender isn't partyB of quote")
+				await expect(context.adlFacet.connect(context.signers.hedger2).adlClose([quoteId], [decimal(10n)], [decimal(1n)])).to.be.revertedWith(
+					"PartyBFacet: Sender isn't partyB of quote",
+				)
 			})
 
 			it("fails on zero amount", async function () {
@@ -278,11 +278,10 @@ export function shouldBehaveLikeADLFacet(): void {
 			expect(followUpReq).to.equal(undefined)
 
 			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
-				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
-				expect(quoteAfter.quantityToClose).to.equal(0n)
-				expect(quoteAfter.requestedClosePrice).to.equal(0n)
-				expect(await context.viewFacetQuote.getQuoteCloseId(quoteId)).to.equal(oldCloseId + 1n) // ADL closeId consumed the close
-			})
-
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			expect(quoteAfter.quantityToClose).to.equal(0n)
+			expect(quoteAfter.requestedClosePrice).to.equal(0n)
+			expect(await context.viewFacetQuote.getQuoteCloseId(quoteId)).to.equal(oldCloseId + 1n) // ADL closeId consumed the close
 		})
-	}
+	})
+}

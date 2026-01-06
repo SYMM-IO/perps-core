@@ -1,13 +1,19 @@
-import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 
+import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
+import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator.js"
+import { CloseRequestValidator } from "./models/validators/CloseRequestValidator.js"
+import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator.js"
 import {
 	decimal,
 	getBlockTimestamp,
@@ -19,12 +25,6 @@ import {
 	pausePartyBOpenPositions,
 	unDecimal,
 } from "./utils/Common.js"
-import { CloseRequestValidator } from "./models/validators/CloseRequestValidator.js"
-import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
-import { FillCloseRequestValidator } from "./models/validators/FillCloseRequestValidator.js"
-import { CancelCloseRequestValidator } from "./models/validators/CancelCloseRequestValidator.js"
-import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
-import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 
 const WAD = 10n ** 18n
 const WAD_36 = 10n ** 36n
@@ -60,7 +60,9 @@ export function shouldBehaveLikeClosePosition(): void {
 		await hedger.openPosition(quote1LongOpened.id)
 
 		// Quote2 SHORT opened
-		quote2ShortOpened = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()),
+		)
 		await hedger.lockQuote(quote2ShortOpened.id)
 		await hedger.openPosition(quote2ShortOpened.id)
 
@@ -130,10 +132,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		expect(fundingFee).to.be.gt(0n)
 
 		const closedPrice = decimal(20n)
-		await user.requestToClosePosition(
-			quoteId,
-			limitCloseRequestBuilder().quantityToClose(filledAmount).closePrice(closedPrice).build(),
-		)
+		await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(filledAmount).closePrice(closedPrice).build())
 
 		const partyAAllocatedBefore = (await user.getBalanceInfo()).allocatedBalances
 		const partyBAllocatedBefore = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
@@ -141,10 +140,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		expect(partyAAllocatedBefore).to.be.lt(fundingFee)
 
 		await expect(
-			hedger.fillCloseRequest(
-				quoteId,
-				limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(closedPrice).price(closedPrice).build(),
-			),
+			hedger.fillCloseRequest(quoteId, limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(closedPrice).price(closedPrice).build()),
 		).to.not.be.reverted
 
 		const partyAAllocatedAfter = (await user.getBalanceInfo()).allocatedBalances

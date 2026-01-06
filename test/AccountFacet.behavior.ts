@@ -154,20 +154,20 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			await expect(context.accountFacet.connect(hedger.signer).cancelAssuranceWithdraw()).to.be.revertedWith("Pausable: Accounting paused")
 
-			await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, await context.collateral.getAddress())).to.be.revertedWith(
-				"Pausable: Accounting paused",
-			)
+			await expect(
+				context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, await context.collateral.getAddress()),
+			).to.be.revertedWith("Pausable: Accounting paused")
 
 			await expect(
 				context.accountFacet.slashUser(await hedger.getAddress(), await context.collateral.getAddress(), amount, context.signers.user.address),
 			).to.be.revertedWith("Pausable: Accounting paused")
 		})
 
-			it("reverts assurance collateral actions for suspended user", async function () {
-				const amount = decimal(1n)
-				await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await hedger.getAddress())
+		it("reverts assurance collateral actions for suspended user", async function () {
+			const amount = decimal(1n)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await hedger.getAddress())
 
-				await expect(
+			await expect(
 				context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount),
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
 
@@ -210,18 +210,20 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("validates cancelAssuranceWithdraw require checks", async function () {
-			await expect(context.accountFacet.connect(hedger.signer).cancelAssuranceWithdraw()).to.be.revertedWith("AccountFacet: no pending Assurance withdraw")
+			await expect(context.accountFacet.connect(hedger.signer).cancelAssuranceWithdraw()).to.be.revertedWith(
+				"AccountFacet: no pending Assurance withdraw",
+			)
 		})
 
-			it("validates acceptAssuranceWithdraw require checks", async function () {
-				const token = await context.collateral.getAddress()
-				const amount = decimal(10n)
-				const recipient = context.signers.user.address
+		it("validates acceptAssuranceWithdraw require checks", async function () {
+			const token = await context.collateral.getAddress()
+			const amount = decimal(10n)
+			const recipient = context.signers.user.address
 
 			// role check
-			await expect(context.accountFacet.connect(context.signers.user).acceptAssuranceWithdraw(await hedger.getAddress(), amount, token)).to.be.revertedWith(
-				"Accessibility: Must has role",
-			)
+			await expect(
+				context.accountFacet.connect(context.signers.user).acceptAssuranceWithdraw(await hedger.getAddress(), amount, token),
+			).to.be.revertedWith("Accessibility: Must has role")
 
 			// pending check
 			await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, token)).to.be.revertedWith(
@@ -229,17 +231,17 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 
 			// params mismatch
-				await context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(token, amount)
-				await context.accountFacet.connect(hedger.signer).requestAssuranceWithdraw(token, amount, recipient)
-				await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, ZeroAddress)).to.be.revertedWith(
-					"AccountFacet: params mismatch",
-				)
+			await context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(token, amount)
+			await context.accountFacet.connect(hedger.signer).requestAssuranceWithdraw(token, amount, recipient)
+			await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, ZeroAddress)).to.be.revertedWith(
+				"AccountFacet: params mismatch",
+			)
 
-				// insufficient collateral on accept (amount > collateral)
-				await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount + 1n, token)).to.be.revertedWith(
-					"AccountFacet: insufficient Assurance collateral",
-				)
-			})
+			// insufficient collateral on accept (amount > collateral)
+			await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount + 1n, token)).to.be.revertedWith(
+				"AccountFacet: insufficient Assurance collateral",
+			)
+		})
 
 		it("validates acceptAssuranceWithdraw requester mismatch check (corrupted storage)", async function () {
 			const token = await context.collateral.getAddress()
@@ -269,9 +271,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const token = await context.collateral.getAddress()
 			const recipient = context.signers.user.address
 
-			await expect(
-				context.accountFacet.connect(context.signers.user).slashUser(await hedger.getAddress(), token, 1n, recipient),
-			).to.be.revertedWith("Accessibility: Must has role")
+			await expect(context.accountFacet.connect(context.signers.user).slashUser(await hedger.getAddress(), token, 1n, recipient)).to.be.revertedWith(
+				"Accessibility: Must has role",
+			)
 
 			await expect(context.accountFacet.slashUser(await hedger.getAddress(), token, 0n, recipient)).to.be.revertedWith(
 				"AccountFacet: invalid penalty",
@@ -296,9 +298,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const amount = decimal(150n)
 			const recipient = context.signers.user.address
 			await context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount)
-			await expect(
-				context.accountFacet.connect(hedger.signer).requestAssuranceWithdraw(await context.collateral.getAddress(), amount, recipient),
-			)
+			await expect(context.accountFacet.connect(hedger.signer).requestAssuranceWithdraw(await context.collateral.getAddress(), amount, recipient))
 				.to.emit(context.accountFacet, "AssuranceWithdrawRequested")
 				.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount, recipient)
 
@@ -307,9 +307,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount)
 
 			// can request again after cancel
-			await expect(
-				context.accountFacet.connect(hedger.signer).requestAssuranceWithdraw(await context.collateral.getAddress(), amount, recipient),
-			).to.not.be.reverted
+			await expect(context.accountFacet.connect(hedger.signer).requestAssuranceWithdraw(await context.collateral.getAddress(), amount, recipient)).to
+				.not.be.reverted
 		})
 
 		it("approves assurance withdraw and transfers to recipient", async function () {
@@ -330,21 +329,19 @@ export function shouldBehaveLikeAccountFacet(): void {
 			expect(beforeDiamond - afterDiamond).to.equal(amount)
 		})
 
-			it("slashes user from assurance collateral", async function () {
-				const amount = decimal(120n)
-				const recipient = context.signers.user.address
-				await context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount)
-				const beforeRecipient = await context.collateral.balanceOf(recipient)
+		it("slashes user from assurance collateral", async function () {
+			const amount = decimal(120n)
+			const recipient = context.signers.user.address
+			await context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount)
+			const beforeRecipient = await context.collateral.balanceOf(recipient)
 			const beforeDiamond = await context.collateral.balanceOf(context.diamond)
 
-				await expect(
-					context.accountFacet.slashUser(await hedger.getAddress(), await context.collateral.getAddress(), amount, recipient),
-				)
-					.to.emit(context.accountFacet, "UserSlashed")
-					.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount, recipient)
+			await expect(context.accountFacet.slashUser(await hedger.getAddress(), await context.collateral.getAddress(), amount, recipient))
+				.to.emit(context.accountFacet, "UserSlashed")
+				.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount, recipient)
 
-				const afterRecipient = await context.collateral.balanceOf(recipient)
-				const afterDiamond = await context.collateral.balanceOf(context.diamond)
+			const afterRecipient = await context.collateral.balanceOf(recipient)
+			const afterDiamond = await context.collateral.balanceOf(context.diamond)
 			expect(afterRecipient - beforeRecipient).to.equal(amount)
 			expect(beforeDiamond - afterDiamond).to.equal(amount)
 		})
