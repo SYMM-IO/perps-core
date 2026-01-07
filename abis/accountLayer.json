@@ -21,6 +21,11 @@
     },
     {
         "inputs": [],
+        "name": "BalanceInvariantViolation",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "CoreNotFound",
         "type": "error"
     },
@@ -32,6 +37,21 @@
     {
         "inputs": [],
         "name": "EmptyArray",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "EnforcedPause",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ExpectedPause",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ExternalCallFailed",
         "type": "error"
     },
     {
@@ -64,6 +84,11 @@
     {
         "inputs": [],
         "name": "InvalidCallData",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidExpressRate",
         "type": "error"
     },
     {
@@ -162,6 +187,11 @@
         "type": "error"
     },
     {
+        "inputs": [],
+        "name": "ReentrancyGuardReentrantCall",
+        "type": "error"
+    },
+    {
         "inputs": [
             {
                 "internalType": "bytes4",
@@ -195,6 +225,11 @@
     {
         "inputs": [],
         "name": "Unauthorized",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "VirtualProviderRequired",
         "type": "error"
     },
     {
@@ -527,6 +562,42 @@
                 "type": "address[]"
             }
         ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "depositAndAllocateForAccountWithExpressRate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "depositForAccountWithExpressRate",
+        "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
@@ -1650,6 +1721,25 @@
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "expressRate",
+                "type": "uint256"
+            }
+        ],
+        "name": "ExpressRateSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
             }
         ],
         "name": "FeeUpdateCancelled",
@@ -1830,6 +1920,25 @@
             }
         ],
         "name": "StakeholdersUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "virtualProvider",
+                "type": "address"
+            }
+        ],
+        "name": "VirtualProviderSet",
         "type": "event"
     },
     {
@@ -2158,6 +2267,24 @@
                 "type": "address"
             },
             {
+                "internalType": "uint256",
+                "name": "expressRate",
+                "type": "uint256"
+            }
+        ],
+        "name": "setExpressRate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
                 "internalType": "bytes4",
                 "name": "selector",
                 "type": "bytes4"
@@ -2197,6 +2324,24 @@
             }
         ],
         "name": "setOperator",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "virtualProvider",
+                "type": "address"
+            }
+        ],
+        "name": "setVirtualProvider",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

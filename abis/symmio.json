@@ -10937,6 +10937,25 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "provider",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "DepositVirtualFunds",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "sender",
                 "type": "address"
             },
@@ -11545,6 +11564,19 @@
             }
         ],
         "name": "depositToReserveVault",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "depositVirtualFunds",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
