@@ -27,18 +27,10 @@ import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
-import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSafeCall } from "../../libraries/LibSafeCall.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 
 library AccountFacetImpl {
-
-	function _normalizeTo18(address token, uint256 amount) internal view returns (uint256) {
-		uint256 decimals = IERC20Metadata(token).decimals();
-		require(decimals <= 18, "AccountFacet: token decimals > 18");
-		return (amount * 1e18) / (10 ** decimals);
-	}
-
 	function deposit(address user, uint256 amount) internal {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		LibSafeERC20.safeTransferFrom(appLayout.collateral, LibSigner.getSigner(), address(this), amount);
@@ -446,7 +438,7 @@ library AccountFacetImpl {
 
 		require(req.status == AssuranceWithdrawStatus.PENDING, "AccountFacet: no pending Assurance withdraw");
 		require(req.requester == user, "AccountFacet: requester mismatch");
-		require(req.token == token, "AccountFacet: params mismatch");
+		require(req.token == token && req.amount >= amount, "AccountFacet: params mismatch");
 		require(accountLayout.assuranceCollateral[user][token] >= amount, "AccountFacet: insufficient Assurance collateral");
 
 		address recipient = req.recipient;

@@ -76,7 +76,7 @@ export function shouldBehaveLikeADLFacet(): void {
 			it("fails on length mismatch", async function () {
 				const quoteId = await openWith(hedger)
 				await expect(context.adlFacet.connect(hedger.signer).adlClose([quoteId], [decimal(10n)], [])).to.be.revertedWith(
-					"PartyBBatchActionsFacet: invalid array length",
+					"ADLFacet: Invalid array length",
 				)
 			})
 
@@ -84,14 +84,14 @@ export function shouldBehaveLikeADLFacet(): void {
 				const quoteId = await openWith(hedger)
 				await context.controlFacet.connect(context.signers.admin).setADLEnabled(await hedger.getAddress(), false)
 				await expect(context.adlFacet.connect(hedger.signer).adlClose([quoteId], [decimal(10n)], [decimal(1n)])).to.be.revertedWith(
-					"PartyBFacet: ADL disabled",
+					"ADLFacet: ADL disabled",
 				)
 			})
 
 			it("fails when sender is not partyB", async function () {
 				const quoteId = await openWith(hedger)
 				await expect(context.adlFacet.connect(context.signers.hedger2).adlClose([quoteId], [decimal(10n)], [decimal(1n)])).to.be.revertedWith(
-					"PartyBFacet: Sender isn't partyB of quote",
+					"ADLFacet: Sender isn't partyB of quote",
 				)
 			})
 

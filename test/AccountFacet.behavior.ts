@@ -237,10 +237,59 @@ export function shouldBehaveLikeAccountFacet(): void {
 				"AccountFacet: params mismatch",
 			)
 
-			// insufficient collateral on accept (amount > collateral)
+			// amount mismatch
 			await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount + 1n, token)).to.be.revertedWith(
-				"AccountFacet: insufficient Assurance collateral",
+				"AccountFacet: params mismatch",
 			)
+		})
+
+		it("reverts acceptAssuranceWithdraw when approved amount exceeds requested amount", async function () {
+			const token = await context.collateral.getAddress()
+			const recipient = context.signers.user.address
+			const depositAmount = decimal(1000n)
+			const requestedWithdrawAmount = decimal(500n)
+
+			// Deposit 1000 assurance collateral
+			await context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(token, depositAmount)
+
+			// Request to withdraw 500
+			await context.accountFacet.connect(hedger.signer).requestAssuranceWithdraw(token, requestedWithdrawAmount, recipient)
+
+			// Try to accept with 501 (more than requested) - should fail with params mismatch
+			await expect(
+				context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), requestedWithdrawAmount + 1n, token),
+			).to.be.revertedWith("AccountFacet: params mismatch")
+
+			// Try to accept with 1000 (full deposit, but more than requested) - should fail with params mismatch
+			await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), depositAmount, token)).to.be.revertedWith(
+				"AccountFacet: params mismatch",
+			)
+
+			// Accept with exact requested amount - should succeed
+			await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), requestedWithdrawAmount, token)).to.not.be.reverted
+		})
+
+		it("allows partial approval of assurance withdrawal up to requested amount", async function () {
+			const token = await context.collateral.getAddress()
+			const recipient = context.signers.user.address
+			const depositAmount = decimal(1000n)
+			const requestedWithdrawAmount = decimal(500n)
+			const partialApprovalAmount = decimal(300n)
+
+			// Deposit 1000 assurance collateral
+			await context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(token, depositAmount)
+
+			// Request to withdraw 500
+			await context.accountFacet.connect(hedger.signer).requestAssuranceWithdraw(token, requestedWithdrawAmount, recipient)
+
+			const recipientBalanceBefore = await context.collateral.balanceOf(recipient)
+
+			// Accept with 300 (less than requested) - should succeed (partial approval allowed)
+			await expect(context.accountFacet.acceptAssuranceWithdraw(await hedger.getAddress(), partialApprovalAmount, token)).to.not.be.reverted
+
+			// Verify recipient received the partial amount
+			const recipientBalanceAfter = await context.collateral.balanceOf(recipient)
+			expect(recipientBalanceAfter - recipientBalanceBefore).to.equal(partialApprovalAmount)
 		})
 
 		it("validates acceptAssuranceWithdraw requester mismatch check (corrupted storage)", async function () {
