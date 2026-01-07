@@ -46,27 +46,36 @@ contract AccountManager is IAccountManager, IAccountLayerErrors {
 		emit AddAccount(msg.sender, subAccountAddress[0], name);
 	}
 
-	function depositForAccount(address account, uint256 amount) external withSigner {
+	function depositForAccount(address account, uint256 amount) external {
 		address core = IAccountLayerDiamond(accountHub).getRelatedCore(account);
 		address collateral = ISymmio(core).getCollateral();
+
+		// ERC20 operations done before setting signer to prevent callback impersonation
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20(collateral).safeIncreaseAllowance(accountHub, amount);
 
+		// Set signer only for diamond call, then clear
+		IAccountLayerDiamond(accountHub).setSigner(msg.sender);
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = abi.encodeWithSelector(ISymmio.depositFor.selector, account, amount);
 		IAccountLayerDiamond(accountHub)._call(account, callDatas);
+		IAccountLayerDiamond(accountHub).setSigner(address(0));
 	}
 
-	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner {
+	function depositAndAllocateForAccount(address account, uint256 amount) external {
 		address core = IAccountLayerDiamond(accountHub).getRelatedCore(account);
-
 		address collateral = ISymmio(core).getCollateral();
+
+		// ERC20 operations done before setting signer to prevent callback impersonation
 		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
 		IERC20(collateral).safeIncreaseAllowance(accountHub, amount);
 
+		// Set signer only for diamond call, then clear
+		IAccountLayerDiamond(accountHub).setSigner(msg.sender);
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = abi.encodeWithSelector(ISymmio.depositAndAllocateFor.selector, account, amount);
 		IAccountLayerDiamond(accountHub)._call(account, callDatas);
+		IAccountLayerDiamond(accountHub).setSigner(address(0));
 	}
 
 	function depositForAccountWithExpressRate(

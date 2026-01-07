@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IAffiliateFacet } from "./IAffiliateFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
@@ -15,10 +14,10 @@ import { AccountHubStorage } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage, AffiliateData, AffiliateRegistration, AffiliateState, Stakeholder, PendingFeeUpdate } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
-	using SafeERC20 for IERC20;
 	using EnumerableSet for EnumerableSet.AddressSet;
 
 	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
@@ -315,13 +314,13 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 		for (uint256 i = 0; i < stakeholders.length; i++) {
 			uint256 share = (stakeholders[i].share * amount) / SHARE_PRECISION;
-			IERC20(collateral).safeTransfer(stakeholders[i].receiver, share);
+			LibAccountLayerSafeERC20.safeTransfer(collateral, stakeholders[i].receiver, share);
 			emit FeesDistributed(stakeholders[i].receiver, share);
 		}
 
 		uint256 symmioAmount = (afLayout.affiliates[affiliate].feeDetails.symmioShare * amount) / SHARE_PRECISION;
 		if (symmioAmount > 0) {
-			IERC20(collateral).safeTransfer(afLayout.symmioFeeReceiver, symmioAmount);
+			LibAccountLayerSafeERC20.safeTransfer(collateral, afLayout.symmioFeeReceiver, symmioAmount);
 			emit FeesDistributed(afLayout.symmioFeeReceiver, symmioAmount);
 		}
 

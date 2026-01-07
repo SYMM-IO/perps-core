@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import { SafeERC20, IERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { ICoreFacet } from "./ICoreFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
@@ -23,6 +22,7 @@ import { AffiliateHubStorage, AffiliateState, HookContext } from "../../storages
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerSafeCall } from "../../libraries/LibAccountLayerSafeCall.sol";
+import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
 import { IVirtualProvider } from "../../../interfaces/IVirtualProvider.sol";
@@ -30,7 +30,6 @@ import { IVirtualProvider } from "../../../interfaces/IVirtualProvider.sol";
 contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
-	using SafeERC20 for IERC20;
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 
@@ -143,7 +142,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		uint256 allocatedBefore = usesAllocation ? ISymmio(core).allocatedBalanceOfPartyA(account) : 0;
 
 		// Transfer total amount from user
-		IERC20(collateral).safeTransferFrom(signer, address(this), amount);
+		LibAccountLayerSafeERC20.safeTransferFrom(collateral, signer, address(this), amount);
 
 		// Calculate split: virtualAmount = amount * expressRate / 1e18
 		uint256 virtualAmount = (amount * expressRate) / 1e18;
@@ -151,13 +150,13 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		// Deposit (and optionally allocate) real portion to Symmio Diamond
 		if (realAmount > 0) {
-			IERC20(collateral).safeIncreaseAllowance(core, realAmount);
+			LibAccountLayerSafeERC20.safeIncreaseAllowance(collateral, core, realAmount);
 			_executeWithSymmioSigner(core, address(this), abi.encodeWithSelector(depositSelector, account, realAmount));
 		}
 
 		// Transfer virtual portion to Virtual Provider and invoke callback
 		if (virtualAmount > 0 && virtualProvider != address(0)) {
-			IERC20(collateral).safeTransfer(virtualProvider, virtualAmount);
+			LibAccountLayerSafeERC20.safeTransfer(collateral, virtualProvider, virtualAmount);
 			// Use safe call to prevent virtualProvider from impersonating user via getSigner()
 			LibAccountLayerSafeCall.safeExternalCall(
 				virtualProvider,
