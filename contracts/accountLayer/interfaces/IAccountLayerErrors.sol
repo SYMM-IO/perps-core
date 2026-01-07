@@ -43,4 +43,11 @@ interface IAccountLayerErrors {
 	error SelectorNotAllowed(bytes4 selector);
 	error HookFailed(bytes reason);
 	error HookActionFailed(bytes reason);
+	error VirtualProviderRequired();
+	error InvalidExpressRate();
+	error BalanceInvariantViolation();
+	error ReentrancyGuardReentrantCall();
+	error EnforcedPause();
+	error ExpectedPause();
+	error ExternalCallFailed();
 }

@@ -204,7 +204,7 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("respects the global pause guard", async function () {
                     await pauseAffiliateHub()
-                    await expect(context.alAffiliateFacet.connect(context.signers.user).cancelRegistration(affiliate)).to.be.revertedWith("AccountLayer: Paused")
+                    await expect(context.alAffiliateFacet.connect(context.signers.user).cancelRegistration(affiliate)).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
             })
 
@@ -283,7 +283,7 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("cannot be called while the hub is paused", async function () {
                     await pauseAffiliateHub()
-                    await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWith("AccountLayer: Paused")
+                    await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
             })
         })
@@ -312,7 +312,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     await pauseAffiliateHub()
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user).proposeAdminTransfer(affiliate, context.signers.user2.address),
-                    ).to.be.revertedWith("AccountLayer: Paused")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
 
                 it("requires the affiliate to stay active", async function () {
@@ -348,7 +348,7 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("blocks acceptance while the contract is paused", async function () {
                     await pauseAffiliateHub()
-                    await expect(context.alAffiliateFacet.connect(context.signers.user2).acceptAdminTransfer(affiliate)).to.be.revertedWith("AccountLayer: Paused")
+                    await expect(context.alAffiliateFacet.connect(context.signers.user2).acceptAdminTransfer(affiliate)).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
             })
 
@@ -373,7 +373,7 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("respects the global pause state", async function () {
                     await pauseAffiliateHub()
-                    await expect(context.alAffiliateFacet.connect(context.signers.user).cancelAdminTransfer(affiliate)).to.be.revertedWith("AccountLayer: Paused")
+                    await expect(context.alAffiliateFacet.connect(context.signers.user).cancelAdminTransfer(affiliate)).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
             })
 
@@ -402,7 +402,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     await pauseAffiliateHub()
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user).updateAffiliateDetails(affiliate, "x", "#fff"),
-                    ).to.be.revertedWith("AccountLayer: Paused")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
             })
         })
@@ -469,8 +469,9 @@ export function shouldBehaveLikeAffiliateHub() {
                     // pause whole contract
                     await context.alControlFacet.connect(context.signers.admin).pause()
                     // registrations revert while paused
-                    await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(buildRegistration({ name: "Paused" }))).to.be.revertedWith(
-                        "AccountLayer: Paused",
+                    await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(buildRegistration({ name: "Paused" }))).to.be.revertedWithCustomError(
+                        context.alAffiliateFacet,
+                        "EnforcedPause",
                     )
                     // unpause and allow registrations again
                     await context.alControlFacet.connect(context.signers.admin).unpause()
@@ -534,7 +535,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     await pauseAffiliateHub()
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2")),
-                    ).to.be.revertedWith("AccountLayer: Paused")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
 
                 it("validates stakeholder definitions and symmio share", async function () {
@@ -574,7 +575,7 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("reverts when the hub is paused", async function () {
                     await pauseAffiliateHub()
-                    await expect(context.alAffiliateFacet.connect(context.signers.user).cancelFeeUpdate(affiliate)).to.be.revertedWith("AccountLayer: Paused")
+                    await expect(context.alAffiliateFacet.connect(context.signers.user).cancelFeeUpdate(affiliate)).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
             })
 
@@ -598,7 +599,7 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("reverts while the contract is paused", async function () {
                     await pauseAffiliateHub()
-                    await expect(context.alAffiliateFacet.connect(context.signers.admin).approveFeeUpdate(affiliate)).to.be.revertedWith("AccountLayer: Paused")
+                    await expect(context.alAffiliateFacet.connect(context.signers.admin).approveFeeUpdate(affiliate)).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
             })
 
@@ -635,8 +636,9 @@ export function shouldBehaveLikeAffiliateHub() {
 
                 it("reverts when the contract is paused", async function () {
                     await pauseAffiliateHub()
-                    await expect(context.alAffiliateFacet.connect(context.signers.feeCollector).claimFees(affiliate, coreAddress, feeAmount)).to.be.revertedWith(
-                        "AccountLayer: Paused",
+                    await expect(context.alAffiliateFacet.connect(context.signers.feeCollector).claimFees(affiliate, coreAddress, feeAmount)).to.be.revertedWithCustomError(
+                        context.alAffiliateFacet,
+                        "EnforcedPause",
                     )
                 })
 
@@ -736,7 +738,7 @@ export function shouldBehaveLikeAffiliateHub() {
                     await pauseAffiliateHub()
                     await expect(
                         context.alAffiliateFacet.connect(context.signers.user).setHook(affiliate, "0x12345678", await mockHook.getAddress()),
-                    ).to.be.revertedWith("AccountLayer: Paused")
+                    ).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
             })
 
@@ -760,7 +762,7 @@ export function shouldBehaveLikeAffiliateHub() {
                         "NotAffiliateAdmin",
                     )
                     await pauseAffiliateHub()
-                    await expect(context.alAffiliateFacet.connect(context.signers.user).removeHook(affiliate, "0x12345678")).to.be.revertedWith("AccountLayer: Paused")
+                    await expect(context.alAffiliateFacet.connect(context.signers.user).removeHook(affiliate, "0x12345678")).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
                 })
             })
         })

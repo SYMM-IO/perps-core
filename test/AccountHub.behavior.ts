@@ -429,7 +429,26 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				await expect(
 					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
-				).to.be.revertedWith("CoreFacet: Balance invariant violation")
+				).to.be.revertedWithCustomError(context.alCoreFacet, "VirtualProviderRequired")
+			})
+
+			it("reverts when amount is zero", async function () {
+				await registerVirtualProvider()
+				await setExpressConfig(expressRate, virtualProviderAddress)
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, 0n),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "ZeroAmount")
+			})
+
+			it("reverts when express rate exceeds 100% (at setter level)", async function () {
+				await registerVirtualProvider()
+				const invalidExpressRate = decimal(1n) + 1n // 100% + 1 wei
+
+				// Express rate validation happens at the setter level (setExpressRate)
+				await expect(
+					context.alAffiliateFacet.connect(context.signers.admin).setExpressRate(await context.accountManager.getAddress(), invalidExpressRate),
+				).to.be.revertedWithCustomError(context.alAffiliateFacet, "InvalidShare")
 			})
 
 			it("handles zero express rate without virtual transfer", async function () {
@@ -518,6 +537,97 @@ export function shouldBehaveLikeAccountHub(): void {
 				await expect(
 					context.alCoreFacet.connect(context.signers.others[0]).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
 				).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
+			})
+
+			describe("onExpressDeposit callback failures", function () {
+				let configurableMockProvider: any
+				let configurableMockProviderAddress: string
+
+				const registerConfigurableMockProvider = async () => {
+					const ConfigurableMockVirtualProvider = await ethers.getContractFactory(
+						"contracts/test/MockVirtualProvider.sol:ConfigurableMockVirtualProvider",
+					)
+					configurableMockProvider = await ConfigurableMockVirtualProvider.deploy()
+					configurableMockProviderAddress = await configurableMockProvider.getAddress()
+					await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(configurableMockProviderAddress)
+					return configurableMockProvider
+				}
+
+				it("reverts when onExpressDeposit callback reverts", async function () {
+					await registerConfigurableMockProvider()
+					await configurableMockProvider.setFailureMode(1) // REVERT mode
+					await setExpressConfig(expressRate, configurableMockProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+					).to.be.revertedWith("ConfigurableMockVirtualProvider: intentional revert")
+				})
+
+				it("reverts when onExpressDeposit credits wrong amount (less)", async function () {
+					await registerConfigurableMockProvider()
+					await configurableMockProvider.setFailureMode(2) // WRONG_AMOUNT mode
+					await configurableMockProvider.setAmountDelta(-1n) // Credit 1 less
+					await setExpressConfig(expressRate, configurableMockProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "BalanceInvariantViolation")
+				})
+
+				it("reverts when onExpressDeposit credits wrong amount (more)", async function () {
+					await registerConfigurableMockProvider()
+					await configurableMockProvider.setFailureMode(2) // WRONG_AMOUNT mode
+					await configurableMockProvider.setAmountDelta(1n) // Credit 1 more
+					await setExpressConfig(expressRate, configurableMockProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "BalanceInvariantViolation")
+				})
+
+				it("reverts when onExpressDeposit credits wrong user", async function () {
+					await registerConfigurableMockProvider()
+					await configurableMockProvider.setFailureMode(3) // WRONG_USER mode
+					await configurableMockProvider.setWrongUser(context.signers.others[0].address)
+					await setExpressConfig(expressRate, configurableMockProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "BalanceInvariantViolation")
+				})
+
+				it("prevents malicious provider from impersonating user via callback (SafeCall protection)", async function () {
+					// Deploy malicious provider that attempts to exploit the callback
+					const MaliciousMockVirtualProvider = await ethers.getContractFactory(
+						"contracts/test/MockVirtualProvider.sol:MaliciousMockVirtualProvider",
+					)
+					const maliciousProvider = await MaliciousMockVirtualProvider.deploy(context.accountLayerDiamond)
+					const maliciousProviderAddress = await maliciousProvider.getAddress()
+
+					// Register the malicious provider
+					await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(maliciousProviderAddress)
+					await setExpressConfig(expressRate, maliciousProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					// Execute the deposit - the malicious provider will attempt to impersonate the user
+					await context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount)
+
+					// Verify the attack was attempted
+					expect(await maliciousProvider.attackAttempted()).to.be.true
+
+					// Verify the attack failed (signer was cleared, so callback couldn't impersonate user)
+					expect(await maliciousProvider.attackSucceeded()).to.be.false
+
+					// Verify that getSigner() returned the malicious provider's address (msg.sender)
+					// instead of the original user, proving the signer was properly cleared
+					const capturedSigner = await maliciousProvider.capturedSigner()
+					expect(capturedSigner).to.equal(maliciousProviderAddress)
+					expect(capturedSigner).to.not.equal(context.signers.user.address)
+				})
 			})
 		})
 
@@ -1543,13 +1653,13 @@ export function shouldBehaveLikeAccountHub(): void {
 				const subAccountData = [createSubAccountData("MARKET_ACCOUNT", 1)]
 				await expect(
 					context.alCoreFacet.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData),
-				).to.be.revertedWith("AccountLayer: Paused")
+				).to.be.revertedWithCustomError(context.alCoreFacet, "EnforcedPause")
 			})
 
 			it("should revert _call when paused", async () => {
 				await context.alControlFacet.connect(context.signers.admin).pause()
 				const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
-				await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWith("AccountLayer: Paused")
+				await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWithCustomError(context.alCoreFacet, "EnforcedPause")
 			})
 
 			it("should allow actions after unpause", async () => {

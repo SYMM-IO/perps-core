@@ -22,6 +22,7 @@ import {
 import { AffiliateHubStorage, AffiliateState, HookContext } from "../../storages/AffiliateHubStorage.sol";
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerSafeCall } from "../../libraries/LibAccountLayerSafeCall.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
 import { IVirtualProvider } from "../../../interfaces/IVirtualProvider.sol";
@@ -117,12 +118,18 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		uint256 amount,
 		bytes4 depositSelector
 	) private {
+		if (amount == 0) revert ZeroAmount();
+
 		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		
+
 		// Get expressRate and virtualProvider from affiliate data
 		uint256 expressRate = afLayout.affiliates[affiliate].expressRate;
 		address virtualProvider = afLayout.affiliates[affiliate].virtualProvider;
+
+		// Validate express rate and virtual provider configuration
+		if (expressRate > 1e18) revert InvalidExpressRate();
+		if (expressRate > 0 && virtualProvider == address(0)) revert VirtualProviderRequired();
 		
 		address core = LibAccountLayerUtils.getRelatedCore(account);
 		address collateral = ISymmio(core).getCollateral();
@@ -151,7 +158,11 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		// Transfer virtual portion to Virtual Provider and invoke callback
 		if (virtualAmount > 0 && virtualProvider != address(0)) {
 			IERC20(collateral).safeTransfer(virtualProvider, virtualAmount);
-			IVirtualProvider(virtualProvider).onExpressDeposit(account, virtualAmount, core);
+			// Use safe call to prevent virtualProvider from impersonating user via getSigner()
+			LibAccountLayerSafeCall.safeExternalCall(
+				virtualProvider,
+				abi.encodeWithSelector(IVirtualProvider.onExpressDeposit.selector, account, virtualAmount, core)
+			);
 		}
 
 		// Enforce invariant: input_amount == balanceOf(user) increase (including allocation if used)
@@ -160,7 +171,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		uint256 balanceIncrease = balanceAfter - balanceBefore;
 		uint256 allocatedIncrease = usesAllocation ? allocatedAfter - allocatedBefore : 0;
 		uint256 expectedIncrease = (amount * 1e18) / (10 ** collateralDecimals);
-		require(balanceIncrease + allocatedIncrease == expectedIncrease, "CoreFacet: Balance invariant violation");
+		if (balanceIncrease + allocatedIncrease != expectedIncrease) revert BalanceInvariantViolation();
 	}
 
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {

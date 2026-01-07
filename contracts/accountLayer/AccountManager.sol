@@ -10,8 +10,9 @@ import { IAccountLayerDiamond } from "./interfaces/IAccountLayerDiamond.sol";
 import { ICoreFacet } from "./facets/Core/ICoreFacet.sol";
 import { SubAccountCreationData, SubAccountDetail, SubAccountIsolationType } from "./storages/AccountHubStorage.sol";
 import { ISymmio } from "./interfaces/ISymmio.sol";
+import { IAccountLayerErrors } from "./interfaces/IAccountLayerErrors.sol";
 
-contract AccountManager is IAccountManager {
+contract AccountManager is IAccountManager, IAccountLayerErrors {
 	using SafeERC20 for IERC20;
 
 	address public accountHub;
@@ -23,7 +24,7 @@ contract AccountManager is IAccountManager {
 	}
 
 	constructor(address _accountHub) {
-		require(_accountHub != address(0), "AccountManager: Zero address");
+		if (_accountHub == address(0)) revert ZeroAddress();
 		accountHub = _accountHub;
 	}
 
