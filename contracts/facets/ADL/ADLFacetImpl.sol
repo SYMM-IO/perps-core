@@ -11,8 +11,7 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
-import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
-import { ADLReason } from "../../libraries/LibPartiesEvents.sol";
+import { LibPartiesEvents, ADLReason } from "../../libraries/LibPartiesEvents.sol";
 
 library ADLFacetImpl {
 	/**
@@ -42,17 +41,41 @@ library ADLFacetImpl {
 		for (uint256 i = 0; i < len; ) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
 
-			require(quote.partyB == signer, "ADLFacet: Sender isn't partyB of quote");
-			// If PartyA is already in liquidation process, ADL should skip (positions must be handled via liquidation/settlement flow).
-			if (maLayout.liquidationStatus[quote.partyA]) {
+			// Skip if partyB doesn't match (instead of revert)
+			if (quote.partyB != signer) {
 				emit LibPartiesEvents.ADLSkip(quote.id, quote.partyA, quote.partyB, ADLReason.NOT_IN_CLOSE_STATE, 0);
 				unchecked {
 					++i;
 				}
 				continue;
 			}
-			require(!maLayout.partyBLiquidationStatus[quote.partyB][quote.partyA], "ADLFacet: PartyB is liquidated");
-			require(quote.symbolId == firstQuote.symbolId, "ADLFacet: Symbols not match");
+
+			// Skip if PartyA is in liquidation (instead of revert)
+			if (maLayout.liquidationStatus[quote.partyA]) {
+				emit LibPartiesEvents.ADLSkip(quote.id, quote.partyA, quote.partyB, ADLReason.IN_LIQUIDATION, 0);
+				unchecked {
+					++i;
+				}
+				continue;
+			}
+
+			// Skip if PartyB is liquidated for this PartyA (instead of revert)
+			if (maLayout.partyBLiquidationStatus[quote.partyB][quote.partyA]) {
+				emit LibPartiesEvents.ADLSkip(quote.id, quote.partyA, quote.partyB, ADLReason.IN_LIQUIDATION, 0);
+				unchecked {
+					++i;
+				}
+				continue;
+			}
+
+			// Skip if symbol doesn't match (instead of revert)
+			if (quote.symbolId != firstQuote.symbolId) {
+				emit LibPartiesEvents.ADLSkip(quote.id, quote.partyA, quote.partyB, ADLReason.SYMBOL_MISMATCH, 0);
+				unchecked {
+					++i;
+				}
+				continue;
+			}
 
 			if (
 				quote.quoteStatus != QuoteStatus.OPENED &&

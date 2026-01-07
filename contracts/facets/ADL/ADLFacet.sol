@@ -13,7 +13,7 @@ import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 contract ADLFacet is Accessibility, Pausable, IADLFacet {
 	/**
 	 * @notice Performs ADL closes for quotes on the same symbol, emitting fill events per quote.
-	 * @dev Uses ADLFacetImpl to handle balance checks, nonce bumps, and quote status/closeId management.
+	 * @dev Skips quotes that would fail instead of reverting the entire transaction.
 	 * @param quoteIds Quotes to ADL close (must share partyA/partyB/symbol).
 	 * @param amounts Amounts to close per quote (token decimals).
 	 * @param prices Execution prices per quote.
