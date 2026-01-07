@@ -53,6 +53,13 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		_virtualDepositFor(user, amount);
 	}
 
+	/// @notice Allows Virtual Providers to transfer held funds to Symmio.
+	/// @param amount The amount of collateral to transfer, specified in collateral decimals.
+	function depositVirtualFunds(uint256 amount) external whenNotAccountingPaused {
+		AccountFacetImpl.depositVirtualFunds(amount);
+		emit DepositVirtualFunds(msg.sender, amount);
+	}
+
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer and allocate them.
 	/// @param user The recipient address for the deposit.
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.

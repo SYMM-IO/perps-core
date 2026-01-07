@@ -38,4 +38,5 @@ interface IAccountEvents {
 	event InitiateVirtualExternalTransfer(uint256 id, address sender, address receiver, uint256 amount,address target, address provider);
 	event AcceptVirtualExternalTransfer(uint256 id);
 	event CancelVirtualExternalTransfer(uint256 id);
+	event DepositVirtualFunds(address indexed provider, uint256 amount);
 }

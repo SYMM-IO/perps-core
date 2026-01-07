@@ -8,6 +8,11 @@ const symmioInterface = new ethers.Interface([
 	"function withdrawTo(address account,uint256 amount)",
 ])
 
+const coreInterface = new ethers.Interface([
+	"function depositForAccountWithExpressRate(address account,uint256 amount)",
+	"function depositAndAllocateForAccountWithExpressRate(address account,uint256 amount)",
+])
+
 async function accountManagerFixture() {
 	const [deployer, user, user2, distributor] = await ethers.getSigners()
 
@@ -208,6 +213,76 @@ export function shouldBehaveLikeAccountManager(): void {
 				await expect(context.accountManager.connect(context.signers.user).depositAndAllocateForAccount(account, amount)).to.be.revertedWith(
 					"MockAccountHub: call reverted",
 				)
+				const signerLog = await context.accountHubMock.getSignerLog()
+				expect(signerLog.length).to.equal(0)
+				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
+			})
+		})
+
+		describe("depositForAccountWithExpressRate", function () {
+			it("forwards express deposit call via AccountHub", async function () {
+				const context = await loadFixture(accountManagerFixture)
+				const account = ethers.Wallet.createRandom().address
+				const amount = ethers.parseUnits("25", 18)
+
+				await context.accountHubMock.resetTracking()
+
+				await context.accountManager.connect(context.signers.user).depositForAccountWithExpressRate(account, amount)
+
+				const callData = await context.accountHubMock.getLastCallData()
+				expect(callData[0]).to.equal(coreInterface.encodeFunctionData("depositForAccountWithExpressRate", [account, amount]))
+
+				const signerLog = await context.accountHubMock.getSignerLog()
+				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+			})
+
+			it("resets signer when AccountHub call reverts", async function () {
+				const context = await loadFixture(accountManagerFixture)
+				const account = ethers.Wallet.createRandom().address
+				const amount = ethers.parseUnits("25", 18)
+
+				await context.accountHubMock.resetTracking()
+				await context.accountHubMock.setRevertOnCall(true)
+
+				await expect(
+					context.accountManager.connect(context.signers.user).depositForAccountWithExpressRate(account, amount),
+				).to.be.revertedWith("MockAccountHub: call reverted")
+
+				const signerLog = await context.accountHubMock.getSignerLog()
+				expect(signerLog.length).to.equal(0)
+				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
+			})
+		})
+
+		describe("depositAndAllocateForAccountWithExpressRate", function () {
+			it("forwards express deposit+allocate call via AccountHub", async function () {
+				const context = await loadFixture(accountManagerFixture)
+				const account = ethers.Wallet.createRandom().address
+				const amount = ethers.parseUnits("40", 18)
+
+				await context.accountHubMock.resetTracking()
+
+				await context.accountManager.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(account, amount)
+
+				const callData = await context.accountHubMock.getLastCallData()
+				expect(callData[0]).to.equal(coreInterface.encodeFunctionData("depositAndAllocateForAccountWithExpressRate", [account, amount]))
+
+				const signerLog = await context.accountHubMock.getSignerLog()
+				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+			})
+
+			it("resets signer when AccountHub call reverts", async function () {
+				const context = await loadFixture(accountManagerFixture)
+				const account = ethers.Wallet.createRandom().address
+				const amount = ethers.parseUnits("40", 18)
+
+				await context.accountHubMock.resetTracking()
+				await context.accountHubMock.setRevertOnCall(true)
+
+				await expect(
+					context.accountManager.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(account, amount),
+				).to.be.revertedWith("MockAccountHub: call reverted")
+
 				const signerLog = await context.accountHubMock.getSignerLog()
 				expect(signerLog.length).to.equal(0)
 				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
