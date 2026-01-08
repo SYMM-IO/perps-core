@@ -11,6 +11,7 @@ import { AccountStorage, ForceCloseDetail, PartyBForceCloseState } from "../../s
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { HighLowPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { LibMuonUnifiedSettlement } from "../../libraries/muon/LibMuonUnifiedSettlement.sol";
+import { LibMuonForceActions } from "../../libraries/muon/LibMuonForceActions.sol";
 
 library ForceCloseStepsImpl {
 	using LockedValuesOps for LockedValues;
@@ -41,6 +42,35 @@ library ForceCloseStepsImpl {
 		detail.upnlPartyB = sig.upnlPartyB;
 		detail.currentPrice = sig.currentPrice;
 		detail.inProgress = true;
+	}
+
+	/**
+	 * @notice Refreshes the force-close uPNL/currentPrice snapshot using a fresh HighLowPriceSig.
+	 * @dev Does not modify the previously calculated closePrice.
+	 */
+	function refreshForceCloseSnapshot(uint256 quoteId, HighLowPriceSig memory sig) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		Quote storage quote = quoteLayout.quotes[quoteId];
+
+		require(detail.inProgress, "ForceActionsFacet: Invalid state");
+
+		LibMuonForceActions.verifyHighLowPrice(sig, quote.partyB, quote.partyA, quote.symbolId);
+
+		// Ensure partyA solvency for the stored closePrice with this fresh snapshot.
+		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
+			quoteId,
+			sig.currentPrice,
+			sig.upnlPartyA,
+			sig.upnlPartyB,
+			detail.closePrice
+		);
+		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
+
+		detail.upnlPartyB = sig.upnlPartyB;
+		detail.currentPrice = sig.currentPrice;
+		detail.timestamp = block.timestamp;
 	}
 
 	/**
@@ -86,13 +116,7 @@ library ForceCloseStepsImpl {
 			if (succeed) {
 				detail.partyBState = PartyBForceCloseState.SOLVENT;
 			} else {
-				upnlPartyB = LibForceActions.liquidatePartyB(
-					quoteId,
-					detail.closePrice,
-					reservedBalance,
-					detail.upnlPartyB,
-					detail.currentPrice
-				);
+				upnlPartyB = LibForceActions.liquidatePartyB(quoteId, detail.closePrice, reservedBalance, detail.upnlPartyB, detail.currentPrice);
 				detail.partyBState = PartyBForceCloseState.LIQUIDATED;
 			}
 		}
@@ -114,12 +138,42 @@ library ForceCloseStepsImpl {
 
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		Quote storage forceCloseQuote = quoteLayout.quotes[quoteId];
+		bool isSamePartyB = forceCloseQuote.partyB == sig.partyB;
+
 		// Verify signature using unified settlement verification
 		bool isMasterAccountMode = accountLayout.masterAccountMode[sig.partyB];
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isMasterAccountMode);
 
 		// Use the unified settlement function with isForceClose=true
-		newPartyAsAllocatedBalances = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
+		int256[] memory settleAmountsPerPartyA;
+		(newPartyAsAllocatedBalances, settleAmountsPerPartyA) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
+
+		// Settlement signatures do not include the force-close quote price/currentPrice, so we only shift uPNL by the
+		// realized settlement delta and keep currentPrice unchanged (it should be refreshed via refresh/finalize sig).
+		if (isSamePartyB) {
+			if (isMasterAccountMode) {
+				int256 totalSettlementAmount;
+				for (uint256 i = 0; i < settleAmountsPerPartyA.length; i++) {
+					totalSettlementAmount += settleAmountsPerPartyA[i];
+				}
+				detail.upnlPartyB = detail.upnlPartyB + totalSettlementAmount;
+			} else {
+				uint256 forceClosePartyAIndex = type(uint256).max;
+				for (uint256 i = 0; i < sig.partyAs.length; i++) {
+					if (sig.partyAs[i] == forceCloseQuote.partyA) {
+						forceClosePartyAIndex = i;
+						break;
+					}
+				}
+				if (forceClosePartyAIndex != type(uint256).max) {
+					detail.upnlPartyB = detail.upnlPartyB + settleAmountsPerPartyA[forceClosePartyAIndex];
+				}
+			}
+		}
+
+		// Always advance workflow timestamp.
 		detail.timestamp = block.timestamp;
 	}
 }

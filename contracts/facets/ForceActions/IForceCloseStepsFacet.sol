@@ -38,6 +38,20 @@ interface IForceCloseStepsFacet is ForceActionsFacetEvents {
 	function finalizeForceClose(uint256 quoteId) external;
 
 	/**
+	 * @notice Refreshes the force-close snapshot (uPNL/currentPrice) using a fresh HighLowPriceSig.
+	 * @param quoteId The ID of the quote for the force close workflow.
+	 * @param sig Fresh Muon signature (uPNLs + currentPrice).
+	 */
+	function refreshForceCloseSnapshot(uint256 quoteId, HighLowPriceSig memory sig) external;
+
+	/**
+	 * @notice Finalizes the 3-step force close flow using a fresh HighLowPriceSig to refresh uPNL/currentPrice.
+	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 * @param sig Fresh Muon signature (uPNLs + currentPrice) to use for solvency checks and liquidation calculations.
+	 */
+	function finalizeForceClose(uint256 quoteId, HighLowPriceSig memory sig) external;
+
+	/**
 	 * @notice Initializes, settles uPNL, and finalizes the force close in a single transaction.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
 	 * @param sig The Muon signature to calculate the close price.

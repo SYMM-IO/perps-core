@@ -137,7 +137,7 @@ library LibSettlement {
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices,
 		bool isForceClose
-	) public returns (uint256[] memory newPartyAsAllocatedBalances) {
+	) public returns (uint256[] memory newPartyAsAllocatedBalances, int256[] memory settleAmountsPerPartyA) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -202,7 +202,7 @@ library LibSettlement {
 		}
 
 		// 7. Process quotes and calculate settlement amounts per partyA
-		int256[] memory settleAmountsPerPartyA = new int256[](sig.partyAs.length);
+		settleAmountsPerPartyA = new int256[](sig.partyAs.length);
 
 		for (uint256 i = 0; i < sig.quotesSettlementsData.length; i++) {
 			UnifiedQuoteSettlementData memory data = sig.quotesSettlementsData[i];

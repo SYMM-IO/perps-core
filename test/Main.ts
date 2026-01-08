@@ -64,11 +64,11 @@ describe("UnitTests", function () {
 			shouldBehaveLikeEmergencyClosePosition()
 		})
 
-		describe("ForceClosePosition", async function () {
+		describe.only("ForceClosePosition", async function () {
 			shouldBehaveLikeForceClosePosition()
 		})
 
-		describe("SettleAndForceClosePosition", async function () {
+		describe.only("SettleAndForceClosePosition", async function () {
 			shouldBehaveLikeSettleAndForceClosePosition()
 		})
 
@@ -84,7 +84,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikePartyBPositionViews()
 		})
 
-		describe("SpecificScenario", async function () {
+		describe.only("SpecificScenario", async function () {
 			shouldBehaveLikeSpecificScenario()
 		})
 
