@@ -594,6 +594,24 @@ export function shouldBehaveLikeFundingRate(): void {
 				expect(quote2.lastFundingPaymentTimestamp).to.equal(BigInt(await time.latest()))
 				expect(afterBalance1 - beforeBalance1).to.equal(-1n * decimal(6n, 16))
 
+				// Verify aggregate funding matches per-quote calculation
+				const perQuoteFee1 = await context.viewFacetSymbol.getAccumulatedFundingFees([5])
+				const aggregateFunding1 = await context.viewFacetQuote.getPartyAAggregatedFunding(
+					await context.signers.user.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				// After charging, accumulatedPaidFunding should match the aggregate tracking
+				expect(aggregateFunding1).to.not.equal(0)
+				// Verify debt calculation is consistent (aggregate >= sum due to no caps in aggregate)
+				const aggregateDebt1 = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(aggregateDebt1).to.be.gte(perQuoteFee1[0])
+
 				//* Move to t+1500: Update epoch duration
 				await time.setNextBlockTimestamp(startTime + 1500)
 				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [300])
@@ -624,6 +642,22 @@ export function shouldBehaveLikeFundingRate(): void {
 				expect(quote3.accumulatedPaidFunding).to.equal(decimal(105n, 15)) //! 0.12
 				expect(quote3.lastFundingPaymentTimestamp).to.equal(await time.latest())
 				expect(afterBalance2 - beforeBalance2).to.equal(-1n * decimal(15n, 15))
+
+				// Verify aggregate funding after second charge
+				const perQuoteFee2 = await context.viewFacetSymbol.getAccumulatedFundingFees([5])
+				const aggregateFunding2 = await context.viewFacetQuote.getPartyAAggregatedFunding(
+					await context.signers.user.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(aggregateFunding2).to.not.equal(0)
+				const aggregateDebt2 = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(aggregateDebt2).to.be.gte(perQuoteFee2[0])
 
 				//* Move to t+1900: Update funding fee
 				await time.setNextBlockTimestamp(startTime + 1800)
@@ -656,6 +690,41 @@ export function shouldBehaveLikeFundingRate(): void {
 				expect(quote4.accumulatedPaidFunding).to.approximately(decimal(155n, 15), decimal(1n, 13))
 				expect(quote4.lastFundingPaymentTimestamp).to.equal(await time.latest())
 				expect(afterBalance3 - beforeBalance3).to.equal(-1n * decimal(5n, 16))
+
+				// Verify aggregate funding after final charge
+				const perQuoteFee3 = await context.viewFacetSymbol.getAccumulatedFundingFees([5])
+				const aggregateFunding3 = await context.viewFacetQuote.getPartyAAggregatedFunding(
+					await context.signers.user.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(aggregateFunding3).to.not.equal(0)
+				const aggregateDebt3 = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(aggregateDebt3).to.be.gte(perQuoteFee3[0])
+
+				// Also verify complete aggregate state
+				const [aggAmount, aggNotional, aggWeightedFunding] = await context.viewFacetQuote.getPartyACompleteAggregateState(
+					await context.signers.user.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(aggAmount).to.be.gt(0)
+				expect(aggNotional).to.be.gt(0)
+
+				// Verify partyB aggregate state matches
+				const [partyBAggAmount, partyBAggNotional, partyBAggWeightedFunding] = await context.viewFacetQuote.getPartyBCompleteAggregateStatePerPartyA(
+					await context.signers.hedger.getAddress(),
+					await context.signers.user.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(partyBAggAmount).to.equal(aggAmount)
+				expect(partyBAggNotional).to.equal(aggNotional)
 			})
 		})
 

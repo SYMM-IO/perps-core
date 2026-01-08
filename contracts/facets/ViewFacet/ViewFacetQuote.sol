@@ -5,9 +5,11 @@
 pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { QuoteStorage, Quote, PositionType, QuoteStatus, PartiesAggregatedPositions } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, PositionType, QuoteStatus, PartiesAggregatedPositions, PartiesAggregatedFunding } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { IViewFacetQuote } from "./IViewFacetQuote.sol";
+import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
 
 contract ViewFacetQuote is IViewFacetQuote {
 	/**
@@ -734,5 +736,117 @@ contract ViewFacetQuote is IViewFacetQuote {
 			positionType[i] = uint256(quotes[i].positionType);
 			symbolIds[i] = quotes[i].symbolId;
 		}
+	}
+
+	// ============ Aggregate Funding View Functions ============
+
+	/**
+	 * @notice Returns the aggregate funding state for partyA at a specific symbol and position type
+	 * @param partyA The partyA address
+	 * @param symbolId The symbol ID
+	 * @param positionType The position type (0 = LONG, 1 = SHORT)
+	 * @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
+	 */
+	function getPartyAAggregatedFunding(
+		address partyA,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 weightedPaidFunding) {
+		return QuoteStorage.layout().partyAAggregatedFunding[partyA][symbolId][positionType].weightedPaidFunding;
+	}
+
+	/**
+	 * @notice Returns the aggregate funding state for partyB per partyA at a specific symbol and position type
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @param symbolId The symbol ID
+	 * @param positionType The position type (0 = LONG, 1 = SHORT)
+	 * @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
+	 */
+	function getPartyBAggregatedFundingPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 weightedPaidFunding) {
+		return QuoteStorage.layout().partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding;
+	}
+
+	/**
+	 * @notice Returns the calculated aggregate funding debt for partyA at a specific symbol and position type
+	 * @dev This is a conservative estimate that ignores maxFundingRate caps
+	 * @param partyA The partyA address
+	 * @param partyB The partyB address (needed for funding rate lookup)
+	 * @param symbolId The symbol ID
+	 * @param positionType The position type (0 = LONG, 1 = SHORT)
+	 * @return fundingDebt The aggregate funding debt (positive = partyA owes, negative = partyA is owed)
+	 */
+	function getPartyAAggregateFundingDebt(
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 fundingDebt) {
+		return LibAggregateFunding.getPartyAAggregateFundingDebt(partyA, partyB, symbolId, positionType);
+	}
+
+	/**
+	 * @notice Returns the calculated aggregate funding debt for partyB per partyA at a specific symbol and position type
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @param symbolId The symbol ID
+	 * @param positionType The position type (0 = LONG, 1 = SHORT)
+	 * @return fundingDebt The aggregate funding debt (positive = partyB owes, negative = partyB is owed)
+	 */
+	function getPartyBAggregateFundingDebt(
+		address partyB,
+		address partyA,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 fundingDebt) {
+		return LibAggregateFunding.getPartyBAggregateFundingDebt(partyB, partyA, symbolId, positionType);
+	}
+
+	/**
+	 * @notice Returns both aggregated positions and funding for partyA at a specific symbol and position type
+	 * @dev Convenience function for getting complete state needed for Muon verification
+	 * @param partyA The partyA address
+	 * @param symbolId The symbol ID
+	 * @param positionType The position type (0 = LONG, 1 = SHORT)
+	 * @return aggregatedAmount The total open amount
+	 * @return aggregatedNotional The total notional value
+	 * @return weightedPaidFunding The weighted paid funding
+	 */
+	function getPartyACompleteAggregateState(
+		address partyA,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		PartiesAggregatedPositions storage pos = quoteLayout.partyAAggregatedPositions[partyA][symbolId][positionType];
+		PartiesAggregatedFunding storage funding = quoteLayout.partyAAggregatedFunding[partyA][symbolId][positionType];
+		return (pos.aggregatedAmount, pos.aggregatedNotional, funding.weightedPaidFunding);
+	}
+
+	/**
+	 * @notice Returns both aggregated positions and funding for partyB per partyA at a specific symbol and position type
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @param symbolId The symbol ID
+	 * @param positionType The position type (0 = LONG, 1 = SHORT)
+	 * @return aggregatedAmount The total open amount
+	 * @return aggregatedNotional The total notional value
+	 * @return weightedPaidFunding The weighted paid funding
+	 */
+	function getPartyBCompleteAggregateStatePerPartyA(
+		address partyB,
+		address partyA,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		PartiesAggregatedPositions storage pos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][positionType];
+		PartiesAggregatedFunding storage funding = quoteLayout.partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType];
+		return (pos.aggregatedAmount, pos.aggregatedNotional, funding.weightedPaidFunding);
 	}
 }

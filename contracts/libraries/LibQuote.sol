@@ -8,6 +8,7 @@ import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
+import { LibAggregateFunding } from "./LibAggregateFunding.sol";
 
 library LibQuote {
 	using LockedValuesOps for LockedValues;
@@ -141,6 +142,11 @@ library LibQuote {
 	function subFromPartiesAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		subFromPartyBAggregatedPositions(quote, amount);
 		subFromPartyAAggregatedPositions(quote, amount);
+
+		// Track aggregate funding for nonce-free Muon verification
+		// Note: If funding was charged before this call, accumulatedPaidFunding is already updated
+		// and updatePartiesAggregateFunding was called in chargeAccumulatedFundingFee
+		LibAggregateFunding.subFromPartiesAggregateFunding(quote, amount);
 	}
 
 	/**
@@ -230,6 +236,10 @@ library LibQuote {
 		uint256 openAmount = quoteOpenAmount(quote);
 		addToPartyBAggregatedPositions(quote, openAmount);
 		addToPartyAAggregatedPositions(quote, openAmount);
+
+		// Track aggregate funding for nonce-free Muon verification
+		// Note: quote.accumulatedPaidFunding is set before this function is called
+		LibAggregateFunding.addToPartiesAggregateFunding(quote, openAmount);
 	}
 
 	/**

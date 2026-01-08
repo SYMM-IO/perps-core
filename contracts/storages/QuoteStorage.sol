@@ -84,6 +84,12 @@ struct PartiesAggregatedPositions {
 	uint256 aggregatedNotional;
 }
 
+// Aggregate funding tracking: Σ(openAmount × accumulatedPaidFunding) for all open quotes
+// This enables O(symbols) funding debt calculation instead of O(quotes)
+struct PartiesAggregatedFunding {
+	int256 weightedPaidFunding; // Σ(openAmount × accumulatedPaidFunding / 1e18)
+}
+
 library QuoteStorage {
 	bytes32 internal constant QUOTE_STORAGE_SLOT = keccak256("diamond.standard.storage.quote");
 
@@ -105,6 +111,9 @@ library QuoteStorage {
 		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyBAggregatedPositions; // partyB => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
 		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyAAggregatedPositions; // partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
 		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyBAggregatedPositionsPerPartyA; // partyB => partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
+		// Aggregate funding tracking for nonce-free Muon verification
+		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding))) partyAAggregatedFunding; // partyA => symbolId => positionType => aggregate funding
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding)))) partyBAggregatedFundingPerPartyA; // partyB => partyA => symbolId => positionType => aggregate funding
 	}
 
 	function layout() internal pure returns (Layout storage l) {

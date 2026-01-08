@@ -29,6 +29,7 @@ import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior.js"
 import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior.js";
 import { shouldBehaveLikeAccessControlRoleAdmins } from "./AccessControlRoleAdmins.behavior.js"
 import { shouldBehaveLikeMasterAccountMigration } from "./MasterAccountMigration.behavior.js"
+import { shouldBehaveLikeAggregateFunding } from "./AggregateFunding.behavior.js"
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
@@ -150,6 +151,10 @@ describe("UnitTests", function () {
 
 		describe("AccountManager", async function () {
 			shouldBehaveLikeAccountManager()
+		})
+
+		describe("AggregateFunding", async function () {
+			shouldBehaveLikeAggregateFunding()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {
