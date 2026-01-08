@@ -26,6 +26,8 @@ interface IAffiliateFacetEvents {
 	event HookSet(address indexed affiliate, bytes4 indexed selector, address hook);
 	event HookRemoved(address indexed affiliate, bytes4 indexed selector);
 	event OperatorSet(address indexed affiliate, bytes4 indexed selector, address indexed operator, bool status);
+	event ExpressRateSet(address indexed affiliate, uint256 expressRate);
+	event VirtualProviderSet(address indexed affiliate, address virtualProvider);
 }
 
 interface IAffiliateFacet is IAffiliateFacetEvents, IAccountLayerErrors {
@@ -74,6 +76,12 @@ interface IAffiliateFacet is IAffiliateFacetEvents, IAccountLayerErrors {
 	// ==================== Operator Management ====================
 
 	function setOperator(address affiliate, bytes4 selector, address operator, bool status) external;
+
+	// ==================== Express Withdraw Configuration ====================
+
+	function setExpressRate(address affiliate, uint256 expressRate) external;
+
+	function setVirtualProvider(address affiliate, address virtualProvider) external;
 
 	// ==================== Delegated Calls ====================
 

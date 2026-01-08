@@ -5,18 +5,19 @@
 pragma solidity >=0.8.18;
 
 import { AccountLayerStorage } from "../storages/AccountLayerStorage.sol";
+import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
 
-abstract contract AccountLayerPausable {
+abstract contract AccountLayerPausable is IAccountLayerErrors {
 	event Paused(address account);
 	event Unpaused(address account);
 
 	modifier whenNotPaused() {
-		require(!AccountLayerStorage.layout().globalPaused, "AccountLayer: Paused");
+		if (AccountLayerStorage.layout().globalPaused) revert EnforcedPause();
 		_;
 	}
 
 	modifier whenPaused() {
-		require(AccountLayerStorage.layout().globalPaused, "AccountLayer: Not paused");
+		if (!AccountLayerStorage.layout().globalPaused) revert ExpectedPause();
 		_;
 	}
 

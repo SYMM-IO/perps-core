@@ -36,6 +36,18 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 		uint256 symbolId
 	) external returns (address);
 
+	// ==================== Deposit Functions ====================
+
+	function depositForAccountWithExpressRate(
+		address account,
+		uint256 amount
+	) external;
+
+	function depositAndAllocateForAccountWithExpressRate(
+		address account,
+		uint256 amount
+	) external;
+
 	// ==================== Call Execution ====================
 
 	function _call(address account, bytes[] calldata callDatas) external returns (bytes[] memory);

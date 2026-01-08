@@ -6,9 +6,7 @@ pragma solidity >=0.8.18;
 
 import { MuonStorage, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
-import { LibAccount } from "../LibAccount.sol";
 
 library LibMuonUnifiedSettlement {
 	function verifyUnifiedSettlement(UnifiedSettlementSig memory settleSig, bool isMasterAccountMode) internal view {

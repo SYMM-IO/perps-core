@@ -38,6 +38,8 @@ struct AffiliateData {
 	mapping(bytes4 => address) hooks;
 	address accountManager;
 	address registrant;
+	uint256 expressRate; // Express Withdraw rate (in 1e18, e.g., 3% = 0.03e18)
+	address virtualProvider; // Virtual Provider address for Express Withdraw
 }
 
 struct AffiliateRegistration {

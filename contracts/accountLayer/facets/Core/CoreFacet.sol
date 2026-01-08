@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { ICoreFacet } from "./ICoreFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
@@ -20,8 +21,11 @@ import {
 import { AffiliateHubStorage, AffiliateState, HookContext } from "../../storages/AffiliateHubStorage.sol";
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerSafeCall } from "../../libraries/LibAccountLayerSafeCall.sol";
+import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
+import { IVirtualProvider } from "../../../interfaces/IVirtualProvider.sol";
 
 contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
@@ -90,6 +94,97 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		}
 
 		return _getOrCreateVirtualAccount(parentAccount, metadata, isolationType, symbolId);
+	}
+
+	// ==================== Deposit Functions ====================
+
+	function depositForAccountWithExpressRate(
+		address account,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+		_depositForAccountWithExpressRate(account, amount, ISymmio.depositFor.selector);
+	}
+
+	function depositAndAllocateForAccountWithExpressRate(
+		address account,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+		_depositForAccountWithExpressRate(account, amount, ISymmio.depositAndAllocateFor.selector);
+	}
+
+	function _depositForAccountWithExpressRate(
+		address account,
+		uint256 amount,
+		bytes4 depositSelector
+	) private {
+		if (amount == 0) revert ZeroAmount();
+
+		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
+		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+
+		// Get expressRate and virtualProvider from affiliate data
+		uint256 expressRate = afLayout.affiliates[affiliate].expressRate;
+		address virtualProvider = afLayout.affiliates[affiliate].virtualProvider;
+
+		// Validate express rate and virtual provider configuration
+		if (expressRate > 1e18) revert InvalidExpressRate();
+		if (expressRate > 0 && virtualProvider == address(0)) revert VirtualProviderRequired();
+		
+		address core = LibAccountLayerUtils.getRelatedCore(account);
+		address collateral = ISymmio(core).getCollateral();
+		uint256 collateralDecimals = IERC20Metadata(collateral).decimals();
+
+		address signer = LibAccountLayerUtils.getSigner();
+		bool usesAllocation = depositSelector == ISymmio.depositAndAllocateFor.selector;
+
+		// Get balances before deposit to calculate increase
+		uint256 balanceBefore = ISymmio(core).balanceOf(account);
+		uint256 allocatedBefore = usesAllocation ? ISymmio(core).allocatedBalanceOfPartyA(account) : 0;
+
+		// Transfer total amount from user
+		LibAccountLayerSafeERC20.safeTransferFrom(collateral, signer, address(this), amount);
+
+		// Calculate split: virtualAmount = amount * expressRate / 1e18
+		uint256 virtualAmount = (amount * expressRate) / 1e18;
+		uint256 realAmount = amount - virtualAmount;
+
+		// Deposit (and optionally allocate) real portion to Symmio Diamond
+		if (realAmount > 0) {
+			LibAccountLayerSafeERC20.safeIncreaseAllowance(collateral, core, realAmount);
+			_executeWithSymmioSigner(core, address(this), abi.encodeWithSelector(depositSelector, account, realAmount));
+		}
+
+		// Transfer virtual portion to Virtual Provider and invoke callback
+		if (virtualAmount > 0 && virtualProvider != address(0)) {
+			LibAccountLayerSafeERC20.safeTransfer(collateral, virtualProvider, virtualAmount);
+			// Use safe call to prevent virtualProvider from impersonating user via getSigner()
+			LibAccountLayerSafeCall.safeExternalCall(
+				virtualProvider,
+				abi.encodeWithSelector(IVirtualProvider.onExpressDeposit.selector, account, virtualAmount, core)
+			);
+		}
+
+		// Enforce invariant: input_amount == balanceOf(user) increase (including allocation if used)
+		uint256 balanceAfter = ISymmio(core).balanceOf(account);
+		uint256 allocatedAfter = usesAllocation ? ISymmio(core).allocatedBalanceOfPartyA(account) : 0;
+		uint256 balanceIncrease = balanceAfter - balanceBefore;
+		uint256 allocatedIncrease = usesAllocation ? allocatedAfter - allocatedBefore : 0;
+		uint256 expectedIncrease = (amount * 1e18) / (10 ** collateralDecimals);
+		if (balanceIncrease + allocatedIncrease != expectedIncrease) revert BalanceInvariantViolation();
+	}
+
+	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
+		ISymmio(symmio).setSigner(signer);
+		(bool success, bytes memory result) = symmio.call(callData);
+		ISymmio(symmio).setSigner(address(0));
+
+		if (!success) {
+			assembly {
+				revert(add(result, 32), mload(result))
+			}
+		}
+
+		return result;
 	}
 
 	// ==================== Call Execution ====================
