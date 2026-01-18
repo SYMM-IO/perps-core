@@ -13,6 +13,7 @@ import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 interface ISymmio {
 	function isCallFromInstantLayer() external view returns (bool);
+	function adlClose(uint256 quoteId, uint256 amount, uint256 price);
 }
 
 contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, IERC1271 {
@@ -58,6 +59,8 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 		_grantRole(MANAGER_ROLE, admin);
 		symmioAddress = symmioAddress_;
 	}
+
+	event ADLSkip(uint256 quoteId, uint256 amount, uint256 price);
 
 	/**
 	 * @dev Emitted when the Symmio address is updated.
@@ -117,6 +120,14 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	 */
 	function _approve(address token, uint256 amount) external onlyRole(TRUSTED_ROLE) whenNotPaused {
 		require(IERC20Upgradeable(token).approve(symmioAddress, amount), "SymmioPartyB: Not approved");
+	}
+
+	function adlCall(address destAddress, uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) external whenNotPaused {
+		for (int i = 0; i < callDatas.length; i++) {
+			try ISymmio(destAddress).adlClose(quoteIds[i], amounts[i], prices[i]) {} catch Error(string memory reason) {
+				emit ADLSkip(quoteIds[i], amounts[i], prices[i]);
+			}
+		}
 	}
 
 	/**

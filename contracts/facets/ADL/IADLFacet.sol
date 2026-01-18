@@ -8,8 +8,5 @@ import { IPartyBBatchActionsEvents } from "../PartyBBatchActions/IPartyBBatchAct
 import { ADLReason } from "../../libraries/LibPartiesEvents.sol";
 
 interface IADLFacet is IPartyBBatchActionsEvents {
-	event ADLSkip(uint256 quoteId, address partyA, address partyB, ADLReason reason, int256 requiredFundingFee);
-	event ADLClose(uint256[] quoteIds, uint256[] amounts, uint256[] prices, uint256 closedAmount);
-
-	function adlClose(uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) external returns (uint256);
+	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external returns (uint256);
 }

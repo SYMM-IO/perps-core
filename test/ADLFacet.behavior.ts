@@ -73,24 +73,17 @@ export function shouldBehaveLikeADLFacet(): void {
 		}
 
 		describe("reverts", function () {
-			it("fails on length mismatch", async function () {
-				const quoteId = await openWith(hedger)
-				await expect(context.adlFacet.connect(hedger.signer).adlClose([quoteId], [decimal(10n)], [])).to.be.revertedWith(
-					"PartyBBatchActionsFacet: invalid array length",
-				)
-			})
-
 			it("fails when ADL is disabled for partyB", async function () {
 				const quoteId = await openWith(hedger)
 				await context.controlFacet.connect(context.signers.admin).setADLEnabled(await hedger.getAddress(), false)
-				await expect(context.adlFacet.connect(hedger.signer).adlClose([quoteId], [decimal(10n)], [decimal(1n)])).to.be.revertedWith(
+				await expect(context.adlFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
 					"PartyBFacet: ADL disabled",
 				)
 			})
 
 			it("fails when sender is not partyB of quote", async function () {
 				const quoteId = await openWith(hedger)
-				await expect(context.adlFacet.connect(context.signers.hedger2).adlClose([quoteId], [decimal(10n)], [decimal(1n)])).to.be.revertedWith(
+				await expect(context.adlFacet.connect(context.signers.hedger2).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
 					"PartyBFacet: Sender isn't partyB of quote",
 				)
 			})
@@ -98,30 +91,18 @@ export function shouldBehaveLikeADLFacet(): void {
 			it("fails on zero amount", async function () {
 				const quoteId = await openWith(hedger)
 				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
-				const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [0n], [decimal(1n)])
-				const events = await parseEvents(tx)
-				const skip = events.find((e: any) => e!.name === "ADLSkip" && e!.args.quoteId === quoteId)
-				expect(skip).to.not.equal(undefined)
-				expect(skip!.args.reason).to.equal(ADLReason.INVALID_FILLED_AMOUNT)
-
-				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
-				expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount)
-				expect(quoteAfter.quoteStatus).to.equal(quoteBefore.quoteStatus)
+				await expect(context.adlFacet.connect(hedger.signer).adlClose(quoteId, 0, quoteBefore.openedPrice)).to.be.revertedWith(
+					"ADLFacet: Invalid amount",
+				)
 			})
 
 			it("skips when ADL amount exceeds open amount", async function () {
 				const quoteId = await openWith(hedger)
 				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
 				const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
-				const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [openAmount + 1n], [quoteBefore.openedPrice])
-				const events = await parseEvents(tx)
-				const skip = events.find((e: any) => e!.name === "ADLSkip" && e!.args.quoteId === quoteId)
-				expect(skip).to.not.equal(undefined)
-				expect(skip!.args.reason).to.equal(ADLReason.INVALID_FILLED_AMOUNT)
-
-				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
-				expect(quoteAfter.closedAmount).to.equal(quoteBefore.closedAmount)
-				expect(quoteAfter.quoteStatus).to.equal(quoteBefore.quoteStatus)
+				await expect(context.adlFacet.connect(hedger.signer).adlClose(quoteId, openAmount + 1n, quoteBefore.openedPrice)).to.be.revertedWith(
+					"ADLFacet: Invalid amount",
+				)
 			})
 
 			it("skips when close would make partyB use locked CVA/LF (should settle/close others first)", async function () {
@@ -141,15 +122,9 @@ export function shouldBehaveLikeADLFacet(): void {
 				await context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([quoteId], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
 
 				// Close half with enough profit for PartyA so PartyB would pay pnl and dip below remaining locked CVA+LF.
-				const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [decimal(50n)], [decimal(22n, 17)]) // 2.2
-				const events = await parseEvents(tx)
-				const skip = events.find((e: any) => e!.name === "ADLSkip" && e!.args.quoteId === quoteId)
-				expect(skip).to.not.equal(undefined)
-				expect(skip!.args.reason).to.equal(ADLReason.PARTY_B_INSUFFICIENT_BALANCE)
-
-				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
-				expect(quoteAfter.closedAmount).to.equal(0n)
-				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+				await expect(context.adlFacet.connect(hedger.signer).adlClose(quoteId, decimal(50n), decimal(22n, 17))).to.be.revertedWith(
+					"LibQuote: PartyB should be solvent",
+				) // 2.2
 			})
 		})
 
@@ -163,7 +138,7 @@ export function shouldBehaveLikeADLFacet(): void {
 			const oldCloseId = await context.viewFacetQuote.getQuoteCloseId(quoteId)
 			const adlAmount = decimal(30n) // means we have still amount = 70 after ADL close
 
-			await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [adlAmount], [quoteBefore.openedPrice])
+			await context.adlFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
 
 			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
 			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
@@ -183,7 +158,7 @@ export function shouldBehaveLikeADLFacet(): void {
 			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
 			const adlAmount = decimal(70n)
 
-			const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [adlAmount], [quoteBefore.openedPrice])
+			const tx = await context.adlFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
 			const events = await parseEvents(tx)
 
 			const limitRequest = events.find(
@@ -207,7 +182,7 @@ export function shouldBehaveLikeADLFacet(): void {
 			const oldCloseId = await context.viewFacetQuote.getQuoteCloseId(quoteId)
 			const adlAmount = quoteBefore.quantity - quoteBefore.closedAmount
 
-			const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [adlAmount], [quoteBefore.openedPrice])
+			const tx = await context.adlFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
 			const events = await parseEvents(tx)
 
 			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
@@ -233,7 +208,7 @@ export function shouldBehaveLikeADLFacet(): void {
 
 			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
 			const adlAmount = decimal(30n)
-			const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [adlAmount], [quoteBefore.openedPrice])
+			const tx = await context.adlFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
 			await tx.wait()
 
 			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
@@ -254,7 +229,7 @@ export function shouldBehaveLikeADLFacet(): void {
 
 			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
 			const adlAmount = decimal(25n)
-			const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [adlAmount], [quoteBefore.openedPrice])
+			const tx = await context.adlFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
 			await tx.wait()
 
 			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
@@ -273,7 +248,7 @@ export function shouldBehaveLikeADLFacet(): void {
 
 			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
 			const adlAmount = quoteBefore.quantity - quoteBefore.closedAmount
-			const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [adlAmount], [quoteBefore.openedPrice])
+			const tx = await context.adlFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
 			const events = await parseEvents(tx)
 
 			const followUpReq = events.find(

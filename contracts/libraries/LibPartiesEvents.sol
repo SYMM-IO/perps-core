@@ -10,7 +10,8 @@ enum ADLReason {
 	NOT_IN_CLOSE_STATE,
 	PARTY_A_INSUFFICIENT_BALANCE,
 	PARTY_B_INSUFFICIENT_BALANCE,
-	INVALID_FILLED_AMOUNT
+	INVALID_FILLED_AMOUNT,
+	INVALID_PARTY_STATE
 }
 
 /**
@@ -87,5 +88,5 @@ library LibPartiesEvents {
 	);
 	// reason: 1 => insufficient balance for funding + maintenance for partyA, 2 => insufficient for partyB
 	event ADLSkip(uint256 quoteId, address partyA, address partyB, ADLReason reason, int256 requiredFundingFee);
-	event ADLClose(uint256[] quoteIds, uint256[] amounts, uint256[] prices, uint256 closedAmount);
+	event ADLClose(uint256 quoteId, uint256 amount, uint256 price, uint256 closedAmount);
 }
