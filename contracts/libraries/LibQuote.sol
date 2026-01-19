@@ -5,8 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus, PartiesAggregatedPositions } from "../storages/QuoteStorage.sol";
-import { AccountStorage } from "../storages/AccountStorage.sol";
-import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibAggregateFunding } from "./LibAggregateFunding.sol";
 
@@ -79,6 +77,11 @@ library LibQuote {
 	 */
 	function addToPartyBAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		// Check if partyB had any position in this symbol BEFORE adding
+		bool hadGlobalPosition = partyBHasPositionInSymbol(quote.partyB, quote.symbolId);
+		bool hadPositionPerPartyA = partyBHasPositionInSymbolPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
+
 		PartiesAggregatedPositions storage partyBInfo = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
 		PartiesAggregatedPositions storage partyBPerPartyAInfo = quoteLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][
 			quote.symbolId
@@ -88,6 +91,14 @@ library LibQuote {
 		partyBInfo.aggregatedNotional += notional;
 		partyBPerPartyAInfo.aggregatedAmount += amount;
 		partyBPerPartyAInfo.aggregatedNotional += notional;
+
+		// Add to active symbols if this is the first position in this symbol
+		if (!hadGlobalPosition) {
+			addToPartyBActiveSymbols(quote.partyB, quote.symbolId);
+		}
+		if (!hadPositionPerPartyA) {
+			addToPartyBActiveSymbolsPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
+		}
 	}
 
 	/**
@@ -97,10 +108,19 @@ library LibQuote {
 	 */
 	function addToPartyAAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		// Check if partyA had any position in this symbol BEFORE adding
+		bool hadPosition = partyAHasPositionInSymbol(quote.partyA, quote.symbolId);
+
 		PartiesAggregatedPositions storage partyAInfo = quoteLayout.partyAAggregatedPositions[quote.partyA][quote.symbolId][quote.positionType];
 		uint256 notional = amount * quote.openedPrice;
 		partyAInfo.aggregatedAmount += amount;
 		partyAInfo.aggregatedNotional += notional;
+
+		// Add to active symbols if this is the first position in this symbol
+		if (!hadPosition) {
+			addToPartyAActiveSymbols(quote.partyA, quote.symbolId);
+		}
 	}
 
 	/**
@@ -119,6 +139,14 @@ library LibQuote {
 		partyBInfo.aggregatedNotional -= notional;
 		partyBPerPartyAInfo.aggregatedAmount -= amount;
 		partyBPerPartyAInfo.aggregatedNotional -= notional;
+
+		// Remove from active symbols if no positions remain in this symbol
+		if (!partyBHasPositionInSymbol(quote.partyB, quote.symbolId)) {
+			removeFromPartyBActiveSymbols(quote.partyB, quote.symbolId);
+		}
+		if (!partyBHasPositionInSymbolPerPartyA(quote.partyB, quote.partyA, quote.symbolId)) {
+			removeFromPartyBActiveSymbolsPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
+		}
 	}
 
 	/**
@@ -132,7 +160,166 @@ library LibQuote {
 		uint256 notional = amount * quote.openedPrice;
 		partyAInfo.aggregatedAmount -= amount;
 		partyAInfo.aggregatedNotional -= notional;
+
+		// Remove from active symbols if no positions remain in this symbol
+		if (!partyAHasPositionInSymbol(quote.partyA, quote.symbolId)) {
+			removeFromPartyAActiveSymbols(quote.partyA, quote.symbolId);
+		}
 	}
+
+	// ===================== Active Symbols Tracking =====================
+
+	/**
+	 * @notice Adds a symbol to Party A's active symbols list if not already tracked.
+	 * @param partyA The address of Party A.
+	 * @param symbolId The symbol ID to add.
+	 */
+	function addToPartyAActiveSymbols(address partyA, uint256 symbolId) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		if (quoteLayout.partyAActiveSymbolsIndex[partyA][symbolId] == 0) {
+			quoteLayout.partyAActiveSymbols[partyA].push(symbolId);
+			quoteLayout.partyAActiveSymbolsIndex[partyA][symbolId] = quoteLayout.partyAActiveSymbols[partyA].length;
+		}
+	}
+
+	/**
+	 * @notice Removes a symbol from Party A's active symbols list using swap-and-pop.
+	 * @param partyA The address of Party A.
+	 * @param symbolId The symbol ID to remove.
+	 */
+	function removeFromPartyAActiveSymbols(address partyA, uint256 symbolId) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256 indexPlusOne = quoteLayout.partyAActiveSymbolsIndex[partyA][symbolId];
+		if (indexPlusOne == 0) return;
+
+		uint256 index = indexPlusOne - 1;
+		uint256 lastIndex = quoteLayout.partyAActiveSymbols[partyA].length - 1;
+
+		if (index != lastIndex) {
+			uint256 lastSymbolId = quoteLayout.partyAActiveSymbols[partyA][lastIndex];
+			quoteLayout.partyAActiveSymbols[partyA][index] = lastSymbolId;
+			quoteLayout.partyAActiveSymbolsIndex[partyA][lastSymbolId] = indexPlusOne;
+		}
+
+		quoteLayout.partyAActiveSymbols[partyA].pop();
+		quoteLayout.partyAActiveSymbolsIndex[partyA][symbolId] = 0;
+	}
+
+	/**
+	 * @notice Adds a symbol to Party B's global active symbols list if not already tracked.
+	 * @param partyB The address of Party B.
+	 * @param symbolId The symbol ID to add.
+	 */
+	function addToPartyBActiveSymbols(address partyB, uint256 symbolId) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		if (quoteLayout.partyBActiveSymbolsIndex[partyB][symbolId] == 0) {
+			quoteLayout.partyBActiveSymbols[partyB].push(symbolId);
+			quoteLayout.partyBActiveSymbolsIndex[partyB][symbolId] = quoteLayout.partyBActiveSymbols[partyB].length;
+		}
+	}
+
+	/**
+	 * @notice Removes a symbol from Party B's global active symbols list using swap-and-pop.
+	 * @param partyB The address of Party B.
+	 * @param symbolId The symbol ID to remove.
+	 */
+	function removeFromPartyBActiveSymbols(address partyB, uint256 symbolId) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256 indexPlusOne = quoteLayout.partyBActiveSymbolsIndex[partyB][symbolId];
+		if (indexPlusOne == 0) return;
+
+		uint256 index = indexPlusOne - 1;
+		uint256 lastIndex = quoteLayout.partyBActiveSymbols[partyB].length - 1;
+
+		if (index != lastIndex) {
+			uint256 lastSymbolId = quoteLayout.partyBActiveSymbols[partyB][lastIndex];
+			quoteLayout.partyBActiveSymbols[partyB][index] = lastSymbolId;
+			quoteLayout.partyBActiveSymbolsIndex[partyB][lastSymbolId] = indexPlusOne;
+		}
+
+		quoteLayout.partyBActiveSymbols[partyB].pop();
+		quoteLayout.partyBActiveSymbolsIndex[partyB][symbolId] = 0;
+	}
+
+	/**
+	 * @notice Adds a symbol to Party B's active symbols list per Party A if not already tracked.
+	 * @param partyB The address of Party B.
+	 * @param partyA The address of Party A.
+	 * @param symbolId The symbol ID to add.
+	 */
+	function addToPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 symbolId) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		if (quoteLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId] == 0) {
+			quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA].push(symbolId);
+			quoteLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId] = quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA].length;
+		}
+	}
+
+	/**
+	 * @notice Removes a symbol from Party B's active symbols list per Party A using swap-and-pop.
+	 * @param partyB The address of Party B.
+	 * @param partyA The address of Party A.
+	 * @param symbolId The symbol ID to remove.
+	 */
+	function removeFromPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 symbolId) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256 indexPlusOne = quoteLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId];
+		if (indexPlusOne == 0) return;
+
+		uint256 index = indexPlusOne - 1;
+		uint256 lastIndex = quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA].length - 1;
+
+		if (index != lastIndex) {
+			uint256 lastSymbolId = quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA][lastIndex];
+			quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA][index] = lastSymbolId;
+			quoteLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][lastSymbolId] = indexPlusOne;
+		}
+
+		quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA].pop();
+		quoteLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId] = 0;
+	}
+
+	/**
+	 * @notice Checks if Party A has any position in a symbol (either LONG or SHORT).
+	 * @param partyA The address of Party A.
+	 * @param symbolId The symbol ID to check.
+	 * @return True if Party A has any position in the symbol.
+	 */
+	function partyAHasPositionInSymbol(address partyA, uint256 symbolId) internal view returns (bool) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		return
+			quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.LONG].aggregatedAmount > 0 ||
+			quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.SHORT].aggregatedAmount > 0;
+	}
+
+	/**
+	 * @notice Checks if Party B has any global position in a symbol (either LONG or SHORT).
+	 * @param partyB The address of Party B.
+	 * @param symbolId The symbol ID to check.
+	 * @return True if Party B has any position in the symbol.
+	 */
+	function partyBHasPositionInSymbol(address partyB, uint256 symbolId) internal view returns (bool) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		return
+			quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmount > 0 ||
+			quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedAmount > 0;
+	}
+
+	/**
+	 * @notice Checks if Party B has any position in a symbol per specific Party A (either LONG or SHORT).
+	 * @param partyB The address of Party B.
+	 * @param partyA The address of Party A.
+	 * @param symbolId The symbol ID to check.
+	 * @return True if Party B has any position in the symbol with Party A.
+	 */
+	function partyBHasPositionInSymbolPerPartyA(address partyB, address partyA, uint256 symbolId) internal view returns (bool) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		return
+			quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmount > 0 ||
+			quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedAmount > 0;
+	}
+
+	// ===================== End Active Symbols Tracking =====================
 
 	/**
 	 * @notice Subtracts from both Party A and Party B aggregated positions when a position closes.

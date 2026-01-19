@@ -20,6 +20,12 @@ interface IViewFacetQuote {
 		uint256 avgOpenPrice;
 	}
 
+	struct AggregatedFundingDebtBySymbol {
+		uint256 symbolId;
+		PositionType positionType;
+		int256 fundingDebt;
+	}
+
 	struct Bitmap {
 		uint256 size;
 		BitmapElement[] elements;
@@ -70,17 +76,6 @@ interface IViewFacetQuote {
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
 
-	function getPartyBAggregatedPositions(address partyB, uint256 offset, uint256 limit) external view returns (AggregatedPositionBySymbol[] memory);
-
-	function getPartyAAggregatedPositions(address partyA, uint256 offset, uint256 limit) external view returns (AggregatedPositionBySymbol[] memory);
-
-	function getPartyBAggregatedPositionsPerPartyA(
-		address partyB,
-		address partyA,
-		uint256 offset,
-		uint256 limit
-	) external view returns (AggregatedPositionBySymbol[] memory);
-
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 
 	function getPartyBPendingQuotes(address partyB, address partyA) external view returns (uint256[] memory);
@@ -130,4 +125,89 @@ interface IViewFacetQuote {
 			uint256[] memory remainingOpenAmount,
 			uint256[] memory positionType
 		);
+
+	// ============ Aggregate Funding View Functions ============
+
+	function getPartyAAggregatedFunding(address partyA, uint256 symbolId, PositionType positionType) external view returns (int256 weightedPaidFunding);
+
+	function getPartyBAggregatedFundingPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 weightedPaidFunding);
+
+	function getPartyAAggregateFundingDebt(
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 fundingDebt);
+
+	function getPartyBAggregateFundingDebt(
+		address partyB,
+		address partyA,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 fundingDebt);
+
+	function getPartyACompleteAggregateState(
+		address partyA,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding);
+
+	function getPartyBCompleteAggregateStatePerPartyA(
+		address partyB,
+		address partyA,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding);
+
+	// ============ Active Symbols View Functions ============
+
+	function getPartyAActiveSymbolsCount(address partyA) external view returns (uint256);
+
+	function getPartyBActiveSymbolsCount(address partyB) external view returns (uint256);
+
+	function getPartyBActiveSymbolsCountPerPartyA(address partyB, address partyA) external view returns (uint256);
+
+	function getPartyAActiveSymbols(address partyA, uint256 start, uint256 size) external view returns (uint256[] memory);
+
+	function getPartyBActiveSymbols(address partyB, uint256 start, uint256 size) external view returns (uint256[] memory);
+
+	function getPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 start, uint256 size) external view returns (uint256[] memory);
+
+	function getPartyAAggregatedPositionsByActiveSymbols(
+		address partyA,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedPositionBySymbol[] memory);
+
+	function getPartyBAggregatedPositionsByActiveSymbols(
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedPositionBySymbol[] memory);
+
+	function getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedPositionBySymbol[] memory);
+
+	function getPartyAAggregateFundingDebtByActiveSymbols(
+		address partyA,
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedFundingDebtBySymbol[] memory);
+
+	function getPartyBAggregateFundingDebtByActiveSymbols(
+		address partyB,
+		address partyA,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedFundingDebtBySymbol[] memory);
 }

@@ -114,6 +114,13 @@ library QuoteStorage {
 		// Aggregate funding tracking for nonce-free Muon verification
 		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding))) partyAAggregatedFunding; // partyA => symbolId => positionType => aggregate funding
 		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding)))) partyBAggregatedFundingPerPartyA; // partyB => partyA => symbolId => positionType => aggregate funding
+		// Active symbols tracking for efficient view calls
+		mapping(address => uint256[]) partyAActiveSymbols; // partyA => symbolId[]
+		mapping(address => mapping(uint256 => uint256)) partyAActiveSymbolsIndex; // partyA => symbolId => index+1 (0 = not active)
+		mapping(address => uint256[]) partyBActiveSymbols; // partyB => symbolId[]
+		mapping(address => mapping(uint256 => uint256)) partyBActiveSymbolsIndex; // partyB => symbolId => index+1 (0 = not active)
+		mapping(address => mapping(address => uint256[])) partyBActiveSymbolsPerPartyA; // partyB => partyA => symbolId[]
+		mapping(address => mapping(address => mapping(uint256 => uint256))) partyBActiveSymbolsIndexPerPartyA; // partyB => partyA => symbolId => index+1 (0 = not active)
 	}
 
 	function layout() internal pure returns (Layout storage l) {

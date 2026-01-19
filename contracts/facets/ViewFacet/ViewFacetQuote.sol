@@ -9,7 +9,6 @@ import { QuoteStorage, Quote, PositionType, QuoteStatus, PartiesAggregatedPositi
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { IViewFacetQuote } from "./IViewFacetQuote.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
-import { LibAccount } from "../../libraries/LibAccount.sol";
 
 contract ViewFacetQuote is IViewFacetQuote {
 	/**
@@ -341,215 +340,6 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
-	 * @notice Returns Aggregated open amounts and average open prices for a party B across symbols, grouped by position type.
-	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
-	 * @param partyB The address of party B.
-	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
-	 * @param limit Maximum symbols to process starting at offset.
-	 */
-	function getPartyBAggregatedPositions(
-		address partyB,
-		uint256 offset,
-		uint256 limit
-	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		uint256 totalSymbols = symbolLayout.lastId;
-		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new AggregatedPositionBySymbol[](0);
-		}
-
-		uint256 end = offset + limit;
-		if (end > totalSymbols) end = totalSymbols;
-
-		// pre allocate two slots per symbol (long + short)
-		uint256 maxItems = (end - offset) * 2;
-		results = new AggregatedPositionBySymbol[](maxItems);
-		uint256 count;
-
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-
-		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
-			uint256 symbolId = symbolIndex;
-			mapping(PositionType => PartiesAggregatedPositions) storage positionsByType = quoteLayout.partyBAggregatedPositions[partyB][symbolId];
-
-			// LONG
-			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
-			if (longPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmount,
-					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			// SHORT
-			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
-			if (shortPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmount,
-					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			unchecked {
-				++symbolIndex;
-			}
-		}
-
-		if (count == results.length) {
-			return results;
-		}
-
-		// trim the pre allocated array to the actual number of results
-		assembly {
-			mstore(results, count)
-		}
-	}
-
-	/**
-	 * @notice Returns Aggregated open amounts and average open prices for a party A across symbols, grouped by position type.
-	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
-	 * @param partyA The address of party A.
-	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
-	 * @param limit Maximum symbols to process starting at offset.
-	 */
-	function getPartyAAggregatedPositions(
-		address partyA,
-		uint256 offset,
-		uint256 limit
-	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		uint256 totalSymbols = symbolLayout.lastId;
-		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new AggregatedPositionBySymbol[](0);
-		}
-
-		uint256 end = offset + limit;
-		if (end > totalSymbols) end = totalSymbols;
-
-		uint256 maxItems = (end - offset) * 2;
-		results = new AggregatedPositionBySymbol[](maxItems);
-		uint256 count;
-
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-
-		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
-			uint256 symbolId = symbolIndex;
-			mapping(PositionType => PartiesAggregatedPositions) storage positionsByType = quoteLayout.partyAAggregatedPositions[partyA][symbolId];
-
-			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
-			if (longPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmount,
-					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
-			if (shortPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmount,
-					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			unchecked {
-				++symbolIndex;
-			}
-		}
-
-		if (count == results.length) {
-			return results;
-		}
-
-		assembly {
-			mstore(results, count)
-		}
-	}
-
-	/**
-	 * @notice Returns total open amounts and average open prices for a party B per party A across symbols, grouped by position type.
-	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
-	 * @param partyB The address of party B.
-	 * @param partyA The address of party A.
-	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
-	 * @param limit Maximum symbols to process starting at offset.
-	 */
-	function getPartyBAggregatedPositionsPerPartyA(
-		address partyB,
-		address partyA,
-		uint256 offset,
-		uint256 limit
-	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		uint256 totalSymbols = symbolLayout.lastId;
-		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new AggregatedPositionBySymbol[](0);
-		}
-
-		uint256 end = offset + limit;
-		if (end > totalSymbols) end = totalSymbols;
-
-		uint256 maxItems = (end - offset) * 2;
-		results = new AggregatedPositionBySymbol[](maxItems);
-		uint256 count;
-
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-
-		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
-			uint256 symbolId = symbolIndex;
-			mapping(PositionType => PartiesAggregatedPositions) storage positionsByType = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][
-				partyA
-			][symbolId];
-
-			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
-			if (longPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmount,
-					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
-			if (shortPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmount,
-					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			unchecked {
-				++symbolIndex;
-			}
-		}
-
-		if (count == results.length) {
-			return results;
-		}
-
-		assembly {
-			mstore(results, count)
-		}
-	}
-
-	/**
 	 * @notice Returns an array of pending quotes associated with a party A address.
 	 * @param partyA The address of party A.
 	 * @return An array of pending quotes.
@@ -848,5 +638,365 @@ contract ViewFacetQuote is IViewFacetQuote {
 		PartiesAggregatedPositions storage pos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][positionType];
 		PartiesAggregatedFunding storage funding = quoteLayout.partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType];
 		return (pos.aggregatedAmount, pos.aggregatedNotional, funding.weightedPaidFunding);
+	}
+
+	// ============ Active Symbols View Functions ============
+
+	/**
+	 * @notice Returns the count of active symbols for partyA
+	 * @param partyA The partyA address
+	 * @return The number of active symbols
+	 */
+	function getPartyAActiveSymbolsCount(address partyA) external view returns (uint256) {
+		return QuoteStorage.layout().partyAActiveSymbols[partyA].length;
+	}
+
+	/**
+	 * @notice Returns the count of active symbols for partyB (global)
+	 * @param partyB The partyB address
+	 * @return The number of active symbols
+	 */
+	function getPartyBActiveSymbolsCount(address partyB) external view returns (uint256) {
+		return QuoteStorage.layout().partyBActiveSymbols[partyB].length;
+	}
+
+	/**
+	 * @notice Returns the count of active symbols for partyB with specific partyA
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @return The number of active symbols
+	 */
+	function getPartyBActiveSymbolsCountPerPartyA(address partyB, address partyA) external view returns (uint256) {
+		return QuoteStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA].length;
+	}
+
+	/**
+	 * @notice Returns a paginated list of symbol IDs that partyA has active positions in
+	 * @param partyA The partyA address
+	 * @param start The starting index
+	 * @param size The maximum number of symbols to return
+	 * @return An array of symbol IDs
+	 */
+	function getPartyAActiveSymbols(address partyA, uint256 start, uint256 size) external view returns (uint256[] memory) {
+		uint256[] storage activeSymbols = QuoteStorage.layout().partyAActiveSymbols[partyA];
+		uint256 totalLength = activeSymbols.length;
+		if (totalLength <= start) return new uint256[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		uint256[] memory result = new uint256[](size);
+		for (uint256 i = 0; i < size; ) {
+			result[i] = activeSymbols[start + i];
+			unchecked { ++i; }
+		}
+		return result;
+	}
+
+	/**
+	 * @notice Returns a paginated list of symbol IDs that partyB has active positions in (global)
+	 * @param partyB The partyB address
+	 * @param start The starting index
+	 * @param size The maximum number of symbols to return
+	 * @return An array of symbol IDs
+	 */
+	function getPartyBActiveSymbols(address partyB, uint256 start, uint256 size) external view returns (uint256[] memory) {
+		uint256[] storage activeSymbols = QuoteStorage.layout().partyBActiveSymbols[partyB];
+		uint256 totalLength = activeSymbols.length;
+		if (totalLength <= start) return new uint256[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		uint256[] memory result = new uint256[](size);
+		for (uint256 i = 0; i < size; ) {
+			result[i] = activeSymbols[start + i];
+			unchecked { ++i; }
+		}
+		return result;
+	}
+
+	/**
+	 * @notice Returns a paginated list of symbol IDs that partyB has active positions in with specific partyA
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @param start The starting index
+	 * @param size The maximum number of symbols to return
+	 * @return An array of symbol IDs
+	 */
+	function getPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 start, uint256 size) external view returns (uint256[] memory) {
+		uint256[] storage activeSymbols = QuoteStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA];
+		uint256 totalLength = activeSymbols.length;
+		if (totalLength <= start) return new uint256[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		uint256[] memory result = new uint256[](size);
+		for (uint256 i = 0; i < size; ) {
+			result[i] = activeSymbols[start + i];
+			unchecked { ++i; }
+		}
+		return result;
+	}
+
+	/**
+	 * @notice Returns paginated aggregated positions for partyA using active symbols
+	 * @param partyA The partyA address
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of aggregated positions by symbol
+	 */
+	function getPartyAAggregatedPositionsByActiveSymbols(
+		address partyA,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedPositionBySymbol[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbols[partyA];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		// Max 2 entries per symbol (LONG + SHORT)
+		results = new AggregatedPositionBySymbol[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			// LONG
+			PartiesAggregatedPositions storage longPos = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.LONG];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = AggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedOpenAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
+				});
+			}
+
+			// SHORT
+			PartiesAggregatedPositions storage shortPos = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.SHORT];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = AggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedOpenAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		// Trim array
+		assembly { mstore(results, count) }
+	}
+
+	/**
+	 * @notice Returns paginated aggregated positions for partyB using active symbols
+	 * @param partyB The partyB address
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of aggregated positions by symbol
+	 */
+	function getPartyBAggregatedPositionsByActiveSymbols(
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedPositionBySymbol[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbols[partyB];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		results = new AggregatedPositionBySymbol[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			PartiesAggregatedPositions storage longPos = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = AggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedOpenAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
+				});
+			}
+
+			PartiesAggregatedPositions storage shortPos = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = AggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedOpenAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		assembly { mstore(results, count) }
+	}
+
+	/**
+	 * @notice Returns paginated aggregated positions for partyB per partyA using active symbols
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of aggregated positions by symbol
+	 */
+	function getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(
+		address partyB,
+		address partyA,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedPositionBySymbol[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		results = new AggregatedPositionBySymbol[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			PartiesAggregatedPositions storage longPos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = AggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedOpenAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
+				});
+			}
+
+			PartiesAggregatedPositions storage shortPos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = AggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedOpenAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		assembly { mstore(results, count) }
+	}
+
+	/**
+	 * @notice Returns paginated aggregated funding debt for partyA across active symbols
+	 * @param partyA The partyA address
+	 * @param partyB The partyB address (needed for funding rate lookup)
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of funding debt by symbol and position type
+	 */
+	function getPartyAAggregateFundingDebtByActiveSymbols(
+		address partyA,
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbols[partyA];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		results = new AggregatedFundingDebtBySymbol[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			// LONG
+			if (quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.LONG].aggregatedAmount > 0) {
+				results[count++] = AggregatedFundingDebtBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					fundingDebt: LibAggregateFunding.getPartyAAggregateFundingDebt(partyA, partyB, symbolId, PositionType.LONG)
+				});
+			}
+
+			// SHORT
+			if (quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
+				results[count++] = AggregatedFundingDebtBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					fundingDebt: LibAggregateFunding.getPartyAAggregateFundingDebt(partyA, partyB, symbolId, PositionType.SHORT)
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		assembly { mstore(results, count) }
+	}
+
+	/**
+	 * @notice Returns paginated aggregated funding debt for partyB per partyA across active symbols
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of funding debt by symbol and position type
+	 */
+	function getPartyBAggregateFundingDebtByActiveSymbols(
+		address partyB,
+		address partyA,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		results = new AggregatedFundingDebtBySymbol[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			// LONG
+			if (quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmount > 0) {
+				results[count++] = AggregatedFundingDebtBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					fundingDebt: LibAggregateFunding.getPartyBAggregateFundingDebt(partyB, partyA, symbolId, PositionType.LONG)
+				});
+			}
+
+			// SHORT
+			if (quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
+				results[count++] = AggregatedFundingDebtBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					fundingDebt: LibAggregateFunding.getPartyBAggregateFundingDebt(partyB, partyA, symbolId, PositionType.SHORT)
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		assembly { mstore(results, count) }
 	}
 }
