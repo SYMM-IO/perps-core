@@ -20,6 +20,11 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 	const EightHourInSec = 28800
 
+	function getWeightedPaidFunding(quote: QuoteStructOutput, openAmount?: bigint): bigint {
+		const amount = openAmount ?? quote.quantity - quote.closedAmount
+		return (amount * quote.accumulatedPaidFunding) / decimal(1n)
+	}
+
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
 		user = new User(context, context.signers.user)
@@ -63,23 +68,31 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await time.increase(EightHourInSec * 2)
 
 			// Open a position with default values (quantity=100, price=1)
-			await user.sendQuote(
+			const quoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			// Check aggregate funding was updated
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
 			const partyAFunding = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
 				1,
 				PositionType.LONG
 			)
-			// Aggregate funding should be set based on quote's accumulatedPaidFunding at open time
-			// The exact value depends on the accumulated funding rate at the time of opening
-			expect(partyAFunding).to.not.equal(0)
+			const expectedFunding = getWeightedPaidFunding(quote)
+			expect(partyAFunding).to.equal(expectedFunding)
+
+			const partyBFunding = await context.viewFacetQuote.getPartyBAggregatedFundingPerPartyA(
+				await hedger.getAddress(),
+				await user.getAddress(),
+				1,
+				PositionType.LONG
+			)
+			expect(partyBFunding).to.equal(expectedFunding)
 		})
 
 		it("should accumulate aggregate funding across multiple positions", async function () {
@@ -92,38 +105,43 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await time.increase(EightHourInSec)
 
 			// Open first position
-			await user.sendQuote(
+			const firstQuoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(firstQuoteId)
+			await hedger.openPosition(firstQuoteId)
 
+			const firstQuote = await context.viewFacetQuote.getQuote(firstQuoteId)
+			const expectedFirst = getWeightedPaidFunding(firstQuote)
 			const fundingAfterFirst = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
 				1,
 				PositionType.LONG
 			)
+			expect(fundingAfterFirst).to.equal(expectedFirst)
 
 			// Wait and open second position
 			await time.increase(EightHourInSec)
-			await user.sendQuote(
+			const secondQuoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(2)
-			await hedger.openPosition(2)
+			await hedger.lockQuote(secondQuoteId)
+			await hedger.openPosition(secondQuoteId)
 
 			const fundingAfterSecond = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
 				1,
 				PositionType.LONG
 			)
+			const secondQuote = await context.viewFacetQuote.getQuote(secondQuoteId)
+			const expectedSecond = expectedFirst + getWeightedPaidFunding(secondQuote)
 
 			// Aggregate funding should have accumulated
-			expect(fundingAfterSecond).to.not.equal(fundingAfterFirst)
+			expect(fundingAfterSecond).to.equal(expectedSecond)
 		})
 
 		it("should track LONG and SHORT positions separately", async function () {
@@ -136,25 +154,27 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await time.increase(EightHourInSec)
 
 			// Open LONG position
-			await user.sendQuote(
+			const longQuoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.positionType(PositionType.LONG)
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(longQuoteId)
+			await hedger.openPosition(longQuoteId)
 
 			// Open SHORT position
-			await user.sendQuote(
+			const shortQuoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.positionType(PositionType.SHORT)
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(2)
-			await hedger.openPosition(2)
+			await hedger.lockQuote(shortQuoteId)
+			await hedger.openPosition(shortQuoteId)
 
+			const longQuote = await context.viewFacetQuote.getQuote(longQuoteId)
+			const shortQuote = await context.viewFacetQuote.getQuote(shortQuoteId)
 			const longFunding = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
 				1,
@@ -166,13 +186,14 @@ export function shouldBehaveLikeAggregateViews(): void {
 				PositionType.SHORT
 			)
 
-			// Both should be tracked, and may have opposite signs due to different rates
-			expect(longFunding).to.not.equal(0)
-			expect(shortFunding).to.not.equal(0)
+			expect(longFunding).to.equal(getWeightedPaidFunding(longQuote))
+			expect(shortFunding).to.equal(getWeightedPaidFunding(shortQuote))
 		})
 	})
 
 	describe("Aggregate Funding Updates on Charge", function () {
+		let openQuoteId: bigint
+
 		beforeEach(async function () {
 			// Setup and open a position
 			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
@@ -180,24 +201,27 @@ export function shouldBehaveLikeAggregateViews(): void {
 				.connect(context.signers.hedger)
 				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
 
-			await user.sendQuote(
+			openQuoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(openQuoteId)
+			await hedger.openPosition(openQuoteId)
 
 			// Wait for funding to accumulate
 			await time.increase(EightHourInSec * 3)
 		})
 
 		it("should update aggregate funding when funding is charged", async function () {
+			const quoteBefore = await context.viewFacetQuote.getQuote(openQuoteId)
+			const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
 			const fundingBefore = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
 				1,
 				PositionType.LONG
 			)
+			expect(fundingBefore).to.equal(getWeightedPaidFunding(quoteBefore, openAmount))
 
 			// Charge funding
 			await context.fundingRateFacet
@@ -205,21 +229,24 @@ export function shouldBehaveLikeAggregateViews(): void {
 				.chargeAccumulatedFundingFee(
 					await user.getAddress(),
 					await hedger.getAddress(),
-					[1],
+					[openQuoteId],
 					await getDummyPairUpnlSig()
 				)
 
+			const quoteAfter = await context.viewFacetQuote.getQuote(openQuoteId)
 			const fundingAfter = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
 				1,
 				PositionType.LONG
 			)
 
-			// Aggregate funding should be updated to reflect the charged amount
-			expect(fundingAfter).to.not.equal(fundingBefore)
+			const expectedDelta = (openAmount * (quoteAfter.accumulatedPaidFunding - quoteBefore.accumulatedPaidFunding)) / decimal(1n)
+			expect(fundingAfter).to.equal(fundingBefore + expectedDelta)
 		})
 
 		it("should correctly update both partyA and partyB aggregate funding on charge", async function () {
+			const quoteBefore = await context.viewFacetQuote.getQuote(openQuoteId)
+			const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
 			const partyAFundingBefore = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
 				1,
@@ -231,6 +258,8 @@ export function shouldBehaveLikeAggregateViews(): void {
 				1,
 				PositionType.LONG
 			)
+			expect(partyAFundingBefore).to.equal(getWeightedPaidFunding(quoteBefore, openAmount))
+			expect(partyBFundingBefore).to.equal(partyAFundingBefore)
 
 			// Charge funding
 			await context.fundingRateFacet
@@ -238,10 +267,11 @@ export function shouldBehaveLikeAggregateViews(): void {
 				.chargeAccumulatedFundingFee(
 					await user.getAddress(),
 					await hedger.getAddress(),
-					[1],
+					[openQuoteId],
 					await getDummyPairUpnlSig()
 				)
 
+			const quoteAfter = await context.viewFacetQuote.getQuote(openQuoteId)
 			const partyAFundingAfter = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
 				1,
@@ -254,13 +284,15 @@ export function shouldBehaveLikeAggregateViews(): void {
 				PositionType.LONG
 			)
 
-			// Both parties' aggregate funding should change
-			expect(partyAFundingAfter).to.not.equal(partyAFundingBefore)
-			expect(partyBFundingAfter).to.not.equal(partyBFundingBefore)
+			const expectedDelta = (openAmount * (quoteAfter.accumulatedPaidFunding - quoteBefore.accumulatedPaidFunding)) / decimal(1n)
+			expect(partyAFundingAfter).to.equal(partyAFundingBefore + expectedDelta)
+			expect(partyBFundingAfter).to.equal(partyBFundingBefore + expectedDelta)
 		})
 	})
 
 	describe("Aggregate Funding Removal on Position Close", function () {
+		let openQuoteId: bigint
+
 		beforeEach(async function () {
 			// Setup and open a position
 			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
@@ -268,13 +300,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 				.connect(context.signers.hedger)
 				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
 
-			await user.sendQuote(
+			openQuoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(openQuoteId)
+			await hedger.openPosition(openQuoteId)
 		})
 
 		it("should decrease aggregate funding when position is fully closed", async function () {
@@ -285,21 +317,24 @@ export function shouldBehaveLikeAggregateViews(): void {
 				.chargeAccumulatedFundingFee(
 					await user.getAddress(),
 					await hedger.getAddress(),
-					[1],
+					[openQuoteId],
 					await getDummyPairUpnlSig()
 				)
 
+			const quoteBeforeClose = await context.viewFacetQuote.getQuote(openQuoteId)
 			const fundingBeforeClose = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
 				1,
 				PositionType.LONG
 			)
+			const expectedBeforeClose = getWeightedPaidFunding(quoteBeforeClose)
+			expect(fundingBeforeClose).to.equal(expectedBeforeClose)
 
 			// Request to close
-			await user.requestToClosePosition(1)
+			await user.requestToClosePosition(openQuoteId)
 
 			// Fill close request
-			await hedger.fillCloseRequest(1)
+			await hedger.fillCloseRequest(openQuoteId)
 
 			const fundingAfterClose = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
@@ -307,20 +342,20 @@ export function shouldBehaveLikeAggregateViews(): void {
 				PositionType.LONG
 			)
 
-			// After full close, aggregate funding should be reduced
-			// Since it was the only position, it should be 0 or very close to it
-			expect(fundingAfterClose).to.be.approximately(0n, decimal(1n, 10))
+			const closeContribution = getWeightedPaidFunding(quoteBeforeClose)
+			expect(fundingAfterClose).to.equal(fundingBeforeClose - closeContribution)
+			expect(fundingAfterClose).to.equal(0n)
 		})
 
 		it("should proportionally decrease aggregate funding on partial close", async function () {
 			// Open another position first so we have multiple
-			await user.sendQuote(
+			const secondQuoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(2)
-			await hedger.openPosition(2)
+			await hedger.lockQuote(secondQuoteId)
+			await hedger.openPosition(secondQuoteId)
 
 			// Charge funding
 			await time.increase(EightHourInSec * 3)
@@ -329,7 +364,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				.chargeAccumulatedFundingFee(
 					await user.getAddress(),
 					await hedger.getAddress(),
-					[1, 2],
+					[openQuoteId, secondQuoteId],
 					await getDummyPairUpnlSig()
 				)
 
@@ -338,10 +373,12 @@ export function shouldBehaveLikeAggregateViews(): void {
 				1,
 				PositionType.LONG
 			)
+			const quoteBeforeClose = await context.viewFacetQuote.getQuote(openQuoteId)
+			const closeContribution = getWeightedPaidFunding(quoteBeforeClose)
 
 			// Close only one position
-			await user.requestToClosePosition(1)
-			await hedger.fillCloseRequest(1)
+			await user.requestToClosePosition(openQuoteId)
+			await hedger.fillCloseRequest(openQuoteId)
 
 			const fundingAfterClose = await context.viewFacetQuote.getPartyAAggregatedFunding(
 				await user.getAddress(),
@@ -349,9 +386,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				PositionType.LONG
 			)
 
-			// Aggregate funding should be roughly halved (since we closed one of two equal positions)
-			// Allow some tolerance due to timing differences
-			expect(fundingAfterClose).to.be.lt(fundingBeforeClose)
+			expect(fundingAfterClose).to.equal(fundingBeforeClose - closeContribution)
 			expect(fundingAfterClose).to.be.gt(0n)
 		})
 	})
@@ -377,13 +412,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 		it("should calculate partyA funding debt correctly", async function () {
 			// Open a position
-			await user.sendQuote(
+			const quoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			// Wait for funding to accumulate
 			await time.increase(EightHourInSec * 3)
@@ -401,13 +436,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 		it("should return opposite funding debt for partyB", async function () {
 			// Open a position
-			await user.sendQuote(
+			const quoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			// Wait for funding to accumulate
 			await time.increase(EightHourInSec * 3)
@@ -439,13 +474,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
 
 			// Open positions
-			await user.sendQuote(
+			const quoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 		})
 
 		it("should return complete aggregate state for partyA", async function () {
@@ -485,13 +520,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 			// Open multiple positions
 			for (let i = 0; i < 3; i++) {
-				await user.sendQuote(
+				const quoteId = await user.sendQuote(
 					limitQuoteRequestBuilder()
 						.maxFundingRate(decimal(1n))
 						.build()
 				)
-				await hedger.lockQuote(i + 1)
-				await hedger.openPosition(i + 1)
+				await hedger.lockQuote(quoteId)
+				await hedger.openPosition(quoteId)
 				await time.increase(EightHourInSec) // Wait between positions
 			}
 
@@ -708,13 +743,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 				.updateAccumulatedFundingFee([1], [0], [0], [decimal(1n)])
 
 			// Open position
-			await user.sendQuote(
+			const quoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			// Wait
 			await time.increase(EightHourInSec * 3)
@@ -731,9 +766,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 		it("should return zero debt when epoch duration not set", async function () {
 			// Don't set epoch duration - open position normally without accumulated funding
-			await user.sendQuote(limitQuoteRequestBuilder().build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			// Debt should be zero since no funding system is configured
 			const debt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
@@ -753,14 +788,14 @@ export function shouldBehaveLikeAggregateViews(): void {
 				.updateAccumulatedFundingFee([1], [-decimal(1n, 14)], [decimal(1n, 14)], [decimal(1n)])
 
 			// Open LONG position
-			await user.sendQuote(
+			const quoteId = await user.sendQuote(
 				limitQuoteRequestBuilder()
 					.positionType(PositionType.LONG)
 					.maxFundingRate(decimal(1n))
 					.build()
 			)
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			// Wait for funding
 			await time.increase(EightHourInSec * 3)
@@ -798,9 +833,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		it("should add symbol to active list when position opens", async function () {
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbols(await user.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(1)
@@ -812,28 +847,28 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 		it("should not duplicate symbol when opening multiple positions in same symbol", async function () {
 			// Open two positions in symbol 1
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const firstQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(firstQuoteId)
+			await hedger.openPosition(firstQuoteId)
 
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(2)
-			await hedger.openPosition(2)
+			const secondQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(secondQuoteId)
+			await hedger.openPosition(secondQuoteId)
 
 			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbols(await user.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(1) // Still only 1 symbol
 		})
 
 		it("should remove symbol from active list when all positions close", async function () {
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			let partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbols(await user.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(1)
 
-			await user.requestToClosePosition(1)
-			await hedger.fillCloseRequest(1)
+			await user.requestToClosePosition(quoteId)
+			await hedger.fillCloseRequest(quoteId)
 
 			partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbols(await user.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(0)
@@ -841,17 +876,17 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 		it("should keep symbol when only partial positions close", async function () {
 			// Open two positions
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const firstQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(firstQuoteId)
+			await hedger.openPosition(firstQuoteId)
 
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(2)
-			await hedger.openPosition(2)
+			const secondQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(secondQuoteId)
+			await hedger.openPosition(secondQuoteId)
 
 			// Close only first
-			await user.requestToClosePosition(1)
-			await hedger.fillCloseRequest(1)
+			await user.requestToClosePosition(firstQuoteId)
+			await hedger.fillCloseRequest(firstQuoteId)
 
 			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbols(await user.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(1) // Still has symbol 1
@@ -866,13 +901,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2], [EightHourInSec])
 
 			// Open positions in both symbols
-			await user.sendQuote(limitQuoteRequestBuilder().symbolId(1).maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const symbol1QuoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(1).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(symbol1QuoteId)
+			await hedger.openPosition(symbol1QuoteId)
 
-			await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(2)
-			await hedger.openPosition(2)
+			const symbol2QuoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(symbol2QuoteId)
+			await hedger.openPosition(symbol2QuoteId)
 
 			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbols(await user.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(2)
@@ -890,15 +925,19 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2, 3], [EightHourInSec, EightHourInSec])
 
 			// Open positions in all 3 symbols
+			const quoteIdsBySymbol = new Map<number, bigint>()
 			for (let symbolId = 1; symbolId <= 3; symbolId++) {
-				await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).maxFundingRate(decimal(1n)).build())
-				await hedger.lockQuote(symbolId)
-				await hedger.openPosition(symbolId)
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).maxFundingRate(decimal(1n)).build())
+				quoteIdsBySymbol.set(symbolId, quoteId)
+				await hedger.lockQuote(quoteId)
+				await hedger.openPosition(quoteId)
 			}
 
 			// Close position in symbol 1 (first in array - triggers swap-and-pop)
-			await user.requestToClosePosition(1)
-			await hedger.fillCloseRequest(1)
+			const symbol1QuoteId = quoteIdsBySymbol.get(1)
+			if (!symbol1QuoteId) throw new Error("Symbol 1 quote not found")
+			await user.requestToClosePosition(symbol1QuoteId)
+			await hedger.fillCloseRequest(symbol1QuoteId)
 
 			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbols(await user.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(2)
@@ -925,26 +964,27 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		it("should return correct aggregated positions", async function () {
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			const positions = await context.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbols(await user.getAddress(), 0, 1000)
 			expect(positions.length).to.equal(1)
 			expect(positions[0].symbolId).to.equal(1n)
-			expect(positions[0].aggregatedOpenAmount).to.be.gt(0)
+			const { longPosition } = await context.viewFacetQuote.getPartyAAggregatedPositionBySymbol(await user.getAddress(), 1)
+			expect(positions[0].aggregatedOpenAmount).to.equal(longPosition.aggregatedOpenAmount)
 		})
 
 		it("should return both LONG and SHORT for same symbol", async function () {
 			// Open LONG
-			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const longQuoteId = await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(longQuoteId)
+			await hedger.openPosition(longQuoteId)
 
 			// Open SHORT
-			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(2)
-			await hedger.openPosition(2)
+			const shortQuoteId = await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(shortQuoteId)
+			await hedger.openPosition(shortQuoteId)
 
 			const positions = await context.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbols(await user.getAddress(), 0, 1000)
 			expect(positions.length).to.equal(2)
@@ -956,9 +996,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		it("should return funding debt by active symbols", async function () {
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			await time.increase(EightHourInSec * 3)
 
@@ -972,9 +1012,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		it("should return opposite funding debt for partyB", async function () {
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			await time.increase(EightHourInSec * 3)
 
@@ -992,9 +1032,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		it("should work for partyB views", async function () {
-			await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(1)
-			await hedger.openPosition(1)
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
 
 			const partyBPositions = await context.viewFacetQuote.getPartyBAggregatedPositionsByActiveSymbols(await hedger.getAddress(), 0, 1000)
 			expect(partyBPositions.length).to.equal(1)
@@ -1032,9 +1072,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 			// Open positions in all 4 symbols
 			for (let symbolId = 1; symbolId <= 4; symbolId++) {
-				await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).maxFundingRate(decimal(1n)).build())
-				await hedger.lockQuote(symbolId)
-				await hedger.openPosition(symbolId)
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).maxFundingRate(decimal(1n)).build())
+				await hedger.lockQuote(quoteId)
+				await hedger.openPosition(quoteId)
 			}
 		})
 
