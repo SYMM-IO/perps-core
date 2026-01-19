@@ -82,26 +82,14 @@ contract AccountManager is IAccountManager, IAccountLayerErrors {
 		address account,
 		uint256 amount
 	) external withSigner {
-		bytes[] memory callDatas = new bytes[](1);
-		callDatas[0] = abi.encodeWithSelector(
-			ICoreFacet.depositForAccountWithExpressRate.selector,
-			account,
-			amount
-		);
-		IAccountLayerDiamond(accountHub)._call(account, callDatas);
+		ICoreFacet(accountHub).depositForAccountWithExpressRate(account, amount);
 	}
 
 	function depositAndAllocateForAccountWithExpressRate(
 		address account,
 		uint256 amount
 	) external withSigner {
-		bytes[] memory callDatas = new bytes[](1);
-		callDatas[0] = abi.encodeWithSelector(
-			ICoreFacet.depositAndAllocateForAccountWithExpressRate.selector,
-			account,
-			amount
-		);
-		IAccountLayerDiamond(accountHub)._call(account, callDatas);
+		ICoreFacet(accountHub).depositAndAllocateForAccountWithExpressRate(account, amount);
 	}
 
 	function withdrawFromAccount(address account, uint256 amount) external withSigner {
