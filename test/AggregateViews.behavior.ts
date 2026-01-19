@@ -191,7 +191,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 	})
 
-	describe("Aggregate Funding Updates on Charge", function () {
+	describe("Aggregate Funding Tracking on Quote Sync", function () {
 		let openQuoteId: bigint
 
 		beforeEach(async function () {
@@ -213,7 +213,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await time.increase(EightHourInSec * 3)
 		})
 
-		it("should update aggregate funding when funding is charged", async function () {
+		it("should update weightedPaidFunding when quote syncs with accumulated rates", async function () {
 			const quoteBefore = await context.viewFacetQuote.getQuote(openQuoteId)
 			const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
 			const fundingBefore = await context.viewFacetQuote.getPartyAAggregatedFunding(
@@ -244,7 +244,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			expect(fundingAfter).to.equal(fundingBefore + expectedDelta)
 		})
 
-		it("should correctly update both partyA and partyB aggregate funding on charge", async function () {
+		it("should update both partyA and partyB weightedPaidFunding on quote sync", async function () {
 			const quoteBefore = await context.viewFacetQuote.getQuote(openQuoteId)
 			const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
 			const partyAFundingBefore = await context.viewFacetQuote.getPartyAAggregatedFunding(
