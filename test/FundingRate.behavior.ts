@@ -595,7 +595,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				expect(afterBalance1 - beforeBalance1).to.equal(-1n * decimal(6n, 16))
 
 				// Verify aggregate funding matches per-quote calculation
-				const perQuoteFee1 = await context.viewFacetSymbol.getAccumulatedFundingFees([5])
+				const perQuoteFee1 = await context.viewFacetQuote.getQuoteFundingDebts([5])
 				const aggregateFunding1 = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
@@ -645,7 +645,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				expect(afterBalance2 - beforeBalance2).to.equal(-1n * decimal(15n, 15))
 
 				// Verify aggregate funding after second charge
-				const perQuoteFee2 = await context.viewFacetSymbol.getAccumulatedFundingFees([5])
+				const perQuoteFee2 = await context.viewFacetQuote.getQuoteFundingDebts([5])
 				const aggregateFunding2 = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
@@ -694,7 +694,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				expect(afterBalance3 - beforeBalance3).to.equal(-1n * decimal(5n, 16))
 
 				// Verify aggregate funding after final charge
-				const perQuoteFee3 = await context.viewFacetSymbol.getAccumulatedFundingFees([5])
+				const perQuoteFee3 = await context.viewFacetQuote.getQuoteFundingDebts([5])
 				const aggregateFunding3 = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),

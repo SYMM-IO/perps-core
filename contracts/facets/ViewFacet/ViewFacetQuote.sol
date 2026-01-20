@@ -9,6 +9,7 @@ import { QuoteStorage, Quote, PositionType, QuoteStatus, PartiesAggregatedPositi
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { IViewFacetQuote } from "./IViewFacetQuote.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
+import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 
 contract ViewFacetQuote is IViewFacetQuote {
 	/**
@@ -401,6 +402,31 @@ contract ViewFacetQuote is IViewFacetQuote {
 	 */
 	function getQuoteCloseId(uint256 quoteId) external view returns (uint256) {
 		return QuoteStorage.layout().closeIds[quoteId];
+	}
+
+	/**
+	 * @notice Gets the funding debt for a list of quotes
+	 * @dev Returns the funding debt each quote should pay (positive) or receive (negative)
+	 * @param quoteIds Array of quote IDs to calculate funding debts for
+	 * @return debts Array of funding debts in the same order as quoteIds
+	 */
+	function getQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256[] memory debts) {
+		debts = new int256[](quoteIds.length);
+		for (uint256 i = 0; i < quoteIds.length; i++) debts[i] = LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);
+		return debts;
+	}
+
+	/**
+	 * @notice Gets the sum of funding debts for a list of quotes
+	 * @dev Returns the sum of funding debts
+	 * @param quoteIds Array of quote IDs to calculate funding debts for
+	 * @return sum Sum of funding debts
+	 */
+	function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256) {
+		int256 sum;
+		for (uint256 i = 0; i < quoteIds.length; i++)
+			sum += LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);
+		return sum;
 	}
 
 	/**

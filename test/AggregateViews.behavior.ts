@@ -446,6 +446,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 			// PartyA debt should be non-zero
 			expect(partyADebt).to.not.equal(0)
+			
+			const accumulatedFundingFees = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+			expect(accumulatedFundingFees).to.equal(partyADebt)
 		})
 
 		it("should return opposite funding debt for partyB", async function () {
@@ -593,8 +596,8 @@ export function shouldBehaveLikeAggregateViews(): void {
 			// Wait for funding to accumulate
 			await time.increase(EightHourInSec * 3)
 
-			// Get per-quote funding using getAccumulatedFundingFees
-			const perQuoteFees = await context.viewFacetSymbol.getAccumulatedFundingFees(quoteIds)
+			// Get per-quote funding using getQuoteFundingDebts
+			const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
 			let sumPerQuoteFees = 0n
 			for (const fee of perQuoteFees) {
 				sumPerQuoteFees += fee
@@ -639,8 +642,8 @@ export function shouldBehaveLikeAggregateViews(): void {
 			// Wait for some funding
 			await time.increase(EightHourInSec * 2)
 
-			// Get per-quote funding using getAccumulatedFundingFees
-			const perQuoteFees = await context.viewFacetSymbol.getAccumulatedFundingFees(quoteIds)
+			// Get per-quote funding using getQuoteFundingDebts
+			const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
 			let sumPerQuoteFees = 0n
 			for (const fee of perQuoteFees) {
 				sumPerQuoteFees += fee
@@ -686,8 +689,8 @@ export function shouldBehaveLikeAggregateViews(): void {
 			// Wait for MANY epochs so caps are definitely hit
 			await time.increase(EightHourInSec * 10)
 
-			// Get per-quote funding using getAccumulatedFundingFees
-			const perQuoteFees = await context.viewFacetSymbol.getAccumulatedFundingFees(quoteIds)
+			// Get per-quote funding using getQuoteFundingDebts
+			const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
 			let sumPerQuoteFees = 0n
 			for (const fee of perQuoteFees) {
 				sumPerQuoteFees += fee
@@ -710,7 +713,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			expect(aggregateFundingDebt).to.be.gt(0)
 		})
 
-		it("should verify getSumAccumulatedFundingFees matches sum of individual fees", async function () {
+		it("should verify getSumQuoteFundingDebts matches sum of individual fees", async function () {
 			// Setup funding rates
 			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
 			await context.fundingRateFacet
@@ -734,15 +737,15 @@ export function shouldBehaveLikeAggregateViews(): void {
 			// Wait for funding
 			await time.increase(EightHourInSec * 2)
 
-			// Get per-quote funding using getAccumulatedFundingFees
-			const perQuoteFees = await context.viewFacetSymbol.getAccumulatedFundingFees(quoteIds)
+			// Get per-quote funding using getQuoteFundingDebts
+			const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
 			let manualSum = 0n
 			for (const fee of perQuoteFees) {
 				manualSum += fee
 			}
 
-			// Get sum using getSumAccumulatedFundingFees
-			const contractSum = await context.viewFacetSymbol.getSumAccumulatedFundingFees(quoteIds)
+			// Get sum using getSumQuoteFundingDebts
+			const contractSum = await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds)
 
 			// Should be exactly equal
 			expect(contractSum).to.equal(manualSum)

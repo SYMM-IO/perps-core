@@ -4,7 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
@@ -240,28 +239,4 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return SymbolStorage.layout().fundingFees[symbolId][partyB];
 	}
 
-	/**
-	 * @notice Gets the accumulated funding fees for a list of quotes
-	 * @dev Returns the funding fee each position should pay (positive) or receive (negative)
-	 * @param quoteIds Array of quote IDs to calculate funding fees for
-	 * @return fees Array of funding fees in the same order as quoteIds
-	 */
-	function getAccumulatedFundingFees(uint256[] memory quoteIds) external view returns (int256[] memory fees) {
-		fees = new int256[](quoteIds.length);
-		for (uint256 i = 0; i < quoteIds.length; i++) fees[i] = LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);
-		return fees;
-	}
-
-	/**
-	 * @notice Gets the sum of accumulated funding fees for a list of quotes
-	 * @dev Returns the sum of funding fees
-	 * @param quoteIds Array of quote IDs to calculate funding fees for
-	 * @return sum Sum of funding fees in the same order as quoteIds
-	 */
-	function getSumAccumulatedFundingFees(uint256[] memory quoteIds) external view returns (int256) {
-		int256 sum;
-		for(uint256 i = 0; i < quoteIds.length; i++)
-			sum += LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);
-		return sum;
-	}
 }

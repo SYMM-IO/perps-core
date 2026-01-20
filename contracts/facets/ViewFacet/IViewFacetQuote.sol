@@ -87,6 +87,10 @@ interface IViewFacetQuote {
 
 	function getQuoteCloseId(uint256 quoteId) external view returns (uint256);
 
+	function getQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256[] memory debts);
+
+	function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256 sum);
+
 	function getPartyAUPNLParams(
 		address partyA,
 		uint256 quoteStart,
