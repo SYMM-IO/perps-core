@@ -2419,104 +2419,104 @@ export function shouldBehaveLikeAggregateViews(): void {
 			)
 			expect(partyBPerPartyA.length).to.equal(1)
 		})
-	})
 
-	describe("Pagination", function () {
-		beforeEach(async function () {
-			// Add symbols 2, 3, 4
-			await context.symbolControlFacet.connect(context.signers.admin)
-				.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
-			await context.symbolControlFacet.connect(context.signers.admin)
-				.addSymbol("SYMBOL3", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
-			await context.symbolControlFacet.connect(context.signers.admin)
-				.addSymbol("SYMBOL4", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
-			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2, 3, 4], [1, 1, 1])
+		describe("Pagination", function () {
+			beforeEach(async function () {
+				// Add symbols 2, 3, 4
+				await context.symbolControlFacet.connect(context.signers.admin)
+					.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+				await context.symbolControlFacet.connect(context.signers.admin)
+					.addSymbol("SYMBOL3", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+				await context.symbolControlFacet.connect(context.signers.admin)
+					.addSymbol("SYMBOL4", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+				await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2, 3, 4], [1, 1, 1])
 
-			await context.fundingRateFacet.connect(context.signers.hedger)
-				.setEpochDurations([1, 2, 3, 4], [EightHourInSec, EightHourInSec, EightHourInSec, EightHourInSec])
-			await context.fundingRateFacet.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee(
-					[1, 2, 3, 4],
-					[decimal(1n, 14), decimal(1n, 14), decimal(1n, 14), decimal(1n, 14)],
-					[-decimal(1n, 14), -decimal(1n, 14), -decimal(1n, 14), -decimal(1n, 14)],
-					[decimal(1n), decimal(1n), decimal(1n), decimal(1n)]
+				await context.fundingRateFacet.connect(context.signers.hedger)
+					.setEpochDurations([1, 2, 3, 4], [EightHourInSec, EightHourInSec, EightHourInSec, EightHourInSec])
+				await context.fundingRateFacet.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee(
+						[1, 2, 3, 4],
+						[decimal(1n, 14), decimal(1n, 14), decimal(1n, 14), decimal(1n, 14)],
+						[-decimal(1n, 14), -decimal(1n, 14), -decimal(1n, 14), -decimal(1n, 14)],
+						[decimal(1n), decimal(1n), decimal(1n), decimal(1n)]
+					)
+
+				// Open positions in all 4 symbols
+				for (let symbolId = 1; symbolId <= 4; symbolId++) {
+					const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).maxFundingRate(decimal(1n)).build())
+					await hedger.lockQuote(quoteId)
+					await hedger.openPosition(quoteId)
+				}
+			})
+
+			it("should return correct count", async function () {
+				const partyACount = await context.viewFacetAggregate.getPartyAActiveSymbolsCountPerPartyB(await user.getAddress(), await hedger.getAddress())
+				expect(partyACount).to.equal(4n)
+
+				const partyBCount = await context.viewFacetAggregate.getPartyBActiveSymbolsCountPerPartyA(await hedger.getAddress(), await user.getAddress())
+				expect(partyBCount).to.equal(4n)
+			})
+
+			it("should paginate active symbols correctly", async function () {
+				const firstPage = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 2)
+				expect(firstPage.length).to.equal(2)
+
+				const secondPage = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 2)
+				expect(secondPage.length).to.equal(2)
+
+				// All 4 symbols should be unique across pages
+				const allSymbols = [...firstPage, ...secondPage]
+				const uniqueSymbols = new Set(allSymbols.map(s => s.toString()))
+				expect(uniqueSymbols.size).to.equal(4)
+			})
+
+			it("should return empty when start exceeds length", async function () {
+				const result = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 100, 10)
+				expect(result.length).to.equal(0)
+			})
+
+			it("should return empty when size is zero", async function () {
+				const result = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 0)
+				expect(result.length).to.equal(0)
+			})
+
+			it("should cap size to remaining elements", async function () {
+				// Request 100 starting at index 2, only 2 remain
+				const result = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 100)
+				expect(result.length).to.equal(2)
+			})
+
+			it("should paginate aggregated positions correctly", async function () {
+				const firstPage = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 2)
+				expect(firstPage.length).to.equal(2) // 2 symbols, 1 position each
+
+				const secondPage = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 2)
+				expect(secondPage.length).to.equal(2)
+
+				// All 4 symbols covered
+				const allSymbolIds = [...firstPage, ...secondPage].map(p => p.symbolId)
+				const uniqueSymbolIds = new Set(allSymbolIds.map(s => s.toString()))
+				expect(uniqueSymbolIds.size).to.equal(4)
+			})
+
+			it("should paginate funding debt correctly", async function () {
+				await time.increase(EightHourInSec)
+
+				const firstPage = await context.viewFacetAggregate.getPartyAAggregateFundingDebtByActiveSymbols(
+					await user.getAddress(), await hedger.getAddress(), 0, 2
 				)
+				expect(firstPage.length).to.equal(2)
 
-			// Open positions in all 4 symbols
-			for (let symbolId = 1; symbolId <= 4; symbolId++) {
-				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).maxFundingRate(decimal(1n)).build())
-				await hedger.lockQuote(quoteId)
-				await hedger.openPosition(quoteId)
-			}
-		})
+				const secondPage = await context.viewFacetAggregate.getPartyAAggregateFundingDebtByActiveSymbols(
+					await user.getAddress(), await hedger.getAddress(), 2, 2
+				)
+				expect(secondPage.length).to.equal(2)
 
-		it("should return correct count", async function () {
-			const partyACount = await context.viewFacetAggregate.getPartyAActiveSymbolsCountPerPartyB(await user.getAddress(), await hedger.getAddress())
-			expect(partyACount).to.equal(4n)
-
-			const partyBCount = await context.viewFacetAggregate.getPartyBActiveSymbolsCountPerPartyA(await hedger.getAddress(), await user.getAddress())
-			expect(partyBCount).to.equal(4n)
-		})
-
-		it("should paginate active symbols correctly", async function () {
-			const firstPage = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 2)
-			expect(firstPage.length).to.equal(2)
-
-			const secondPage = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 2)
-			expect(secondPage.length).to.equal(2)
-
-			// All 4 symbols should be unique across pages
-			const allSymbols = [...firstPage, ...secondPage]
-			const uniqueSymbols = new Set(allSymbols.map(s => s.toString()))
-			expect(uniqueSymbols.size).to.equal(4)
-		})
-
-		it("should return empty when start exceeds length", async function () {
-			const result = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 100, 10)
-			expect(result.length).to.equal(0)
-		})
-
-		it("should return empty when size is zero", async function () {
-			const result = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 0)
-			expect(result.length).to.equal(0)
-		})
-
-		it("should cap size to remaining elements", async function () {
-			// Request 100 starting at index 2, only 2 remain
-			const result = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 100)
-			expect(result.length).to.equal(2)
-		})
-
-		it("should paginate aggregated positions correctly", async function () {
-			const firstPage = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 2)
-			expect(firstPage.length).to.equal(2) // 2 symbols, 1 position each
-
-			const secondPage = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 2)
-			expect(secondPage.length).to.equal(2)
-
-			// All 4 symbols covered
-			const allSymbolIds = [...firstPage, ...secondPage].map(p => p.symbolId)
-			const uniqueSymbolIds = new Set(allSymbolIds.map(s => s.toString()))
-			expect(uniqueSymbolIds.size).to.equal(4)
-		})
-
-		it("should paginate funding debt correctly", async function () {
-			await time.increase(EightHourInSec)
-
-			const firstPage = await context.viewFacetAggregate.getPartyAAggregateFundingDebtByActiveSymbols(
-				await user.getAddress(), await hedger.getAddress(), 0, 2
-			)
-			expect(firstPage.length).to.equal(2)
-
-			const secondPage = await context.viewFacetAggregate.getPartyAAggregateFundingDebtByActiveSymbols(
-				await user.getAddress(), await hedger.getAddress(), 2, 2
-			)
-			expect(secondPage.length).to.equal(2)
-
-			// All should have non-zero debt
-			for (const debt of [...firstPage, ...secondPage]) {
-				expect(debt.fundingDebt).to.not.equal(0)
-			}
+				// All should have non-zero debt
+				for (const debt of [...firstPage, ...secondPage]) {
+					expect(debt.fundingDebt).to.not.equal(0)
+				}
+			})
 		})
 	})
 
