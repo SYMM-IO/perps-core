@@ -92,20 +92,6 @@ interface IViewFacetAggregate {
 		PositionType positionType
 	) external view returns (int256 fundingDebt);
 
-	function getPartyACompleteAggregateStatePerPartyB(
-		address partyA,
-		address partyB,
-		uint256 symbolId,
-		PositionType positionType
-	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding);
-
-	function getPartyBCompleteAggregateStatePerPartyA(
-		address partyB,
-		address partyA,
-		uint256 symbolId,
-		PositionType positionType
-	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding);
-
 	// ============ Active Symbols View Functions ============
 
 	function getPartyBActiveSymbolsCount(address partyB) external view returns (uint256);

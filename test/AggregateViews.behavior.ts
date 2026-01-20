@@ -485,51 +485,6 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 	})
 
-	describe("Complete Aggregate State View Functions", function () {
-		beforeEach(async function () {
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
-
-			// Open positions
-			const quoteId = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger.lockQuote(quoteId)
-			await hedger.openPosition(quoteId)
-		})
-
-		it("should return complete aggregate state for partyA", async function () {
-			const [aggregatedAmount, aggregatedNotional, weightedPaidFunding] =
-				await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
-					await user.getAddress(),
-					await hedger.getAddress(),
-					1,
-					PositionType.LONG
-				)
-
-			expect(aggregatedAmount).to.be.gt(0)
-			expect(aggregatedNotional).to.be.gt(0)
-			// weightedPaidFunding depends on accumulatedPaidFunding at open time
-		})
-
-		it("should return complete aggregate state for partyB per partyA", async function () {
-			const [aggregatedAmount, aggregatedNotional, weightedPaidFunding] =
-				await context.viewFacetAggregate.getPartyBCompleteAggregateStatePerPartyA(
-					await hedger.getAddress(),
-					await user.getAddress(),
-					1,
-					PositionType.LONG
-				)
-
-			expect(aggregatedAmount).to.be.gt(0)
-			expect(aggregatedNotional).to.be.gt(0)
-		})
-	})
-
 	describe("Aggregate Funding Consistency with Per-Quote Funding", function () {
 		it("should give consistent total funding debt when compared to per-quote calculation", async function () {
 			// Setup funding rates
@@ -1236,30 +1191,42 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger2.lockQuote(quoteId2)
 			await hedger2.openPosition(quoteId2)
 
-			// Get complete state per hedger
-			const [amount1, notional1, weighted1] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
+			// Get position state per hedger
+			const { longPosition: pos1 } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
+				await user.getAddress(),
+				await hedger.getAddress(),
+				1
+			)
+			const { longPosition: pos2 } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
+				await user.getAddress(),
+				await hedger2.getAddress(),
+				1
+			)
+
+			// Amounts should be equal (same quantity)
+			expect(pos1.aggregatedOpenAmount).to.equal(pos2.aggregatedOpenAmount)
+
+			// Avg prices should be equal (same price)
+			expect(pos1.avgOpenPrice).to.equal(pos2.avgOpenPrice)
+
+			// Get funding state per hedger
+			const funding1 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
 				PositionType.LONG
 			)
-			const [amount2, notional2, weighted2] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
+			const funding2 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
 				PositionType.LONG
 			)
 
-			// Amounts should be equal (same quantity)
-			expect(amount1).to.equal(amount2)
-
-			// Notionals should be equal (same price)
-			expect(notional1).to.equal(notional2)
-
 			// Weighted funding may differ due to different funding rates
 			// but both should be non-zero
-			expect(weighted1).to.not.equal(0n)
-			expect(weighted2).to.not.equal(0n)
+			expect(funding1).to.not.equal(0n)
+			expect(funding2).to.not.equal(0n)
 		})
 
 		it("should handle closing position with one hedger without affecting other hedger's aggregate", async function () {
@@ -1283,11 +1250,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger2.openPosition(quoteId2)
 
 			// Get initial aggregate for hedger2
-			const [amount2Before] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
+			const { longPosition: pos2Before } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
-				1,
-				PositionType.LONG
+				1
 			)
 
 			// Close position with hedger1
@@ -1295,22 +1261,20 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.fillCloseRequest(quoteId1)
 
 			// Hedger1's aggregate should be zero
-			const [amount1After] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
+			const { longPosition: pos1After } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
 				await user.getAddress(),
 				await hedger.getAddress(),
-				1,
-				PositionType.LONG
+				1
 			)
-			expect(amount1After).to.equal(0n)
+			expect(pos1After.aggregatedOpenAmount).to.equal(0n)
 
 			// Hedger2's aggregate should be unchanged
-			const [amount2After] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
+			const { longPosition: pos2After } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
-				1,
-				PositionType.LONG
+				1
 			)
-			expect(amount2After).to.equal(amount2Before)
+			expect(pos2After.aggregatedOpenAmount).to.equal(pos2Before.aggregatedOpenAmount)
 		})
 	})
 

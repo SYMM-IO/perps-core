@@ -189,52 +189,6 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		return LibAggregateFunding.getPartyBGlobalAggregateFundingDebt(partyB, symbolId, positionType);
 	}
 
-	/**
-	 * @notice Returns both aggregated positions and funding for partyA per partyB at a specific symbol and position type
-	 * @dev Convenience function for getting complete state needed for Muon verification
-	 *      Uses per-partyB storage to correctly handle multi-hedger scenarios
-	 * @param partyA The partyA address
-	 * @param partyB The partyB address (different hedgers have different funding rates)
-	 * @param symbolId The symbol ID
-	 * @param positionType The position type (0 = LONG, 1 = SHORT)
-	 * @return aggregatedAmount The total open amount with this specific hedger
-	 * @return aggregatedNotional The total notional value with this specific hedger
-	 * @return weightedPaidFunding The weighted paid funding with this specific hedger
-	 */
-	function getPartyACompleteAggregateStatePerPartyB(
-		address partyA,
-		address partyB,
-		uint256 symbolId,
-		PositionType positionType
-	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage pos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][positionType];
-		PartiesAggregatedFunding storage funding = quoteLayout.partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType];
-		return (pos.aggregatedAmount, pos.aggregatedNotional, funding.weightedPaidFunding);
-	}
-
-	/**
-	 * @notice Returns both aggregated positions and funding for partyB per partyA at a specific symbol and position type
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @param symbolId The symbol ID
-	 * @param positionType The position type (0 = LONG, 1 = SHORT)
-	 * @return aggregatedAmount The total open amount
-	 * @return aggregatedNotional The total notional value
-	 * @return weightedPaidFunding The weighted paid funding
-	 */
-	function getPartyBCompleteAggregateStatePerPartyA(
-		address partyB,
-		address partyA,
-		uint256 symbolId,
-		PositionType positionType
-	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage pos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][positionType];
-		PartiesAggregatedFunding storage funding = quoteLayout.partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType];
-		return (pos.aggregatedAmount, pos.aggregatedNotional, funding.weightedPaidFunding);
-	}
-
 	// ============ Active Symbols View Functions ============
 
 	/**

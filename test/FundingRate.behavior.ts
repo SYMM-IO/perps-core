@@ -710,25 +710,23 @@ export function shouldBehaveLikeFundingRate(): void {
 				)
 				expect(aggregateDebt3).to.be.gte(perQuoteFee3[0])
 
-				// Also verify complete aggregate state
-				const [aggAmount, aggNotional, aggWeightedFunding] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
+				// Also verify aggregate position state
+				const { longPosition: partyALong } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
-					1,
-					PositionType.LONG
+					1
 				)
-				expect(aggAmount).to.be.gt(0)
-				expect(aggNotional).to.be.gt(0)
+				expect(partyALong.aggregatedOpenAmount).to.be.gt(0)
+				expect(partyALong.avgOpenPrice).to.be.gt(0)
 
 				// Verify partyB aggregate state matches
-				const [partyBAggAmount, partyBAggNotional, partyBAggWeightedFunding] = await context.viewFacetAggregate.getPartyBCompleteAggregateStatePerPartyA(
+				const { longPosition: partyBLong } = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(
 					await context.signers.hedger.getAddress(),
 					await context.signers.user.getAddress(),
-					1,
-					PositionType.LONG
+					1
 				)
-				expect(partyBAggAmount).to.equal(aggAmount)
-				expect(partyBAggNotional).to.equal(aggNotional)
+				expect(partyBLong.aggregatedOpenAmount).to.equal(partyALong.aggregatedOpenAmount)
+				expect(partyBLong.avgOpenPrice).to.equal(partyALong.avgOpenPrice)
 			})
 		})
 
