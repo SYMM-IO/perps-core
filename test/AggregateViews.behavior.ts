@@ -38,9 +38,6 @@ export function shouldBehaveLikeAggregateViews(): void {
 		await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
 	})
 
-	// ============ Active Symbols Tracking ============
-	// These tests verify the active symbols tracking that enables efficient aggregated views
-
 	describe("Active Symbols Tracking", function () {
 		beforeEach(async function () {
 			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
@@ -780,394 +777,327 @@ export function shouldBehaveLikeAggregateViews(): void {
 				expect(debt).to.be.lt(0)
 				expect(debt).to.be.eq(await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId]))
 			})
+
+			describe("Multi-Hedger", function () {
+				let hedger2: Hedger
+
+				beforeEach(async function () {
+					// Setup second hedger
+					hedger2 = new Hedger(context, context.signers.hedger2)
+					await hedger2.setup()
+					await hedger2.setBalances(decimal(5000n), decimal(5000n))
+
+					// Setup funding rates for both hedgers with different rates
+					await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+					await context.fundingRateFacet
+						.connect(context.signers.hedger)
+						.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+
+					// Second hedger sets different funding rates for the same symbol
+					await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([1], [EightHourInSec])
+					await context.fundingRateFacet
+						.connect(context.signers.hedger2)
+						.updateAccumulatedFundingFee([1], [decimal(2n, 14)], [-decimal(2n, 14)], [decimal(1n)])
+				})
+
+				it("should track aggregate funding separately per hedger", async function () {
+					await time.increase(EightHourInSec)
+					await context.symbolControlFacet
+						.connect(context.signers.admin)
+						.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+
+					// Open position with first hedger
+					const quoteId1 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger.lockQuote(quoteId1)
+					await hedger.openPosition(quoteId1)
+
+					// Open position with second hedger
+					const quoteId2 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger2.lockQuote(quoteId2)
+					await hedger2.openPosition(quoteId2)
+
+					const quote1 = await context.viewFacetQuote.getQuote(quoteId1)
+					const quote2 = await context.viewFacetQuote.getQuote(quoteId2)
+
+					// Check aggregate funding per hedger
+					const fundingHedger1 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+						await user.getAddress(),
+						await hedger.getAddress(),
+						1,
+						PositionType.LONG
+					)
+					const fundingHedger2 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+						await user.getAddress(),
+						await hedger2.getAddress(),
+						1,
+						PositionType.LONG
+					)
+
+					// Each hedger's aggregate should only contain that hedger's positions
+					expect(fundingHedger1).to.equal(getWeightedPaidFunding(quote1))
+					expect(fundingHedger2).to.equal(getWeightedPaidFunding(quote2))
+
+					// They should be different because they have different funding rates
+					expect(fundingHedger1).to.not.equal(fundingHedger2)
+
+					const fundingHedger1PartyB = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
+						await hedger.getAddress(),
+						await user.getAddress(),
+						1,
+						PositionType.LONG
+					)
+					const fundingHedger2PartyB = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
+						await hedger2.getAddress(),
+						await user.getAddress(),
+						1,
+						PositionType.LONG
+					)
+
+					expect(fundingHedger1PartyB).to.equal(getWeightedPaidFunding(quote1))
+					expect(fundingHedger2PartyB).to.equal(getWeightedPaidFunding(quote2))
+
+					expect(fundingHedger1PartyB).to.not.equal(fundingHedger2PartyB)
+
+					expect(fundingHedger1PartyB).to.be.eq(fundingHedger1)
+					expect(fundingHedger2PartyB).to.be.eq(fundingHedger2)
+				})
+
+				it("should calculate funding debt correctly per hedger with different rates", async function () {
+					await time.increase(EightHourInSec * 2)
+
+					// Open positions with both hedgers
+					const quoteId1 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger.lockQuote(quoteId1)
+					await hedger.openPosition(quoteId1)
+
+					const quoteId2 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger2.lockQuote(quoteId2)
+					await hedger2.openPosition(quoteId2)
+
+					// Wait for more funding to accumulate
+					await time.increase(EightHourInSec * 3)
+
+					// Get funding debt for each hedger relationship
+					const debtWithHedger1 = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
+						await user.getAddress(),
+						await hedger.getAddress(),
+						1,
+						PositionType.LONG
+					)
+					const debtWithHedger2 = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
+						await user.getAddress(),
+						await hedger2.getAddress(),
+						1,
+						PositionType.LONG
+					)
+
+					// Debts should be different because hedgers have different funding rates
+					expect(debtWithHedger1).to.not.equal(0)
+					expect(debtWithHedger2).to.not.equal(0)
+					expect(debtWithHedger2).to.be.eq(2n * debtWithHedger1)
+				})
+
+				it("should correctly update aggregate funding when charging per hedger (syncing quote funding value)", async function () {
+					await time.increase(EightHourInSec)
+
+					// Open positions with both hedgers
+					const quoteId1 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger.lockQuote(quoteId1)
+					await hedger.openPosition(quoteId1)
+
+					const quoteId2 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger2.lockQuote(quoteId2)
+					await hedger2.openPosition(quoteId2)
+
+					// Wait for funding to accumulate
+					await time.increase(EightHourInSec * 3)
+
+					// Charge funding for hedger1's quotes only
+					const fundingBefore = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+						await user.getAddress(),
+						await hedger.getAddress(),
+						1,
+						PositionType.LONG
+					)
+
+					const fundingHedger2Before = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+						await user.getAddress(),
+						await hedger2.getAddress(),
+						1,
+						PositionType.LONG
+					)
+
+					await context.fundingRateFacet
+						.connect(context.signers.hedger)
+						.chargeAccumulatedFundingFee(
+							await user.getAddress(),
+							await hedger.getAddress(),
+							[quoteId1],
+							await getDummyPairUpnlSig()
+						)
+
+					const fundingAfter = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+						await user.getAddress(),
+						await hedger.getAddress(),
+						1,
+						PositionType.LONG
+					)
+
+					let fundingHedger2After = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+						await user.getAddress(),
+						await hedger2.getAddress(),
+						1,
+						PositionType.LONG
+					)
+
+					// Hedger1's aggregate should have changed
+					expect(fundingAfter).to.not.equal(fundingBefore)
+
+					// Hedger2's aggregate should remain unchanged
+					expect(fundingHedger2After).to.equal(fundingHedger2Before)
+
+					// Charge funding for hedger2 now
+					await context.fundingRateFacet
+						.connect(context.signers.hedger2)
+						.chargeAccumulatedFundingFee(
+							await user.getAddress(),
+							await hedger2.getAddress(),
+							[quoteId2],
+							await getDummyPairUpnlSig()
+						)
+
+					fundingHedger2After = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+						await user.getAddress(),
+						await hedger2.getAddress(),
+						1,
+						PositionType.LONG
+					)
+
+					expect(fundingHedger2After).to.not.equal(fundingHedger2Before)
+				})
+
+				it("should track active symbols separately per hedger", async function () {
+					// Open position with hedger1 in symbol 1
+					const quoteId1 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.symbolId(1)
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger.lockQuote(quoteId1)
+					await hedger.openPosition(quoteId1)
+
+					// Open position with hedger2 in symbol 1 (same symbol, different hedger)
+					const quoteId2 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.symbolId(1)
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger2.lockQuote(quoteId2)
+					await hedger2.openPosition(quoteId2)
+
+					// Check active symbols per hedger - both should have symbol 1
+					const activeSymbolsHedger1 = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(
+						await user.getAddress(),
+						await hedger.getAddress(),
+						0,
+						1000
+					)
+					const activeSymbolsHedger2 = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(
+						await user.getAddress(),
+						await hedger2.getAddress(),
+						0,
+						1000
+					)
+
+					// Each hedger should have symbol 1 tracked separately
+					expect(activeSymbolsHedger1.length).to.equal(1)
+					expect(activeSymbolsHedger1[0]).to.equal(1n)
+
+					expect(activeSymbolsHedger2.length).to.equal(1)
+					expect(activeSymbolsHedger2[0]).to.equal(1n)
+
+					// Global active symbols should contain symbol 1 (only once)
+					const allActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+					expect(allActiveSymbols.length).to.equal(1)
+					expect(allActiveSymbols[0]).to.equal(1n)
+				})
+
+				it("should handle closing position with one hedger without affecting other hedger's aggregate", async function () {
+					await time.increase(EightHourInSec)
+
+					// Open positions with both hedgers
+					const quoteId1 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger.lockQuote(quoteId1)
+					await hedger.openPosition(quoteId1)
+
+					const quoteId2 = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					await hedger2.lockQuote(quoteId2)
+					await hedger2.openPosition(quoteId2)
+
+					// Get initial aggregate for hedger2
+					const { longPosition: pos2Before } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
+						await user.getAddress(),
+						await hedger2.getAddress(),
+						1
+					)
+
+					// Close position with hedger1
+					await user.requestToClosePosition(quoteId1)
+					await hedger.fillCloseRequest(quoteId1)
+
+					// Hedger1's aggregate should be zero
+					const { longPosition: pos1After } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
+						await user.getAddress(),
+						await hedger.getAddress(),
+						1
+					)
+					expect(pos1After.aggregatedOpenAmount).to.equal(0n)
+
+					// Hedger2's aggregate should be unchanged
+					const { longPosition: pos2After } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
+						await user.getAddress(),
+						await hedger2.getAddress(),
+						1
+					)
+					expect(pos2After.aggregatedOpenAmount).to.equal(pos2Before.aggregatedOpenAmount)
+				})
+			})
 		})
 	})
-
-	// ============ Multi-Hedger Aggregate Funding Tests ============
-	// These tests verify that partyA aggregate funding is tracked correctly per-hedger
-	// This is critical when partyA has positions with multiple hedgers in the same symbol
-
-	describe("Multi-Hedger Aggregate Funding", function () {
-		let hedger2: Hedger
-
-		beforeEach(async function () {
-			// Setup second hedger
-			hedger2 = new Hedger(context, context.signers.hedger2)
-			await hedger2.setup()
-			await hedger2.setBalances(decimal(5000n), decimal(5000n))
-
-			// Setup funding rates for both hedgers with different rates
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
-
-			// Second hedger sets different funding rates for the same symbol
-			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger2)
-				.updateAccumulatedFundingFee([1], [decimal(2n, 14)], [-decimal(2n, 14)], [decimal(1n)])
-		})
-
-		it("should track aggregate funding separately per hedger", async function () {
-			await time.increase(EightHourInSec)
-			await context.symbolControlFacet
-				.connect(context.signers.admin)
-				.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
-
-			// Open position with first hedger
-			const quoteId1 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger.lockQuote(quoteId1)
-			await hedger.openPosition(quoteId1)
-
-			// Open position with second hedger
-			const quoteId2 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger2.lockQuote(quoteId2)
-			await hedger2.openPosition(quoteId2)
-
-			const quote1 = await context.viewFacetQuote.getQuote(quoteId1)
-			const quote2 = await context.viewFacetQuote.getQuote(quoteId2)
-
-			// Check aggregate funding per hedger
-			const fundingHedger1 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-			const fundingHedger2 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			// Each hedger's aggregate should only contain that hedger's positions
-			expect(fundingHedger1).to.equal(getWeightedPaidFunding(quote1))
-			expect(fundingHedger2).to.equal(getWeightedPaidFunding(quote2))
-
-			// They should be different because they have different funding rates
-			expect(fundingHedger1).to.not.equal(fundingHedger2)
-
-			const fundingHedger1PartyB = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
-				await hedger.getAddress(),
-				await user.getAddress(),
-				1,
-				PositionType.LONG
-			)
-			const fundingHedger2PartyB = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
-				await hedger2.getAddress(),
-				await user.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			expect(fundingHedger1PartyB).to.equal(getWeightedPaidFunding(quote1))
-			expect(fundingHedger2PartyB).to.equal(getWeightedPaidFunding(quote2))
-
-			expect(fundingHedger1PartyB).to.not.equal(fundingHedger2PartyB)
-
-			expect(fundingHedger1PartyB).to.be.eq(fundingHedger1)
-			expect(fundingHedger2PartyB).to.be.eq(fundingHedger2)
-		})
-
-		it("should calculate funding debt correctly per hedger with different rates", async function () {
-			await time.increase(EightHourInSec * 2)
-
-			// Open positions with both hedgers
-			const quoteId1 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger.lockQuote(quoteId1)
-			await hedger.openPosition(quoteId1)
-
-			const quoteId2 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger2.lockQuote(quoteId2)
-			await hedger2.openPosition(quoteId2)
-
-			// Wait for more funding to accumulate
-			await time.increase(EightHourInSec * 3)
-
-			// Get funding debt for each hedger relationship
-			const debtWithHedger1 = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-			const debtWithHedger2 = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			// Debts should be different because hedgers have different funding rates
-			expect(debtWithHedger1).to.not.equal(0)
-			expect(debtWithHedger2).to.not.equal(0)
-			expect(debtWithHedger2).to.be.eq(2n * debtWithHedger1)
-		})
-
-		it("should correctly update aggregate funding when charging per hedger (syncing quote funding value)", async function () {
-			await time.increase(EightHourInSec)
-
-			// Open positions with both hedgers
-			const quoteId1 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger.lockQuote(quoteId1)
-			await hedger.openPosition(quoteId1)
-
-			const quoteId2 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger2.lockQuote(quoteId2)
-			await hedger2.openPosition(quoteId2)
-
-			// Wait for funding to accumulate
-			await time.increase(EightHourInSec * 3)
-
-			// Charge funding for hedger1's quotes only
-			const fundingBefore = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			const fundingHedger2Before = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.chargeAccumulatedFundingFee(
-					await user.getAddress(),
-					await hedger.getAddress(),
-					[quoteId1],
-					await getDummyPairUpnlSig()
-				)
-
-			const fundingAfter = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			let fundingHedger2After = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			// Hedger1's aggregate should have changed
-			expect(fundingAfter).to.not.equal(fundingBefore)
-
-			// Hedger2's aggregate should remain unchanged
-			expect(fundingHedger2After).to.equal(fundingHedger2Before)
-
-			// Charge funding for hedger2 now
-			await context.fundingRateFacet
-				.connect(context.signers.hedger2)
-				.chargeAccumulatedFundingFee(
-					await user.getAddress(),
-					await hedger2.getAddress(),
-					[quoteId2],
-					await getDummyPairUpnlSig()
-				)
-
-			fundingHedger2After = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			expect(fundingHedger2After).to.not.equal(fundingHedger2Before)
-		})
-
-		it("should track active symbols separately per hedger", async function () {
-			// Open position with hedger1 in symbol 1
-			const quoteId1 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.symbolId(1)
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger.lockQuote(quoteId1)
-			await hedger.openPosition(quoteId1)
-
-			// Open position with hedger2 in symbol 1 (same symbol, different hedger)
-			const quoteId2 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.symbolId(1)
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger2.lockQuote(quoteId2)
-			await hedger2.openPosition(quoteId2)
-
-			// Check active symbols per hedger - both should have symbol 1
-			const activeSymbolsHedger1 = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				0,
-				1000
-			)
-			const activeSymbolsHedger2 = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				0,
-				1000
-			)
-
-			// Each hedger should have symbol 1 tracked separately
-			expect(activeSymbolsHedger1.length).to.equal(1)
-			expect(activeSymbolsHedger1[0]).to.equal(1n)
-
-			expect(activeSymbolsHedger2.length).to.equal(1)
-			expect(activeSymbolsHedger2[0]).to.equal(1n)
-
-			// Global active symbols should contain symbol 1 (only once)
-			const allActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
-			expect(allActiveSymbols.length).to.equal(1)
-			expect(allActiveSymbols[0]).to.equal(1n)
-		})
-
-		it("should return correct complete aggregate state per hedger", async function () {
-			await time.increase(EightHourInSec)
-
-			// Open positions with both hedgers (same quantity to make comparison easier)
-			const quoteId1 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.quantity(decimal(100n))
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger.lockQuote(quoteId1)
-			await hedger.openPosition(quoteId1)
-
-			const quoteId2 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.quantity(decimal(100n))
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger2.lockQuote(quoteId2)
-			await hedger2.openPosition(quoteId2)
-
-			// Get position state per hedger
-			const { longPosition: pos1 } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1
-			)
-			const { longPosition: pos2 } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				1
-			)
-
-			// Amounts should be equal (same quantity)
-			expect(pos1.aggregatedOpenAmount).to.equal(pos2.aggregatedOpenAmount)
-
-			// Avg prices should be equal (same price)
-			expect(pos1.avgOpenPrice).to.equal(pos2.avgOpenPrice)
-
-			// Get funding state per hedger
-			const funding1 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-			const funding2 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			// Weighted funding may differ due to different funding rates
-			// but both should be non-zero
-			expect(funding1).to.not.equal(0n)
-			expect(funding2).to.not.equal(0n)
-		})
-
-		it("should handle closing position with one hedger without affecting other hedger's aggregate", async function () {
-			await time.increase(EightHourInSec)
-
-			// Open positions with both hedgers
-			const quoteId1 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger.lockQuote(quoteId1)
-			await hedger.openPosition(quoteId1)
-
-			const quoteId2 = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger2.lockQuote(quoteId2)
-			await hedger2.openPosition(quoteId2)
-
-			// Get initial aggregate for hedger2
-			const { longPosition: pos2Before } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				1
-			)
-
-			// Close position with hedger1
-			await user.requestToClosePosition(quoteId1)
-			await hedger.fillCloseRequest(quoteId1)
-
-			// Hedger1's aggregate should be zero
-			const { longPosition: pos1After } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1
-			)
-			expect(pos1After.aggregatedOpenAmount).to.equal(0n)
-
-			// Hedger2's aggregate should be unchanged
-			const { longPosition: pos2After } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
-				await user.getAddress(),
-				await hedger2.getAddress(),
-				1
-			)
-			expect(pos2After.aggregatedOpenAmount).to.equal(pos2Before.aggregatedOpenAmount)
-		})
-	})
-
-	// ============ Aggregated Views by Active Symbols ============
-	// These tests verify the efficient view functions that use active symbols tracking
 
 	describe("Aggregated Views by Active Symbols", function () {
 		beforeEach(async function () {
@@ -1264,9 +1194,6 @@ export function shouldBehaveLikeAggregateViews(): void {
 			expect(partyBPerPartyA.length).to.equal(1)
 		})
 	})
-
-	// ============ Pagination ============
-	// These tests verify pagination works correctly for large numbers of active symbols
 
 	describe("Pagination", function () {
 		beforeEach(async function () {
@@ -1366,9 +1293,6 @@ export function shouldBehaveLikeAggregateViews(): void {
 			}
 		})
 	})
-
-	// ============ Aggregated Position Views ============
-	// Tests for position aggregation (amounts, notionals, avg prices)
 
 	describe("Aggregated Position Views", function () {
 		let posContext: RunContext
