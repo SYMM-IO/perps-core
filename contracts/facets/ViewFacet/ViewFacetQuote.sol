@@ -273,7 +273,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
-	 * @notice Returns Aggregated open position amounts and average open prices for a party B and symbol, grouped by position type.
+	 * @notice Returns Aggregated open position amounts and average open prices for a party B and symbol (global across all partyAs).
 	 * @param partyB The address of party B.
 	 * @param symbolId The symbol ID.
 	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
@@ -319,18 +319,20 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
-	 * @notice Returns Aggregated open position amounts and average open prices for a party A and symbol, grouped by position type.
+	 * @notice Returns Aggregated open position amounts and average open prices for a party A, party B, and symbol, grouped by position type.
 	 * @param partyA The address of party A.
+	 * @param partyB The address of party B.
 	 * @param symbolId The symbol ID.
 	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
 	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
 	 */
-	function getPartyAAggregatedPositionBySymbol(
+	function getPartyAAggregatedPositionBySymbolPerPartyB(
 		address partyA,
+		address partyB,
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyAAggregatedPositions[partyA][symbolId];
+		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId];
 		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
 		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
 		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
@@ -531,18 +533,21 @@ contract ViewFacetQuote is IViewFacetQuote {
 	// ============ Aggregate Funding View Functions ============
 
 	/**
-	 * @notice Returns the aggregate funding state for partyA at a specific symbol and position type
+	 * @notice Returns the aggregate funding state for partyA per partyB at a specific symbol and position type
+	 * @dev Uses per-partyB storage to correctly handle multi-hedger scenarios
 	 * @param partyA The partyA address
+	 * @param partyB The partyB address (different hedgers have different funding rates)
 	 * @param symbolId The symbol ID
 	 * @param positionType The position type (0 = LONG, 1 = SHORT)
 	 * @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
 	 */
-	function getPartyAAggregatedFunding(
+	function getPartyAAggregatedFundingPerPartyB(
 		address partyA,
+		address partyB,
 		uint256 symbolId,
 		PositionType positionType
 	) external view returns (int256 weightedPaidFunding) {
-		return QuoteStorage.layout().partyAAggregatedFunding[partyA][symbolId][positionType].weightedPaidFunding;
+		return QuoteStorage.layout().partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding;
 	}
 
 	/**
@@ -598,23 +603,26 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
-	 * @notice Returns both aggregated positions and funding for partyA at a specific symbol and position type
+	 * @notice Returns both aggregated positions and funding for partyA per partyB at a specific symbol and position type
 	 * @dev Convenience function for getting complete state needed for Muon verification
+	 *      Uses per-partyB storage to correctly handle multi-hedger scenarios
 	 * @param partyA The partyA address
+	 * @param partyB The partyB address (different hedgers have different funding rates)
 	 * @param symbolId The symbol ID
 	 * @param positionType The position type (0 = LONG, 1 = SHORT)
-	 * @return aggregatedAmount The total open amount
-	 * @return aggregatedNotional The total notional value
-	 * @return weightedPaidFunding The weighted paid funding
+	 * @return aggregatedAmount The total open amount with this specific hedger
+	 * @return aggregatedNotional The total notional value with this specific hedger
+	 * @return weightedPaidFunding The weighted paid funding with this specific hedger
 	 */
-	function getPartyACompleteAggregateState(
+	function getPartyACompleteAggregateStatePerPartyB(
 		address partyA,
+		address partyB,
 		uint256 symbolId,
 		PositionType positionType
 	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage pos = quoteLayout.partyAAggregatedPositions[partyA][symbolId][positionType];
-		PartiesAggregatedFunding storage funding = quoteLayout.partyAAggregatedFunding[partyA][symbolId][positionType];
+		PartiesAggregatedPositions storage pos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][positionType];
+		PartiesAggregatedFunding storage funding = quoteLayout.partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType];
 		return (pos.aggregatedAmount, pos.aggregatedNotional, funding.weightedPaidFunding);
 	}
 
@@ -643,52 +651,12 @@ contract ViewFacetQuote is IViewFacetQuote {
 	// ============ Active Symbols View Functions ============
 
 	/**
-	 * @notice Returns the count of active symbols for partyA
-	 * @param partyA The partyA address
-	 * @return The number of active symbols
-	 */
-	function getPartyAActiveSymbolsCount(address partyA) external view returns (uint256) {
-		return QuoteStorage.layout().partyAActiveSymbols[partyA].length;
-	}
-
-	/**
-	 * @notice Returns the count of active symbols for partyB (global)
+	 * @notice Returns the count of active symbols for partyB (global across all partyAs)
 	 * @param partyB The partyB address
 	 * @return The number of active symbols
 	 */
 	function getPartyBActiveSymbolsCount(address partyB) external view returns (uint256) {
 		return QuoteStorage.layout().partyBActiveSymbols[partyB].length;
-	}
-
-	/**
-	 * @notice Returns the count of active symbols for partyB with specific partyA
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @return The number of active symbols
-	 */
-	function getPartyBActiveSymbolsCountPerPartyA(address partyB, address partyA) external view returns (uint256) {
-		return QuoteStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA].length;
-	}
-
-	/**
-	 * @notice Returns a paginated list of symbol IDs that partyA has active positions in
-	 * @param partyA The partyA address
-	 * @param start The starting index
-	 * @param size The maximum number of symbols to return
-	 * @return An array of symbol IDs
-	 */
-	function getPartyAActiveSymbols(address partyA, uint256 start, uint256 size) external view returns (uint256[] memory) {
-		uint256[] storage activeSymbols = QuoteStorage.layout().partyAActiveSymbols[partyA];
-		uint256 totalLength = activeSymbols.length;
-		if (totalLength <= start) return new uint256[](0);
-		if (start + size > totalLength) size = totalLength - start;
-
-		uint256[] memory result = new uint256[](size);
-		for (uint256 i = 0; i < size; ) {
-			result[i] = activeSymbols[start + i];
-			unchecked { ++i; }
-		}
-		return result;
 	}
 
 	/**
@@ -713,85 +681,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
-	 * @notice Returns a paginated list of symbol IDs that partyB has active positions in with specific partyA
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @param start The starting index
-	 * @param size The maximum number of symbols to return
-	 * @return An array of symbol IDs
-	 */
-	function getPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 start, uint256 size) external view returns (uint256[] memory) {
-		uint256[] storage activeSymbols = QuoteStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA];
-		uint256 totalLength = activeSymbols.length;
-		if (totalLength <= start) return new uint256[](0);
-		if (start + size > totalLength) size = totalLength - start;
-
-		uint256[] memory result = new uint256[](size);
-		for (uint256 i = 0; i < size; ) {
-			result[i] = activeSymbols[start + i];
-			unchecked { ++i; }
-		}
-		return result;
-	}
-
-	/**
-	 * @notice Returns paginated aggregated positions for partyA using active symbols
-	 * @param partyA The partyA address
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of aggregated positions by symbol
-	 */
-	function getPartyAAggregatedPositionsByActiveSymbols(
-		address partyA,
-		uint256 start,
-		uint256 size
-	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbols[partyA];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
-		if (start + size > totalLength) size = totalLength - start;
-
-		// Max 2 entries per symbol (LONG + SHORT)
-		results = new AggregatedPositionBySymbol[](size * 2);
-		uint256 count;
-		uint256 end = start + size;
-
-		for (uint256 i = start; i < end; ) {
-			uint256 symbolId = activeSymbols[i];
-
-			// LONG
-			PartiesAggregatedPositions storage longPos = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.LONG];
-			if (longPos.aggregatedAmount > 0) {
-				results[count++] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmount,
-					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
-				});
-			}
-
-			// SHORT
-			PartiesAggregatedPositions storage shortPos = quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.SHORT];
-			if (shortPos.aggregatedAmount > 0) {
-				results[count++] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmount,
-					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
-				});
-			}
-
-			unchecked { ++i; }
-		}
-
-		// Trim array
-		assembly { mstore(results, count) }
-	}
-
-	/**
-	 * @notice Returns paginated aggregated positions for partyB using active symbols
+	 * @notice Returns paginated aggregated positions for partyB using active symbols (global)
 	 * @param partyB The partyB address
 	 * @param start The starting index in the active symbols array
 	 * @param size The maximum number of symbols to process
@@ -827,6 +717,126 @@ contract ViewFacetQuote is IViewFacetQuote {
 			}
 
 			PartiesAggregatedPositions storage shortPos = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = AggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedOpenAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		assembly { mstore(results, count) }
+	}
+
+	/**
+	 * @notice Returns the count of active symbols for partyB with specific partyA
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @return The number of active symbols
+	 */
+	function getPartyBActiveSymbolsCountPerPartyA(address partyB, address partyA) external view returns (uint256) {
+		return QuoteStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA].length;
+	}
+
+	/**
+	 * @notice Returns the count of active symbols for partyA with specific partyB
+	 * @dev Symbols where partyA has positions with this specific hedger
+	 * @param partyA The partyA address
+	 * @param partyB The partyB address
+	 * @return The number of active symbols with this hedger
+	 */
+	function getPartyAActiveSymbolsCountPerPartyB(address partyA, address partyB) external view returns (uint256) {
+		return QuoteStorage.layout().partyAActiveSymbolsPerPartyB[partyA][partyB].length;
+	}
+
+	/**
+	 * @notice Returns a paginated list of symbol IDs that partyA has active positions in with specific partyB
+	 * @dev Used for iterating through symbols where partyA has positions with a specific hedger
+	 * @param partyA The partyA address
+	 * @param partyB The partyB address
+	 * @param start The starting index
+	 * @param size The maximum number of symbols to return
+	 * @return An array of symbol IDs
+	 */
+	function getPartyAActiveSymbolsPerPartyB(address partyA, address partyB, uint256 start, uint256 size) external view returns (uint256[] memory) {
+		uint256[] storage activeSymbols = QuoteStorage.layout().partyAActiveSymbolsPerPartyB[partyA][partyB];
+		uint256 totalLength = activeSymbols.length;
+		if (totalLength <= start) return new uint256[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		uint256[] memory result = new uint256[](size);
+		for (uint256 i = 0; i < size; ) {
+			result[i] = activeSymbols[start + i];
+			unchecked { ++i; }
+		}
+		return result;
+	}
+
+	/**
+	 * @notice Returns a paginated list of symbol IDs that partyB has active positions in with specific partyA
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @param start The starting index
+	 * @param size The maximum number of symbols to return
+	 * @return An array of symbol IDs
+	 */
+	function getPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 start, uint256 size) external view returns (uint256[] memory) {
+		uint256[] storage activeSymbols = QuoteStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA];
+		uint256 totalLength = activeSymbols.length;
+		if (totalLength <= start) return new uint256[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		uint256[] memory result = new uint256[](size);
+		for (uint256 i = 0; i < size; ) {
+			result[i] = activeSymbols[start + i];
+			unchecked { ++i; }
+		}
+		return result;
+	}
+
+	/**
+	 * @notice Returns paginated aggregated positions for partyA per partyB using active symbols
+	 * @param partyA The partyA address
+	 * @param partyB The partyB address
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of aggregated positions by symbol
+	 */
+	function getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(
+		address partyA,
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedPositionBySymbol[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		results = new AggregatedPositionBySymbol[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			PartiesAggregatedPositions storage longPos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = AggregatedPositionBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedOpenAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
+				});
+			}
+
+			PartiesAggregatedPositions storage shortPos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -911,7 +921,8 @@ contract ViewFacetQuote is IViewFacetQuote {
 		uint256 size
 	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbols[partyA];
+		// Use per-partyB active symbols to only iterate symbols where partyA has positions with this specific hedger
+		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
@@ -924,8 +935,8 @@ contract ViewFacetQuote is IViewFacetQuote {
 		for (uint256 i = start; i < end; ) {
 			uint256 symbolId = activeSymbols[i];
 
-			// LONG
-			if (quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.LONG].aggregatedAmount > 0) {
+			// LONG - check per-partyB positions
+			if (quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
 				results[count++] = AggregatedFundingDebtBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
@@ -933,8 +944,8 @@ contract ViewFacetQuote is IViewFacetQuote {
 				});
 			}
 
-			// SHORT
-			if (quoteLayout.partyAAggregatedPositions[partyA][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
+			// SHORT - check per-partyB positions
+			if (quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
 				results[count++] = AggregatedFundingDebtBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,

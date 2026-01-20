@@ -30,6 +30,7 @@ library LibAggregateFunding {
 	/**
 	 * @notice Adds to aggregate funding when a position is opened
 	 * @dev Called after quote.accumulatedPaidFunding is set in updateAccumulatedPaidFunding
+	 *      Updates per-partyB storage since different hedgers have different funding rates
 	 * @param quote The quote being opened
 	 * @param amount The amount being opened
 	 */
@@ -40,7 +41,8 @@ library LibAggregateFunding {
 		// Note: accumulatedPaidFunding is already scaled by 1e18
 		int256 contribution = (int256(amount) * quote.accumulatedPaidFunding) / 1e18;
 
-		quoteLayout.partyAAggregatedFunding[quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding += contribution;
+		// Update per-partyB storage (required for accurate funding calculations with multiple hedgers)
+		quoteLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding += contribution;
 	}
 
 	/**
@@ -69,6 +71,7 @@ library LibAggregateFunding {
 	/**
 	 * @notice Subtracts from partyA aggregate funding when a position is closed
 	 * @dev Uses the quote's current accumulatedPaidFunding to calculate contribution
+	 *      Updates per-partyB storage since different hedgers have different funding rates
 	 * @param quote The quote being closed
 	 * @param amount The amount being closed
 	 */
@@ -78,7 +81,8 @@ library LibAggregateFunding {
 		// Calculate contribution to remove: amount × accumulatedPaidFunding / 1e18
 		int256 contribution = (int256(amount) * quote.accumulatedPaidFunding) / 1e18;
 
-		quoteLayout.partyAAggregatedFunding[quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding -= contribution;
+		// Update per-partyB storage (required for accurate funding calculations with multiple hedgers)
+		quoteLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding -= contribution;
 	}
 
 	/**
@@ -107,6 +111,7 @@ library LibAggregateFunding {
 	/**
 	 * @notice Updates aggregate funding when a quote's accumulatedPaidFunding changes
 	 * @dev Called when funding is charged and accumulatedPaidFunding is updated
+	 *      Updates per-partyB storage for partyA since different hedgers have different funding rates
 	 * @param quote The quote whose funding was charged
 	 * @param oldAccumulatedPaidFunding The previous accumulatedPaidFunding value
 	 * @param openAmount The current open amount of the quote
@@ -119,8 +124,8 @@ library LibAggregateFunding {
 		int256 newContribution = (int256(openAmount) * quote.accumulatedPaidFunding) / 1e18;
 		int256 delta = newContribution - oldContribution;
 
-		// Update partyA aggregate
-		quoteLayout.partyAAggregatedFunding[quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding += delta;
+		// Update partyA aggregate (per-partyB storage for accurate multi-hedger calculations)
+		quoteLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding += delta;
 
 		// Update partyB aggregate per partyA
 		quoteLayout.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding += delta;
@@ -129,8 +134,9 @@ library LibAggregateFunding {
 	/**
 	 * @notice Calculates the aggregate funding debt for partyA for a specific symbol and position type
 	 * @dev This is a conservative estimate that ignores maxFundingRate caps
+	 *      Uses per-partyB storage to correctly handle multi-hedger scenarios
 	 * @param partyA The partyA address
-	 * @param partyB The partyB address (needed for funding rate lookup)
+	 * @param partyB The partyB address (needed for funding rate lookup and per-hedger positions)
 	 * @param symbolId The symbol ID
 	 * @param positionType The position type (LONG or SHORT)
 	 * @return The aggregate funding debt (positive = partyA owes, negative = partyA is owed)
@@ -142,7 +148,8 @@ library LibAggregateFunding {
 		PositionType positionType
 	) internal view returns (int256) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		PartiesAggregatedPositions storage pos = quoteLayout.partyAAggregatedPositions[partyA][symbolId][positionType];
+		// Use per-partyB positions to get only positions with this specific hedger
+		PartiesAggregatedPositions storage pos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][positionType];
 
 		if (pos.aggregatedAmount == 0) return 0;
 
@@ -152,7 +159,8 @@ library LibAggregateFunding {
 		// Get current accumulated fee (same logic as in getAccumulatedFundingFee)
 		int256 currentFee = _calculateCurrentFee(fundingFee, positionType);
 
-		int256 weightedPaid = quoteLayout.partyAAggregatedFunding[partyA][symbolId][positionType].weightedPaidFunding;
+		// Use per-partyB weighted paid funding
+		int256 weightedPaid = quoteLayout.partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding;
 
 		// Total funding = totalAmount × currentFee / 1e18 - totalWeightedPaid
 		// Note: currentFee already includes epochs multiplication from _calculateCurrentFee

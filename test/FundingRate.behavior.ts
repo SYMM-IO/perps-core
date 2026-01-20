@@ -596,8 +596,9 @@ export function shouldBehaveLikeFundingRate(): void {
 
 				// Verify aggregate funding matches per-quote calculation
 				const perQuoteFee1 = await context.viewFacetSymbol.getAccumulatedFundingFees([5])
-				const aggregateFunding1 = await context.viewFacetQuote.getPartyAAggregatedFunding(
+				const aggregateFunding1 = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
 					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)
@@ -645,8 +646,9 @@ export function shouldBehaveLikeFundingRate(): void {
 
 				// Verify aggregate funding after second charge
 				const perQuoteFee2 = await context.viewFacetSymbol.getAccumulatedFundingFees([5])
-				const aggregateFunding2 = await context.viewFacetQuote.getPartyAAggregatedFunding(
+				const aggregateFunding2 = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
 					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)
@@ -693,8 +695,9 @@ export function shouldBehaveLikeFundingRate(): void {
 
 				// Verify aggregate funding after final charge
 				const perQuoteFee3 = await context.viewFacetSymbol.getAccumulatedFundingFees([5])
-				const aggregateFunding3 = await context.viewFacetQuote.getPartyAAggregatedFunding(
+				const aggregateFunding3 = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
 					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)
@@ -708,8 +711,9 @@ export function shouldBehaveLikeFundingRate(): void {
 				expect(aggregateDebt3).to.be.gte(perQuoteFee3[0])
 
 				// Also verify complete aggregate state
-				const [aggAmount, aggNotional, aggWeightedFunding] = await context.viewFacetQuote.getPartyACompleteAggregateState(
+				const [aggAmount, aggNotional, aggWeightedFunding] = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
 					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)

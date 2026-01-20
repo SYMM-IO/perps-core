@@ -71,8 +71,9 @@ interface IViewFacetQuote {
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
 
-	function getPartyAAggregatedPositionBySymbol(
+	function getPartyAAggregatedPositionBySymbolPerPartyB(
 		address partyA,
+		address partyB,
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
 
@@ -128,7 +129,12 @@ interface IViewFacetQuote {
 
 	// ============ Aggregate Funding View Functions ============
 
-	function getPartyAAggregatedFunding(address partyA, uint256 symbolId, PositionType positionType) external view returns (int256 weightedPaidFunding);
+	function getPartyAAggregatedFundingPerPartyB(
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 weightedPaidFunding);
 
 	function getPartyBAggregatedFundingPerPartyA(
 		address partyB,
@@ -151,8 +157,9 @@ interface IViewFacetQuote {
 		PositionType positionType
 	) external view returns (int256 fundingDebt);
 
-	function getPartyACompleteAggregateState(
+	function getPartyACompleteAggregateStatePerPartyB(
 		address partyA,
+		address partyB,
 		uint256 symbolId,
 		PositionType positionType
 	) external view returns (uint256 aggregatedAmount, uint256 aggregatedNotional, int256 weightedPaidFunding);
@@ -166,25 +173,26 @@ interface IViewFacetQuote {
 
 	// ============ Active Symbols View Functions ============
 
-	function getPartyAActiveSymbolsCount(address partyA) external view returns (uint256);
-
 	function getPartyBActiveSymbolsCount(address partyB) external view returns (uint256);
-
-	function getPartyBActiveSymbolsCountPerPartyA(address partyB, address partyA) external view returns (uint256);
-
-	function getPartyAActiveSymbols(address partyA, uint256 start, uint256 size) external view returns (uint256[] memory);
 
 	function getPartyBActiveSymbols(address partyB, uint256 start, uint256 size) external view returns (uint256[] memory);
 
-	function getPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 start, uint256 size) external view returns (uint256[] memory);
-
-	function getPartyAAggregatedPositionsByActiveSymbols(
-		address partyA,
+	function getPartyBAggregatedPositionsByActiveSymbols(
+		address partyB,
 		uint256 start,
 		uint256 size
 	) external view returns (AggregatedPositionBySymbol[] memory);
 
-	function getPartyBAggregatedPositionsByActiveSymbols(
+	function getPartyBActiveSymbolsCountPerPartyA(address partyB, address partyA) external view returns (uint256);
+
+	function getPartyAActiveSymbolsCountPerPartyB(address partyA, address partyB) external view returns (uint256);
+
+	function getPartyAActiveSymbolsPerPartyB(address partyA, address partyB, uint256 start, uint256 size) external view returns (uint256[] memory);
+
+	function getPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 start, uint256 size) external view returns (uint256[] memory);
+
+	function getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(
+		address partyA,
 		address partyB,
 		uint256 start,
 		uint256 size

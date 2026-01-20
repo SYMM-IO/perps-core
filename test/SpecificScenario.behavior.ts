@@ -33,19 +33,44 @@ export function shouldBehaveLikeSpecificScenario(): void {
 	})
 
 	const expectPartyBTotals = async (context: RunContext, longAmount: bigint, longAvgPrice: bigint, shortAmount: bigint, shortAvgPrice: bigint) => {
-		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbol(context.signers.hedger.address, 1)
-		expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
-		expect(longPosition.avgOpenPrice).to.equal(longAvgPrice)
-		expect(shortPosition.aggregatedOpenAmount).to.equal(shortAmount)
-		expect(shortPosition.avgOpenPrice).to.equal(shortAvgPrice)
+		// Aggregate positions from both user and user2 (since we removed global storage)
+		const pos1 = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user.address, 1)
+		const pos2 = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user2.address, 1)
+
+		const totalLongAmount = pos1.longPosition.aggregatedOpenAmount + pos2.longPosition.aggregatedOpenAmount
+		const totalLongNotional = pos1.longPosition.aggregatedOpenAmount * pos1.longPosition.avgOpenPrice +
+			pos2.longPosition.aggregatedOpenAmount * pos2.longPosition.avgOpenPrice
+		const totalShortAmount = pos1.shortPosition.aggregatedOpenAmount + pos2.shortPosition.aggregatedOpenAmount
+		const totalShortNotional = pos1.shortPosition.aggregatedOpenAmount * pos1.shortPosition.avgOpenPrice +
+			pos2.shortPosition.aggregatedOpenAmount * pos2.shortPosition.avgOpenPrice
+
+		const avgLong = totalLongAmount === 0n ? 0n : totalLongNotional / totalLongAmount
+		const avgShort = totalShortAmount === 0n ? 0n : totalShortNotional / totalShortAmount
+
+		expect(totalLongAmount).to.equal(longAmount)
+		expect(avgLong).to.equal(longAvgPrice)
+		expect(totalShortAmount).to.equal(shortAmount)
+		expect(avgShort).to.equal(shortAvgPrice)
 	}
 
 	const expectPartyATotals = async (context: RunContext, longAmount: bigint, longAvgPrice: bigint, shortAmount: bigint, shortAvgPrice: bigint) => {
-		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyAAggregatedPositionBySymbol(context.signers.user.address, 1)
-		expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
-		expect(longPosition.avgOpenPrice).to.equal(longAvgPrice)
-		expect(shortPosition.aggregatedOpenAmount).to.equal(shortAmount)
-		expect(shortPosition.avgOpenPrice).to.equal(shortAvgPrice)
+		// Query partyA's positions per partyB using the complete aggregate state
+		const longState = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+			context.signers.user.address,
+			context.signers.hedger.address,
+			1,
+			PositionType.LONG,
+		)
+		const shortState = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+			context.signers.user.address,
+			context.signers.hedger.address,
+			1,
+			PositionType.SHORT,
+		)
+		expect(longState.aggregatedAmount).to.equal(longAmount)
+		expect(longState.aggregatedAmount === 0n ? 0n : longState.aggregatedNotional / longState.aggregatedAmount).to.equal(longAvgPrice)
+		expect(shortState.aggregatedAmount).to.equal(shortAmount)
+		expect(shortState.aggregatedAmount === 0n ? 0n : shortState.aggregatedNotional / shortState.aggregatedAmount).to.equal(shortAvgPrice)
 	}
 
 	const expectPartyBTotalsByPartyA = async (

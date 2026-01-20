@@ -108,17 +108,20 @@ library QuoteStorage {
 		uint256 lastCloseId;
 		mapping(uint256 => uint256) closeIds;
 		mapping(address => uint256) partyALockQuotesCount;
-		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyBAggregatedPositions; // partyB => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
-		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyAAggregatedPositions; // partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
-		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyBAggregatedPositionsPerPartyA; // partyB => partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
-		// Aggregate funding tracking for nonce-free Muon verification
-		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding))) partyAAggregatedFunding; // partyA => symbolId => positionType => aggregate funding
-		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding)))) partyBAggregatedFundingPerPartyA; // partyB => partyA => symbolId => positionType => aggregate funding
-		// Active symbols tracking for efficient view calls
-		mapping(address => uint256[]) partyAActiveSymbols; // partyA => symbolId[]
-		mapping(address => mapping(uint256 => uint256)) partyAActiveSymbolsIndex; // partyA => symbolId => index+1 (0 = not active)
+		// Global partyB aggregated positions (for master account mode UPNL calculations across all partyAs)
+		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyBAggregatedPositions; // partyB => symbolId => positionType
+		// Per-counterparty aggregated positions (for UPNL calculations with per-hedger funding rates)
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyBAggregatedPositionsPerPartyA; // partyB => partyA => symbolId => positionType
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyAAggregatedPositionsPerPartyB; // partyA => partyB => symbolId => positionType
+		// Per-counterparty aggregate funding tracking
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding)))) partyAAggregatedFundingPerPartyB; // partyA => partyB => symbolId => positionType
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding)))) partyBAggregatedFundingPerPartyA; // partyB => partyA => symbolId => positionType
+		// Global partyB active symbols (for master account mode iteration across all partyAs)
 		mapping(address => uint256[]) partyBActiveSymbols; // partyB => symbolId[]
 		mapping(address => mapping(uint256 => uint256)) partyBActiveSymbolsIndex; // partyB => symbolId => index+1 (0 = not active)
+		// Per-counterparty active symbols tracking for efficient iteration
+		mapping(address => mapping(address => uint256[])) partyAActiveSymbolsPerPartyB; // partyA => partyB => symbolId[]
+		mapping(address => mapping(address => mapping(uint256 => uint256))) partyAActiveSymbolsIndexPerPartyB; // partyA => partyB => symbolId => index+1 (0 = not active)
 		mapping(address => mapping(address => uint256[])) partyBActiveSymbolsPerPartyA; // partyB => partyA => symbolId[]
 		mapping(address => mapping(address => mapping(uint256 => uint256))) partyBActiveSymbolsIndexPerPartyA; // partyB => partyA => symbolId => index+1 (0 = not active)
 	}
