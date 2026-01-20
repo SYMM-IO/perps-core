@@ -9,6 +9,8 @@ const symmioInterface = new ethers.Interface([
 ])
 
 const coreInterface = new ethers.Interface([
+	"function depositForAccount(address account,uint256 amount)",
+	"function depositAndAllocateForAccount(address account,uint256 amount)",
 	"function depositForAccountWithExpressRate(address account,uint256 amount)",
 	"function depositAndAllocateForAccountWithExpressRate(address account,uint256 amount)",
 ])
@@ -112,112 +114,109 @@ export function shouldBehaveLikeAccountManager(): void {
 			})
 		})
 
-		describe("depositForAccount", function () {
-			it("pulls collateral, approves AccountHub, and forwards call", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("250", 18)
+			describe("depositForAccount", function () {
+				it("forwards the deposit call via AccountHub with signer wrapper", async function () {
+					const context = await loadFixture(accountManagerFixture)
+					const account = ethers.Wallet.createRandom().address
+					const amount = ethers.parseUnits("250", 18)
 
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-				await context.accountHubMock.resetTracking()
+					await context.accountHubMock.resetTracking()
 
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount)
+					// Fund the user but do NOT approve AccountManager
+					await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
 
-				await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, amount)).to.not.be.reverted
+					const userBalanceBefore = await context.token.balanceOf(context.signers.user.address)
+					const hubBalanceBefore = await context.token.balanceOf(await context.accountHubMock.getAddress())
+					const managerBalanceBefore = await context.token.balanceOf(await context.accountManager.getAddress())
 
-				const allowance = await context.token.allowance(await context.accountManager.getAddress(), await context.accountHubMock.getAddress())
-				expect(allowance).to.equal(amount)
+					await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, amount)).to.not.be.reverted
 
-				const callData = await context.accountHubMock.getLastCallData()
-				expect(callData.length).to.equal(1)
-				expect(callData[0]).to.equal(symmioInterface.encodeFunctionData("depositFor", [account, amount]))
-				expect(await context.accountHubMock.lastCallAccount()).to.equal(account)
+					const userBalanceAfter = await context.token.balanceOf(context.signers.user.address)
+					const hubBalanceAfter = await context.token.balanceOf(await context.accountHubMock.getAddress())
+					const managerBalanceAfter = await context.token.balanceOf(await context.accountManager.getAddress())
 
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+					expect(userBalanceAfter - userBalanceBefore).to.equal(0n)
+					expect(hubBalanceAfter - hubBalanceBefore).to.equal(0n)
+					expect(managerBalanceAfter - managerBalanceBefore).to.equal(0n)
+
+					const callData = await context.accountHubMock.getLastCallData()
+					expect(callData.length).to.equal(1)
+					expect(callData[0]).to.equal(coreInterface.encodeFunctionData("depositForAccount", [account, amount]))
+					expect(await context.accountHubMock.lastCallAccount()).to.equal(account)
+
+					const signerLog = await context.accountHubMock.getSignerLog()
+					expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+				})
+
+				it("resets signer when AccountHub call reverts", async function () {
+					const context = await loadFixture(accountManagerFixture)
+					const account = ethers.Wallet.createRandom().address
+					const amount = ethers.parseUnits("25", 18)
+
+					await context.accountHubMock.resetTracking()
+					await context.accountHubMock.setRevertOnCall(true)
+
+					await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, amount)).to.be.revertedWith(
+						"MockAccountHub: call reverted",
+					)
+
+					const signerLog = await context.accountHubMock.getSignerLog()
+					expect(signerLog.length).to.equal(0)
+					expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
+				})
 			})
 
-			it("reverts when caller lacks allowance", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("10", 18)
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, amount)).to.be.revertedWith(
-					"ERC20: insufficient allowance",
-				)
+			describe("depositAndAllocateForAccount", function () {
+				it("forwards the deposit+allocate call via AccountHub with signer wrapper", async function () {
+					const context = await loadFixture(accountManagerFixture)
+					const account = ethers.Wallet.createRandom().address
+					const amount = ethers.parseUnits("50", 18)
+
+					await context.accountHubMock.resetTracking()
+
+					// Fund the user but do NOT approve AccountManager
+					await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
+
+					const userBalanceBefore = await context.token.balanceOf(context.signers.user.address)
+					const hubBalanceBefore = await context.token.balanceOf(await context.accountHubMock.getAddress())
+					const managerBalanceBefore = await context.token.balanceOf(await context.accountManager.getAddress())
+
+					await expect(context.accountManager.connect(context.signers.user).depositAndAllocateForAccount(account, amount)).to.not.be.reverted
+
+					const userBalanceAfter = await context.token.balanceOf(context.signers.user.address)
+					const hubBalanceAfter = await context.token.balanceOf(await context.accountHubMock.getAddress())
+					const managerBalanceAfter = await context.token.balanceOf(await context.accountManager.getAddress())
+
+					expect(userBalanceAfter - userBalanceBefore).to.equal(0n)
+					expect(hubBalanceAfter - hubBalanceBefore).to.equal(0n)
+					expect(managerBalanceAfter - managerBalanceBefore).to.equal(0n)
+
+					const callData = await context.accountHubMock.getLastCallData()
+					expect(callData.length).to.equal(1)
+					expect(callData[0]).to.equal(coreInterface.encodeFunctionData("depositAndAllocateForAccount", [account, amount]))
+					expect(await context.accountHubMock.lastCallAccount()).to.equal(account)
+
+					const signerLog = await context.accountHubMock.getSignerLog()
+					expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+				})
+
+				it("resets signer when AccountHub call reverts", async function () {
+					const context = await loadFixture(accountManagerFixture)
+					const account = ethers.Wallet.createRandom().address
+					const amount = ethers.parseUnits("25", 18)
+
+					await context.accountHubMock.resetTracking()
+					await context.accountHubMock.setRevertOnCall(true)
+
+					await expect(
+						context.accountManager.connect(context.signers.user).depositAndAllocateForAccount(account, amount),
+					).to.be.revertedWith("MockAccountHub: call reverted")
+
+					const signerLog = await context.accountHubMock.getSignerLog()
+					expect(signerLog.length).to.equal(0)
+					expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
+				})
 			})
-
-			it("increments allowance across multiple deposits", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount1 = ethers.parseUnits("5", 18)
-				const amount2 = ethers.parseUnits("7", 18)
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount1 + amount2)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount1 + amount2)
-
-				await context.accountManager.connect(context.signers.user).depositForAccount(account, amount1)
-				await context.accountManager.connect(context.signers.user).depositForAccount(account, amount2)
-
-				const allowance = await context.token.allowance(await context.accountManager.getAddress(), await context.accountHubMock.getAddress())
-				expect(allowance).to.equal(amount1 + amount2)
-			})
-
-			it("requires the related core to be configured", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.setRequireRelatedCore(true)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("1", 18)
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount)
-				await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, amount)).to.be.revertedWith(
-					"MockAccountHub: core not set",
-				)
-			})
-		})
-
-		describe("depositAndAllocateForAccount", function () {
-			it("routes the allocate call with the signer wrapper", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("50", 18)
-
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-				await context.accountHubMock.resetTracking()
-
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount)
-
-				await expect(context.accountManager.connect(context.signers.user).depositAndAllocateForAccount(account, amount)).to.not.be.reverted
-
-				const callData = await context.accountHubMock.getLastCallData()
-				expect(callData[0]).to.equal(symmioInterface.encodeFunctionData("depositAndAllocateFor", [account, amount]))
-
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
-			})
-
-			it("resets signer when AccountHub call reverts", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("25", 18)
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount)
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.setRevertOnCall(true)
-				await expect(context.accountManager.connect(context.signers.user).depositAndAllocateForAccount(account, amount)).to.be.revertedWith(
-					"MockAccountHub: call reverted",
-				)
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog.length).to.equal(0)
-				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
-			})
-		})
 
 		describe("depositForAccountWithExpressRate", function () {
 			it("forwards express deposit call via AccountHub", async function () {
