@@ -42,7 +42,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 		describe("Aggregate Funding Tracking on Position Open", function () {
 			it("should initialize aggregate funding to zero for new symbol/position type", async function () {
 				// Check initial state before any positions
-				const partyAFunding = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const partyAFunding = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -50,7 +50,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				)
 				expect(partyAFunding).to.equal(0)
 
-				const partyBFunding = await context.viewFacetQuote.getPartyBAggregatedFundingPerPartyA(
+				const partyBFunding = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
 					await hedger.getAddress(),
 					await user.getAddress(),
 					1,
@@ -80,7 +80,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 				// Check aggregate funding was updated
 				const quote = await context.viewFacetQuote.getQuote(quoteId)
-				const partyAFunding = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const partyAFunding = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -89,7 +89,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				const expectedFunding = getWeightedPaidFunding(quote)
 				expect(partyAFunding).to.equal(expectedFunding)
 
-				const partyBFunding = await context.viewFacetQuote.getPartyBAggregatedFundingPerPartyA(
+				const partyBFunding = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
 					await hedger.getAddress(),
 					await user.getAddress(),
 					1,
@@ -118,7 +118,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 				const firstQuote = await context.viewFacetQuote.getQuote(firstQuoteId)
 				const expectedFirst = getWeightedPaidFunding(firstQuote)
-				const fundingAfterFirst = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const fundingAfterFirst = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -136,7 +136,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await hedger.lockQuote(secondQuoteId)
 				await hedger.openPosition(secondQuoteId)
 
-				const fundingAfterSecond = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const fundingAfterSecond = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -180,13 +180,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 				const longQuote = await context.viewFacetQuote.getQuote(longQuoteId)
 				const shortQuote = await context.viewFacetQuote.getQuote(shortQuoteId)
-				const longFunding = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const longFunding = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)
-				const shortFunding = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const shortFunding = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -223,7 +223,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			it("should update aggregate funding when funding is charged (quote funding value sync)", async function () {
 				const quoteBefore = await context.viewFacetQuote.getQuote(openQuoteId)
 				const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
-				const fundingBefore = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const fundingBefore = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -242,7 +242,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					)
 
 				const quoteAfter = await context.viewFacetQuote.getQuote(openQuoteId)
-				const fundingAfter = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const fundingAfter = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -256,13 +256,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 			it("should correctly update both partyA and partyB aggregate funding on charge", async function () {
 				const quoteBefore = await context.viewFacetQuote.getQuote(openQuoteId)
 				const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
-				const partyAFundingBefore = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const partyAFundingBefore = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)
-				const partyBFundingBefore = await context.viewFacetQuote.getPartyBAggregatedFundingPerPartyA(
+				const partyBFundingBefore = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
 					await hedger.getAddress(),
 					await user.getAddress(),
 					1,
@@ -282,13 +282,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 					)
 
 				const quoteAfter = await context.viewFacetQuote.getQuote(openQuoteId)
-				const partyAFundingAfter = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const partyAFundingAfter = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)
-				const partyBFundingAfter = await context.viewFacetQuote.getPartyBAggregatedFundingPerPartyA(
+				const partyBFundingAfter = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
 					await hedger.getAddress(),
 					await user.getAddress(),
 					1,
@@ -333,7 +333,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					)
 
 				const quoteBeforeClose = await context.viewFacetQuote.getQuote(openQuoteId)
-				const fundingBeforeClose = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const fundingBeforeClose = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -348,7 +348,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				// Fill close request
 				await hedger.fillCloseRequest(openQuoteId)
 
-				const fundingAfterClose = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const fundingAfterClose = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -381,7 +381,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 						await getDummyPairUpnlSig()
 					)
 
-				const fundingBeforeClose = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const fundingBeforeClose = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -394,7 +394,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await user.requestToClosePosition(openQuoteId)
 				await hedger.fillCloseRequest(openQuoteId)
 
-				const fundingAfterClose = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+				const fundingAfterClose = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -416,7 +416,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 
 			it("should return zero funding debt when no positions exist", async function () {
-				const debt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+				const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -438,7 +438,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				// Wait for funding to accumulate
 				await time.increase(EightHourInSec * 3)
 
-				const partyADebt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+				const partyADebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -465,14 +465,14 @@ export function shouldBehaveLikeAggregateViews(): void {
 				// Wait for funding to accumulate
 				await time.increase(EightHourInSec * 3)
 
-				const partyADebt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+				const partyADebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)
 
-				const partyBDebt = await context.viewFacetQuote.getPartyBAggregateFundingDebt(
+				const partyBDebt = await context.viewFacetAggregate.getPartyBAggregateFundingDebt(
 					await hedger.getAddress(),
 					await user.getAddress(),
 					1,
@@ -504,7 +504,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 		it("should return complete aggregate state for partyA", async function () {
 			const [aggregatedAmount, aggregatedNotional, weightedPaidFunding] =
-				await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+				await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
@@ -518,7 +518,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 		it("should return complete aggregate state for partyB per partyA", async function () {
 			const [aggregatedAmount, aggregatedNotional, weightedPaidFunding] =
-				await context.viewFacetQuote.getPartyBCompleteAggregateStatePerPartyA(
+				await context.viewFacetAggregate.getPartyBCompleteAggregateStatePerPartyA(
 					await hedger.getAddress(),
 					await user.getAddress(),
 					1,
@@ -554,7 +554,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await time.increase(EightHourInSec * 2)
 
 			// Get aggregate funding debt
-			const aggregateFundingDebt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+			const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -565,7 +565,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			expect(aggregateFundingDebt).to.not.equal(0)
 
 			// Verify partyB debt is opposite
-			const partyBAggregateFundingDebt = await context.viewFacetQuote.getPartyBAggregateFundingDebt(
+			const partyBAggregateFundingDebt = await context.viewFacetAggregate.getPartyBAggregateFundingDebt(
 				await hedger.getAddress(),
 				await user.getAddress(),
 				1,
@@ -606,7 +606,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			}
 
 			// Get aggregate funding debt
-			const aggregateFundingDebt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+			const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -652,7 +652,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			}
 
 			// Get aggregate funding debt
-			const aggregateFundingDebt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+			const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -699,7 +699,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			}
 
 			// Get aggregate funding debt
-			const aggregateFundingDebt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+			const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -775,7 +775,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await time.increase(EightHourInSec * 3)
 
 			// Funding debt should be zero
-			const debt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+			const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -791,7 +791,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.openPosition(quoteId)
 
 			// Debt should be zero since no funding system is configured
-			const debt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+			const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -821,7 +821,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await time.increase(EightHourInSec * 3)
 
 			// With negative long rate, partyA should be owed money (negative debt)
-			const debt = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+			const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -845,10 +845,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		it("should have empty active symbols list initially", async function () {
-			const activeSymbols = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const activeSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(activeSymbols.length).to.equal(0)
 
-			const partyBActiveSymbols = await context.viewFacetQuote.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
 			expect(partyBActiveSymbols.length).to.equal(0)
 		})
 
@@ -857,11 +857,11 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.lockQuote(quoteId)
 			await hedger.openPosition(quoteId)
 
-			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(1)
 			expect(partyAActiveSymbols[0]).to.equal(1n)
 
-			const partyBActiveSymbols = await context.viewFacetQuote.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
 			expect(partyBActiveSymbols.length).to.equal(1)
 		})
 
@@ -875,7 +875,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.lockQuote(secondQuoteId)
 			await hedger.openPosition(secondQuoteId)
 
-			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(1) // Still only 1 symbol
 		})
 
@@ -884,13 +884,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.lockQuote(quoteId)
 			await hedger.openPosition(quoteId)
 
-			let partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			let partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(1)
 
 			await user.requestToClosePosition(quoteId)
 			await hedger.fillCloseRequest(quoteId)
 
-			partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(0)
 		})
 
@@ -908,7 +908,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await user.requestToClosePosition(firstQuoteId)
 			await hedger.fillCloseRequest(firstQuoteId)
 
-			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(1) // Still has symbol 1
 		})
 
@@ -929,7 +929,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.lockQuote(symbol2QuoteId)
 			await hedger.openPosition(symbol2QuoteId)
 
-			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(2)
 			expect(partyAActiveSymbols).to.include(1n)
 			expect(partyAActiveSymbols).to.include(2n)
@@ -959,7 +959,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await user.requestToClosePosition(symbol1QuoteId)
 			await hedger.fillCloseRequest(symbol1QuoteId)
 
-			const partyAActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(partyAActiveSymbols.length).to.equal(2)
 			expect(partyAActiveSymbols).to.include(2n)
 			expect(partyAActiveSymbols).to.include(3n)
@@ -1021,13 +1021,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 			const quote2 = await context.viewFacetQuote.getQuote(quoteId2)
 
 			// Check aggregate funding per hedger
-			const fundingHedger1 = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+			const fundingHedger1 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
 				PositionType.LONG
 			)
-			const fundingHedger2 = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+			const fundingHedger2 = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
@@ -1067,13 +1067,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await time.increase(EightHourInSec * 3)
 
 			// Get funding debt for each hedger relationship
-			const debtWithHedger1 = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+			const debtWithHedger1 = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
 				PositionType.LONG
 			)
-			const debtWithHedger2 = await context.viewFacetQuote.getPartyAAggregateFundingDebt(
+			const debtWithHedger2 = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
@@ -1112,7 +1112,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await time.increase(EightHourInSec * 3)
 
 			// Charge funding for hedger1's quotes only
-			const fundingBefore = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+			const fundingBefore = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -1128,7 +1128,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					await getDummyPairUpnlSig()
 				)
 
-			const fundingAfter = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+			const fundingAfter = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -1139,7 +1139,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			expect(fundingAfter).to.not.equal(fundingBefore)
 
 			// Hedger2's aggregate should remain unchanged (no charge was made)
-			const fundingHedger2Before = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+			const fundingHedger2Before = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
@@ -1156,7 +1156,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					await getDummyPairUpnlSig()
 				)
 
-			const fundingHedger2After = await context.viewFacetQuote.getPartyAAggregatedFundingPerPartyB(
+			const fundingHedger2After = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
@@ -1188,13 +1188,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger2.openPosition(quoteId2)
 
 			// Check active symbols per hedger - both should have symbol 1
-			const activeSymbolsHedger1 = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(
+			const activeSymbolsHedger1 = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				0,
 				1000
 			)
-			const activeSymbolsHedger2 = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(
+			const activeSymbolsHedger2 = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				0,
@@ -1209,7 +1209,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			expect(activeSymbolsHedger2[0]).to.equal(1n)
 
 			// Global active symbols should contain symbol 1 (only once)
-			const allActiveSymbols = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const allActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(allActiveSymbols.length).to.equal(1)
 			expect(allActiveSymbols[0]).to.equal(1n)
 		})
@@ -1237,13 +1237,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger2.openPosition(quoteId2)
 
 			// Get complete state per hedger
-			const [amount1, notional1, weighted1] = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+			const [amount1, notional1, weighted1] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
 				PositionType.LONG
 			)
-			const [amount2, notional2, weighted2] = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+			const [amount2, notional2, weighted2] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
@@ -1283,7 +1283,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger2.openPosition(quoteId2)
 
 			// Get initial aggregate for hedger2
-			const [amount2Before] = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+			const [amount2Before] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
@@ -1295,7 +1295,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.fillCloseRequest(quoteId1)
 
 			// Hedger1's aggregate should be zero
-			const [amount1After] = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+			const [amount1After] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				1,
@@ -1304,7 +1304,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			expect(amount1After).to.equal(0n)
 
 			// Hedger2's aggregate should be unchanged
-			const [amount2After] = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+			const [amount2After] = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
@@ -1326,7 +1326,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		it("should return empty array when no positions", async function () {
-			const positions = await context.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const positions = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(positions.length).to.equal(0)
 		})
 
@@ -1335,10 +1335,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.lockQuote(quoteId)
 			await hedger.openPosition(quoteId)
 
-			const positions = await context.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const positions = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(positions.length).to.equal(1)
 			expect(positions[0].symbolId).to.equal(1n)
-			const { longPosition } = await context.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(await user.getAddress(), await hedger.getAddress(), 1)
+			const { longPosition } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(await user.getAddress(), await hedger.getAddress(), 1)
 			expect(positions[0].aggregatedOpenAmount).to.equal(longPosition.aggregatedOpenAmount)
 		})
 
@@ -1353,7 +1353,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.lockQuote(shortQuoteId)
 			await hedger.openPosition(shortQuoteId)
 
-			const positions = await context.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			const positions = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
 			expect(positions.length).to.equal(2)
 
 			const longPos = positions.find((p: any) => p.positionType === BigInt(PositionType.LONG))
@@ -1369,7 +1369,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 			await time.increase(EightHourInSec * 3)
 
-			const fundingDebts = await context.viewFacetQuote.getPartyAAggregateFundingDebtByActiveSymbols(
+			const fundingDebts = await context.viewFacetAggregate.getPartyAAggregateFundingDebtByActiveSymbols(
 				await user.getAddress(),
 				await hedger.getAddress(),
 				0, 1000
@@ -1385,10 +1385,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 			await time.increase(EightHourInSec * 3)
 
-			const partyADebts = await context.viewFacetQuote.getPartyAAggregateFundingDebtByActiveSymbols(
+			const partyADebts = await context.viewFacetAggregate.getPartyAAggregateFundingDebtByActiveSymbols(
 				await user.getAddress(), await hedger.getAddress(), 0, 1000
 			)
-			const partyBDebts = await context.viewFacetQuote.getPartyBAggregateFundingDebtByActiveSymbols(
+			const partyBDebts = await context.viewFacetAggregate.getPartyBAggregateFundingDebtByActiveSymbols(
 				await hedger.getAddress(), await user.getAddress(), 0, 1000
 			)
 
@@ -1403,10 +1403,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 			await hedger.lockQuote(quoteId)
 			await hedger.openPosition(quoteId)
 
-			const partyBPositions = await context.viewFacetQuote.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			const partyBPositions = await context.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
 			expect(partyBPositions.length).to.equal(1)
 
-			const partyBPerPartyA = await context.viewFacetQuote.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(
+			const partyBPerPartyA = await context.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(
 				await hedger.getAddress(), await user.getAddress(), 0, 1000
 			)
 			expect(partyBPerPartyA.length).to.equal(1)
@@ -1446,18 +1446,18 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		it("should return correct count", async function () {
-			const partyACount = await context.viewFacetQuote.getPartyAActiveSymbolsCountPerPartyB(await user.getAddress(), await hedger.getAddress())
+			const partyACount = await context.viewFacetAggregate.getPartyAActiveSymbolsCountPerPartyB(await user.getAddress(), await hedger.getAddress())
 			expect(partyACount).to.equal(4n)
 
-			const partyBCount = await context.viewFacetQuote.getPartyBActiveSymbolsCountPerPartyA(await hedger.getAddress(), await user.getAddress())
+			const partyBCount = await context.viewFacetAggregate.getPartyBActiveSymbolsCountPerPartyA(await hedger.getAddress(), await user.getAddress())
 			expect(partyBCount).to.equal(4n)
 		})
 
 		it("should paginate active symbols correctly", async function () {
-			const firstPage = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 2)
+			const firstPage = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 2)
 			expect(firstPage.length).to.equal(2)
 
-			const secondPage = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 2)
+			const secondPage = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 2)
 			expect(secondPage.length).to.equal(2)
 
 			// All 4 symbols should be unique across pages
@@ -1467,26 +1467,26 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		it("should return empty when start exceeds length", async function () {
-			const result = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 100, 10)
+			const result = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 100, 10)
 			expect(result.length).to.equal(0)
 		})
 
 		it("should return empty when size is zero", async function () {
-			const result = await context.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 0)
+			const result = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 0)
 			expect(result.length).to.equal(0)
 		})
 
 		it("should cap size to remaining elements", async function () {
 			// Request 100 starting at index 2, only 2 remain
-			const result = await context.viewFacetQuote.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 100)
+			const result = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 100)
 			expect(result.length).to.equal(2)
 		})
 
 		it("should paginate aggregated positions correctly", async function () {
-			const firstPage = await context.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 2)
+			const firstPage = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 2)
 			expect(firstPage.length).to.equal(2) // 2 symbols, 1 position each
 
-			const secondPage = await context.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 2)
+			const secondPage = await context.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 2, 2)
 			expect(secondPage.length).to.equal(2)
 
 			// All 4 symbols covered
@@ -1498,12 +1498,12 @@ export function shouldBehaveLikeAggregateViews(): void {
 		it("should paginate funding debt correctly", async function () {
 			await time.increase(EightHourInSec)
 
-			const firstPage = await context.viewFacetQuote.getPartyAAggregateFundingDebtByActiveSymbols(
+			const firstPage = await context.viewFacetAggregate.getPartyAAggregateFundingDebtByActiveSymbols(
 				await user.getAddress(), await hedger.getAddress(), 0, 2
 			)
 			expect(firstPage.length).to.equal(2)
 
-			const secondPage = await context.viewFacetQuote.getPartyAAggregateFundingDebtByActiveSymbols(
+			const secondPage = await context.viewFacetAggregate.getPartyAAggregateFundingDebtByActiveSymbols(
 				await user.getAddress(), await hedger.getAddress(), 2, 2
 			)
 			expect(secondPage.length).to.equal(2)
@@ -1601,7 +1601,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					}
 				}
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, symbolId)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, symbolId)
 				expect(longPosition.positionType).to.equal(BigInt(PositionType.LONG))
 				expect(longPosition.aggregatedOpenAmount).to.equal(expectedLongOpenAmount)
 				expect(longPosition.avgOpenPrice).to.equal(expectedLongOpenAmount === 0n ? 0n : expectedLongNotional / expectedLongOpenAmount)
@@ -1637,7 +1637,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					}
 				}
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 				expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
 				expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
 				expect(shortPosition.aggregatedOpenAmount).to.equal(shortAmount)
@@ -1651,7 +1651,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					.addSymbol("EMPTY_SYMBOL", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
 				await posContext.symbolControlFacet.connect(posContext.signers.admin).setSymbolTypes([2], [1])
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 2)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 2)
 				expect(longPosition.aggregatedOpenAmount).to.equal(0n)
 				expect(shortPosition.aggregatedOpenAmount).to.equal(0n)
 				expect(longPosition.avgOpenPrice).to.equal(0n)
@@ -1659,7 +1659,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 
 			it("returns zero for partyB with no position history", async function () {
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger2.address, posUser.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger2.address, posUser.address, 1)
 				expect(longPosition.aggregatedOpenAmount).to.equal(0n)
 				expect(shortPosition.aggregatedOpenAmount).to.equal(0n)
 				expect(longPosition.avgOpenPrice).to.equal(0n)
@@ -1674,8 +1674,8 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await posHedger2.openPosition(user2Quote.id)
 
 				// posHedger should still have their original totals
-				const hedgerTotals = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
-				const hedger2Totals = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger2.address, posUser.address, 1)
+				const hedgerTotals = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const hedger2Totals = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger2.address, posUser.address, 1)
 
 				// posHedger has 2 LONGs and 1 SHORT
 				expect(hedgerTotals.longPosition.aggregatedOpenAmount).to.be.gt(0n)
@@ -1687,7 +1687,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 
 			it("updates totals correctly after opening new position", async function () {
-				const before = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const before = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 
 				// Open another LONG
 				await posUser.setBalances(decimal(1000n), decimal(1000n), decimal(1000n))
@@ -1695,14 +1695,14 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await posHedger.lockQuote(newQuote.id)
 				await posHedger.openPosition(newQuote.id)
 
-				const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 
 				expect(after.longPosition.aggregatedOpenAmount).to.equal(before.longPosition.aggregatedOpenAmount + newQuote.quantity)
 				expect(after.shortPosition.aggregatedOpenAmount).to.equal(before.shortPosition.aggregatedOpenAmount)
 			})
 
 			it("decreases totals after partial close via fillCloseRequest", async function () {
-				const before = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const before = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 				const closeQuantity = (await getQuoteQuantity(posContext, quote1LongOpened.id)) / 2n
 
 				await posUser.requestToClosePosition(
@@ -1711,20 +1711,20 @@ export function shouldBehaveLikeAggregateViews(): void {
 				)
 				await posHedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().filledAmount(closeQuantity).closedPrice(decimal(1n)).build())
 
-				const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 
 				expect(after.longPosition.aggregatedOpenAmount).to.equal(before.longPosition.aggregatedOpenAmount - closeQuantity)
 				expect(after.shortPosition.aggregatedOpenAmount).to.equal(before.shortPosition.aggregatedOpenAmount)
 			})
 
 			it("removes position from totals after full close via fillCloseRequest", async function () {
-				const before = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const before = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 				const fullQuantity = await getQuoteQuantity(posContext, quote1LongOpened.id)
 
 				await posUser.requestToClosePosition(quote1LongOpened.id, limitCloseRequestBuilder().quantityToClose(fullQuantity).closePrice(decimal(1n)).build())
 				await posHedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().filledAmount(fullQuantity).closedPrice(decimal(1n)).build())
 
-				const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 
 				expect(after.longPosition.aggregatedOpenAmount).to.equal(before.longPosition.aggregatedOpenAmount - fullQuantity)
 			})
@@ -1740,13 +1740,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 					.connect(liquidator)
 					.liquidatePositionsPartyA(await posUser.getAddress(), [quote1LongOpened.id, quote2ShortOpened.id, quote3LongOpened.id])
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 				expect(longPosition.aggregatedOpenAmount).to.equal(0n)
 				expect(shortPosition.aggregatedOpenAmount).to.equal(0n)
 			})
 
 			it("updates averages after settlement adjustments", async function () {
-				const before = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const before = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 				const updatedPrice = decimal(5n, 17)
 
 				const settlementEntry = Object.assign([quote1LongOpened.id, updatedPrice, 0n], {
@@ -1758,7 +1758,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 				await posHedger.settleUpnl(await posContext.signers.user.getAddress(), [updatedPrice], settlementSig)
 
-				const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 				const { longAmount, longNotional, shortAmount, shortNotional } = await getExpectedTotals([
 					quote1LongOpened.id,
 					quote2ShortOpened.id,
@@ -1802,7 +1802,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					}
 				}
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbol(posHedger.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbol(posHedger.address, 1)
 
 				expect(longPosition.aggregatedOpenAmount).to.equal(globalLongAmount)
 				expect(longPosition.avgOpenPrice).to.equal(globalLongAmount === 0n ? 0n : globalLongNotional / globalLongAmount)
@@ -1811,13 +1811,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 
 			it("returns zero for partyB with no positions", async function () {
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbol(posHedger2.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbol(posHedger2.address, 1)
 				expect(longPosition.aggregatedOpenAmount).to.equal(0n)
 				expect(shortPosition.aggregatedOpenAmount).to.equal(0n)
 			})
 
 			it("updates global totals when positions close", async function () {
-				const before = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbol(posHedger.address, 1)
+				const before = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbol(posHedger.address, 1)
 
 				// Close one position partially (quote1LongOpened is a LONG position)
 				const closeAmount = decimal(50n, 17)
@@ -1827,7 +1827,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				)
 				await posHedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().filledAmount(closeAmount).closedPrice(decimal(1n)).build())
 
-				const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbol(posHedger.address, 1)
+				const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbol(posHedger.address, 1)
 
 				// LONG position aggregate should decrease (stored by quote.positionType)
 				expect(after.longPosition.aggregatedOpenAmount).to.equal(before.longPosition.aggregatedOpenAmount - closeAmount)
@@ -1864,7 +1864,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					partyA,
 				)
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA, 1)
 
 				expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
 				expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
@@ -1897,8 +1897,8 @@ export function shouldBehaveLikeAggregateViews(): void {
 					shortNotional: shortN2,
 				} = await getExpectedPartyBTotalsByPartyA([user2Quote.id], partyA2)
 
-				const userTotals = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA1, 1)
-				const user2Totals = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA2, 1)
+				const userTotals = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA1, 1)
+				const user2Totals = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA2, 1)
 
 				expect(userTotals.longPosition.aggregatedOpenAmount).to.equal(long1)
 				expect(userTotals.longPosition.avgOpenPrice).to.equal(long1 === 0n ? 0n : longN1 / long1)
@@ -1914,7 +1914,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 		describe("getPartyAAggregatedPositionBySymbolPerPartyB", function () {
 			it("updates totals after opening new position", async function () {
-				const before = await posContext.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
+				const before = await posContext.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
 
 				await posUser.setBalances(decimal(1000n), decimal(1000n), decimal(1000n))
 				const newQuote = await posContext.viewFacetQuote.getQuote(await posUser.sendQuote())
@@ -1928,7 +1928,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					newQuote.id,
 				])
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
 
 				expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
 				expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
@@ -1954,7 +1954,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					quote3LongOpened.id,
 				])
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
 
 				expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
 				expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
@@ -1974,7 +1974,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					quote3LongOpened.id,
 				])
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
 
 				expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
 				expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
@@ -2002,7 +2002,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					quote3LongOpened.id,
 				])
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
 
 				expect(newQuote.openedPrice).to.equal(unDecimal(oldQuote.openedPrice * (decimal(1n) + rate)))
 				expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
@@ -2022,7 +2022,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					.connect(liquidator)
 					.liquidatePositionsPartyA(await posUser.getAddress(), [quote1LongOpened.id, quote2ShortOpened.id, quote3LongOpened.id])
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
 				expect(longPosition.aggregatedOpenAmount).to.equal(0n)
 				expect(shortPosition.aggregatedOpenAmount).to.equal(0n)
 				expect(longPosition.avgOpenPrice).to.equal(0n)
@@ -2047,7 +2047,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					quote3LongOpened.id,
 				])
 
-				const { longPosition, shortPosition } = await posContext.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
+				const { longPosition, shortPosition } = await posContext.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
 
 				expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
 				expect(longPosition.avgOpenPrice).to.equal(longAmount === 0n ? 0n : longNotional / longAmount)
@@ -2076,7 +2076,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 			it("getPartyBActiveSymbolsCount returns correct count", async function () {
 				// posHedger has positions in symbol 1 from beforeEach
-				const countBefore = await posContext.viewFacetQuote.getPartyBActiveSymbolsCount(posHedger.address)
+				const countBefore = await posContext.viewFacetAggregate.getPartyBActiveSymbolsCount(posHedger.address)
 				expect(countBefore).to.equal(1n)
 
 				// Open a position in symbol2
@@ -2086,7 +2086,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await posHedger.lockQuote(sym2Quote.id)
 				await posHedger.openPosition(sym2Quote.id)
 
-				const countAfter = await posContext.viewFacetQuote.getPartyBActiveSymbolsCount(posHedger.address)
+				const countAfter = await posContext.viewFacetAggregate.getPartyBActiveSymbolsCount(posHedger.address)
 				expect(countAfter).to.equal(2n)
 			})
 
@@ -2098,15 +2098,15 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await posHedger.lockQuote(sym2Quote.id)
 				await posHedger.openPosition(sym2Quote.id)
 
-				const allSymbols = await posContext.viewFacetQuote.getPartyBActiveSymbols(posHedger.address, 0, 1000)
+				const allSymbols = await posContext.viewFacetAggregate.getPartyBActiveSymbols(posHedger.address, 0, 1000)
 				expect(allSymbols.length).to.equal(2)
 				expect(allSymbols.map((s: bigint) => Number(s))).to.include.members([1, 2])
 
 				// Test pagination
-				const firstPage = await posContext.viewFacetQuote.getPartyBActiveSymbols(posHedger.address, 0, 1)
+				const firstPage = await posContext.viewFacetAggregate.getPartyBActiveSymbols(posHedger.address, 0, 1)
 				expect(firstPage.length).to.equal(1)
 
-				const secondPage = await posContext.viewFacetQuote.getPartyBActiveSymbols(posHedger.address, 1, 1)
+				const secondPage = await posContext.viewFacetAggregate.getPartyBActiveSymbols(posHedger.address, 1, 1)
 				expect(secondPage.length).to.equal(1)
 			})
 
@@ -2124,7 +2124,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await posHedger.openPosition(user2Quote.id)
 
 				// Now posHedger has positions in symbol 1 (with posUser) and symbol 2 (with user2)
-				const aggregates = await posContext.viewFacetQuote.getPartyBAggregatedPositionsByActiveSymbols(posHedger.address, 0, 1000)
+				const aggregates = await posContext.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbols(posHedger.address, 0, 1000)
 
 				// Should have entries for both symbols
 				const sym1Entry = aggregates.find((entry: any) => BigInt(entry.symbolId) === 1n)
@@ -2134,7 +2134,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				expect(sym2Entry).to.not.be.undefined
 
 				// Verify symbol 1 has the global totals (from posUser's positions)
-				const sym1Totals = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbol(posHedger.address, 1)
+				const sym1Totals = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbol(posHedger.address, 1)
 				expect(sym1Entry?.aggregatedOpenAmount).to.equal(
 					sym1Totals.longPosition.aggregatedOpenAmount > 0n
 						? sym1Totals.longPosition.aggregatedOpenAmount
@@ -2150,7 +2150,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await posHedger.lockQuote(sym2Quote.id)
 				await posHedger.openPosition(sym2Quote.id)
 
-				const countBefore = await posContext.viewFacetQuote.getPartyBActiveSymbolsCount(posHedger.address)
+				const countBefore = await posContext.viewFacetAggregate.getPartyBActiveSymbolsCount(posHedger.address)
 				expect(countBefore).to.equal(2n)
 
 				// Close the position in symbol2 completely
@@ -2161,10 +2161,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 				)
 				await posHedger.fillCloseRequest(sym2Quote.id, limitFillCloseRequestBuilder().filledAmount(openAmount).closedPrice(decimal(1n)).build())
 
-				const countAfter = await posContext.viewFacetQuote.getPartyBActiveSymbolsCount(posHedger.address)
+				const countAfter = await posContext.viewFacetAggregate.getPartyBActiveSymbolsCount(posHedger.address)
 				expect(countAfter).to.equal(1n)
 
-				const symbols = await posContext.viewFacetQuote.getPartyBActiveSymbols(posHedger.address, 0, 1000)
+				const symbols = await posContext.viewFacetAggregate.getPartyBActiveSymbols(posHedger.address, 0, 1000)
 				expect(symbols.map((s: bigint) => Number(s))).to.not.include(2)
 			})
 
@@ -2182,10 +2182,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await posHedger.openPosition(user2Quote.id)
 
 				// posHedger should now have active symbols from both partyAs
-				const count = await posContext.viewFacetQuote.getPartyBActiveSymbolsCount(posHedger.address)
+				const count = await posContext.viewFacetAggregate.getPartyBActiveSymbolsCount(posHedger.address)
 				expect(count).to.equal(2n) // symbol 1 from posUser, symbol 2 from user2
 
-				const symbols = await posContext.viewFacetQuote.getPartyBActiveSymbols(posHedger.address, 0, 1000)
+				const symbols = await posContext.viewFacetAggregate.getPartyBActiveSymbols(posHedger.address, 0, 1000)
 				expect(symbols.map((s: bigint) => Number(s))).to.include.members([1, 2])
 			})
 		})
@@ -2218,10 +2218,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 
 			it("returns active symbols and omits empty symbols", async function () {
-				const sym1Totals = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
-				const sym2Totals = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, Number(symbol2))
+				const sym1Totals = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const sym2Totals = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, Number(symbol2))
 
-				const aggregates = await posContext.viewFacetQuote.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(posHedger.address, posUser.address, 0, 1000)
+				const aggregates = await posContext.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(posHedger.address, posUser.address, 0, 1000)
 
 				const findEntry = (sid: bigint, posType: PositionType) =>
 					aggregates.find((entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType))
@@ -2245,7 +2245,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 
 			it("returns empty for partyB with no positions", async function () {
-				const result = await posContext.viewFacetQuote.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(posHedger2.address, posUser.address, 0, 1000)
+				const result = await posContext.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(posHedger2.address, posUser.address, 0, 1000)
 				expect(result.length).to.equal(0)
 			})
 		})
@@ -2277,10 +2277,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 
 			it("returns active symbols and omits empty symbols", async function () {
-				const sym1Totals = await posContext.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
-				const sym2Totals = await posContext.viewFacetQuote.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, Number(symbol2))
+				const sym1Totals = await posContext.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, 1)
+				const sym2Totals = await posContext.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(posUser.address, posHedger.address, Number(symbol2))
 
-				const aggregates = await posContext.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(posUser.address, posHedger.address, 0, 1000)
+				const aggregates = await posContext.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(posUser.address, posHedger.address, 0, 1000)
 
 				const findEntry = (sid: bigint, posType: PositionType) =>
 					aggregates.find((entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType))
@@ -2308,7 +2308,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await user2.setup()
 				await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
 
-				const result = await posContext.viewFacetQuote.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user2.getAddress(), posHedger.address, 0, 1000)
+				const result = await posContext.viewFacetAggregate.getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(await user2.getAddress(), posHedger.address, 0, 1000)
 				expect(result.length).to.equal(0)
 			})
 		})
@@ -2333,10 +2333,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 			it("returns active symbols for a specific partyA", async function () {
 				const partyA = await posUser.getAddress()
-				const sym1Totals = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA, 1)
-				const sym2Totals = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA, Number(symbol2))
+				const sym1Totals = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA, 1)
+				const sym2Totals = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, partyA, Number(symbol2))
 
-				const aggregates = await posContext.viewFacetQuote.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(posHedger.address, partyA, 0, 1000)
+				const aggregates = await posContext.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(posHedger.address, partyA, 0, 1000)
 
 				const findEntry = (sid: bigint, posType: PositionType) =>
 					aggregates.find((entry: any) => BigInt(entry.symbolId) === sid && BigInt(entry.positionType) === BigInt(posType))
@@ -2359,14 +2359,14 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await user2.setup()
 				await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
 
-				const result = await posContext.viewFacetQuote.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(posHedger.address, await user2.getAddress(), 0, 1000)
+				const result = await posContext.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(posHedger.address, await user2.getAddress(), 0, 1000)
 				expect(result.length).to.equal(0)
 			})
 		})
 
 		describe("emergency close impact on aggregated positions", function () {
 			it("reduces totals after emergency close", async function () {
-				const before = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const before = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 				const quoteQuantity = await getQuoteQuantity(posContext, quote1LongOpened.id)
 
 				// Enable emergency mode for partyB
@@ -2375,7 +2375,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				// Emergency close the position
 				await posHedger.emergencyClosePosition(quote1LongOpened.id, emergencyCloseRequestBuilder().build())
 
-				const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+				const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 
 				// Verify totals are reduced
 				expect(after.longPosition.aggregatedOpenAmount).to.equal(before.longPosition.aggregatedOpenAmount - quoteQuantity)
@@ -2385,7 +2385,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 		describe("funding fee impact on avg open price", function () {
 			describe("accumulated funding fee (new method)", function () {
 				it("keeps totals consistent after funding accrual and charge", async function () {
-					const before = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+					const before = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 
 					await posContext.pauseControlFacet.enableNewFundingFee()
 					await posContext.symbolControlFacet.connect(posContext.signers.admin).setSymbolFundingState(1, 3600, 1200)
@@ -2405,7 +2405,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 							await getDummyPairUpnlSig(),
 						)
 
-					const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+					const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 					// Accumulated funding doesn't change openedPrice, so avgOpenPrice stays the same
 					expect(after.longPosition.aggregatedOpenAmount).to.equal(before.longPosition.aggregatedOpenAmount)
 					expect(after.longPosition.avgOpenPrice).to.equal(before.longPosition.avgOpenPrice)
@@ -2428,7 +2428,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					await time.setNextBlockTimestamp(targetTime)
 					await posHedger.chargeFundingRate(await posContext.signers.user.getAddress(), [quote1LongOpened.id], [rate], await getDummyPairUpnlSig())
 
-					const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+					const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 					const newQuote = await posContext.viewFacetQuote.getQuote(quote1LongOpened.id)
 					const { longAmount, longNotional, shortAmount, shortNotional } = await getExpectedTotals([
 						quote1LongOpened.id,
@@ -2459,7 +2459,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					await time.setNextBlockTimestamp(targetTime)
 					await posHedger.chargeFundingRate(await posContext.signers.user.getAddress(), [quote2ShortOpened.id], [rate], await getDummyPairUpnlSig())
 
-					const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+					const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 					const newQuote = await posContext.viewFacetQuote.getQuote(quote2ShortOpened.id)
 					const { longAmount, longNotional, shortAmount, shortNotional } = await getExpectedTotals([
 						quote1LongOpened.id,
@@ -2497,7 +2497,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 						await getDummyPairUpnlSig(),
 					)
 
-					const after = await posContext.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
+					const after = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 					const newQuote1 = await posContext.viewFacetQuote.getQuote(quote1LongOpened.id)
 					const newQuote3 = await posContext.viewFacetQuote.getQuote(quote3LongOpened.id)
 					const { longAmount, longNotional, shortAmount, shortNotional } = await getExpectedTotals([
@@ -2546,14 +2546,14 @@ export function shouldBehaveLikeAggregateViews(): void {
 					)
 
 				// Get global funding
-				const globalFunding = await posContext.viewFacetQuote.getPartyBAggregatedFunding(
+				const globalFunding = await posContext.viewFacetAggregate.getPartyBAggregatedFunding(
 					posHedger.address,
 					1,
 					PositionType.LONG
 				)
 
 				// Get per-partyA funding
-				const perPartyAFunding = await posContext.viewFacetQuote.getPartyBAggregatedFundingPerPartyA(
+				const perPartyAFunding = await posContext.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
 					posHedger.address,
 					posUser.address,
 					1,
@@ -2569,14 +2569,14 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await time.increase(EightHourInSec * 2)
 
 				// Get global funding debt
-				const globalDebt = await posContext.viewFacetQuote.getPartyBGlobalAggregateFundingDebt(
+				const globalDebt = await posContext.viewFacetAggregate.getPartyBGlobalAggregateFundingDebt(
 					posHedger.address,
 					1,
 					PositionType.LONG
 				)
 
 				// Get per-partyA funding debt
-				const perPartyADebt = await posContext.viewFacetQuote.getPartyBAggregateFundingDebt(
+				const perPartyADebt = await posContext.viewFacetAggregate.getPartyBAggregateFundingDebt(
 					posHedger.address,
 					posUser.address,
 					1,
@@ -2592,7 +2592,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await time.increase(EightHourInSec * 2)
 
 				// Get global funding debts by active symbols
-				const results = await posContext.viewFacetQuote.getPartyBGlobalAggregateFundingDebtByActiveSymbols(
+				const results = await posContext.viewFacetAggregate.getPartyBGlobalAggregateFundingDebtByActiveSymbols(
 					posHedger.address,
 					0,
 					1000
@@ -2605,8 +2605,8 @@ export function shouldBehaveLikeAggregateViews(): void {
 				const shortEntry = results.find((r: any) => BigInt(r.symbolId) === 1n && BigInt(r.positionType) === BigInt(PositionType.SHORT))
 
 				// Get individual debt for comparison
-				const longDebt = await posContext.viewFacetQuote.getPartyBGlobalAggregateFundingDebt(posHedger.address, 1, PositionType.LONG)
-				const shortDebt = await posContext.viewFacetQuote.getPartyBGlobalAggregateFundingDebt(posHedger.address, 1, PositionType.SHORT)
+				const longDebt = await posContext.viewFacetAggregate.getPartyBGlobalAggregateFundingDebt(posHedger.address, 1, PositionType.LONG)
+				const shortDebt = await posContext.viewFacetAggregate.getPartyBGlobalAggregateFundingDebt(posHedger.address, 1, PositionType.SHORT)
 
 				if (longEntry) {
 					expect(longEntry.fundingDebt).to.equal(longDebt)
@@ -2651,20 +2651,20 @@ export function shouldBehaveLikeAggregateViews(): void {
 					)
 
 				// Get global funding
-				const globalFunding = await posContext.viewFacetQuote.getPartyBAggregatedFunding(
+				const globalFunding = await posContext.viewFacetAggregate.getPartyBAggregatedFunding(
 					posHedger.address,
 					1,
 					PositionType.LONG
 				)
 
 				// Get per-partyA funding for both users
-				const user1Funding = await posContext.viewFacetQuote.getPartyBAggregatedFundingPerPartyA(
+				const user1Funding = await posContext.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
 					posHedger.address,
 					posUser.address,
 					1,
 					PositionType.LONG
 				)
-				const user2Funding = await posContext.viewFacetQuote.getPartyBAggregatedFundingPerPartyA(
+				const user2Funding = await posContext.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
 					posHedger.address,
 					await user2.getAddress(),
 					1,
@@ -2692,20 +2692,20 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await time.increase(EightHourInSec * 2)
 
 				// Get global funding debt
-				const globalDebt = await posContext.viewFacetQuote.getPartyBGlobalAggregateFundingDebt(
+				const globalDebt = await posContext.viewFacetAggregate.getPartyBGlobalAggregateFundingDebt(
 					posHedger.address,
 					1,
 					PositionType.LONG
 				)
 
 				// Get per-partyA funding debts
-				const user1Debt = await posContext.viewFacetQuote.getPartyBAggregateFundingDebt(
+				const user1Debt = await posContext.viewFacetAggregate.getPartyBAggregateFundingDebt(
 					posHedger.address,
 					posUser.address,
 					1,
 					PositionType.LONG
 				)
-				const user2Debt = await posContext.viewFacetQuote.getPartyBAggregateFundingDebt(
+				const user2Debt = await posContext.viewFacetAggregate.getPartyBAggregateFundingDebt(
 					posHedger.address,
 					await user2.getAddress(),
 					1,
@@ -2717,21 +2717,21 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 
 			it("returns zero for partyB with no positions", async function () {
-				const globalFunding = await posContext.viewFacetQuote.getPartyBAggregatedFunding(
+				const globalFunding = await posContext.viewFacetAggregate.getPartyBAggregatedFunding(
 					posHedger2.address,
 					1,
 					PositionType.LONG
 				)
 				expect(globalFunding).to.equal(0)
 
-				const globalDebt = await posContext.viewFacetQuote.getPartyBGlobalAggregateFundingDebt(
+				const globalDebt = await posContext.viewFacetAggregate.getPartyBGlobalAggregateFundingDebt(
 					posHedger2.address,
 					1,
 					PositionType.LONG
 				)
 				expect(globalDebt).to.equal(0)
 
-				const results = await posContext.viewFacetQuote.getPartyBGlobalAggregateFundingDebtByActiveSymbols(
+				const results = await posContext.viewFacetAggregate.getPartyBGlobalAggregateFundingDebtByActiveSymbols(
 					posHedger2.address,
 					0,
 					1000

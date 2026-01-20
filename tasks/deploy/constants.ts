@@ -11,6 +11,7 @@ export const FacetNames = [
 	"contracts/facets/ViewFacet/ViewFacet.sol:ViewFacet",
 	"ViewFacetSymbol",
 	"ViewFacetQuote",
+	"ViewFacetAggregate",
 	"FundingRateFacet",
 	"ForceActionsFacet",
 	"ForceCloseStepsFacet",

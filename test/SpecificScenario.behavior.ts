@@ -34,8 +34,8 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 	const expectPartyBTotals = async (context: RunContext, longAmount: bigint, longAvgPrice: bigint, shortAmount: bigint, shortAvgPrice: bigint) => {
 		// Aggregate positions from both user and user2 (since we removed global storage)
-		const pos1 = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user.address, 1)
-		const pos2 = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user2.address, 1)
+		const pos1 = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user.address, 1)
+		const pos2 = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user2.address, 1)
 
 		const totalLongAmount = pos1.longPosition.aggregatedOpenAmount + pos2.longPosition.aggregatedOpenAmount
 		const totalLongNotional = pos1.longPosition.aggregatedOpenAmount * pos1.longPosition.avgOpenPrice +
@@ -55,13 +55,13 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 	const expectPartyATotals = async (context: RunContext, longAmount: bigint, longAvgPrice: bigint, shortAmount: bigint, shortAvgPrice: bigint) => {
 		// Query partyA's positions per partyB using the complete aggregate state
-		const longState = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+		const longState = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
 			context.signers.user.address,
 			context.signers.hedger.address,
 			1,
 			PositionType.LONG,
 		)
-		const shortState = await context.viewFacetQuote.getPartyACompleteAggregateStatePerPartyB(
+		const shortState = await context.viewFacetAggregate.getPartyACompleteAggregateStatePerPartyB(
 			context.signers.user.address,
 			context.signers.hedger.address,
 			1,
@@ -86,7 +86,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 			expect(position.avgOpenPrice).to.equal(avg)
 		}
 
-		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(
+		const { longPosition, shortPosition } = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(
 			context.signers.hedger.address,
 			partyA,
 			1,
@@ -94,7 +94,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		assertPosition(longPosition, longAmount, longAvgPrice)
 		assertPosition(shortPosition, shortAmount, shortAvgPrice)
 
-		const aggregates = await context.viewFacetQuote.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(context.signers.hedger.address, partyA, 0, 1000)
+		const aggregates = await context.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(context.signers.hedger.address, partyA, 0, 1000)
 		const findAggregate = (posType: PositionType) =>
 			aggregates.find((entry: any) => BigInt(entry.symbolId) === 1n && BigInt(entry.positionType) === BigInt(posType))
 		const assertAggregate = (entry: any, amount: bigint, avg: bigint) => {

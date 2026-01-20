@@ -19,6 +19,7 @@ import type {
 	SettlementFacet,
 	ViewFacetSymbol,
 	ViewFacetQuote,
+	ViewFacetAggregate,
 	InstantLayer,
 	SymmioPartyB,
 	AccountManager,
@@ -56,6 +57,7 @@ export class RunContext {
 	viewFacet!: ViewFacet
 	viewFacetSymbol!: ViewFacetSymbol
 	viewFacetQuote!: ViewFacetQuote
+	viewFacetAggregate!: ViewFacetAggregate
 	liquidationFacet!: LiquidationFacet
 	controlFacet!: ControlFacet
 	symbolControlFacet!: SymbolControlFacet
@@ -137,6 +139,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.viewFacet = await ethers.getContractAt("contracts/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamond)
 	context.viewFacetSymbol = await ethers.getContractAt("ViewFacetSymbol", diamond)
 	context.viewFacetQuote = await ethers.getContractAt("ViewFacetQuote", diamond)
+	context.viewFacetAggregate = await ethers.getContractAt("ViewFacetAggregate", diamond)
 	context.liquidationFacet = await ethers.getContractAt("LiquidationFacet", diamond)
 	context.controlFacet = await ethers.getContractAt("contracts/facets/Control/ControlFacet.sol:ControlFacet", diamond)
 	context.symbolControlFacet = await ethers.getContractAt("SymbolControlFacet", diamond)
