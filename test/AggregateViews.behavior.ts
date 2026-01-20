@@ -38,8 +38,203 @@ export function shouldBehaveLikeAggregateViews(): void {
 		await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
 	})
 
+	// ============ Active Symbols Tracking ============
+	// These tests verify the active symbols tracking that enables efficient aggregated views
+
+	describe("Active Symbols Tracking", function () {
+		beforeEach(async function () {
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+		})
+
+		it("should have empty active symbols list initially", async function () {
+			const activeSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			expect(activeSymbols.length).to.equal(0)
+
+			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			expect(partyBActiveSymbols.length).to.equal(0)
+
+			const partyBGlobalActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbols(await hedger.getAddress(), 0, 1000)
+			expect(partyBGlobalActiveSymbols.length).to.equal(0)
+		})
+
+		it("should add symbol to active list when position opens", async function () {
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			expect(partyAActiveSymbols.length).to.equal(1)
+			expect(partyAActiveSymbols[0]).to.equal(1n)
+
+			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			expect(partyBActiveSymbols.length).to.equal(1)
+			expect(partyBActiveSymbols[0]).to.equal(1n)
+
+			const partyBGlobalActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbols(await hedger.getAddress(), 0, 1000)
+			expect(partyBGlobalActiveSymbols.length).to.equal(1)
+			expect(partyBGlobalActiveSymbols[0]).to.equal(1n)
+		})
+
+		it("should not duplicate symbol when opening multiple positions in same symbol", async function () {
+			// Open two positions in symbol 1
+			const firstQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(firstQuoteId)
+			await hedger.openPosition(firstQuoteId)
+
+			const secondQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(secondQuoteId)
+			await hedger.openPosition(secondQuoteId)
+
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			expect(partyAActiveSymbols.length).to.equal(1) // Still only 1 symbol
+		})
+
+		it("should remove symbol from active list when all positions close", async function () {
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			let partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			expect(partyAActiveSymbols.length).to.equal(1)
+
+			await user.requestToClosePosition(quoteId)
+			await hedger.fillCloseRequest(quoteId)
+
+			partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			expect(partyAActiveSymbols.length).to.equal(0)
+
+			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			expect(partyBActiveSymbols.length).to.equal(0)
+
+			const partyBGlobalActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbols(await hedger.getAddress(), 0, 1000)
+			expect(partyBGlobalActiveSymbols.length).to.equal(0)
+		})
+
+		it("should keep symbol when closing one of many positions with a symbol", async function () {
+			// Open two positions
+			const firstQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(firstQuoteId)
+			await hedger.openPosition(firstQuoteId)
+
+			const secondQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(secondQuoteId)
+			await hedger.openPosition(secondQuoteId)
+
+			// Close only first
+			await user.requestToClosePosition(firstQuoteId)
+			await hedger.fillCloseRequest(firstQuoteId)
+
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			expect(partyAActiveSymbols.length).to.equal(1) // Still has symbol 1
+
+			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			expect(partyBActiveSymbols.length).to.equal(1)
+
+			const partyBGlobalActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbols(await hedger.getAddress(), 0, 1000)
+			expect(partyBGlobalActiveSymbols.length).to.equal(1)
+		})
+
+		it("should keep symbol when only partial positions close", async function () {
+			// Open two positions
+			const firstQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			const firstQuote = await context.viewFacetQuote.getQuote(firstQuoteId)
+			await hedger.lockQuote(firstQuoteId)
+			await hedger.openPosition(firstQuoteId)
+			await user.requestToClosePosition(firstQuoteId, limitCloseRequestBuilder().quantityToClose(firstQuote.quantity / 2n).build())
+			await hedger.fillCloseRequest(firstQuoteId, limitFillCloseRequestBuilder().filledAmount(firstQuote.quantity / 2n).build())
+
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			expect(partyAActiveSymbols.length).to.equal(1) // Still has symbol 1
+
+			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			expect(partyBActiveSymbols.length).to.equal(1)
+
+			const partyBGlobalActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbols(await hedger.getAddress(), 0, 1000)
+			expect(partyBGlobalActiveSymbols.length).to.equal(1)
+		})
+
+		it("should track multiple symbols correctly", async function () {
+			// Add symbol 2
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2], [EightHourInSec])
+
+			// Open positions in both symbols
+			const symbol1QuoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(1).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(symbol1QuoteId)
+			await hedger.openPosition(symbol1QuoteId)
+
+			const symbol2QuoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(symbol2QuoteId)
+			await hedger.openPosition(symbol2QuoteId)
+
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			expect(partyAActiveSymbols.length).to.equal(2)
+			expect(partyAActiveSymbols).to.include(1n)
+			expect(partyAActiveSymbols).to.include(2n)
+
+			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			expect(partyBActiveSymbols.length).to.equal(2)
+			expect(partyBActiveSymbols).to.include(1n)
+			expect(partyBActiveSymbols).to.include(2n)
+
+			const partyBGlobalActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbols(await hedger.getAddress(), 0, 1000)
+			expect(partyBGlobalActiveSymbols.length).to.equal(2)
+			expect(partyBGlobalActiveSymbols).to.include(1n)
+			expect(partyBGlobalActiveSymbols).to.include(2n)
+		})
+
+		it("should handle swap-and-pop removal correctly", async function () {
+			// Add symbols 2 and 3
+			await context.symbolControlFacet.connect(context.signers.admin)
+				.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin)
+				.addSymbol("SYMBOL3", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2, 3], [1, 1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2, 3], [EightHourInSec, EightHourInSec])
+
+			// Open positions in all 3 symbols
+			const quoteIdsBySymbol = new Map<number, bigint>()
+			for (let symbolId = 1; symbolId <= 3; symbolId++) {
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).maxFundingRate(decimal(1n)).build())
+				quoteIdsBySymbol.set(symbolId, quoteId)
+				await hedger.lockQuote(quoteId)
+				await hedger.openPosition(quoteId)
+			}
+
+			// Close position in symbol 1 (first in array - triggers swap-and-pop)
+			const symbol1QuoteId = quoteIdsBySymbol.get(1)
+			if (!symbol1QuoteId) throw new Error("Symbol 1 quote not found")
+			await user.requestToClosePosition(symbol1QuoteId)
+			await hedger.fillCloseRequest(symbol1QuoteId)
+
+			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
+			expect(partyAActiveSymbols.length).to.equal(2)
+			expect(partyAActiveSymbols).to.include(2n)
+			expect(partyAActiveSymbols).to.include(3n)
+			expect(partyAActiveSymbols).to.not.include(1n)
+
+			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
+			expect(partyBActiveSymbols.length).to.equal(2)
+			expect(partyBActiveSymbols).to.include(2n)
+			expect(partyBActiveSymbols).to.include(3n)
+			expect(partyBActiveSymbols).to.not.include(1n)
+
+			const partyBGlobalActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbols(await hedger.getAddress(), 0, 1000)
+			expect(partyBGlobalActiveSymbols.length).to.equal(2)
+			expect(partyBGlobalActiveSymbols).to.include(2n)
+			expect(partyBGlobalActiveSymbols).to.include(3n)
+			expect(partyBGlobalActiveSymbols).to.not.include(1n)
+		})
+	})
+
 	describe("Aggregate Funding", function () {
-		describe("Aggregate Funding Tracking on Position Open", function () {
+		describe("Tracking on Position Open", function () {
 			it("should initialize aggregate funding to zero for new symbol/position type", async function () {
 				// Check initial state before any positions
 				const partyAFunding = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
@@ -198,7 +393,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 		})
 
-		describe("Aggregate Funding Updates on Quote Funding Value Sync", function () {
+		describe("Updates on Quote Funding Value Sync", function () {
 			let openQuoteId: bigint
 
 			beforeEach(async function () {
@@ -301,7 +496,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 		})
 
-		describe("Aggregate Funding Removal on Position Close", function () {
+		describe("Removal on Position Close", function () {
 			let openQuoteId: bigint
 
 			beforeEach(async function () {
@@ -406,16 +601,12 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 		})
 
-		describe("Aggregate Funding Debt Calculation", function () {
-			beforeEach(async function () {
-				// Setup funding rates
+		describe("Consistency with Per-Quote Funding Debt Calculation", function () {
+			it("should return zero funding debt when no positions exist", async function () {
 				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
 				await context.fundingRateFacet
 					.connect(context.signers.hedger)
 					.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
-			})
-
-			it("should return zero funding debt when no positions exist", async function () {
 				const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 					await user.getAddress(),
 					await hedger.getAddress(),
@@ -425,76 +616,101 @@ export function shouldBehaveLikeAggregateViews(): void {
 				expect(debt).to.equal(0)
 			})
 
-			it("should calculate partyA funding debt correctly", async function () {
-				// Open a position
-				const quoteId = await user.sendQuote(
-					limitQuoteRequestBuilder()
-						.maxFundingRate(decimal(1n))
-						.build()
-				)
-				await hedger.lockQuote(quoteId)
-				await hedger.openPosition(quoteId)
+			it("should give consistent total funding debt when compared to per-quote calculation", async function () {
+				// Setup funding rates
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
 
-				// Wait for funding to accumulate
-				await time.increase(EightHourInSec * 3)
+				const quoteIds: bigint[] = []
+				// Open multiple positions
+				for (let i = 0; i < 3; i++) {
+					const quoteId = await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.maxFundingRate(decimal(1n))
+							.build()
+					)
+					quoteIds.push(quoteId)
+					await hedger.lockQuote(quoteId)
+					await hedger.openPosition(quoteId)
+					await time.increase(EightHourInSec) // Wait between positions
+				}
 
-				const partyADebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
+				// Wait for more funding to accumulate
+				await time.increase(EightHourInSec * 2)
+
+				// Get aggregate funding debt
+				const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)
 
-				// PartyA debt should be non-zero
-				expect(partyADebt).to.not.equal(0)
+				expect(aggregateFundingDebt).to.equal(await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds))
 
-				const accumulatedFundingFees = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
-				expect(accumulatedFundingFees).to.equal(partyADebt)
+				// Verify partyB debt is opposite
+				const partyBAggregateFundingDebt = await context.viewFacetAggregate.getPartyBAggregateFundingDebt(
+					await hedger.getAddress(),
+					await user.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(partyBAggregateFundingDebt).to.equal(-aggregateFundingDebt)
 			})
 
-			it("should return opposite funding debt for partyB", async function () {
-				// Open a position
+			it("should have aggregate funding > sum of per-quote funding when maxFundingRate caps are hit", async function () {
+				// Setup funding rate: 1e16 per epoch
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee([1], [decimal(1n, 16)], [-decimal(1n, 16)], [decimal(1n)])
+
+				// Open position with maxFundingRate = 1e16 per epoch
+				// Cap hits when: openAmount × rate / 1e18 > maxFundingRate
+				// With openAmount=100e18, rate=1e16: fee_per_epoch = 100e18 × 1e16 / 1e18 = 1e18
+				// Since 1e18 > 1e16 (maxFundingRate), the cap is hit
 				const quoteId = await user.sendQuote(
 					limitQuoteRequestBuilder()
-						.maxFundingRate(decimal(1n))
+						.maxFundingRate(decimal(1n, 16)) // Cap per epoch
 						.build()
 				)
 				await hedger.lockQuote(quoteId)
 				await hedger.openPosition(quoteId)
 
-				// Wait for funding to accumulate
-				await time.increase(EightHourInSec * 3)
+				// Wait for multiple epochs
+				await time.increase(EightHourInSec * 5)
 
-				const partyADebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
+				// Get per-quote funding (capped at maxFundingRate × epochs)
+				const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts([quoteId])
+				const perQuoteFee = perQuoteFees[0]
+
+				// Get aggregate funding debt (uncapped, conservative estimate)
+				const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1,
 					PositionType.LONG
 				)
 
-				const partyBDebt = await context.viewFacetAggregate.getPartyBAggregateFundingDebt(
-					await hedger.getAddress(),
-					await user.getAddress(),
-					1,
-					PositionType.LONG
-				)
-
-				// PartyB debt should be opposite to partyA debt
-				expect(partyBDebt).to.equal(-partyADebt)
+				// Aggregate > per-quote because:
+				// - Per-quote: capped at maxFundingRate × epochs = 1e16 × 5 = 5e16
+				// - Aggregate: uncapped = openAmount × rate × epochs / 1e18 = 1e18 × 5 = 5e18
+				// This conservative behavior ensures solvency checks are safe
+				expect(aggregateFundingDebt).to.be.gt(perQuoteFee)
 			})
 		})
-	})
 
-	describe("Aggregate Funding Consistency with Per-Quote Funding", function () {
-		it("should give consistent total funding debt when compared to per-quote calculation", async function () {
-			// Setup funding rates
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+		describe("Edge Cases", function () {
+			it("should handle zero funding rate correctly", async function () {
+				// Setup epoch duration but zero funding rate
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee([1], [0], [0], [decimal(1n)])
 
-			// Open multiple positions
-			for (let i = 0; i < 3; i++) {
+				// Open position
 				const quoteId = await user.sendQuote(
 					limitQuoteRequestBuilder()
 						.maxFundingRate(decimal(1n))
@@ -502,423 +718,68 @@ export function shouldBehaveLikeAggregateViews(): void {
 				)
 				await hedger.lockQuote(quoteId)
 				await hedger.openPosition(quoteId)
-				await time.increase(EightHourInSec) // Wait between positions
-			}
 
-			// Wait for more funding to accumulate
-			await time.increase(EightHourInSec * 2)
+				// Wait
+				await time.increase(EightHourInSec * 3)
 
-			// Get aggregate funding debt
-			const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			// The aggregate debt should be non-zero and represent the total funding owed
-			expect(aggregateFundingDebt).to.not.equal(0)
-
-			// Verify partyB debt is opposite
-			const partyBAggregateFundingDebt = await context.viewFacetAggregate.getPartyBAggregateFundingDebt(
-				await hedger.getAddress(),
-				await user.getAddress(),
-				1,
-				PositionType.LONG
-			)
-			expect(partyBAggregateFundingDebt).to.equal(-aggregateFundingDebt)
-		})
-
-		it("should have aggregate funding >= sum of per-quote funding (due to maxFundingRate caps)", async function () {
-			// Setup funding rates with a moderate rate
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
-
-			// Open multiple positions with different maxFundingRates
-			const quoteIds: bigint[] = []
-			for (let i = 0; i < 3; i++) {
-				const quoteId = await user.sendQuote(
-					limitQuoteRequestBuilder()
-						.maxFundingRate(decimal(1n)) // High max funding rate
-						.build()
+				// Funding debt should be zero
+				const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					1,
+					PositionType.LONG
 				)
-				quoteIds.push(quoteId)
+				expect(debt).to.equal(0)
+			})
+
+			it("should return zero debt when epoch duration not set", async function () {
+				// Don't set epoch duration - open position normally without accumulated funding
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
 				await hedger.lockQuote(quoteId)
 				await hedger.openPosition(quoteId)
-				await time.increase(EightHourInSec)
-			}
 
-			// Wait for funding to accumulate
-			await time.increase(EightHourInSec * 3)
-
-			// Get per-quote funding using getQuoteFundingDebts
-			const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
-			let sumPerQuoteFees = 0n
-			for (const fee of perQuoteFees) {
-				sumPerQuoteFees += fee
-			}
-
-			// Get aggregate funding debt
-			const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			// Aggregate should be >= sum of per-quote fees because:
-			// - Per-quote fees have maxFundingRate caps applied
-			// - Aggregate is conservative (no caps)
-			// When caps don't kick in, they should be equal
-			// When caps kick in, aggregate >= sum
-			expect(aggregateFundingDebt).to.be.gte(sumPerQuoteFees)
-		})
-
-		it("should match exactly when maxFundingRate caps are not hit", async function () {
-			// Setup with LOW funding rate so caps won't be hit
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [decimal(1n, 16)], [-decimal(1n, 16)], [decimal(1n)]) // Very low rate
-
-			// Open positions with HIGH maxFundingRate (so caps won't be hit)
-			const quoteIds: bigint[] = []
-			for (let i = 0; i < 2; i++) {
-				const quoteId = await user.sendQuote(
-					limitQuoteRequestBuilder()
-						.maxFundingRate(decimal(1n)) // Very high max - won't be hit
-						.build()
+				// Debt should be zero since no funding system is configured
+				const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					1,
+					PositionType.LONG
 				)
-				quoteIds.push(quoteId)
-				await hedger.lockQuote(quoteId)
-				await hedger.openPosition(quoteId)
-			}
+				expect(debt).to.equal(0)
+			})
 
-			// Wait for some funding
-			await time.increase(EightHourInSec * 2)
+			it("should handle negative funding rates", async function () {
+				// Setup negative long funding rate (shorts pay longs)
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee([1], [-decimal(1n, 14)], [decimal(1n, 14)], [decimal(1n)])
 
-			// Get per-quote funding using getQuoteFundingDebts
-			const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
-			let sumPerQuoteFees = 0n
-			for (const fee of perQuoteFees) {
-				sumPerQuoteFees += fee
-			}
-
-			// Get aggregate funding debt
-			const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			// When caps are not hit, aggregate should equal sum of per-quote fees
-			// Allow small tolerance for rounding
-			const tolerance = decimal(1n, 12) // Small tolerance for rounding
-			const diff = aggregateFundingDebt > sumPerQuoteFees
-				? aggregateFundingDebt - sumPerQuoteFees
-				: sumPerQuoteFees - aggregateFundingDebt
-			expect(diff).to.be.lte(tolerance)
-		})
-
-		it("should show aggregate >= sum when maxFundingRate caps are hit", async function () {
-			// Setup with HIGH funding rate so caps WILL be hit
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)]) // Higher rate
-
-			// Open positions with LOW maxFundingRate (so caps WILL be hit)
-			const quoteIds: bigint[] = []
-			for (let i = 0; i < 2; i++) {
+				// Open LONG position
 				const quoteId = await user.sendQuote(
 					limitQuoteRequestBuilder()
-						.maxFundingRate(decimal(1n, 16)) // Low max - will be hit after a few epochs
-						.build()
-				)
-				quoteIds.push(quoteId)
-				await hedger.lockQuote(quoteId)
-				await hedger.openPosition(quoteId)
-			}
-
-			// Wait for MANY epochs so caps are definitely hit
-			await time.increase(EightHourInSec * 10)
-
-			// Get per-quote funding using getQuoteFundingDebts
-			const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
-			let sumPerQuoteFees = 0n
-			for (const fee of perQuoteFees) {
-				sumPerQuoteFees += fee
-			}
-
-			// Get aggregate funding debt
-			const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			// When caps are hit, aggregate should be >= sum of per-quote fees
-			// The aggregate is a conservative (higher or equal) estimate since it doesn't apply per-quote caps
-			expect(aggregateFundingDebt).to.be.gte(sumPerQuoteFees)
-
-			// Also verify that both are non-zero and the cap was actually applied
-			expect(sumPerQuoteFees).to.be.gt(0)
-			expect(aggregateFundingDebt).to.be.gt(0)
-		})
-
-		it("should verify getSumQuoteFundingDebts matches sum of individual fees", async function () {
-			// Setup funding rates
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
-
-			// Open multiple positions
-			const quoteIds: bigint[] = []
-			for (let i = 0; i < 3; i++) {
-				const quoteId = await user.sendQuote(
-					limitQuoteRequestBuilder()
+						.positionType(PositionType.LONG)
 						.maxFundingRate(decimal(1n))
 						.build()
 				)
-				quoteIds.push(quoteId)
 				await hedger.lockQuote(quoteId)
 				await hedger.openPosition(quoteId)
-				await time.increase(EightHourInSec)
-			}
 
-			// Wait for funding
-			await time.increase(EightHourInSec * 2)
+				// Wait for funding
+				await time.increase(EightHourInSec * 3)
 
-			// Get per-quote funding using getQuoteFundingDebts
-			const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
-			let manualSum = 0n
-			for (const fee of perQuoteFees) {
-				manualSum += fee
-			}
+				// With negative long rate, partyA should be owed money (negative debt)
+				const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					1,
+					PositionType.LONG
+				)
 
-			// Get sum using getSumQuoteFundingDebts
-			const contractSum = await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds)
-
-			// Should be exactly equal
-			expect(contractSum).to.equal(manualSum)
-		})
-	})
-
-	describe("Edge Cases", function () {
-		it("should handle zero funding rate correctly", async function () {
-			// Setup epoch duration but zero funding rate
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [0], [0], [decimal(1n)])
-
-			// Open position
-			const quoteId = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger.lockQuote(quoteId)
-			await hedger.openPosition(quoteId)
-
-			// Wait
-			await time.increase(EightHourInSec * 3)
-
-			// Funding debt should be zero
-			const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-			expect(debt).to.equal(0)
-		})
-
-		it("should return zero debt when epoch duration not set", async function () {
-			// Don't set epoch duration - open position normally without accumulated funding
-			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
-			await hedger.lockQuote(quoteId)
-			await hedger.openPosition(quoteId)
-
-			// Debt should be zero since no funding system is configured
-			const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-			expect(debt).to.equal(0)
-		})
-
-		it("should handle negative funding rates", async function () {
-			// Setup negative long funding rate (shorts pay longs)
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [-decimal(1n, 14)], [decimal(1n, 14)], [decimal(1n)])
-
-			// Open LONG position
-			const quoteId = await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.positionType(PositionType.LONG)
-					.maxFundingRate(decimal(1n))
-					.build()
-			)
-			await hedger.lockQuote(quoteId)
-			await hedger.openPosition(quoteId)
-
-			// Wait for funding
-			await time.increase(EightHourInSec * 3)
-
-			// With negative long rate, partyA should be owed money (negative debt)
-			const debt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-				await user.getAddress(),
-				await hedger.getAddress(),
-				1,
-				PositionType.LONG
-			)
-
-			// Debt could be negative (partyA is owed) since rate is negative
-			expect(debt).to.be.lt(0)
-		})
-	})
-
-	// ============ Active Symbols Tracking ============
-	// These tests verify the active symbols tracking that enables efficient aggregated views
-
-	describe("Active Symbols Tracking", function () {
-		beforeEach(async function () {
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-			await context.fundingRateFacet
-				.connect(context.signers.hedger)
-				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
-		})
-
-		it("should have empty active symbols list initially", async function () {
-			const activeSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
-			expect(activeSymbols.length).to.equal(0)
-
-			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
-			expect(partyBActiveSymbols.length).to.equal(0)
-		})
-
-		it("should add symbol to active list when position opens", async function () {
-			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(quoteId)
-			await hedger.openPosition(quoteId)
-
-			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
-			expect(partyAActiveSymbols.length).to.equal(1)
-			expect(partyAActiveSymbols[0]).to.equal(1n)
-
-			const partyBActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsPerPartyA(await hedger.getAddress(), await user.getAddress(), 0, 1000)
-			expect(partyBActiveSymbols.length).to.equal(1)
-		})
-
-		it("should not duplicate symbol when opening multiple positions in same symbol", async function () {
-			// Open two positions in symbol 1
-			const firstQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(firstQuoteId)
-			await hedger.openPosition(firstQuoteId)
-
-			const secondQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(secondQuoteId)
-			await hedger.openPosition(secondQuoteId)
-
-			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
-			expect(partyAActiveSymbols.length).to.equal(1) // Still only 1 symbol
-		})
-
-		it("should remove symbol from active list when all positions close", async function () {
-			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(quoteId)
-			await hedger.openPosition(quoteId)
-
-			let partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
-			expect(partyAActiveSymbols.length).to.equal(1)
-
-			await user.requestToClosePosition(quoteId)
-			await hedger.fillCloseRequest(quoteId)
-
-			partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
-			expect(partyAActiveSymbols.length).to.equal(0)
-		})
-
-		it("should keep symbol when only partial positions close", async function () {
-			// Open two positions
-			const firstQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(firstQuoteId)
-			await hedger.openPosition(firstQuoteId)
-
-			const secondQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(secondQuoteId)
-			await hedger.openPosition(secondQuoteId)
-
-			// Close only first
-			await user.requestToClosePosition(firstQuoteId)
-			await hedger.fillCloseRequest(firstQuoteId)
-
-			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
-			expect(partyAActiveSymbols.length).to.equal(1) // Still has symbol 1
-		})
-
-		it("should track multiple symbols correctly", async function () {
-			// Add symbol 2
-			await context.symbolControlFacet
-				.connect(context.signers.admin)
-				.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
-			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2], [EightHourInSec])
-
-			// Open positions in both symbols
-			const symbol1QuoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(1).maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(symbol1QuoteId)
-			await hedger.openPosition(symbol1QuoteId)
-
-			const symbol2QuoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).maxFundingRate(decimal(1n)).build())
-			await hedger.lockQuote(symbol2QuoteId)
-			await hedger.openPosition(symbol2QuoteId)
-
-			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
-			expect(partyAActiveSymbols.length).to.equal(2)
-			expect(partyAActiveSymbols).to.include(1n)
-			expect(partyAActiveSymbols).to.include(2n)
-		})
-
-		it("should handle swap-and-pop removal correctly", async function () {
-			// Add symbols 2 and 3
-			await context.symbolControlFacet.connect(context.signers.admin)
-				.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
-			await context.symbolControlFacet.connect(context.signers.admin)
-				.addSymbol("SYMBOL3", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
-			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2, 3], [1, 1])
-			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2, 3], [EightHourInSec, EightHourInSec])
-
-			// Open positions in all 3 symbols
-			const quoteIdsBySymbol = new Map<number, bigint>()
-			for (let symbolId = 1; symbolId <= 3; symbolId++) {
-				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).maxFundingRate(decimal(1n)).build())
-				quoteIdsBySymbol.set(symbolId, quoteId)
-				await hedger.lockQuote(quoteId)
-				await hedger.openPosition(quoteId)
-			}
-
-			// Close position in symbol 1 (first in array - triggers swap-and-pop)
-			const symbol1QuoteId = quoteIdsBySymbol.get(1)
-			if (!symbol1QuoteId) throw new Error("Symbol 1 quote not found")
-			await user.requestToClosePosition(symbol1QuoteId)
-			await hedger.fillCloseRequest(symbol1QuoteId)
-
-			const partyAActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(await user.getAddress(), await hedger.getAddress(), 0, 1000)
-			expect(partyAActiveSymbols.length).to.equal(2)
-			expect(partyAActiveSymbols).to.include(2n)
-			expect(partyAActiveSymbols).to.include(3n)
-			expect(partyAActiveSymbols).to.not.include(1n)
+				// Debt could be negative (partyA is owed) since rate is negative
+				expect(debt).to.be.lt(0)
+				expect(debt).to.be.eq(await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId]))
+			})
 		})
 	})
 
@@ -994,8 +855,28 @@ export function shouldBehaveLikeAggregateViews(): void {
 			expect(fundingHedger2).to.equal(getWeightedPaidFunding(quote2))
 
 			// They should be different because they have different funding rates
-			// (unless both accumulated the same, which is unlikely)
 			expect(fundingHedger1).to.not.equal(fundingHedger2)
+
+			const fundingHedger1PartyB = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
+				await hedger.getAddress(),
+				await user.getAddress(),
+				1,
+				PositionType.LONG
+			)
+			const fundingHedger2PartyB = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
+				await hedger2.getAddress(),
+				await user.getAddress(),
+				1,
+				PositionType.LONG
+			)
+
+			expect(fundingHedger1PartyB).to.equal(getWeightedPaidFunding(quote1))
+			expect(fundingHedger2PartyB).to.equal(getWeightedPaidFunding(quote2))
+
+			expect(fundingHedger1PartyB).to.not.equal(fundingHedger2PartyB)
+
+			expect(fundingHedger1PartyB).to.be.eq(fundingHedger1)
+			expect(fundingHedger2PartyB).to.be.eq(fundingHedger2)
 		})
 
 		it("should calculate funding debt correctly per hedger with different rates", async function () {
@@ -1038,12 +919,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 			// Debts should be different because hedgers have different funding rates
 			expect(debtWithHedger1).to.not.equal(0)
 			expect(debtWithHedger2).to.not.equal(0)
-			// Hedger2 has 2x the funding rate, so debt should be approximately double
-			// (allowing for timing differences in position opening)
-			expect(debtWithHedger2).to.be.gt(debtWithHedger1)
+			expect(debtWithHedger2).to.be.eq(2n * debtWithHedger1)
 		})
 
-		it("should correctly update aggregate funding when charging per hedger", async function () {
+		it("should correctly update aggregate funding when charging per hedger (syncing quote funding value)", async function () {
 			await time.increase(EightHourInSec)
 
 			// Open positions with both hedgers
@@ -1074,6 +953,13 @@ export function shouldBehaveLikeAggregateViews(): void {
 				PositionType.LONG
 			)
 
+			const fundingHedger2Before = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+				await user.getAddress(),
+				await hedger2.getAddress(),
+				1,
+				PositionType.LONG
+			)
+
 			await context.fundingRateFacet
 				.connect(context.signers.hedger)
 				.chargeAccumulatedFundingFee(
@@ -1090,16 +976,18 @@ export function shouldBehaveLikeAggregateViews(): void {
 				PositionType.LONG
 			)
 
-			// Hedger1's aggregate should have changed
-			expect(fundingAfter).to.not.equal(fundingBefore)
-
-			// Hedger2's aggregate should remain unchanged (no charge was made)
-			const fundingHedger2Before = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+			let fundingHedger2After = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
 				PositionType.LONG
 			)
+
+			// Hedger1's aggregate should have changed
+			expect(fundingAfter).to.not.equal(fundingBefore)
+
+			// Hedger2's aggregate should remain unchanged
+			expect(fundingHedger2After).to.equal(fundingHedger2Before)
 
 			// Charge funding for hedger2 now
 			await context.fundingRateFacet
@@ -1111,7 +999,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					await getDummyPairUpnlSig()
 				)
 
-			const fundingHedger2After = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+			fundingHedger2After = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
 				await user.getAddress(),
 				await hedger2.getAddress(),
 				1,
