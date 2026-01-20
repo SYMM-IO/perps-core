@@ -113,6 +113,8 @@ library QuoteStorage {
 		// Per-counterparty aggregated positions (for UPNL calculations with per-hedger funding rates)
 		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyBAggregatedPositionsPerPartyA; // partyB => partyA => symbolId => positionType
 		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyAAggregatedPositionsPerPartyB; // partyA => partyB => symbolId => positionType
+		// Global partyB aggregate funding tracking (for master account mode UPNL calculations across all partyAs)
+		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding))) partyBAggregatedFunding; // partyB => symbolId => positionType
 		// Per-counterparty aggregate funding tracking
 		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding)))) partyAAggregatedFundingPerPartyB; // partyA => partyB => symbolId => positionType
 		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding)))) partyBAggregatedFundingPerPartyA; // partyB => partyA => symbolId => positionType

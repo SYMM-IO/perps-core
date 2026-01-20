@@ -222,4 +222,24 @@ interface IViewFacetQuote {
 		uint256 start,
 		uint256 size
 	) external view returns (AggregatedFundingDebtBySymbol[] memory);
+
+	// ============ Global PartyB Funding View Functions ============
+
+	function getPartyBAggregatedFunding(
+		address partyB,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 weightedPaidFunding);
+
+	function getPartyBGlobalAggregateFundingDebt(
+		address partyB,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 fundingDebt);
+
+	function getPartyBGlobalAggregateFundingDebtByActiveSymbols(
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedFundingDebtBySymbol[] memory);
 }

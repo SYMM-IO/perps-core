@@ -1036,4 +1036,90 @@ contract ViewFacetQuote is IViewFacetQuote {
 
 		assembly { mstore(results, count) }
 	}
+
+	// ============ Global PartyB Funding View Functions ============
+
+	/**
+	 * @notice Returns the global aggregate funding state for partyB at a specific symbol and position type
+	 * @dev Used for master account mode UPNL calculations across all partyAs
+	 * @param partyB The partyB address
+	 * @param symbolId The symbol ID
+	 * @param positionType The position type (0 = LONG, 1 = SHORT)
+	 * @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
+	 */
+	function getPartyBAggregatedFunding(
+		address partyB,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 weightedPaidFunding) {
+		return QuoteStorage.layout().partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding;
+	}
+
+	/**
+	 * @notice Returns the global calculated aggregate funding debt for partyB at a specific symbol and position type
+	 * @dev This is for master account mode UPNL calculations across all partyAs
+	 * @param partyB The partyB address
+	 * @param symbolId The symbol ID
+	 * @param positionType The position type (0 = LONG, 1 = SHORT)
+	 * @return fundingDebt The global aggregate funding debt (positive = partyB owes, negative = partyB is owed)
+	 */
+	function getPartyBGlobalAggregateFundingDebt(
+		address partyB,
+		uint256 symbolId,
+		PositionType positionType
+	) external view returns (int256 fundingDebt) {
+		return LibAggregateFunding.getPartyBGlobalAggregateFundingDebt(partyB, symbolId, positionType);
+	}
+
+	/**
+	 * @notice Returns paginated global aggregated funding debt for partyB across active symbols
+	 * @dev Uses global partyB active symbols - for master account mode UPNL calculations
+	 * @param partyB The partyB address
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of funding debt by symbol and position type
+	 */
+	function getPartyBGlobalAggregateFundingDebtByActiveSymbols(
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		// Use global partyB active symbols
+		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbols[partyB];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		results = new AggregatedFundingDebtBySymbol[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			// LONG - use global positions
+			if (quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
+				results[count++] = AggregatedFundingDebtBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					fundingDebt: LibAggregateFunding.getPartyBGlobalAggregateFundingDebt(partyB, symbolId, PositionType.LONG)
+				});
+			}
+
+			// SHORT - use global positions
+			if (quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
+				results[count++] = AggregatedFundingDebtBySymbol({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					fundingDebt: LibAggregateFunding.getPartyBGlobalAggregateFundingDebt(partyB, symbolId, PositionType.SHORT)
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		assembly { mstore(results, count) }
+	}
 }
