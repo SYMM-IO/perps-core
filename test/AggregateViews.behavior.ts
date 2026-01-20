@@ -2597,6 +2597,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 				const activeSymbolsBefore = await clearingContext.viewFacetAggregate.getPartyBActiveSymbolsCount(await clearingHedger.getAddress())
 				expect(activeSymbolsBefore).to.equal(1n)
 
+				// Note: Funding aggregates (weightedPaidFunding) start at 0 and only accumulate
+				// when chargeAccumulatedFundingFee is called. We verify they remain zero
+				// after liquidation to ensure no stale data remains.
+
 				// Initiate cross liquidation
 				await clearingContext.clearingHouseFacet
 					.connect(clearingContext.signers.liquidator)
@@ -2611,13 +2615,29 @@ export function shouldBehaveLikeAggregateViews(): void {
 					.connect(clearingContext.signers.liquidator)
 					.liquidatePositionsForCrossLiquidation(await clearingHedger.getAddress(), priceSig)
 
-				// Verify aggregates are zeroed
+				// Verify position aggregates are zeroed
 				const { longPosition: longAfter, shortPosition: shortAfter } = await clearingContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbol(
 					await clearingHedger.getAddress(),
 					1
 				)
 				expect(longAfter.aggregatedOpenAmount).to.equal(0n)
+				expect(longAfter.avgOpenPrice).to.equal(0n)
 				expect(shortAfter.aggregatedOpenAmount).to.equal(0n)
+				expect(shortAfter.avgOpenPrice).to.equal(0n)
+
+				// Verify funding aggregates are zeroed
+				const fundingLongAfter = await clearingContext.viewFacetAggregate.getPartyBAggregatedFunding(
+					await clearingHedger.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				const fundingShortAfter = await clearingContext.viewFacetAggregate.getPartyBAggregatedFunding(
+					await clearingHedger.getAddress(),
+					1,
+					PositionType.SHORT
+				)
+				expect(fundingLongAfter).to.equal(0n)
+				expect(fundingShortAfter).to.equal(0n)
 
 				// Verify active symbols list is empty
 				const activeSymbolsAfter = await clearingContext.viewFacetAggregate.getPartyBActiveSymbolsCount(await clearingHedger.getAddress())
@@ -2806,13 +2826,31 @@ export function shouldBehaveLikeAggregateViews(): void {
 				)
 				await user.forceClosePosition(quoteId, highLowSig)
 
-				// Verify aggregates are updated
+				// Verify position aggregates are zeroed
 				const { longPosition: longAfter } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1
 				)
 				expect(longAfter.aggregatedOpenAmount).to.equal(0n)
+				expect(longAfter.avgOpenPrice).to.equal(0n)
+
+				// Verify funding aggregates are zeroed
+				const fundingAfter = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(fundingAfter).to.equal(0n)
+
+				// Verify partyB side is also zeroed
+				const { longPosition: partyBLongAfter } = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(
+					await hedger.getAddress(),
+					await user.getAddress(),
+					1
+				)
+				expect(partyBLongAfter.aggregatedOpenAmount).to.equal(0n)
 
 				// Verify active symbols
 				const activeSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(
@@ -2844,6 +2882,17 @@ export function shouldBehaveLikeAggregateViews(): void {
 					1
 				)
 				const openAmount = positionAfterOpen.aggregatedOpenAmount
+				const avgPriceBefore = positionAfterOpen.avgOpenPrice
+				expect(openAmount).to.be.gt(0n)
+				expect(avgPriceBefore).to.be.gt(0n)
+
+				// Get funding aggregate before
+				const fundingBefore = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					1,
+					PositionType.LONG
+				)
 
 				// Request close with short deadline
 				await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().deadline(getBlockTimestamp(10n)).build())
@@ -2862,13 +2911,23 @@ export function shouldBehaveLikeAggregateViews(): void {
 				quote = await context.viewFacetQuote.getQuote(quoteId)
 				expect(quote.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
 
-				// Verify aggregates are UNCHANGED
+				// Verify position aggregates are UNCHANGED
 				const { longPosition: positionAfterExpire } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1
 				)
 				expect(positionAfterExpire.aggregatedOpenAmount).to.equal(openAmount)
+				expect(positionAfterExpire.avgOpenPrice).to.equal(avgPriceBefore)
+
+				// Verify funding aggregates are UNCHANGED
+				const fundingAfter = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					1,
+					PositionType.LONG
+				)
+				expect(fundingAfter).to.equal(fundingBefore)
 
 				// Active symbols should still contain symbol 1
 				const activeSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsPerPartyB(
@@ -3012,6 +3071,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 				// Get sum of per-partyA funding
 				let sumPerPartyA = 0n
+				const perPartyAFundings: bigint[] = []
 				for (const u of users) {
 					const perPartyA = await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(
 						await hedger.getAddress(),
@@ -3019,31 +3079,38 @@ export function shouldBehaveLikeAggregateViews(): void {
 						1,
 						PositionType.LONG
 					)
+					perPartyAFundings.push(perPartyA)
 					sumPerPartyA += perPartyA
 				}
 
-				// Global should equal sum of per-partyA
+				// Verify each partyA funding aggregate is non-zero after charging
+				for (const funding of perPartyAFundings) {
+					expect(funding).to.be.gt(0n)
+				}
+				expect(globalFunding).to.be.gt(0n)
+
+				// Global funding should equal sum of per-partyA funding
 				expect(globalFunding).to.equal(sumPerPartyA)
 
-				// Global debt should also match
-				const globalDebt = await context.viewFacetAggregate.getPartyBGlobalAggregateFundingDebt(
+				// Also verify position aggregates for global partyB match
+				const { longPosition: globalLong } = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbol(
 					await hedger.getAddress(),
-					1,
-					PositionType.LONG
+					1
 				)
 
-				let sumPerPartyADebt = 0n
+				let sumPerPartyAAmount = 0n
 				for (const u of users) {
-					const debt = await context.viewFacetAggregate.getPartyBAggregateFundingDebt(
+					const { longPosition } = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(
 						await hedger.getAddress(),
 						await u.getAddress(),
-						1,
-						PositionType.LONG
+						1
 					)
-					sumPerPartyADebt += debt
+					sumPerPartyAAmount += longPosition.aggregatedOpenAmount
 				}
 
-				expect(globalDebt).to.equal(sumPerPartyADebt)
+				// Global position aggregate should equal sum of per-partyA position aggregates
+				expect(globalLong.aggregatedOpenAmount).to.equal(sumPerPartyAAmount)
+				expect(globalLong.aggregatedOpenAmount).to.be.gt(0n)
 			})
 		})
 
@@ -3071,8 +3138,8 @@ export function shouldBehaveLikeAggregateViews(): void {
 					1
 				)
 				expect(longPosition.aggregatedOpenAmount).to.equal(openAmount)
-				// avgOpenPrice should be calculated correctly
-				expect(longPosition.avgOpenPrice).to.be.gt(0n)
+				// avgOpenPrice should match the quote's opened price exactly for single position
+				expect(longPosition.avgOpenPrice).to.equal(quote.openedPrice)
 			})
 
 			it("should handle funding debt calculation without overflow", async function () {
@@ -3112,7 +3179,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				expect(debt).to.be.lt(decimal(1_000_000_000n)) // Sanity check
 			})
 
-			it("should calculate weighted average correctly with multiple positions", async function () {
+			it("should accumulate aggregates correctly with multiple positions", async function () {
 				// Setup
 				await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
 				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
@@ -3123,25 +3190,55 @@ export function shouldBehaveLikeAggregateViews(): void {
 				// Open first position: 100 units at price 1.0 (default)
 				const quote1Id = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
 				await hedger.lockQuote(quote1Id)
-				await hedger.openPosition(quote1Id)  // Uses default price from quote
+				await hedger.openPosition(quote1Id)
 
-				// Open second position: 100 units at price 1.0 as well
-				const quote2Id = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
-				await hedger.lockQuote(quote2Id)
-				await hedger.openPosition(quote2Id)  // Uses default price from quote
+				const quote1 = await context.viewFacetQuote.getQuote(quote1Id)
+				const amount1 = quote1.quantity - quote1.closedAmount
+				const price1 = quote1.openedPrice
 
-				// With two positions at same price, weighted avg = price
-				const { longPosition } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
+				// Verify first position aggregate
+				let { longPosition } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
 					await user.getAddress(),
 					await hedger.getAddress(),
 					1
 				)
+				expect(longPosition.aggregatedOpenAmount).to.equal(amount1)
+				expect(longPosition.avgOpenPrice).to.equal(price1)
 
-				expect(longPosition.aggregatedOpenAmount).to.equal(decimal(200n))
+				// Open second position: also 100 units at price 1.0
+				const quote2Id = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+				await hedger.lockQuote(quote2Id)
+				await hedger.openPosition(quote2Id)
 
-				// avgOpenPrice = (100e18 * 1e18 + 100e18 * 1e18) / 200e18 = 200e36 / 200e18 = 1e18
-				const expectedAvgPrice = decimal(1n) // 1.0
+				const quote2 = await context.viewFacetQuote.getQuote(quote2Id)
+				const amount2 = quote2.quantity - quote2.closedAmount
+				const price2 = quote2.openedPrice
+
+				// Get final aggregates
+				const result = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					1
+				)
+				longPosition = result.longPosition
+
+				// Total amount should be sum of both positions
+				expect(longPosition.aggregatedOpenAmount).to.equal(amount1 + amount2)
+
+				// Weighted average calculation: (amount1 * price1 + amount2 * price2) / (amount1 + amount2)
+				// With same prices: avgPrice = price
+				const expectedNotional = unDecimal(amount1 * price1) + unDecimal(amount2 * price2)
+				const expectedAvgPrice = expectedNotional * decimal(1n) / (amount1 + amount2)
 				expect(longPosition.avgOpenPrice).to.equal(expectedAvgPrice)
+
+				// Also verify partyB side matches
+				const { longPosition: partyBLong } = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(
+					await hedger.getAddress(),
+					await user.getAddress(),
+					1
+				)
+				expect(partyBLong.aggregatedOpenAmount).to.equal(longPosition.aggregatedOpenAmount)
+				expect(partyBLong.avgOpenPrice).to.equal(longPosition.avgOpenPrice)
 			})
 		})
 	})
