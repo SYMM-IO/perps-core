@@ -13,6 +13,9 @@ import { SharedEvents } from "./SharedEvents.sol";
  * @dev Clears the signer before calling hooks to prevent hooks from impersonating users
  */
 library LibHook {
+	/// @dev Reverts when a hook fails.
+	error HookReverted(address hook, bytes4 selector, uint256 quoteId, bytes reason);
+
 	/**
 	 * @notice Safely calls a hook with signer cleared
 	 * @dev Clears signer before call to prevent impersonation attacks, restores after
@@ -28,9 +31,14 @@ library LibHook {
 		MAStorage.layout().signer = address(0);
 
 		(bool success, bytes memory reason) = hook.call(data);
+
+		// NOTE: We intentionally revert on hook failures for now to avoid inconsistency
 		if (!success) {
-			emit SharedEvents.HookFailed(hook, bytes4(data), quoteId, reason);
+			revert HookReverted(hook, bytes4(data), quoteId, reason);
 		}
+		// if (!success) {
+		// 	emit SharedEvents.HookFailed(hook, bytes4(data), quoteId, reason);
+		// }
 
 		// Restore signer after hook call
 		MAStorage.layout().signer = previousSigner;
