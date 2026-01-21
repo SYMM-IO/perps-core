@@ -364,6 +364,32 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			ahLayout.activeVAByKey[parentAccount][isolationType][symbolId] = reusedAccount;
 		}
 
+		// Sync bind state with parent account
+		ISymmio symmio = ISymmio(parent.symmioCore);
+		ISymmio.BindState memory parentBindState = symmio.getBindState(parentAccount);
+		address parentPartyB = parentBindState.status == ISymmio.BindStatus.BOUND ? parentBindState.partyB : address(0);
+		ISymmio.BindState memory vaBindState = symmio.getBindState(reusedAccount);
+
+		if (vaBindState.partyB != parentPartyB) {
+			if (vaBindState.partyB != address(0)) {
+				if (vaBindState.status == ISymmio.BindStatus.BOUND) {
+					_executeWithSymmioSigner(parent.symmioCore, reusedAccount, abi.encodeWithSelector(ISymmio.requestToUnbindFromPartyB.selector));
+				}
+
+				if (vaBindState.status == ISymmio.BindStatus.BOUND || vaBindState.status == ISymmio.BindStatus.PENDING_UNBIND) {
+					_executeWithSymmioSigner(
+						parent.symmioCore,
+						vaBindState.partyB,
+						abi.encodeWithSelector(ISymmio.completeUnbindRequest.selector, reusedAccount)
+					);
+				}
+			}
+
+			if (parentPartyB != address(0)) {
+				_executeWithSymmioSigner(parent.symmioCore, reusedAccount, abi.encodeWithSelector(ISymmio.bindToPartyB.selector, parentPartyB));
+			}
+		}
+
 		LibAccountLayerUtils.callHook(
 			parent.affiliate,
 			reusedAccount,

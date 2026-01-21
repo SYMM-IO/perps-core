@@ -1517,6 +1517,57 @@ export function shouldBehaveLikeAccountHub(): void {
 				const reusedAccountData = await context.alViewFacet.getVirtualAccount(reusedVirtualAccountAddress)
 				expect(reusedAccountData.isExists).to.true
 			})
+
+			it("should sync PartyB binding when reusing a virtual account", async () => {
+				// Make hedger bindable so accounts can bind to it
+				await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
+
+				// Bind the parent sub-account to PartyB
+				const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [bindCallData])
+
+				const parentBindBefore = await context.viewFacet.getBindState(positionSubAccountAddress)
+				expect(parentBindBefore.status).to.equal(1) // BOUND
+				expect(parentBindBefore.partyB).to.equal(context.signers.hedger.address)
+
+				// Create a VA while parent is bound
+				const quoteRequest = limitQuoteRequestBuilder()
+					.positionType(PositionType.LONG)
+					.partyBWhiteList([context.signers.hedger.address])
+					.build()
+				const initialVirtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const initialVABind = await context.viewFacet.getBindState(initialVirtualAccountAddress)
+				expect(initialVABind.status).to.equal(1) // BOUND
+				expect(initialVABind.partyB).to.equal(context.signers.hedger.address)
+
+				// Delete the VA so it can be reused
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(initialVirtualAccountAddress, 0, 10)
+				expect(quotesBeforeClose.length).to.equal(1)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, initialVirtualAccountAddress)
+
+				const deletedAccountData = await context.alViewFacet.getVirtualAccount(initialVirtualAccountAddress)
+				expect(deletedAccountData.isExists).to.false
+
+				// Unbind the parent sub-account VA should no longer be bound after it gets reused
+				const requestUnbindCallData = context.accountFacet.interface.encodeFunctionData("requestToUnbindFromPartyB", [])
+				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [requestUnbindCallData])
+				await context.accountFacet.connect(context.signers.hedger).completeUnbindRequest(positionSubAccountAddress)
+
+				const parentBindAfter = await context.viewFacet.getBindState(positionSubAccountAddress)
+				expect(parentBindAfter.partyB).to.equal(ZeroAddress)
+
+				// Trigger reuse by sending another quote with the same VA key (POSITION + same symbolId)
+				const reusedVirtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+				expect(reusedVirtualAccountAddress).to.equal(initialVirtualAccountAddress)
+
+				// Expected: reused VA should track the parent's current binding state (unbound)
+				const reusedVABind = await context.viewFacet.getBindState(reusedVirtualAccountAddress)
+				expect(reusedVABind.partyB).to.equal(parentBindAfter.partyB)
+			})
 		})
 
 		describe("onCancelQuote", async () => {
