@@ -116,10 +116,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		_executeWithSymmioSigner(core, signer, abi.encodeWithSelector(depositSelector, account, amount));
 	}
 
-	function depositForAccountWithExpressRate(
-		address account,
-		uint256 amount
-	) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+	function depositForAccountWithExpressRate(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
 		(uint256 expressRate, address virtualProvider) = _getExpressDepositConfig(account);
 		_depositWithExpressSplit(account, amount, ISymmio.depositFor.selector, expressRate, virtualProvider);
 	}
@@ -143,13 +140,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		if (expressRate > 0 && virtualProvider == address(0)) revert VirtualProviderRequired();
 	}
 
-	function _depositWithExpressSplit(
-		address account,
-		uint256 amount,
-		bytes4 depositSelector,
-		uint256 expressRate,
-		address virtualProvider
-	) private {
+	function _depositWithExpressSplit(address account, uint256 amount, bytes4 depositSelector, uint256 expressRate, address virtualProvider) private {
 		if (amount == 0) revert ZeroAmount();
 
 		address core = LibAccountLayerUtils.getRelatedCore(account);
@@ -239,12 +230,12 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 				if (ahLayout.virtualAccounts[account].isExists) {
 					results[i] = _handleVirtualAccountSendQuote(account, cd, p);
-					return results;
+					continue;
 				}
 
 				if (ahLayout.subAccounts[account].isExists) {
 					results[i] = _handleSubAccountSendQuote(account, cd, p);
-					return results;
+					continue;
 				}
 			}
 
