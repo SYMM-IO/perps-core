@@ -351,8 +351,28 @@ export function shouldBehaveLikeAccountManager(): void {
 				await context.token.connect(context.signers.user).approve(context.diamond, amount)
 				await context.accountManager.connect(context.signers.user).depositForAccount(account, amount)
 
-				const withdrawCallData = symmioInterface.encodeFunctionData("withdrawTo", [account, amount])
+				const withdrawCallData = symmioInterface.encodeFunctionData("withdrawTo", [context.signers.user.address, amount])
 				await expect(context.accountManager.connect(context.signers.user).withdrawFromAccount(account, amount))
+					.to.emit(context.alCoreFacet, "Call")
+					.withArgs(context.signers.user.address, account, withdrawCallData, true, anyValue)
+
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
+			})
+
+			it("allows withdrawing to a custom recipient", async function () {
+				const context = await loadFixture(accountManagerFixture)
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Withdraw to recipient")
+				await context.accountManager.connect(context.signers.user).addAccount("Withdraw to recipient")
+				const account = accountPrediction[0]
+				const amount = ethers.parseUnits("10", 18)
+				const recipient = context.signers.user2.address
+
+				await context.token.mint(context.signers.user.address, amount)
+				await context.token.connect(context.signers.user).approve(context.diamond, amount)
+				await context.accountManager.connect(context.signers.user).depositForAccount(account, amount)
+
+				const withdrawCallData = symmioInterface.encodeFunctionData("withdrawTo", [recipient, amount])
+				await expect(context.accountManager.connect(context.signers.user).withdrawFromAccountTo(account, recipient, amount))
 					.to.emit(context.alCoreFacet, "Call")
 					.withArgs(context.signers.user.address, account, withdrawCallData, true, anyValue)
 

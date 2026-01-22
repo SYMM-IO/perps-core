@@ -66,9 +66,12 @@ contract AccountManager is IAccountManager, IAccountLayerErrors {
 	}
 
 	function withdrawFromAccount(address account, uint256 amount) external withSigner {
-		bytes[] memory callDatas = new bytes[](1);
-		callDatas[0] = abi.encodeWithSelector(ISymmio.withdrawTo.selector, account, amount);
-		IAccountLayerDiamond(accountHub)._call(account, callDatas);
+		_withdrawFromAccount(account, msg.sender, amount);
+	}
+
+	function withdrawFromAccountTo(address account, address to, uint256 amount) external withSigner {
+		if (to == address(0)) revert ZeroAddress();
+		_withdrawFromAccount(account, to, amount);
 	}
 
 	function _call(address account, bytes[] memory callDatas) external withSigner {
@@ -100,5 +103,11 @@ contract AccountManager is IAccountManager, IAccountLayerErrors {
 
 	function getAccountsLength(address user) external view returns (uint256) {
 		return IAccountLayerDiamond(accountHub).getSubAccountsCountOfUser(user);
+	}
+
+	function _withdrawFromAccount(address account, address to, uint256 amount) private {
+		bytes[] memory callDatas = new bytes[](1);
+		callDatas[0] = abi.encodeWithSelector(ISymmio.withdrawTo.selector, to, amount);
+		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 }
