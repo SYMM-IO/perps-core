@@ -22,7 +22,7 @@ import type { QuoteStruct } from "../src/types/interfaces/ISymmio.js"
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
-	const getFundingFee = async () => await context.viewFacetSymbol.getSumAccumulatedFundingFees([1])
+	const getFundingFee = async () => await context.viewFacetQuote.getSumQuoteFundingDebts([1])
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)

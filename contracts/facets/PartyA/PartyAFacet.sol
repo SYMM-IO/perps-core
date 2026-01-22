@@ -57,6 +57,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		notSuspended(LibSigner.getSigner())
 		returns (uint256 quoteId)
 	{
+		maxFundingRate; // silence unused variable warning
 		PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
@@ -68,7 +69,6 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			lf,
 			partyAmm,
 			partyBmm,
-			maxFundingRate,
 			deadline,
 			affiliate,
 			upnlSig,
@@ -111,7 +111,6 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	 * @param lf Liquidation Fee. It is the prize that will be paid to the liquidator user
 	 * @param partyAmm The partyA Maintenance Margin value. The amount that is actually behind the position and is considered in liquidation status
 	 * @param partyBmm The partyB Maintenance Margin value. The amount that is actually behind the position and is considered in liquidation status
-	 * @param maxFundingRate The maximum funding rate allowed from user side.
 	 * @param deadline The user should set a deadline for their request. If no PartyB takes action on the quote within this timeframe, the request will expire
 	 * @param affiliate The affiliate of this quote
 	 * @param upnlSig The Muon signature for user upnl and symbol price
@@ -128,7 +127,6 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		uint256 lf,
 		uint256 partyAmm,
 		uint256 partyBmm,
-		uint256 maxFundingRate,
 		uint256 deadline,
 		address affiliate,
 		SingleUpnlAndPriceSig memory upnlSig,
@@ -152,7 +150,6 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			lf,
 			partyAmm,
 			partyBmm,
-			maxFundingRate,
 			deadline,
 			affiliate,
 			upnlSig,
@@ -221,6 +218,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		notLiquidatedPartyA(LibSigner.getSigner())
 		notSuspended(LibSigner.getSigner())
 	{
+		maxFundingRate; // silence unused variable warning
 		PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
@@ -232,7 +230,6 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			lf,
 			partyAmm,
 			partyBmm,
-			maxFundingRate,
 			deadline,
 			address(0),
 			upnlSig,
