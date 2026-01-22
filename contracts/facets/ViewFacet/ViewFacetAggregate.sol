@@ -597,4 +597,187 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 
 		assembly { mstore(results, count) }
 	}
+
+	// ============ UPNL Data View Functions ============
+
+	/**
+	 * @notice Returns paginated UPNL data for partyA with a specific partyB
+	 * @dev Returns all data needed for off-chain UPNL calculation:
+	 *      - LONG UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt
+	 *      - SHORT UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
+	 * @param partyA The partyA address
+	 * @param partyB The partyB address
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of UPNL data for each symbol/position type
+	 */
+	function getPartyAUpnlData(
+		address partyA,
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (UpnlData[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new UpnlData[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		results = new UpnlData[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			// LONG position data
+			PartiesAggregatedPositions storage longPos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = UpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount,
+					fundingDebt: LibAggregateFunding.getPartyAAggregateFundingDebt(partyA, partyB, symbolId, PositionType.LONG)
+				});
+			}
+
+			// SHORT position data
+			PartiesAggregatedPositions storage shortPos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = UpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount,
+					fundingDebt: LibAggregateFunding.getPartyAAggregateFundingDebt(partyA, partyB, symbolId, PositionType.SHORT)
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		assembly { mstore(results, count) }
+	}
+
+	/**
+	 * @notice Returns paginated UPNL data for partyB with a specific partyA
+	 * @dev PartyB's UPNL is opposite to partyA's:
+	 *      - LONG UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
+	 *      - SHORT UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt
+	 * @param partyB The partyB address
+	 * @param partyA The partyA address
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of UPNL data for each symbol/position type
+	 */
+	function getPartyBUpnlData(
+		address partyB,
+		address partyA,
+		uint256 start,
+		uint256 size
+	) external view returns (UpnlData[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new UpnlData[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		results = new UpnlData[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			// LONG position data
+			PartiesAggregatedPositions storage longPos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = UpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount,
+					fundingDebt: LibAggregateFunding.getPartyBAggregateFundingDebt(partyB, partyA, symbolId, PositionType.LONG)
+				});
+			}
+
+			// SHORT position data
+			PartiesAggregatedPositions storage shortPos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = UpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount,
+					fundingDebt: LibAggregateFunding.getPartyBAggregateFundingDebt(partyB, partyA, symbolId, PositionType.SHORT)
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		assembly { mstore(results, count) }
+	}
+
+	/**
+	 * @notice Returns paginated global UPNL data for partyB (master account mode)
+	 * @dev Aggregates across all partyAs. PartyB's UPNL is opposite to partyA's:
+	 *      - LONG UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
+	 *      - SHORT UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt
+	 * @param partyB The partyB address
+	 * @param start The starting index in the active symbols array
+	 * @param size The maximum number of symbols to process
+	 * @return results Array of UPNL data for each symbol/position type
+	 */
+	function getPartyBGlobalUpnlData(
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (UpnlData[] memory results) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbols[partyB];
+		uint256 totalLength = activeSymbols.length;
+
+		if (totalLength <= start || size == 0) return new UpnlData[](0);
+		if (start + size > totalLength) size = totalLength - start;
+
+		results = new UpnlData[](size * 2);
+		uint256 count;
+		uint256 end = start + size;
+
+		for (uint256 i = start; i < end; ) {
+			uint256 symbolId = activeSymbols[i];
+
+			// LONG position data
+			PartiesAggregatedPositions storage longPos = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = UpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedAmount: longPos.aggregatedAmount,
+					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount,
+					fundingDebt: LibAggregateFunding.getPartyBGlobalAggregateFundingDebt(partyB, symbolId, PositionType.LONG)
+				});
+			}
+
+			// SHORT position data
+			PartiesAggregatedPositions storage shortPos = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = UpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedAmount: shortPos.aggregatedAmount,
+					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount,
+					fundingDebt: LibAggregateFunding.getPartyBGlobalAggregateFundingDebt(partyB, symbolId, PositionType.SHORT)
+				});
+			}
+
+			unchecked { ++i; }
+		}
+
+		assembly { mstore(results, count) }
+	}
 }
