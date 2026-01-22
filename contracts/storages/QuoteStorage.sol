@@ -53,7 +53,7 @@ struct Quote {
 	uint256 closedAmount;
 	LockedValues initialLockedValues;
 	LockedValues lockedValues;
-	uint256 maxFundingRate;
+	uint256 maxFundingRate; // NOTE: Funding caps postponed to a later version. Field kept for compatibility.
 	address partyA;
 	address partyB;
 	QuoteStatus quoteStatus;

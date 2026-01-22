@@ -22,9 +22,6 @@ import { LibFundingRate } from "./LibFundingRate.sol";
  *
  * By tracking totalWeightedPaidFunding = Σ(openAmount × accumulatedPaidFunding), we can
  * calculate total funding debt without iterating through all quotes.
- *
- * Note: This calculation ignores maxFundingRate caps per quote, resulting in a conservative
- * (higher) funding estimate. This is acceptable for solvency checks.
  */
 library LibAggregateFunding {
 	/**

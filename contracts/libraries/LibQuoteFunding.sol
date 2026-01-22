@@ -42,18 +42,6 @@ library LibQuoteFunding {
 
 		// Subtract already paid amount
 		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (currentFee - quote.accumulatedPaidFunding)) / 1e18;
-
-		// Apply maximum funding rate cap
-		int256 maxFee = int256(quote.maxFundingRate) * int256(unpaidEpochs);
-
-		if (fee > 0) {
-			// Positive fee: cap at maxFee
-			fee = fee > maxFee ? maxFee : fee;
-		} else {
-			// Negative fee: cap at -maxFee
-			fee = fee < -maxFee ? -maxFee : fee;
-		}
-		// If fee == 0, no action needed
 	}
 
 	/**

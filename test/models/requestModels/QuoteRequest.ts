@@ -38,7 +38,6 @@ export interface QuoteRequestWithData {
 	partyAmm: BigNumberish
 	partyBmm: BigNumberish
 	lf: BigNumberish
-	maxFundingRate: BigNumberish
 	deadline: Promise<BigNumberish> | BigNumberish
 	upnlSig: Promise<SingleUpnlAndPriceSigStruct>
 	data: any
@@ -72,7 +71,6 @@ const buildLimitDataQuoteRequest = (): QuoteRequestWithData => ({
 	partyAmm: decimal(75n),
 	partyBmm: decimal(40n),
 	lf: decimal(3n),
-	maxFundingRate: decimal(2n, 16),
 	deadline: getBlockTimestamp(500n),
 	affiliate: "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d", //FIXME find a better way
 	upnlSig: getDummySingleUpnlAndPriceSig(decimal(1n)),

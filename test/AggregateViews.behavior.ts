@@ -743,47 +743,6 @@ export function shouldBehaveLikeAggregateViews(): void {
 				)
 				expect(partyBAggregateFundingDebt).to.equal(-aggregateFundingDebt)
 			})
-
-			it("should have aggregate funding > sum of per-quote funding when maxFundingRate caps are hit", async function () {
-				// Setup funding rate: 1e16 per epoch
-				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
-				await context.fundingRateFacet
-					.connect(context.signers.hedger)
-					.updateAccumulatedFundingFee([1], [decimal(1n, 16)], [-decimal(1n, 16)], [decimal(1n)])
-
-				// Open position with maxFundingRate = 1e16 per epoch
-				// Cap hits when: openAmount × rate / 1e18 > maxFundingRate
-				// With openAmount=100e18, rate=1e16: fee_per_epoch = 100e18 × 1e16 / 1e18 = 1e18
-				// Since 1e18 > 1e16 (maxFundingRate), the cap is hit
-				const quoteId = await user.sendQuote(
-					limitQuoteRequestBuilder()
-						.maxFundingRate(decimal(1n, 16)) // Cap per epoch
-						.build()
-				)
-				await hedger.lockQuote(quoteId)
-				await hedger.openPosition(quoteId)
-
-				// Wait for multiple epochs
-				await time.increase(EightHourInSec * 5)
-
-				// Get per-quote funding (capped at maxFundingRate × epochs)
-				const perQuoteFees = await context.viewFacetQuote.getQuoteFundingDebts([quoteId])
-				const perQuoteFee = perQuoteFees[0]
-
-				// Get aggregate funding debt (uncapped, conservative estimate)
-				const aggregateFundingDebt = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
-					await user.getAddress(),
-					await hedger.getAddress(),
-					1,
-					PositionType.LONG
-				)
-
-				// Aggregate > per-quote because:
-				// - Per-quote: capped at maxFundingRate × epochs = 1e16 × 5 = 5e16
-				// - Aggregate: uncapped = openAmount × rate × epochs / 1e18 = 1e18 × 5 = 5e18
-				// This conservative behavior ensures solvency checks are safe
-				expect(aggregateFundingDebt).to.be.gt(perQuoteFee)
-			})
 		})
 
 		describe("Edge Cases", function () {

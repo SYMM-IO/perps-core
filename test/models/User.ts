@@ -106,7 +106,6 @@ export class User extends PartyEntity {
 				request.lf,
 				request.partyAmm,
 				request.partyBmm,
-				request.maxFundingRate,
 				await request.deadline,
 				this.context.accountManager,
 				await request.upnlSig,
