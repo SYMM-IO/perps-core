@@ -9,7 +9,7 @@ import { IMarginFacet } from "./IMarginFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
-import { AccountHubStorage, VirtualAccountIsolationType } from "../../storages/AccountHubStorage.sol";
+import { AccountHubStorage, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountHubStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
@@ -38,6 +38,19 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		if (!ahLayout.subAccounts[subAccount].isExists) revert AccountDoesNotExist();
+		SubAccountIsolationType subIsolation = ahLayout.subAccounts[subAccount].isolationType;
+
+		bool validIsolation = false;
+		if (subIsolation == SubAccountIsolationType.POSITION) {
+			validIsolation = isolationType == VirtualAccountIsolationType.POSITION;
+		} else if (subIsolation == SubAccountIsolationType.MARKET) {
+			validIsolation = isolationType == VirtualAccountIsolationType.MARKET;
+		} else if (subIsolation == SubAccountIsolationType.MARKET_DIRECTION) {
+			validIsolation =
+				isolationType == VirtualAccountIsolationType.MARKET_LONG || isolationType == VirtualAccountIsolationType.MARKET_SHORT;
+		}
+
+		if (!validIsolation) revert InvalidIsolationType();
 
 		address predictedVA = _predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
 

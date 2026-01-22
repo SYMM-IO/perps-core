@@ -2998,6 +2998,25 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 		})
 
+		describe("addMarginToNextVA", async () => {
+			// ensure isolation type matches the subaccount mode
+			it("rejects mismatched isolation type", async () => {
+				const subAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MARKET_ACCOUNT", 1, "MARKET", true)],
+					BALANCES.DEPOSIT_AMOUNT,
+					false,
+				)
+
+				const quoteRequest = limitQuoteRequestBuilder().symbolId(1).build()
+				const wrongIsolationType = 0 // VirtualAccountIsolationType.POSITION
+
+				await expect(
+					context.alMarginFacet.connect(context.signers.user).addMarginToNextVA(subAccount, wrongIsolationType, quoteRequest.symbolId, BALANCES.TRANSFER_AMOUNT),
+				).to.be.revertedWithCustomError(context.alMarginFacet, "InvalidIsolationType")
+			})
+		})
+
 		describe("Transfer Methods", async () => {
 			let customSubAccount: string
 			let virtualAccount: string

@@ -30,6 +30,7 @@ interface IAccountLayerErrors {
 	error AffiliateNotActive();
 	error NotAffiliateAdmin();
 	error NotSymmioCore();
+	error InvalidIsolationType();
 	error MustHaveRole();
 	error MustBeRoleAdmin();
 	error OnlyCustomIsolationCanCreateManually();
