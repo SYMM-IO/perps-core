@@ -252,6 +252,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		bytes4 selector = bytes4(callData[:4]);
+		if (!afLayout.callAllowedSelectors[affiliate][selector]) revert SelectorNotAllowed(selector);
 		if (afLayout.affiliates[affiliate].admin != msg.sender && !afLayout.operators[affiliate][selector][msg.sender]) revert Unauthorized();
 		if (!afLayout.affiliates[affiliate].symmioCores.contains(symmio)) revert SymmioCoreNotAllowed();
 

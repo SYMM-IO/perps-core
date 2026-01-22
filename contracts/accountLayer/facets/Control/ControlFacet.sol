@@ -103,4 +103,16 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		}
 		emit HookAllowedSelectorsSet(affiliate, selectors, allowed);
 	}
+
+	function setCallAllowedSelectors(
+		address affiliate,
+		bytes4[] calldata selectors,
+		bool allowed
+	) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
+		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		for (uint256 i = 0; i < selectors.length; i++) {
+			afLayout.callAllowedSelectors[affiliate][selectors[i]] = allowed;
+		}
+		emit CallAllowedSelectorsSet(affiliate, selectors, allowed);
+	}
 }
