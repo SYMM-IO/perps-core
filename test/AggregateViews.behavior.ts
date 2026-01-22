@@ -1185,10 +1185,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 					const liquidator = context.signers.liquidator
 					const sig = await getDummyLiquidationSig("0x10", -decimal(1_000_000n), [1n], [decimal(1n)], decimal(1_000_000n), 0n)
 
-					await context.liquidationFacet.connect(liquidator).liquidatePartyA(await user.getAddress(), sig)
-					await context.liquidationFacet.connect(liquidator).setSymbolsPrice(await user.getAddress(), sig)
-					await context.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(await user.getAddress())
-					await context.liquidationFacet.connect(liquidator).liquidatePositionsPartyA(await user.getAddress(), [quoteId])
+					await context.partyALiquidationFacet.connect(liquidator).liquidatePartyA(await user.getAddress(), sig)
+					await context.partyALiquidationFacet.connect(liquidator).setSymbolsPrice(await user.getAddress(), sig)
+					await context.partyALiquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(await user.getAddress())
+					await context.partyALiquidationFacet.connect(liquidator).liquidatePositionsPartyA(await user.getAddress(), [quoteId])
 
 					// After liquidation, position and funding aggregates should be zeroed
 					const { longPosition: posAfter } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
@@ -1568,10 +1568,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 				const liquidator = posContext.signers.liquidator
 				const sig = await getDummyLiquidationSig("0x10", -decimal(1_000_000n), [1n], [decimal(1n)], decimal(1_000_000n), 0n)
 
-				await posContext.liquidationFacet.connect(liquidator).liquidatePartyA(await posUser.getAddress(), sig)
-				await posContext.liquidationFacet.connect(liquidator).setSymbolsPrice(await posUser.getAddress(), sig)
-				await posContext.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(await posUser.getAddress())
-				await posContext.liquidationFacet
+				await posContext.partyALiquidationFacet.connect(liquidator).liquidatePartyA(await posUser.getAddress(), sig)
+				await posContext.partyALiquidationFacet.connect(liquidator).setSymbolsPrice(await posUser.getAddress(), sig)
+				await posContext.partyALiquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(await posUser.getAddress())
+				await posContext.partyALiquidationFacet
 					.connect(liquidator)
 					.liquidatePositionsPartyA(await posUser.getAddress(), [quote1LongOpened.id, quote2ShortOpened.id, quote3LongOpened.id])
 
@@ -1849,10 +1849,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 				const liquidator = posContext.signers.liquidator
 				const sig = await getDummyLiquidationSig("0x10", -decimal(1_000_000n), [1n], [decimal(1n)], decimal(1_000_000n), 0n)
 
-				await posContext.liquidationFacet.connect(liquidator).liquidatePartyA(await posUser.getAddress(), sig)
-				await posContext.liquidationFacet.connect(liquidator).setSymbolsPrice(await posUser.getAddress(), sig)
-				await posContext.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(await posUser.getAddress())
-				await posContext.liquidationFacet
+				await posContext.partyALiquidationFacet.connect(liquidator).liquidatePartyA(await posUser.getAddress(), sig)
+				await posContext.partyALiquidationFacet.connect(liquidator).setSymbolsPrice(await posUser.getAddress(), sig)
+				await posContext.partyALiquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(await posUser.getAddress())
+				await posContext.partyALiquidationFacet
 					.connect(liquidator)
 					.liquidatePositionsPartyA(await posUser.getAddress(), [quote1LongOpened.id, quote2ShortOpened.id, quote3LongOpened.id])
 

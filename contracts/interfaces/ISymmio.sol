@@ -9,7 +9,8 @@ import { IControlFacet } from "../facets/Control/IControlFacet.sol";
 import { ISymbolControlFacet } from "../facets/Control/ISymbolControlFacet.sol";
 import { IPauseControlFacet } from "../facets/Control/IPauseControlFacet.sol";
 import { IFundingRateFacet } from "../facets/FundingRate/IFundingRateFacet.sol";
-import { ILiquidationFacet } from "../facets/liquidation/ILiquidationFacet.sol";
+import { IPartyALiquidationFacet } from "../facets/liquidation/IPartyALiquidationFacet.sol";
+import { IPartyBLiquidationFacet } from "../facets/liquidation/IPartyBLiquidationFacet.sol";
 import { IPartyAFacet } from "../facets/PartyA/IPartyAFacet.sol";
 import { IBridgeFacet } from "../facets/Bridge/IBridgeFacet.sol";
 import { IViewFacet } from "../facets/ViewFacet/IViewFacet.sol";
@@ -36,7 +37,8 @@ interface ISymmio is
 	IPartyBPositionActionsFacet,
 	IPartyBBatchActionsFacet,
 	IPartyAFacet,
-	ILiquidationFacet,
+	IPartyALiquidationFacet,
+	IPartyBLiquidationFacet,
 	IViewFacet,
 	IViewFacetSymbol,
 	IViewFacetQuote,

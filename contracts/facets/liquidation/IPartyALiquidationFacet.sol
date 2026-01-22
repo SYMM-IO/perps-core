@@ -4,10 +4,10 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { ILiquidationEvents } from "./ILiquidationEvents.sol";
-import { LiquidationSig, DeferredLiquidationSig, SingleUpnlSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
+import { IPartyALiquidationEvents } from "./IPartyALiquidationEvents.sol";
+import { LiquidationSig, DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
 
-interface ILiquidationFacet is ILiquidationEvents {
+interface IPartyALiquidationFacet is IPartyALiquidationEvents {
 	function liquidatePartyA(address partyA, LiquidationSig memory liquidationSig) external;
 
 	function setSymbolsPrice(address partyA, LiquidationSig memory liquidationSig) external;
@@ -23,8 +23,4 @@ interface ILiquidationFacet is ILiquidationEvents {
 	function settlePartyALiquidation(address partyA, address[] memory partyBs) external;
 
 	function resolveLiquidationDispute(address partyA, address[] memory partyBs, int256[] memory amounts, bool disputed) external;
-
-	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) external;
-
-	function liquidatePositionsPartyB(address partyB, address partyA, QuotePriceSig memory priceSig) external;
 }

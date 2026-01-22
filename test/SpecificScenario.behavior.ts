@@ -354,10 +354,10 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		const liquidator = context.signers.liquidator
 		const liquidationSig = await getDummyLiquidationSig("0x10", -decimal(1_000_000n), [1n], [decimal(3n)], decimal(1_000_000n), 0n)
-		await context.liquidationFacet.connect(liquidator).liquidatePartyA(user.address, liquidationSig)
-		await context.liquidationFacet.connect(liquidator).setSymbolsPrice(user.address, liquidationSig)
-		await context.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(user.address)
-		await context.liquidationFacet.connect(liquidator).liquidatePositionsPartyA(user.address, [quote1.id])
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePartyA(user.address, liquidationSig)
+		await context.partyALiquidationFacet.connect(liquidator).setSymbolsPrice(user.address, liquidationSig)
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(user.address)
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePositionsPartyA(user.address, [quote1.id])
 
 		await expectPartyBTotals(context, decimal(10n), decimal(8n), decimal(50n), decimal(15n))
 		expect((await context.viewFacetQuote.getQuote(quote1.id)).quoteStatus).to.equal(BigInt(QuoteStatus.LIQUIDATED))
@@ -691,10 +691,10 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		const liquidator = context.signers.liquidator
 		const liquidationSig = await getDummyLiquidationSig("0x10", -decimal(1_000_000n), [1n], [decimal(3n)], decimal(1_000_000n), 0n)
-		await context.liquidationFacet.connect(liquidator).liquidatePartyA(user.address, liquidationSig)
-		await context.liquidationFacet.connect(liquidator).setSymbolsPrice(user.address, liquidationSig)
-		await context.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(user.address)
-		await context.liquidationFacet.connect(liquidator).liquidatePositionsPartyA(user.address, [quote1.id])
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePartyA(user.address, liquidationSig)
+		await context.partyALiquidationFacet.connect(liquidator).setSymbolsPrice(user.address, liquidationSig)
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(user.address)
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePositionsPartyA(user.address, [quote1.id])
 
 		await expectPartyATotals(context, decimal(10n), decimal(8n), decimal(50n), decimal(15n))
 		expect((await context.viewFacetQuote.getQuote(quote1.id)).quoteStatus).to.equal(BigInt(QuoteStatus.LIQUIDATED))
