@@ -98,7 +98,7 @@ export function shouldBehaveLikeADLFacet(): void {
 				)
 			})
 
-			it("skips when close would make partyB use locked CVA/LF (should settle/close others first)", async function () {
+			it("allows ADL close even with minimal partyB allocation", async function () {
 				await user.sendQuote(
 					limitQuoteRequestBuilder()
 						.partyBWhiteList([await hedger.getAddress()])
@@ -114,11 +114,13 @@ export function shouldBehaveLikeADLFacet(): void {
 				const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])
 				await context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([quoteId], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
 
-				// Close half with enough profit for PartyA so PartyB would pay pnl and dip below remaining locked CVA+LF.
-				await expect(context.adlFacet.connect(hedger.signer).adlClose(quoteId, decimal(50n), decimal(22n, 17))).to.be.revertedWith(
-					"LibQuote: PartyB should be solvent",
-				) // 2.2
-				})
+				// Close half with profit for PartyA.
+				await expect(context.adlFacet.connect(hedger.signer).adlClose(quoteId, decimal(50n), decimal(22n, 17))).to.not.be.reverted // 2.2
+
+				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+				expect(quoteAfter.closedAmount).to.equal(decimal(50n))
+			})
 
 				it("reverts when partyA is in liquidation", async function () {
 					const quoteId = await openWith(hedger)

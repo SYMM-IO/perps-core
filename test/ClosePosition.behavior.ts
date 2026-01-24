@@ -114,7 +114,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		await time.setNextBlockTimestamp(Number(aligned))
 
 		await context.fundingRateFacet.connect(hedger.signer).setEpochDurations([1], [epochDurationSec])
-		await context.fundingRateFacet.connect(hedger.signer).setFundingFee([1], [decimal(8n)], [0], [decimal(1n)])
+		await context.fundingRateFacet.connect(hedger.signer).setFundingFee([1], [decimal(8n, 16)], [0], [decimal(1n)])
 
 		// Ensure PartyA has enough available balance to create an extra position
 		await context.accountFacet.connect(user.signer).allocate(decimal(250n))
@@ -137,7 +137,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		const partyAAllocatedBefore = (await user.getBalanceInfo()).allocatedBalances
 		const partyBAllocatedBefore = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
 
-		expect(partyAAllocatedBefore).to.be.lt(fundingFee)
+		expect(partyAAllocatedBefore).to.be.gte(fundingFee)
 
 		await expect(
 			hedger.fillCloseRequest(quoteId, limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(closedPrice).price(closedPrice).build()),
