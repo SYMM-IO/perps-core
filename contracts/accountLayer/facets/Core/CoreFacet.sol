@@ -304,6 +304,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		LibAccountLayerUtils.validateName(data.name);
 		if (!afLayout.whitelistedSymmioCores[data.symmioCore]) revert NotSymmioCore();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
+		if (!afLayout.affiliates[affiliate].symmioCores.contains(data.symmioCore)) revert SymmioCoreNotAllowed();
 
 		if (
 			data.singleVAMode &&

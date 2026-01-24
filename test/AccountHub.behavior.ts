@@ -295,6 +295,23 @@ export function shouldBehaveLikeAccountHub(): void {
 				).to.revertedWithCustomError(context.alCoreFacet, "NotSymmioCore")
 			})
 
+			it("should failed when symmioCore is not in affiliate core list", async () => {
+				const otherCore = context.signers.others[0].address
+				await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(otherCore, true)
+
+				const subAccountData = {
+					name: "EXAMPLE_NAME",
+					metadata: ethers.keccak256(toUtf8Bytes("EXAMPLE")),
+					symmioCore: otherCore,
+					isolationType: 0,
+					singleVAMode: false,
+				}
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), [subAccountData]),
+				).to.revertedWithCustomError(context.alCoreFacet, "SymmioCoreNotAllowed")
+			})
+
 			it("should failed when provided affiliate not active", async () => {
 				const subAccountData = buildExampleSubAccountData()
 				await expect(
