@@ -33,6 +33,16 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	bytes32 private constant ACCOUNT_INIT_CODE_HASH = keccak256("ACC_V1");
 
+	// Symmio core admin selectors blocked in _call because AccountLayer holds privileged roles on Symmio core
+	bytes4 private constant REGISTER_AFFILIATE_SELECTOR = bytes4(keccak256("registerAffiliate(address)"));
+	bytes4 private constant DEREGISTER_AFFILIATE_SELECTOR = bytes4(keccak256("deregisterAffiliate(address)"));
+	bytes4 private constant SET_AFFILIATE_METADATA_SELECTOR = bytes4(keccak256("setAffiliateMetadata(address,(string,string,string))"));
+	bytes4 private constant SET_FEE_COLLECTOR_SELECTOR = bytes4(keccak256("setFeeCollector(address,address)"));
+	bytes4 private constant SET_AFFILIATE_FEE_SELECTOR = bytes4(keccak256("setAffiliateFee(address,uint256[],uint256[],uint256[])"));
+	bytes4 private constant SET_CUSTOM_AFFILIATE_FEE_SELECTOR = bytes4(keccak256("setCustomAffiliateFee(address,address[],uint256[],uint256[],uint256[])"));
+	bytes4 private constant SET_SIGNER_SELECTOR = bytes4(keccak256("setSigner(address)"));
+	bytes4 private constant INTERNAL_TRANSFER_TO_BALANCE_SELECTOR = bytes4(keccak256("internalTransferToBalance(address,uint256)"));
+
 	// ==================== Sub-Account Management ====================
 
 	function createSubAccounts(
@@ -220,6 +230,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			bytes calldata cd = callDatas[i];
 			bytes4 selector = bytes4(cd[:4]);
+			if (_isForbiddenSelector(selector)) revert Unauthorized();
 
 			if (
 				selector == LibQuoteParams.SEND_QUOTE_SELECTOR ||
@@ -243,6 +254,18 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		}
 
 		return results;
+	}
+
+	function _isForbiddenSelector(bytes4 selector) private pure returns (bool) {
+		return
+			selector == REGISTER_AFFILIATE_SELECTOR ||
+			selector == DEREGISTER_AFFILIATE_SELECTOR ||
+			selector == SET_AFFILIATE_METADATA_SELECTOR ||
+			selector == SET_FEE_COLLECTOR_SELECTOR ||
+			selector == SET_AFFILIATE_FEE_SELECTOR ||
+			selector == SET_CUSTOM_AFFILIATE_FEE_SELECTOR ||
+			selector == SET_SIGNER_SELECTOR ||
+			selector == INTERNAL_TRANSFER_TO_BALANCE_SELECTOR;
 	}
 
 	// ==================== Hook Callback ====================

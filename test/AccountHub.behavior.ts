@@ -976,6 +976,21 @@ export function shouldBehaveLikeAccountHub(): void {
 						"NotOwner",
 					)
 				})
+
+				it("should not allow account owner to call Symmio admin functions via _call", async () => {
+					const victimAffiliate = await context.accountManager2.getAddress()
+					const attackerCollector = context.signers.user.address
+					const beforeCollector = await context.viewFacet.getFeeCollector(victimAffiliate)
+
+					const callData: BytesLike[] = [
+						context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victimAffiliate, attackerCollector]),
+					]
+
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.reverted
+
+					const afterCollector = await context.viewFacet.getFeeCollector(victimAffiliate)
+					expect(afterCollector).to.equal(beforeCollector)
+				})
 			})
 
 			describe("SendQuote with isolation types", async () => {
