@@ -31,6 +31,14 @@ interface IViewFacetAggregate {
 		int256 fundingDebt;
 	}
 
+	struct UpnlData {
+		uint256 symbolId;
+		PositionType positionType;
+		uint256 aggregatedAmount;
+		uint256 avgOpenPrice;
+		int256 fundingDebt;
+	}
+
 	// ============ Position Aggregate View Functions ============
 
 	function getPartyBAggregatedPositionBySymbol(
@@ -147,4 +155,26 @@ interface IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (AggregatedFundingDebtBySymbol[] memory);
+
+	// ============ UPNL Data View Functions ============
+
+	function getPartyAUpnlData(
+		address partyA,
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (UpnlData[] memory);
+
+	function getPartyBUpnlData(
+		address partyB,
+		address partyA,
+		uint256 start,
+		uint256 size
+	) external view returns (UpnlData[] memory);
+
+	function getPartyBGlobalUpnlData(
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (UpnlData[] memory);
 }

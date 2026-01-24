@@ -54,44 +54,4 @@ interface IViewFacetQuote {
 	function getQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256[] memory debts);
 
 	function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256 sum);
-
-	function getPartyAUPNLParams(
-		address partyA,
-		uint256 quoteStart,
-		uint256 quoteEnd,
-		bool getCount
-	)
-		external
-		view
-		returns (
-			uint256 positionsCount,
-			uint256[] memory partyBsAllocated,
-			address[] memory partyBs,
-			uint256[] memory quoteIds,
-			uint256[] memory symbolIds,
-			string[] memory symbolNames,
-			uint256[] memory openPrices,
-			uint256[] memory remainingOpenAmount,
-			uint256[] memory positionType
-		);
-
-	function getPartyBUPNLParams(
-		address partyA,
-		address partyB,
-		uint256 quoteStart,
-		uint256 quoteEnd,
-		bool getCount
-	)
-		external
-		view
-		returns (
-			uint256 positionsCount,
-			uint256[] memory partyBsAllocated,
-			uint256[] memory quoteIds,
-			uint256[] memory symbolIds,
-			string[] memory symbolNames,
-			uint256[] memory openPrices,
-			uint256[] memory remainingOpenAmount,
-			uint256[] memory positionType
-		);
 }

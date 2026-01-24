@@ -1892,7 +1892,6 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 		describe("Global PartyB Active Symbols", function () {
 			let symbol2: bigint
-			let symbol3: bigint
 
 			beforeEach(async function () {
 				// add two extra symbols and map them to the already whitelisted type 1
@@ -1905,7 +1904,6 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await posContext.symbolControlFacet.connect(posContext.signers.admin).setSymbolTypes([2, 3], [1, 1])
 
 				symbol2 = 2n
-				symbol3 = 3n
 			})
 
 			it("getPartyBActiveSymbolsCount returns correct count", async function () {
@@ -3111,6 +3109,639 @@ export function shouldBehaveLikeAggregateViews(): void {
 				for (const debt of [...firstPage, ...secondPage]) {
 					expect(debt.fundingDebt).to.not.equal(0)
 				}
+			})
+		})
+	})
+
+	// ============================================================================
+	// SECTION 5: UPNL DATA VIEW METHODS
+	// Tests for getting all data needed for off-chain UPNL calculation
+	// ============================================================================
+
+	describe("UPNL Data View Methods", function () {
+		const NUM_SYMBOLS_FOR_PAGINATION = 20 // Use 20 symbols to test pagination
+
+		beforeEach(async function () {
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+		})
+
+		// Helper to create multiple symbols
+		async function createSymbols(count: number): Promise<void> {
+			const symbolIds: number[] = []
+			const epochDurations: number[] = []
+			const symbolTypes: number[] = []
+			const longRates: bigint[] = []
+			const shortRates: bigint[] = []
+			const prices: bigint[] = []
+
+			for (let i = 2; i <= count + 1; i++) {
+				await context.symbolControlFacet
+					.connect(context.signers.admin)
+					.addSymbol(`SYMBOL${i}`, decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+				symbolIds.push(i)
+				epochDurations.push(EightHourInSec)
+				symbolTypes.push(1)
+				longRates.push(decimal(1n, 14))
+				shortRates.push(-decimal(1n, 14))
+				prices.push(decimal(1n))
+			}
+
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes(symbolIds, symbolTypes)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations(symbolIds, epochDurations)
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.updateAccumulatedFundingFee(symbolIds, longRates, shortRates, prices)
+		}
+
+		// Helper to open a position and return quote ID
+		async function openPosition(symbolId: number, positionType: PositionType): Promise<bigint> {
+			const quoteId = await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.symbolId(symbolId)
+					.positionType(positionType)
+					.maxFundingRate(decimal(1n))
+					.build()
+			)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+			return quoteId
+		}
+
+		describe("getPartyAUpnlData", function () {
+			it("single LONG position", async function () {
+				const quoteId = await openPosition(1, PositionType.LONG)
+				await time.increase(EightHourInSec * 2)
+
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				const upnlData = await context.viewFacetAggregate.getPartyAUpnlData(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(1)
+				expect(upnlData[0].symbolId).to.equal(1n)
+				expect(upnlData[0].positionType).to.equal(PositionType.LONG)
+				expect(upnlData[0].aggregatedAmount).to.equal(quote.quantity)
+				expect(upnlData[0].avgOpenPrice).to.equal(quote.openedPrice)
+
+				// Verify funding debt matches getSumQuoteFundingDebts
+				const expectedFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+				expect(upnlData[0].fundingDebt).to.equal(expectedFundingDebt)
+			})
+
+			it("single SHORT position", async function () {
+				const quoteId = await openPosition(1, PositionType.SHORT)
+				await time.increase(EightHourInSec * 2)
+
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				const upnlData = await context.viewFacetAggregate.getPartyAUpnlData(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(1)
+				expect(upnlData[0].symbolId).to.equal(1n)
+				expect(upnlData[0].positionType).to.equal(PositionType.SHORT)
+				expect(upnlData[0].aggregatedAmount).to.equal(quote.quantity)
+				expect(upnlData[0].avgOpenPrice).to.equal(quote.openedPrice)
+
+				// Verify funding debt matches getSumQuoteFundingDebts
+				const expectedFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+				expect(upnlData[0].fundingDebt).to.equal(expectedFundingDebt)
+			})
+
+			it("combination of LONG and SHORT with 1 symbol", async function () {
+				const longQuoteId = await openPosition(1, PositionType.LONG)
+				const shortQuoteId = await openPosition(1, PositionType.SHORT)
+				await time.increase(EightHourInSec * 2)
+
+				const longQuote = await context.viewFacetQuote.getQuote(longQuoteId)
+				const shortQuote = await context.viewFacetQuote.getQuote(shortQuoteId)
+
+				const upnlData = await context.viewFacetAggregate.getPartyAUpnlData(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(2)
+
+				const longData = upnlData.find(d => Number(d.positionType) === PositionType.LONG)
+				const shortData = upnlData.find(d => Number(d.positionType) === PositionType.SHORT)
+
+				expect(longData).to.not.be.undefined
+				expect(longData!.symbolId).to.equal(1n)
+				expect(longData!.aggregatedAmount).to.equal(longQuote.quantity)
+				expect(longData!.avgOpenPrice).to.equal(longQuote.openedPrice)
+
+				expect(shortData).to.not.be.undefined
+				expect(shortData!.symbolId).to.equal(1n)
+				expect(shortData!.aggregatedAmount).to.equal(shortQuote.quantity)
+				expect(shortData!.avgOpenPrice).to.equal(shortQuote.openedPrice)
+
+				// Verify funding debts
+				const longFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([longQuoteId])
+				const shortFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([shortQuoteId])
+				expect(longData!.fundingDebt).to.equal(longFundingDebt)
+				expect(shortData!.fundingDebt).to.equal(shortFundingDebt)
+			})
+
+			it("combination of LONG and SHORT with many symbols", async function () {
+				// Create 4 additional symbols (total 5)
+				await createSymbols(4)
+
+				// Open positions across different symbols
+				const quoteIds: Map<number, { long?: bigint; short?: bigint }> = new Map()
+
+				// Symbol 1: LONG only
+				quoteIds.set(1, { long: await openPosition(1, PositionType.LONG) })
+
+				// Symbol 2: SHORT only
+				quoteIds.set(2, { short: await openPosition(2, PositionType.SHORT) })
+
+				// Symbol 3: Both LONG and SHORT
+				quoteIds.set(3, {
+					long: await openPosition(3, PositionType.LONG),
+					short: await openPosition(3, PositionType.SHORT),
+				})
+
+				// Symbol 4: LONG only
+				quoteIds.set(4, { long: await openPosition(4, PositionType.LONG) })
+
+				// Symbol 5: SHORT only
+				quoteIds.set(5, { short: await openPosition(5, PositionType.SHORT) })
+
+				await time.increase(EightHourInSec * 2)
+
+				const upnlData = await context.viewFacetAggregate.getPartyAUpnlData(
+					await user.getAddress(),
+					await hedger.getAddress(),
+					0,
+					1000
+				)
+
+				// Should have 6 entries: 3 LONGs (symbols 1,3,4) + 3 SHORTs (symbols 2,3,5)
+				expect(upnlData.length).to.equal(6)
+
+				// Verify each symbol's data
+				for (const [symbolId, ids] of quoteIds) {
+					if (ids.long) {
+						const longData = upnlData.find(
+							d => Number(d.symbolId) === symbolId && Number(d.positionType) === PositionType.LONG
+						)
+						expect(longData).to.not.be.undefined
+						const quote = await context.viewFacetQuote.getQuote(ids.long)
+						expect(longData!.aggregatedAmount).to.equal(quote.quantity)
+						expect(longData!.avgOpenPrice).to.equal(quote.openedPrice)
+
+						const expectedFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([ids.long])
+						expect(longData!.fundingDebt).to.equal(expectedFunding)
+					}
+					if (ids.short) {
+						const shortData = upnlData.find(
+							d => Number(d.symbolId) === symbolId && Number(d.positionType) === PositionType.SHORT
+						)
+						expect(shortData).to.not.be.undefined
+						const quote = await context.viewFacetQuote.getQuote(ids.short)
+						expect(shortData!.aggregatedAmount).to.equal(quote.quantity)
+						expect(shortData!.avgOpenPrice).to.equal(quote.openedPrice)
+
+						const expectedFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([ids.short])
+						expect(shortData!.fundingDebt).to.equal(expectedFunding)
+					}
+				}
+			})
+
+			it("pagination with many symbols", async function () {
+				// Create many symbols to test pagination
+				await createSymbols(NUM_SYMBOLS_FOR_PAGINATION - 1) // -1 because symbol 1 already exists
+
+				// Open positions in all symbols
+				const quoteIds: bigint[] = []
+				for (let i = 1; i <= NUM_SYMBOLS_FOR_PAGINATION; i++) {
+					quoteIds.push(await openPosition(i, PositionType.LONG))
+				}
+
+				await time.increase(EightHourInSec)
+
+				// Get total count
+				const totalActiveSymbols = await context.viewFacetAggregate.getPartyAActiveSymbolsCountPerPartyB(
+					await user.getAddress(),
+					await hedger.getAddress()
+				)
+				expect(totalActiveSymbols).to.equal(BigInt(NUM_SYMBOLS_FOR_PAGINATION))
+
+				// Test pagination with page size of 10
+				const pageSize = 10
+				const allData: any[] = []
+
+				for (let start = 0; start < NUM_SYMBOLS_FOR_PAGINATION; start += pageSize) {
+					const page = await context.viewFacetAggregate.getPartyAUpnlData(
+						await user.getAddress(),
+						await hedger.getAddress(),
+						start,
+						pageSize
+					)
+					allData.push(...page)
+				}
+
+				// Should have all symbols
+				expect(allData.length).to.equal(NUM_SYMBOLS_FOR_PAGINATION)
+
+				// All symbol IDs should be unique
+				const symbolIds = allData.map(d => Number(d.symbolId))
+				const uniqueSymbolIds = new Set(symbolIds)
+				expect(uniqueSymbolIds.size).to.equal(NUM_SYMBOLS_FOR_PAGINATION)
+
+				// Verify funding debt for a few samples
+				for (let i = 0; i < 5; i++) {
+					const data = allData[i]
+					const symbolId = Number(data.symbolId)
+					const quoteId = quoteIds[symbolId - 1]
+					const expectedFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+					expect(data.fundingDebt).to.equal(expectedFunding)
+				}
+			})
+		})
+
+		describe("getPartyBUpnlData", function () {
+			it("single LONG position", async function () {
+				const quoteId = await openPosition(1, PositionType.LONG)
+				await time.increase(EightHourInSec * 2)
+
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				const upnlData = await context.viewFacetAggregate.getPartyBUpnlData(
+					await hedger.getAddress(),
+					await user.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(1)
+				expect(upnlData[0].symbolId).to.equal(1n)
+				expect(upnlData[0].positionType).to.equal(PositionType.LONG)
+				expect(upnlData[0].aggregatedAmount).to.equal(quote.quantity)
+				expect(upnlData[0].avgOpenPrice).to.equal(quote.openedPrice)
+
+				// PartyB funding debt is opposite to partyA's
+				const partyAFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+				expect(upnlData[0].fundingDebt).to.equal(-partyAFundingDebt)
+			})
+
+			it("single SHORT position", async function () {
+				const quoteId = await openPosition(1, PositionType.SHORT)
+				await time.increase(EightHourInSec * 2)
+
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				const upnlData = await context.viewFacetAggregate.getPartyBUpnlData(
+					await hedger.getAddress(),
+					await user.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(1)
+				expect(upnlData[0].symbolId).to.equal(1n)
+				expect(upnlData[0].positionType).to.equal(PositionType.SHORT)
+				expect(upnlData[0].aggregatedAmount).to.equal(quote.quantity)
+				expect(upnlData[0].avgOpenPrice).to.equal(quote.openedPrice)
+
+				// PartyB funding debt is opposite to partyA's
+				const partyAFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+				expect(upnlData[0].fundingDebt).to.equal(-partyAFundingDebt)
+			})
+
+			it("combination of LONG and SHORT with 1 symbol", async function () {
+				const longQuoteId = await openPosition(1, PositionType.LONG)
+				const shortQuoteId = await openPosition(1, PositionType.SHORT)
+				await time.increase(EightHourInSec * 2)
+
+				const longQuote = await context.viewFacetQuote.getQuote(longQuoteId)
+				const shortQuote = await context.viewFacetQuote.getQuote(shortQuoteId)
+
+				const upnlData = await context.viewFacetAggregate.getPartyBUpnlData(
+					await hedger.getAddress(),
+					await user.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(2)
+
+				const longData = upnlData.find(d => Number(d.positionType) === PositionType.LONG)
+				const shortData = upnlData.find(d => Number(d.positionType) === PositionType.SHORT)
+
+				expect(longData).to.not.be.undefined
+				expect(longData!.aggregatedAmount).to.equal(longQuote.quantity)
+				expect(longData!.avgOpenPrice).to.equal(longQuote.openedPrice)
+
+				expect(shortData).to.not.be.undefined
+				expect(shortData!.aggregatedAmount).to.equal(shortQuote.quantity)
+				expect(shortData!.avgOpenPrice).to.equal(shortQuote.openedPrice)
+
+				// Verify funding debts are opposite to partyA's
+				const longFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([longQuoteId])
+				const shortFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([shortQuoteId])
+				expect(longData!.fundingDebt).to.equal(-longFundingDebt)
+				expect(shortData!.fundingDebt).to.equal(-shortFundingDebt)
+			})
+
+			it("combination of LONG and SHORT with many symbols", async function () {
+				await createSymbols(4)
+
+				const quoteIds: Map<number, { long?: bigint; short?: bigint }> = new Map()
+				quoteIds.set(1, { long: await openPosition(1, PositionType.LONG) })
+				quoteIds.set(2, { short: await openPosition(2, PositionType.SHORT) })
+				quoteIds.set(3, {
+					long: await openPosition(3, PositionType.LONG),
+					short: await openPosition(3, PositionType.SHORT),
+				})
+				quoteIds.set(4, { long: await openPosition(4, PositionType.LONG) })
+				quoteIds.set(5, { short: await openPosition(5, PositionType.SHORT) })
+
+				await time.increase(EightHourInSec * 2)
+
+				const upnlData = await context.viewFacetAggregate.getPartyBUpnlData(
+					await hedger.getAddress(),
+					await user.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(6)
+
+				// Verify funding debts are opposite
+				for (const [symbolId, ids] of quoteIds) {
+					if (ids.long) {
+						const longData = upnlData.find(
+							d => Number(d.symbolId) === symbolId && Number(d.positionType) === PositionType.LONG
+						)
+						const partyAFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([ids.long])
+						expect(longData!.fundingDebt).to.equal(-partyAFunding)
+					}
+					if (ids.short) {
+						const shortData = upnlData.find(
+							d => Number(d.symbolId) === symbolId && Number(d.positionType) === PositionType.SHORT
+						)
+						const partyAFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([ids.short])
+						expect(shortData!.fundingDebt).to.equal(-partyAFunding)
+					}
+				}
+			})
+
+			it("pagination with many symbols", async function () {
+				await createSymbols(NUM_SYMBOLS_FOR_PAGINATION - 1)
+
+				const quoteIds: bigint[] = []
+				for (let i = 1; i <= NUM_SYMBOLS_FOR_PAGINATION; i++) {
+					quoteIds.push(await openPosition(i, PositionType.LONG))
+				}
+
+				await time.increase(EightHourInSec)
+
+				const totalActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsCountPerPartyA(
+					await hedger.getAddress(),
+					await user.getAddress()
+				)
+				expect(totalActiveSymbols).to.equal(BigInt(NUM_SYMBOLS_FOR_PAGINATION))
+
+				const pageSize = 10
+				const allData: any[] = []
+
+				for (let start = 0; start < NUM_SYMBOLS_FOR_PAGINATION; start += pageSize) {
+					const page = await context.viewFacetAggregate.getPartyBUpnlData(
+						await hedger.getAddress(),
+						await user.getAddress(),
+						start,
+						pageSize
+					)
+					allData.push(...page)
+				}
+
+				expect(allData.length).to.equal(NUM_SYMBOLS_FOR_PAGINATION)
+
+				const symbolIds = allData.map(d => Number(d.symbolId))
+				const uniqueSymbolIds = new Set(symbolIds)
+				expect(uniqueSymbolIds.size).to.equal(NUM_SYMBOLS_FOR_PAGINATION)
+
+				// Verify funding debt is opposite for samples
+				for (let i = 0; i < 5; i++) {
+					const data = allData[i]
+					const symbolId = Number(data.symbolId)
+					const quoteId = quoteIds[symbolId - 1]
+					const partyAFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+					expect(data.fundingDebt).to.equal(-partyAFunding)
+				}
+			})
+		})
+
+		describe("getPartyBGlobalUpnlData", function () {
+			it("single LONG position", async function () {
+				const quoteId = await openPosition(1, PositionType.LONG)
+				await time.increase(EightHourInSec * 2)
+
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				const upnlData = await context.viewFacetAggregate.getPartyBGlobalUpnlData(
+					await hedger.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(1)
+				expect(upnlData[0].symbolId).to.equal(1n)
+				expect(upnlData[0].positionType).to.equal(PositionType.LONG)
+				expect(upnlData[0].aggregatedAmount).to.equal(quote.quantity)
+				expect(upnlData[0].avgOpenPrice).to.equal(quote.openedPrice)
+
+				// Global funding debt should be opposite to partyA's
+				const partyAFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+				expect(upnlData[0].fundingDebt).to.equal(-partyAFundingDebt)
+			})
+
+			it("single SHORT position", async function () {
+				const quoteId = await openPosition(1, PositionType.SHORT)
+				await time.increase(EightHourInSec * 2)
+
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				const upnlData = await context.viewFacetAggregate.getPartyBGlobalUpnlData(
+					await hedger.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(1)
+				expect(upnlData[0].symbolId).to.equal(1n)
+				expect(upnlData[0].positionType).to.equal(PositionType.SHORT)
+				expect(upnlData[0].aggregatedAmount).to.equal(quote.quantity)
+				expect(upnlData[0].avgOpenPrice).to.equal(quote.openedPrice)
+
+				const partyAFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+				expect(upnlData[0].fundingDebt).to.equal(-partyAFundingDebt)
+			})
+
+			it("combination of LONG and SHORT with 1 symbol", async function () {
+				const longQuoteId = await openPosition(1, PositionType.LONG)
+				const shortQuoteId = await openPosition(1, PositionType.SHORT)
+				await time.increase(EightHourInSec * 2)
+
+				const longQuote = await context.viewFacetQuote.getQuote(longQuoteId)
+				const shortQuote = await context.viewFacetQuote.getQuote(shortQuoteId)
+
+				const upnlData = await context.viewFacetAggregate.getPartyBGlobalUpnlData(
+					await hedger.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(2)
+
+				const longData = upnlData.find(d => Number(d.positionType) === PositionType.LONG)
+				const shortData = upnlData.find(d => Number(d.positionType) === PositionType.SHORT)
+
+				expect(longData).to.not.be.undefined
+				expect(longData!.aggregatedAmount).to.equal(longQuote.quantity)
+
+				expect(shortData).to.not.be.undefined
+				expect(shortData!.aggregatedAmount).to.equal(shortQuote.quantity)
+
+				// Verify funding debts
+				const longFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([longQuoteId])
+				const shortFundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([shortQuoteId])
+				expect(longData!.fundingDebt).to.equal(-longFundingDebt)
+				expect(shortData!.fundingDebt).to.equal(-shortFundingDebt)
+			})
+
+			it("combination of LONG and SHORT with many symbols", async function () {
+				await createSymbols(4)
+
+				const quoteIds: Map<number, { long?: bigint; short?: bigint }> = new Map()
+				quoteIds.set(1, { long: await openPosition(1, PositionType.LONG) })
+				quoteIds.set(2, { short: await openPosition(2, PositionType.SHORT) })
+				quoteIds.set(3, {
+					long: await openPosition(3, PositionType.LONG),
+					short: await openPosition(3, PositionType.SHORT),
+				})
+				quoteIds.set(4, { long: await openPosition(4, PositionType.LONG) })
+				quoteIds.set(5, { short: await openPosition(5, PositionType.SHORT) })
+
+				await time.increase(EightHourInSec * 2)
+
+				const upnlData = await context.viewFacetAggregate.getPartyBGlobalUpnlData(
+					await hedger.getAddress(),
+					0,
+					1000
+				)
+
+				expect(upnlData.length).to.equal(6)
+
+				// Verify funding debts
+				for (const [symbolId, ids] of quoteIds) {
+					if (ids.long) {
+						const longData = upnlData.find(
+							d => Number(d.symbolId) === symbolId && Number(d.positionType) === PositionType.LONG
+						)
+						const partyAFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([ids.long])
+						expect(longData!.fundingDebt).to.equal(-partyAFunding)
+					}
+					if (ids.short) {
+						const shortData = upnlData.find(
+							d => Number(d.symbolId) === symbolId && Number(d.positionType) === PositionType.SHORT
+						)
+						const partyAFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([ids.short])
+						expect(shortData!.fundingDebt).to.equal(-partyAFunding)
+					}
+				}
+			})
+
+			it("pagination with many symbols", async function () {
+				await createSymbols(NUM_SYMBOLS_FOR_PAGINATION - 1)
+
+				const quoteIds: bigint[] = []
+				for (let i = 1; i <= NUM_SYMBOLS_FOR_PAGINATION; i++) {
+					quoteIds.push(await openPosition(i, PositionType.LONG))
+				}
+
+				await time.increase(EightHourInSec)
+
+				const totalActiveSymbols = await context.viewFacetAggregate.getPartyBActiveSymbolsCount(
+					await hedger.getAddress()
+				)
+				expect(totalActiveSymbols).to.equal(BigInt(NUM_SYMBOLS_FOR_PAGINATION))
+
+				const pageSize = 10
+				const allData: any[] = []
+
+				for (let start = 0; start < NUM_SYMBOLS_FOR_PAGINATION; start += pageSize) {
+					const page = await context.viewFacetAggregate.getPartyBGlobalUpnlData(
+						await hedger.getAddress(),
+						start,
+						pageSize
+					)
+					allData.push(...page)
+				}
+
+				expect(allData.length).to.equal(NUM_SYMBOLS_FOR_PAGINATION)
+
+				const symbolIds = allData.map(d => Number(d.symbolId))
+				const uniqueSymbolIds = new Set(symbolIds)
+				expect(uniqueSymbolIds.size).to.equal(NUM_SYMBOLS_FOR_PAGINATION)
+
+				// Verify funding debt is opposite for samples
+				for (let i = 0; i < 5; i++) {
+					const data = allData[i]
+					const symbolId = Number(data.symbolId)
+					const quoteId = quoteIds[symbolId - 1]
+					const partyAFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+					expect(data.fundingDebt).to.equal(-partyAFunding)
+				}
+			})
+
+			it("aggregates across multiple partyAs", async function () {
+				// Setup second user
+				const user2 = new User(context, context.signers.user2)
+				await user2.setup()
+				await user2.setBalances(decimal(5000n), decimal(5000n), decimal(5000n))
+
+				// Open position with user1
+				const quote1Id = await openPosition(1, PositionType.LONG)
+
+				// Open position with user2 (same symbol, same hedger)
+				const quote2Id = await user2.sendQuote(
+					limitQuoteRequestBuilder()
+						.positionType(PositionType.LONG)
+						.maxFundingRate(decimal(1n))
+						.build()
+				)
+				await hedger.lockQuote(quote2Id)
+				await hedger.openPosition(quote2Id)
+
+				await time.increase(EightHourInSec * 2)
+
+				const quote1 = await context.viewFacetQuote.getQuote(quote1Id)
+				const quote2 = await context.viewFacetQuote.getQuote(quote2Id)
+
+				const globalUpnlData = await context.viewFacetAggregate.getPartyBGlobalUpnlData(
+					await hedger.getAddress(),
+					0,
+					1000
+				)
+
+				expect(globalUpnlData.length).to.equal(1)
+				// Should aggregate both users' positions
+				expect(globalUpnlData[0].aggregatedAmount).to.equal(quote1.quantity + quote2.quantity)
+				expect(globalUpnlData[0].avgOpenPrice).to.equal(quote1.openedPrice)
+
+				// Global funding debt should be sum of individual funding debts (negated)
+				const totalFunding = await context.viewFacetQuote.getSumQuoteFundingDebts([quote1Id, quote2Id])
+				expect(globalUpnlData[0].fundingDebt).to.equal(-totalFunding)
 			})
 		})
 	})
