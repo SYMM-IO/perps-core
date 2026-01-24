@@ -8,7 +8,7 @@ import type {
 	UnifiedQuoteSettlementDataStruct,
 	UnifiedSettlementSigStruct,
 } from "../../src/types/facets/Settlement/ISettlementFacet.js"
-import type { QuotePriceSigStruct } from "../../src/types/facets/liquidation/LiquidationFacet.js"
+import type { QuotePriceSigStruct } from "../../src/types/facets/liquidation/PartyBLiquidationFacet.js"
 import type {
 	DeferredLiquidationSigStruct,
 	PairUpnlAndPriceSigStruct,
@@ -22,6 +22,21 @@ export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUp
 		reqId: "0x",
 		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
+		gatewaySignature: ethers.ZeroAddress,
+		sigs: {
+			signature: "0",
+			owner: ethers.ZeroAddress,
+			nonce: ethers.ZeroAddress,
+		},
+	}
+}
+
+export async function getDummySingleUpnlWithPendingBalanceSig(upnl: bigint = 0n, pendingBalance: bigint = 0n): Promise<any> {
+	return {
+		reqId: "0x",
+		timestamp: await getBlockTimestamp(700n),
+		upnl: upnl,
+		pendingBalance: pendingBalance,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {
 			signature: "0",

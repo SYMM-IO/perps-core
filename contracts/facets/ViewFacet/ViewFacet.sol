@@ -200,6 +200,14 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
+	 * @notice Checks if the legacy deallocate function is disabled.
+	 * @return A boolean indicating whether legacy deallocate is disabled (true = must use safeDeallocate).
+	 */
+	function isLegacyDeallocateDisabled() external view returns (bool) {
+		return GlobalAppStorage.layout().legacyDeallocateDisabled;
+	}
+
+	/**
 	 * @notice Checks if a party B has completed master account migration.
 	 * @param partyB The address of Party B.
 	 * @return A boolean indicating whether the party B has completed migration.

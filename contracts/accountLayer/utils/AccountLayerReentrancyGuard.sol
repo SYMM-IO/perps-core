@@ -4,7 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-abstract contract AccountLayerReentrancyGuard {
+import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
+
+abstract contract AccountLayerReentrancyGuard is IAccountLayerErrors {
 	uint256 private constant _NOT_ENTERED = 1;
 	uint256 private constant _ENTERED = 2;
 
@@ -26,7 +28,7 @@ abstract contract AccountLayerReentrancyGuard {
 	}
 
 	modifier nonReentrant() {
-		require(_getReentrancyStatus() != _ENTERED, "ReentrancyGuard: reentrant call");
+		if (_getReentrancyStatus() == _ENTERED) revert ReentrancyGuardReentrantCall();
 		_setReentrancyStatus(_ENTERED);
 		_;
 		_setReentrancyStatus(_NOT_ENTERED);

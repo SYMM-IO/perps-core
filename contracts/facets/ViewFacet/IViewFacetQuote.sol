@@ -4,22 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { Quote, PositionType } from "../../storages/QuoteStorage.sol";
+import { Quote } from "../../storages/QuoteStorage.sol";
 
 interface IViewFacetQuote {
-	struct AggregatedPositionAmount {
-		PositionType positionType;
-		uint256 aggregatedOpenAmount;
-		uint256 avgOpenPrice;
-	}
-
-	struct AggregatedPositionBySymbol {
-		uint256 symbolId;
-		PositionType positionType;
-		uint256 aggregatedOpenAmount;
-		uint256 avgOpenPrice;
-	}
-
 	struct Bitmap {
 		uint256 size;
 		BitmapElement[] elements;
@@ -54,33 +41,6 @@ interface IViewFacetQuote {
 
 	function partyBPositionsCount(address partyB, address partyA) external view returns (uint256);
 
-	function getPartyBAggregatedPositionBySymbol(
-		address partyB,
-		uint256 symbolId
-	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
-
-	function getPartyBAggregatedPositionBySymbolPerPartyA(
-		address partyB,
-		address partyA,
-		uint256 symbolId
-	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
-
-	function getPartyAAggregatedPositionBySymbol(
-		address partyA,
-		uint256 symbolId
-	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition);
-
-	function getPartyBAggregatedPositions(address partyB, uint256 offset, uint256 limit) external view returns (AggregatedPositionBySymbol[] memory);
-
-	function getPartyAAggregatedPositions(address partyA, uint256 offset, uint256 limit) external view returns (AggregatedPositionBySymbol[] memory);
-
-	function getPartyBAggregatedPositionsPerPartyA(
-		address partyB,
-		address partyA,
-		uint256 offset,
-		uint256 limit
-	) external view returns (AggregatedPositionBySymbol[] memory);
-
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 
 	function getPartyBPendingQuotes(address partyB, address partyA) external view returns (uint256[] memory);
@@ -90,6 +50,10 @@ interface IViewFacetQuote {
 	function getNextQuoteId() external view returns (uint256);
 
 	function getQuoteCloseId(uint256 quoteId) external view returns (uint256);
+
+	function getQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256[] memory debts);
+
+	function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256 sum);
 
 	function getPartyAUPNLParams(
 		address partyA,

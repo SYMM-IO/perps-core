@@ -26,7 +26,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
-import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 import { LibSafeCall } from "../../libraries/LibSafeCall.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 
@@ -41,6 +41,17 @@ library AccountFacetImpl {
 	function virtualDepositFor(address user, uint256 amount) internal {
 		require(GlobalAppStorage.layout().virtualProviders[msg.sender], "AccountFacet : msg.sender not registered as virtual provider");
 		AccountStorage.layout().balances[user] += amount;
+	}
+
+	function depositVirtualFunds(uint256 amount) internal {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		require(
+			appLayout.virtualProviders[msg.sender],
+			"AccountFacet: signer not registered as virtual provider"
+		);
+		// Transfer funds from virtual provider to Symmio
+		address collateral = appLayout.collateral;
+		LibSafeERC20.safeTransferFrom(collateral, msg.sender, address(this), amount);
 	}
 
 	function withdraw(address user, uint256 amount) internal {
@@ -84,7 +95,9 @@ library AccountFacetImpl {
 		accountLayout.allocatedBalances[user] += amount;
 	}
 
+
 	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) internal {
+		require(!GlobalAppStorage.layout().legacyDeallocateDisabled, "AccountFacet: Legacy deallocate is disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(
@@ -96,6 +109,24 @@ library AccountFacetImpl {
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: partyA will be liquidatable");
+
+		accountLayout.allocatedBalances[signer] -= amount;
+		accountLayout.balances[signer] += amount;
+		accountLayout.withdrawCooldown[signer] = block.timestamp;
+	}
+
+	function safeDeallocate(uint256 amount, SingleUpnlWithPendingBalanceSig memory upnlSig) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+		require(
+			block.timestamp >= accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateDebounceTime,
+			"AccountFacet: Too many deallocate in a short window"
+		);
+		require(accountLayout.allocatedBalances[signer] >= amount, "AccountFacet: Insufficient allocated Balance");
+		LibMuonAccount.verifyPartyAUpnlWithPendingBalance(upnlSig, signer);
+		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
+		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
+		require(uint256(availableBalance) >= upnlSig.pendingBalance + amount, "AccountFacet: Insufficient balance considering pending allocations");
 
 		accountLayout.allocatedBalances[signer] -= amount;
 		accountLayout.balances[signer] += amount;

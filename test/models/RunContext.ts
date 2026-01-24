@@ -10,9 +10,10 @@ import type {
 	DiamondCutFacet,
 	DiamondLoupeFacet,
 	ForceActionsFacet,
-	ForceActionsMasterAccountFacet,
+	ForceCloseStepsFacet,
 	FundingRateFacet,
-	LiquidationFacet,
+	PartyALiquidationFacet,
+	PartyBLiquidationFacet,
 	PartyAFacet,
 	PartyBBatchActionsFacet,
 	PartyBPositionActionsFacet,
@@ -20,6 +21,7 @@ import type {
 	SettlementFacet,
 	ViewFacetSymbol,
 	ViewFacetQuote,
+	ViewFacetAggregate,
 	InstantLayer,
 	SymmioPartyB,
 	AccountManager,
@@ -58,14 +60,16 @@ export class RunContext {
 	viewFacet!: ViewFacet
 	viewFacetSymbol!: ViewFacetSymbol
 	viewFacetQuote!: ViewFacetQuote
-	liquidationFacet!: LiquidationFacet
+	viewFacetAggregate!: ViewFacetAggregate
+	partyALiquidationFacet!: PartyALiquidationFacet
+	partyBLiquidationFacet!: PartyBLiquidationFacet
 	controlFacet!: ControlFacet
 	symbolControlFacet!: SymbolControlFacet
 	pauseControlFacet!: PauseControlFacet
 	fundingRateFacet!: FundingRateFacet
 	settlementFacet!: SettlementFacet
 	forceActionsFacet!: ForceActionsFacet
-	forceActionsMasterAccountFacet!: ForceActionsMasterAccountFacet
+	forceCloseStepsFacet!: ForceCloseStepsFacet
 	clearingHouseFacet!: ClearingHouseFacet
 	withdrawFacet!: WithdrawFacet
 	masterAccountMigrationFacet!: MasterAccountMigrationFacet
@@ -140,14 +144,16 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.viewFacet = await ethers.getContractAt("contracts/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamond)
 	context.viewFacetSymbol = await ethers.getContractAt("ViewFacetSymbol", diamond)
 	context.viewFacetQuote = await ethers.getContractAt("ViewFacetQuote", diamond)
-	context.liquidationFacet = await ethers.getContractAt("LiquidationFacet", diamond)
+	context.viewFacetAggregate = await ethers.getContractAt("ViewFacetAggregate", diamond)
+	context.partyALiquidationFacet = await ethers.getContractAt("PartyALiquidationFacet", diamond)
+	context.partyBLiquidationFacet = await ethers.getContractAt("PartyBLiquidationFacet", diamond)
 	context.controlFacet = await ethers.getContractAt("contracts/facets/Control/ControlFacet.sol:ControlFacet", diamond)
 	context.symbolControlFacet = await ethers.getContractAt("SymbolControlFacet", diamond)
 	context.pauseControlFacet = await ethers.getContractAt("PauseControlFacet", diamond)
 	context.fundingRateFacet = await ethers.getContractAt("FundingRateFacet", diamond)
 	context.settlementFacet = await ethers.getContractAt("SettlementFacet", diamond)
 	context.forceActionsFacet = await ethers.getContractAt("ForceActionsFacet", diamond)
-	context.forceActionsMasterAccountFacet = await ethers.getContractAt("ForceActionsMasterAccountFacet", diamond)
+	context.forceCloseStepsFacet = await ethers.getContractAt("ForceCloseStepsFacet", diamond)
 	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
 	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
 	context.masterAccountMigrationFacet = await ethers.getContractAt("MasterAccountMigrationFacet", diamond)

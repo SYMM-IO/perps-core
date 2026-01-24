@@ -425,6 +425,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		appLayout.masterAccountEnabled = enabled;
 	}
 
+	/// @notice Enables or disables the legacy deallocate function. When disabled, users must use safeDeallocate.
+	/// @param disabled True to disable legacy deallocate (requiring safeDeallocate), false to allow legacy deallocate.
+	function setLegacyDeallocateDisabled(bool disabled) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetLegacyDeallocateDisabled(appLayout.legacyDeallocateDisabled, disabled);
+		appLayout.legacyDeallocateDisabled = disabled;
+	}
+
 	/// @notice Registers a bridge contract.
 	/// @param bridge The address of the bridge contract to authorize.
 	function addBridge(address bridge) external onlyRole(LibAccessibility.BRIDGE_MANAGER_ROLE) {

@@ -13,7 +13,7 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
-import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 contract AccountFacet is Accessibility, Pausable, IAccountFacet {
@@ -51,6 +51,13 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
 	function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused {
 		_virtualDepositFor(user, amount);
+	}
+
+	/// @notice Allows Virtual Providers to transfer held funds to Symmio.
+	/// @param amount The amount of collateral to transfer, specified in collateral decimals.
+	function depositVirtualFunds(uint256 amount) external whenNotAccountingPaused {
+		AccountFacetImpl.depositVirtualFunds(amount);
+		emit DepositVirtualFunds(msg.sender, amount);
 	}
 
 	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer and allocate them.
@@ -151,6 +158,21 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address signer = LibSigner.getSigner();
 
 		AccountFacetImpl.deallocate(amount, upnlSig);
+		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
+		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
+	}
+
+	/// @notice Allows Party A to deallocate a specified amount of collateral with pending balance check.
+	/// @dev This function considers off-chain pending operations (like solver orders) that need reserved funds.
+	/// @param amount The precise amount of collateral to be deallocated, specified in 18 decimals.
+	/// @param upnlSig The Muon signature for SingleUpnlWithPendingBalanceSig containing upnl and pendingBalance.
+	function safeDeallocate(
+		uint256 amount,
+		SingleUpnlWithPendingBalanceSig memory upnlSig
+	) external whenNotAccountingPaused notLiquidatedPartyA(LibSigner.getSigner()) {
+		address signer = LibSigner.getSigner();
+
+		AccountFacetImpl.safeDeallocate(amount, upnlSig);
 		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
 		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}

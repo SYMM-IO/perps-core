@@ -44,4 +44,5 @@ interface IAccountEvents {
 	event AssuranceWithdrawApproved(address indexed user, address indexed token, uint256 amount);
 	event AssuranceWithdrawCancelled(address indexed user, address indexed token, uint256 amount);
 	event UserSlashed(address indexed user, address indexed token, uint256 amount, address recipient);
+	event DepositVirtualFunds(address indexed provider, uint256 amount);
 }

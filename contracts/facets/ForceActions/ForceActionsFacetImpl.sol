@@ -10,12 +10,11 @@ import { LibForceActions } from "../../libraries/LibForceActions.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
-import { AccountStorage, ForceCloseDetail, UPNLSettlementState, PartyBForceCloseState } from "../../storages/AccountStorage.sol";
+import { AccountStorage, ForceCloseDetail, UPNLSettlementState } from "../../storages/AccountStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
-import { HighLowPriceSig, SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
-import { LibMuonUnifiedSettlement } from "../../libraries/muon/LibMuonUnifiedSettlement.sol";
+import { HighLowPriceSig, SettlementSig } from "../../storages/MuonStorage.sol";
 
 library ForceActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -60,52 +59,6 @@ library ForceActionsFacetImpl {
 		quote.quantityToClose = 0;
 	}
 
-	function forceCloseMasterAccountInit(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice) {
-		require(
-			AccountStorage.layout().masterAccountMode[QuoteStorage.layout().quotes[quoteId].partyB],
-			"ForceActionsFacet: Master account mode inactive"
-		);
-
-		LibForceActions.validateForceCloseConditions(quoteId, sig);
-		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
-
-		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
-			quoteId,
-			sig.currentPrice,
-			sig.upnlPartyA,
-			sig.upnlPartyB,
-			closePrice
-		);
-
-		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
-
-		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
-		detail.timestamp = block.timestamp;
-		detail.closePrice = closePrice;
-		detail.upnlPartyB = sig.upnlPartyB;
-		detail.currentPrice = sig.currentPrice;
-		detail.inProgress = true;
-	}
-
-	function finalizeMasterAccountForceClose(uint256 quoteId) internal returns (bool isSolvent) {
-		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
-
-		require(detail.inProgress, "ForceActionsFacet: Invalid state");
-
-		(isSolvent, detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteMasterAccountWithRespectToUpnl(
-			quoteId,
-			detail.currentPrice,
-			detail.upnlPartyB,
-			detail.closePrice
-		);
-
-		detail.partyBState = isSolvent ? PartyBForceCloseState.SOLVENT : PartyBForceCloseState.INSOLVENT;
-		detail.inProgress = false;
-		detail.timestamp = block.timestamp;
-		detail.upnlPartyB = 0;
-		detail.currentPrice = 0;
-	}
-
 	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice, int256 upnlPartyB, bool succeed) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
@@ -135,6 +88,10 @@ library ForceActionsFacetImpl {
 
 	/* Force Close Settlement Functions*/
 
+	/**
+	 * @dev DEPRECATED: This function is kept for backward compatibility. Use settleUpnlUnified in ForceCloseStepsImpl instead,
+	 *      which supports both masterAccount and normal partyB modes with a unified signature format.
+	 */
 	function settleUPNL(uint256 quoteId, SettlementSig memory sig, uint256[] memory updatedPrices) internal {
 		address partyA = QuoteStorage.layout().quotes[quoteId].partyA;
 
@@ -146,24 +103,5 @@ library ForceActionsFacetImpl {
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
 		detail.timestamp = block.timestamp;
 		detail.settlementState = UPNLSettlementState.REALIZED;
-	}
-
-	function settleUpnlUnified(
-		uint256 quoteId,
-		UnifiedSettlementSig memory sig,
-		uint256[] memory updatedPrices
-	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
-
-		require(detail.inProgress, "ForceActionsFacet: Invalid state");
-
-		// Verify signature using unified settlement verification
-		bool isMasterAccountMode = accountLayout.masterAccountMode[sig.partyB];
-		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isMasterAccountMode);
-
-		// Use the unified settlement function with isForceClose=true
-		newPartyAsAllocatedBalances = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
-		detail.timestamp = block.timestamp;
 	}
 }

@@ -22,7 +22,7 @@ import type { QuoteStruct } from "../src/types/interfaces/ISymmio.js"
 
 export function shouldBehaveLikeLiquidationFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
-	const getFundingFee = async () => await context.viewFacetSymbol.getSumAccumulatedFundingFees([1])
+	const getFundingFee = async () => await context.viewFacetQuote.getSumQuoteFundingDebts([1])
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -88,7 +88,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	describe("Liquidate PartyA", async function () {
 		it("Should fail on partyA being solvent", async function () {
 			await expect(
-				context.liquidationFacet.liquidatePartyA(
+				context.partyALiquidationFacet.liquidatePartyA(
 					context.signers.user.getAddress(),
 					await getDummyLiquidationSig("0x10", 0n, [], [], 0n, (await user.getBalanceInfo()).allocatedBalances),
 				),
@@ -97,7 +97,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 		it("Should fail on partyA being solvent deferred", async function () {
 			await expect(
-				context.liquidationFacet.deferredLiquidatePartyA(
+				context.partyALiquidationFacet.deferredLiquidatePartyA(
 					context.signers.user.getAddress(),
 					await getDummyLiquidationSig("0x10", 0n, [], [], 0n, (await user.getBalanceInfo()).allocatedBalances),
 				),
@@ -212,7 +212,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			if (lf > -availableBalance) remaingLF = lf + availableBalance
 			let maxProfitPerPos = (await context.viewFacet.getLiquidationInsuranceVaultParams())[1]
 
-			await expect(context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)).to.be.revertedWith(
+			await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)).to.be.revertedWith(
 				"LiquidationFacet: PartyA is solvent",
 			)
 
@@ -235,8 +235,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			if (lf > -availableBalance) remaingLF = lf + availableBalance
 			maxProfitPerPos = (await context.viewFacet.getLiquidationInsuranceVaultParams())[1]
 
-			await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)
-			await context.liquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user2.address, sign)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user2.address, sign)
 
 			// its ok as there is only one position
 			await expectConnected(user2.address, hedger.address, true)
@@ -278,7 +278,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			let deficit = 0n
 			if (lf + cva >= -availableBalance) deficit = -availableBalance - lf
 
-			await expect(context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)).to.be.revertedWith(
+			await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)).to.be.revertedWith(
 				"LiquidationFacet: PartyA is solvent",
 			)
 
@@ -300,8 +300,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			deficit = 0n
 			if (lf + cva >= -availableBalance) deficit = -availableBalance - lf
 
-			await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)
-			await context.liquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user2.address, sign)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user2.address, sign)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user2.address, sign)
 
 			// its ok as there is only one position
 			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(0)
@@ -353,8 +353,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			let deficit = 0n
 			if (lf + cva < -availableBalance) deficit = -availableBalance - (lf + cva)
 
-			await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user3.address, sign)
-			await context.liquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user3.address, sign)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user3.address, sign)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user3.address, sign)
 
 			// its ok as there is only one position
 			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(0)
@@ -395,8 +395,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			const remaingLF = lf > availableBalance ? lf + availableBalance : lf + cva + availableBalance
 			const maxProfitPerPos = (await context.viewFacet.getLiquidationInsuranceVaultParams())[1]
 
-			await context.liquidationFacet.connect(context.signers.liquidator).deferredLiquidatePartyA(user2.address, sign)
-			await context.liquidationFacet.connect(context.signers.liquidator).deferredSetSymbolsPrice(user2.address, sign)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).deferredLiquidatePartyA(user2.address, sign)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).deferredSetSymbolsPrice(user2.address, sign)
 
 			// its ok as there is only one position
 			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(remaingLF - maxProfitPerPos)
@@ -420,7 +420,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			it("Should fail on partyA being solvent", async function () {
 				let user3 = context.signers.hedger2.getAddress()
-				await expect(context.liquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(user3, [1])).to.be.revertedWith(
+				await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(user3, [1])).to.be.revertedWith(
 					"LiquidationFacet: PartyA is solvent",
 				)
 			})
@@ -516,7 +516,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 		it("Should fail on partyA being solvent deferred", async function () {
 			let user3 = context.signers.hedger2.getAddress()
-			await expect(context.liquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(user3, [1])).to.be.revertedWith(
+			await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(user3, [1])).to.be.revertedWith(
 				"LiquidationFacet: PartyA is solvent",
 			)
 		})
@@ -597,7 +597,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	describe("Liquidate PartyB", async function () {
 		it("Should fail on partyB being solvent", async function () {
 			await expect(
-				context.liquidationFacet
+				context.partyBLiquidationFacet
 					.connect(context.signers.liquidator)
 					.liquidatePartyB(context.signers.hedger.getAddress(), context.signers.user.getAddress(), await getDummySingleUpnlSig()),
 			).to.be.revertedWith("LiquidationFacet: partyB is solvent")
@@ -607,7 +607,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			let userAddress = await context.signers.user.getAddress()
 			let hedgerAddress = await context.signers.hedger.getAddress()
 
-			await context.liquidationFacet
+			await context.partyBLiquidationFacet
 				.connect(context.signers.liquidator)
 				.liquidatePartyB(hedgerAddress, userAddress, await getDummySingleUpnlSig(decimal(-336n)))
 			let balanceInfo: BalanceInfo = await hedger.getBalanceInfo(userAddress)
@@ -625,11 +625,11 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		})
 
 		it("Should fail to liquidate a partyB twice", async function () {
-			await context.liquidationFacet
+			await context.partyBLiquidationFacet
 				.connect(context.signers.liquidator)
 				.liquidatePartyB(context.signers.hedger.getAddress(), context.signers.user.getAddress(), await getDummySingleUpnlSig(decimal(-336n)))
 			await expect(
-				context.liquidationFacet
+				context.partyBLiquidationFacet
 					.connect(context.signers.liquidator)
 					.liquidatePartyB(context.signers.hedger.getAddress(), context.signers.user.getAddress(), await getDummySingleUpnlSig(decimal(-336n))),
 			).to.revertedWith("Accessibility: PartyB isn't solvent")

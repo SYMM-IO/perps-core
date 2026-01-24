@@ -4,6 +4,7 @@ import { shouldBehaveLikeAccountFacet } from "./AccountFacet.behavior.js"
 import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior.js"
 import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior.js"
 import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior.js"
+import { shouldBehaveLikeAggregateViews } from "./AggregateViews.behavior.js"
 import { shouldBehaveLikeBridgeFacet } from "./BridgeFacet.behavior.js"
 import { shouldBehaveLikeCancelQuote } from "./CancelQuote.behavior.js"
 import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior.js"
@@ -22,7 +23,6 @@ import { shouldBehaveLikeMasterAccountMigration } from "./MasterAccountMigration
 import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
 import { shouldBehaveLikeOpenPosition } from "./OpenPosition.behavior.js"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior.js"
-import { shouldBehaveLikePartyBPositionViews } from "./PartyBPositionViews.behavior.js"
 import { shouldBehaveLikeSendQuote } from "./SendQuote.behavior.js"
 import { shouldBehaveLikeSettleAndForceClosePosition } from "./SettleAndForceClosePosition.behavior.js"
 import { shouldBehaveLikeSettlement } from "./Settlement.behavior.js"
@@ -80,10 +80,6 @@ describe("UnitTests", function () {
 
 		describe("FundingRate", async function () {
 			shouldBehaveLikeFundingRate()
-		})
-
-		describe("PartyBPositionViews", async function () {
-			shouldBehaveLikePartyBPositionViews()
 		})
 
 		describe("SpecificScenario", async function () {
@@ -160,6 +156,10 @@ describe("UnitTests", function () {
 
 		describe("AccountManager", async function () {
 			shouldBehaveLikeAccountManager()
+		})
+
+		describe("AggregateViews", async function () {
+			shouldBehaveLikeAggregateViews()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {

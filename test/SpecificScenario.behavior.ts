@@ -33,15 +33,33 @@ export function shouldBehaveLikeSpecificScenario(): void {
 	})
 
 	const expectPartyBTotals = async (context: RunContext, longAmount: bigint, longAvgPrice: bigint, shortAmount: bigint, shortAvgPrice: bigint) => {
-		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbol(context.signers.hedger.address, 1)
-		expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
-		expect(longPosition.avgOpenPrice).to.equal(longAvgPrice)
-		expect(shortPosition.aggregatedOpenAmount).to.equal(shortAmount)
-		expect(shortPosition.avgOpenPrice).to.equal(shortAvgPrice)
+		// Aggregate positions from both user and user2 (since we removed global storage)
+		const pos1 = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user.address, 1)
+		const pos2 = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user2.address, 1)
+
+		const totalLongAmount = pos1.longPosition.aggregatedOpenAmount + pos2.longPosition.aggregatedOpenAmount
+		const totalLongNotional = pos1.longPosition.aggregatedOpenAmount * pos1.longPosition.avgOpenPrice +
+			pos2.longPosition.aggregatedOpenAmount * pos2.longPosition.avgOpenPrice
+		const totalShortAmount = pos1.shortPosition.aggregatedOpenAmount + pos2.shortPosition.aggregatedOpenAmount
+		const totalShortNotional = pos1.shortPosition.aggregatedOpenAmount * pos1.shortPosition.avgOpenPrice +
+			pos2.shortPosition.aggregatedOpenAmount * pos2.shortPosition.avgOpenPrice
+
+		const avgLong = totalLongAmount === 0n ? 0n : totalLongNotional / totalLongAmount
+		const avgShort = totalShortAmount === 0n ? 0n : totalShortNotional / totalShortAmount
+
+		expect(totalLongAmount).to.equal(longAmount)
+		expect(avgLong).to.equal(longAvgPrice)
+		expect(totalShortAmount).to.equal(shortAmount)
+		expect(avgShort).to.equal(shortAvgPrice)
 	}
 
 	const expectPartyATotals = async (context: RunContext, longAmount: bigint, longAvgPrice: bigint, shortAmount: bigint, shortAvgPrice: bigint) => {
-		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyAAggregatedPositionBySymbol(context.signers.user.address, 1)
+		// Query partyA's positions per partyB
+		const { longPosition, shortPosition } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
+			context.signers.user.address,
+			context.signers.hedger.address,
+			1,
+		)
 		expect(longPosition.aggregatedOpenAmount).to.equal(longAmount)
 		expect(longPosition.avgOpenPrice).to.equal(longAvgPrice)
 		expect(shortPosition.aggregatedOpenAmount).to.equal(shortAmount)
@@ -61,7 +79,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 			expect(position.avgOpenPrice).to.equal(avg)
 		}
 
-		const { longPosition, shortPosition } = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbolPerPartyA(
+		const { longPosition, shortPosition } = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(
 			context.signers.hedger.address,
 			partyA,
 			1,
@@ -69,7 +87,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		assertPosition(longPosition, longAmount, longAvgPrice)
 		assertPosition(shortPosition, shortAmount, shortAvgPrice)
 
-		const aggregates = await context.viewFacetQuote.getPartyBAggregatedPositionsPerPartyA(context.signers.hedger.address, partyA, 0, 5)
+		const aggregates = await context.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(context.signers.hedger.address, partyA, 0, 1000)
 		const findAggregate = (posType: PositionType) =>
 			aggregates.find((entry: any) => BigInt(entry.symbolId) === 1n && BigInt(entry.positionType) === BigInt(posType))
 		const assertAggregate = (entry: any, amount: bigint, avg: bigint) => {
@@ -336,10 +354,10 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		const liquidator = context.signers.liquidator
 		const liquidationSig = await getDummyLiquidationSig("0x10", -decimal(1_000_000n), [1n], [decimal(3n)], decimal(1_000_000n), 0n)
-		await context.liquidationFacet.connect(liquidator).liquidatePartyA(user.address, liquidationSig)
-		await context.liquidationFacet.connect(liquidator).setSymbolsPrice(user.address, liquidationSig)
-		await context.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(user.address)
-		await context.liquidationFacet.connect(liquidator).liquidatePositionsPartyA(user.address, [quote1.id])
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePartyA(user.address, liquidationSig)
+		await context.partyALiquidationFacet.connect(liquidator).setSymbolsPrice(user.address, liquidationSig)
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(user.address)
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePositionsPartyA(user.address, [quote1.id])
 
 		await expectPartyBTotals(context, decimal(10n), decimal(8n), decimal(50n), decimal(15n))
 		expect((await context.viewFacetQuote.getQuote(quote1.id)).quoteStatus).to.equal(BigInt(QuoteStatus.LIQUIDATED))
@@ -428,7 +446,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 			0n,
 			0n,
 		)
-		await context.forceActionsMasterAccountFacet.initializeMasterAccountForceClose(quote1.id, highLowSig)
+		await context.forceCloseStepsFacet.initializeForceClose(quote1.id, highLowSig)
 
 		const currentPrice = decimal(14n)
 		const updatedPrice = decimal(13n)
@@ -447,7 +465,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 			],
 		)
 
-		await context.forceActionsMasterAccountFacet.settleUpnlForForceClose(quote1.id, settlementSig, [updatedPrice])
+		await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1.id, settlementSig, [updatedPrice])
 
 		const avgAfter = avgPrice(totalAmount, amount1 * price1 + amount2 * updatedPrice)
 		await expectPartyBTotals(context, totalAmount, avgAfter, 0n, 0n)
@@ -673,10 +691,10 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		const liquidator = context.signers.liquidator
 		const liquidationSig = await getDummyLiquidationSig("0x10", -decimal(1_000_000n), [1n], [decimal(3n)], decimal(1_000_000n), 0n)
-		await context.liquidationFacet.connect(liquidator).liquidatePartyA(user.address, liquidationSig)
-		await context.liquidationFacet.connect(liquidator).setSymbolsPrice(user.address, liquidationSig)
-		await context.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(user.address)
-		await context.liquidationFacet.connect(liquidator).liquidatePositionsPartyA(user.address, [quote1.id])
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePartyA(user.address, liquidationSig)
+		await context.partyALiquidationFacet.connect(liquidator).setSymbolsPrice(user.address, liquidationSig)
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(user.address)
+		await context.partyALiquidationFacet.connect(liquidator).liquidatePositionsPartyA(user.address, [quote1.id])
 
 		await expectPartyATotals(context, decimal(10n), decimal(8n), decimal(50n), decimal(15n))
 		expect((await context.viewFacetQuote.getQuote(quote1.id)).quoteStatus).to.equal(BigInt(QuoteStatus.LIQUIDATED))

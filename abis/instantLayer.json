@@ -1543,6 +1543,64 @@
     {
         "inputs": [
             {
+                "internalType": "uint256",
+                "name": "startId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "limit",
+                "type": "uint256"
+            }
+        ],
+        "name": "getTemplates",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256[]",
+                                "name": "insertionPoints",
+                                "type": "uint256[]"
+                            },
+                            {
+                                "internalType": "uint256[]",
+                                "name": "sourceIndices",
+                                "type": "uint256[]"
+                            },
+                            {
+                                "internalType": "uint256[]",
+                                "name": "sourceOffsets",
+                                "type": "uint256[]"
+                            }
+                        ],
+                        "internalType": "struct InstantLayer.Operation[]",
+                        "name": "operations",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "active",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct InstantLayer.Template[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "components": [
                     {
                         "components": [

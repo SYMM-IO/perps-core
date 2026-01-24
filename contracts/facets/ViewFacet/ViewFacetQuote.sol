@@ -5,9 +5,10 @@
 pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { QuoteStorage, Quote, PositionType, QuoteStatus, PartiesAggregatedPositions } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { IViewFacetQuote } from "./IViewFacetQuote.sol";
+import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 
 contract ViewFacetQuote is IViewFacetQuote {
 	/**
@@ -272,282 +273,6 @@ contract ViewFacetQuote is IViewFacetQuote {
 	}
 
 	/**
-	 * @notice Returns Aggregated open position amounts and average open prices for a party B and symbol, grouped by position type.
-	 * @param partyB The address of party B.
-	 * @param symbolId The symbol ID.
-	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
-	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
-	 */
-	function getPartyBAggregatedPositionBySymbol(
-		address partyB,
-		uint256 symbolId
-	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyBAggregatedPositions[partyB][symbolId];
-		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
-		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
-		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
-		uint256 shortNotional = aggregatedPositions[PositionType.SHORT].aggregatedNotional;
-		longPosition = AggregatedPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
-		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
-	}
-
-	/**
-	 * @notice Returns Aggregated open position amounts and average open prices for a party B, party A, and symbol, grouped by position type.
-	 * @param partyB The address of party B.
-	 * @param partyA The address of party A.
-	 * @param symbolId The symbol ID.
-	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
-	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
-	 */
-	function getPartyBAggregatedPositionBySymbolPerPartyA(
-		address partyB,
-		address partyA,
-		uint256 symbolId
-	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][
-			partyA
-		][symbolId];
-		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
-		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
-		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
-		uint256 shortNotional = aggregatedPositions[PositionType.SHORT].aggregatedNotional;
-		longPosition = AggregatedPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
-		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
-	}
-
-	/**
-	 * @notice Returns Aggregated open position amounts and average open prices for a party A and symbol, grouped by position type.
-	 * @param partyA The address of party A.
-	 * @param symbolId The symbol ID.
-	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
-	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
-	 */
-	function getPartyAAggregatedPositionBySymbol(
-		address partyA,
-		uint256 symbolId
-	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyAAggregatedPositions[partyA][symbolId];
-		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
-		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
-		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
-		uint256 shortNotional = aggregatedPositions[PositionType.SHORT].aggregatedNotional;
-		longPosition = AggregatedPositionAmount(PositionType.LONG, longAmount, longAmount == 0 ? 0 : longNotional / longAmount);
-		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
-	}
-
-	/**
-	 * @notice Returns Aggregated open amounts and average open prices for a party B across symbols, grouped by position type.
-	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
-	 * @param partyB The address of party B.
-	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
-	 * @param limit Maximum symbols to process starting at offset.
-	 */
-	function getPartyBAggregatedPositions(
-		address partyB,
-		uint256 offset,
-		uint256 limit
-	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		uint256 totalSymbols = symbolLayout.lastId;
-		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new AggregatedPositionBySymbol[](0);
-		}
-
-		uint256 end = offset + limit;
-		if (end > totalSymbols) end = totalSymbols;
-
-		// pre allocate two slots per symbol (long + short)
-		uint256 maxItems = (end - offset) * 2;
-		results = new AggregatedPositionBySymbol[](maxItems);
-		uint256 count;
-
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-
-		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
-			uint256 symbolId = symbolIndex;
-			mapping(PositionType => PartiesAggregatedPositions) storage positionsByType = quoteLayout.partyBAggregatedPositions[partyB][symbolId];
-
-			// LONG
-			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
-			if (longPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmount,
-					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			// SHORT
-			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
-			if (shortPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmount,
-					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			unchecked {
-				++symbolIndex;
-			}
-		}
-
-		if (count == results.length) {
-			return results;
-		}
-
-		// trim the pre allocated array to the actual number of results
-		assembly {
-			mstore(results, count)
-		}
-	}
-
-	/**
-	 * @notice Returns Aggregated open amounts and average open prices for a party A across symbols, grouped by position type.
-	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
-	 * @param partyA The address of party A.
-	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
-	 * @param limit Maximum symbols to process starting at offset.
-	 */
-	function getPartyAAggregatedPositions(
-		address partyA,
-		uint256 offset,
-		uint256 limit
-	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		uint256 totalSymbols = symbolLayout.lastId;
-		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new AggregatedPositionBySymbol[](0);
-		}
-
-		uint256 end = offset + limit;
-		if (end > totalSymbols) end = totalSymbols;
-
-		uint256 maxItems = (end - offset) * 2;
-		results = new AggregatedPositionBySymbol[](maxItems);
-		uint256 count;
-
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-
-		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
-			uint256 symbolId = symbolIndex;
-			mapping(PositionType => PartiesAggregatedPositions) storage positionsByType = quoteLayout.partyAAggregatedPositions[partyA][symbolId];
-
-			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
-			if (longPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmount,
-					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
-			if (shortPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmount,
-					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			unchecked {
-				++symbolIndex;
-			}
-		}
-
-		if (count == results.length) {
-			return results;
-		}
-
-		assembly {
-			mstore(results, count)
-		}
-	}
-
-	/**
-	 * @notice Returns total open amounts and average open prices for a party B per party A across symbols, grouped by position type.
-	 * @dev Zero-amount entries are removed. Use offset/limit to paginate symbol ids.
-	 * @param partyB The address of party B.
-	 * @param partyA The address of party A.
-	 * @param offset Start symbol index (0-based; symbolId = offset + 1).
-	 * @param limit Maximum symbols to process starting at offset.
-	 */
-	function getPartyBAggregatedPositionsPerPartyA(
-		address partyB,
-		address partyA,
-		uint256 offset,
-		uint256 limit
-	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		uint256 totalSymbols = symbolLayout.lastId;
-		if (totalSymbols == 0 || limit == 0 || offset >= totalSymbols) {
-			return new AggregatedPositionBySymbol[](0);
-		}
-
-		uint256 end = offset + limit;
-		if (end > totalSymbols) end = totalSymbols;
-
-		uint256 maxItems = (end - offset) * 2;
-		results = new AggregatedPositionBySymbol[](maxItems);
-		uint256 count;
-
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-
-		for (uint256 symbolIndex = offset + 1; symbolIndex <= end; ) {
-			uint256 symbolId = symbolIndex;
-			mapping(PositionType => PartiesAggregatedPositions) storage positionsByType = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][
-				partyA
-			][symbolId];
-
-			PartiesAggregatedPositions storage longPos = positionsByType[PositionType.LONG];
-			if (longPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.LONG,
-					aggregatedOpenAmount: longPos.aggregatedAmount,
-					avgOpenPrice: longPos.aggregatedNotional / longPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			PartiesAggregatedPositions storage shortPos = positionsByType[PositionType.SHORT];
-			if (shortPos.aggregatedAmount > 0) {
-				results[count] = AggregatedPositionBySymbol({
-					symbolId: symbolId,
-					positionType: PositionType.SHORT,
-					aggregatedOpenAmount: shortPos.aggregatedAmount,
-					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount
-				});
-				count++;
-			}
-
-			unchecked {
-				++symbolIndex;
-			}
-		}
-
-		if (count == results.length) {
-			return results;
-		}
-
-		assembly {
-			mstore(results, count)
-		}
-	}
-
-	/**
 	 * @notice Returns an array of pending quotes associated with a party A address.
 	 * @param partyA The address of party A.
 	 * @return An array of pending quotes.
@@ -607,6 +332,31 @@ contract ViewFacetQuote is IViewFacetQuote {
 	 */
 	function getQuoteCloseId(uint256 quoteId) external view returns (uint256) {
 		return QuoteStorage.layout().closeIds[quoteId];
+	}
+
+	/**
+	 * @notice Gets the funding debt for a list of quotes
+	 * @dev Returns the funding debt each quote should pay (positive) or receive (negative)
+	 * @param quoteIds Array of quote IDs to calculate funding debts for
+	 * @return debts Array of funding debts in the same order as quoteIds
+	 */
+	function getQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256[] memory debts) {
+		debts = new int256[](quoteIds.length);
+		for (uint256 i = 0; i < quoteIds.length; i++) debts[i] = LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);
+		return debts;
+	}
+
+	/**
+	 * @notice Gets the sum of funding debts for a list of quotes
+	 * @dev Returns the sum of funding debts
+	 * @param quoteIds Array of quote IDs to calculate funding debts for
+	 * @return sum Sum of funding debts
+	 */
+	function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256) {
+		int256 sum;
+		for (uint256 i = 0; i < quoteIds.length; i++)
+			sum += LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);
+		return sum;
 	}
 
 	/**

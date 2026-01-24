@@ -17,6 +17,8 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 	 * @param settlementSig The data struct contains quoteIds and upnl of parties and market prices
 	 * @param updatedPrices New prices to be set as openedPrice for the specified quotes.
 	 * @param partyA Address of party A
+	 * @dev DEPRECATED: This function is kept for backward compatibility. Use settleUpnlUnified instead,
+	 *      which supports both masterAccount and normal partyB modes with a unified signature format.
 	 */
 	function settleUpnl(
 		SettlementSig memory settlementSig,

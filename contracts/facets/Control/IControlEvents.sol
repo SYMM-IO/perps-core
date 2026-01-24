@@ -89,6 +89,7 @@ interface IControlEvents {
 	event SetPartyBEmergencyStatus(address partyB, bool status);
 	event SetBalanceLimitPerUser(uint256 balanceLimitPerUser);
 	event SetMasterAccountEnabled(bool oldValue, bool newValue);
+	event SetLegacyDeallocateDisabled(bool oldValue, bool newValue);
 	event RegisterPartyB(address partyB);
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);

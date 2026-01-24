@@ -85,6 +85,12 @@ export function shouldBehaveLikeAccountHub(): void {
 		return sAcc
 	}
 
+	async function createSubAccount(parentAccount: HardhatEthersSigner, subAccountData: SubAccountCreationDataStruct[]) {
+		await context.alCoreFacet.connect(parentAccount).createSubAccounts(await context.accountManager.getAddress(), subAccountData)
+		const accounts = await context.alViewFacet.getUserSubAccountsAddresses(parentAccount.address, 0, 100)
+		return accounts[accounts.length - 1]
+	}
+
 	async function sendQuoteAndGetVirtualAccount(account: string, quoteRequest = limitQuoteRequestBuilder().build()) {
 		// Check if this is a virtual account or a sub-account
 		const virtualAccountData = await context.alViewFacet.getVirtualAccount(account)
@@ -344,6 +350,284 @@ export function shouldBehaveLikeAccountHub(): void {
 				await expect(
 					context.alCoreFacet.connect(context.signers.user).editAccountName(context.signers.others[0], newAccountName),
 				).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
+			})
+		})
+
+		describe("express deposit", function () {
+			let subAccountAddress: string
+			let virtualProviderAddress: string
+			const expressRate = decimal(3n, 16) // 3%
+			const depositAmount = decimal(1000n)
+
+			const registerVirtualProvider = async () => {
+				const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+				const virtualProvider = await MockVirtualProvider.deploy(context.diamond)
+				virtualProviderAddress = await virtualProvider.getAddress()
+				await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(virtualProviderAddress)
+				return virtualProvider
+			}
+
+			const setExpressConfig = async (rate: bigint, provider: string) => {
+				await context.alAffiliateFacet.connect(context.signers.admin).setExpressRate(await context.accountManager.getAddress(), rate)
+				await context.alAffiliateFacet.connect(context.signers.admin).setVirtualProvider(await context.accountManager.getAddress(), provider)
+			}
+
+			const approveExpressDeposit = async (amount: bigint) => {
+				await context.collateral.connect(context.signers.user).approve(context.accountLayerDiamond, amount)
+				await context.collateral.connect(context.signers.user).approve(context.diamond, amount)
+			}
+
+			beforeEach(async function () {
+				subAccountAddress = await createSubAccount(context.signers.user, [createSubAccountData("EXPRESS_ACCOUNT", 3, "EXPRESS")])
+			})
+
+			it("splits deposit between real and virtual amounts", async function () {
+				const provider = await registerVirtualProvider()
+				await setExpressConfig(expressRate, virtualProviderAddress)
+				await approveExpressDeposit(depositAmount)
+
+				const virtualAmount = (depositAmount * expressRate) / decimal(1n)
+				const realAmount = depositAmount - virtualAmount
+
+				const userAddress = context.signers.user.address
+				const userBalanceBefore = await context.collateral.balanceOf(userAddress)
+				const accountLayerBalanceBefore = await context.collateral.balanceOf(context.accountLayerDiamond)
+				const balanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
+				const coreBalanceBefore = await context.collateral.balanceOf(context.diamond)
+
+				await context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount)
+
+				const userBalanceAfter = await context.collateral.balanceOf(userAddress)
+				const accountLayerBalanceAfter = await context.collateral.balanceOf(context.accountLayerDiamond)
+				const balanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
+				const coreBalanceAfter = await context.collateral.balanceOf(context.diamond)
+				const providerBalance = await context.collateral.balanceOf(virtualProviderAddress)
+
+				expect(userBalanceBefore - userBalanceAfter).to.equal(depositAmount)
+				expect(accountLayerBalanceAfter - accountLayerBalanceBefore).to.equal(0n)
+				expect(balanceAfter - balanceBefore).to.equal(depositAmount)
+				expect(coreBalanceAfter - coreBalanceBefore).to.equal(realAmount)
+				expect(providerBalance).to.equal(virtualAmount)
+			})
+
+			it("reverts when virtual provider is not registered on Symmio", async function () {
+				const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+				const virtualProvider = await MockVirtualProvider.deploy(context.diamond)
+				virtualProviderAddress = await virtualProvider.getAddress()
+
+				await setExpressConfig(expressRate, virtualProviderAddress)
+				await approveExpressDeposit(depositAmount)
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+				).to.be.revertedWith("AccountFacet : msg.sender not registered as virtual provider")
+			})
+
+			it("reverts when express rate is set without virtual provider", async function () {
+				await context.alAffiliateFacet.connect(context.signers.admin).setExpressRate(await context.accountManager.getAddress(), expressRate)
+				await approveExpressDeposit(depositAmount)
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "VirtualProviderRequired")
+			})
+
+			it("reverts when amount is zero", async function () {
+				await registerVirtualProvider()
+				await setExpressConfig(expressRate, virtualProviderAddress)
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, 0n),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "ZeroAmount")
+			})
+
+			it("reverts when express rate exceeds 100% (at setter level)", async function () {
+				await registerVirtualProvider()
+				const invalidExpressRate = decimal(1n) + 1n // 100% + 1 wei
+
+				// Express rate validation happens at the setter level (setExpressRate)
+				await expect(
+					context.alAffiliateFacet.connect(context.signers.admin).setExpressRate(await context.accountManager.getAddress(), invalidExpressRate),
+				).to.be.revertedWithCustomError(context.alAffiliateFacet, "InvalidShare")
+			})
+
+			it("handles zero express rate without virtual transfer", async function () {
+				await context.alAffiliateFacet.connect(context.signers.admin).setExpressRate(await context.accountManager.getAddress(), 0)
+				await approveExpressDeposit(depositAmount)
+
+				const userAddress = context.signers.user.address
+				const userBalanceBefore = await context.collateral.balanceOf(userAddress)
+				const accountLayerBalanceBefore = await context.collateral.balanceOf(context.accountLayerDiamond)
+				const balanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
+				const coreBalanceBefore = await context.collateral.balanceOf(context.diamond)
+
+				await context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount)
+
+				const userBalanceAfter = await context.collateral.balanceOf(userAddress)
+				const accountLayerBalanceAfter = await context.collateral.balanceOf(context.accountLayerDiamond)
+				const balanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
+				const coreBalanceAfter = await context.collateral.balanceOf(context.diamond)
+				expect(balanceAfter - balanceBefore).to.equal(depositAmount)
+				expect(userBalanceBefore - userBalanceAfter).to.equal(depositAmount)
+				expect(accountLayerBalanceAfter - accountLayerBalanceBefore).to.equal(0n)
+				expect(coreBalanceAfter - coreBalanceBefore).to.equal(depositAmount)
+			})
+
+			it("handles full express rate by crediting only virtual balance", async function () {
+				await registerVirtualProvider()
+				await setExpressConfig(decimal(1n), virtualProviderAddress)
+				await approveExpressDeposit(depositAmount)
+
+				const userAddress = context.signers.user.address
+				const userBalanceBefore = await context.collateral.balanceOf(userAddress)
+				const accountLayerBalanceBefore = await context.collateral.balanceOf(context.accountLayerDiamond)
+				const balanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
+				const coreBalanceBefore = await context.collateral.balanceOf(context.diamond)
+
+				await context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount)
+
+				const userBalanceAfter = await context.collateral.balanceOf(userAddress)
+				const accountLayerBalanceAfter = await context.collateral.balanceOf(context.accountLayerDiamond)
+				const balanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
+				const coreBalanceAfter = await context.collateral.balanceOf(context.diamond)
+				const providerBalance = await context.collateral.balanceOf(virtualProviderAddress)
+
+				expect(userBalanceBefore - userBalanceAfter).to.equal(depositAmount)
+				expect(accountLayerBalanceAfter - accountLayerBalanceBefore).to.equal(0n)
+				expect(balanceAfter - balanceBefore).to.equal(depositAmount)
+				expect(coreBalanceAfter - coreBalanceBefore).to.equal(0n)
+				expect(providerBalance).to.equal(depositAmount)
+			})
+
+			it("allocates the real portion when using depositAndAllocate", async function () {
+				await registerVirtualProvider()
+				await setExpressConfig(expressRate, virtualProviderAddress)
+				await approveExpressDeposit(depositAmount)
+
+				const virtualAmount = (depositAmount * expressRate) / decimal(1n)
+				const realAmount = depositAmount - virtualAmount
+
+				const userAddress = context.signers.user.address
+				const userBalanceBefore = await context.collateral.balanceOf(userAddress)
+				const accountLayerBalanceBefore = await context.collateral.balanceOf(context.accountLayerDiamond)
+				const balanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
+				const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
+				const coreBalanceBefore = await context.collateral.balanceOf(context.diamond)
+
+				await context.alCoreFacet.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(subAccountAddress, depositAmount)
+
+				const userBalanceAfter = await context.collateral.balanceOf(userAddress)
+				const accountLayerBalanceAfter = await context.collateral.balanceOf(context.accountLayerDiamond)
+				const balanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
+				const allocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
+				const coreBalanceAfter = await context.collateral.balanceOf(context.diamond)
+
+				expect(userBalanceBefore - userBalanceAfter).to.equal(depositAmount)
+				expect(accountLayerBalanceAfter - accountLayerBalanceBefore).to.equal(0n)
+				expect(balanceAfter - balanceBefore).to.equal(virtualAmount)
+				expect(allocatedAfter - allocatedBefore).to.equal(realAmount)
+				expect(coreBalanceAfter - coreBalanceBefore).to.equal(realAmount)
+			})
+
+			it("requires the account owner", async function () {
+				await registerVirtualProvider()
+				await setExpressConfig(expressRate, virtualProviderAddress)
+				await approveExpressDeposit(depositAmount)
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.others[0]).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
+			})
+
+			describe("onExpressDeposit callback failures", function () {
+				let configurableMockProvider: any
+				let configurableMockProviderAddress: string
+
+				const registerConfigurableMockProvider = async () => {
+					const ConfigurableMockVirtualProvider = await ethers.getContractFactory(
+						"contracts/test/MockVirtualProvider.sol:ConfigurableMockVirtualProvider",
+					)
+					configurableMockProvider = await ConfigurableMockVirtualProvider.deploy()
+					configurableMockProviderAddress = await configurableMockProvider.getAddress()
+					await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(configurableMockProviderAddress)
+					return configurableMockProvider
+				}
+
+				it("reverts when onExpressDeposit callback reverts", async function () {
+					await registerConfigurableMockProvider()
+					await configurableMockProvider.setFailureMode(1) // REVERT mode
+					await setExpressConfig(expressRate, configurableMockProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+					).to.be.revertedWith("ConfigurableMockVirtualProvider: intentional revert")
+				})
+
+				it("reverts when onExpressDeposit credits wrong amount (less)", async function () {
+					await registerConfigurableMockProvider()
+					await configurableMockProvider.setFailureMode(2) // WRONG_AMOUNT mode
+					await configurableMockProvider.setAmountDelta(-1n) // Credit 1 less
+					await setExpressConfig(expressRate, configurableMockProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "BalanceInvariantViolation")
+				})
+
+				it("reverts when onExpressDeposit credits wrong amount (more)", async function () {
+					await registerConfigurableMockProvider()
+					await configurableMockProvider.setFailureMode(2) // WRONG_AMOUNT mode
+					await configurableMockProvider.setAmountDelta(1n) // Credit 1 more
+					await setExpressConfig(expressRate, configurableMockProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "BalanceInvariantViolation")
+				})
+
+				it("reverts when onExpressDeposit credits wrong user", async function () {
+					await registerConfigurableMockProvider()
+					await configurableMockProvider.setFailureMode(3) // WRONG_USER mode
+					await configurableMockProvider.setWrongUser(context.signers.others[0].address)
+					await setExpressConfig(expressRate, configurableMockProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "BalanceInvariantViolation")
+				})
+
+				it("prevents malicious provider from impersonating user via callback (SafeCall protection)", async function () {
+					// Deploy malicious provider that attempts to exploit the callback
+					const MaliciousMockVirtualProvider = await ethers.getContractFactory(
+						"contracts/test/MockVirtualProvider.sol:MaliciousMockVirtualProvider",
+					)
+					const maliciousProvider = await MaliciousMockVirtualProvider.deploy(context.accountLayerDiamond)
+					const maliciousProviderAddress = await maliciousProvider.getAddress()
+
+					// Register the malicious provider
+					await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(maliciousProviderAddress)
+					await setExpressConfig(expressRate, maliciousProviderAddress)
+					await approveExpressDeposit(depositAmount)
+
+					// Execute the deposit - the malicious provider will attempt to impersonate the user
+					await context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(subAccountAddress, depositAmount)
+
+					// Verify the attack was attempted
+					expect(await maliciousProvider.attackAttempted()).to.be.true
+
+					// Verify the attack failed (signer was cleared, so callback couldn't impersonate user)
+					expect(await maliciousProvider.attackSucceeded()).to.be.false
+
+					// Verify that getSigner() returned the malicious provider's address (msg.sender)
+					// instead of the original user, proving the signer was properly cleared
+					const capturedSigner = await maliciousProvider.capturedSigner()
+					expect(capturedSigner).to.equal(maliciousProviderAddress)
+					expect(capturedSigner).to.not.equal(context.signers.user.address)
+				})
 			})
 		})
 
@@ -1369,13 +1653,13 @@ export function shouldBehaveLikeAccountHub(): void {
 				const subAccountData = [createSubAccountData("MARKET_ACCOUNT", 1)]
 				await expect(
 					context.alCoreFacet.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData),
-				).to.be.revertedWith("AccountLayer: Paused")
+				).to.be.revertedWithCustomError(context.alCoreFacet, "EnforcedPause")
 			})
 
 			it("should revert _call when paused", async () => {
 				await context.alControlFacet.connect(context.signers.admin).pause()
 				const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
-				await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWith("AccountLayer: Paused")
+				await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWithCustomError(context.alCoreFacet, "EnforcedPause")
 			})
 
 			it("should allow actions after unpause", async () => {

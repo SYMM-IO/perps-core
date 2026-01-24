@@ -37,6 +37,7 @@ library GlobalAppStorage {
 		bool iterativeFundingDeprecationFlag;
 		bool accumulativeFundingRateActivationFlag;
 		bool partyBOpenPositionsPaused;
+		bool legacyDeallocateDisabled;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

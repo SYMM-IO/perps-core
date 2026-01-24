@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibFundingRate } from "./LibFundingRate.sol";
 import { LibQuote } from "./LibQuote.sol";
+import { LibAggregateFunding } from "./LibAggregateFunding.sol";
 import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { SymbolStorage, FundingFee } from "../storages/SymbolStorage.sol";
@@ -52,18 +53,6 @@ library LibQuoteFunding {
 
 		// Subtract already paid amount
 		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (currentFee - quote.accumulatedPaidFunding)) / 1e18;
-
-		// Apply maximum funding rate cap
-		int256 maxFee = int256(quote.maxFundingRate) * int256(unpaidEpochs);
-
-		if (fee > 0) {
-			// Positive fee: cap at maxFee
-			fee = fee > maxFee ? maxFee : fee;
-		} else {
-			// Negative fee: cap at -maxFee
-			fee = fee < -maxFee ? -maxFee : fee;
-		}
-		// If fee == 0, no action needed
 	}
 
 	/**

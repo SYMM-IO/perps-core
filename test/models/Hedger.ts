@@ -167,7 +167,7 @@ export class Hedger extends PartyEntity {
 	public async liquidate(partyA: string, sig: SingleUpnlSigStructOutput | Promise<SingleUpnlSigStructOutput> = getDummySingleUpnlSig()) {
 		let signature = sig instanceof Promise ? await sig : sig
 		await runTx(
-			this.context.liquidationFacet.connect(this.context.signers.liquidator).liquidatePartyB(await this.signer.getAddress(), partyA, signature),
+			this.context.partyBLiquidationFacet.connect(this.context.signers.liquidator).liquidatePartyB(await this.signer.getAddress(), partyA, signature),
 		)
 	}
 

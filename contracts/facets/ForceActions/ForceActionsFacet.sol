@@ -48,6 +48,8 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	 * @param sig The Muon signature to calculate the close price.
 	 * @param settleSig The data struct contains quoteIds and upnl of parties and market prices
 	 * @param updatedPrices New prices to be set as openedPrice for the specified quotes.
+	 * @dev DEPRECATED: This function is kept for backward compatibility. Use forceCloseAndSettlePositionsUnified instead,
+	 *      which supports UnifiedSettlementSig for better multi-partyB coordination.
 	 */
 	function settleAndForceClosePosition(
 		uint256 quoteId,

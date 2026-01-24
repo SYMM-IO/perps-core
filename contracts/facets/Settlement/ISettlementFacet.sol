@@ -8,6 +8,7 @@ import { SettlementFacetEvents } from "./SettlementFacetEvents.sol";
 import { SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 interface ISettlementFacet is SettlementFacetEvents {
+	/// @dev DEPRECATED: Use settleUpnlUnified instead
 	function settleUpnl(SettlementSig memory settleSig, uint256[] memory updatedPrices, address partyA) external;
 
 	function settleUpnlUnified(UnifiedSettlementSig memory sig, uint256[] memory updatedPrices) external;

@@ -6,15 +6,15 @@ pragma solidity >=0.8.18;
 
 import { Pausable } from "../../utils/Pausable.sol";
 import { Accessibility, LibAccessibility } from "../../utils/Accessibility.sol";
-import { ILiquidationFacet } from "./ILiquidationFacet.sol";
-import { LiquidationFacetImpl } from "./LiquidationFacetImpl.sol";
+import { IPartyALiquidationFacet } from "./IPartyALiquidationFacet.sol";
+import { PartyALiquidationFacetImpl } from "./PartyALiquidationFacetImpl.sol";
 import { DeferredLiquidationFacetImpl } from "./DeferredLiquidationFacetImpl.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
-import { LiquidationSig, DeferredLiquidationSig, SingleUpnlSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
+import { LiquidationSig, DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
 
-contract LiquidationFacet is Pausable, Accessibility, ILiquidationFacet {
+contract PartyALiquidationFacet is Pausable, Accessibility, IPartyALiquidationFacet {
 	/**
 	 * @notice Liquidates Party A based on the provided signature.
 	 * @param partyA The address of Party A to be liquidated.
@@ -24,7 +24,7 @@ contract LiquidationFacet is Pausable, Accessibility, ILiquidationFacet {
 		address partyA,
 		LiquidationSig memory liquidationSig
 	) external whenNotLiquidationPaused notLiquidatedPartyA(partyA) onlyRole(LibAccessibility.LIQUIDATOR_ROLE) {
-		LiquidationFacetImpl.liquidatePartyA(partyA, liquidationSig);
+		PartyALiquidationFacetImpl.liquidatePartyA(partyA, liquidationSig);
 		emit LiquidatePartyA(
 			msg.sender,
 			partyA,
@@ -45,7 +45,7 @@ contract LiquidationFacet is Pausable, Accessibility, ILiquidationFacet {
 		address partyA,
 		LiquidationSig memory liquidationSig
 	) external whenNotLiquidationPaused onlyRole(LibAccessibility.LIQUIDATOR_ROLE) {
-		LiquidationFacetImpl.setSymbolsPrice(partyA, liquidationSig);
+		PartyALiquidationFacetImpl.setSymbolsPrice(partyA, liquidationSig);
 		emit SetSymbolsPrices(msg.sender, partyA, liquidationSig.symbolIds, liquidationSig.prices, liquidationSig.liquidationId);
 	}
 
@@ -93,7 +93,7 @@ contract LiquidationFacet is Pausable, Accessibility, ILiquidationFacet {
 	function liquidatePendingPositionsPartyA(address partyA) external whenNotLiquidationPaused onlyRole(LibAccessibility.LIQUIDATOR_ROLE) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		uint256[] memory pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
-		(uint256[] memory liquidatedAmounts, bytes memory liquidationId) = LiquidationFacetImpl.liquidatePendingPositionsPartyA(partyA);
+		(uint256[] memory liquidatedAmounts, bytes memory liquidationId) = PartyALiquidationFacetImpl.liquidatePendingPositionsPartyA(partyA);
 		emit LiquidatePendingPositionsPartyA(msg.sender, partyA, pendingQuotes, liquidatedAmounts, liquidationId);
 	}
 
@@ -106,7 +106,7 @@ contract LiquidationFacet is Pausable, Accessibility, ILiquidationFacet {
 		address partyA,
 		uint256[] memory quoteIds
 	) external whenNotLiquidationPaused onlyRole(LibAccessibility.LIQUIDATOR_ROLE) {
-		(bool disputed, uint256[] memory liquidatedAmounts, uint256[] memory closeIds, uint256[] memory averageClosedPrices, bytes memory liquidationId) = LiquidationFacetImpl
+		(bool disputed, uint256[] memory liquidatedAmounts, uint256[] memory closeIds, uint256[] memory averageClosedPrices, bytes memory liquidationId) = PartyALiquidationFacetImpl
 			.liquidatePositionsPartyA(partyA, quoteIds);
 		emit LiquidatePositionsPartyA(msg.sender, partyA, quoteIds, liquidatedAmounts, closeIds, liquidationId);
 		emit LiquidatePositionsPartyA(msg.sender, partyA, quoteIds, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
@@ -121,7 +121,7 @@ contract LiquidationFacet is Pausable, Accessibility, ILiquidationFacet {
 	 * @param partyBs An array of addresses representing Party Bs involved in the settlement.
 	 */
 	function settlePartyALiquidation(address partyA, address[] memory partyBs) external whenNotLiquidationPaused {
-		(int256[] memory settleAmounts, bytes memory liquidationId) = LiquidationFacetImpl.settlePartyALiquidation(partyA, partyBs);
+		(int256[] memory settleAmounts, bytes memory liquidationId) = PartyALiquidationFacetImpl.settlePartyALiquidation(partyA, partyBs);
 		emit SettlePartyALiquidation(partyA, partyBs, settleAmounts, liquidationId);
 		if (MAStorage.layout().liquidationStatus[partyA] == false) {
 			emit FullyLiquidatedPartyA(partyA, liquidationId);
@@ -141,48 +141,7 @@ contract LiquidationFacet is Pausable, Accessibility, ILiquidationFacet {
 		int256[] memory amounts,
 		bool disputed
 	) external onlyRole(LibAccessibility.DISPUTE_ROLE) {
-		bytes memory liquidationId = LiquidationFacetImpl.resolveLiquidationDispute(partyA, partyBs, amounts, disputed);
+		bytes memory liquidationId = PartyALiquidationFacetImpl.resolveLiquidationDispute(partyA, partyBs, amounts, disputed);
 		emit ResolveLiquidationDispute(partyA, partyBs, amounts, disputed, liquidationId);
-	}
-
-	/**
-	 * @notice Liquidates Party B with respect to a Party A.
-	 * @param partyB The address of Party B to be liquidated.
-	 * @param partyA The address of Party A related to the liquidation.
-	 * @param upnlSig The Muon signature containing the unrealized profit and loss data.
-	 */
-	function liquidatePartyB(
-		address partyB,
-		address partyA,
-		SingleUpnlSig memory upnlSig
-	)
-		external
-		whenNotLiquidationPaused
-		notLiquidatedPartyB(partyB, partyA)
-		notCrossLiquidatedPartyB(partyB)
-		notLiquidatedPartyA(partyA)
-		onlyRole(LibAccessibility.PARTYB_LIQUIDATOR_ROLE)
-	{
-		emit LiquidatePartyB(msg.sender, partyB, partyA, AccountStorage.layout().partyBAllocatedBalances[partyB][partyA], upnlSig.upnl);
-		LiquidationFacetImpl.liquidatePartyB(partyB, partyA, upnlSig);
-	}
-
-	/**
-	 * @notice Liquidates positions of Party B the Party A.
-	 * @param partyB The address of Party B whose positions are being liquidated.
-	 * @param partyA The address of Party A related to the liquidation.
-	 * @param priceSig The Muon signature containing the quote price data.
-	 */
-	function liquidatePositionsPartyB(
-		address partyB,
-		address partyA,
-		QuotePriceSig memory priceSig
-	) external whenNotLiquidationPaused onlyRole(LibAccessibility.PARTYB_LIQUIDATOR_ROLE) {
-		(uint256[] memory liquidatedAmounts, uint256[] memory closeIds, uint256[] memory averageClosedPrices) = LiquidationFacetImpl.liquidatePositionsPartyB(partyB, partyA, priceSig);
-		emit LiquidatePositionsPartyB(msg.sender, partyB, partyA, priceSig.quoteIds, liquidatedAmounts, closeIds);
-		emit LiquidatePositionsPartyB(msg.sender, partyB, partyA, priceSig.quoteIds, liquidatedAmounts, closeIds, averageClosedPrices);
-		if (QuoteStorage.layout().partyBPositionsCount[partyB][partyA] == 0) {
-			emit FullyLiquidatedPartyB(partyB, partyA);
-		}
 	}
 }

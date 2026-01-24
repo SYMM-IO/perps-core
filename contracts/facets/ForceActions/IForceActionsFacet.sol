@@ -12,6 +12,7 @@ import { HighLowPriceSig, SettlementSig } from "../../storages/MuonStorage.sol";
 ///         PartyB becomes unresponsive or when solvency logic requires the system
 ///         to close or cancel quotes/positions.
 /// @dev The logic is implemented in ForceActionsFacet + ForceActionsFacetImpl.
+///      For the 3-step force close flow, see IForceCloseStepsFacet.
 
 interface IForceActionsFacet is ForceActionsFacetEvents {
 	function forceCancelQuote(uint256 quoteId) external;
@@ -20,6 +21,7 @@ interface IForceActionsFacet is ForceActionsFacetEvents {
 
 	function forceClosePosition(uint256 quoteId, HighLowPriceSig memory sig) external;
 
+	/// @dev DEPRECATED: Use forceCloseAndSettlePositionsUnified in ForceCloseStepsFacet instead
 	function settleAndForceClosePosition(
 		uint256 quoteId,
 		HighLowPriceSig memory sig,
