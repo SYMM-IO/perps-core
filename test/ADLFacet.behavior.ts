@@ -10,7 +10,7 @@ import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal } from "./utils/Common.js"
-import { getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
+import { getDummyLiquidationSig, getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeADLFacet(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -20,6 +20,9 @@ export function shouldBehaveLikeADLFacet(): void {
 		PARTY_A_INSUFFICIENT_BALANCE: 1n,
 		PARTY_B_INSUFFICIENT_BALANCE: 2n,
 		INVALID_FILLED_AMOUNT: 3n,
+		IN_LIQUIDATION: 4n,
+		SYMBOL_MISMATCH: 5n,
+		CLOSE_FAILED: 6n,
 	} as const
 
 	beforeEach(async function () {
@@ -125,6 +128,50 @@ export function shouldBehaveLikeADLFacet(): void {
 				await expect(context.adlFacet.connect(hedger.signer).adlClose(quoteId, decimal(50n), decimal(22n, 17))).to.be.revertedWith(
 					"LibQuote: PartyB should be solvent",
 				) // 2.2
+			})
+
+			it("skips when partyA is in liquidation", async function () {
+				const quoteId = await openWith(hedger)
+				// Put partyA in liquidation using proper liquidation signature
+				const allocatedBalance = decimal(500n)
+				const liquidationSig = await getDummyLiquidationSig("0x01", -decimal(600n), [1n], [decimal(1n)], -decimal(600n), allocatedBalance)
+				await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(await user.getAddress(), liquidationSig)
+
+				const tx = await context.adlFacet.connect(hedger.signer).adlClose([quoteId], [decimal(10n)], [decimal(1n)])
+				const events = await parseEvents(tx)
+				const skip = events.find((e: any) => e!.name === "ADLSkip" && e!.args.quoteId === quoteId)
+				expect(skip).to.not.equal(undefined)
+				expect(skip!.args.reason).to.equal(ADLReason.IN_LIQUIDATION)
+			})
+
+			it("continues processing other quotes when one is skipped", async function () {
+				// Open two positions
+				const quoteId1 = await openWith(hedger)
+				const quoteId2 = await openWith(hedger)
+
+				const quote1 = await context.viewFacetQuote.getQuote(quoteId1)
+				const quote2 = await context.viewFacetQuote.getQuote(quoteId2)
+
+				// Try to close both - first with invalid amount (0), second with valid amount
+				const tx = await context.adlFacet.connect(hedger.signer).adlClose(
+					[quoteId1, quoteId2],
+					[0n, decimal(10n)], // First will skip due to invalid amount
+					[quote1.openedPrice, quote2.openedPrice],
+				)
+				const events = await parseEvents(tx)
+
+				// First quote should be skipped
+				const skip1 = events.find((e: any) => e!.name === "ADLSkip" && e!.args.quoteId === quoteId1)
+				expect(skip1).to.not.equal(undefined)
+				expect(skip1!.args.reason).to.equal(ADLReason.INVALID_FILLED_AMOUNT)
+
+				// Second quote should be processed successfully
+				const quoteAfter2 = await context.viewFacetQuote.getQuote(quoteId2)
+				expect(quoteAfter2.closedAmount).to.equal(decimal(10n))
+
+				// First quote should be unchanged
+				const quoteAfter1 = await context.viewFacetQuote.getQuote(quoteId1)
+				expect(quoteAfter1.closedAmount).to.equal(0n)
 			})
 		})
 
