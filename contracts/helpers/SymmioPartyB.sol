@@ -13,7 +13,7 @@ import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 interface ISymmio {
 	function isCallFromInstantLayer() external view returns (bool);
-	function adlClose(uint256 quoteId, uint256 amount, uint256 price);
+	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external;
 }
 
 contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, IERC1271 {
@@ -60,7 +60,14 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 		symmioAddress = symmioAddress_;
 	}
 
-	event ADLSkip(uint256 quoteId, uint256 amount, uint256 price);
+	/**
+	 * @dev Emitted when the Adl close call is reverted for a function.
+	 * @param quoteId The ID of the quote.
+	 * @param amount The amount to be closed.
+	 * @param price The price to close at.
+	 * @param reason The reason the request reverted.
+	 */
+	event ADLSkip(uint256 quoteId, uint256 amount, uint256 price, string reason);
 
 	/**
 	 * @dev Emitted when the Symmio address is updated.
@@ -123,9 +130,18 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	}
 
 	function adlCall(address destAddress, uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) external whenNotPaused {
-		for (int i = 0; i < callDatas.length; i++) {
+		uint256 len = quoteIds.length;
+		require(amounts.length == len && prices.length == len, "SymmioPartyB: Array length mismatch");
+		require(destAddress != address(0), "SymmioPartyB: Invalid address");
+		require(destAddress == symmioAddress, "SymmioPartyB: Invalid address");
+		require(
+			hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
+			"SymmioPartyB: Invalid access"
+		);
+
+		for (uint256 i = 0; i < len; i++) {
 			try ISymmio(destAddress).adlClose(quoteIds[i], amounts[i], prices[i]) {} catch Error(string memory reason) {
-				emit ADLSkip(quoteIds[i], amounts[i], prices[i]);
+				emit ADLSkip(quoteIds[i], amounts[i], prices[i], reason);
 			}
 		}
 	}
