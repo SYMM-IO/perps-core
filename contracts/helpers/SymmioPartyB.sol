@@ -25,6 +25,8 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	/// @notice Role for updating contract configuration and signer settings.
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 
+	bytes16 private constant _HEX_SYMBOLS = "0123456789abcdef";
+
 	mapping(bytes4 => bool) public restrictedSelectors; // selector -> isRestricted
 	mapping(address => bool) public multicastWhitelist; // contractAddress -> isAllowedForMulticast
 	uint256 private _guardCounter;
@@ -129,6 +131,33 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 		require(IERC20Upgradeable(token).approve(symmioAddress, amount), "SymmioPartyB: Not approved");
 	}
 
+	function _toHexSelector(bytes4 selector) private pure returns (string memory) {
+		bytes memory buffer = new bytes(10);
+		buffer[0] = "0";
+		buffer[1] = "x";
+		for (uint256 i = 0; i < 4; i++) {
+			uint8 b = uint8(selector[i]);
+			buffer[2 + i * 2] = _HEX_SYMBOLS[b >> 4];
+			buffer[3 + i * 2] = _HEX_SYMBOLS[b & 0x0f];
+		}
+		return string(buffer);
+	}
+
+	function _revertDataToReason(bytes memory revertData) private pure returns (string memory) {
+		if (revertData.length >= 4) {
+			bytes4 selector;
+			assembly {
+				selector := mload(add(revertData, 0x20))
+			}
+
+			// Panic(uint256)
+			if (selector == 0x4e487b71) return "Panic";
+
+			return string.concat("Custom error: ", _toHexSelector(selector));
+		}
+		return "Low-level revert";
+	}
+
 	function adlCall(address destAddress, uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) external whenNotPaused {
 		uint256 len = quoteIds.length;
 		require(amounts.length == len && prices.length == len, "SymmioPartyB: Array length mismatch");
@@ -142,6 +171,8 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 		for (uint256 i = 0; i < len; i++) {
 			try ISymmio(destAddress).adlClose(quoteIds[i], amounts[i], prices[i]) {} catch Error(string memory reason) {
 				emit ADLSkip(quoteIds[i], amounts[i], prices[i], reason);
+			} catch (bytes memory revertData) {
+				emit ADLSkip(quoteIds[i], amounts[i], prices[i], _revertDataToReason(revertData));
 			}
 		}
 	}

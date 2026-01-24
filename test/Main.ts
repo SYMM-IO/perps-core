@@ -28,6 +28,7 @@ import { shouldBehaveLikeSettleAndForceClosePosition } from "./SettleAndForceClo
 import { shouldBehaveLikeSettlement } from "./Settlement.behavior.js"
 import { shouldBehaveLikeSettlementUnified } from "./SettlementUnified.behavior.js"
 import { shouldBehaveLikeSpecificScenario } from "./SpecificScenario.behavior.js"
+import { shouldBehaveLikeSymmioPartyB } from "./SymmioPartyB.behavior.js"
 import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior.js"
 import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior.js"
 
@@ -139,6 +140,10 @@ describe("UnitTests", function () {
 
 		describe("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
+		})
+
+		describe("SymmioPartyB", async function () {
+			shouldBehaveLikeSymmioPartyB()
 		})
 
 		describe("WithdrawFacet", async function () {
