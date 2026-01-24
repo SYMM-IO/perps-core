@@ -11,6 +11,7 @@ import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
 interface IMarginFacetEvents {
 	event AddMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
 	event RemoveMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
+	event EmergencyMarginRecovered(address indexed virtualAccount, address indexed subAccount, uint256 amount);
 }
 
 interface IMarginFacet is IMarginFacetEvents, IAccountLayerErrors {
@@ -19,5 +20,7 @@ interface IMarginFacet is IMarginFacetEvents, IAccountLayerErrors {
 	function addMarginToNextVA(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId, uint256 amount) external;
 
 	function removeMargin(address virtualAccount, uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
+
+	function emergencyRecoverMargin(address subAccount, uint256 nonce) external;
 
 }

@@ -3032,6 +3032,89 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 		})
 
+		describe("emergencyRecoverMargin", async () => {
+			let subAccount: string
+
+			beforeEach(async () => {
+				subAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("CUSTOM_ACCOUNT", 3, "CUSTOM")],
+					BALANCES.DEPOSIT_AMOUNT,
+					false,
+				)
+			})
+
+			it("recovers margin from predicted VA address", async () => {
+				const predictedAddress = await context.alViewFacet.predictNextVirtualAccountAddress(subAccount, 0, 1)
+				const subAccountBalanceBefore = await context.viewFacet.balanceOf(subAccount)
+
+				const transferCallData: BytesLike[] = [
+					context.accountFacet.interface.encodeFunctionData("internalTransfer", [predictedAddress, BALANCES.TRANSFER_AMOUNT]),
+				]
+				await context.alCoreFacet.connect(context.signers.user)._call(subAccount, transferCallData)
+
+				const subAccountBalanceAfterTransfer = await context.viewFacet.balanceOf(subAccount)
+				const predictedAllocatedBalanceAfterTransfer = await context.viewFacet.allocatedBalanceOfPartyA(predictedAddress)
+
+				expect(subAccountBalanceAfterTransfer).to.equal(subAccountBalanceBefore - BALANCES.TRANSFER_AMOUNT)
+				expect(predictedAllocatedBalanceAfterTransfer).to.equal(BALANCES.TRANSFER_AMOUNT)
+
+				await expect(context.alMarginFacet.connect(context.signers.user).emergencyRecoverMargin(subAccount, 1))
+					.to.emit(context.alMarginFacet, "EmergencyMarginRecovered")
+					.withArgs(predictedAddress, subAccount, BALANCES.TRANSFER_AMOUNT)
+
+				const subAccountBalanceAfterRecover = await context.viewFacet.balanceOf(subAccount)
+				const predictedAllocatedBalanceAfterRecover = await context.viewFacet.allocatedBalanceOfPartyA(predictedAddress)
+				const predictedBalanceAfterRecover = await context.viewFacet.balanceOf(predictedAddress)
+
+				expect(subAccountBalanceAfterRecover).to.equal(subAccountBalanceBefore)
+				expect(predictedAllocatedBalanceAfterRecover).to.equal(0n)
+				expect(predictedBalanceAfterRecover).to.equal(0n)
+			})
+
+			it("reverts when nonce is zero", async () => {
+				await expect(context.alMarginFacet.connect(context.signers.user).emergencyRecoverMargin(subAccount, 0)).to.be.revertedWithCustomError(
+					context.alMarginFacet,
+					"InvalidNonce",
+				)
+			})
+
+			it("reverts when nonce is too large", async () => {
+				await expect(context.alMarginFacet.connect(context.signers.user).emergencyRecoverMargin(subAccount, 2)).to.be.revertedWithCustomError(
+					context.alMarginFacet,
+					"InvalidNonce",
+				)
+			})
+
+			it("reverts when target account already exists", async () => {
+				await context.alCoreFacet.connect(context.signers.user).createCustomVirtualAccount(
+					subAccount,
+					ethers.keccak256(toUtf8Bytes("EMERGENCY_VA_1")),
+					0,
+					1,
+				)
+
+				await expect(context.alMarginFacet.connect(context.signers.user).emergencyRecoverMargin(subAccount, 1)).to.be.revertedWithCustomError(
+					context.alMarginFacet,
+					"AccountAlreadyExists",
+				)
+			})
+
+			it("reverts when no balance is available for recovery", async () => {
+				await expect(context.alMarginFacet.connect(context.signers.user).emergencyRecoverMargin(subAccount, 1)).to.be.revertedWithCustomError(
+					context.alMarginFacet,
+					"ZeroAmount",
+				)
+			})
+
+			it("reverts when called by non-owner", async () => {
+				await expect(context.alMarginFacet.connect(context.signers.others[0]).emergencyRecoverMargin(subAccount, 1)).to.be.revertedWithCustomError(
+					context.alMarginFacet,
+					"NotOwner",
+				)
+			})
+		})
+
 		describe("Transfer Methods", async () => {
 			let customSubAccount: string
 			let virtualAccount: string

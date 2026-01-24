@@ -76,6 +76,39 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		emit RemoveMargin(virtualAccount, parent, amount);
 	}
 
+	function emergencyRecoverMargin(address subAccount, uint256 nonce) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		if (!ahLayout.subAccounts[subAccount].isExists) revert AccountDoesNotExist();
+
+		uint256 currentNonce = ahLayout.subAccountVirtualNonces[subAccount];
+		if (nonce == 0 || nonce > currentNonce + 1) revert InvalidNonce();
+
+		address lostAccount = LibAccountLayerUtils.generateVirtualAccountAddress(subAccount, nonce);
+		if (ahLayout.subAccounts[lostAccount].isExists || ahLayout.virtualAccounts[lostAccount].isExists) {
+			revert AccountAlreadyExists();
+		}
+
+		address core = LibAccountLayerUtils.getRelatedCore(subAccount);
+		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(lostAccount);
+		uint256 balance = ISymmio(core).balanceOf(lostAccount);
+		if (allocatedBalance + balance == 0) revert ZeroAmount();
+
+		if (allocatedBalance > 0) {
+			_executeWithSymmioSigner(core, lostAccount, abi.encodeWithSelector(ISymmio.zeroUpnlDeallocate.selector, allocatedBalance));
+		}
+
+		uint256 totalBalance = ISymmio(core).balanceOf(lostAccount);
+		if (totalBalance > 0) {
+			_executeWithSymmioSigner(
+				core,
+				lostAccount,
+				abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, subAccount, totalBalance)
+			);
+		}
+
+		emit EmergencyMarginRecovered(lostAccount, subAccount, totalBalance);
+	}
+
 	// ==================== Internal Functions ====================
 
 	function _predictNextVirtualAccountAddress(
@@ -99,5 +132,25 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 
 		uint256 nextNonce = ahLayout.subAccountVirtualNonces[subAccount] + 1;
 		return LibAccountLayerUtils.generateVirtualAccountAddress(subAccount, nextNonce);
+	}
+
+	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
+		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		address previousSigner = ahLayout.globalSigner;
+		ahLayout.globalSigner = address(0);
+
+		ISymmio(symmio).setSigner(signer);
+		(bool success, bytes memory result) = symmio.call(callData);
+		ISymmio(symmio).setSigner(address(0));
+
+		ahLayout.globalSigner = previousSigner;
+
+		if (!success) {
+			assembly {
+				revert(add(result, 32), mload(result))
+			}
+		}
+
+		return result;
 	}
 }
