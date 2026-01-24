@@ -125,7 +125,7 @@ export function shouldBehaveLikeADLFacet(): void {
 					// Put partyA in liquidation using proper liquidation signature
 					const allocatedBalance = decimal(500n)
 					const liquidationSig = await getDummyLiquidationSig("0x01", -decimal(600n), [1n], [decimal(1n)], -decimal(600n), allocatedBalance)
-					await context.liquidationFacet.connect(context.signers.liquidator).liquidatePartyA(await user.getAddress(), liquidationSig)
+					await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(await user.getAddress(), liquidationSig)
 
 					await expect(context.adlFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
 						"PartyAFacet: PartyA is in liquidation process",

@@ -86,7 +86,5 @@ library LibPartiesEvents {
 		uint256 closeId,
 		LockedValues lockedValues
 	);
-	// reason: 1 => insufficient balance for funding + maintenance for partyA, 2 => insufficient for partyB
-	event ADLSkip(uint256 quoteId, address partyA, address partyB, ADLReason reason, int256 requiredFundingFee);
 	event ADLClose(uint256 quoteId, uint256 amount, uint256 price, uint256 closedAmount);
 }

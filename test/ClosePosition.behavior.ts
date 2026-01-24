@@ -95,7 +95,7 @@ export function shouldBehaveLikeClosePosition(): void {
 			}
 		}
 
-		const amounts = await context.viewFacetQuote.getPartyBAggregatedPositionBySymbol(hedger.address, symbolId)
+		const amounts = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbol(hedger.address, symbolId)
 		expect(amounts.length).to.equal(2)
 		expect(amounts[0].positionType).to.equal(BigInt(PositionType.LONG))
 		expect(amounts[0].aggregatedOpenAmount).to.equal(expectedLong)
@@ -128,7 +128,7 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		await time.increase(epochDurationSec)
 
-		const fundingFee = (await context.viewFacetSymbol.getAccumulatedFundingFees([quoteId]))[0]
+		const fundingFee = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
 		expect(fundingFee).to.be.gt(0n)
 
 		const closedPrice = decimal(20n)
