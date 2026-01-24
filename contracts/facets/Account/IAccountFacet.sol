@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { IAccountEvents } from "./IAccountEvents.sol";
-import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 
 interface IAccountFacet is IAccountEvents {
 	//Party A
@@ -32,6 +32,8 @@ interface IAccountFacet is IAccountEvents {
 	function depositAndAllocateFor(address user, uint256 amount) external;
 
 	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) external;
+
+	function safeDeallocate(uint256 amount, SingleUpnlWithPendingBalanceSig memory upnlSig) external;
 
 	function internalTransfer(address user, uint256 amount) external;
 

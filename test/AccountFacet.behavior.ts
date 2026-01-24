@@ -14,7 +14,7 @@ import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
 import { migratePartyBToMaster } from "./utils/MasterAccount.js"
-import { getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { getDummySingleUpnlSig, getDummySingleUpnlWithPendingBalanceSig } from "./utils/SignatureUtils.js"
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"))
 
@@ -499,6 +499,133 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig())
 			await time.increase(LIMITS.DEALLOCATE_COOLDOWN)
 			await expect(context.accountFacet.connect(context.signers.user).withdraw(BALANCES.DEALLOCATE_AMOUNT)).to.not.be.reverted
+		})
+	})
+
+	describe("SafeDeallocate", async function () {
+		beforeEach(async function () {
+			context = await loadFixture(initializeFixture)
+			user = new User(context, context.signers.user)
+			await user.setup()
+			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.DEPOSIT_AMOUNT, BALANCES.DEPOSIT_AMOUNT)
+		})
+
+		it("Should fail on insufficient allocated Balance", async function () {
+			const excessiveAmount = BALANCES.DEPOSIT_AMOUNT + BALANCES.ALLOCATE_AMOUNT
+			await expect(
+				context.accountFacet.connect(context.signers.user).safeDeallocate(excessiveAmount, await getDummySingleUpnlWithPendingBalanceSig()),
+			).to.be.revertedWith("AccountFacet: Insufficient allocated Balance")
+		})
+
+		it("Should fail when accounting is paused", async function () {
+			await context.pauseControlFacet.pauseAccounting()
+			await expect(
+				context.accountFacet.connect(context.signers.user).safeDeallocate(BALANCES.DEPOSIT_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
+			).to.be.revertedWith("Pausable: Accounting paused")
+		})
+
+		it("Should fail on available balance is lower than zero", async function () {
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(BALANCES.DEPOSIT_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.NEGATIVE_LARGE)),
+			).to.be.revertedWith("AccountFacet: Available balance is lower than zero")
+		})
+
+		it("Should fail on partyA becoming liquidatable", async function () {
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(BALANCES.DEPOSIT_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.NEGATIVE_SMALL)),
+			).to.be.revertedWith("AccountFacet: Insufficient balance considering pending allocations")
+		})
+
+		it("Should fail when pendingBalance makes partyA liquidatable", async function () {
+			// With pendingBalance of 200, user can only deallocate up to (300 - 200) = 100
+			// Trying to deallocate 150 should fail
+			const pendingBalance = decimal(200n)
+			const deallocateAmount = decimal(150n)
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.ZERO, pendingBalance)),
+			).to.be.revertedWith("AccountFacet: Insufficient balance considering pending allocations")
+		})
+
+		it("Should safeDeallocate with zero pending balance", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const deallocateAmount = BALANCES.DEALLOCATE_AMOUNT
+			const expectedAllocated = BALANCES.DEPOSIT_AMOUNT - deallocateAmount
+
+			await context.accountFacet.connect(context.signers.user).safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig())
+
+			expect(await context.viewFacet.balanceOf(userAddress)).to.equal(deallocateAmount)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(expectedAllocated)
+		})
+
+		it("Should safeDeallocate with pending balance when enough available", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			// Allocated: 300, pendingBalance: 100, deallocate: 50
+			// Available after: 300 - 100 - 50 = 150 >= 0, should succeed
+			const pendingBalance = decimal(100n)
+			const deallocateAmount = BALANCES.DEALLOCATE_AMOUNT
+			const expectedAllocated = BALANCES.DEPOSIT_AMOUNT - deallocateAmount
+
+			await context.accountFacet
+				.connect(context.signers.user)
+				.safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.ZERO, pendingBalance))
+
+			expect(await context.viewFacet.balanceOf(userAddress)).to.equal(deallocateAmount)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(expectedAllocated)
+		})
+
+		it("Should fail to safeDeallocate too often", async function () {
+			const deallocateAmount = BALANCES.SMALL_AMOUNT
+
+			await context.accountFacet.connect(context.signers.user).safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig())
+			await expect(
+				context.accountFacet.connect(context.signers.user).safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig()),
+			).to.be.revertedWith("AccountFacet: Too many deallocate in a short window")
+		})
+	})
+
+	describe("Legacy Deallocate Disabling", async function () {
+		beforeEach(async function () {
+			context = await loadFixture(initializeFixture)
+			user = new User(context, context.signers.user)
+			await user.setup()
+			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.DEPOSIT_AMOUNT, BALANCES.DEPOSIT_AMOUNT)
+		})
+
+		it("Should allow legacy deallocate when not disabled", async function () {
+			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(false)
+			await expect(
+				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
+			).to.not.be.reverted
+		})
+
+		it("Should block legacy deallocate when disabled", async function () {
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
+			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(true)
+			await expect(
+				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
+			).to.be.revertedWith("AccountFacet: Legacy deallocate is disabled")
+		})
+
+		it("Should allow safeDeallocate when legacy is disabled", async function () {
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
+			await expect(
+				context.accountFacet.connect(context.signers.user).safeDeallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
+			).to.not.be.reverted
+		})
+
+		it("Should re-enable legacy deallocate", async function () {
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(false)
+			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(false)
+			await expect(
+				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
+			).to.not.be.reverted
 		})
 	})
 

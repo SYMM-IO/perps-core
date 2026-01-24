@@ -31,6 +31,21 @@ export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUp
 	}
 }
 
+export async function getDummySingleUpnlWithPendingBalanceSig(upnl: bigint = 0n, pendingBalance: bigint = 0n): Promise<any> {
+	return {
+		reqId: "0x",
+		timestamp: await getBlockTimestamp(700n),
+		upnl: upnl,
+		pendingBalance: pendingBalance,
+		gatewaySignature: ethers.ZeroAddress,
+		sigs: {
+			signature: "0",
+			owner: ethers.ZeroAddress,
+			nonce: ethers.ZeroAddress,
+		},
+	}
+}
+
 export async function getDummyLiquidationSig(
 	liquidationId: string,
 	upnl: bigint = 0n,
