@@ -96,11 +96,10 @@ library FundingRateFacetImpl {
 				paidTimestamp = nextEpochTimestamp;
 			}
 
-			uint256 maxEpochFundingRate = quote.maxFundingRate * epochDuration;
+
 			// Apply funding rate to position
 			if (rates[i] >= 0) {
 				// Positive funding: Longs pay shorts
-				require(uint256(rates[i]) <= maxEpochFundingRate, "ChargeFundingFacet: High funding rate");
 				uint256 priceAdjustment = (quote.openedPrice * uint256(rates[i])) / 1e18;
 
 				if (quote.positionType == PositionType.LONG) {
@@ -116,7 +115,6 @@ library FundingRateFacetImpl {
 				partyBAvailableBalance += int256((LibQuote.quoteOpenAmount(quote) * priceAdjustment) / 1e18);
 			} else {
 				// Negative funding: Shorts pay longs
-				require(uint256(-rates[i]) <= maxEpochFundingRate, "ChargeFundingFacet: High funding rate");
 				uint256 priceAdjustment = (quote.openedPrice * uint256(-rates[i])) / 1e18;
 
 				if (quote.positionType == PositionType.LONG) {

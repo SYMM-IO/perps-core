@@ -137,4 +137,5 @@ interface IControlFacet is IControlEvents {
 
 	function setPartyBBindable(address partyB, bool bindable) external;
 
+	function setLegacyDeallocateDisabled(bool disabled) external;
 }

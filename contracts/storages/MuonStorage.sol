@@ -14,6 +14,15 @@ struct SingleUpnlSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+struct SingleUpnlWithPendingBalanceSig {
+	bytes reqId;
+	uint256 timestamp;
+	int256 upnl;
+	uint256 pendingBalance;
+	bytes gatewaySignature;
+	IMuonSignatureVerifier.SchnorrSign sigs;
+}
+
 struct SingleUpnlAndPriceSig {
 	bytes reqId;
 	uint256 timestamp;

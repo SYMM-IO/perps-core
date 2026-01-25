@@ -12,7 +12,6 @@ import { shouldBehaveLikeEmergencyClosePosition } from "./EmergencyClosePosition
 import { shouldBehaveLikeForceClosePosition } from "./ForceClosePosition.behavior.js"
 import { shouldBehaveLikeLiquidationFacet } from "./LiquidationFacet.behavior.js"
 import { shouldBehaveLikeFundingRate } from "./FundingRate.behavior.js"
-import { shouldBehaveLikePartyBPositionViews } from "./PartyBPositionViews.behavior.js"
 import { shouldBehaveLikeSpecificScenario } from "./SpecificScenario.behavior.js"
 import { shouldBehaveLikeBridgeFacet } from "./BridgeFacet.behavior.js"
 import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
@@ -29,6 +28,7 @@ import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior.js"
 import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior.js";
 import { shouldBehaveLikeAccessControlRoleAdmins } from "./AccessControlRoleAdmins.behavior.js"
 import { shouldBehaveLikeMasterAccountMigration } from "./MasterAccountMigration.behavior.js"
+import { shouldBehaveLikeAggregateViews } from "./AggregateViews.behavior.js"
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
@@ -78,10 +78,6 @@ describe("UnitTests", function () {
 
 		describe("FundingRate", async function () {
 			shouldBehaveLikeFundingRate()
-		})
-
-		describe("PartyBPositionViews", async function () {
-			shouldBehaveLikePartyBPositionViews()
 		})
 
 		describe("SpecificScenario", async function () {
@@ -150,6 +146,10 @@ describe("UnitTests", function () {
 
 		describe("AccountManager", async function () {
 			shouldBehaveLikeAccountManager()
+		})
+
+		describe("AggregateViews", async function () {
+			shouldBehaveLikeAggregateViews()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {

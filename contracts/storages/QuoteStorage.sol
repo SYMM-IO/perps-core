@@ -53,7 +53,7 @@ struct Quote {
 	uint256 closedAmount;
 	LockedValues initialLockedValues;
 	LockedValues lockedValues;
-	uint256 maxFundingRate;
+	uint256 maxFundingRate; // NOTE: Funding caps postponed to a later version. Field kept for compatibility.
 	address partyA;
 	address partyB;
 	QuoteStatus quoteStatus;
@@ -84,6 +84,12 @@ struct PartiesAggregatedPositions {
 	uint256 aggregatedNotional;
 }
 
+// Aggregate funding tracking: Σ(openAmount × accumulatedPaidFunding) for all open quotes
+// This enables O(symbols) funding debt calculation instead of O(quotes)
+struct PartiesAggregatedFunding {
+	int256 weightedPaidFunding; // Σ(openAmount × accumulatedPaidFunding / 1e18)
+}
+
 library QuoteStorage {
 	bytes32 internal constant QUOTE_STORAGE_SLOT = keccak256("diamond.standard.storage.quote");
 
@@ -102,9 +108,24 @@ library QuoteStorage {
 		uint256 lastCloseId;
 		mapping(uint256 => uint256) closeIds;
 		mapping(address => uint256) partyALockQuotesCount;
-		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyBAggregatedPositions; // partyB => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
-		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyAAggregatedPositions; // partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
-		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyBAggregatedPositionsPerPartyA; // partyB => partyA => symbolId => positionType => struct with aggregatedAmounts and aggregatedNotionals
+		// Global partyB aggregated positions (for master account mode UPNL calculations across all partyAs)
+		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions))) partyBAggregatedPositions; // partyB => symbolId => positionType
+		// Per-counterparty aggregated positions (for UPNL calculations with per-hedger funding rates)
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyBAggregatedPositionsPerPartyA; // partyB => partyA => symbolId => positionType
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedPositions)))) partyAAggregatedPositionsPerPartyB; // partyA => partyB => symbolId => positionType
+		// Global partyB aggregate funding tracking (for master account mode UPNL calculations across all partyAs)
+		mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding))) partyBAggregatedFunding; // partyB => symbolId => positionType
+		// Per-counterparty aggregate funding tracking
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding)))) partyAAggregatedFundingPerPartyB; // partyA => partyB => symbolId => positionType
+		mapping(address => mapping(address => mapping(uint256 => mapping(PositionType => PartiesAggregatedFunding)))) partyBAggregatedFundingPerPartyA; // partyB => partyA => symbolId => positionType
+		// Global partyB active symbols (for master account mode iteration across all partyAs)
+		mapping(address => uint256[]) partyBActiveSymbols; // partyB => symbolId[]
+		mapping(address => mapping(uint256 => uint256)) partyBActiveSymbolsIndex; // partyB => symbolId => index+1 (0 = not active)
+		// Per-counterparty active symbols tracking for efficient iteration
+		mapping(address => mapping(address => uint256[])) partyAActiveSymbolsPerPartyB; // partyA => partyB => symbolId[]
+		mapping(address => mapping(address => mapping(uint256 => uint256))) partyAActiveSymbolsIndexPerPartyB; // partyA => partyB => symbolId => index+1 (0 = not active)
+		mapping(address => mapping(address => uint256[])) partyBActiveSymbolsPerPartyA; // partyB => partyA => symbolId[]
+		mapping(address => mapping(address => mapping(uint256 => uint256))) partyBActiveSymbolsIndexPerPartyA; // partyB => partyA => symbolId => index+1 (0 = not active)
 	}
 
 	function layout() internal pure returns (Layout storage l) {

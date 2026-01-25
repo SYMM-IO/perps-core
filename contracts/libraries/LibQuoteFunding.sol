@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibFundingRate } from "./LibFundingRate.sol";
 import { LibQuote } from "./LibQuote.sol";
+import { LibAggregateFunding } from "./LibAggregateFunding.sol";
 import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { SymbolStorage, FundingFee } from "../storages/SymbolStorage.sol";
@@ -41,18 +42,6 @@ library LibQuoteFunding {
 
 		// Subtract already paid amount
 		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (currentFee - quote.accumulatedPaidFunding)) / 1e18;
-
-		// Apply maximum funding rate cap
-		int256 maxFee = int256(quote.maxFundingRate) * int256(unpaidEpochs);
-
-		if (fee > 0) {
-			// Positive fee: cap at maxFee
-			fee = fee > maxFee ? maxFee : fee;
-		} else {
-			// Negative fee: cap at -maxFee
-			fee = fee < -maxFee ? -maxFee : fee;
-		}
-		// If fee == 0, no action needed
 	}
 
 	/**
@@ -69,8 +58,17 @@ library LibQuoteFunding {
 		// Calculate the unpaid funding fee
 		int256 fee = getAccumulatedFundingFee(quoteId);
 
+		// Store old value for aggregate funding update
+		int256 oldAccumulatedPaidFunding = quote.accumulatedPaidFunding;
+		uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+
 		quote.lastFundingPaymentTimestamp = block.timestamp;
 		updateAccumulatedPaidFunding(quoteId);
+
+		// Update aggregate funding tracking for nonce-free Muon verification
+		// This must be called after updateAccumulatedPaidFunding updates quote.accumulatedPaidFunding
+		LibAggregateFunding.updatePartiesAggregateFunding(quote, oldAccumulatedPaidFunding, openAmount);
+
 		address partyBAllocationKey = LibAccount.partyBAllocationKey(quote.partyB, quote.partyA);
 		if (fee > 0) {
 			// Positive fee: Trader (PartyA) pays Market Maker (PartyB)

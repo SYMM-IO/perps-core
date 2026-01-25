@@ -34,8 +34,4 @@ interface IViewFacetSymbol {
 	function forceCloseGapRatio(uint256 symbolId) external view returns (uint256);
 
 	function getFundingFeesOfPartyB(uint256 symbolId, address partyB) external view returns (FundingFee memory);
-
-	function getAccumulatedFundingFees(uint256[] memory quoteIds) external view returns (int256[] memory fees);
-
-	function getSumAccumulatedFundingFees(uint256[] memory quoteIds) external view returns (int256 sum);
 }
