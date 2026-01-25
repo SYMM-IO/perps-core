@@ -1639,6 +1639,25 @@ export function shouldBehaveLikeAccountHub(): void {
 				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
 				expect(allocatedBalance).to.equal(0n)
 			})
+
+			it("should reject sendQuote from a deleted virtual account", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				await cancelVirtualAccountQuote(virtualAccountAddress)
+
+				const virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.false
+
+				const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [
+					virtualAccountAddress,
+					BALANCES.TRANSFER_AMOUNT,
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [transferCallData])
+
+				const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+				await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [sendQuoteCallData])).to.be.reverted
+			})
 		})
 
 		describe("Fund return to parent balance on virtual account deletion", async () => {
