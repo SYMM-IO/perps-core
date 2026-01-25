@@ -1,21 +1,20 @@
-import { loadFixture } from "./helpers/network-helpers.js"
+import { expect } from "chai"
 
+import type { UnifiedQuoteSettlementDataStruct } from "../src/types/facets/Settlement/ISettlementFacet.js"
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture } from "./helpers/network-helpers.js"
 import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, unDecimal } from "./utils/Common.js"
-import { expect } from "chai"
-import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
-import type { UnifiedQuoteSettlementDataStruct } from "../src/types/facets/Settlement/ISettlementFacet.js"
 import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeSettlementUnified(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
-	let longHedger1: bigint, shortHedger1: bigint, shortHedger2: bigint, shortClosePending: bigint,
-		longClosed: bigint, longHedger1User2: bigint
+	let longHedger1: bigint, shortHedger1: bigint, shortHedger2: bigint, shortClosePending: bigint, longClosed: bigint, longHedger1User2: bigint
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -69,26 +68,12 @@ export function shouldBehaveLikeSettlementUnified(): void {
 	describe("Normal Mode (non-masterAccount)", function () {
 		it("Should fail when partyB actions paused", async function () {
 			await context.pauseControlFacet.connect(context.signers.admin).pausePartyBActions()
-			const sig = await getDummyUnifiedSettlementSig(
-				await hedger.getAddress(),
-				0n,
-				[0n],
-				[await user.getAddress()],
-				[0n],
-				[]
-			)
+			const sig = await getDummyUnifiedSettlementSig(await hedger.getAddress(), 0n, [0n], [await user.getAddress()], [0n], [])
 			await expect(hedger.settleUpnlUnified([], sig)).to.be.revertedWith("Pausable: PartyB actions paused")
 		})
 
 		it("Should fail when quotes array is empty", async function () {
-			const sig = await getDummyUnifiedSettlementSig(
-				await hedger.getAddress(),
-				0n,
-				[0n],
-				[await user.getAddress()],
-				[0n],
-				[]
-			)
+			const sig = await getDummyUnifiedSettlementSig(await hedger.getAddress(), 0n, [0n], [await user.getAddress()], [0n], [])
 			await expect(hedger.settleUpnlUnified([], sig)).to.be.revertedWith("LibSettlement: Empty quotes array")
 		})
 
@@ -99,7 +84,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[],
 				[],
 				[],
-				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: Empty partyAs array")
 		})
@@ -111,7 +96,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[], // Empty - should have same length as partyAs
 				[await user.getAddress()],
 				[0n],
-				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: Invalid upnlPartyBPerPartyA length")
 		})
@@ -123,7 +108,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n],
 				[await user.getAddress()],
 				[decimal(600n) * -1n], // PartyA has large negative UPNL
-				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: PartyA is insolvent")
 		})
@@ -135,7 +120,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[decimal(10000n) * -1n], // PartyB has large negative UPNL
 				[await user.getAddress()],
 				[0n],
-				[{ quoteId: shortHedger1, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: shortHedger1, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 			await expect(hedger.settleUpnlUnified([decimal(5n, 17)], sig)).to.be.revertedWith("LibSettlement: PartyB is insolvent for partyA")
 		})
@@ -147,7 +132,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n],
 				[await user2.getAddress()],
 				[0n],
-				[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 			// hedger2 has no position with user2 for this quote (quote belongs to hedger)
 			await expect(hedger2.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: Sender should have a position with partyA")
@@ -160,7 +145,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n],
 				[await user.getAddress()],
 				[0n],
-				[{ quoteId: shortHedger2, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct] // But quote belongs to hedger2
+				[{ quoteId: shortHedger2, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct], // But quote belongs to hedger2
 			)
 			await expect(hedger.settleUpnlUnified([decimal(5n, 17)], sig)).to.be.revertedWith("LibSettlement: Invalid partyB for quote")
 		})
@@ -172,7 +157,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n],
 				[await user.getAddress()],
 				[0n],
-				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 5n } as UnifiedQuoteSettlementDataStruct] // Index 5 but only 1 partyA
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 5n } as UnifiedQuoteSettlementDataStruct], // Index 5 but only 1 partyA
 			)
 			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: Invalid partyAIndex")
 		})
@@ -184,7 +169,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n],
 				[await user.getAddress()],
 				[0n],
-				[{ quoteId: longClosed, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: longClosed, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: Invalid quote state")
 		})
@@ -196,20 +181,20 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n],
 				[await user.getAddress()],
 				[0n],
-				[{ quoteId: longHedger1, currentPrice: decimal(2n), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: longHedger1, currentPrice: decimal(2n), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 			await expect(hedger.settleUpnlUnified([decimal(0n)], sig)).to.be.revertedWith("LibSettlement: Updated price is out of range")
 		})
 
 		it("Should fail when partyB is in liquidation process", async function () {
-			await hedger.liquidate(await user.getAddress(), await getDummySingleUpnlSig(decimal(10000n) * -1n) as any)
+			await hedger.liquidate(await user.getAddress(), (await getDummySingleUpnlSig(decimal(10000n) * -1n)) as any)
 			const sig = await getDummyUnifiedSettlementSig(
 				await hedger.getAddress(),
 				0n,
 				[0n],
 				[await user.getAddress()],
 				[0n],
-				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 			await expect(hedger.settleUpnlUnified([decimal(6n, 17)], sig)).to.be.revertedWith("LibSettlement: PartyB is in liquidation with partyA")
 		})
@@ -226,7 +211,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n],
 				[partyA],
 				[0n],
-				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 
 			const partyABalanceBefore = await user.getBalanceInfo()
@@ -264,8 +249,8 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n, 0n],
 				[
 					{ quoteId: shortHedger1, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct,
-					{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 1n } as UnifiedQuoteSettlementDataStruct
-				]
+					{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 1n } as UnifiedQuoteSettlementDataStruct,
+				],
 			)
 
 			await hedger.settleUpnlUnified([decimal(5n, 17), decimal(6n, 17)], sig)
@@ -279,6 +264,36 @@ export function shouldBehaveLikeSettlementUnified(): void {
 			// Verify prices updated
 			expect((await context.viewFacetQuote.getQuote(shortHedger1)).openedPrice).to.be.eq(decimal(5n, 17).toString())
 			expect((await context.viewFacetQuote.getQuote(longHedger1User2)).openedPrice).to.be.eq(decimal(6n, 17).toString())
+		})
+
+		it("Allows a different partyB caller to settle for another partyB (partyA funding without legacy settleUpnl)", async function () {
+			const partyA = await user.getAddress()
+
+			const quoteBefore = await context.viewFacetQuote.getQuote(shortHedger2)
+			const updatedPrice = decimal(5n, 17) // 0.5
+
+			const sig = await getDummyUnifiedSettlementSig(
+				await hedger2.getAddress(), // settle for hedger2
+				0n,
+				[0n], // normal-mode requires per-partyA uPNL
+				[partyA],
+				[0n],
+				[{ quoteId: shortHedger2, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
+			)
+
+			const partyABalanceBefore = await user.getBalanceInfo()
+			const partyB2BalanceBefore = await hedger2.getBalanceInfo(partyA)
+
+			// Caller is hedger (different from sig.partyB=hedger2) but hedger has positions with partyA, so this should succeed.
+			await hedger.settleUpnlUnified([updatedPrice], sig)
+
+			const partyABalanceAfter = await user.getBalanceInfo()
+			const partyB2BalanceAfter = await hedger2.getBalanceInfo(partyA)
+
+			const expectedProfitForPartyA = unDecimal((quoteBefore.openedPrice - updatedPrice) * quoteBefore.quantity)
+			expect(partyABalanceAfter.allocatedBalances - partyABalanceBefore.allocatedBalances).to.eq(expectedProfitForPartyA)
+			expect(partyB2BalanceBefore.allocatedBalances - partyB2BalanceAfter.allocatedBalances).to.eq(expectedProfitForPartyA)
+			expect((await context.viewFacetQuote.getQuote(shortHedger2)).openedPrice).to.eq(updatedPrice)
 		})
 	})
 
@@ -301,7 +316,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[], // Empty for master account mode
 				[partyA],
 				[0n],
-				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 
 			const partyABalanceBefore = await user.getBalanceInfo()
@@ -338,8 +353,8 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[0n, 0n],
 				[
 					{ quoteId: shortHedger1, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct,
-					{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 1n } as UnifiedQuoteSettlementDataStruct
-				]
+					{ quoteId: longHedger1User2, currentPrice: decimal(5n, 17), partyAIndex: 1n } as UnifiedQuoteSettlementDataStruct,
+				],
 			)
 
 			await hedger.settleUpnlUnified([decimal(5n, 17), decimal(6n, 17)], sig)
@@ -366,7 +381,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 				[],
 				[await user.getAddress()],
 				[0n],
-				[{ quoteId: shortHedger1, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct]
+				[{ quoteId: shortHedger1, currentPrice: 0n, partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 			await expect(hedger.settleUpnlUnified([decimal(5n, 17)], sig)).to.be.revertedWith("LibSettlement: PartyB is insolvent")
 		})
