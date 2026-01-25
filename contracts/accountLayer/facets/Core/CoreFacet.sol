@@ -225,12 +225,13 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		if (callDatas.length == 0) revert EmptyArray();
 
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		bool isVirtualAccount = ahLayout.virtualAccounts[account].isExists;
-		bool isSubAccount = ahLayout.subAccounts[account].isExists;
-		if (!isVirtualAccount && !isSubAccount) revert AccountDoesNotExist();
 		bytes[] memory results = new bytes[](callDatas.length);
 
 		for (uint256 i = 0; i < callDatas.length; i++) {
+			bool isVirtualAccount = ahLayout.virtualAccounts[account].isExists;
+			bool isSubAccount = ahLayout.subAccounts[account].isExists;
+			if (!isVirtualAccount && !isSubAccount) revert AccountDoesNotExist();
+
 			bytes calldata cd = callDatas[i];
 			bytes4 selector = bytes4(cd[:4]);
 			if (_isForbiddenSelector(selector)) revert Unauthorized();

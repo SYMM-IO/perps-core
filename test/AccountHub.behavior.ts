@@ -1658,6 +1658,20 @@ export function shouldBehaveLikeAccountHub(): void {
 				const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 				await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [sendQuoteCallData])).to.be.reverted
 			})
+
+			it("should revert if virtual account is deleted mid-batch", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotes = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quotes[0]])
+
+				const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote, sendQuoteCallData]),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
+			})
 		})
 
 		describe("Fund return to parent balance on virtual account deletion", async () => {
