@@ -58,7 +58,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeCancelQuote()
 		})
 
-		describe.only("ClosePosition", async function () {
+		describe("ClosePosition", async function () {
 			shouldBehaveLikeClosePosition()
 		})
 
@@ -78,7 +78,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeLiquidationFacet()
 		})
 
-		describe.only("FundingRate", async function () {
+		describe("FundingRate", async function () {
 			shouldBehaveLikeFundingRate()
 		})
 
@@ -126,7 +126,7 @@ describe("UnitTests", function () {
 			shouldBehaveLikeClearingHouseFacet()
 		})
 
-		describe.only("ADLFacet", async function () {
+		describe("ADLFacet", async function () {
 			shouldBehaveLikeADLFacet()
 		})
 

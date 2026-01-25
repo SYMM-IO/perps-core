@@ -63,11 +63,12 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	}
 
 	/**
-	 * @dev Emitted when the Adl close call is reverted for a function.
-	 * @param quoteId The ID of the quote.
-	 * @param amount The amount to be closed.
-	 * @param price The price to close at.
-	 * @param reason The reason the request reverted.
+	 * @notice Emitted when an `adlClose` attempt reverts for a quote.
+	 * @dev `adlCall` is best-effort; it catches per-quote failures and continues the loop.
+	 * @param quoteId The quote id that was attempted to be ADL-closed.
+	 * @param amount The requested close amount.
+	 * @param price The requested execution price.
+	 * @param reason A human-readable reason derived from the revert (string reason, panic, or custom error selector).
 	 */
 	event ADLSkip(uint256 quoteId, uint256 amount, uint256 price, string reason);
 
@@ -143,6 +144,12 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 		return string(buffer);
 	}
 
+	/**
+	 * @dev Best-effort conversion of low-level revert data into a readable string.
+	 *
+	 * - For `Error(string)`, Solidity provides the string via `catch Error(string memory reason)`.
+	 * - For panics and custom errors, we return either `"Panic"` or `"Custom error: 0x...."` (selector only).
+	 */
 	function _revertDataToReason(bytes memory revertData) private pure returns (string memory) {
 		if (revertData.length >= 4) {
 			bytes4 selector;
@@ -158,18 +165,39 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 		return "Low-level revert";
 	}
 
-	function adlCall(address destAddress, uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) external whenNotPaused {
+	/* ──────────────────────────────── ADL ──────────────────────────────── */
+
+	/**
+	 * @notice Best-effort ADL close for multiple quotes.
+	 * @dev For each index `i`, this function attempts `Symmio.adlClose(quoteIds[i], amounts[i], prices[i])`.
+	 *
+	 * Execution model:
+	 * - Reverts only on precondition failures (access control, array mismatch, invalid Symmio address).
+	 * - Catches per-quote reverts, emits `ADLSkip`, and continues processing the remaining items.
+	 *
+	 * Access control:
+	 * - Allowed for `MANAGER_ROLE` or `TRUSTED_ROLE`.
+	 * - Also allowed during InstantLayer execution (`Symmio.isCallFromInstantLayer() == true`).
+	 *
+	 * @param quoteIds Quote ids to ADL-close.
+	 * @param amounts Close amounts per quote (token decimals).
+	 * @param prices Execution prices per quote.
+	 */
+	function adlCall(
+		uint256[] calldata quoteIds,
+		uint256[] calldata amounts,
+		uint256[] calldata prices
+	) external nonReentrant whenNotPaused {
 		uint256 len = quoteIds.length;
 		require(amounts.length == len && prices.length == len, "SymmioPartyB: Array length mismatch");
-		require(destAddress != address(0), "SymmioPartyB: Invalid address");
-		require(destAddress == symmioAddress, "SymmioPartyB: Invalid address");
+		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
 		require(
 			hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
 			"SymmioPartyB: Invalid access"
 		);
 
 		for (uint256 i = 0; i < len; i++) {
-			try ISymmio(destAddress).adlClose(quoteIds[i], amounts[i], prices[i]) {} catch Error(string memory reason) {
+			try ISymmio(symmioAddress).adlClose(quoteIds[i], amounts[i], prices[i]) {} catch Error(string memory reason) {
 				emit ADLSkip(quoteIds[i], amounts[i], prices[i], reason);
 			} catch (bytes memory revertData) {
 				emit ADLSkip(quoteIds[i], amounts[i], prices[i], _revertDataToReason(revertData));

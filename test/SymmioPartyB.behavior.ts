@@ -93,7 +93,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 
 					const tx = await context.symmioPartyB
 						.connect(context.signers.admin)
-						.adlCall(context.diamond, [quoteId1, quoteId2], [0n, decimal(10n)], [q1.openedPrice, q2.openedPrice], { gasLimit: 30_000_000 })
+						.adlCall([quoteId1, quoteId2], [0n, decimal(10n)], [q1.openedPrice, q2.openedPrice], { gasLimit: 30_000_000 })
 
 				const receipt = await tx.wait()
 				const events = receipt.logs
