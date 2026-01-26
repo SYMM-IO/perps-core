@@ -7,33 +7,37 @@ meta-derivatives engine, with its first use case being a new type of hyper-effic
 ## Code Architecture
 
 This project utilizes the Diamond Proxy pattern ([EIP-2535](https://eips.ethereum.org/EIPS/eip-2535)) for upgradability
-and modularity. Currently, we have 25 facets:
+and modularity. Currently, we have 29 facets:
 
 1. **DiamondCutFacet** - Diamond upgrade operations (EIP-2535)
 2. **DiamondLoupeFacet** - Diamond introspection (EIP-2535)
 3. **AccountFacet** - Account management operations
-4. **MasterAccountMigrationFacet** - Master account migration functionality
-5. **ControlFacet** - Protocol control and configuration
-6. **SymbolControlFacet** - Trading symbol management
-7. **PauseControlFacet** - Emergency pause controls
-8. **PartyALiquidationFacet** - PartyA liquidation logic
-9. **PartyBLiquidationFacet** - PartyB liquidation logic
-10. **PartyAFacet** - PartyA (trader) operations
-11. **BridgeFacet** - Fast withdrawals
-12. **ViewFacet** - General read-only queries
-13. **ViewFacetSymbol** - Symbol-related queries
-14. **ViewFacetQuote** - Quote-related queries
-15. **ViewFacetAggregate** - Aggregated position and funding queries
-16. **FundingRateFacet** - Funding rate calculations
-17. **ForceActionsFacet** - Atomic force close and cancel operations
-18. **ForceCloseStepsFacet** - 3-step force close flow (init, settle, finalize)
-19. **SettlementFacet** - Trade settlement logic
+4. **AssuranceFacet** - Assurance collateral management
+5. **BindingFacet** - PartyA-PartyB binding operations
+6. **BridgeFacet** - Fast withdrawals
+7. **ClearingHouseFacet** - Clearing house functionality
+8. **ControlFacet** - Protocol control and configuration
+9. **ExternalTransferFacet** - External transfer operations
+10. **ForceActionsFacet** - Atomic force close and cancel operations
+11. **ForceCloseStepsFacet** - 3-step force close flow (init, settle, finalize)
+12. **FundingRateFacet** - Funding rate calculations
+13. **MasterAccountMigrationFacet** - Master account migration functionality
+14. **PartyAFacet** - PartyA (trader) operations
+15. **PartyALiquidationFacet** - PartyA liquidation logic
+16. **PartyBAccountFacet** - PartyB account management
+17. **PartyBBatchActionsFacet** - Batch operations for PartyB
+18. **PartyBEmergencyActionsFacet** - Emergency close and ADL operations
+19. **PartyBLiquidationFacet** - PartyB liquidation logic
 20. **PartyBPositionActionsFacet** - PartyB position operations
 21. **PartyBQuoteActionsFacet** - PartyB quote operations
-22. **ClearingHouseFacet** - Clearing house functionality
-23. **PartyBBatchActionsFacet** - Batch operations for PartyB
-24. **PartyBEmergencyActionsFacet** - Emergency close and ADL operations
-25. **WithdrawFacet** - Withdrawal operations
+22. **PauseControlFacet** - Emergency pause controls
+23. **SettlementFacet** - Trade settlement logic
+24. **SymbolControlFacet** - Trading symbol management
+25. **ViewFacet** - General read-only queries
+26. **ViewFacetAggregate** - Aggregated position and funding queries
+27. **ViewFacetQuote** - Quote-related queries
+28. **ViewFacetSymbol** - Symbol-related queries
+29. **WithdrawFacet** - Withdrawal operations
 
 ### AccountLayer Diamond
 
