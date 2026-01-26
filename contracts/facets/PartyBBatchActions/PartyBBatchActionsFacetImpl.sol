@@ -8,17 +8,21 @@ import { LibMuonPartyBBatchActions } from "../../libraries/muon/LibMuonPartyBBat
 import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+
+import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
+import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -27,23 +31,6 @@ library PartyBBatchActionsFacetImpl {
 	// like `emit IPartiesEvents.OpenPosition(...)`. To keep event signatures consistent
 	// with `IPartiesEvents`, we redeclare the required events here and emit them unqualified.
 	event AcceptCancelRequest(uint256 quoteId, QuoteStatus quoteStatus);
-	event SendQuote(
-		address partyA,
-		uint256 quoteId,
-		address[] partyBsWhiteList,
-		uint256 symbolId,
-		PositionType positionType,
-		OrderType orderType,
-		uint256 price,
-		uint256 marketPrice,
-		uint256 quantity,
-		uint256 cva,
-		uint256 lf,
-		uint256 partyAmm,
-		uint256 partyBmm,
-		uint256 tradingFee,
-		uint256 deadline
-	);
 	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice); // for backward compatibility
 	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
 
@@ -104,30 +91,34 @@ library PartyBBatchActionsFacetImpl {
 			}
 			// Emitting events here in the impl is against our standards in these contracts,
 			// but given that this contract is getting too large and we can't return the ids, we are allowing it here.
-			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
-			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
+			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
+			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
 			if (newId != 0) {
 				Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-					emit SendQuote(
-						newQuote.partyA,
-						newQuote.id,
-						newQuote.partyBsWhiteList,
-						newQuote.symbolId,
-						newQuote.positionType,
-						newQuote.orderType,
-						newQuote.requestedOpenPrice,
-						newQuote.marketPrice,
-						newQuote.quantity,
-						newQuote.lockedValues.cva,
-						newQuote.lockedValues.lf,
-						newQuote.lockedValues.partyAmm,
-						newQuote.lockedValues.partyBmm,
-						newQuote.tradingFee,
-						newQuote.deadline
+					LibSendQuoteEvents.emitSendQuoteEvents(
+						LibSendQuoteEvents.SendQuoteEventParams({
+							partyA: newQuote.partyA,
+							quoteId: newQuote.id,
+							partyBsWhiteList: newQuote.partyBsWhiteList,
+							symbolId: newQuote.symbolId,
+							positionType: newQuote.positionType,
+							orderType: newQuote.orderType,
+							price: newQuote.requestedOpenPrice,
+							marketPrice: newQuote.marketPrice,
+							quantity: newQuote.quantity,
+							cva: newQuote.lockedValues.cva,
+							lf: newQuote.lockedValues.lf,
+							partyAmm: newQuote.lockedValues.partyAmm,
+							partyBmm: newQuote.lockedValues.partyBmm,
+							tradingFee: newQuote.tradingFee,
+							deadline: newQuote.deadline,
+							affiliate: newQuote.affiliate,
+							data: newQuote.data
+						})
 					);
 				} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
-					emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
+					emit LibPartiesEvents.AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
 				}
 			}
 		}
@@ -163,7 +154,7 @@ library PartyBBatchActionsFacetImpl {
 		address firstQuotePartyA = firstQuote.partyA;
 		address firstQuotePartyB = firstQuote.partyB;
 
-		if (accountLayout.bindState[firstQuote.partyA].partyB != LibSigner.getSigner()|| !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
+		if (accountLayout.bindState[firstQuote.partyA].partyB != LibSigner.getSigner() || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
 		}
@@ -222,4 +213,5 @@ library PartyBBatchActionsFacetImpl {
 			}
 		}
 	}
+
 }

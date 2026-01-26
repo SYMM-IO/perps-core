@@ -15,6 +15,8 @@ interface ISymmioCore {
 contract ExpressProvider is IExpressProvider {
 	address public symmioAddress;
 
+	event WithdrawSuspended(address indexed user, uint256 indexed requestId);
+
 	constructor(address _symmioAddress) {
 		symmioAddress = _symmioAddress;
 	}
@@ -56,6 +58,10 @@ contract ExpressProvider is IExpressProvider {
 
 	function onWithdrawCancelRequest(WithdrawRequest memory _req) external override pure {
 		_req;
+	}
+
+	function onWithdrawSuspend(WithdrawRequest memory _req) external override {
+		emit WithdrawSuspended(_req.user, _req.id);
 	}
 
 	function _bytesToAddress(bytes memory data) internal pure returns (address addr) {

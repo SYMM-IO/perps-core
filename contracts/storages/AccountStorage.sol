@@ -112,6 +112,20 @@ enum ExternalTransferStatus {
 	CANCELED
 }
 
+enum AssuranceWithdrawStatus {
+	NONE,
+	PENDING,
+	APPROVED
+}
+
+struct AssuranceWithdrawalRequest {
+	address token;
+	uint256 amount;
+	address recipient;
+	address requester;
+	AssuranceWithdrawStatus status;
+}
+
 // External Transfer : Symmio1(user1) balance -> Symmio2(user2) balance
 struct ExternalTransferReq {
 	uint256 id;
@@ -169,6 +183,9 @@ library AccountStorage {
 		uint256 lastExternalTransferId;
 		mapping(uint256 => ExternalTransferReq) externalTransfers;
 		mapping(address => bool) isPartyBBindable;
+		// ---- Assurance collateral (token decimals) ----
+		mapping(address => mapping(address => uint256)) assuranceCollateral; // partyB => token => amount (token decimals)
+		mapping(address => AssuranceWithdrawalRequest) assuranceWithdrawalRequests;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -4,10 +4,37 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStatus, PositionType, OrderType, LockedValues } from "../storages/QuoteStorage.sol";
+import { QuoteStatus, OrderType, PositionType, LockedValues } from "../storages/QuoteStorage.sol";
 
-interface IPartiesEvents {
+/**
+ * @notice Event definitions used by PartyB batch actions (adl flows, close requests).
+ * @dev Declared in a dedicated library so libraries can emit without local redeclaration.
+ */
+library LibPartiesEvents {
 	event AcceptCancelRequest(uint256 quoteId, QuoteStatus quoteStatus);
+
+	event RequestToClosePosition(
+		address partyA,
+		address partyB,
+		uint256 quoteId,
+		uint256 closePrice,
+		uint256 quantityToClose,
+		OrderType orderType,
+		uint256 deadline,
+		QuoteStatus quoteStatus,
+		uint256 closeId
+	);
+
+	event RequestToClosePosition(
+		address partyA,
+		address partyB,
+		uint256 quoteId,
+		uint256 closePrice,
+		uint256 quantityToClose,
+		OrderType orderType,
+		uint256 deadline,
+		QuoteStatus quoteStatus
+	);
 
 	event SendQuote(
 		address partyA,
@@ -25,18 +52,13 @@ interface IPartiesEvents {
 		uint256 partyBmm,
 		uint256 tradingFee,
 		uint256 deadline
-	); // for backward compatibility
-
-	// paramsData is abi.encode(symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline)
-	event SendQuote(address partyA, uint256 quoteId, address[] partyBsWhiteList, address affiliate, bytes paramsData, bytes data);
-
-	event ExpireQuoteOpen(QuoteStatus quoteStatus, uint256 quoteId);
-
-	event ExpireQuoteClose(QuoteStatus quoteStatus, uint256 quoteId, uint256 closeId);
-
+	);
 	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice); // for backward compatibility
 	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
+	event RequestToCancelCloseRequest(address partyA, address partyB, uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId);
+	event AcceptCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId);
 
+	// Close fill events (mirrors IPartiesEvents for backward compatibility)
 	event FillCloseRequest(
 		uint256 quoteId,
 		address partyA,
@@ -45,7 +67,7 @@ interface IPartiesEvents {
 		uint256 closedPrice,
 		QuoteStatus quoteStatus,
 		uint256 closeId
-	); // for backward compatibility
+	);
 	event FillCloseRequest(
 		uint256 quoteId,
 		address partyA,
@@ -56,6 +78,5 @@ interface IPartiesEvents {
 		uint256 closeId,
 		LockedValues lockedValues
 	);
-
-	event LiquidatePartyB(address liquidator, address partyB, address partyA, uint256 partyBAllocatedBalance, int256 upnl);
+	event ADLClose(uint256 quoteId, uint256 amount, uint256 price, uint256 closedAmount);
 }

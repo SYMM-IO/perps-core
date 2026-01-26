@@ -289,6 +289,14 @@ library WithdrawFacetImpl {
 
 		_unlockAndRefund(withdrawRequest);
 		withdrawRequest.status = WithdrawStatus.SUSPENDED;
+
+		if (withdrawRequest.provider != address(0)) {
+			if (!withdrawRequest.isPureVirtual) {
+				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onWithdrawSuspend, (withdrawRequest)));
+			} else {
+				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onWithdrawSuspend, (withdrawRequest)));
+			}
+		}
 	}
 
 	function acceptSpeedUpRequest(address user, uint256 requestId, uint256 newCooldown) internal {

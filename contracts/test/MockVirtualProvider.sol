@@ -22,6 +22,7 @@ contract VirtualProvider is IVirtualProvider {
 	ExternalTransferReq public externalTransferData;
 
 	event WithdrawCalled(address sender, WithdrawReceiverPart part, bytes providerData);
+	event WithdrawSuspended(address indexed user, uint256 indexed requestId);
 
 	constructor(address _symmioAddress) {
 		symmioAddress = _symmioAddress;
@@ -85,6 +86,10 @@ contract VirtualProvider is IVirtualProvider {
 		require(true, "");
 		withdrawRequest;
 		_newCooldown;
+	}
+
+	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) external override {
+		emit WithdrawSuspended(withdrawRequest.user, withdrawRequest.id);
 	}
 
 	function onExternalTransfer(ExternalTransferReq memory externalTransfer) external override {
@@ -157,6 +162,7 @@ contract ConfigurableMockVirtualProvider is IVirtualProvider {
 	function onWithdrawCancelRequest(WithdrawRequest memory) external pure override {}
 	function onForceWithdrawCancel(WithdrawRequest memory) external pure override {}
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory, uint256) external pure override {}
+	function onWithdrawSuspend(WithdrawRequest memory) external pure override {}
 	function onExternalTransfer(ExternalTransferReq memory) external pure override {}
 	function onCancelExternalTransfer(uint256) external pure override {}
 }
@@ -209,6 +215,7 @@ contract MaliciousMockVirtualProvider is IVirtualProvider {
 	function onWithdrawCancelRequest(WithdrawRequest memory) external pure override {}
 	function onForceWithdrawCancel(WithdrawRequest memory) external pure override {}
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory, uint256) external pure override {}
+	function onWithdrawSuspend(WithdrawRequest memory) external pure override {}
 	function onExternalTransfer(ExternalTransferReq memory) external pure override {}
 	function onCancelExternalTransfer(uint256) external pure override {}
 }

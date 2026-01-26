@@ -184,4 +184,135 @@ export function shouldBehaveLikeSendQuote(): void {
 		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
 		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
 	})
+
+	it("Should decode new SendQuote event paramsData correctly using abi.decode", async function () {
+		// Send a quote with data using the existing helper
+		const qId = await user.sendQuoteWithData()
+
+		// Get the quote from storage to verify values
+		const quote = await context.viewFacetQuote.getQuote(qId)
+
+		// Query for the new SendQuote event using queryFilter on partyAFacet
+		// The new event signature: SendQuote(address indexed partyA, uint256 indexed quoteId, address[], address, bytes, bytes)
+		const newEventFilter = context.partyAFacet.filters["SendQuote(address,uint256,address[],address,bytes,bytes)"]
+		const events = await context.partyAFacet.queryFilter(newEventFilter())
+		expect(events.length).to.be.greaterThan(0)
+
+		// Get the most recent event
+		const latestEvent = events[events.length - 1]
+		const decodedEvent = latestEvent.args
+
+		// Verify indexed params
+		expect(decodedEvent.partyA).to.equal(await user.getAddress())
+		expect(decodedEvent.quoteId).to.equal(qId)
+
+		// Decode paramsData using standard ABI decoder (now that we use abi.encode instead of abi.encodePacked)
+		const paramsData = decodedEvent.paramsData
+		const decodedParams = ethers.AbiCoder.defaultAbiCoder().decode(
+			["uint256", "uint8", "uint8", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256"],
+			paramsData
+		)
+
+		// Verify decoded params match the quote from storage
+		expect(decodedParams[0]).to.equal(quote.symbolId) // symbolId
+		expect(decodedParams[1]).to.equal(BigInt(quote.positionType)) // positionType
+		expect(decodedParams[2]).to.equal(BigInt(quote.orderType)) // orderType
+		expect(decodedParams[3]).to.equal(quote.requestedOpenPrice) // price
+		expect(decodedParams[4]).to.equal(quote.marketPrice) // marketPrice
+		expect(decodedParams[5]).to.equal(quote.quantity) // quantity
+		expect(decodedParams[6]).to.equal(quote.lockedValues.cva) // cva
+		expect(decodedParams[7]).to.equal(quote.lockedValues.lf) // lf
+		expect(decodedParams[8]).to.equal(quote.lockedValues.partyAmm) // partyAmm
+		expect(decodedParams[9]).to.equal(quote.lockedValues.partyBmm) // partyBmm
+		expect(decodedParams[10]).to.equal(quote.tradingFee) // tradingFee
+		expect(decodedParams[11]).to.equal(quote.deadline) // deadline
+
+		// Decode and verify custom data - the default data is encoded "hello-world"
+		const eventData = decodedEvent.data
+		const decodedCustomData = ethers.AbiCoder.defaultAbiCoder().decode(["string"], eventData)
+		expect(decodedCustomData[0]).to.equal("hello-world")
+
+		// Verify affiliate matches what's in the quote
+		expect(decodedEvent.affiliate).to.equal(quote.affiliate)
+	})
+
+	it("Should decode new SendQuote event paramsData correctly using manual byte slicing", async function () {
+		// Helper function to decode paramsData manually without ethers AbiCoder
+		function decodeSendQuoteParamsDataManual(paramsData: string): {
+			symbolId: bigint;
+			positionType: number;
+			orderType: number;
+			price: bigint;
+			marketPrice: bigint;
+			quantity: bigint;
+			cva: bigint;
+			lf: bigint;
+			partyAmm: bigint;
+			partyBmm: bigint;
+			tradingFee: bigint;
+			deadline: bigint;
+		} {
+			// Remove 0x prefix if present
+			const hex = paramsData.startsWith("0x") ? paramsData.slice(2) : paramsData;
+
+			// With abi.encode, each value is padded to 32 bytes (64 hex chars)
+			let offset = 0;
+			const sliceUint256 = (): bigint => {
+				const value = BigInt("0x" + hex.slice(offset, offset + 64));
+				offset += 64;
+				return value;
+			};
+
+			return {
+				symbolId: sliceUint256(),
+				positionType: Number(sliceUint256()), // uint8 padded to 32 bytes
+				orderType: Number(sliceUint256()),    // uint8 padded to 32 bytes
+				price: sliceUint256(),
+				marketPrice: sliceUint256(),
+				quantity: sliceUint256(),
+				cva: sliceUint256(),
+				lf: sliceUint256(),
+				partyAmm: sliceUint256(),
+				partyBmm: sliceUint256(),
+				tradingFee: sliceUint256(),
+				deadline: sliceUint256(),
+			};
+		}
+
+		// Send a quote with data using the existing helper
+		const qId = await user.sendQuoteWithData()
+
+		// Get the quote from storage to verify values
+		const quote = await context.viewFacetQuote.getQuote(qId)
+
+		// Query for the new SendQuote event
+		const newEventFilter = context.partyAFacet.filters["SendQuote(address,uint256,address[],address,bytes,bytes)"]
+		const events = await context.partyAFacet.queryFilter(newEventFilter())
+		expect(events.length).to.be.greaterThan(0)
+
+		// Get the most recent event
+		const latestEvent = events[events.length - 1]
+		const decodedEvent = latestEvent.args
+
+		// Decode paramsData using manual byte slicing
+		const paramsData = decodedEvent.paramsData
+		const decodedParams = decodeSendQuoteParamsDataManual(paramsData)
+
+		// Verify decoded params match the quote from storage
+		expect(decodedParams.symbolId).to.equal(quote.symbolId)
+		expect(BigInt(decodedParams.positionType)).to.equal(BigInt(quote.positionType))
+		expect(BigInt(decodedParams.orderType)).to.equal(BigInt(quote.orderType))
+		expect(decodedParams.price).to.equal(quote.requestedOpenPrice)
+		expect(decodedParams.marketPrice).to.equal(quote.marketPrice)
+		expect(decodedParams.quantity).to.equal(quote.quantity)
+		expect(decodedParams.cva).to.equal(quote.lockedValues.cva)
+		expect(decodedParams.lf).to.equal(quote.lockedValues.lf)
+		expect(decodedParams.partyAmm).to.equal(quote.lockedValues.partyAmm)
+		expect(decodedParams.partyBmm).to.equal(quote.lockedValues.partyBmm)
+		expect(decodedParams.tradingFee).to.equal(quote.tradingFee)
+		expect(decodedParams.deadline).to.equal(quote.deadline)
+
+		// Verify affiliate matches what's in the quote
+		expect(decodedEvent.affiliate).to.equal(quote.affiliate)
+	})
 }

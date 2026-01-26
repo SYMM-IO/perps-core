@@ -21,6 +21,7 @@ export const FacetNames = [
 	"PartyBQuoteActionsFacet",
 	"ClearingHouseFacet",
 	"PartyBBatchActionsFacet",
+	"ADLFacet",
 	"WithdrawFacet"
 ]
 
