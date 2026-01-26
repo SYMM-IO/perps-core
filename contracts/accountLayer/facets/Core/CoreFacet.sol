@@ -228,13 +228,21 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		bytes[] memory results = new bytes[](callDatas.length);
 
 		for (uint256 i = 0; i < callDatas.length; i++) {
-			bool isVirtualAccount = ahLayout.virtualAccounts[account].isExists;
-			bool isSubAccount = ahLayout.subAccounts[account].isExists;
-			if (!isVirtualAccount && !isSubAccount) revert AccountDoesNotExist();
-
 			bytes calldata cd = callDatas[i];
 			bytes4 selector = bytes4(cd[:4]);
 			if (_isForbiddenSelector(selector)) revert Unauthorized();
+
+			bool isVirtualAccount = ahLayout.virtualAccounts[account].isExists;
+			bool isSubAccount = ahLayout.subAccounts[account].isExists;
+			if (!isVirtualAccount && !isSubAccount) {
+				// if its a deleted VA, parentAccount is still set and it must not be callable
+				if (ahLayout.virtualAccounts[account].parentAccount != address(0)) revert AccountDoesNotExist();
+
+				// legacy multi accounts
+				if (LibAccountLayerUtils.resolveAccountOwner(account) == address(0)) revert AccountDoesNotExist();
+				results[i] = _executeWithSigner(account, cd);
+				continue;
+			}
 
 			if (
 				selector == LibQuoteParams.SEND_QUOTE_SELECTOR ||

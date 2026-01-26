@@ -996,11 +996,21 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should allow _call for legacy multi-account addresses", async () => {
 					const legacyMultiAccounts = await context.alViewFacet.getLegacyMultiAccounts()
-					const legacyMultiAccount = await ethers.getContractAt(
-						"contracts/test/MockMultiAccount.sol:MockMultiAccount",
-						legacyMultiAccounts[0],
-					)
-					const legacyAccount = await legacyMultiAccount.createMockAccount(context.signers.user.address)
+					expect(legacyMultiAccounts.length).to.be.greaterThan(0)
+					const legacyMultiAccount = await ethers.getContractAt("MockMultiAccount", legacyMultiAccounts[0])
+					const createTx = await legacyMultiAccount.createMockAccount(context.signers.user.address)
+					const receipt = await createTx.wait()
+					let legacyAccount = ZeroAddress
+					for (const log of receipt!.logs) {
+						try {
+							const parsed = legacyMultiAccount.interface.parseLog(log)
+							if (parsed?.name === "AccountCreated") {
+								legacyAccount = parsed.args.account
+								break
+							}
+						} catch {}
+					}
+					expect(legacyAccount).to.not.equal(ZeroAddress)
 
 					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
 					await context.accountFacet.connect(context.signers.user).depositFor(legacyAccount, BALANCES.DEPOSIT_AMOUNT)
@@ -1010,6 +1020,38 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(legacyAccount)
 					expect(allocatedBalance).to.equal(BALANCES.SMALL_AMOUNT)
+				})
+
+				it("should block forbidden selectors for legacy multi-account addresses", async () => {
+					const legacyMultiAccounts = await context.alViewFacet.getLegacyMultiAccounts()
+					expect(legacyMultiAccounts.length).to.be.greaterThan(0)
+					const legacyMultiAccount = await ethers.getContractAt("MockMultiAccount", legacyMultiAccounts[0])
+					const createTx = await legacyMultiAccount.createMockAccount(context.signers.user.address)
+					const receipt = await createTx.wait()
+					let legacyAccount = ZeroAddress
+					for (const log of receipt!.logs) {
+						try {
+							const parsed = legacyMultiAccount.interface.parseLog(log)
+							if (parsed?.name === "AccountCreated") {
+								legacyAccount = parsed.args.account
+								break
+							}
+						} catch {}
+					}
+					expect(legacyAccount).to.not.equal(ZeroAddress)
+
+					const victimAffiliate = await context.accountManager2.getAddress()
+					const attackerCollector = context.signers.user.address
+					const beforeCollector = await context.viewFacet.getFeeCollector(victimAffiliate)
+
+					const callData: BytesLike[] = [
+						context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victimAffiliate, attackerCollector]),
+					]
+
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(legacyAccount, callData)).to.be.reverted
+
+					const afterCollector = await context.viewFacet.getFeeCollector(victimAffiliate)
+					expect(afterCollector).to.equal(beforeCollector)
 				})
 
 				it("should not allow account owner to call Symmio admin functions via _call", async () => {
