@@ -10,6 +10,7 @@ import { Pausable } from "../../utils/Pausable.sol";
 import { IPartyAFacet } from "./IPartyAFacet.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
+import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType, OrderType } from "../../storages/QuoteStorage.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
@@ -77,22 +78,26 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 
 		quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		emit SendQuote(
-			LibSigner.getSigner(),
-			quoteId,
-			partyBsWhiteList,
-			symbolId,
-			positionType,
-			orderType,
-			price,
-			upnlSig.price,
-			quantity,
-			quote.lockedValues.cva,
-			quote.lockedValues.lf,
-			quote.lockedValues.partyAmm,
-			quote.lockedValues.partyBmm,
-			quote.tradingFee,
-			deadline
+		LibSendQuoteEvents.emitSendQuoteEvents(
+			LibSendQuoteEvents.SendQuoteEventParams({
+				partyA: LibSigner.getSigner(),
+				quoteId: quoteId,
+				partyBsWhiteList: partyBsWhiteList,
+				symbolId: symbolId,
+				positionType: positionType,
+				orderType: orderType,
+				price: price,
+				marketPrice: upnlSig.price,
+				quantity: quantity,
+				cva: quote.lockedValues.cva,
+				lf: quote.lockedValues.lf,
+				partyAmm: quote.lockedValues.partyAmm,
+				partyBmm: quote.lockedValues.partyBmm,
+				tradingFee: quote.tradingFee,
+				deadline: deadline,
+				affiliate: affiliate,
+				data: ""
+			})
 		);
 	}
 
@@ -158,23 +163,26 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 
 		quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		emit SendQuoteData(quoteId, data);
-		emit SendQuote(
-			LibSigner.getSigner(),
-			quoteId,
-			partyBsWhiteList,
-			symbolId,
-			positionType,
-			orderType,
-			price,
-			upnlSig.price,
-			quantity,
-			quote.lockedValues.cva,
-			quote.lockedValues.lf,
-			quote.lockedValues.partyAmm,
-			quote.lockedValues.partyBmm,
-			quote.tradingFee,
-			deadline
+		LibSendQuoteEvents.emitSendQuoteEvents(
+			LibSendQuoteEvents.SendQuoteEventParams({
+				partyA: LibSigner.getSigner(),
+				quoteId: quoteId,
+				partyBsWhiteList: partyBsWhiteList,
+				symbolId: symbolId,
+				positionType: positionType,
+				orderType: orderType,
+				price: price,
+				marketPrice: upnlSig.price,
+				quantity: quantity,
+				cva: quote.lockedValues.cva,
+				lf: quote.lockedValues.lf,
+				partyAmm: quote.lockedValues.partyAmm,
+				partyBmm: quote.lockedValues.partyBmm,
+				tradingFee: quote.tradingFee,
+				deadline: deadline,
+				affiliate: affiliate,
+				data: data
+			})
 		);
 	}
 
@@ -238,23 +246,26 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 
 		uint256 quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-
-		emit SendQuote(
-			LibSigner.getSigner(),
-			quoteId,
-			partyBsWhiteList,
-			symbolId,
-			positionType,
-			orderType,
-			price,
-			upnlSig.price,
-			quantity,
-			quote.lockedValues.cva,
-			quote.lockedValues.lf,
-			quote.lockedValues.partyAmm,
-			quote.lockedValues.partyBmm,
-			quote.tradingFee,
-			deadline
+		LibSendQuoteEvents.emitSendQuoteEvents(
+			LibSendQuoteEvents.SendQuoteEventParams({
+				partyA: LibSigner.getSigner(),
+				quoteId: quoteId,
+				partyBsWhiteList: partyBsWhiteList,
+				symbolId: symbolId,
+				positionType: positionType,
+				orderType: orderType,
+				price: price,
+				marketPrice: upnlSig.price,
+				quantity: quantity,
+				cva: quote.lockedValues.cva,
+				lf: quote.lockedValues.lf,
+				partyAmm: quote.lockedValues.partyAmm,
+				partyBmm: quote.lockedValues.partyBmm,
+				tradingFee: quote.tradingFee,
+				deadline: deadline,
+				affiliate: address(0),
+				data: ""
+			})
 		);
 	}
 

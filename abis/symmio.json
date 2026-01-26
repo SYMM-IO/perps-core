@@ -73,6 +73,108 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
+                "name": "openedPrice",
+                "type": "uint256"
+            }
+        ],
+        "name": "OpenPosition",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "openedPrice",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "cva",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "lf",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "partyAmm",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "partyBmm",
+                        "type": "uint256"
+                    }
+                ],
+                "indexed": false,
+                "internalType": "struct LockedValues",
+                "name": "lockedValues",
+                "type": "tuple"
+            }
+        ],
+        "name": "OpenPosition",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
                 "name": "closedPrice",
                 "type": "uint256"
             },
@@ -304,237 +406,6 @@
         "inputs": [
             {
                 "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "filledAmount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "openedPrice",
-                "type": "uint256"
-            }
-        ],
-        "name": "OpenPosition",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "filledAmount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "openedPrice",
-                "type": "uint256"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "cva",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "lf",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "partyAmm",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "partyBmm",
-                        "type": "uint256"
-                    }
-                ],
-                "indexed": false,
-                "internalType": "struct LockedValues",
-                "name": "lockedValues",
-                "type": "tuple"
-            }
-        ],
-        "name": "OpenPosition",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum QuoteStatus",
-                "name": "quoteStatus",
-                "type": "uint8"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "closeId",
-                "type": "uint256"
-            }
-        ],
-        "name": "RequestToCancelCloseRequest",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum QuoteStatus",
-                "name": "quoteStatus",
-                "type": "uint8"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            }
-        ],
-        "name": "RequestToCancelQuote",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "closePrice",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quantityToClose",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum OrderType",
-                "name": "orderType",
-                "type": "uint8"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "deadline",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum QuoteStatus",
-                "name": "quoteStatus",
-                "type": "uint8"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "closeId",
-                "type": "uint256"
-            }
-        ],
-        "name": "RequestToClosePosition",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
                 "internalType": "address",
                 "name": "partyA",
                 "type": "address"
@@ -632,9 +503,33 @@
         "inputs": [
             {
                 "indexed": false,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
                 "internalType": "uint256",
                 "name": "quoteId",
                 "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address[]",
+                "name": "partyBsWhiteList",
+                "type": "address[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "paramsData",
+                "type": "bytes"
             },
             {
                 "indexed": false,
@@ -643,7 +538,7 @@
                 "type": "bytes"
             }
         ],
-        "name": "SendQuoteData",
+        "name": "SendQuote",
         "type": "event"
     },
     {
@@ -2757,6 +2652,67 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "start",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "size",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyAUpnlData",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "fundingDebt",
+                        "type": "int256"
+                    }
+                ],
+                "internalType": "struct IViewFacetAggregate.UpnlData[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "partyB",
                 "type": "address"
             },
@@ -3313,6 +3269,123 @@
                     }
                 ],
                 "internalType": "struct IViewFacetAggregate.AggregatedFundingDebtBySymbol[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "start",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "size",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyBGlobalUpnlData",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "fundingDebt",
+                        "type": "int256"
+                    }
+                ],
+                "internalType": "struct IViewFacetAggregate.UpnlData[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "start",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "size",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyBUpnlData",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "avgOpenPrice",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "fundingDebt",
+                        "type": "int256"
+                    }
+                ],
+                "internalType": "struct IViewFacetAggregate.UpnlData[]",
                 "name": "",
                 "type": "tuple[]"
             }
@@ -4737,6 +4810,19 @@
             }
         ],
         "name": "isInMasterAccountMode",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "isLegacyDeallocateDisabled",
         "outputs": [
             {
                 "internalType": "bool",
@@ -6207,80 +6293,6 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "quoteStart",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "quoteEnd",
-                "type": "uint256"
-            },
-            {
-                "internalType": "bool",
-                "name": "getCount",
-                "type": "bool"
-            }
-        ],
-        "name": "getPartyAUPNLParams",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "positionsCount",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "partyBsAllocated",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "address[]",
-                "name": "partyBs",
-                "type": "address[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "quoteIds",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "symbolIds",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "string[]",
-                "name": "symbolNames",
-                "type": "string[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "openPrices",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "remainingOpenAmount",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "positionType",
-                "type": "uint256[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
                 "name": "partyB",
                 "type": "address"
             },
@@ -6525,80 +6537,6 @@
             {
                 "internalType": "uint256[]",
                 "name": "",
-                "type": "uint256[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "quoteStart",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "quoteEnd",
-                "type": "uint256"
-            },
-            {
-                "internalType": "bool",
-                "name": "getCount",
-                "type": "bool"
-            }
-        ],
-        "name": "getPartyBUPNLParams",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "positionsCount",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "partyBsAllocated",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "quoteIds",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "symbolIds",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "string[]",
-                "name": "symbolNames",
-                "type": "string[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "openPrices",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "remainingOpenAmount",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "positionType",
                 "type": "uint256[]"
             }
         ],
@@ -12376,6 +12314,73 @@
                 "type": "uint256"
             },
             {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnl",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "pendingBalance",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct SingleUpnlWithPendingBalanceSig",
+                "name": "upnlSig",
+                "type": "tuple"
+            }
+        ],
+        "name": "safeDeallocate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
                 "internalType": "address",
                 "name": "origin",
                 "type": "address"
@@ -14347,6 +14352,25 @@
         "inputs": [
             {
                 "indexed": false,
+                "internalType": "bool",
+                "name": "oldValue",
+                "type": "bool"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "newValue",
+                "type": "bool"
+            }
+        ],
+        "name": "SetLegacyDeallocateDisabled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
                 "internalType": "address",
                 "name": "insuranceVault",
                 "type": "address"
@@ -16122,6 +16146,19 @@
             }
         ],
         "name": "setInvalidBridgedAmountsPool",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bool",
+                "name": "disabled",
+                "type": "bool"
+            }
+        ],
+        "name": "setLegacyDeallocateDisabled",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

@@ -20,10 +20,20 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
+import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
+
+	// NOTE: Solidity v0.8.18 doesn't support emitting events via qualified identifiers
+	// like `emit IPartiesEvents.OpenPosition(...)`. To keep event signatures consistent
+	// with `IPartiesEvents`, we redeclare the required events here and emit them unqualified.
+	event AcceptCancelRequest(uint256 quoteId, QuoteStatus quoteStatus);
+	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice); // for backward compatibility
+	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
+
 	function openPositions(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -86,22 +96,26 @@ library PartyBBatchActionsFacetImpl {
 			if (newId != 0) {
 				Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-					emit LibPartiesEvents.SendQuote(
-						newQuote.partyA,
-						newQuote.id,
-						newQuote.partyBsWhiteList,
-						newQuote.symbolId,
-						newQuote.positionType,
-						newQuote.orderType,
-						newQuote.requestedOpenPrice,
-						newQuote.marketPrice,
-						newQuote.quantity,
-						newQuote.lockedValues.cva,
-						newQuote.lockedValues.lf,
-						newQuote.lockedValues.partyAmm,
-						newQuote.lockedValues.partyBmm,
-						newQuote.tradingFee,
-						newQuote.deadline
+					LibSendQuoteEvents.emitSendQuoteEvents(
+						LibSendQuoteEvents.SendQuoteEventParams({
+							partyA: newQuote.partyA,
+							quoteId: newQuote.id,
+							partyBsWhiteList: newQuote.partyBsWhiteList,
+							symbolId: newQuote.symbolId,
+							positionType: newQuote.positionType,
+							orderType: newQuote.orderType,
+							price: newQuote.requestedOpenPrice,
+							marketPrice: newQuote.marketPrice,
+							quantity: newQuote.quantity,
+							cva: newQuote.lockedValues.cva,
+							lf: newQuote.lockedValues.lf,
+							partyAmm: newQuote.lockedValues.partyAmm,
+							partyBmm: newQuote.lockedValues.partyBmm,
+							tradingFee: newQuote.tradingFee,
+							deadline: newQuote.deadline,
+							affiliate: newQuote.affiliate,
+							data: newQuote.data
+						})
 					);
 				} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
 					emit LibPartiesEvents.AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
