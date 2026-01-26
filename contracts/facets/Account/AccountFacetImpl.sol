@@ -6,7 +6,15 @@ pragma solidity >=0.8.18;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { AccountStorage, BindState, BindStatus, ExternalTransferReq, ExternalTransferStatus } from "../../storages/AccountStorage.sol";
+import {
+	AccountStorage,
+	AssuranceWithdrawalRequest,
+	AssuranceWithdrawStatus,
+	BindState,
+	BindStatus,
+	ExternalTransferReq,
+	ExternalTransferStatus
+} from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
@@ -31,10 +39,7 @@ library AccountFacetImpl {
 	}
 
 	function virtualDepositFor(address user, uint256 amount) internal {
-		require(
-			GlobalAppStorage.layout().virtualProviders[msg.sender],
-			"AccountFacet : msg.sender not registered as virtual provider"
-		);
+		require(GlobalAppStorage.layout().virtualProviders[msg.sender], "AccountFacet : msg.sender not registered as virtual provider");
 		AccountStorage.layout().balances[user] += amount;
 	}
 
@@ -195,12 +200,10 @@ library AccountFacetImpl {
 	function allocateForPartyB(uint256 amount, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(!accountLayout.masterAccountMode[signer] || partyA == address(0),
-			"PartyBFacet: Master account mode is active");
+		require(!accountLayout.masterAccountMode[signer] || partyA == address(0), "PartyBFacet: Master account mode is active");
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
 		require(
-			!MAStorage.layout().partyBLiquidationStatus[signer][partyA]
-			&& !accountLayout.crossLiquidationDetails[signer].inProgress,
+			!MAStorage.layout().partyBLiquidationStatus[signer][partyA] && !accountLayout.crossLiquidationDetails[signer].inProgress,
 			"AccountFacet: PartyB isn't solvent"
 		);
 		accountLayout.balances[signer] -= amount;
@@ -243,10 +246,7 @@ library AccountFacetImpl {
 		require(GlobalAppStorage.layout().masterAccountEnabled, "AccountFacet: Master account disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(
-			MasterAccountMigrationStorage.layout().partyBMigrationComplete[signer],
-			"AccountFacet: Master account migration incomplete"
-		);
+		require(MasterAccountMigrationStorage.layout().partyBMigrationComplete[signer], "AccountFacet: Master account migration incomplete");
 		require(!accountLayout.masterAccountMode[signer], "AccountFacet: Master account mode is active");
 		accountLayout.masterAccountMode[signer] = true;
 	}
@@ -427,5 +427,77 @@ library AccountFacetImpl {
 
 		layout.instantActionsMode[signer] = false;
 		layout.instantActionsModeDeactivateTime[signer] = 0;
+	}
+
+	// ---------------- Assurance collateral lifecycle ----------------
+	/**
+	 * @notice Handles collateral dedicated to Assurance operations for PartyB.
+	 * @dev Allows deposit, withdrawal requests/approval, cancellation, and penalty application against assurance funds.
+	 */
+
+	function depositAssuranceCollateral(uint256 amount, address token) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+
+		require(amount > 0, "AccountFacet: invalid amount");
+
+		LibSafeERC20.safeTransferFrom(token, signer, address(this), amount);
+		accountLayout.assuranceCollateral[signer][token] += amount;
+	}
+
+	function requestAssuranceWithdraw(uint256 amount, address token, address recipient) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+
+		require(amount > 0, "AccountFacet: invalid amount");
+		require(recipient != address(0), "AccountFacet: invalid recipient");
+		require(accountLayout.assuranceWithdrawalRequests[signer].status == AssuranceWithdrawStatus.NONE, "AccountFacet: withdraw pending");
+		require(accountLayout.assuranceCollateral[signer][token] >= amount, "AccountFacet: insufficient Assurance collateral");
+
+		accountLayout.assuranceWithdrawalRequests[signer] = AssuranceWithdrawalRequest({
+			token: token,
+			amount: amount,
+			recipient: recipient,
+			requester: signer,
+			status: AssuranceWithdrawStatus.PENDING
+		});
+	}
+
+	function acceptAssuranceWithdraw(address user, uint256 amount, address token) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		AssuranceWithdrawalRequest storage req = accountLayout.assuranceWithdrawalRequests[user];
+
+		require(req.status == AssuranceWithdrawStatus.PENDING, "AccountFacet: no pending Assurance withdraw");
+		require(req.requester == user, "AccountFacet: requester mismatch");
+		require(req.token == token && req.amount >= amount, "AccountFacet: params mismatch");
+		require(accountLayout.assuranceCollateral[user][token] >= amount, "AccountFacet: insufficient Assurance collateral");
+
+		address recipient = req.recipient;
+		accountLayout.assuranceCollateral[user][token] -= amount;
+		delete accountLayout.assuranceWithdrawalRequests[user];
+
+		LibSafeERC20.safeTransfer(token, recipient, amount);
+	}
+
+	function cancelAssuranceWithdraw() internal returns (address token, uint256 amount) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+		AssuranceWithdrawalRequest storage req = accountLayout.assuranceWithdrawalRequests[signer];
+
+		require(req.status == AssuranceWithdrawStatus.PENDING, "AccountFacet: no pending Assurance withdraw");
+
+		token = req.token;
+		amount = req.amount;
+		delete accountLayout.assuranceWithdrawalRequests[signer];
+	}
+
+	function slashUser(address user, address token, uint256 amount, address recipient) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		require(amount > 0, "AccountFacet: invalid penalty");
+		require(accountLayout.assuranceCollateral[user][token] >= amount, "AccountFacet: insufficient Assurance collateral");
+
+		accountLayout.assuranceCollateral[user][token] -= amount;
+		LibSafeERC20.safeTransfer(token, recipient, amount);
 	}
 }
