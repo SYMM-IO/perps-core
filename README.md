@@ -7,7 +7,7 @@ meta-derivatives engine, with its first use case being a new type of hyper-effic
 ## Code Architecture
 
 This project utilizes the Diamond Proxy pattern ([EIP-2535](https://eips.ethereum.org/EIPS/eip-2535)) for upgradability
-and modularity. Currently, we have 24 facets:
+and modularity. Currently, we have 25 facets:
 
 1. **DiamondCutFacet** - Diamond upgrade operations (EIP-2535)
 2. **DiamondLoupeFacet** - Diamond introspection (EIP-2535)
@@ -32,7 +32,8 @@ and modularity. Currently, we have 24 facets:
 21. **PartyBQuoteActionsFacet** - PartyB quote operations
 22. **ClearingHouseFacet** - Clearing house functionality
 23. **PartyBBatchActionsFacet** - Batch operations for PartyB
-24. **WithdrawFacet** - Withdrawal operations
+24. **PartyBEmergencyActionsFacet** - Emergency close and ADL operations
+25. **WithdrawFacet** - Withdrawal operations
 
 ### AccountLayer Diamond
 

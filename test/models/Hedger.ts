@@ -184,7 +184,7 @@ export class Hedger extends PartyEntity {
 			}),
 		)
 		await runTx(
-			this.context.partyBPositionActionsFacet
+			this.context.partyBEmergencyActionsFacet
 				.connect(this.signer)
 				.emergencyClosePosition(id, await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB))),
 		)

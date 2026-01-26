@@ -1,4 +1,4 @@
-import { shouldBehaveLikeADLFacet } from "./ADLFacet.behavior.js"
+import { shouldBehaveLikePartyBEmergencyActionsFacet } from "./PartyBEmergencyActionsFacet.behavior.js"
 import { shouldBehaveLikeAccessControlRoleAdmins } from "./AccessControlRoleAdmins.behavior.js"
 import { shouldBehaveLikeAccountFacet } from "./AccountFacet.behavior.js"
 import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior.js"
@@ -126,8 +126,8 @@ describe("UnitTests", function () {
 			shouldBehaveLikeClearingHouseFacet()
 		})
 
-		describe("ADLFacet", async function () {
-			shouldBehaveLikeADLFacet()
+		describe("PartyBEmergencyActionsFacet", async function () {
+			shouldBehaveLikePartyBEmergencyActionsFacet()
 		})
 
 		describe("PartyBBatchActionsFacet", async function () {
