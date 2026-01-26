@@ -35,7 +35,7 @@ export function shouldBehaveLikeMasterAccountMigration(): void {
 	it("Should preserve master bucket balances when initializeMasterBalances is false", async function () {
 		const partyB = await hedger.getAddress()
 		// Master bucket is address(0) in normal mode as well.
-		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, ZeroAddress)
+		await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, ZeroAddress)
 		const beforeBalances = await context.viewFacet.balanceInfoOfPartyBMasterAccount(partyB)
 
 		await context.masterAccountMigrationFacet
@@ -48,7 +48,7 @@ export function shouldBehaveLikeMasterAccountMigration(): void {
 
 	it("Should reset master bucket balances when initializeMasterBalances is true", async function () {
 		const partyB = await hedger.getAddress()
-		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, ZeroAddress)
+		await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, ZeroAddress)
 		const beforeBalances = await context.viewFacet.balanceInfoOfPartyBMasterAccount(partyB)
 		expect(beforeBalances[0]).to.equal(BALANCES.MASTER_ALLOCATE)
 
@@ -69,11 +69,11 @@ export function shouldBehaveLikeMasterAccountMigration(): void {
 		await context.masterAccountMigrationFacet.connect(context.signers.admin).finalizeMasterAccountMigration(partyB)
 
 		await expect(
-			context.accountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, context.signers.user.address)
+			context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, context.signers.user.address)
 		).to.be.revertedWith("PartyBFacet: Master account mode is active")
 
 		await expect(
-			context.accountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, ZeroAddress)
+			context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(BALANCES.MASTER_ALLOCATE, ZeroAddress)
 		).to.not.be.reverted
 	})
 
@@ -91,8 +91,8 @@ export function shouldBehaveLikeMasterAccountMigration(): void {
 		await user1.setBalances(decimal(2000n), decimal(1000n), decimal(300n))
 		await user2.setBalances(decimal(2000n), decimal(1000n), decimal(300n))
 
-		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA1, partyA1)
-		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA2, partyA2)
+		await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA1, partyA1)
+		await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA2, partyA2)
 		const quote1Id = await user1.sendQuote(limitQuoteRequestBuilder().quantity(decimal(80n)).build())
 		const quote2Id = await user2.sendQuote(limitQuoteRequestBuilder().quantity(decimal(120n)).build())
 		await hedger.lockQuote(quote1Id, 0n, null)

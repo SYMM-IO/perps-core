@@ -143,7 +143,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			.build()
 		const requestOpenQuote = limitOpenRequestBuilder().build()
 
-		const { partyAFacet, partyBPositionActionsFacet, partyBQuoteActionsFacet, accountFacet } = context
+		const { partyAFacet, partyBPositionActionsFacet, partyBQuoteActionsFacet, bindingFacet } = context
 
 		const quoteCallData = partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
 			requestSendQuote.partyBWhiteList,
@@ -169,7 +169,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			requestOpenQuote.openPrice,
 			await getDummyPairUpnlAndPriceSig(10n),
 		])
-		const bindToPartyBCallData = accountFacet.interface.encodeFunctionData("bindToPartyB", [await context.symmioPartyB.getAddress()])
+		const bindToPartyBCallData = bindingFacet.interface.encodeFunctionData("bindToPartyB", [await context.symmioPartyB.getAddress()])
 
 		const ops: InstantLayer.OperationStruct[] = [
 			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] },
@@ -1204,7 +1204,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					0n,
 					execCtx.deadline,
 				)
-				const allocateCallDataRaw = execCtx.context.accountFacet.interface.encodeFunctionData("allocateForPartyB", [allocateAmount, ZeroAddress])
+				const allocateCallDataRaw = execCtx.context.partyBAccountFacet.interface.encodeFunctionData("allocateForPartyB", [allocateAmount, ZeroAddress])
 				const allocateCallData = allocateCallDataRaw + "00"
 				const allocateOp = createSignedOperation(
 					partyBAddress,

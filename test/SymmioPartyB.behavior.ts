@@ -32,7 +32,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 
 		const collateral = await context.viewFacet.getCollateral()
 		const depositCall = context.accountFacet.interface.encodeFunctionData("deposit", [decimal(1000n)])
-		const depositAssuranceCall = context.accountFacet.interface.encodeFunctionData("depositAssuranceCollateral", [collateral, decimal(1000n)])
+		const depositAssuranceCall = context.assuranceFacet.interface.encodeFunctionData("depositAssuranceCollateral", [collateral, decimal(1000n)])
 		await context.symmioPartyB.connect(context.signers.admin)._call([depositCall, depositAssuranceCall])
 
 		return partyBAddress
@@ -47,7 +47,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 		const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
 		const allocateAmount = unDecimal(notional * allocateCoefficient)
 
-		const allocateCall = context.accountFacet.interface.encodeFunctionData("allocateForPartyB", [allocateAmount, await user.getAddress()])
+		const allocateCall = context.partyBAccountFacet.interface.encodeFunctionData("allocateForPartyB", [allocateAmount, await user.getAddress()])
 		const lockCall = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [quoteId, await getDummySingleUpnlSig(0n)])
 		const upnlSig = await getDummyPairUpnlAndPricesSig([quote.requestedOpenPrice], [1n])
 		const openCall = context.partyBBatchActionsFacet.interface.encodeFunctionData("openPositions", [

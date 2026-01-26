@@ -36,12 +36,12 @@ export function shouldBehaveLikeDiamond(): void {
 		this.context = await loadFixture(initializeFixture)
 	})
 
-	it("should have 24 facets", async function () {
+	it("should have 28 facets", async function () {
 		const context: RunContext = this.context
 		for (const address of await context.diamondLoupeFacet.facetAddresses()) {
 			addresses.push(address)
 		}
-		assert.equal(addresses.length, 25)
+		assert.equal(addresses.length, 29)
 	})
 
 	it("facets should have the right function selectors -- call to facetFunctionSelectors function", async function () {

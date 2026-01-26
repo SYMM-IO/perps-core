@@ -581,7 +581,7 @@ export function shouldBehaveLikeClosePosition(): void {
 			let closePrice = decimal(11n, 17)
 			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
-			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await expect(
 				hedger.fillCloseRequest(
 					1,

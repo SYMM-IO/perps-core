@@ -127,7 +127,7 @@ export function shouldBehaveLikeSendQuote(): void {
 
 	it("Should fail when bind to a partyB and the partyB is not in the whitelisted partyBs", async function () {
 		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
-		await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.getAddress())
+		await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.getAddress())
 		await expect(
 			user.sendQuote(
 				limitQuoteRequestBuilder()

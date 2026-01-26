@@ -48,7 +48,7 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 			const collateral = await context.viewFacet.getCollateral()
 			await context.collateral.connect(hedger.signer).mint(await hedger.getAddress(), decimal(2000n))
 			await context.collateral.connect(hedger.signer).approve(context.diamond, ethers.MaxUint256)
-			await context.accountFacet.connect(hedger.signer).depositAssuranceCollateral(collateral, decimal(1000n))
+			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(collateral, decimal(1000n))
 			await context.controlFacet.connect(context.signers.admin).setADLEnabled(await hedger.getAddress(), true)
 		})
 
@@ -118,7 +118,7 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				const q = await context.viewFacetQuote.getQuote(quoteId)
 
 				// Allocate only the bare minimum for PartyB: totalForPartyB = CVA + LF + partyBmm = 65
-				await context.accountFacet.connect(hedger.signer).allocateForPartyB(decimal(65n), await user.getAddress())
+				await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(decimal(65n), await user.getAddress())
 				await hedger.lockQuote(quoteId, 0n, null)
 
 				const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])

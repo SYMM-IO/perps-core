@@ -35,51 +35,9 @@ interface IAccountFacet is IAccountEvents {
 
 	function safeDeallocate(uint256 amount, SingleUpnlWithPendingBalanceSig memory upnlSig) external;
 
+	function zeroUpnlDeallocate(uint256 amount) external;
+
 	function internalTransfer(address user, uint256 amount) external;
 
 	function internalTransferToBalance(address user, uint256 amount) external;
-
-	function externalTransfer(address receiver, uint256 amount, address target) external;
-
-	function bindToPartyB(address partyB) external;
-
-	function requestToUnbindFromPartyB() external;
-
-	function cancelUnbindRequest() external;
-
-	function completeUnbindRequest(address partyA) external;
-
-	function activateInstantActionMode() external;
-
-	function proposeToDeactivateInstantActionMode() external;
-
-	function deactivateInstantActionMode() external;
-
-	// PartyB
-	function allocateForPartyB(uint256 amount, address partyA) external;
-
-	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) external;
-
-	function activateMasterAccountMode() external;
-
-	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) external;
-
-	function depositToReserveVault(uint256 amount, address partyB) external;
-
-	function withdrawFromReserveVault(uint256 amount) external;
-
-	// Virtual External Transfer
-
-	function virtualExternalTransfer(address receiver, uint256 amount,address target, address virtualProvider) external;
-
-	function acceptVirtualExternalTransfer(uint256 id) external;
-
-	function cancelVirtualExternalTransfer(uint256 id) external;
-
-	// Assurance collateral management
-	function depositAssuranceCollateral(address token, uint256 amount) external;
-	function requestAssuranceWithdraw(address token, uint256 amount, address recipient) external;
-	function cancelAssuranceWithdraw() external;
-	function acceptAssuranceWithdraw(address partyB, uint256 amount, address token) external;
-	function slashUser(address user, address token, uint256 amount, address recipient) external;
 }

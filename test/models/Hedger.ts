@@ -48,7 +48,7 @@ export class Hedger extends PartyEntity {
 			const quote = await this.context.viewFacetQuote.getQuote(id)
 			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
 			await runTx(
-				this.context.accountFacet
+				this.context.partyBAccountFacet
 					.connect(this.signer)
 					.allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA),
 			)

@@ -2,6 +2,10 @@ import { ethers } from "../helpers/hardhat-connection.js"
 
 import type {
 	AccountFacet,
+	PartyBAccountFacet,
+	ExternalTransferFacet,
+	BindingFacet,
+	AssuranceFacet,
 	BridgeFacet,
 	ClearingHouseFacet,
 	PartyBEmergencyActionsFacet,
@@ -49,6 +53,10 @@ import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 export class RunContext {
 	// Core Diamond facets
 	accountFacet!: AccountFacet
+	partyBAccountFacet!: PartyBAccountFacet
+	externalTransferFacet!: ExternalTransferFacet
+	bindingFacet!: BindingFacet
+	assuranceFacet!: AssuranceFacet
 	diamondCutFacet!: DiamondCutFacet
 	diamondLoupeFacet!: DiamondLoupeFacet
 	partyBEmergencyActionsFacet!: PartyBEmergencyActionsFacet
@@ -133,6 +141,10 @@ export async function createRunContext(diamond: string, collateral: string, only
 
 	context.collateral = await ethers.getContractAt("FakeStablecoin", collateral)
 	context.accountFacet = await ethers.getContractAt("AccountFacet", diamond)
+	context.partyBAccountFacet = await ethers.getContractAt("PartyBAccountFacet", diamond)
+	context.externalTransferFacet = await ethers.getContractAt("ExternalTransferFacet", diamond)
+	context.bindingFacet = await ethers.getContractAt("BindingFacet", diamond)
+	context.assuranceFacet = await ethers.getContractAt("AssuranceFacet", diamond)
 	context.diamondCutFacet = await ethers.getContractAt("DiamondCutFacet", diamond)
 	context.diamondLoupeFacet = await ethers.getContractAt("DiamondLoupeFacet", diamond)
 	context.partyBEmergencyActionsFacet = await ethers.getContractAt("PartyBEmergencyActionsFacet", diamond)

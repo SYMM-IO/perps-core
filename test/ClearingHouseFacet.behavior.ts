@@ -40,10 +40,10 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 		await hedger.setBalances(decimal(2000n), decimal(2000n))
 		await hedger2.setBalances(decimal(2000n), decimal(2000n))
-		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(1000n, user.address)
-		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(1000n, user2.address)
-		await context.accountFacet.connect(context.signers.hedger).allocateForPartyB(2000n, ZeroAddress)
-		await context.accountFacet.connect(context.signers.hedger2).allocateForPartyB(2000n, ZeroAddress)
+		await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(1000n, user.address)
+		await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(1000n, user2.address)
+		await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(2000n, ZeroAddress)
+		await context.partyBAccountFacet.connect(context.signers.hedger2).allocateForPartyB(2000n, ZeroAddress)
 
 		// Quote1 -> sent
 		await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
