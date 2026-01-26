@@ -8,7 +8,7 @@ import type {
 	UnifiedQuoteSettlementDataStruct,
 	UnifiedSettlementSigStruct,
 } from "../../src/types/facets/Settlement/ISettlementFacet.js"
-import type { QuotePriceSigStruct } from "../../src/types/facets/liquidation/PartyBLiquidationFacet.js"
+import type { QuotePriceSigStruct } from "../../src/types/facets/PartyBLiquidation/PartyBLiquidationFacet.js"
 import type {
 	DeferredLiquidationSigStruct,
 	PairUpnlAndPriceSigStruct,

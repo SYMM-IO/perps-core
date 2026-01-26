@@ -15,7 +15,7 @@ import {
 } from "./requestModels/QuoteRequest.js";
 import { runTx } from "../utils/TxUtils.js"
 import { getDummyLiquidationSig } from "../utils/SignatureUtils.js"
-import type { LiquidationSigStruct } from "../../src/types/facets/liquidation/PartyALiquidationFacet.js"
+import type { LiquidationSigStruct } from "../../src/types/facets/PartyALiquidation/PartyALiquidationFacet.js"
 import type { QuoteStructOutput, SettlementSigStruct } from "../../src/types/interfaces/ISymmio.js"
 import type { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet.js"
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
