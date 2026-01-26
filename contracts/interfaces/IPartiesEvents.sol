@@ -27,7 +27,7 @@ interface IPartiesEvents {
 		uint256 deadline
 	); // for backward compatibility
 
-	// Encoded paramsData: symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline
+	// paramsData is abi.encode(symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline)
 	event SendQuote(address partyA, uint256 quoteId, address[] partyBsWhiteList, address affiliate, bytes paramsData, bytes data);
 
 	event ExpireQuoteOpen(QuoteStatus quoteStatus, uint256 quoteId);

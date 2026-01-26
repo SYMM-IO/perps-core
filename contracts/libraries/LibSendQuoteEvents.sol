@@ -28,7 +28,7 @@ library LibSendQuoteEvents {
 		uint256 deadline
 	);
 
-	// Encoded paramsData: symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline
+	// paramsData is abi.encode(symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline)
 	event SendQuote(address partyA, uint256 quoteId, address[] partyBsWhiteList, address affiliate, bytes paramsData, bytes data);
 
 	struct SendQuoteEventParams {
@@ -72,7 +72,8 @@ library LibSendQuoteEvents {
 		);
 
 		// Emit new event with affiliate and data
-		bytes memory paramsData = abi.encodePacked(
+		// Using abi.encode for easy decoding with standard ABI decoders
+		bytes memory paramsData = abi.encode(
 			params.symbolId,
 			params.positionType,
 			params.orderType,
