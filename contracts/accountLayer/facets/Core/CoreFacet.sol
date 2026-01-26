@@ -386,7 +386,10 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		// Sync bind state with parent account
 		ISymmio symmio = ISymmio(parent.symmioCore);
 		ISymmio.BindState memory parentBindState = symmio.getBindState(parentAccount);
-		address parentPartyB = parentBindState.status == ISymmio.BindStatus.BOUND ? parentBindState.partyB : address(0);
+		address parentPartyB =
+			parentBindState.status == ISymmio.BindStatus.BOUND || parentBindState.status == ISymmio.BindStatus.PENDING_UNBIND
+				? parentBindState.partyB
+				: address(0);
 		ISymmio.BindState memory vaBindState = symmio.getBindState(reusedAccount);
 
 		if (vaBindState.partyB != parentPartyB) {
@@ -451,7 +454,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		ISymmio symmio = ISymmio(parent.symmioCore);
 
 		ISymmio.BindState memory bindState = symmio.getBindState(parentAccount);
-		if (bindState.status == ISymmio.BindStatus.BOUND) {
+		if (bindState.status == ISymmio.BindStatus.BOUND || bindState.status == ISymmio.BindStatus.PENDING_UNBIND) {
 			symmio.setSigner(virtualAccount);
 			symmio.bindToPartyB(bindState.partyB);
 			symmio.setSigner(address(0));

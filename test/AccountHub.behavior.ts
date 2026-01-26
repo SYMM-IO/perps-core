@@ -994,6 +994,24 @@ export function shouldBehaveLikeAccountHub(): void {
 					)
 				})
 
+				it("should allow _call for legacy multi-account addresses", async () => {
+					const legacyMultiAccounts = await context.alViewFacet.getLegacyMultiAccounts()
+					const legacyMultiAccount = await ethers.getContractAt(
+						"contracts/test/MockMultiAccount.sol:MockMultiAccount",
+						legacyMultiAccounts[0],
+					)
+					const legacyAccount = await legacyMultiAccount.createMockAccount(context.signers.user.address)
+
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositFor(legacyAccount, BALANCES.DEPOSIT_AMOUNT)
+
+					const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(legacyAccount, callData)).to.not.be.reverted
+
+					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(legacyAccount)
+					expect(allocatedBalance).to.equal(BALANCES.SMALL_AMOUNT)
+				})
+
 				it("should not allow account owner to call Symmio admin functions via _call", async () => {
 					const victimAffiliate = await context.accountManager2.getAddress()
 					const attackerCollector = context.signers.user.address
@@ -1600,6 +1618,36 @@ export function shouldBehaveLikeAccountHub(): void {
 				//
 				// const reusedVABind = await context.viewFacet.getBindState(reusedVirtualAccountAddress)
 				// expect(reusedVABind.partyB).to.equal(parentBindAfter.partyB)
+			})
+
+			it("should enforce PartyB binding while parent is pending unbind", async () => {
+				// Make hedger bindable so accounts can bind to it
+				await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
+
+				// Bind the parent sub-account to PartyB
+				const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [bindCallData])
+
+				// Request unbind but do not complete it (status should be PENDING_UNBIND)
+				const requestUnbindCallData = context.accountFacet.interface.encodeFunctionData("requestToUnbindFromPartyB", [])
+				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [requestUnbindCallData])
+
+				const parentBindState = await context.viewFacet.getBindState(positionSubAccountAddress)
+				expect(parentBindState.status).to.equal(2) // PENDING_UNBIND
+				expect(parentBindState.partyB).to.equal(context.signers.hedger.address)
+
+				// Build a quote that targets a different PartyB
+				const quoteRequest = limitQuoteRequestBuilder()
+					.positionType(PositionType.LONG)
+					.partyBWhiteList([context.signers.hedger2.address])
+					.build()
+
+				await preFundVirtualAccount(positionSubAccountAddress, quoteRequest)
+
+				const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+				await expect(context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [sendQuoteCallData])).to.be.revertedWith(
+					"PartyAFacet: PartyA is bound to a different PartyB",
+				)
 			})
 		})
 
