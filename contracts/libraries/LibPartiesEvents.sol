@@ -6,14 +6,6 @@ pragma solidity >=0.8.18;
 
 import { QuoteStatus, OrderType, PositionType, LockedValues } from "../storages/QuoteStorage.sol";
 
-enum ADLReason {
-	NOT_IN_CLOSE_STATE,
-	PARTY_A_INSUFFICIENT_BALANCE,
-	PARTY_B_INSUFFICIENT_BALANCE,
-	INVALID_FILLED_AMOUNT,
-	INVALID_PARTY_STATE
-}
-
 /**
  * @notice Event definitions used by PartyB batch actions (adl flows, close requests).
  * @dev Declared in a dedicated library so libraries can emit without local redeclaration.

@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { IPartyBBatchActionsEvents } from "../PartyBBatchActions/IPartyBBatchActionsEvents.sol";
-import { ADLReason } from "../../libraries/LibPartiesEvents.sol";
 
 interface IADLFacet is IPartyBBatchActionsEvents {
 	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external returns (uint256);
