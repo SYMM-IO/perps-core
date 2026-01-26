@@ -13,6 +13,7 @@ import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 interface ISymmio {
 	function isCallFromInstantLayer() external view returns (bool);
+	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external;
 }
 
 contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, IERC1271 {
@@ -58,6 +59,16 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 		_grantRole(MANAGER_ROLE, admin);
 		symmioAddress = symmioAddress_;
 	}
+
+	/**
+	 * @notice Emitted when an `adlClose` attempt reverts for a quote, including the raw revert data.
+	 * @dev The raw data is the ABI-encoded revert payload (e.g., `Error(string)` / `Panic(uint256)` / custom error).
+	 * @param quoteId The quote id that was attempted to be ADL-closed.
+	 * @param amount The requested close amount.
+	 * @param price The requested execution price.
+	 * @param revertData The raw revert data returned by the failed call.
+	 */
+	event ADLSkip(uint256 quoteId, uint256 amount, uint256 price, bytes revertData);
 
 	/**
 	 * @dev Emitted when the Symmio address is updated.
@@ -117,6 +128,44 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	 */
 	function _approve(address token, uint256 amount) external onlyRole(TRUSTED_ROLE) whenNotPaused {
 		require(IERC20Upgradeable(token).approve(symmioAddress, amount), "SymmioPartyB: Not approved");
+	}
+
+	/* ──────────────────────────────── ADL ──────────────────────────────── */
+
+	/**
+	 * @notice Best-effort ADL close for multiple quotes.
+	 * @dev For each index `i`, this function attempts `Symmio.adlClose(quoteIds[i], amounts[i], prices[i])`.
+	 *
+	 * Execution model:
+	 * - Reverts only on precondition failures (access control, array mismatch, invalid Symmio address).
+	 * - Catches per-quote reverts, emits `ADLSkip`, and continues processing the remaining items.
+	 *
+	 * Access control:
+	 * - Allowed for `MANAGER_ROLE` or `TRUSTED_ROLE`.
+	 * - Also allowed during InstantLayer execution (`Symmio.isCallFromInstantLayer() == true`).
+	 *
+	 * @param quoteIds Quote ids to ADL-close.
+	 * @param amounts Close amounts per quote (token decimals).
+	 * @param prices Execution prices per quote.
+	 */
+	function adlCall(
+		uint256[] calldata quoteIds,
+		uint256[] calldata amounts,
+		uint256[] calldata prices
+	) external nonReentrant whenNotPaused {
+		uint256 len = quoteIds.length;
+		require(amounts.length == len && prices.length == len, "SymmioPartyB: Array length mismatch");
+		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
+		require(
+			hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
+			"SymmioPartyB: Invalid access"
+		);
+
+		for (uint256 i = 0; i < len; i++) {
+			try ISymmio(symmioAddress).adlClose(quoteIds[i], amounts[i], prices[i]) {} catch (bytes memory revertData) {
+				emit ADLSkip(quoteIds[i], amounts[i], prices[i], revertData);
+			}
+		}
 	}
 
 	/**

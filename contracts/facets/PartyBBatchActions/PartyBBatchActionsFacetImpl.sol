@@ -8,17 +8,20 @@ import { LibMuonPartyBBatchActions } from "../../libraries/muon/LibMuonPartyBBat
 import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+
+import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 
 library PartyBBatchActionsFacetImpl {
@@ -88,8 +91,8 @@ library PartyBBatchActionsFacetImpl {
 			}
 			// Emitting events here in the impl is against our standards in these contracts,
 			// but given that this contract is getting too large and we can't return the ids, we are allowing it here.
-			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
-			emit OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
+			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
+			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
 			if (newId != 0) {
 				Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
@@ -115,7 +118,7 @@ library PartyBBatchActionsFacetImpl {
 						})
 					);
 				} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
-					emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
+					emit LibPartiesEvents.AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
 				}
 			}
 		}
@@ -151,7 +154,7 @@ library PartyBBatchActionsFacetImpl {
 		address firstQuotePartyA = firstQuote.partyA;
 		address firstQuotePartyB = firstQuote.partyB;
 
-		if (accountLayout.bindState[firstQuote.partyA].partyB != LibSigner.getSigner()|| !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
+		if (accountLayout.bindState[firstQuote.partyA].partyB != LibSigner.getSigner() || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
 		}
@@ -210,4 +213,5 @@ library PartyBBatchActionsFacetImpl {
 			}
 		}
 	}
+
 }
