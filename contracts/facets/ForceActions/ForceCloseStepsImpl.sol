@@ -9,9 +9,9 @@ import { LibForceActions } from "../../libraries/LibForceActions.sol";
 import { QuoteStorage, Quote, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage, ForceCloseDetail, PartyBForceCloseState } from "../../storages/AccountStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
-import { HighLowPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
+import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { LibMuonUnifiedSettlement } from "../../libraries/muon/LibMuonUnifiedSettlement.sol";
-import { LibMuonForceActions } from "../../libraries/muon/LibMuonForceActions.sol";
+import { LibMuonPartyB } from "../../libraries/muon/LibMuonPartyB.sol";
 
 library ForceCloseStepsImpl {
 	using LockedValuesOps for LockedValues;
@@ -45,10 +45,10 @@ library ForceCloseStepsImpl {
 	}
 
 	/**
-	 * @notice Refreshes the force-close uPNL/currentPrice snapshot using a fresh HighLowPriceSig.
+	 * @notice Refreshes the force-close uPNL/currentPrice snapshot using a fresh PairUpnlAndPriceSig.
 	 * @dev Does not modify the previously calculated closePrice.
 	 */
-	function refreshForceCloseSnapshot(uint256 quoteId, HighLowPriceSig memory sig) internal {
+	function refreshForceCloseSnapshot(uint256 quoteId, PairUpnlAndPriceSig memory sig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -56,12 +56,12 @@ library ForceCloseStepsImpl {
 
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
-		LibMuonForceActions.verifyHighLowPrice(sig, quote.partyB, quote.partyA, quote.symbolId);
+		LibMuonPartyB.verifyPairUpnlAndPrice(sig, quote.partyB, quote.partyA, quote.symbolId);
 
 		// Ensure partyA solvency for the stored closePrice with this fresh snapshot.
 		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
 			quoteId,
-			sig.currentPrice,
+			sig.price,
 			sig.upnlPartyA,
 			sig.upnlPartyB,
 			detail.closePrice
@@ -69,7 +69,7 @@ library ForceCloseStepsImpl {
 		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
 		detail.upnlPartyB = sig.upnlPartyB;
-		detail.currentPrice = sig.currentPrice;
+		detail.currentPrice = sig.price;
 		detail.timestamp = block.timestamp;
 	}
 

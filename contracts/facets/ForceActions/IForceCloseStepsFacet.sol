@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { ForceActionsFacetEvents } from "./ForceActionsFacetEvents.sol";
-import { HighLowPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
+import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 /// @title ForceCloseStepsFacet Interface
 /// @notice Defines the 3-step force close workflow for both normal and master account modes.
@@ -38,18 +38,11 @@ interface IForceCloseStepsFacet is ForceActionsFacetEvents {
 	function finalizeForceClose(uint256 quoteId) external;
 
 	/**
-	 * @notice Refreshes the force-close snapshot (uPNL/currentPrice) using a fresh HighLowPriceSig.
-	 * @param quoteId The ID of the quote for the force close workflow.
-	 * @param sig Fresh Muon signature (uPNLs + currentPrice).
-	 */
-	function refreshForceCloseSnapshot(uint256 quoteId, HighLowPriceSig memory sig) external;
-
-	/**
-	 * @notice Finalizes the 3-step force close flow using a fresh HighLowPriceSig to refresh uPNL/currentPrice.
+	 * @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
 	 * @param sig Fresh Muon signature (uPNLs + currentPrice) to use for solvency checks and liquidation calculations.
 	 */
-	function finalizeForceClose(uint256 quoteId, HighLowPriceSig memory sig) external;
+	function finalizeForceClose(uint256 quoteId, PairUpnlAndPriceSig memory sig) external;
 
 	/**
 	 * @notice Initializes, settles uPNL, and finalizes the force close in a single transaction.

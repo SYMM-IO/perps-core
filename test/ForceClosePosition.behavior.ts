@@ -18,7 +18,7 @@ import {
 	calculateExpectedClosePriceForForceClose,
 	calculateExpectedClosePriceForForceCloseWithAvg,
 } from "./utils/PriceUtils.js"
-import { getDummyHighLowPriceSig, getDummyPriceSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
+import { getDummyHighLowPriceSig, getDummyPairUpnlAndPriceSig, getDummyPriceSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
 import { migratePartyBToMaster } from "./utils/MasterAccount.js"
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
@@ -680,31 +680,6 @@ export function shouldBehaveLikeForceClosePosition(): void {
 								expect(after.currentPrice).to.equal(before.currentPrice)
 							})
 
-							it("refreshForceCloseSnapshot updates uPNL/currentPrice snapshot", async function () {
-								await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
-								const before = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
-
-								const sigTimes = await prepareSigTimes(100n)
-								const refreshedSig = await getDummyHighLowPriceSig(
-									sigTimes[0],
-									sigTimes[1],
-									BigInt(highLowSig.lowest),
-									BigInt(highLowSig.highest),
-									decimal(9n), // currentPrice
-									BigInt(highLowSig.averagePrice),
-									quote1LongOpened.symbolId,
-									decimal(123n), // upnlPartyB
-									0n,
-								)
-
-								await (context.forceCloseStepsFacet as any).refreshForceCloseSnapshot(quote1LongOpened.id, refreshedSig)
-
-								const after = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
-								expect(after.inProgress).to.equal(true)
-								expect(after.closePrice).to.equal(before.closePrice)
-								expect(after.currentPrice).to.equal(decimal(9n))
-								expect(after.upnlPartyB).to.equal(decimal(123n))
-							})
 						})
 
 						describe("ForceCloseDetail flags finalize (solvent case)", function () {
@@ -738,21 +713,14 @@ export function shouldBehaveLikeForceClosePosition(): void {
 								const badInitSig = { ...highLowSig, upnlPartyB: -decimal(1_000_000n) }
 								await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, badInitSig)
 
-								const sigTimes = await prepareSigTimes(100n)
-								const refreshedSig = await getDummyHighLowPriceSig(
-									sigTimes[0],
-									sigTimes[1],
-									BigInt(highLowSig.lowest),
-									BigInt(highLowSig.highest),
-									BigInt(highLowSig.currentPrice),
-									BigInt(highLowSig.averagePrice),
-									quote1LongOpened.symbolId,
+								const refreshedSig = await getDummyPairUpnlAndPriceSig(
+									BigInt(highLowSig.currentPrice), // price
+									0n, // upnlPartyA
 									0n, // upnlPartyB
-									0n,
 								)
 
 								const tx = await (context.forceCloseStepsFacet as any)[
-									"finalizeForceClose(uint256,(bytes,uint256,uint256,uint256,uint256,uint256,uint256,uint256,int256,int256,uint256,bytes,(uint256,address,address)))"
+									"finalizeForceClose(uint256,(bytes,uint256,int256,int256,uint256,bytes,(uint256,address,address)))"
 								](quote1LongOpened.id, refreshedSig)
 								await expect(tx)
 									.to.emit(context.forceCloseStepsFacet, "ForceClosePositionMasterAccount")

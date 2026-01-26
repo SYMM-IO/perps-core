@@ -12,7 +12,7 @@ import { ForceCloseStepsImpl } from "./ForceCloseStepsImpl.sol";
 import { SettlementFacetEvents } from "../../facets/Settlement/SettlementFacetEvents.sol";
 import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { HighLowPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
+import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForceCloseStepsFacet, SettlementFacetEvents {
 	/**
@@ -47,20 +47,11 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 	}
 
 	/**
-	 * @notice Refreshes the force-close snapshot (uPNL/currentPrice) using a fresh HighLowPriceSig.
-	 * @param quoteId The ID of the quote for the force close workflow.
-	 * @param sig Fresh Muon signature (uPNLs + currentPrice).
-	 */
-	function refreshForceCloseSnapshot(uint256 quoteId, HighLowPriceSig memory sig) external whenNotPartyAActionsPaused {
-		ForceCloseStepsImpl.refreshForceCloseSnapshot(quoteId, sig);
-	}
-
-	/**
-	 * @notice Finalizes the 3-step force close flow using a fresh HighLowPriceSig to refresh uPNL/currentPrice.
+	 * @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
 	 * @param sig Fresh Muon signature (uPNLs + currentPrice).
 	 */
-	function finalizeForceClose(uint256 quoteId, HighLowPriceSig memory sig) external {
+	function finalizeForceClose(uint256 quoteId, PairUpnlAndPriceSig memory sig) external {
 		_finalizeForceClose(quoteId, sig);
 	}
 
@@ -131,7 +122,7 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 	/**
 	 * @notice Private: Finalizes the force close (handles both normal and master account modes).
 	 */
-	function _finalizeForceClose(uint256 quoteId, HighLowPriceSig memory sig) private {
+	function _finalizeForceClose(uint256 quoteId, PairUpnlAndPriceSig memory sig) private {
 		ForceCloseStepsImpl.refreshForceCloseSnapshot(quoteId, sig);
 		_finalizeForceCloseWithoutSig(quoteId);
 	}
