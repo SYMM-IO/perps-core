@@ -10,7 +10,7 @@ import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal } from "./utils/Common.js"
-import { getDummyLiquidationSig, getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
+import { getDummyCrossLiquidationSig, getDummyLiquidationSig, getDummyPairUpnlAndPricesSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -86,9 +86,9 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 
 			it("fails when sender is not partyB of quote", async function () {
 				const quoteId = await openWith(hedger)
-				await expect(context.partyBEmergencyActionsFacet.connect(context.signers.hedger2).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
-					"PartyBFacet: Sender isn't partyB of quote",
-				)
+				await expect(
+					context.partyBEmergencyActionsFacet.connect(context.signers.hedger2).adlClose(quoteId, decimal(10n), decimal(1n)),
+				).to.be.revertedWith("PartyBFacet: Sender isn't partyB of quote")
 			})
 
 			it("fails on zero amount", async function () {
@@ -103,9 +103,9 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				const quoteId = await openWith(hedger)
 				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
 				const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
-				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, openAmount + 1n, quoteBefore.openedPrice)).to.be.revertedWith(
-					"PartyBFacet: Invalid amount",
-				)
+				await expect(
+					context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, openAmount + 1n, quoteBefore.openedPrice),
+				).to.be.revertedWith("PartyBFacet: Invalid amount")
 			})
 
 			it("allows ADL close even with minimal partyB allocation", async function () {
@@ -132,39 +132,224 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				expect(quoteAfter.closedAmount).to.equal(decimal(50n))
 			})
 
-				it("reverts when partyA is in liquidation", async function () {
-					const quoteId = await openWith(hedger)
-					// Put partyA in liquidation using proper liquidation signature
-					const allocatedBalance = decimal(500n)
-					const liquidationSig = await getDummyLiquidationSig("0x01", -decimal(600n), [1n], [decimal(1n)], -decimal(600n), allocatedBalance)
-					await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(await user.getAddress(), liquidationSig)
+			it("reverts when partyA is in liquidation", async function () {
+				const quoteId = await openWith(hedger)
+				// Put partyA in liquidation using proper liquidation signature
+				const allocatedBalance = decimal(500n)
+				const liquidationSig = await getDummyLiquidationSig("0x01", -decimal(600n), [1n], [decimal(1n)], -decimal(600n), allocatedBalance)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(await user.getAddress(), liquidationSig)
 
-					await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
-						"PartyAFacet: PartyA is in liquidation process",
-					)
-				})
+				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
+					"PartyAFacet: PartyA is in liquidation process",
+				)
 			})
 
-			it("keeps existing close request intact after ADL when enough remains to fulfill it", async function () {
-				const userClosePrice = decimal(2n)
-				const userCloseQty = decimal(60n)
-				const quoteId = await openWith(hedger)
-				await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(userCloseQty).closePrice(userClosePrice).build())
+			it("reverts when partyB is in liquidation", async function () {
+				// Set up with minimal allocation to allow liquidation
+				await user.sendQuote(
+					limitQuoteRequestBuilder()
+						.partyBWhiteList([await hedger.getAddress()])
+						.build(),
+				)
+				const quoteId = await context.viewFacetQuote.getNextQuoteId()
+				const q = await context.viewFacetQuote.getQuote(quoteId)
 
+				// Allocate minimum for partyB (totalForPartyB = CVA + LF + partyBmm = 65)
+				await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(decimal(65n), await user.getAddress())
+				await hedger.lockQuote(quoteId, 0n, null)
+
+				const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])
+				await context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([quoteId], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
+
+				// Liquidate partyB with a large negative upnl
+				await context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(await hedger.getAddress(), await user.getAddress(), await getDummySingleUpnlSig(decimal(-100n)))
+
+				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
+					"PartyBFacet: PartyB is liquidated",
+				)
+			})
+
+			it("reverts when partyB is in cross liquidation", async function () {
+				// Open a position first
+				const quoteId = await openWith(hedger)
+
+				// Enable master account mode for hedger via migration
+				await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
+				await context.masterAccountMigrationFacet.connect(context.signers.admin).beginMasterAccountMigration(await hedger.getAddress(), true)
+				await context.masterAccountMigrationFacet
+					.connect(context.signers.admin)
+					.migrateMasterAccountQuotes(await hedger.getAddress(), [await user.getAddress()])
+				await context.masterAccountMigrationFacet.connect(context.signers.admin).finalizeMasterAccountMigration(await hedger.getAddress())
+
+				// Grant CLEARING_HOUSE_ROLE to liquidator
+				await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(ethers.toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+
+				// Trigger cross liquidation with a large negative upnl
+				const crossLiqSig = await getDummyCrossLiquidationSig("0x01", decimal(-500000n), decimal(400000n))
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidateCrossPartyB(await hedger.getAddress(), crossLiqSig)
+
+				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
+					"PartyBFacet: PartyB is in cross liquidation process",
+				)
+			})
+		})
+
+		describe("basic happy path (OPENED state)", function () {
+			it("partially closes an OPENED position via ADL", async function () {
+				const quoteId = await openWith(hedger)
 				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
-				const oldCloseId = await context.viewFacetQuote.getQuoteCloseId(quoteId)
-				const adlAmount = decimal(30n) // means we have still amount = 70 after ADL close
+				const adlAmount = decimal(40n)
 
 				await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
 
 				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
-				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
-				expect(quoteAfter.quantityToClose).to.equal(userCloseQty)
-				expect(quoteAfter.requestedClosePrice).to.equal(userClosePrice)
-				const finalCloseId = await context.viewFacetQuote.getQuoteCloseId(quoteId)
-				expect(finalCloseId).to.be.greaterThan(oldCloseId)
-				expect(quoteAfter.closedAmount - quoteBefore.closedAmount).to.equal(adlAmount)
+				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+				expect(quoteAfter.closedAmount).to.equal(adlAmount)
+				expect(quoteAfter.quantityToClose).to.equal(0n)
+				expect(quoteAfter.requestedClosePrice).to.equal(0n)
 			})
+
+			it("fully closes an OPENED position via ADL", async function () {
+				const quoteId = await openWith(hedger)
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+				const openAmount = quoteBefore.quantity - quoteBefore.closedAmount
+
+				await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, openAmount, quoteBefore.openedPrice)
+
+				const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+				expect(quoteAfter.closedAmount).to.equal(quoteBefore.quantity)
+			})
+		})
+
+		describe("event emissions", function () {
+			it("emits RequestToClosePosition with MARKET order type for ADL close", async function () {
+				const quoteId = await openWith(hedger)
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+				const adlAmount = decimal(30n)
+
+				const tx = await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
+				const events = await parseEvents(tx)
+
+				const requestEvents = events.filter((e: any) => e!.name === "RequestToClosePosition")
+				expect(requestEvents.length).to.be.greaterThanOrEqual(1)
+
+				const adlRequestEvent = requestEvents.find((e: any) => e!.args.orderType === BigInt(OrderType.MARKET))
+				expect(adlRequestEvent).to.not.be.undefined
+				expect(adlRequestEvent!.args.quantityToClose).to.equal(adlAmount)
+				expect(adlRequestEvent!.args.closePrice).to.equal(quoteBefore.openedPrice)
+			})
+
+			it("emits FillCloseRequest event for ADL close", async function () {
+				const quoteId = await openWith(hedger)
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+				const adlAmount = decimal(30n)
+
+				const tx = await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
+				const events = await parseEvents(tx)
+
+				const fillEvents = events.filter((e: any) => e!.name === "FillCloseRequest")
+				expect(fillEvents.length).to.be.greaterThanOrEqual(1)
+
+				const fillEvent = fillEvents[0]
+				expect(fillEvent!.args.quoteId).to.equal(quoteId)
+				expect(fillEvent!.args.filledAmount).to.equal(adlAmount)
+				expect(fillEvent!.args.closedPrice).to.equal(quoteBefore.openedPrice)
+			})
+
+		})
+
+		describe("nonce and closeId updates", function () {
+			it("increments partyA and partyB nonces after ADL close", async function () {
+				const quoteId = await openWith(hedger)
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+
+				const partyANonceBefore = await context.viewFacet.nonceOfPartyA(await user.getAddress())
+				const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(await hedger.getAddress(), await user.getAddress())
+
+				await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(30n), quoteBefore.openedPrice)
+
+				const partyANonceAfter = await context.viewFacet.nonceOfPartyA(await user.getAddress())
+				const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(await hedger.getAddress(), await user.getAddress())
+
+				expect(partyANonceAfter).to.equal(partyANonceBefore + 1n)
+				expect(partyBNonceAfter).to.equal(partyBNonceBefore + 1n)
+			})
+
+			it("assigns a new closeId for ADL close", async function () {
+				const quoteId = await openWith(hedger)
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+				const closeIdBefore = await context.viewFacetQuote.getQuoteCloseId(quoteId)
+
+				await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(30n), quoteBefore.openedPrice)
+
+				const closeIdAfter = await context.viewFacetQuote.getQuoteCloseId(quoteId)
+				expect(closeIdAfter).to.be.greaterThan(closeIdBefore)
+			})
+		})
+
+		describe("multiple successive ADL closes", function () {
+			it("allows multiple partial ADL closes on the same position", async function () {
+				const quoteId = await openWith(hedger)
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+
+				// First ADL close: 30 units
+				await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(30n), quoteBefore.openedPrice)
+				let quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfter.closedAmount).to.equal(decimal(30n))
+				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+
+				// Second ADL close: 40 units
+				await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(40n), quoteBefore.openedPrice)
+				quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfter.closedAmount).to.equal(decimal(70n))
+				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+
+				// Third ADL close: remaining 30 units (fully close)
+				await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(30n), quoteBefore.openedPrice)
+				quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteAfter.closedAmount).to.equal(decimal(100n))
+				expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			})
+
+			it("increments closeId on each successive ADL close", async function () {
+				const quoteId = await openWith(hedger)
+				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+
+				const closeId1 = await context.viewFacetQuote.getQuoteCloseId(quoteId)
+
+				await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(30n), quoteBefore.openedPrice)
+				const closeId2 = await context.viewFacetQuote.getQuoteCloseId(quoteId)
+				expect(closeId2).to.be.greaterThan(closeId1)
+
+				await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(30n), quoteBefore.openedPrice)
+				const closeId3 = await context.viewFacetQuote.getQuoteCloseId(quoteId)
+				expect(closeId3).to.be.greaterThan(closeId2)
+			})
+		})
+
+		it("keeps existing close request intact after ADL when enough remains to fulfill it", async function () {
+			const userClosePrice = decimal(2n)
+			const userCloseQty = decimal(60n)
+			const quoteId = await openWith(hedger)
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(userCloseQty).closePrice(userClosePrice).build())
+
+			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+			const oldCloseId = await context.viewFacetQuote.getQuoteCloseId(quoteId)
+			const adlAmount = decimal(30n) // means we have still amount = 70 after ADL close
+
+			await context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, adlAmount, quoteBefore.openedPrice)
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
+			expect(quoteAfter.quantityToClose).to.equal(userCloseQty)
+			expect(quoteAfter.requestedClosePrice).to.equal(userClosePrice)
+			const finalCloseId = await context.viewFacetQuote.getQuoteCloseId(quoteId)
+			expect(finalCloseId).to.be.greaterThan(oldCloseId)
+			expect(quoteAfter.closedAmount - quoteBefore.closedAmount).to.equal(adlAmount)
+		})
 
 		it("reissues a reduced user close request when ADL consumes most of the position", async function () {
 			const quoteId = await openWith(hedger)
