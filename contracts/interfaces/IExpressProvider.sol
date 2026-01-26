@@ -10,4 +10,5 @@ interface IExpressProvider {
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address collateral) external;
 	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external;
 	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
+	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) external;
 }
