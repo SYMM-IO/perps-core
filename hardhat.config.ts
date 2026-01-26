@@ -35,7 +35,7 @@ const beraAPIKey: string = process.env.BERA_API_KEY || ""
 const hardhatDockerUrl: string | undefined = process.env.HARDHAT_DOCKER_URL || ""
 
 const config: HardhatUserConfig = {
-	defaultNetwork: "hardhat",
+	// defaultNetwork: "hardhat",
 	gasReporter: {
 		currency: "USD",
 		enabled: true,
@@ -43,14 +43,14 @@ const config: HardhatUserConfig = {
 		src: "./contracts",
 	},
 	networks: {
-		hardhat: {
-			forking: {
-				url: "https://base-mainnet.infura.io/v3/{API_KEY}",
-				blockNumber: 23478537,
-			},
-			loggingEnabled: false,
-			allowUnlimitedContractSize: false,
-		},
+		// hardhat: {
+		// 	// forking: {
+		// 	// 	url: "https://base-mainnet.infura.io/v3/{API_KEY}",
+		// 	// 	blockNumber: 23478537,
+		// 	// },
+		// 	loggingEnabled: false,
+		// 	allowUnlimitedContractSize: false,
+		// },
 		docker: {
 			url: hardhatDockerUrl,
 			allowUnlimitedContractSize: false,
@@ -107,6 +107,9 @@ const config: HardhatUserConfig = {
 		bera: {
 			url: "https://rpc.berachain.com",
 			accounts: [privateKey],
+		},
+		localhost: {
+			url: "http://127.0.0.1:8545",
 		},
 	},
 	etherscan: {
