@@ -15579,38 +15579,6 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            }
-        ],
-        "name": "MigrationBegun",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "masterModeEnabled",
-                "type": "bool"
-            }
-        ],
-        "name": "MigrationFinalized",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
                 "indexed": false,
                 "internalType": "uint256",
                 "name": "quotesProvided",
@@ -15634,57 +15602,7 @@
                 "type": "address"
             }
         ],
-        "name": "beginMigration",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "internalType": "bool",
-                "name": "enableMasterMode",
-                "type": "bool"
-            }
-        ],
-        "name": "finalizeMigration",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            }
-        ],
         "name": "isPartyBLockedValuesMigrated",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            }
-        ],
-        "name": "isPartyBMigrationInProgress",
         "outputs": [
             {
                 "internalType": "bool",

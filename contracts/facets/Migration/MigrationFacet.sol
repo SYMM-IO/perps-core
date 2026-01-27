@@ -12,27 +12,6 @@ import { MigrationFacetImpl } from "./MigrationFacetImpl.sol";
 
 contract MigrationFacet is Accessibility, IMigrationFacet {
 	/**
-	 * @notice Begin migration for a partyB by pausing their actions
-	 * @dev This must be called before migrating quotes and locked values
-	 * @param partyB The partyB to begin migration for
-	 */
-	function beginMigration(address partyB) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		MigrationFacetImpl.beginMigration(partyB);
-		emit MigrationBegun(partyB);
-	}
-
-	/**
-	 * @notice Finalize migration for a partyB
-	 * @dev This optionally enables master account mode and unpauses the partyB
-	 * @param partyB The partyB to finalize migration for
-	 * @param enableMasterMode Whether to enable master account mode
-	 */
-	function finalizeMigration(address partyB, bool enableMasterMode) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		MigrationFacetImpl.finalizeMigration(partyB, enableMasterMode);
-		emit MigrationFinalized(partyB, enableMasterMode);
-	}
-
-	/**
 	 * @notice Migrate quotes to populate aggregated positions, funding, and active symbols
 	 * @dev Can be called multiple times with different batches. Already migrated quotes are skipped.
 	 * @param quoteIds Array of quote IDs to migrate
@@ -43,9 +22,8 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 	}
 
 	/**
-	 * @notice Migrate partyB locked values to master bucket for master account mode (v8.4 data)
-	 * @dev IMPORTANT: Only use this for partyBs with pre-v8.5 data.
-	 *      For partyBs with only v8.5 data, use migrateAllocatedBalances instead.
+	 * @notice Migrate partyB balances to master bucket for master account mode
+	 * @dev Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
 	 * @param partyB The partyB to migrate
 	 * @param partyAs All partyA addresses that have positions with this partyB
 	 */
@@ -73,14 +51,5 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 	 */
 	function isPartyBLockedValuesMigrated(address partyB) external view returns (bool) {
 		return MigrationStorage.layout().partyBLockedValuesMigrated[partyB];
-	}
-
-	/**
-	 * @notice Check if partyB migration is in progress (paused)
-	 * @param partyB The partyB address to check
-	 * @return True if the partyB is currently paused for migration
-	 */
-	function isPartyBMigrationInProgress(address partyB) external view returns (bool) {
-		return MigrationStorage.layout().partyBMigrationPaused[partyB];
 	}
 }

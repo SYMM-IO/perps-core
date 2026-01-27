@@ -5,8 +5,6 @@
 pragma solidity >=0.8.18;
 
 interface IMigrationEvents {
-	event MigrationBegun(address indexed partyB);
-	event MigrationFinalized(address indexed partyB, bool masterModeEnabled);
 	event QuotesMigrated(uint256 quotesProvided, uint256 quotesMigrated);
 	event MasterAccountLockedValuesMigrated(address indexed partyB, uint256 partyAsProcessed);
 }

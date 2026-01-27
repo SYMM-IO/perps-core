@@ -9,50 +9,12 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibFundingRate } from "../../libraries/LibFundingRate.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage, FundingFee } from "../../storages/SymbolStorage.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 
 library MigrationFacetImpl {
 	using LockedValuesOps for LockedValues;
-
-	/**
-	 * @notice Begins the migration process for a partyB by pausing their actions
-	 * @dev This must be called before migrating quotes and locked values
-	 * @param partyB The partyB to begin migration for
-	 */
-	function beginMigration(address partyB) internal {
-		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
-
-		require(MAStorage.layout().partyBStatus[partyB], "MigrationFacet: Address is not PartyB");
-		require(!migrationLayout.partyBMigrationPaused[partyB], "MigrationFacet: Migration already in progress");
-
-		migrationLayout.partyBMigrationPaused[partyB] = true;
-	}
-
-	/**
-	 * @notice Finalizes the migration process for a partyB
-	 * @dev This enables master account mode and unpauses the partyB
-	 *      Should be called after all quotes and locked values have been migrated
-	 * @param partyB The partyB to finalize migration for
-	 * @param enableMasterMode Whether to enable master account mode after migration
-	 */
-	function finalizeMigration(address partyB, bool enableMasterMode) internal {
-		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
-		require(migrationLayout.partyBMigrationPaused[partyB], "MigrationFacet: Migration not in progress");
-
-		if (enableMasterMode) {
-			require(GlobalAppStorage.layout().masterAccountEnabled, "MigrationFacet: Master account feature disabled");
-			require(migrationLayout.partyBLockedValuesMigrated[partyB], "MigrationFacet: Locked values not migrated");
-			accountLayout.masterAccountMode[partyB] = true;
-		}
-
-		migrationLayout.partyBMigrationPaused[partyB] = false;
-	}
 
 	/**
 	 * @notice Migrates quotes to populate aggregated positions, funding, and active symbols
@@ -131,10 +93,9 @@ library MigrationFacetImpl {
 
 	/**
 	 * @notice Migrates partyB locked values to the master bucket (address(0))
-	 * @dev This aggregates all per-partyA locked values into the master bucket for master account mode.
-	 *      IMPORTANT: This function should ONLY be called for quotes created BEFORE v8.5 upgrade.
-	 *      For quotes created after v8.5, locked values are already in master bucket and this would double-count.
-	 *      Use setPartyBMigrationComplete instead for partyBs with only v8.5 data.
+	 * @dev This aggregates all per-partyA balances into the master bucket for master account mode.
+	 *      Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
+	 *      This function is idempotent per partyB - calling it twice will revert.
 	 * @param partyB The partyB to migrate
 	 * @param partyAs Array of partyA addresses that have balances with this partyB
 	 * @return partyAsProcessed Number of partyAs actually processed

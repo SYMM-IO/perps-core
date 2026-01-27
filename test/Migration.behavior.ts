@@ -204,116 +204,8 @@ export function shouldBehaveLikeMigration(): void {
 		})
 	})
 
-	describe("beginMigration and finalizeMigration", function () {
-		it("Should allow only MIGRATION_ROLE to call beginMigration", async function () {
-			const partyB = await hedger.getAddress()
-
-			await expect(
-				context.migrationFacet.connect(context.signers.user).beginMigration(partyB)
-			).to.be.revertedWith("Accessibility: Must has role")
-
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-			).to.not.be.reverted
-		})
-
-		it("Should require partyB to be registered", async function () {
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).beginMigration(context.signers.user.address)
-			).to.be.revertedWith("MigrationFacet: Address is not PartyB")
-		})
-
-		it("Should prevent double begin migration", async function () {
-			const partyB = await hedger.getAddress()
-
-			await context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-			).to.be.revertedWith("MigrationFacet: Migration already in progress")
-		})
-
-		it("Should pause partyB actions during migration", async function () {
-			const partyB = await hedger.getAddress()
-			const allocateAmount = decimal(100n)
-
-			// Begin migration
-			await context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-
-			// partyB should be paused and unable to allocate
-			await expect(
-				context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateAmount, context.signers.user.address)
-			).to.be.revertedWith("Pausable: PartyB migration paused")
-		})
-
-		it("Should emit MigrationBegun event", async function () {
-			const partyB = await hedger.getAddress()
-
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-			).to.emit(context.migrationFacet, "MigrationBegun").withArgs(partyB)
-		})
-
-		it("Should require migration to be in progress for finalize", async function () {
-			const partyB = await hedger.getAddress()
-
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).finalizeMigration(partyB, false)
-			).to.be.revertedWith("MigrationFacet: Migration not in progress")
-		})
-
-		it("Should require locked values migrated before enabling master mode", async function () {
-			const partyB = await hedger.getAddress()
-
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
-			await context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).finalizeMigration(partyB, true)
-			).to.be.revertedWith("MigrationFacet: Locked values not migrated")
-		})
-
-		it("Should unpause partyB after finalize without master mode", async function () {
-			const partyB = await hedger.getAddress()
-			const allocateAmount = decimal(100n)
-
-			// Begin migration
-			await context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-
-			// Finalize without enabling master mode
-			await context.migrationFacet.connect(context.signers.admin).finalizeMigration(partyB, false)
-
-			// partyB should be able to allocate again
-			await expect(
-				context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateAmount, context.signers.user.address)
-			).to.not.be.reverted
-		})
-
-		it("Should emit MigrationFinalized event", async function () {
-			const partyB = await hedger.getAddress()
-
-			await context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).finalizeMigration(partyB, false)
-			).to.emit(context.migrationFacet, "MigrationFinalized").withArgs(partyB, false)
-		})
-
-		it("Should track migration in progress status", async function () {
-			const partyB = await hedger.getAddress()
-
-			expect(await context.migrationFacet.isPartyBMigrationInProgress(partyB)).to.equal(false)
-
-			await context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-			expect(await context.migrationFacet.isPartyBMigrationInProgress(partyB)).to.equal(true)
-
-			await context.migrationFacet.connect(context.signers.admin).finalizeMigration(partyB, false)
-			expect(await context.migrationFacet.isPartyBMigrationInProgress(partyB)).to.equal(false)
-		})
-	})
-
-	describe("Full migration flow with pause", function () {
-		it("Should complete full migration flow: begin -> migrate -> finalize with master mode", async function () {
+	describe("Full migration flow", function () {
+		it("Should complete full migration flow: migrate -> enable master mode", async function () {
 			const partyB = await hedger.getAddress()
 			const partyA1 = context.signers.user.address
 			const partyA2 = context.signers.user2.address
@@ -327,27 +219,18 @@ export function shouldBehaveLikeMigration(): void {
 			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA1, partyA1)
 			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA2, partyA2)
 
-			// Step 1: Begin migration (pause partyB)
-			await context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
-
-			// Verify partyB is paused
-			expect(await context.migrationFacet.isPartyBMigrationInProgress(partyB)).to.equal(true)
-
-			// Step 2: Migrate locked values
+			// Migrate locked values to master bucket
 			await context.migrationFacet.connect(context.signers.admin).migrateMasterAccountLockedValues(partyB, [partyA1, partyA2])
 
 			// Verify master bucket has aggregated balances
 			const masterBalance = await context.viewFacet.balanceInfoOfPartyBMasterAccount(partyB)
 			expect(masterBalance[0]).to.equal(allocateA1 + allocateA2)
 
-			// Step 3: Finalize migration (enable master mode and unpause)
-			await context.migrationFacet.connect(context.signers.admin).finalizeMigration(partyB, true)
+			// Enable master account mode
+			await context.controlFacet.connect(context.signers.admin).setPartyBMasterAccountMode(partyB, true)
 
 			// Verify master account mode is enabled
 			expect(await context.viewFacet.isInMasterAccountMode(partyB)).to.equal(true)
-
-			// Verify partyB is unpaused
-			expect(await context.migrationFacet.isPartyBMigrationInProgress(partyB)).to.equal(false)
 
 			// Per-partyA allocations should now fail (master mode active)
 			await expect(

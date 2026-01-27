@@ -12,8 +12,6 @@ library MigrationStorage {
 		mapping(uint256 => bool) quoteMigrated;
 		// Track partyBs that have had locked values migrated to master bucket
 		mapping(address => bool) partyBLockedValuesMigrated;
-		// Track partyBs that are paused during migration
-		mapping(address => bool) partyBMigrationPaused;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
