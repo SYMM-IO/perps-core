@@ -12,7 +12,7 @@ import { ForceCloseStepsImpl } from "./ForceCloseStepsImpl.sol";
 import { SettlementFacetEvents } from "../../facets/Settlement/SettlementFacetEvents.sol";
 import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { HighLowPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
+import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForceCloseStepsFacet, SettlementFacetEvents {
 	/**
@@ -39,11 +39,13 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 	}
 
 	/**
-	 * @notice Finalizes the 3-step force close flow (handles both normal and master account modes).
+	 * @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
+	 * @param sig Fresh Muon signature (uPNLs + currentPrice).
 	 */
-	function finalizeForceClose(uint256 quoteId) external {
-		_finalizeForceClose(quoteId);
+	function finalizeForceClose(uint256 quoteId, PairUpnlAndPriceSig memory sig) external {
+		ForceCloseStepsImpl.refreshForceCloseSnapshot(quoteId, sig);
+		_finalizeForceCloseWithoutSig(quoteId);
 	}
 
 	/**
@@ -61,7 +63,7 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		_initializeForceClose(quoteId, sig);
 		if (updatedPrices.length > 0) _settleUpnlForForceClose(quoteId, settlementSig, updatedPrices);
-		_finalizeForceClose(quoteId);
+		_finalizeForceCloseWithoutSig(quoteId);
 	}
 
 	/**
@@ -69,32 +71,17 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 	 */
 	function _initializeForceClose(uint256 quoteId, HighLowPriceSig memory sig) private {
 		uint256 closePrice = ForceCloseStepsImpl.forceCloseInit(quoteId, sig);
-		emit ForceCloseInitialized(
-			msg.sender,
-			QuoteStorage.layout().quotes[quoteId].partyB,
-			quoteId,
-			sig.reqId,
-			closePrice,
-			sig.timestamp
-		);
+		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, closePrice, sig.timestamp);
 	}
 
 	/**
 	 * @notice Private: Settles uPNL for the force close using unified settlement.
 	 */
-	function _settleUpnlForForceClose(
-		uint256 quoteId,
-		UnifiedSettlementSig memory settlementSig,
-		uint256[] memory updatedPrices
-	) private {
+	function _settleUpnlForForceClose(uint256 quoteId, UnifiedSettlementSig memory settlementSig, uint256[] memory updatedPrices) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		bool isMasterAccountMode = accountLayout.masterAccountMode[settlementSig.partyB];
 
-		uint256[] memory newPartyAsAllocatedBalances = ForceCloseStepsImpl.settleUpnlUnified(
-			quoteId,
-			settlementSig,
-			updatedPrices
-		);
+		uint256[] memory newPartyAsAllocatedBalances = ForceCloseStepsImpl.settleUpnlUnified(quoteId, settlementSig, updatedPrices);
 
 		// For master account mode, use address(0) as allocation key; for normal mode use partyAs[0]
 		address allocKey = isMasterAccountMode ? address(0) : settlementSig.partyAs[0];
@@ -110,10 +97,7 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		);
 	}
 
-	/**
-	 * @notice Private: Finalizes the force close (handles both normal and master account modes).
-	 */
-	function _finalizeForceClose(uint256 quoteId) private {
+	function _finalizeForceCloseWithoutSig(uint256 quoteId) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote memory quote = quoteLayout.quotes[quoteId];
@@ -147,13 +131,7 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 					quoteLayout.closeIds[quoteId]
 				);
 			} else {
-				emit LiquidatePartyB(
-					msg.sender,
-					partyB,
-					quote.partyA,
-					accountLayout.partyBAllocatedBalances[partyB][quote.partyA],
-					upnlPartyB
-				);
+				emit LiquidatePartyB(msg.sender, partyB, quote.partyA, accountLayout.partyBAllocatedBalances[partyB][quote.partyA], upnlPartyB);
 			}
 		}
 	}

@@ -467,6 +467,9 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1.id, settlementSig, [updatedPrice])
 
+		const forceCloseDetail = await context.viewFacet.forceCloseDetails(quote1.id)
+		expect(forceCloseDetail.upnlPartyB).to.equal(amount2)
+
 		const avgAfter = avgPrice(totalAmount, amount1 * price1 + amount2 * updatedPrice)
 		await expectPartyBTotals(context, totalAmount, avgAfter, 0n, 0n)
 		await expectPartyBTotalsByPartyA(context, userAddress, amount1, price1, 0n, 0n)

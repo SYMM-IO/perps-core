@@ -45,7 +45,7 @@ library LibMuonUnifiedSettlement {
 					"verifyUnifiedSettlement",
 					isMasterAccountMode,
 					settleSig.partyB,
-					accountLayout.partyBNonces[settleSig.partyB][address(0)], // master nonce
+					uint256(0), // nonce is not used in master mode
 					partyANonces,
 					encodedData,
 					settleSig.upnlPartyB, // aggregated UPNL
