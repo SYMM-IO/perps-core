@@ -5,17 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { IPartiesEvents, QuoteStatus } from "../../interfaces/IPartiesEvents.sol";
-import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyBPositionActionsEvents is IPartiesEvents {
 	event AcceptCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId);
-	event EmergencyClosePosition(
-		uint256 quoteId,
-		address partyA,
-		address partyB,
-		uint256 filledAmount,
-		uint256 closedPrice,
-		QuoteStatus quoteStatus,
-		uint256 closeId
-	);
 }

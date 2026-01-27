@@ -27,7 +27,6 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 
 	mapping(bytes4 => bool) public restrictedSelectors; // selector -> isRestricted
 	mapping(address => bool) public multicastWhitelist; // contractAddress -> isAllowedForMulticast
-	uint256 private _guardCounter;
 
 	address public symmioAddress;
 	address public signer;
@@ -35,14 +34,6 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	/// @custom:oz-upgrades-unsafe-allow constructor
 	constructor() {
 		_disableInitializers();
-	}
-
-	// Custom modifier for reentrancy protection
-	modifier nonReentrant() {
-		require(_guardCounter == 0, "SymmioPartyB: reentrant call");
-		_guardCounter = 1;
-		_;
-		_guardCounter = 0;
 	}
 
 	/**
@@ -148,11 +139,11 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	 * @param amounts Close amounts per quote (token decimals).
 	 * @param prices Execution prices per quote.
 	 */
-	function adlCall(
+	function adlClose(
 		uint256[] calldata quoteIds,
 		uint256[] calldata amounts,
 		uint256[] calldata prices
-	) external nonReentrant whenNotPaused {
+	) external whenNotPaused {
 		uint256 len = quoteIds.length;
 		require(amounts.length == len && prices.length == len, "SymmioPartyB: Array length mismatch");
 		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
@@ -173,7 +164,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	 * @param destAddress The destination address to call.
 	 * @param callData The call data to be used for the call.
 	 */
-	function _executeCall(address destAddress, bytes memory callData) internal nonReentrant {
+	function _executeCall(address destAddress, bytes memory callData) internal {
 		require(destAddress != address(0), "SymmioPartyB: Invalid address");
 		require(callData.length >= 4, "SymmioPartyB: Invalid call data");
 

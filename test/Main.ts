@@ -1,4 +1,4 @@
-import { shouldBehaveLikeADLFacet } from "./ADLFacet.behavior.js"
+import { shouldBehaveLikePartyBEmergencyActionsFacet } from "./PartyBEmergencyActionsFacet.behavior.js"
 import { shouldBehaveLikeAccessControlRoleAdmins } from "./AccessControlRoleAdmins.behavior.js"
 import { shouldBehaveLikeAccountFacet } from "./AccountFacet.behavior.js"
 import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior.js"
@@ -19,7 +19,7 @@ import { shouldBehaveLikeFuzzTest } from "./FuzzTest.behavior.js"
 import { shouldBehaveLikeHooks } from "./Hooks.behavior.js"
 import { shouldBehaveLikeLiquidationFacet } from "./LiquidationFacet.behavior.js"
 import { shouldBehaveLikeLockQuote } from "./LockQuote.behavior.js"
-import { shouldBehaveLikeMasterAccountMigration } from "./MasterAccountMigration.behavior.js"
+import { shouldBehaveLikeMigration } from "./Migration.behavior.js"
 import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
 import { shouldBehaveLikeOpenPosition } from "./OpenPosition.behavior.js"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior.js"
@@ -106,8 +106,8 @@ describe("UnitTests", function () {
 			shouldBehaveLikeAccessControlRoleAdmins()
 		})
 
-		describe("MasterAccountMigration", async function () {
-			shouldBehaveLikeMasterAccountMigration()
+		describe("Migration", async function () {
+			shouldBehaveLikeMigration()
 		})
 
 		describe("Settlement", async function () {
@@ -126,8 +126,8 @@ describe("UnitTests", function () {
 			shouldBehaveLikeClearingHouseFacet()
 		})
 
-		describe("ADLFacet", async function () {
-			shouldBehaveLikeADLFacet()
+		describe("PartyBEmergencyActionsFacet", async function () {
+			shouldBehaveLikePartyBEmergencyActionsFacet()
 		})
 
 		describe("PartyBBatchActionsFacet", async function () {

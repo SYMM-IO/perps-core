@@ -95,7 +95,7 @@ export default defineConfig({
 			},
 			optimizer: {
 				enabled: true,
-				runs: 1,
+				runs: 200,
 			},
 			viaIR: true,
 		},
@@ -112,7 +112,7 @@ export default defineConfig({
 			url: process.env.HARDHAT_DOCKER_URL || "http://localhost:8545",
 		},
 		bsc: createNetworkConfig("https://binance.llamarpc.com"),
-		base: createNetworkConfig("https://api.zan.top/base-mainnet"),
+		base: createNetworkConfig("https://mainnet.base.org"),
 		polygon: createNetworkConfig("https://polygon-rpc.com"),
 		iota: createNetworkConfig("https://json-rpc.evm.iotaledger.net"),
 		blast: createNetworkConfig("https://rpc.blast.io"),

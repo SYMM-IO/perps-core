@@ -1,6 +1,10 @@
 export const FacetNames = [
 	"AccountFacet",
-	"MasterAccountMigrationFacet",
+	"PartyBAccountFacet",
+	"ExternalTransferFacet",
+	"BindingFacet",
+	"AssuranceFacet",
+	"MigrationFacet",
 	"contracts/facets/Control/ControlFacet.sol:ControlFacet",
 	"SymbolControlFacet",
 	"PauseControlFacet",
@@ -21,7 +25,7 @@ export const FacetNames = [
 	"PartyBQuoteActionsFacet",
 	"ClearingHouseFacet",
 	"PartyBBatchActionsFacet",
-	"ADLFacet",
+	"PartyBEmergencyActionsFacet",
 	"WithdrawFacet"
 ]
 

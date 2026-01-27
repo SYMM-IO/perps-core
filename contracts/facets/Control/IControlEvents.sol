@@ -125,4 +125,5 @@ interface IControlEvents {
 	event SetPartyBBindable(address partyB, bool bindable);
 	event DeprecateOldFundingFee();
 	event EnableNewFundingFee();
+	event SetPartyBMasterAccountMode(address indexed partyB, bool enabled);
 }

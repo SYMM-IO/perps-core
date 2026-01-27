@@ -445,14 +445,14 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				const hedgerAddress = await hedger.getAddress()
 				const partyAAddress = await user.getAddress()
 
-				await context.accountFacet.connect(hedger.signer).depositToReserveVault(decimal(1000n), hedgerAddress)
+				await context.partyBAccountFacet.connect(hedger.signer).depositToReserveVault(decimal(1000n), hedgerAddress)
 				{
 					const targetAllocated = decimal(2000n)
 					const balanceInfo = await hedger.getBalanceInfo(partyAAddress)
 					if (balanceInfo.allocatedBalances < targetAllocated) {
 						const topUp = targetAllocated - balanceInfo.allocatedBalances
 						await hedger.setBalances(topUp, topUp)
-						await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, partyAAddress)
+						await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, partyAAddress)
 					}
 				}
 
@@ -777,7 +777,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							if (masterBalanceBefore.allocatedBalances < targetAllocated) {
 								const topUp = targetAllocated - masterBalanceBefore.allocatedBalances
 								await hedger.setBalances(topUp, topUp)
-								await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+								await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
 							}
 
 							const tx = await context.forceCloseStepsFacet.forceCloseAndSettlePositionsUnified(
@@ -803,7 +803,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							if (masterBalanceBefore.allocatedBalances < targetAllocated) {
 								const topUp = targetAllocated - masterBalanceBefore.allocatedBalances
 								await hedger.setBalances(topUp, topUp)
-								await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+								await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
 							}
 							highLowSig.upnlPartyB = -decimal(1_000_000n)
 							highLowSig.currentPrice = decimal(1n)
@@ -855,7 +855,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							if (masterBalanceBefore.allocatedBalances < targetAllocated) {
 								const topUp = targetAllocated - masterBalanceBefore.allocatedBalances
 								await hedger.setBalances(topUp, topUp)
-								await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+								await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
 							}
 
 							highLowSig.upnlPartyB = -decimal(1_000_000n)
@@ -882,7 +882,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							if (masterBalanceBefore.allocatedBalances < targetAllocated) {
 								const topUp = targetAllocated - masterBalanceBefore.allocatedBalances
 								await hedger.setBalances(topUp, topUp)
-								await context.accountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+								await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
 							}
 							highLowSig.upnlPartyB = -decimal(1_000_000n)
 							highLowSig.currentPrice = decimal(1n)

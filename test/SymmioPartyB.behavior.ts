@@ -32,7 +32,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 
 		const collateral = await context.viewFacet.getCollateral()
 		const depositCall = context.accountFacet.interface.encodeFunctionData("deposit", [decimal(1000n)])
-		const depositAssuranceCall = context.accountFacet.interface.encodeFunctionData("depositAssuranceCollateral", [collateral, decimal(1000n)])
+		const depositAssuranceCall = context.assuranceFacet.interface.encodeFunctionData("depositAssuranceCollateral", [collateral, decimal(1000n)])
 		await context.symmioPartyB.connect(context.signers.admin)._call([depositCall, depositAssuranceCall])
 
 		return partyBAddress
@@ -47,7 +47,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 		const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
 		const allocateAmount = unDecimal(notional * allocateCoefficient)
 
-		const allocateCall = context.accountFacet.interface.encodeFunctionData("allocateForPartyB", [allocateAmount, await user.getAddress()])
+		const allocateCall = context.partyBAccountFacet.interface.encodeFunctionData("allocateForPartyB", [allocateAmount, await user.getAddress()])
 		const lockCall = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [quoteId, await getDummySingleUpnlSig(0n)])
 		const upnlSig = await getDummyPairUpnlAndPricesSig([quote.requestedOpenPrice], [1n])
 		const openCall = context.partyBBatchActionsFacet.interface.encodeFunctionData("openPositions", [
@@ -81,7 +81,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 			})
 		})
 
-		describe("adlCall", function () {
+		describe("adlClose", function () {
 			it("continues processing other quotes when one ADL call reverts", async function () {
 				const partyBAddress = await setupPartyBContract()
 
@@ -93,7 +93,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 
 					const tx = await context.symmioPartyB
 						.connect(context.signers.admin)
-						.adlCall([quoteId1, quoteId2], [0n, decimal(10n)], [q1.openedPrice, q2.openedPrice], { gasLimit: 30_000_000 })
+						.adlClose([quoteId1, quoteId2], [0n, decimal(10n)], [q1.openedPrice, q2.openedPrice], { gasLimit: 30_000_000 })
 
 				const receipt = await tx.wait()
 					const events = receipt.logs

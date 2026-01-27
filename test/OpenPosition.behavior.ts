@@ -278,7 +278,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 				.connect(context.signers.admin)
 				.grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address,true)
-			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await expect(
 				hedger.openPosition(
 					1,

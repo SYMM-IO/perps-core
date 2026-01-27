@@ -2384,7 +2384,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				openedQuoteIds.push(quote3Id)
 
 				// Allocate for master account mode
-				await clearingContext.accountFacet.connect(clearingContext.signers.hedger).allocateForPartyB(decimal(3000n), ZeroAddress)
+				await clearingContext.partyBAccountFacet.connect(clearingContext.signers.hedger).allocateForPartyB(decimal(3000n), ZeroAddress)
 
 				// Migrate to master account mode
 				await migratePartyBToMaster(clearingContext, clearingHedger, openedQuoteIds)

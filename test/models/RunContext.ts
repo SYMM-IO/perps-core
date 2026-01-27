@@ -2,9 +2,13 @@ import { ethers } from "../helpers/hardhat-connection.js"
 
 import type {
 	AccountFacet,
+	PartyBAccountFacet,
+	ExternalTransferFacet,
+	BindingFacet,
+	AssuranceFacet,
 	BridgeFacet,
 	ClearingHouseFacet,
-	ADLFacet,
+	PartyBEmergencyActionsFacet,
 	SymbolControlFacet,
 	PauseControlFacet,
 	DiamondCutFacet,
@@ -31,7 +35,7 @@ import type {
 	FakeStablecoin,
 	SymmioPartyA,
 	WithdrawFacet,
-	MasterAccountMigrationFacet,
+	MigrationFacet,
 	// AccountLayer facets
 	CoreFacet as ALCoreFacet,
 	MarginFacet as ALMarginFacet,
@@ -49,9 +53,13 @@ import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 export class RunContext {
 	// Core Diamond facets
 	accountFacet!: AccountFacet
+	partyBAccountFacet!: PartyBAccountFacet
+	externalTransferFacet!: ExternalTransferFacet
+	bindingFacet!: BindingFacet
+	assuranceFacet!: AssuranceFacet
 	diamondCutFacet!: DiamondCutFacet
 	diamondLoupeFacet!: DiamondLoupeFacet
-	adlFacet!: ADLFacet
+	partyBEmergencyActionsFacet!: PartyBEmergencyActionsFacet
 	partyAFacet!: PartyAFacet
 	partyBBatchActionsFacet!: PartyBBatchActionsFacet
 	partyBQuoteActionsFacet!: PartyBQuoteActionsFacet
@@ -72,7 +80,7 @@ export class RunContext {
 	forceCloseStepsFacet!: ForceCloseStepsFacet
 	clearingHouseFacet!: ClearingHouseFacet
 	withdrawFacet!: WithdrawFacet
-	masterAccountMigrationFacet!: MasterAccountMigrationFacet
+	migrationFacet!: MigrationFacet
 
 	// AccountLayer Diamond facets
 	alCoreFacet!: ALCoreFacet
@@ -133,9 +141,13 @@ export async function createRunContext(diamond: string, collateral: string, only
 
 	context.collateral = await ethers.getContractAt("FakeStablecoin", collateral)
 	context.accountFacet = await ethers.getContractAt("AccountFacet", diamond)
+	context.partyBAccountFacet = await ethers.getContractAt("PartyBAccountFacet", diamond)
+	context.externalTransferFacet = await ethers.getContractAt("ExternalTransferFacet", diamond)
+	context.bindingFacet = await ethers.getContractAt("BindingFacet", diamond)
+	context.assuranceFacet = await ethers.getContractAt("AssuranceFacet", diamond)
 	context.diamondCutFacet = await ethers.getContractAt("DiamondCutFacet", diamond)
 	context.diamondLoupeFacet = await ethers.getContractAt("DiamondLoupeFacet", diamond)
-	context.adlFacet = await ethers.getContractAt("ADLFacet", diamond)
+	context.partyBEmergencyActionsFacet = await ethers.getContractAt("PartyBEmergencyActionsFacet", diamond)
 	context.partyAFacet = await ethers.getContractAt("PartyAFacet", diamond)
 	context.partyBBatchActionsFacet = await ethers.getContractAt("PartyBBatchActionsFacet", diamond)
 	context.partyBQuoteActionsFacet = await ethers.getContractAt("PartyBQuoteActionsFacet", diamond)
@@ -156,7 +168,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.forceCloseStepsFacet = await ethers.getContractAt("ForceCloseStepsFacet", diamond)
 	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
 	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
-	context.masterAccountMigrationFacet = await ethers.getContractAt("MasterAccountMigrationFacet", diamond)
+	context.migrationFacet = await ethers.getContractAt("MigrationFacet", diamond)
 
 	context.manager = new TestManager(context, onlyInitialize)
 	if (!onlyInitialize) await context.manager.start()

@@ -104,17 +104,18 @@ library LibSettlement {
 
 			int256 settlementAmount = settleAmounts[i];
 
+			// Use correct allocation key based on master mode
+			address allocKey = LibAccount.partyBAllocationKey(partyB, partyA);
+
 			totalSettlementAmount += settlementAmount;
 			if (settlementAmount >= 0) {
-				accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(settlementAmount);
+				accountLayout.partyBAllocatedBalances[partyB][allocKey] -= uint256(settlementAmount);
 				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			} else {
-				if (AccountStorage.layout().masterAccountMode[partyB])
-					accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(-settlementAmount);
-				else accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-settlementAmount);
+				accountLayout.partyBAllocatedBalances[partyB][allocKey] += uint256(-settlementAmount);
 				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			}
-			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][partyA];
+			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][allocKey];
 		}
 		if (totalSettlementAmount >= 0) {
 			accountLayout.allocatedBalances[partyA] += uint256(totalSettlementAmount);

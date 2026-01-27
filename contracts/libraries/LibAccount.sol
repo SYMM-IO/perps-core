@@ -186,35 +186,29 @@ library LibAccount {
 	}
 
 	/**
-	 * @notice Adds a new quote locked balance to Party B's pending locked balances. In master account mode, adds to both master and specific Party A balances.
+	 * @notice Adds a new quote locked balance to Party B's locked balances. Always updates both per-partyA and master bucket.
 	 * @param quote The quote whose locked values are to be added.
 	 */
 	function addToPartyBLockedBalances(Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].addQuote(quote);
-
-		if (accountLayout.masterAccountMode[quote.partyB]) {
-			accountLayout.partyBLockedBalances[quote.partyB][address(0)].addQuote(quote);
-		}
+		accountLayout.partyBLockedBalances[quote.partyB][address(0)].addQuote(quote);
 	}
 
 	/**
-	 * @notice Subtracts a quote's locked balance from Party B's locked balances. In master account mode, subtracts from both master and specific Party A balances.
+	 * @notice Subtracts a quote's locked balance from Party B's locked balances. Always updates both per-partyA and master bucket.
 	 * @param quote The quote whose locked values are to be subtracted.
 	 */
 	function subFromPartyBLockedBalances(Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
-
-		if (accountLayout.masterAccountMode[quote.partyB]) {
-			accountLayout.partyBLockedBalances[quote.partyB][address(0)].subQuote(quote);
-		}
+		accountLayout.partyBLockedBalances[quote.partyB][address(0)].subQuote(quote);
 	}
 
 	/**
-	 * @notice Replaces a quote's locked balance in Party B's locked balances with new locked values. In master account mode, updates both master and specific Party A balances.
+	 * @notice Replaces a quote's locked balance in Party B's locked balances with new locked values. Always updates both per-partyA and master bucket.
 	 * @param quote The quote whose locked values are to be replaced.
 	 * @param newLockedValues The new locked values to set.
 	 */
@@ -222,14 +216,11 @@ library LibAccount {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		accountLayout.partyBLockedBalances[quote.partyB][quote.partyA].subQuote(quote).add(newLockedValues);
-
-		if (accountLayout.masterAccountMode[quote.partyB]) {
-			accountLayout.partyBLockedBalances[quote.partyB][address(0)].subQuote(quote).add(newLockedValues);
-		}
+		accountLayout.partyBLockedBalances[quote.partyB][address(0)].subQuote(quote).add(newLockedValues);
 	}
 
 	/**
-	 * @notice Adds a new quote locked balance to Party B's pending locked balances. In master account mode, adds to both master and specific Party A balances.
+	 * @notice Adds a new quote locked balance to Party B's pending locked balances. Always updates both per-partyA and master bucket.
 	 * @param partyB The address of Party B.
 	 * @param partyA The address of Party A.
 	 * @param quote The quote whose locked values are to be added.
@@ -238,38 +229,29 @@ library LibAccount {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		accountLayout.partyBPendingLockedBalances[partyB][partyA].addQuote(quote);
-
-		if (accountLayout.masterAccountMode[partyB]) {
-			accountLayout.partyBPendingLockedBalances[partyB][address(0)].addQuote(quote);
-		}
+		accountLayout.partyBPendingLockedBalances[partyB][address(0)].addQuote(quote);
 	}
 
 	/**
-	 * @notice Subtracts a quote's locked balance from Party B's pending locked balances. In master account mode, subtracts from both master and specific Party A balances.
+	 * @notice Subtracts a quote's locked balance from Party B's pending locked balances. Always updates both per-partyA and master bucket.
 	 * @param quote The quote whose locked values are to be subtracted.
 	 */
 	function subFromPartyBPendingLockedBalances(Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		accountLayout.partyBPendingLockedBalances[quote.partyB][quote.partyA].subQuote(quote);
-
-		if (accountLayout.masterAccountMode[quote.partyB]) {
-			accountLayout.partyBPendingLockedBalances[quote.partyB][address(0)].subQuote(quote);
-		}
+		accountLayout.partyBPendingLockedBalances[quote.partyB][address(0)].subQuote(quote);
 	}
 
 	/**
-	 * @notice Increments Party B nonce for a specific Party A. In master account mode, increments both master nonce and specific Party A nonce.
+	 * @notice Increments Party B nonce for a specific Party A. Always increments both per-partyA and master nonce.
 	 * @param partyB PartyB address
 	 * @param partyA PartyA address
 	 */
 	function increasePartyBNonce(address partyB, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		bool isMasterAccountMode = accountLayout.masterAccountMode[partyB];
 		accountLayout.partyBNonces[partyB][partyA]++;
-		if (isMasterAccountMode) {
-			accountLayout.partyBNonces[partyB][address(0)]++;
-		}
+		accountLayout.partyBNonces[partyB][address(0)]++;
 	}
 
 	/**

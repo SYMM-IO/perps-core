@@ -611,4 +611,16 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		accountLayout.isPartyBBindable[partyB] = bindable;
 		emit SetPartyBBindable(partyB, bindable);
 	}
+
+	/// @notice Enables or disables master account mode for a specific Party B.
+	/// @dev Master account mode allows Party B to manage all partyA positions from a single aggregated balance.
+	///      This should be called AFTER migrating locked values using MigrationFacet.migrateMasterAccountLockedValues.
+	/// @param partyB The address of the Party B to configure.
+	/// @param enabled True to enable master account mode, false to disable.
+	function setPartyBMasterAccountMode(address partyB, bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		require(GlobalAppStorage.layout().masterAccountEnabled, "ControlFacet: Master account feature disabled");
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
+		AccountStorage.layout().masterAccountMode[partyB] = enabled;
+		emit SetPartyBMasterAccountMode(partyB, enabled);
+	}
 }

@@ -87,8 +87,17 @@ library LibLiquidation {
 		);
 
 		accountLayout.partyBAllocatedBalances[partyB][partyA] = 0;
+
+		// Subtract from master bucket before zeroing per-partyA balances
+		LockedValues memory lv = accountLayout.partyBLockedBalances[partyB][partyA];
+		LockedValues memory lvPending = accountLayout.partyBPendingLockedBalances[partyB][partyA];
+
+		accountLayout.partyBLockedBalances[partyB][address(0)].sub(lv);
+		accountLayout.partyBPendingLockedBalances[partyB][address(0)].sub(lvPending);
+
 		accountLayout.partyBLockedBalances[partyB][partyA].makeZero();
 		accountLayout.partyBPendingLockedBalances[partyB][partyA].makeZero();
+
 		accountLayout.partyANonces[partyA] += 1;
 
 		// Transfer liquidator share to the liquidator

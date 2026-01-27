@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { IControlEvents } from "./IControlEvents.sol";
+import { IControlEvents } from "../Control/IControlEvents.sol";
 import { Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
 
 interface ISymbolControlFacet is IControlEvents {
