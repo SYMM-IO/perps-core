@@ -32,12 +32,6 @@ interface IForceCloseStepsFacet is ForceActionsFacetEvents {
 	) external;
 
 	/**
-	 * @notice Finalizes the 3-step force close flow (handles both normal and master account modes).
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 */
-	function finalizeForceClose(uint256 quoteId) external;
-
-	/**
 	 * @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
 	 * @param sig Fresh Muon signature (uPNLs + currentPrice) to use for solvency checks and liquidation calculations.
