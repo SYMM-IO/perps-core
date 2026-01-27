@@ -25,11 +25,6 @@ interface IMigrationFacet is IMigrationEvents {
 	/// @param partyAs All partyA addresses that have positions with this partyB
 	function migrateMasterAccountLockedValues(address partyB, address[] calldata partyAs) external;
 
-	/// @notice Migrate only allocated balances to master bucket (for v8.5 data)
-	/// @param partyB The partyB to migrate
-	/// @param partyAs All partyA addresses that have balances with this partyB
-	function migrateAllocatedBalances(address partyB, address[] calldata partyAs) external;
-
 	/// @notice Check if a quote has been migrated
 	/// @param quoteId The quote ID to check
 	/// @return True if the quote has been migrated

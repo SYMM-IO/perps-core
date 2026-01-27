@@ -168,32 +168,4 @@ library MigrationFacetImpl {
 		migrationLayout.partyBLockedValuesMigrated[partyB] = true;
 	}
 
-	/**
-	 * @notice Migrates only allocated balances to master bucket (for v8.5 data where locked values are already maintained)
-	 * @dev Use this for partyBs whose positions were all created after v8.5, where locked values are already in master bucket
-	 * @param partyB The partyB to migrate
-	 * @param partyAs Array of partyA addresses that have balances with this partyB
-	 * @return partyAsProcessed Number of partyAs actually processed
-	 */
-	function migrateAllocatedBalances(
-		address partyB,
-		address[] calldata partyAs
-	) internal returns (uint256 partyAsProcessed) {
-		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-
-		require(!migrationLayout.partyBLockedValuesMigrated[partyB], "MigrationFacet: Already migrated");
-
-		for (uint256 i = 0; i < partyAs.length; i++) {
-			address partyA = partyAs[i];
-
-			// Only aggregate allocated balances to master bucket
-			// Locked/pending are already in master bucket for v8.5 data
-			accountLayout.partyBAllocatedBalances[partyB][address(0)] += accountLayout.partyBAllocatedBalances[partyB][partyA];
-
-			partyAsProcessed++;
-		}
-
-		migrationLayout.partyBLockedValuesMigrated[partyB] = true;
-	}
 }

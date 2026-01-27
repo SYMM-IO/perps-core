@@ -58,20 +58,6 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 	}
 
 	/**
-	 * @notice Migrate only allocated balances to master bucket (for v8.5 data)
-	 * @dev Use this for partyBs whose positions were created after v8.5, where locked values are already in master bucket.
-	 * @param partyB The partyB to migrate
-	 * @param partyAs All partyA addresses that have balances with this partyB
-	 */
-	function migrateAllocatedBalances(
-		address partyB,
-		address[] calldata partyAs
-	) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		uint256 partyAsProcessed = MigrationFacetImpl.migrateAllocatedBalances(partyB, partyAs);
-		emit MasterAccountLockedValuesMigrated(partyB, partyAsProcessed);
-	}
-
-	/**
 	 * @notice Check if a quote has been migrated
 	 * @param quoteId The quote ID to check
 	 * @return True if the quote has been migrated

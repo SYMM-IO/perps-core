@@ -15727,24 +15727,6 @@
                 "type": "address[]"
             }
         ],
-        "name": "migrateAllocatedBalances",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "internalType": "address[]",
-                "name": "partyAs",
-                "type": "address[]"
-            }
-        ],
         "name": "migrateMasterAccountLockedValues",
         "outputs": [],
         "stateMutability": "nonpayable",

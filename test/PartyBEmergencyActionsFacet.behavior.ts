@@ -175,13 +175,13 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				// Open a position first
 				const quoteId = await openWith(hedger)
 
-				// Enable master account mode for hedger via migration
+				// Enable master account mode for hedger directly (no migration to avoid double-counting locked values)
 				await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
-				await context.migrationFacet.connect(context.signers.admin).beginMigration(await hedger.getAddress())
-				await context.migrationFacet
-					.connect(context.signers.admin)
-					.migrateAllocatedBalances(await hedger.getAddress(), [await user.getAddress()])
-				await context.migrationFacet.connect(context.signers.admin).finalizeMigration(await hedger.getAddress(), true)
+				await context.controlFacet.connect(context.signers.admin).setPartyBMasterAccountMode(await hedger.getAddress(), true)
+				// Allocate to master bucket for solvency
+				const allocatedPerPartyA = await context.viewFacet.allocatedBalanceOfPartyB(await hedger.getAddress(), await user.getAddress())
+				await hedger.setBalances(allocatedPerPartyA, allocatedPerPartyA, 0n)
+				await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(allocatedPerPartyA, ethers.ZeroAddress)
 
 				// Grant CLEARING_HOUSE_ROLE to liquidator
 				await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(ethers.toUtf8Bytes("CLEARING_HOUSE_ROLE")))
