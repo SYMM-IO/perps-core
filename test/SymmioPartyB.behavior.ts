@@ -81,7 +81,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 			})
 		})
 
-		describe("adlCall", function () {
+		describe("adlClose", function () {
 			it("continues processing other quotes when one ADL call reverts", async function () {
 				const partyBAddress = await setupPartyBContract()
 
@@ -93,7 +93,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 
 					const tx = await context.symmioPartyB
 						.connect(context.signers.admin)
-						.adlCall([quoteId1, quoteId2], [0n, decimal(10n)], [q1.openedPrice, q2.openedPrice], { gasLimit: 30_000_000 })
+						.adlClose([quoteId1, quoteId2], [0n, decimal(10n)], [q1.openedPrice, q2.openedPrice], { gasLimit: 30_000_000 })
 
 				const receipt = await tx.wait()
 					const events = receipt.logs

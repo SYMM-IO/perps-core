@@ -139,7 +139,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	 * @param amounts Close amounts per quote (token decimals).
 	 * @param prices Execution prices per quote.
 	 */
-	function adlCall(
+	function adlClose(
 		uint256[] calldata quoteIds,
 		uint256[] calldata amounts,
 		uint256[] calldata prices
