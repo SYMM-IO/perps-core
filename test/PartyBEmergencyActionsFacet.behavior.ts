@@ -177,11 +177,11 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 
 				// Enable master account mode for hedger via migration
 				await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
-				await context.masterAccountMigrationFacet.connect(context.signers.admin).beginMasterAccountMigration(await hedger.getAddress(), true)
-				await context.masterAccountMigrationFacet
+				await context.migrationFacet.connect(context.signers.admin).beginMigration(await hedger.getAddress())
+				await context.migrationFacet
 					.connect(context.signers.admin)
-					.migrateMasterAccountQuotes(await hedger.getAddress(), [await user.getAddress()])
-				await context.masterAccountMigrationFacet.connect(context.signers.admin).finalizeMasterAccountMigration(await hedger.getAddress())
+					.migrateAllocatedBalances(await hedger.getAddress(), [await user.getAddress()])
+				await context.migrationFacet.connect(context.signers.admin).finalizeMigration(await hedger.getAddress(), true)
 
 				// Grant CLEARING_HOUSE_ROLE to liquidator
 				await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(ethers.toUtf8Bytes("CLEARING_HOUSE_ROLE")))

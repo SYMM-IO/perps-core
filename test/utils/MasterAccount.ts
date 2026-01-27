@@ -8,8 +8,12 @@ export async function migratePartyBToMaster(
 	hedger: Hedger,
 	quoteIds: BigNumberish[],
 ) {
+	const partyB = await hedger.getAddress()
+
+	// Enable master account feature globally
 	await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
-	await context.masterAccountMigrationFacet.beginMasterAccountMigration(await hedger.getAddress(), true)
+
+	// Collect unique partyAs from quotes
 	const partyAs: string[] = []
 	const seen: Record<string, boolean> = {}
 	for (const id of quoteIds) {
@@ -21,6 +25,14 @@ export async function migratePartyBToMaster(
 		}
 	}
 
-	await context.masterAccountMigrationFacet.migrateMasterAccountQuotes(await hedger.getAddress(), partyAs)
-	await context.masterAccountMigrationFacet.finalizeMasterAccountMigration(await hedger.getAddress())
+	// Step 1: Begin migration (pause partyB)
+	await context.migrationFacet.connect(context.signers.admin).beginMigration(partyB)
+
+	// Step 2: Migrate allocated balances to master bucket
+	// Note: Using migrateAllocatedBalances instead of migrateMasterAccountLockedValues
+	// because in v8.5 mode, locked/pending values are already in master bucket
+	await context.migrationFacet.connect(context.signers.admin).migrateAllocatedBalances(partyB, partyAs)
+
+	// Step 3: Finalize migration (enable master mode and unpause)
+	await context.migrationFacet.connect(context.signers.admin).finalizeMigration(partyB, true)
 }

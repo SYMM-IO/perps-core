@@ -4,19 +4,20 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-library MasterAccountMigrationStorage {
-	bytes32 internal constant MASTER_ACCOUNT_MIGRATION_STORAGE_SLOT =
-		keccak256("diamond.standard.storage.masteraccountmigration");
+library MigrationStorage {
+	bytes32 internal constant MIGRATION_STORAGE_SLOT = keccak256("diamond.standard.storage.migration");
 
 	struct Layout {
+		// Track processed quotes to avoid double-counting
+		mapping(uint256 => bool) quoteMigrated;
+		// Track partyBs that have had locked values migrated to master bucket
+		mapping(address => bool) partyBLockedValuesMigrated;
+		// Track partyBs that are paused during migration
 		mapping(address => bool) partyBMigrationPaused;
-		mapping(address => uint256) partyBMigrationId;
-		mapping(address => mapping(address => uint256)) partyBMigrationProcessedPartyA;
-		mapping(address => bool) partyBMigrationComplete;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
-		bytes32 slot = MASTER_ACCOUNT_MIGRATION_STORAGE_SLOT;
+		bytes32 slot = MIGRATION_STORAGE_SLOT;
 		assembly {
 			l.slot := slot
 		}

@@ -35,7 +35,7 @@ import type {
 	FakeStablecoin,
 	SymmioPartyA,
 	WithdrawFacet,
-	MasterAccountMigrationFacet,
+	MigrationFacet,
 	// AccountLayer facets
 	CoreFacet as ALCoreFacet,
 	MarginFacet as ALMarginFacet,
@@ -80,7 +80,7 @@ export class RunContext {
 	forceCloseStepsFacet!: ForceCloseStepsFacet
 	clearingHouseFacet!: ClearingHouseFacet
 	withdrawFacet!: WithdrawFacet
-	masterAccountMigrationFacet!: MasterAccountMigrationFacet
+	migrationFacet!: MigrationFacet
 
 	// AccountLayer Diamond facets
 	alCoreFacet!: ALCoreFacet
@@ -168,7 +168,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.forceCloseStepsFacet = await ethers.getContractAt("ForceCloseStepsFacet", diamond)
 	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
 	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
-	context.masterAccountMigrationFacet = await ethers.getContractAt("MasterAccountMigrationFacet", diamond)
+	context.migrationFacet = await ethers.getContractAt("MigrationFacet", diamond)
 
 	context.manager = new TestManager(context, onlyInitialize)
 	if (!onlyInitialize) await context.manager.start()

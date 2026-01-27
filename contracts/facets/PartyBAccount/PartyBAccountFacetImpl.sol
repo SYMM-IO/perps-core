@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
-import { MasterAccountMigrationStorage } from "../../storages/MasterAccountMigrationStorage.sol";
+import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
@@ -30,6 +30,7 @@ library PartyBAccountFacetImpl {
 	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
+		require(!accountLayout.masterAccountMode[signer] || partyA == address(0), "PartyBFacet: Master account mode is active");
 		require(accountLayout.partyBAllocatedBalances[signer][partyA] >= amount, "AccountFacet: Insufficient allocated balance");
 		LibMuon.verifyPartyBUpnl(upnlSig, signer, partyA, true); // Here the nonce is always from master account mode nonce if enabled
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, partyA);
@@ -88,7 +89,7 @@ library PartyBAccountFacetImpl {
 		require(GlobalAppStorage.layout().masterAccountEnabled, "AccountFacet: Master account disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(MasterAccountMigrationStorage.layout().partyBMigrationComplete[signer], "AccountFacet: Master account migration incomplete");
+		require(MigrationStorage.layout().partyBLockedValuesMigrated[signer], "AccountFacet: Master account migration incomplete");
 		require(!accountLayout.masterAccountMode[signer], "AccountFacet: Master account mode is active");
 		accountLayout.masterAccountMode[signer] = true;
 	}

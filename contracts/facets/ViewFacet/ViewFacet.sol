@@ -14,7 +14,7 @@ import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { MuonStorage } from "../../storages/MuonStorage.sol";
 import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
-import { MasterAccountMigrationStorage } from "../../storages/MasterAccountMigrationStorage.sol";
+import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { BridgeStorage, BridgeTransaction } from "../../storages/BridgeStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -208,12 +208,12 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Checks if a party B has completed master account migration.
+	 * @notice Checks if a party B has completed master account locked values migration.
 	 * @param partyB The address of Party B.
-	 * @return A boolean indicating whether the party B has completed migration.
+	 * @return A boolean indicating whether the party B has completed locked values migration.
 	 */
 	function isMasterAccountMigrationComplete(address partyB) external view returns (bool) {
-		return MasterAccountMigrationStorage.layout().partyBMigrationComplete[partyB];
+		return MigrationStorage.layout().partyBLockedValuesMigrated[partyB];
 	}
 
 	/**
