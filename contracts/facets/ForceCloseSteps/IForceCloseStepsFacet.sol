@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { ForceActionsFacetEvents } from "./ForceActionsFacetEvents.sol";
+import { ForceActionsFacetEvents } from "../ForceActions/ForceActionsFacetEvents.sol";
 import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 /// @title ForceCloseStepsFacet Interface
