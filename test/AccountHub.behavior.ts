@@ -6,7 +6,7 @@ import { IAccountHubHook__factory, ISymmioHook__factory } from "../src/types/ind
 import type { MockAccountHubHook } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
-import { loadFixture } from "./helpers/network-helpers.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
@@ -1073,6 +1073,29 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					const afterCollector = await context.viewFacet.getFeeCollector(victimAffiliate)
 					expect(afterCollector).to.equal(beforeCollector)
+				})
+
+				it("should not allow internalTransferToBalance via _call", async () => {
+					const recipient = context.signers.user2.address
+					const senderBalanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
+					const recipientBalanceBefore = await context.viewFacet.balanceOf(recipient)
+					const cooldownBefore = await context.viewFacet.withdrawCooldownOf(recipient)
+
+					const callData: BytesLike[] = [
+						context.accountFacet.interface.encodeFunctionData("internalTransferToBalance", [recipient, BALANCES.SMALL_AMOUNT]),
+					]
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "Unauthorized")
+
+					const senderBalanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
+					const recipientBalanceAfter = await context.viewFacet.balanceOf(recipient)
+					const cooldownAfter = await context.viewFacet.withdrawCooldownOf(recipient)
+
+					expect(senderBalanceAfter).to.equal(senderBalanceBefore)
+					expect(recipientBalanceAfter).to.equal(recipientBalanceBefore)
+					expect(cooldownAfter).to.equal(cooldownBefore)
 				})
 			})
 
