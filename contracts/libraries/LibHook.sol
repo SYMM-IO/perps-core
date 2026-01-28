@@ -36,9 +36,6 @@ library LibHook {
 		if (!success) {
 			revert HookReverted(hook, bytes4(data), quoteId, reason);
 		}
-		// if (!success) {
-		// 	emit SharedEvents.HookFailed(hook, bytes4(data), quoteId, reason);
-		// }
 
 		// Restore signer after hook call
 		MAStorage.layout().signer = previousSigner;

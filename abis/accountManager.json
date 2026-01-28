@@ -12,6 +12,11 @@
     },
     {
         "inputs": [],
+        "name": "AccountAlreadyExists",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "AccountDoesNotExist",
         "type": "error"
     },
@@ -104,7 +109,17 @@
     },
     {
         "inputs": [],
+        "name": "InvalidIsolationType",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "InvalidNameLength",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidNonce",
         "type": "error"
     },
     {
@@ -487,6 +502,29 @@
             }
         ],
         "name": "withdrawFromAccount",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "to",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "withdrawFromAccountTo",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
