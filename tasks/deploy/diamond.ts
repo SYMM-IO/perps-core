@@ -80,7 +80,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	// Deploy LibQuoteClose (depends on LibQuoteFunding)
 	const LibQuoteCloseFactory = await ethers.getContractFactory("LibQuoteClose", {
 		libraries: {
-			"project/contracts/libraries/LibQuoteFunding.sol:LibQuoteFunding": libraryAddresses["LibQuoteFunding"],
+			"project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding": libraryAddresses["LibQuoteFunding"],
 		},
 	})
 	const libQuoteClose = await LibQuoteCloseFactory.deploy()
@@ -121,7 +121,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		if (requiredLibraries && requiredLibraries.length > 0) {
 			const libraries: Record<string, string> = {}
 			for (const lib of requiredLibraries) {
-				libraries[`project/contracts/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
+				libraries[`project/contracts/core/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
 			}
 			FacetFactory = await ethers.getContractFactory(facetName, { libraries })
 		} else {

@@ -4,10 +4,10 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { LibDiamond } from "../libraries/LibDiamond.sol";
-import { IDiamondLoupe } from "../facets/DiamondLoup/IDiamondLoupe.sol";
-import { IDiamondCut } from "../facets/DiamondCut/IDiamondCut.sol";
-import { IERC165 } from "../interfaces/IERC165.sol";
+import { LibDiamond } from "../core/libraries/LibDiamond.sol";
+import { IDiamondLoupe } from "../core/facets/DiamondLoup/IDiamondLoupe.sol";
+import { IDiamondCut } from "../core/facets/DiamondCut/IDiamondCut.sol";
+import { IERC165 } from "../core/interfaces/IERC165.sol";
 import { AccountLayerStorage } from "./storages/AccountLayerStorage.sol";
 import { AccountHubStorage } from "./storages/AccountHubStorage.sol";
 import { AffiliateHubStorage } from "./storages/AffiliateHubStorage.sol";

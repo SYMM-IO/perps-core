@@ -76,7 +76,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 	describe("Provider Register", function() {
 		it("Should register virtual provider", async function() {
 			const MockVirtualProvider = await ethers.getContractFactory(
-				"contracts/test/MockVirtualProvider.sol:VirtualProvider"
+				"contracts/core/test/MockVirtualProvider.sol:VirtualProvider"
 			);
 			virtualProvider = await MockVirtualProvider.deploy(context.diamond);
 			await virtualProvider.waitForDeployment();
@@ -96,7 +96,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should register express provider", async function() {
 			const MockExpressProvider = await ethers.getContractFactory(
-				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+				"contracts/core/test/MockExpressProvider.sol:ExpressProvider"
 			);
 			expressProvider = await MockExpressProvider.deploy(context.diamond);
 			await expressProvider.waitForDeployment();
@@ -116,7 +116,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to register express provider as virtual provider", async function() {
 			const MockVirtualProvider = await ethers.getContractFactory(
-				"contracts/test/MockVirtualProvider.sol:VirtualProvider"
+				"contracts/core/test/MockVirtualProvider.sol:VirtualProvider"
 			);
 			virtualProvider = await MockVirtualProvider.deploy(context.diamond);
 			await virtualProvider.waitForDeployment();
@@ -127,7 +127,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.registerVirtualProvider(virtualProviderAddress);
 
 			const MockExpressProvider = await ethers.getContractFactory(
-				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+				"contracts/core/test/MockExpressProvider.sol:ExpressProvider"
 			);
 			expressProvider = await MockExpressProvider.deploy(context.diamond);
 			await expressProvider.waitForDeployment();
@@ -282,7 +282,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should notify express provider when suspending express withdraw", async function() {
 			const MockExpressProvider = await ethers.getContractFactory(
-				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+				"contracts/core/test/MockExpressProvider.sol:ExpressProvider"
 			);
 			expressProvider = await MockExpressProvider.deploy(context.diamond);
 			await expressProvider.waitForDeployment();
@@ -325,7 +325,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should notify virtual provider when suspending virtual withdraw", async function() {
 			const MockVirtualProvider = await ethers.getContractFactory(
-				"contracts/test/MockVirtualProvider.sol:VirtualProvider"
+				"contracts/core/test/MockVirtualProvider.sol:VirtualProvider"
 			);
 			virtualProvider = await MockVirtualProvider.deploy(context.diamond);
 			await virtualProvider.waitForDeployment();
@@ -377,7 +377,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should notify express provider when suspending accepted express withdraw", async function() {
 			const MockExpressProvider = await ethers.getContractFactory(
-				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+				"contracts/core/test/MockExpressProvider.sol:ExpressProvider"
 			);
 			expressProvider = await MockExpressProvider.deploy(context.diamond);
 			await expressProvider.waitForDeployment();
@@ -671,7 +671,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 	describe("Virtual Withdraw", function() {
 		beforeEach(async function() {
 			const MockVirtualProvider = await ethers.getContractFactory(
-				"contracts/test/MockVirtualProvider.sol:VirtualProvider"
+				"contracts/core/test/MockVirtualProvider.sol:VirtualProvider"
 			);
 			virtualProvider = await MockVirtualProvider.deploy(context.diamond);
 			await virtualProvider.waitForDeployment();
@@ -747,7 +747,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to initiate withdraw with more than one virtual provider", async function() {
 			const MockVirtualProvider = await ethers.getContractFactory(
-				"contracts/test/MockVirtualProvider.sol:VirtualProvider"
+				"contracts/core/test/MockVirtualProvider.sol:VirtualProvider"
 			);
 			const virtualProvider2 = await MockVirtualProvider.deploy(
 				context.diamond
@@ -1232,7 +1232,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 	describe("Express Withdraw", function() {
 		beforeEach(async function() {
 			const MockExpressProvider = await ethers.getContractFactory(
-				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+				"contracts/core/test/MockExpressProvider.sol:ExpressProvider"
 			);
 			expressProvider = await MockExpressProvider.deploy(
 				context.diamond
@@ -1309,7 +1309,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		it("Should fail to initiate withdraw with more than one express provider", async function() {
 			const MockExpressProvider = await ethers.getContractFactory(
-				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+				"contracts/core/test/MockExpressProvider.sol:ExpressProvider"
 			);
 			const expressProvider2 = await MockExpressProvider.deploy(
 				context.diamond
@@ -1640,7 +1640,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 	describe("Virtual Express Withdraw", function() {
 		beforeEach(async function() {
 			const MockExpressProvider = await ethers.getContractFactory(
-				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+				"contracts/core/test/MockExpressProvider.sol:ExpressProvider"
 			);
 			expressProvider = await MockExpressProvider.deploy(
 				context.diamond
@@ -1654,7 +1654,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.registerExpressProvider(expressProviderAddress);
 
 			const MockVirtualProvider = await ethers.getContractFactory(
-				"contracts/test/MockVirtualProvider.sol:VirtualProvider"
+				"contracts/core/test/MockVirtualProvider.sol:VirtualProvider"
 			);
 			virtualProvider = await MockVirtualProvider.deploy(context.diamond);
 			await virtualProvider.waitForDeployment();
@@ -1894,7 +1894,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 	describe("Withdraw Speed Up", function() {
 		beforeEach(async function() {
 			const MockVirtualProvider = await ethers.getContractFactory(
-				"contracts/test/MockVirtualProvider.sol:VirtualProvider"
+				"contracts/core/test/MockVirtualProvider.sol:VirtualProvider"
 			);
 			virtualProvider = await MockVirtualProvider.deploy(context.diamond);
 			await virtualProvider.waitForDeployment();
@@ -1905,7 +1905,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.registerVirtualProvider(virtualProviderAddress);
 
 			const MockExpressProvider = await ethers.getContractFactory(
-				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+				"contracts/core/test/MockExpressProvider.sol:ExpressProvider"
 			);
 			expressProvider = await MockExpressProvider.deploy(context.diamond);
 			await expressProvider.waitForDeployment();

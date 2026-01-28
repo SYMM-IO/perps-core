@@ -7,8 +7,8 @@ pragma solidity >=0.8.18;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
-import { LibMuonV04ClientBase } from "../helpers/LibMuonV04ClientBase.sol";
-import { IMuonSignatureVerifier } from "../interfaces/IMuonSignatureVerifier.sol";
+import { LibMuonV04ClientBase } from "./LibMuonV04ClientBase.sol";
+import { IMuonSignatureVerifier } from "../../core/interfaces/IMuonSignatureVerifier.sol";
 
 contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerable {
 	using ECDSA for bytes32;

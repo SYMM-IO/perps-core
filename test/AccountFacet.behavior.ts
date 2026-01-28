@@ -1214,7 +1214,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await user.setup()
 			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.DEPOSIT_AMOUNT)
 
-			const MockExternalTransferRelayer = await ethers.getContractFactory("contracts/test/MockExternalTransferTarget.sol:ExternalTransferRelayer")
+			const MockExternalTransferRelayer = await ethers.getContractFactory("contracts/core/test/MockExternalTransferTarget.sol:ExternalTransferRelayer")
 			mockTarget = await MockExternalTransferRelayer.deploy()
 			await mockTarget.waitForDeployment()
 			targetAddress = await mockTarget.getAddress()
@@ -1440,7 +1440,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			user = new User(context, context.signers.user)
 			await user.setup()
 
-			const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+			const MockVirtualProvider = await ethers.getContractFactory("contracts/core/test/MockVirtualProvider.sol:VirtualProvider")
 			mockProvider = await MockVirtualProvider.deploy(context.diamond)
 			await mockProvider.waitForDeployment()
 			providerAddress = await mockProvider.getAddress()

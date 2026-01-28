@@ -12,9 +12,9 @@ import { SafeERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
-import { ISymmio } from "../interfaces/ISymmio.sol";
-import { ISymmioPartyA } from "../interfaces/ISymmioPartyA.sol";
-import { IMultiAccount } from "../interfaces/IMultiAccount.sol";
+import { ISymmio } from "../../core/interfaces/ISymmio.sol";
+import { ISymmioPartyA } from "../../core/interfaces/ISymmioPartyA.sol";
+import { IMultiAccount } from "../../core/interfaces/IMultiAccount.sol";
 
 contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, AccessControlUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;

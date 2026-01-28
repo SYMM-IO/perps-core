@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-import { SubAccountCreationData } from "../accountLayer/storages/AccountHubStorage.sol";
+import { SubAccountCreationData } from "../storages/AccountHubStorage.sol";
 
 contract MockAffiliateHubForAccountManager {
 	mapping(address => address[]) private affiliateCores;

@@ -25,7 +25,7 @@ import { LibAccountLayerSafeCall } from "../../libraries/LibAccountLayerSafeCall
 import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
-import { IVirtualProvider } from "../../../interfaces/IVirtualProvider.sol";
+import { IVirtualProvider } from "../../../core/interfaces/IVirtualProvider.sol";
 
 contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;

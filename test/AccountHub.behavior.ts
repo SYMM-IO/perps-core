@@ -377,7 +377,7 @@ export function shouldBehaveLikeAccountHub(): void {
 			const depositAmount = decimal(1000n)
 
 			const registerVirtualProvider = async () => {
-				const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+				const MockVirtualProvider = await ethers.getContractFactory("contracts/core/test/MockVirtualProvider.sol:VirtualProvider")
 				const virtualProvider = await MockVirtualProvider.deploy(context.diamond)
 				virtualProviderAddress = await virtualProvider.getAddress()
 				await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(virtualProviderAddress)
@@ -428,7 +428,7 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 
 			it("reverts when virtual provider is not registered on Symmio", async function () {
-				const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+				const MockVirtualProvider = await ethers.getContractFactory("contracts/core/test/MockVirtualProvider.sol:VirtualProvider")
 				const virtualProvider = await MockVirtualProvider.deploy(context.diamond)
 				virtualProviderAddress = await virtualProvider.getAddress()
 
@@ -562,7 +562,7 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				const registerConfigurableMockProvider = async () => {
 					const ConfigurableMockVirtualProvider = await ethers.getContractFactory(
-						"contracts/test/MockVirtualProvider.sol:ConfigurableMockVirtualProvider",
+						"contracts/core/test/MockVirtualProvider.sol:ConfigurableMockVirtualProvider",
 					)
 					configurableMockProvider = await ConfigurableMockVirtualProvider.deploy()
 					configurableMockProviderAddress = await configurableMockProvider.getAddress()
@@ -620,7 +620,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				it("prevents malicious provider from impersonating user via callback (SafeCall protection)", async function () {
 					// Deploy malicious provider that attempts to exploit the callback
 					const MaliciousMockVirtualProvider = await ethers.getContractFactory(
-						"contracts/test/MockVirtualProvider.sol:MaliciousMockVirtualProvider",
+						"contracts/core/test/MockVirtualProvider.sol:MaliciousMockVirtualProvider",
 					)
 					const maliciousProvider = await MaliciousMockVirtualProvider.deploy(context.accountLayerDiamond)
 					const maliciousProviderAddress = await maliciousProvider.getAddress()
