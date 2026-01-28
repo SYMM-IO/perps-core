@@ -9,7 +9,7 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 
 library LibMuonUnifiedSettlement {
-	function verifyUnifiedSettlement(UnifiedSettlementSig memory settleSig, bool isMasterAccountMode) internal view {
+	function verifyUnifiedSettlement(UnifiedSettlementSig memory settleSig, bool isCrossPartyB) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -35,17 +35,17 @@ library LibMuonUnifiedSettlement {
 		}
 
 		bytes32 hash;
-		if (isMasterAccountMode) {
-			// MasterAccount mode: use master nonce and aggregated UPNL
+		if (isCrossPartyB) {
+			// CrossPartyB mode: use cross nonce and aggregated UPNL
 			hash = keccak256(
 				abi.encodePacked(
 					muonLayout.muonAppId,
 					settleSig.reqId,
 					address(this),
 					"verifyUnifiedSettlement",
-					isMasterAccountMode,
+					isCrossPartyB,
 					settleSig.partyB,
-					uint256(0), // nonce is not used in master mode
+					uint256(0), // nonce is not used in cross mode
 					partyANonces,
 					encodedData,
 					settleSig.upnlPartyB, // aggregated UPNL
@@ -68,7 +68,7 @@ library LibMuonUnifiedSettlement {
 					settleSig.reqId,
 					address(this),
 					"verifyUnifiedSettlement",
-					isMasterAccountMode,
+					isCrossPartyB,
 					settleSig.partyB,
 					partyBNonces, // per-partyA nonces
 					partyANonces,

@@ -22,17 +22,17 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 	}
 
 	/**
-	 * @notice Migrate partyB balances to master bucket for master account mode
+	 * @notice Migrate partyB balances to cross bucket for cross partyB mode
 	 * @dev Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
 	 * @param partyB The partyB to migrate
 	 * @param partyAs All partyA addresses that have positions with this partyB
 	 */
-	function migrateMasterAccountLockedValues(
+	function migrateCrossLockedValues(
 		address partyB,
 		address[] calldata partyAs
 	) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		uint256 partyAsProcessed = MigrationFacetImpl.migrateMasterAccountLockedValues(partyB, partyAs);
-		emit MasterAccountLockedValuesMigrated(partyB, partyAsProcessed);
+		uint256 partyAsProcessed = MigrationFacetImpl.migrateCrossLockedValues(partyB, partyAs);
+		emit CrossLockedValuesMigrated(partyB, partyAsProcessed);
 	}
 
 	/**

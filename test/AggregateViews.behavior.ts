@@ -5,7 +5,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
 import { getDummyPairUpnlSig, getDummyLiquidationSig, getDummySettlementSig, getDummyCrossLiquidationSig, getDummyPriceSig, getDummyHighLowPriceSig } from "./utils/SignatureUtils.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { ethers, ZeroAddress } from "ethers"
 import { QuoteStatus } from "./models/Enums.js"
 import { expect } from "chai"
@@ -2383,11 +2383,11 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await clearingHedger.openPosition(quote3Id)
 				openedQuoteIds.push(quote3Id)
 
-				// Allocate for master account mode
+				// Allocate for cross partyB mode
 				await clearingContext.partyBAccountFacet.connect(clearingContext.signers.hedger).allocateForPartyB(decimal(3000n), ZeroAddress)
 
-				// Migrate to master account mode
-				await migratePartyBToMaster(clearingContext, clearingHedger, openedQuoteIds)
+				// Migrate to cross partyB mode
+				await migratePartyBToCross(clearingContext, clearingHedger, openedQuoteIds)
 			})
 
 			it("should update aggregates correctly during cross liquidation", async function () {
@@ -2690,7 +2690,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			})
 		})
 
-		describe("Global PartyB Funding (master account mode)", function () {
+		describe("Global PartyB Funding (cross partyB mode)", function () {
 			const EightHourInSec = 8 * 60 * 60
 
 			beforeEach(async function () {

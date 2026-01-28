@@ -17,7 +17,7 @@ library ForceCloseStepsImpl {
 	using LockedValuesOps for LockedValues;
 
 	/**
-	 * @notice Initializes the 3-step force close flow (works for both normal and master account modes).
+	 * @notice Initializes the 3-step force close flow (works for both normal and cross partyB modes).
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
 	 * @param sig The Muon signature to calculate the close price.
 	 * @return closePrice The calculated close price.
@@ -74,9 +74,9 @@ library ForceCloseStepsImpl {
 	}
 
 	/**
-	 * @notice Finalizes the 3-step force close flow (handles both normal and master account modes).
+	 * @notice Finalizes the 3-step force close flow (handles both normal and cross partyB modes).
 	 * @dev For normal partyB: Uses reserveVault fallback and triggers liquidation if needed.
-	 *      For master account: Uses SOLVENT/INSOLVENT marking without liquidation.
+	 *      For cross partyB: Uses SOLVENT/INSOLVENT marking without liquidation.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
 	 * @return succeed Whether the close was successful without liquidation/insolvency.
 	 * @return upnlPartyB The upnl used for liquidation (only set for normal partyB when succeed is false).
@@ -87,11 +87,11 @@ library ForceCloseStepsImpl {
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
 		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
-		bool isMasterAccountMode = accountLayout.masterAccountMode[partyB];
+		bool isCrossPartyB = accountLayout.isCrossPartyB[partyB];
 
-		if (isMasterAccountMode) {
-			// Master account mode: Use SOLVENT/INSOLVENT marking without liquidation
-			(succeed, detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteMasterAccountWithRespectToUpnl(
+		if (isCrossPartyB) {
+			// Cross partyB mode: Use SOLVENT/INSOLVENT marking without liquidation
+			(succeed, detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteCrossWithRespectToUpnl(
 				quoteId,
 				detail.currentPrice,
 				detail.upnlPartyB,
@@ -143,8 +143,8 @@ library ForceCloseStepsImpl {
 		bool isSamePartyB = forceCloseQuote.partyB == sig.partyB;
 
 		// Verify signature using unified settlement verification
-		bool isMasterAccountMode = accountLayout.masterAccountMode[sig.partyB];
-		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isMasterAccountMode);
+		bool isCrossPartyB = accountLayout.isCrossPartyB[sig.partyB];
+		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB);
 
 		// Use the unified settlement function with isForceClose=true
 		int256[] memory settleAmountsPerPartyA;
@@ -153,7 +153,7 @@ library ForceCloseStepsImpl {
 		// Settlement signatures do not include the force-close quote price/currentPrice, so we only shift uPNL by the
 		// realized settlement delta and keep currentPrice unchanged (it should be refreshed via refresh/finalize sig).
 		if (isSamePartyB) {
-			if (isMasterAccountMode) {
+			if (isCrossPartyB) {
 				int256 totalSettlementAmount;
 				for (uint256 i = 0; i < settleAmountsPerPartyA.length; i++) {
 					totalSettlementAmount += settleAmountsPerPartyA[i];

@@ -27,7 +27,7 @@ library GlobalAppStorage {
 		bool externalTransferPaused;
 		mapping(address => mapping(uint256 => Fee)) affiliateFee; // affiliate => symbolId => fee
 		bool instantLayerPaused;
-		bool masterAccountEnabled;
+		bool crossEnabled;
 		mapping(address => bool) virtualProviders;
 		mapping(address => bool) expressProviders;
 		bool deprecateOldWithdrawalPaused;

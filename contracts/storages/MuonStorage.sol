@@ -143,9 +143,9 @@ struct UnifiedSettlementSig {
 	// PartyB being settled (single - all quotes belong to this partyB)
 	address partyB;
 	// PartyB UPNL - structure depends on mode
-	// For masterAccount: use upnlPartyB (aggregated)
+	// For crossPartyB: use upnlPartyB (aggregated)
 	// For normal: use upnlPartyBPerPartyA[partyAIndex]
-	int256 upnlPartyB; // Aggregated UPNL (masterAccount mode)
+	int256 upnlPartyB; // Aggregated UPNL (crossPartyB mode)
 	int256[] upnlPartyBPerPartyA; // Per-partyA UPNLs (normal mode)
 	// PartyA data (supports multiple)
 	address[] partyAs;

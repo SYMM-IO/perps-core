@@ -16,5 +16,5 @@ interface IPartyBAccountEvents {
 	);
 	event DepositToReserveVault(address sender, address partyB, uint256 amount);
 	event WithdrawFromReserveVault(address partyB, uint256 amount);
-	event ActivateMasterAccountMode(address user);
+	event ActivateCrossPartyB(address user);
 }

@@ -124,7 +124,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 
 	/**
 	 * @notice Returns the global aggregate funding state for partyB at a specific symbol and position type
-	 * @dev Used for master account mode UPNL calculations across all partyAs
+	 * @dev Used for cross partyB mode UPNL calculations across all partyAs
 	 * @param partyB The partyB address
 	 * @param symbolId The symbol ID
 	 * @param positionType The position type (0 = LONG, 1 = SHORT)
@@ -175,7 +175,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 
 	/**
 	 * @notice Returns the global calculated aggregate funding debt for partyB at a specific symbol and position type
-	 * @dev This is for master account mode UPNL calculations across all partyAs
+	 * @dev This is for cross partyB mode UPNL calculations across all partyAs
 	 * @param partyB The partyB address
 	 * @param symbolId The symbol ID
 	 * @param positionType The position type (0 = LONG, 1 = SHORT)
@@ -551,7 +551,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 
 	/**
 	 * @notice Returns paginated global aggregated funding debt for partyB across active symbols
-	 * @dev Uses global partyB active symbols - for master account mode UPNL calculations
+	 * @dev Uses global partyB active symbols - for cross partyB mode UPNL calculations
 	 * @param partyB The partyB address
 	 * @param start The starting index in the active symbols array
 	 * @param size The maximum number of symbols to process
@@ -723,7 +723,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	}
 
 	/**
-	 * @notice Returns paginated global UPNL data for partyB (master account mode)
+	 * @notice Returns paginated global UPNL data for partyB (cross partyB mode)
 	 * @dev Aggregates across all partyAs. PartyB's UPNL is opposite to partyA's:
 	 *      - LONG UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
 	 *      - SHORT UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt

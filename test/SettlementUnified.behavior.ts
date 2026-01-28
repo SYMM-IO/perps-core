@@ -9,7 +9,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, unDecimal } from "./utils/Common.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeSettlementUnified(): void {
@@ -65,7 +65,7 @@ export function shouldBehaveLikeSettlementUnified(): void {
 		await hedger.fillCloseRequest(longClosed)
 	})
 
-	describe("Normal Mode (non-masterAccount)", function () {
+	describe("Normal Mode (non-crossPartyB)", function () {
 		it("Should fail when partyB actions paused", async function () {
 			await context.pauseControlFacet.connect(context.signers.admin).pausePartyBActions()
 			const sig = await getDummyUnifiedSettlementSig(await hedger.getAddress(), 0n, [0n], [await user.getAddress()], [0n], [])
@@ -297,58 +297,58 @@ export function shouldBehaveLikeSettlementUnified(): void {
 		})
 	})
 
-	describe("Master Account Mode", function () {
+	describe("Cross PartyB Mode", function () {
 		beforeEach(async function () {
-			// Migrate hedger to master account mode
-			await migratePartyBToMaster(context, hedger, [longHedger1, shortHedger1, shortClosePending, longHedger1User2])
+			// Migrate hedger to cross partyB mode
+			await migratePartyBToCross(context, hedger, [longHedger1, shortHedger1, shortClosePending, longHedger1User2])
 		})
 
-		it("Should settle successfully for single partyA in master account mode", async function () {
+		it("Should settle successfully for single partyA in cross partyB mode", async function () {
 			const partyA = await user.getAddress()
 			const partyB = await hedger.getAddress()
 			const quoteBefore = await context.viewFacetQuote.getQuote(longHedger1)
 			const updatedPrice = decimal(6n, 17)
 
-			// In master account mode, use aggregated UPNL (upnlPartyB), not per-partyA
+			// In cross partyB mode, use aggregated UPNL (upnlPartyB), not per-partyA
 			const sig = await getDummyUnifiedSettlementSig(
 				partyB,
 				0n, // Aggregated UPNL for partyB
-				[], // Empty for master account mode
+				[], // Empty for cross partyB mode
 				[partyA],
 				[0n],
 				[{ quoteId: longHedger1, currentPrice: decimal(5n, 17), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct],
 			)
 
 			const partyABalanceBefore = await user.getBalanceInfo()
-			const partyBBalanceBefore = await hedger.getBalanceInfoMasterAccount()
+			const partyBBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
 
 			await hedger.settleUpnlUnified([updatedPrice], sig)
 
 			const partyABalanceAfter = await user.getBalanceInfo()
-			const partyBBalanceAfter = await hedger.getBalanceInfoMasterAccount()
+			const partyBBalanceAfter = await hedger.getBalanceInfoCrossPartyB()
 
 			const expectedLoss = unDecimal((quoteBefore.openedPrice - updatedPrice) * quoteBefore.quantity)
 			expect(partyABalanceBefore.allocatedBalances - partyABalanceAfter.allocatedBalances).to.be.eq(expectedLoss)
-			// In master account mode, balance is at address(0)
+			// In cross partyB mode, balance is at address(0)
 			expect(partyBBalanceAfter.allocatedBalances - partyBBalanceBefore.allocatedBalances).to.be.eq(expectedLoss)
 			expect((await context.viewFacetQuote.getQuote(longHedger1)).openedPrice).to.be.eq(updatedPrice)
 		})
 
-		it("Should settle successfully for multiple partyAs in master account mode", async function () {
+		it("Should settle successfully for multiple partyAs in cross partyB mode", async function () {
 			const partyA1 = await user.getAddress()
 			const partyA2 = await user2.getAddress()
 			const partyB = await hedger.getAddress()
 
-			const beforeMasterNonce = await context.viewFacet.nonceOfPartyB(partyB, "0x0000000000000000000000000000000000000000")
+			const beforeCrossNonce = await context.viewFacet.nonceOfPartyB(partyB, "0x0000000000000000000000000000000000000000")
 			const beforeNoncePartyB_A1 = await context.viewFacet.nonceOfPartyB(partyB, partyA1)
 			const beforeNoncePartyB_A2 = await context.viewFacet.nonceOfPartyB(partyB, partyA2)
 
-			const partyBBalanceBefore = await hedger.getBalanceInfoMasterAccount()
+			const partyBBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
 
 			const sig = await getDummyUnifiedSettlementSig(
 				partyB,
-				0n, // Aggregated UPNL for master account
-				[], // Empty for master account mode
+				0n, // Aggregated UPNL for cross partyB
+				[], // Empty for cross partyB mode
 				[partyA1, partyA2],
 				[0n, 0n],
 				[
@@ -359,8 +359,8 @@ export function shouldBehaveLikeSettlementUnified(): void {
 
 			await hedger.settleUpnlUnified([decimal(5n, 17), decimal(6n, 17)], sig)
 
-			// In master account mode, master nonce is incremented once per partyA
-			expect(await context.viewFacet.nonceOfPartyB(partyB, "0x0000000000000000000000000000000000000000")).to.be.eq(beforeMasterNonce + 2n)
+			// In cross partyB mode, cross nonce is incremented once per partyA
+			expect(await context.viewFacet.nonceOfPartyB(partyB, "0x0000000000000000000000000000000000000000")).to.be.eq(beforeCrossNonce + 2n)
 			expect(await context.viewFacet.nonceOfPartyB(partyB, partyA1)).to.be.eq(beforeNoncePartyB_A1 + 1n)
 			expect(await context.viewFacet.nonceOfPartyB(partyB, partyA2)).to.be.eq(beforeNoncePartyB_A2 + 1n)
 
@@ -368,13 +368,13 @@ export function shouldBehaveLikeSettlementUnified(): void {
 			expect((await context.viewFacetQuote.getQuote(shortHedger1)).openedPrice).to.be.eq(decimal(5n, 17).toString())
 			expect((await context.viewFacetQuote.getQuote(longHedger1User2)).openedPrice).to.be.eq(decimal(6n, 17).toString())
 
-			// Verify master account balance updated
-			const partyBBalanceAfter = await hedger.getBalanceInfoMasterAccount()
+			// Verify cross partyB balance updated
+			const partyBBalanceAfter = await hedger.getBalanceInfoCrossPartyB()
 			// Balance should have changed (all settlements go to/from address(0) bucket)
 			expect(partyBBalanceAfter.allocatedBalances).to.not.eq(partyBBalanceBefore.allocatedBalances)
 		})
 
-		it("Should fail when partyB is insolvent in master account mode", async function () {
+		it("Should fail when partyB is insolvent in cross partyB mode", async function () {
 			const sig = await getDummyUnifiedSettlementSig(
 				await hedger.getAddress(),
 				decimal(10000n) * -1n, // Large negative aggregated UPNL

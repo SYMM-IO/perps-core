@@ -16,7 +16,7 @@ import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../.
 
 contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForceCloseStepsFacet, SettlementFacetEvents {
 	/**
-	 * @notice Initializes the 3-step force close flow (works for both normal and master account modes).
+	 * @notice Initializes the 3-step force close flow (works for both normal and cross partyB modes).
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
 	 * @param sig The Muon signature to calculate the close price.
 	 */
@@ -79,12 +79,12 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 	 */
 	function _settleUpnlForForceClose(uint256 quoteId, UnifiedSettlementSig memory settlementSig, uint256[] memory updatedPrices) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		bool isMasterAccountMode = accountLayout.masterAccountMode[settlementSig.partyB];
+		bool isCrossPartyB = accountLayout.isCrossPartyB[settlementSig.partyB];
 
 		uint256[] memory newPartyAsAllocatedBalances = ForceCloseStepsImpl.settleUpnlUnified(quoteId, settlementSig, updatedPrices);
 
-		// For master account mode, use address(0) as allocation key; for normal mode use partyAs[0]
-		address allocKey = isMasterAccountMode ? address(0) : settlementSig.partyAs[0];
+		// For cross partyB mode, use address(0) as allocation key; for normal mode use partyAs[0]
+		address allocKey = isCrossPartyB ? address(0) : settlementSig.partyAs[0];
 
 		emit SettleUpnlUnified(
 			settlementSig.reqId,
@@ -103,12 +103,12 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		Quote memory quote = quoteLayout.quotes[quoteId];
 		address partyB = quote.partyB;
 
-		bool isMasterAccountMode = accountLayout.masterAccountMode[partyB];
+		bool isCrossPartyB = accountLayout.isCrossPartyB[partyB];
 		(bool succeed, int256 upnlPartyB) = ForceCloseStepsImpl.finalizeForceClose(quoteId);
 
-		if (isMasterAccountMode) {
-			// Master account mode: emit event with solvency flag
-			emit ForceClosePositionMasterAccount(
+		if (isCrossPartyB) {
+			// Cross partyB mode: emit event with solvency flag
+			emit ForceClosePositionCross(
 				quoteId,
 				quote.partyA,
 				partyB,

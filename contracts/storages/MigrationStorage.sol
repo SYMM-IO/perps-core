@@ -10,7 +10,7 @@ library MigrationStorage {
 	struct Layout {
 		// Track processed quotes to avoid double-counting
 		mapping(uint256 => bool) quoteMigrated;
-		// Track partyBs that have had locked values migrated to master bucket
+		// Track partyBs that have had locked values migrated to cross bucket
 		mapping(address => bool) partyBLockedValuesMigrated;
 	}
 

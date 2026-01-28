@@ -44,7 +44,7 @@ library LibAggregateFunding {
 
 	/**
 	 * @notice Adds to partyB aggregate funding when a position is opened
-	 * @dev Updates both global and per-partyA storage for master account mode support
+	 * @dev Updates both global and per-partyA storage for cross partyB mode support
 	 * @param quote The quote being opened
 	 * @param amount The amount being opened
 	 */
@@ -53,7 +53,7 @@ library LibAggregateFunding {
 
 		int256 contribution = (int256(amount) * quote.accumulatedPaidFunding) / 1e18;
 
-		// Update global partyB funding (for master account mode)
+		// Update global partyB funding (for cross partyB mode)
 		quoteLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding += contribution;
 
 		// Update per-partyA funding
@@ -89,7 +89,7 @@ library LibAggregateFunding {
 
 	/**
 	 * @notice Subtracts from partyB aggregate funding when a position is closed
-	 * @dev Updates both global and per-partyA storage for master account mode support
+	 * @dev Updates both global and per-partyA storage for cross partyB mode support
 	 * @param quote The quote being closed
 	 * @param amount The amount being closed
 	 */
@@ -98,7 +98,7 @@ library LibAggregateFunding {
 
 		int256 contribution = (int256(amount) * quote.accumulatedPaidFunding) / 1e18;
 
-		// Update global partyB funding (for master account mode)
+		// Update global partyB funding (for cross partyB mode)
 		quoteLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding -= contribution;
 
 		// Update per-partyA funding
@@ -119,7 +119,7 @@ library LibAggregateFunding {
 	 * @notice Updates aggregate funding when a quote's accumulatedPaidFunding changes
 	 * @dev Called when funding is charged and accumulatedPaidFunding is updated
 	 *      Updates per-partyB storage for partyA since different hedgers have different funding rates
-	 *      Also updates global partyB storage for master account mode support
+	 *      Also updates global partyB storage for cross partyB mode support
 	 * @param quote The quote whose funding was charged
 	 * @param oldAccumulatedPaidFunding The previous accumulatedPaidFunding value
 	 * @param openAmount The current open amount of the quote
@@ -135,7 +135,7 @@ library LibAggregateFunding {
 		// Update partyA aggregate (per-partyB storage for accurate multi-hedger calculations)
 		quoteLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding += delta;
 
-		// Update global partyB funding (for master account mode)
+		// Update global partyB funding (for cross partyB mode)
 		quoteLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding += delta;
 
 		// Update partyB aggregate per partyA
@@ -212,7 +212,7 @@ library LibAggregateFunding {
 
 	/**
 	 * @notice Calculates the global aggregate funding debt for partyB for a specific symbol and position type
-	 * @dev This is for master account mode UPNL calculations across all partyAs
+	 * @dev This is for cross partyB mode UPNL calculations across all partyAs
 	 *      Uses global partyB positions and global partyB funding storage
 	 * @param partyB The partyB address
 	 * @param symbolId The symbol ID

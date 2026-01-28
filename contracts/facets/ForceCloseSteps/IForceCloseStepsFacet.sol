@@ -8,12 +8,12 @@ import { ForceActionsFacetEvents } from "../ForceActions/ForceActionsFacetEvents
 import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 /// @title ForceCloseStepsFacet Interface
-/// @notice Defines the 3-step force close workflow for both normal and master account modes.
+/// @notice Defines the 3-step force close workflow for both normal and cross partyB modes.
 /// @dev The logic is implemented in ForceCloseStepsFacet + ForceCloseStepsImpl.
 
 interface IForceCloseStepsFacet is ForceActionsFacetEvents {
 	/**
-	 * @notice Initializes the 3-step force close flow (works for both normal and master account modes).
+	 * @notice Initializes the 3-step force close flow (works for both normal and cross partyB modes).
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
 	 * @param sig The Muon signature to calculate the close price.
 	 */

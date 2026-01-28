@@ -88,7 +88,7 @@ library LibLiquidation {
 
 		accountLayout.partyBAllocatedBalances[partyB][partyA] = 0;
 
-		// Subtract from master bucket before zeroing per-partyA balances
+		// Subtract from cross bucket before zeroing per-partyA balances
 		LockedValues memory lv = accountLayout.partyBLockedBalances[partyB][partyA];
 		LockedValues memory lvPending = accountLayout.partyBPendingLockedBalances[partyB][partyA];
 

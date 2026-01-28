@@ -92,15 +92,15 @@ library MigrationFacetImpl {
 	}
 
 	/**
-	 * @notice Migrates partyB locked values to the master bucket (address(0))
-	 * @dev This aggregates all per-partyA balances into the master bucket for master account mode.
+	 * @notice Migrates partyB locked values to the cross bucket (address(0))
+	 * @dev This aggregates all per-partyA balances into the cross bucket for cross partyB mode.
 	 *      Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
 	 *      This function is idempotent per partyB - calling it twice will revert.
 	 * @param partyB The partyB to migrate
 	 * @param partyAs Array of partyA addresses that have balances with this partyB
 	 * @return partyAsProcessed Number of partyAs actually processed
 	 */
-	function migrateMasterAccountLockedValues(
+	function migrateCrossLockedValues(
 		address partyB,
 		address[] calldata partyAs
 	) internal returns (uint256 partyAsProcessed) {
@@ -112,13 +112,13 @@ library MigrationFacetImpl {
 		for (uint256 i = 0; i < partyAs.length; i++) {
 			address partyA = partyAs[i];
 
-			// Aggregate allocated balances to master bucket
+			// Aggregate allocated balances to cross bucket
 			accountLayout.partyBAllocatedBalances[partyB][address(0)] += accountLayout.partyBAllocatedBalances[partyB][partyA];
 
-			// Aggregate locked balances to master bucket (only for pre-v8.5 data)
+			// Aggregate locked balances to cross bucket (only for pre-v8.5 data)
 			accountLayout.partyBLockedBalances[partyB][address(0)].add(accountLayout.partyBLockedBalances[partyB][partyA]);
 
-			// Aggregate pending locked balances to master bucket (only for pre-v8.5 data)
+			// Aggregate pending locked balances to cross bucket (only for pre-v8.5 data)
 			accountLayout.partyBPendingLockedBalances[partyB][address(0)].add(
 				accountLayout.partyBPendingLockedBalances[partyB][partyA]
 			);

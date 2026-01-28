@@ -104,7 +104,7 @@ library LibSettlement {
 
 			int256 settlementAmount = settleAmounts[i];
 
-			// Use correct allocation key based on master mode
+			// Use correct allocation key based on cross mode
 			address allocKey = LibAccount.partyBAllocationKey(partyB, partyA);
 
 			totalSettlementAmount += settlementAmount;
@@ -127,7 +127,7 @@ library LibSettlement {
 	}
 
 	/**
-	 * @notice Unified settlement function that works for both masterAccount and normal partyB modes
+	 * @notice Unified settlement function that works for both crossPartyB and normal partyB modes
 	 * @dev Settles quotes for a single partyB across one or more partyAs
 	 * @param sig The unified settlement signature containing quote data and UPNLs
 	 * @param updatedPrices Array of new prices to set as openedPrice for each quote
@@ -144,7 +144,7 @@ library LibSettlement {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		address partyB = sig.partyB;
-		bool isMasterAccountMode = accountLayout.masterAccountMode[partyB];
+		bool isCrossPartyB = accountLayout.isCrossPartyB[partyB];
 
 		// 1. Validate lengths
 		require(sig.quotesSettlementsData.length > 0, "LibSettlement: Empty quotes array");
@@ -153,7 +153,7 @@ library LibSettlement {
 		require(sig.partyAs.length == sig.upnlPartyAs.length, "LibSettlement: Invalid upnlPartyAs length");
 
 		// 2. Validate UPNL structure matches mode
-		if (!isMasterAccountMode) {
+		if (!isCrossPartyB) {
 			require(sig.upnlPartyBPerPartyA.length == sig.partyAs.length, "LibSettlement: Invalid upnlPartyBPerPartyA length");
 		}
 
@@ -177,7 +177,7 @@ library LibSettlement {
 		require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
 
 		// 5. Validate partyB solvency based on mode
-		if (isMasterAccountMode) {
+		if (isCrossPartyB) {
 			require(
 				LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyB, partyB, address(0)) >= 0,
 				"LibSettlement: PartyB is insolvent"
@@ -271,7 +271,7 @@ library LibSettlement {
 			LibAccount.increasePartyBNonce(partyB, partyA);
 
 			// Get allocation key based on mode
-			address allocKey = isMasterAccountMode ? address(0) : partyA;
+			address allocKey = isCrossPartyB ? address(0) : partyA;
 
 			// Update partyB balance
 			if (settlementAmount >= 0) {

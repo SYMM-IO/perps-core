@@ -13,7 +13,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummySingleUpnlWithPendingBalanceSig } from "./utils/SignatureUtils.js"
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"))
@@ -1961,20 +1961,20 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 	})
 
-	describe("Master account activation gating", () => {
+	describe("Cross partyB activation gating", () => {
 		beforeEach(async () => {
 			context = await loadFixture(initializeFixture)
 		})
-		it("should revert when master account activation is disabled", async () => {
-			await expect(context.partyBAccountFacet.connect(context.signers.hedger).activateMasterAccountMode()).to.be.revertedWith(
-				"AccountFacet: Master account disabled",
+		it("should revert when cross partyB activation is disabled", async () => {
+			await expect(context.partyBAccountFacet.connect(context.signers.hedger).activateCrossPartyB()).to.be.revertedWith(
+				"AccountFacet: Cross disabled",
 			)
 		})
 
-		it("should allow master account activation after enabled by admin", async () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
-			await migratePartyBToMaster(context, hedger, [])
-			expect(await context.viewFacet.isInMasterAccountMode(context.signers.hedger.address)).to.equal(true)
+		it("should allow cross partyB activation after enabled by admin", async () => {
+			await context.controlFacet.connect(context.signers.admin).setCrossEnabled(true)
+			await migratePartyBToCross(context, hedger, [])
+			expect(await context.viewFacet.isCrossPartyB(context.signers.hedger.address)).to.equal(true)
 		})
 	})
 }

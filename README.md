@@ -21,7 +21,7 @@ and modularity. Currently, we have 29 facets:
 10. **ForceActionsFacet** - Atomic force close and cancel operations
 11. **ForceCloseStepsFacet** - 3-step force close flow (init, settle, finalize)
 12. **FundingRateFacet** - Funding rate calculations
-13. **MasterAccountMigrationFacet** - Master account migration functionality
+13. **MigrationFacet** - Cross partyB migration functionality
 14. **PartyAFacet** - PartyA (trader) operations
 15. **PartyALiquidationFacet** - PartyA liquidation logic
 16. **PartyBAccountFacet** - PartyB account management

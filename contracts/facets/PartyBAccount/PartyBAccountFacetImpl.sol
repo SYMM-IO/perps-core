@@ -17,7 +17,7 @@ library PartyBAccountFacetImpl {
 	function allocateForPartyB(uint256 amount, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(!accountLayout.masterAccountMode[signer] || partyA == address(0), "PartyBFacet: Master account mode is active");
+		require(!accountLayout.isCrossPartyB[signer] || partyA == address(0), "PartyBFacet: Cross partyB mode is active");
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
 		require(
 			!MAStorage.layout().partyBLiquidationStatus[signer][partyA] && !accountLayout.crossLiquidationDetails[signer].inProgress,
@@ -30,9 +30,9 @@ library PartyBAccountFacetImpl {
 	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(!accountLayout.masterAccountMode[signer] || partyA == address(0), "PartyBFacet: Master account mode is active");
+		require(!accountLayout.isCrossPartyB[signer] || partyA == address(0), "PartyBFacet: Cross partyB mode is active");
 		require(accountLayout.partyBAllocatedBalances[signer][partyA] >= amount, "AccountFacet: Insufficient allocated balance");
-		LibMuon.verifyPartyBUpnl(upnlSig, signer, partyA, true); // Here the nonce is always from master account mode nonce if enabled
+		LibMuon.verifyPartyBUpnl(upnlSig, signer, partyA, true); // Here the nonce is always from cross partyB mode nonce if enabled
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, partyA);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: Will be liquidatable");
@@ -52,12 +52,12 @@ library PartyBAccountFacetImpl {
 		require(!maLayout.liquidationStatus[recipient], "PartyBFacet: Recipient isn't solvent");
 		require(!accountLayout.crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB isn't solvent");
 
-		// Not to be in master account mode as when the MA is activated there is no point on transferAllocation
-		require(!accountLayout.masterAccountMode[signer], "PartyBFacet: Master account mode is active");
+		// Not to be in cross partyB mode as when it's activated there is no point on transferAllocation
+		require(!accountLayout.isCrossPartyB[signer], "PartyBFacet: Cross partyB mode is active");
 
 		// deallocate from origin
 		require(accountLayout.partyBAllocatedBalances[signer][origin] >= amount, "PartyBFacet: Insufficient allocated balance");
-		LibMuon.verifyPartyBUpnl(upnlSig, signer, origin, true); // Here the nonce is always from master account mode nonce if enabled
+		LibMuon.verifyPartyBUpnl(upnlSig, signer, origin, true); // Here the nonce is always from cross partyB mode nonce if enabled
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, origin);
 		require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "PartyBFacet: Will be liquidatable");
@@ -85,12 +85,12 @@ library PartyBAccountFacetImpl {
 		accountLayout.withdrawCooldown[signer] = block.timestamp;
 	}
 
-	function activateMasterAccountMode() internal {
-		require(GlobalAppStorage.layout().masterAccountEnabled, "AccountFacet: Master account disabled");
+	function activateCrossPartyB() internal {
+		require(GlobalAppStorage.layout().crossEnabled, "AccountFacet: Cross disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(MigrationStorage.layout().partyBLockedValuesMigrated[signer], "AccountFacet: Master account migration incomplete");
-		require(!accountLayout.masterAccountMode[signer], "AccountFacet: Master account mode is active");
-		accountLayout.masterAccountMode[signer] = true;
+		require(MigrationStorage.layout().partyBLockedValuesMigrated[signer], "AccountFacet: Cross migration incomplete");
+		require(!accountLayout.isCrossPartyB[signer], "AccountFacet: Cross partyB mode is active");
+		accountLayout.isCrossPartyB[signer] = true;
 	}
 }

@@ -11,10 +11,10 @@ interface IMigrationFacet is IMigrationEvents {
 	/// @param quoteIds Array of quote IDs to migrate (batch)
 	function migrateQuotes(uint256[] calldata quoteIds) external;
 
-	/// @notice Migrate partyB balances to master bucket
+	/// @notice Migrate partyB balances to cross bucket
 	/// @param partyB The partyB to migrate
 	/// @param partyAs All partyA addresses that have positions with this partyB
-	function migrateMasterAccountLockedValues(address partyB, address[] calldata partyAs) external;
+	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) external;
 
 	/// @notice Check if a quote has been migrated
 	/// @param quoteId The quote ID to check

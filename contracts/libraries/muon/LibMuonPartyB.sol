@@ -36,6 +36,6 @@ library LibMuonPartyB {
 	}
 
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // Here the nonce should be zero in master account mode as it is called while opening, closing or locking quotes.
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // Here the nonce should be zero in cross partyB mode as it is called while opening, closing or locking quotes.
 	}
 }

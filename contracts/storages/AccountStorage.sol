@@ -15,13 +15,13 @@ enum LiquidationType {
 
 enum AllocatedSettlementState {
 	NONE,
-	GATHER_ALLOCATED_MASTER_ACCOUNT
+	GATHER_ALLOCATED_CROSS
 }
 
 enum UPNLSettlementState {
 	NONE,
 	REALIZED,
-	REALIZED_MASTER_ACCOUNT
+	REALIZED_CROSS
 }
 
 enum PartyBForceCloseState {
@@ -164,7 +164,7 @@ library AccountStorage {
 		mapping(address => mapping(address => SettlementState)) settlementStates;
 		mapping(address => uint256) reserveVault;
 		mapping(address => BindState) bindState;
-		mapping(address => bool) masterAccountMode;
+		mapping(address => bool) isCrossPartyB;
 		mapping(address => CrossLiquidationDetail) crossLiquidationDetails;
 		mapping(address => address) externalTransferTargetsRelayers;
 		mapping(address => address) affiliateHooks;

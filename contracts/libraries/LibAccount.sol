@@ -176,17 +176,17 @@ library LibAccount {
 	}
 
 	/**
-	 * @notice Returns the key used for balance allocation mapping in Party B when master account mode enabled.
+	 * @notice Returns the key used for balance allocation mapping in Party B when cross partyB mode enabled.
 	 * @param partyB The address of Party B.
 	 * @param partyA The address of Party A.
 	 * @return bucket Party B allocation mapping key.
 	 */
 	function partyBAllocationKey(address partyB, address partyA) internal view returns (address) {
-		return AccountStorage.layout().masterAccountMode[partyB] ? address(0) : partyA;
+		return AccountStorage.layout().isCrossPartyB[partyB] ? address(0) : partyA;
 	}
 
 	/**
-	 * @notice Adds a new quote locked balance to Party B's locked balances. Always updates both per-partyA and master bucket.
+	 * @notice Adds a new quote locked balance to Party B's locked balances. Always updates both per-partyA and cross bucket.
 	 * @param quote The quote whose locked values are to be added.
 	 */
 	function addToPartyBLockedBalances(Quote storage quote) internal {
@@ -197,7 +197,7 @@ library LibAccount {
 	}
 
 	/**
-	 * @notice Subtracts a quote's locked balance from Party B's locked balances. Always updates both per-partyA and master bucket.
+	 * @notice Subtracts a quote's locked balance from Party B's locked balances. Always updates both per-partyA and cross bucket.
 	 * @param quote The quote whose locked values are to be subtracted.
 	 */
 	function subFromPartyBLockedBalances(Quote storage quote) internal {
@@ -208,7 +208,7 @@ library LibAccount {
 	}
 
 	/**
-	 * @notice Replaces a quote's locked balance in Party B's locked balances with new locked values. Always updates both per-partyA and master bucket.
+	 * @notice Replaces a quote's locked balance in Party B's locked balances with new locked values. Always updates both per-partyA and cross bucket.
 	 * @param quote The quote whose locked values are to be replaced.
 	 * @param newLockedValues The new locked values to set.
 	 */
@@ -220,7 +220,7 @@ library LibAccount {
 	}
 
 	/**
-	 * @notice Adds a new quote locked balance to Party B's pending locked balances. Always updates both per-partyA and master bucket.
+	 * @notice Adds a new quote locked balance to Party B's pending locked balances. Always updates both per-partyA and cross bucket.
 	 * @param partyB The address of Party B.
 	 * @param partyA The address of Party A.
 	 * @param quote The quote whose locked values are to be added.
@@ -233,7 +233,7 @@ library LibAccount {
 	}
 
 	/**
-	 * @notice Subtracts a quote's locked balance from Party B's pending locked balances. Always updates both per-partyA and master bucket.
+	 * @notice Subtracts a quote's locked balance from Party B's pending locked balances. Always updates both per-partyA and cross bucket.
 	 * @param quote The quote whose locked values are to be subtracted.
 	 */
 	function subFromPartyBPendingLockedBalances(Quote storage quote) internal {
@@ -244,7 +244,7 @@ library LibAccount {
 	}
 
 	/**
-	 * @notice Increments Party B nonce for a specific Party A. Always increments both per-partyA and master nonce.
+	 * @notice Increments Party B nonce for a specific Party A. Always increments both per-partyA and cross nonce.
 	 * @param partyB PartyB address
 	 * @param partyA PartyA address
 	 */
@@ -255,16 +255,16 @@ library LibAccount {
 	}
 
 	/**
-	 * @notice returns Party B nonce for standard account mode or master account mode.
+	 * @notice returns Party B nonce for standard account mode or cross partyB mode.
 	 * @param partyB The Party B address.
 	 * @param partyA The Party A address.
-	 * @param useMasterNonce Flag to return the actual master account nonce when in master account mode.
-	 * @return nonce The Party B nonce in non-master account mode or either zero/actual master nonce when in master account mode.
+	 * @param useCrossNonce Flag to return the actual cross nonce when in cross partyB mode.
+	 * @return nonce The Party B nonce in non-cross partyB mode or either zero/actual cross nonce when in cross partyB mode.
 	 */
-	function getPartyBSignatureNonce(address partyB, address partyA, bool useMasterNonce) internal view returns (uint256) {
+	function getPartyBSignatureNonce(address partyB, address partyA, bool useCrossNonce) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		if (accountLayout.masterAccountMode[partyB]) {
-			return useMasterNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
+		if (accountLayout.isCrossPartyB[partyB]) {
+			return useCrossNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
 		}
 		return accountLayout.partyBNonces[partyB][partyA];
 	}

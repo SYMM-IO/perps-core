@@ -87,10 +87,10 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 		emit WithdrawFromReserveVault(LibSigner.getSigner(), amount);
 	}
 
-	/// @notice Activates master account mode for Party B
+	/// @notice Activates cross partyB mode for Party B
 	/// @dev Can only be called by Party B when not paused and not suspended
-	function activateMasterAccountMode() external whenNotPartyBActionsPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
-		PartyBAccountFacetImpl.activateMasterAccountMode();
-		emit ActivateMasterAccountMode(LibSigner.getSigner());
+	function activateCrossPartyB() external whenNotPartyBActionsPaused notSuspended(LibSigner.getSigner()) onlyPartyB {
+		PartyBAccountFacetImpl.activateCrossPartyB();
+		emit ActivateCrossPartyB(LibSigner.getSigner());
 	}
 }

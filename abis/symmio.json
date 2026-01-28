@@ -2029,7 +2029,7 @@
                 "type": "bool"
             }
         ],
-        "name": "ForceClosePositionMasterAccount",
+        "name": "ForceClosePositionCross",
         "type": "event"
     },
     {
@@ -3203,6 +3203,44 @@
         "inputs": [
             {
                 "indexed": false,
+                "internalType": "bool",
+                "name": "oldValue",
+                "type": "bool"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "newValue",
+                "type": "bool"
+            }
+        ],
+        "name": "SetCrossEnabled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "SetCrossPartyB",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
@@ -3597,25 +3635,6 @@
         "inputs": [
             {
                 "indexed": false,
-                "internalType": "bool",
-                "name": "oldValue",
-                "type": "bool"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "newValue",
-                "type": "bool"
-            }
-        ],
-        "name": "SetMasterAccountEnabled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
                 "internalType": "uint256",
                 "name": "maxLimit",
                 "type": "uint256"
@@ -3743,25 +3762,6 @@
             }
         ],
         "name": "SetPartyBEmergencyStatus",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "enabled",
-                "type": "bool"
-            }
-        ],
-        "name": "SetPartyBMasterAccountMode",
         "type": "event"
     },
     {
@@ -4787,7 +4787,7 @@
                 "type": "address"
             }
         ],
-        "name": "ActivateMasterAccountMode",
+        "name": "ActivateCrossPartyB",
         "type": "event"
     },
     {
@@ -4935,7 +4935,7 @@
     },
     {
         "inputs": [],
-        "name": "activateMasterAccountMode",
+        "name": "activateCrossPartyB",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -7875,6 +7875,57 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "isCrossEnabled",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "isCrossPartyB",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "isCrossPartyBMigrationComplete",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -7894,59 +7945,8 @@
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            }
-        ],
-        "name": "isInMasterAccountMode",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [],
         "name": "isLegacyDeallocateDisabled",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "isMasterAccountEnabled",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            }
-        ],
-        "name": "isMasterAccountMigrationComplete",
         "outputs": [
             {
                 "internalType": "bool",
@@ -8528,7 +8528,7 @@
                 "type": "address"
             }
         ],
-        "name": "balanceInfoOfPartyBMasterAccount",
+        "name": "balanceInfoOfCrossPartyB",
         "outputs": [
             {
                 "internalType": "uint256",
@@ -8587,7 +8587,7 @@
                 "type": "address"
             }
         ],
-        "name": "balanceOfMasterAccount",
+        "name": "balanceOfCrossPartyB",
         "outputs": [
             {
                 "internalType": "uint256",
@@ -15631,7 +15631,7 @@
                 "type": "uint256"
             }
         ],
-        "name": "MasterAccountLockedValuesMigrated",
+        "name": "CrossLockedValuesMigrated",
         "type": "event"
     },
     {
@@ -15704,7 +15704,7 @@
                 "type": "address[]"
             }
         ],
-        "name": "migrateMasterAccountLockedValues",
+        "name": "migrateCrossLockedValues",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -16103,6 +16103,24 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "setCrossPartyB",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
             },
@@ -16456,24 +16474,6 @@
                 "type": "address"
             },
             {
-                "internalType": "bool",
-                "name": "enabled",
-                "type": "bool"
-            }
-        ],
-        "name": "setPartyBMasterAccountMode",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
                 "components": [
                     {
                         "internalType": "string",
@@ -16657,7 +16657,7 @@
                 "type": "bool"
             }
         ],
-        "name": "setMasterAccountEnabled",
+        "name": "setCrossEnabled",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

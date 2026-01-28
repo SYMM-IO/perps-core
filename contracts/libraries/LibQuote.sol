@@ -84,7 +84,7 @@ library LibQuote {
 		// Check if partyB had any position in this symbol with this partyA BEFORE adding
 		bool hadPositionPerPartyA = partyBHasPositionInSymbolPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
 
-		// Update global partyB aggregated positions (for master account mode UPNL)
+		// Update global partyB aggregated positions (for cross partyB mode UPNL)
 		PartiesAggregatedPositions storage partyBGlobalInfo = quoteLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
 		partyBGlobalInfo.aggregatedAmount += amount;
 		partyBGlobalInfo.aggregatedNotional += notional;

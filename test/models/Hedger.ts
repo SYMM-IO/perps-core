@@ -43,8 +43,8 @@ export class Hedger extends PartyEntity {
 	}
 
 	public async lockQuote(id: BigNumberish, upnl: bigint = 0n, allocateCoefficient: bigint | null = decimal(12n, 17)) {
-		const isMasterAccountMode = await this.context.viewFacet.isInMasterAccountMode(this.address)
-		if (allocateCoefficient != null && !isMasterAccountMode) {
+		const isCrossPartyB = await this.context.viewFacet.isCrossPartyB(this.address)
+		if (allocateCoefficient != null && !isCrossPartyB) {
 			const quote = await this.context.viewFacetQuote.getQuote(id)
 			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
 			await runTx(
@@ -108,8 +108,8 @@ export class Hedger extends PartyEntity {
 		}
 	}
 
-	public async getBalanceInfoMasterAccount(): Promise<BalanceInfo> {
-		const b = await this.context.viewFacet.balanceInfoOfPartyBMasterAccount(await this.getAddress())
+	public async getBalanceInfoCrossPartyB(): Promise<BalanceInfo> {
+		const b = await this.context.viewFacet.balanceInfoOfCrossPartyB(await this.getAddress())
 
 		return {
 			allocatedBalances: b[0],

@@ -22,7 +22,7 @@ library PartyBLiquidationFacetImpl {
 
 	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		require(!accountLayout.masterAccountMode[partyB], "LiquidationFacet: PartyB masterAccount mode is active");
+		require(!accountLayout.isCrossPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
 		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA);
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);

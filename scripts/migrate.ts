@@ -49,7 +49,7 @@ export interface PartyBMigrationTask {
 export interface MigrationInput {
 	/** Quote IDs to migrate for aggregated positions */
 	quoteIds: bigint[]
-	/** PartyB tasks for master account balance migration */
+	/** PartyB tasks for cross partyB balance migration */
 	partyBTasks: PartyBMigrationTask[]
 }
 
@@ -172,7 +172,7 @@ export async function migrate(
 		}
 
 		// =====================================================================
-		// Phase 2: Migrate PartyB Balances (Master Bucket)
+		// Phase 2: Migrate PartyB Balances (Cross Bucket)
 		// =====================================================================
 
 		logHeader("Phase 2: Migrating PartyB Balances")
@@ -209,7 +209,7 @@ export async function migrate(
 						log("info", `  [DRY RUN] Would migrate ${partyAs.length} partyA balances`)
 						return null
 					}
-					return migrationFacet.migrateMasterAccountLockedValues(partyB, partyAs)
+					return migrationFacet.migrateCrossLockedValues(partyB, partyAs)
 				},
 				cfg,
 			)

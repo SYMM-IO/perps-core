@@ -37,11 +37,11 @@ interface IViewFacet {
 
 	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
 
-	function isInMasterAccountMode(address partyB) external view returns (bool);
+	function isCrossPartyB(address partyB) external view returns (bool);
 
 	function isLegacyDeallocateDisabled() external view returns (bool);
 
-	function isMasterAccountMigrationComplete(address partyB) external view returns (bool);
+	function isCrossPartyBMigrationComplete(address partyB) external view returns (bool);
 
 	function allocatedBalanceOfPartyBs(address partyA, address[] memory partyBs) external view returns (uint256[] memory);
 
@@ -75,7 +75,7 @@ interface IViewFacet {
 
 	function getDefaultFeeCollector() external view returns (address);
 
-	function isMasterAccountEnabled() external view returns (bool);
+	function isCrossEnabled() external view returns (bool);
 
 	function isPartyALiquidated(address partyA) external view returns (bool);
 

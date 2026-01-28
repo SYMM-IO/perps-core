@@ -109,7 +109,7 @@ library PartyALiquidationFacetImpl {
 				quoteLayout.partyBPendingQuotes[quote.partyB][partyA].length > 0
 			) {
 				delete quoteLayout.partyBPendingQuotes[quote.partyB][partyA];
-				// Subtract from master bucket before zeroing per-partyA balances
+				// Subtract from cross bucket before zeroing per-partyA balances
 				accountLayout.partyBPendingLockedBalances[quote.partyB][address(0)].sub(
 					accountLayout.partyBPendingLockedBalances[quote.partyB][partyA]
 				);
@@ -328,7 +328,7 @@ library PartyALiquidationFacetImpl {
 
 			int256 settleAmount = accountLayout.settlementStates[partyA][partyB].actualAmount;
 
-			// Use correct allocation key based on master mode
+			// Use correct allocation key based on cross mode
 			address allocKey = LibAccount.partyBAllocationKey(partyB, partyA);
 
 			accountLayout.partyBAllocatedBalances[partyB][allocKey] += accountLayout.settlementStates[partyA][partyB].cva;

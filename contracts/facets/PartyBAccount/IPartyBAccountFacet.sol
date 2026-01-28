@@ -18,5 +18,5 @@ interface IPartyBAccountFacet is IPartyBAccountEvents {
 
 	function withdrawFromReserveVault(uint256 amount) external;
 
-	function activateMasterAccountMode() external;
+	function activateCrossPartyB() external;
 }
