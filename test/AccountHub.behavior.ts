@@ -1022,7 +1022,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(allocatedBalance).to.equal(BALANCES.SMALL_AMOUNT)
 				})
 
-				it("should block forbidden selectors for legacy multi-account addresses", async () => {
+				it("should block admin selectors for legacy multi-account addresses via Symmio core proxy protection", async () => {
 					const legacyMultiAccounts = await context.alViewFacet.getLegacyMultiAccounts()
 					expect(legacyMultiAccounts.length).to.be.greaterThan(0)
 					const legacyMultiAccount = await ethers.getContractAt("MockMultiAccount", legacyMultiAccounts[0])
@@ -1048,7 +1048,10 @@ export function shouldBehaveLikeAccountHub(): void {
 						context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victimAffiliate, attackerCollector]),
 					]
 
-					await expect(context.alCoreFacet.connect(context.signers.user)._call(legacyAccount, callData)).to.be.reverted
+					// Symmio core's onlyRole modifier blocks proxied calls (when signer is set)
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(legacyAccount, callData)).to.be.revertedWith(
+						"Accessibility: Cannot call via proxy",
+					)
 
 					const afterCollector = await context.viewFacet.getFeeCollector(victimAffiliate)
 					expect(afterCollector).to.equal(beforeCollector)
@@ -1063,7 +1066,10 @@ export function shouldBehaveLikeAccountHub(): void {
 						context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victimAffiliate, attackerCollector]),
 					]
 
-					await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.reverted
+					// Symmio core's onlyRole modifier blocks proxied calls (when signer is set)
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWith(
+						"Accessibility: Cannot call via proxy",
+					)
 
 					const afterCollector = await context.viewFacet.getFeeCollector(victimAffiliate)
 					expect(afterCollector).to.equal(beforeCollector)

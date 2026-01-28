@@ -42,7 +42,7 @@ export function shouldBehaveLikeHooks(): void {
         context.controlFacet
           .connect(context.signers.user)
           .registerHook(context.accountManager, await mockHook.getAddress()),
-      ).to.be.revertedWith("Accessibility: Must has role")
+      ).to.be.revertedWith("Accessibility: Must have role")
 
       // Admin has SETTER_ROLE in fixture
       await expect(

@@ -196,7 +196,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function internalTransferToBalance(
 		address user,
 		uint256 amount
-	) external whenNotInternalTransferPaused onlyRole(LibAccessibility.INTERNAL_TRANSFER_TO_BALANCE_ROLE) {
+	) external whenNotInternalTransferPaused onlyRoleAllowProxy(LibAccessibility.INTERNAL_TRANSFER_TO_BALANCE_ROLE) {
 		address signer = LibSigner.getSigner();
 
 		AccountFacetImpl.internalTransferToBalance(user, amount);

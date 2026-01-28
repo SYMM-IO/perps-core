@@ -27,13 +27,39 @@ abstract contract Accessibility {
 	}
 
 
+	/// @notice Restricts function access to accounts that are admins for a specific role.
+	/// @dev Includes proxy protection by default. When a proxy sets a signer before forwarding calls,
+	///      `msg.sender` becomes the proxy address. Without the proxy check, functions would authorize
+	///      based on the proxy's roles rather than the original caller's - allowing users to inherit
+	///      any privileged roles held by the proxy.
 	modifier onlyRoleAdmin(bytes32 role) {
+		require(MAStorage.layout().signer == address(0), "Accessibility: Cannot call via proxy");
 		require(LibAccessibility.isRoleAdmin(msg.sender, role), "Accessibility: Must be role admin");
 		_;
 	}
 
+	/// @notice Restricts function access to accounts with a specific role.
+	/// @dev Includes proxy protection by default. When a proxy sets a signer before forwarding calls,
+	///      `msg.sender` becomes the proxy address. Without the proxy check, functions would authorize
+	///      based on the proxy's roles rather than the original caller's - allowing users to inherit
+	///      any privileged roles held by the proxy.
+	///
+	///      For functions that proxies legitimately need to call (e.g., setSigner), use onlyRoleAllowProxy instead.
 	modifier onlyRole(bytes32 role) {
-		require(LibAccessibility.hasRole(msg.sender, role), "Accessibility: Must has role");
+		require(MAStorage.layout().signer == address(0), "Accessibility: Cannot call via proxy");
+		require(LibAccessibility.hasRole(msg.sender, role), "Accessibility: Must have role");
+		_;
+	}
+
+	/// @notice Same as onlyRole but allows calls through proxies that set a signer.
+	/// @dev USE WITH CAUTION. Only use this for functions that:
+	///      1. Must be callable by proxies to function correctly (e.g., setSigner for proxy context setup)
+	///      2. Have been explicitly reviewed for proxy-related security implications
+	///
+	///      If a proxy holds the required role, any user routing calls through that proxy will pass
+	///      this check. Ensure this is the intended behavior before using this modifier.
+	modifier onlyRoleAllowProxy(bytes32 role) {
+		require(LibAccessibility.hasRole(msg.sender, role), "Accessibility: Must have role");
 		_;
 	}
 
