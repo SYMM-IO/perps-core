@@ -88,7 +88,8 @@ interface IControlEvents {
 	event SetSuspendedAddress(address user, bool isSuspended);
 	event SetPartyBEmergencyStatus(address partyB, bool status);
 	event SetBalanceLimitPerUser(uint256 balanceLimitPerUser);
-	event SetMasterAccountEnabled(bool oldValue, bool newValue);
+	event SetCrossEnabled(bool oldValue, bool newValue);
+	event SetLegacyDeallocateDisabled(bool oldValue, bool newValue);
 	event RegisterPartyB(address partyB);
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);
@@ -124,4 +125,5 @@ interface IControlEvents {
 	event SetPartyBBindable(address partyB, bool bindable);
 	event DeprecateOldFundingFee();
 	event EnableNewFundingFee();
+	event SetCrossPartyB(address indexed partyB, bool enabled);
 }

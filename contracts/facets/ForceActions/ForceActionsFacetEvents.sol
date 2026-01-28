@@ -26,8 +26,8 @@ interface ForceActionsFacetEvents {
 		QuoteStatus quoteStatus,
 		uint256 closeId
 	);
-	// Master account mode force close event with solvency flag
-	event ForceClosePositionMasterAccount(
+	// Cross partyB mode force close event with solvency flag
+	event ForceClosePositionCross(
 		uint256 quoteId,
 		address partyA,
 		address partyB,

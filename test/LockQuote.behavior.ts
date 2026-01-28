@@ -13,7 +13,7 @@ import { LockQuoteValidator } from "./models/validators/LockQuoteValidator.js"
 import { UnlockQuoteValidator } from "./models/validators/UnlockQuoteValidator.js"
 import { decimal, pausePartyB } from "./utils/Common.js"
 import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 
 export function shouldBehaveLikeLockQuote(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger, user2: User
@@ -120,7 +120,7 @@ export function shouldBehaveLikeLockQuote(): void {
 		it("Should check bind partyB when bound", async function () {
 			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
-			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await expect(hedger2.lockQuote(1)).to.be.revertedWith("PartyBFacet: PartyB is not bounded to this partyA")
 		})
 
@@ -134,7 +134,7 @@ export function shouldBehaveLikeLockQuote(): void {
 		})
 	})
 
-	describe("Master account shared buckets", function () {
+	describe("Cross partyB shared buckets", function () {
 		let quoteUser1: QuoteStruct, quoteUser2: QuoteStruct
 
 		beforeEach(async function () {
@@ -147,21 +147,21 @@ export function shouldBehaveLikeLockQuote(): void {
 
 			await hedger.lockQuote(quoteUser1.id)
 			await hedger.lockQuote(quoteUser2.id)
-			await migratePartyBToMaster(context, hedger, [quoteUser1.id, quoteUser2.id])
+			await migratePartyBToCross(context, hedger, [quoteUser1.id, quoteUser2.id])
 
 			quoteUser1 = await context.viewFacetQuote.getQuote(quoteUser1.id)
 			quoteUser2 = await context.viewFacetQuote.getQuote(quoteUser2.id)
 		})
 
-		it("locks quotes into the shared master bucket instead of partyA buckets", async function () {
-			const masterBucket = await hedger.getBalanceInfoMasterAccount()
+		it("locks quotes into the shared cross bucket instead of partyA buckets", async function () {
+			const crossBucket = await hedger.getBalanceInfoCrossPartyB()
 			const partyABucket1 = await hedger.getBalanceInfo(await user.getAddress())
 			const partyABucket2 = await hedger.getBalanceInfo(await user2.getAddress())
 
 			let totalCVA = BigInt(quoteUser1.lockedValues.cva) + BigInt(quoteUser2.lockedValues.cva)
 			let totalLF = BigInt(quoteUser1.lockedValues.lf) + BigInt(quoteUser2.lockedValues.lf)
 			let totalMMPartyB = BigInt(quoteUser1.lockedValues.partyBmm) + BigInt(quoteUser2.lockedValues.partyBmm)
-			let totalLockedMaster = masterBucket.pendingLockedCva + masterBucket.pendingLockedLf + masterBucket.pendingLockedMmPartyB
+			let totalLockedCross = crossBucket.pendingLockedCva + crossBucket.pendingLockedLf + crossBucket.pendingLockedMmPartyB
 
 			expect(partyABucket1.pendingLockedCva).to.eq(quoteUser1.lockedValues.cva)
 			expect(partyABucket1.pendingLockedLf).to.eq(quoteUser1.lockedValues.lf)
@@ -170,10 +170,10 @@ export function shouldBehaveLikeLockQuote(): void {
 			expect(partyABucket2.pendingLockedLf).to.eq(quoteUser2.lockedValues.lf)
 			expect(partyABucket2.pendingLockedMmPartyB).to.eq(quoteUser2.lockedValues.partyBmm)
 
-			expect(masterBucket.pendingLockedCva).to.equal(totalCVA)
-			expect(masterBucket.pendingLockedLf).to.equal(totalLF)
-			expect(masterBucket.pendingLockedMmPartyB).to.equal(totalMMPartyB)
-			expect(masterBucket.totalPendingLockedPartyB).to.equal(totalLockedMaster)
+			expect(crossBucket.pendingLockedCva).to.equal(totalCVA)
+			expect(crossBucket.pendingLockedLf).to.equal(totalLF)
+			expect(crossBucket.pendingLockedMmPartyB).to.equal(totalMMPartyB)
+			expect(crossBucket.totalPendingLockedPartyB).to.equal(totalLockedCross)
 		})
 	})
 

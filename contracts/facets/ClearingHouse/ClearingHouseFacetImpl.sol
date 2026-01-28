@@ -23,7 +23,7 @@ library ClearingHouseFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
-		require(accountLayout.masterAccountMode[partyB], "ClearingHouseFacet: partyB is not using master account mode");
+		require(accountLayout.isCrossPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
 		LibMuonLiquidation.verifyCrossLiquidation(liquidationSig, partyB);
 
 		require(
@@ -154,7 +154,7 @@ library ClearingHouseFacetImpl {
 			LibQuote.removeFromOpenPositions(quote.id);
 			quoteLayout.partyAPositionsCount[partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
-			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1; // total positions for partyB in master account mode
+			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1; // total positions for partyB in cross partyB mode
 
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
@@ -173,7 +173,7 @@ library ClearingHouseFacetImpl {
 			}
 		}
 
-		// If no more positions left for partyB in master account mode, clear locked balances and cross liquidation status
+		// If no more positions left for partyB in cross partyB mode, clear locked balances and cross liquidation status
 		if (quoteLayout.partyBPositionsCount[partyB][address(0)] == 0) {
 			crossLiquidationDetail.inProgress = false;
 			crossLiquidationDetail.timestamp = 0;
@@ -184,7 +184,7 @@ library ClearingHouseFacetImpl {
 
 	function softPartyBLiquidation(address partyB, uint256 penalty) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		require(accountLayout.masterAccountMode[partyB], "ClearingHouseFacet: partyB is not using master account mode");
+		require(accountLayout.isCrossPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
 		if (penalty != 0) {
 			require(MAStorage.layout().softLiquidationPenaltyCollector != address(0), "ClearingHouse: No Penalty Collector");
 			require(penalty <= accountLayout.partyBAllocatedBalances[partyB][address(0)], "ClearingHouse: Insufficient Balance");

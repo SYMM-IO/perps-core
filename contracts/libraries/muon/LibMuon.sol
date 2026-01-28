@@ -38,12 +38,12 @@ library LibMuon {
 		verifyPartyBUpnl(upnlSig, partyB, partyA, false);
 	}
 
-	// Used in Account (deallocate/clearing house) to enforce master account nonce usage
+	// Used in Account (deallocate/clearing house) to enforce cross partyB nonce usage
 	function verifyPartyBUpnl(
 		SingleUpnlSig memory upnlSig,
 		address partyB,
 		address partyA,
-		bool useMasterNonce
+		bool useCrossNonce
 	) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
@@ -56,7 +56,7 @@ library LibMuon {
 				address(this),
 				partyB,
 				partyA,
-				LibAccount.getPartyBSignatureNonce(partyB, partyA, useMasterNonce),
+				LibAccount.getPartyBSignatureNonce(partyB, partyA, useCrossNonce),
 				upnlSig.upnl,
 				upnlSig.timestamp,
 				getChainId()

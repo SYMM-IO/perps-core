@@ -723,25 +723,25 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
-	describe("setMasterAccountEnabled", () => {
-		it("should allow admin to toggle master account activation", async function () {
-			expect(await context.viewFacet.isMasterAccountEnabled()).to.equal(false)
+	describe("setCrossEnabled", () => {
+		it("should allow admin to toggle cross partyB activation", async function () {
+			expect(await context.viewFacet.isCrossEnabled()).to.equal(false)
 
 			// set true
-			await expect(context.controlFacet.connect(owner).setMasterAccountEnabled(true))
-				.to.emit(context.controlFacet, "SetMasterAccountEnabled")
+			await expect(context.controlFacet.connect(owner).setCrossEnabled(true))
+				.to.emit(context.controlFacet, "SetCrossEnabled")
 				.withArgs(false, true)
-			expect(await context.viewFacet.isMasterAccountEnabled()).to.equal(true)
+			expect(await context.viewFacet.isCrossEnabled()).to.equal(true)
 
 			// set false
-			await expect(context.controlFacet.connect(owner).setMasterAccountEnabled(false))
-				.to.emit(context.controlFacet, "SetMasterAccountEnabled")
+			await expect(context.controlFacet.connect(owner).setCrossEnabled(false))
+				.to.emit(context.controlFacet, "SetCrossEnabled")
 				.withArgs(true, false)
-			expect(await context.viewFacet.isMasterAccountEnabled()).to.equal(false)
+			expect(await context.viewFacet.isCrossEnabled()).to.equal(false)
 		})
 
-		it("should revert when caller dont have admin role for master account activation set", async function () {
-			await expect(context.controlFacet.connect(user2).setMasterAccountEnabled(true)).to.be.revertedWith("Accessibility: Must have role")
+		it("should revert when caller dont have admin role for cross partyB activation set", async function () {
+			await expect(context.controlFacet.connect(user2).setCrossEnabled(true)).to.be.revertedWith("Accessibility: Must have role")
 		})
 	})
 

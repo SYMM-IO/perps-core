@@ -18,7 +18,7 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 	 * @param updatedPrices New prices to be set as openedPrice for the specified quotes.
 	 * @param partyA Address of party A
 	 * @dev DEPRECATED: This function is kept for backward compatibility. Use settleUpnlUnified instead,
-	 *      which supports both masterAccount and normal partyB modes with a unified signature format.
+	 *      which supports both crossPartyB and normal partyB modes with a unified signature format.
 	 */
 	function settleUpnl(
 		SettlementSig memory settlementSig,
@@ -36,7 +36,7 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 	}
 
 	/**
-	 * @notice Unified settlement function that works for both masterAccount and normal partyB modes
+	 * @notice Unified settlement function that works for both crossPartyB and normal partyB modes
 	 * @dev Settles quotes for a single partyB across one or more partyAs
 	 * @param sig The unified settlement signature containing quote data and UPNLs
 	 * @param updatedPrices Array of new prices to set as openedPrice for each quote
@@ -49,7 +49,7 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 		uint256[] memory newPartyAsAllocatedBalances = SettlementFacetImpl.settleUpnlUnified(sig, updatedPrices);
 
 		// Get partyB allocated balance based on mode
-		address allocKey = accountLayout.masterAccountMode[sig.partyB] ? address(0) : sig.partyAs[0];
+		address allocKey = accountLayout.isCrossPartyB[sig.partyB] ? address(0) : sig.partyAs[0];
 		uint256 newPartyBAllocatedBalance = accountLayout.partyBAllocatedBalances[sig.partyB][allocKey];
 
 		emit SettleUpnlUnified(

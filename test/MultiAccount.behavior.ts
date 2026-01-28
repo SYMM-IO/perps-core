@@ -332,7 +332,7 @@ export function shouldBehaveLikeMultiAccount() {
 
 				let deposit = context.accountFacet.interface.encodeFunctionData("deposit", [decimal(10000n)])
 
-				let allocate = context.accountFacet.interface.encodeFunctionData("allocateForPartyB", [decimal(10000n), partyAAccount])
+				let allocate = context.partyBAccountFacet.interface.encodeFunctionData("allocateForPartyB", [decimal(10000n), partyAAccount])
 
 				await symmioPartyB.connect(context.signers.admin)._call([deposit])
 				await symmioPartyB.connect(context.signers.admin)._call([allocate])

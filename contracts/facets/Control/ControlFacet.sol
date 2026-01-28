@@ -417,12 +417,20 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.layout().balanceLimitPerUser = balanceLimitPerUser;
 	}
 
-	/// @notice Enables or disables master account functionality (feature flag for Party B master account mode).
-	/// @param enabled True to enable master account functionality, false to disable.
-	function setMasterAccountEnabled(bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+	/// @notice Enables or disables cross partyB functionality (feature flag for cross partyB mode).
+	/// @param enabled True to enable cross partyB functionality, false to disable.
+	function setCrossEnabled(bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		emit SetMasterAccountEnabled(appLayout.masterAccountEnabled, enabled);
-		appLayout.masterAccountEnabled = enabled;
+		emit SetCrossEnabled(appLayout.crossEnabled, enabled);
+		appLayout.crossEnabled = enabled;
+	}
+
+	/// @notice Enables or disables the legacy deallocate function. When disabled, users must use safeDeallocate.
+	/// @param disabled True to disable legacy deallocate (requiring safeDeallocate), false to allow legacy deallocate.
+	function setLegacyDeallocateDisabled(bool disabled) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetLegacyDeallocateDisabled(appLayout.legacyDeallocateDisabled, disabled);
+		appLayout.legacyDeallocateDisabled = disabled;
 	}
 
 	/// @notice Registers a bridge contract.
@@ -602,5 +610,17 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
 		accountLayout.isPartyBBindable[partyB] = bindable;
 		emit SetPartyBBindable(partyB, bindable);
+	}
+
+	/// @notice Enables or disables cross partyB mode for a specific Party B.
+	/// @dev Cross partyB mode allows Party B to manage all partyA positions from a single aggregated balance.
+	///      This should be called AFTER migrating locked values using MigrationFacet.migrateCrossLockedValues.
+	/// @param partyB The address of the Party B to configure.
+	/// @param enabled True to enable cross partyB mode, false to disable.
+	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		require(GlobalAppStorage.layout().crossEnabled, "ControlFacet: Cross feature disabled");
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
+		AccountStorage.layout().isCrossPartyB[partyB] = enabled;
+		emit SetCrossPartyB(partyB, enabled);
 	}
 }

@@ -279,6 +279,146 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				ethers.parseUnits("70", 18)
 			);
 		});
+
+		it("Should notify express provider when suspending express withdraw", async function() {
+			const MockExpressProvider = await ethers.getContractFactory(
+				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+			);
+			expressProvider = await MockExpressProvider.deploy(context.diamond);
+			await expressProvider.waitForDeployment();
+			const expressProviderAddress = await expressProvider.getAddress();
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.registerExpressProvider(expressProviderAddress);
+			await context.collateral.transfer(
+				expressProviderAddress,
+				ethers.parseUnits("1000", 18)
+			);
+
+			const expressParts = await buildParts(["50", "20"], {
+				expressProvider: expressProviderAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(expressParts, false, "0x");
+
+			await context.pauseControlFacet
+				.connect(context.signers.admin)
+				.suspendedAddress(context.signers.user.address);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.admin)
+					.suspendWithdrawRequest(user.address, 1)
+			)
+				.to.emit(expressProvider, "WithdrawSuspended")
+				.withArgs(user.address, 1);
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(
+				user.address,
+				1
+			);
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.SUSPENDED);
+		});
+
+		it("Should notify virtual provider when suspending virtual withdraw", async function() {
+			const MockVirtualProvider = await ethers.getContractFactory(
+				"contracts/test/MockVirtualProvider.sol:VirtualProvider"
+			);
+			virtualProvider = await MockVirtualProvider.deploy(context.diamond);
+			await virtualProvider.waitForDeployment();
+			const virtualProviderAddress = await virtualProvider.getAddress();
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.registerVirtualProvider(virtualProviderAddress);
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(
+					context.signers.admin.address,
+					roleHash("VIRTUAL_DEPOSITOR_ROLE")
+				);
+
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
+
+			receiver1 = context.signers.user.address;
+			const virtualParts = await buildParts(["50", "20"], {
+				virtualProvider: virtualProviderAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(virtualParts, false, "0x");
+
+			await context.pauseControlFacet
+				.connect(context.signers.admin)
+				.suspendedAddress(context.signers.user.address);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.admin)
+					.suspendWithdrawRequest(user.address, 1)
+			)
+				.to.emit(virtualProvider, "WithdrawSuspended")
+				.withArgs(user.address, 1);
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(
+				user.address,
+				1
+			);
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.SUSPENDED);
+		});
+
+		it("Should notify express provider when suspending accepted express withdraw", async function() {
+			const MockExpressProvider = await ethers.getContractFactory(
+				"contracts/test/MockExpressProvider.sol:ExpressProvider"
+			);
+			expressProvider = await MockExpressProvider.deploy(context.diamond);
+			await expressProvider.waitForDeployment();
+			const expressProviderAddress = await expressProvider.getAddress();
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.registerExpressProvider(expressProviderAddress);
+			await context.collateral.transfer(
+				expressProviderAddress,
+				ethers.parseUnits("1000", 18)
+			);
+
+			const expressParts = await buildParts(["50", "20"], {
+				expressProvider: expressProviderAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(expressParts, false, "0x");
+
+			await expressProvider.acceptWithdrawRequest(user.address, 1);
+
+			await context.pauseControlFacet
+				.connect(context.signers.admin)
+				.suspendedAddress(context.signers.user.address);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.admin)
+					.suspendWithdrawRequest(user.address, 1)
+			)
+				.to.emit(expressProvider, "WithdrawSuspended")
+				.withArgs(user.address, 1);
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(
+				user.address,
+				1
+			);
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.SUSPENDED);
+		});
 	});
 
 	describe("Normal Withdraw", function() {

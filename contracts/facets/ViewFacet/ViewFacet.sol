@@ -14,7 +14,7 @@ import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { MuonStorage } from "../../storages/MuonStorage.sol";
 import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
-import { MasterAccountMigrationStorage } from "../../storages/MasterAccountMigrationStorage.sol";
+import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { BridgeStorage, BridgeTransaction } from "../../storages/BridgeStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -139,13 +139,13 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Returns balance information of Party B in master account mode.
+	 * @notice Returns balance information of Party B in cross partyB mode.
 	 * @param partyB The address of Party B.
 	 * @return allocatedBalances The allocated balances of Party B.
 	 * @return lockedBalances The locked balances of Party B.
 	 * @return pendingLockedBalances The pending locked balances of Party B.
 	 */
-	function balanceInfoOfPartyBMasterAccount(
+	function balanceInfoOfCrossPartyB(
 		address partyB
 	) external view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -182,30 +182,38 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Returns the balance of Party B emergency reserve vault.
+	 * @notice Returns the balance of cross partyB (aggregated allocated balance).
 	 * @param partyB The address of Party B.
-	 * @return The balance of Party B vault.
+	 * @return The aggregated allocated balance of cross partyB.
 	 */
-	function balanceOfMasterAccount(address partyB) external view returns (uint256) {
+	function balanceOfCrossPartyB(address partyB) external view returns (uint256) {
 		return AccountStorage.layout().partyBAllocatedBalances[partyB][address(0)];
 	}
 
 	/**
-	 * @notice Checks if a party B is in master account mode.
+	 * @notice Checks if a party B is a cross partyB.
 	 * @param partyB The address of Party B.
-	 * @return A boolean indicating whether the party B is in master account mode.
+	 * @return A boolean indicating whether the party B is a cross partyB.
 	 */
-	function isInMasterAccountMode(address partyB) external view returns (bool) {
-		return AccountStorage.layout().masterAccountMode[partyB];
+	function isCrossPartyB(address partyB) external view returns (bool) {
+		return AccountStorage.layout().isCrossPartyB[partyB];
 	}
 
 	/**
-	 * @notice Checks if a party B has completed master account migration.
-	 * @param partyB The address of Party B.
-	 * @return A boolean indicating whether the party B has completed migration.
+	 * @notice Checks if the legacy deallocate function is disabled.
+	 * @return A boolean indicating whether legacy deallocate is disabled (true = must use safeDeallocate).
 	 */
-	function isMasterAccountMigrationComplete(address partyB) external view returns (bool) {
-		return MasterAccountMigrationStorage.layout().partyBMigrationComplete[partyB];
+	function isLegacyDeallocateDisabled() external view returns (bool) {
+		return GlobalAppStorage.layout().legacyDeallocateDisabled;
+	}
+
+	/**
+	 * @notice Checks if a party B has completed cross partyB locked values migration.
+	 * @param partyB The address of Party B.
+	 * @return A boolean indicating whether the party B has completed locked values migration.
+	 */
+	function isCrossPartyBMigrationComplete(address partyB) external view returns (bool) {
+		return MigrationStorage.layout().partyBLockedValuesMigrated[partyB];
 	}
 
 	/**
@@ -244,7 +252,7 @@ contract ViewFacet is IViewFacet {
 	 * @notice Returns the nonce of Party B for a specific Party A.
 	 * @param partyB The address of Party B.
 	 * @param partyA The address of Party A.
-	 * @return The nonce of Party B for Party A in normal mode or master account mode.
+	 * @return The nonce of Party B for Party A in normal mode or cross partyB mode.
 	 */
 	function nonceOfPartyB(address partyB, address partyA) external view returns (uint256) {
 		return AccountStorage.layout().partyBNonces[partyB][partyA];
@@ -373,11 +381,11 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Indicates whether Party B accounts are allowed to activate master account mode.
-	 * @return True if master account functionality is globally enabled, false otherwise.
+	 * @notice Indicates whether Party B accounts are allowed to activate cross partyB mode.
+	 * @return True if cross partyB functionality is globally enabled, false otherwise.
 	 */
-	function isMasterAccountEnabled() external view returns (bool) {
-		return GlobalAppStorage.layout().masterAccountEnabled;
+	function isCrossEnabled() external view returns (bool) {
+		return GlobalAppStorage.layout().crossEnabled;
 	}
 
 	/**

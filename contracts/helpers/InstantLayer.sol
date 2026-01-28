@@ -40,7 +40,6 @@ import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessCo
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { VirtualAccountDetail } from "../accountLayer/storages/AccountHubStorage.sol";
 import { IViewFacet } from "../accountLayer/facets/View/IViewFacet.sol";
 import { ICoreFacet } from "../accountLayer/facets/Core/ICoreFacet.sol";
@@ -860,9 +859,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			}
 		}
 
-		// Verify signature
-		if (!SignatureChecker.isValidSignatureNow(signer, hash, sigCallData)) {
-			revert InvalidSignature();
+		// Verify signature - skip if signer is the executor (msg.sender proves identity)
+		// Authorization was already verified above (PartyB registration or PartyA owner/delegation)
+		if (signer != msg.sender) {
+			if (!SignatureChecker.isValidSignatureNow(signer, hash, sigCallData)) {
+				revert InvalidSignature();
+			}
 		}
 
 		// Check for replay attacks

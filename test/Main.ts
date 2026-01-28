@@ -1,34 +1,36 @@
-import { shouldBehaveLikeFuzzTest } from "./FuzzTest.behavior.js"
-import { shouldBehaveLikeSettleAndForceClosePosition } from "./SettleAndForceClosePosition.behavior.js"
-import { shouldBehaveLikeFeeDistributor } from "./FeeDistributor.behavior.js"
-import { shouldBehaveLikeDiamond } from "./Diamond.behavior.js"
+import { shouldBehaveLikePartyBEmergencyActionsFacet } from "./PartyBEmergencyActionsFacet.behavior.js"
+import { shouldBehaveLikeAccessControlRoleAdmins } from "./AccessControlRoleAdmins.behavior.js"
 import { shouldBehaveLikeAccountFacet } from "./AccountFacet.behavior.js"
-import { shouldBehaveLikeSendQuote } from "./SendQuote.behavior.js"
-import { shouldBehaveLikeLockQuote } from "./LockQuote.behavior.js"
-import { shouldBehaveLikeOpenPosition } from "./OpenPosition.behavior.js"
-import { shouldBehaveLikeCancelQuote } from "./CancelQuote.behavior.js"
-import { shouldBehaveLikeClosePosition } from "./ClosePosition.behavior.js"
-import { shouldBehaveLikeEmergencyClosePosition } from "./EmergencyClosePosition.behavior.js"
-import { shouldBehaveLikeForceClosePosition } from "./ForceClosePosition.behavior.js"
-import { shouldBehaveLikeLiquidationFacet } from "./LiquidationFacet.behavior.js"
-import { shouldBehaveLikeFundingRate } from "./FundingRate.behavior.js"
-import { shouldBehaveLikePartyBPositionViews } from "./PartyBPositionViews.behavior.js"
-import { shouldBehaveLikeSpecificScenario } from "./SpecificScenario.behavior.js"
+import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior.js"
+import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior.js"
+import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior.js"
+import { shouldBehaveLikeAggregateViews } from "./AggregateViews.behavior.js"
 import { shouldBehaveLikeBridgeFacet } from "./BridgeFacet.behavior.js"
-import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
+import { shouldBehaveLikeCancelQuote } from "./CancelQuote.behavior.js"
+import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior.js"
+import { shouldBehaveLikeClosePosition } from "./ClosePosition.behavior.js"
 import { shouldBehaveLikeControlFacet } from "./ControlFacet.behavior.js"
+import { shouldBehaveLikeDiamond } from "./Diamond.behavior.js"
+import { shouldBehaveLikeEmergencyClosePosition } from "./EmergencyClosePosition.behavior.js"
+import { shouldBehaveLikeFeeDistributor } from "./FeeDistributor.behavior.js"
+import { shouldBehaveLikeForceClosePosition } from "./ForceClosePosition.behavior.js"
+import { shouldBehaveLikeFundingRate } from "./FundingRate.behavior.js"
+import { shouldBehaveLikeFuzzTest } from "./FuzzTest.behavior.js"
 import { shouldBehaveLikeHooks } from "./Hooks.behavior.js"
+import { shouldBehaveLikeLiquidationFacet } from "./LiquidationFacet.behavior.js"
+import { shouldBehaveLikeLockQuote } from "./LockQuote.behavior.js"
+import { shouldBehaveLikeMigration } from "./Migration.behavior.js"
+import { shouldBehaveLikeMultiAccount } from "./MultiAccount.behavior.js"
+import { shouldBehaveLikeOpenPosition } from "./OpenPosition.behavior.js"
+import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior.js"
+import { shouldBehaveLikeSendQuote } from "./SendQuote.behavior.js"
+import { shouldBehaveLikeSettleAndForceClosePosition } from "./SettleAndForceClosePosition.behavior.js"
 import { shouldBehaveLikeSettlement } from "./Settlement.behavior.js"
 import { shouldBehaveLikeSettlementUnified } from "./SettlementUnified.behavior.js"
-import { shouldBehaveLikeClearingHouseFacet } from "./ClearingHouseFacet.behavior.js"
-import { shouldBehaveLikePartyBBatchActionsFacet } from "./PartyBBatchActionsFacet.behavior.js"
+import { shouldBehaveLikeSpecificScenario } from "./SpecificScenario.behavior.js"
+import { shouldBehaveLikeSymmioPartyB } from "./SymmioPartyB.behavior.js"
+import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior.js"
 import { shouldBehaveLikeInstantLayer } from "./helpers/instant-layer.behavior.js"
-import { shouldBehaveLikeAccountHub } from "./AccountHub.behavior.js"
-import { shouldBehaveLikeAffiliateHub } from "./AffiliateHub.behavior.js"
-import { shouldBehaveLikeAccountManager } from "./AccountManager.behavior.js"
-import { shouldBehaveLikeWithdrawFacet } from "./WithdrawFacet.behavior.js";
-import { shouldBehaveLikeAccessControlRoleAdmins } from "./AccessControlRoleAdmins.behavior.js"
-import { shouldBehaveLikeMasterAccountMigration } from "./MasterAccountMigration.behavior.js"
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {
@@ -80,10 +82,6 @@ describe("UnitTests", function () {
 			shouldBehaveLikeFundingRate()
 		})
 
-		describe("PartyBPositionViews", async function () {
-			shouldBehaveLikePartyBPositionViews()
-		})
-
 		describe("SpecificScenario", async function () {
 			shouldBehaveLikeSpecificScenario()
 		})
@@ -108,8 +106,8 @@ describe("UnitTests", function () {
 			shouldBehaveLikeAccessControlRoleAdmins()
 		})
 
-		describe("MasterAccountMigration", async function () {
-			shouldBehaveLikeMasterAccountMigration()
+		describe("Migration", async function () {
+			shouldBehaveLikeMigration()
 		})
 
 		describe("Settlement", async function () {
@@ -128,12 +126,20 @@ describe("UnitTests", function () {
 			shouldBehaveLikeClearingHouseFacet()
 		})
 
+		describe("PartyBEmergencyActionsFacet", async function () {
+			shouldBehaveLikePartyBEmergencyActionsFacet()
+		})
+
 		describe("PartyBBatchActionsFacet", async function () {
 			shouldBehaveLikePartyBBatchActionsFacet()
 		})
 
 		describe("InstantLayer", async function () {
 			shouldBehaveLikeInstantLayer()
+		})
+
+		describe("SymmioPartyB", async function () {
+			shouldBehaveLikeSymmioPartyB()
 		})
 
 		describe("WithdrawFacet", async function () {
@@ -150,6 +156,10 @@ describe("UnitTests", function () {
 
 		describe("AccountManager", async function () {
 			shouldBehaveLikeAccountManager()
+		})
+
+		describe("AggregateViews", async function () {
+			shouldBehaveLikeAggregateViews()
 		})
 	} else if (process.env.TEST_MODE == "fuzz") {
 		describe("FuzzTest", async function () {

@@ -10,7 +10,7 @@ import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
 import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
-import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 
 contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet {
 	/**
@@ -36,22 +36,26 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		if (newId != 0) {
 			Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 			if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-				emit SendQuote(
-					newQuote.partyA,
-					newQuote.id,
-					newQuote.partyBsWhiteList,
-					newQuote.symbolId,
-					newQuote.positionType,
-					newQuote.orderType,
-					newQuote.requestedOpenPrice,
-					newQuote.marketPrice,
-					newQuote.quantity,
-					newQuote.lockedValues.cva,
-					newQuote.lockedValues.lf,
-					newQuote.lockedValues.partyAmm,
-					newQuote.lockedValues.partyBmm,
-					newQuote.tradingFee,
-					newQuote.deadline
+				LibSendQuoteEvents.emitSendQuoteEvents(
+					LibSendQuoteEvents.SendQuoteEventParams({
+						partyA: newQuote.partyA,
+						quoteId: newQuote.id,
+						partyBsWhiteList: newQuote.partyBsWhiteList,
+						symbolId: newQuote.symbolId,
+						positionType: newQuote.positionType,
+						orderType: newQuote.orderType,
+						price: newQuote.requestedOpenPrice,
+						marketPrice: newQuote.marketPrice,
+						quantity: newQuote.quantity,
+						cva: newQuote.lockedValues.cva,
+						lf: newQuote.lockedValues.lf,
+						partyAmm: newQuote.lockedValues.partyAmm,
+						partyBmm: newQuote.lockedValues.partyBmm,
+						tradingFee: newQuote.tradingFee,
+						deadline: newQuote.deadline,
+						affiliate: newQuote.affiliate,
+						data: newQuote.data
+					})
 				);
 			} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
 				emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
@@ -87,29 +91,5 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	function acceptCancelCloseRequest(uint256 quoteId) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
 		PartyBPositionActionsFacetImpl.acceptCancelCloseRequest(quoteId);
 		emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED, QuoteStorage.layout().closeIds[quoteId]);
-	}
-
-	/**
-	 * @notice Allows Party B to emergency close a position for the specified quote.
-	 * @param quoteId The ID of the quote for which the position is emergency closed.
-	 * @param upnlSig The Muon signature containing the unrealized profit and loss (UPNL) and the closing price.
-	 */
-	function emergencyClosePosition(
-		uint256 quoteId,
-		PairUpnlAndPriceSig memory upnlSig
-	) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote storage quote = quoteLayout.quotes[quoteId];
-		uint256 filledAmount = LibQuote.quoteOpenAmount(quote);
-		PartyBPositionActionsFacetImpl.emergencyClosePosition(quoteId, upnlSig);
-		emit EmergencyClosePosition(
-			quoteId,
-			quote.partyA,
-			quote.partyB,
-			filledAmount,
-			upnlSig.price,
-			quote.quoteStatus,
-			quoteLayout.closeIds[quoteId]
-		);
 	}
 }

@@ -2228,11 +2228,11 @@ export function shouldBehaveLikeAccountHub(): void {
 				it("should allow hook to execute action on behalf of account when selector is whitelisted", async () => {
 					// Whitelist bindToPartyB selector for this affiliate
 					const affiliateAddress = await context.accountManager.getAddress()
-					const bindToPartyBSelector = context.accountFacet.interface.getFunction("bindToPartyB").selector
+					const bindToPartyBSelector = context.bindingFacet.interface.getFunction("bindToPartyB").selector
 					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], true)
 
 					// Configure hook to call bindToPartyB
-					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
 
 					// Create a sub-account - hook should bind it to partyB
@@ -2256,7 +2256,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const affiliateAddress = await context.accountManager.getAddress()
 
 					// Configure hook to call bindToPartyB (not whitelisted)
-					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
 
 					const subAccountData = [createSubAccountData("SHOULD_FAIL_ACCOUNT", 0)]
@@ -2268,7 +2268,7 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should revert when no active hook context", async () => {
 					// Try to call executeForAccount directly (not from a hook)
-					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 
 					await expect(context.alCoreFacet.executeForAccount(bindCallData)).to.be.revertedWithCustomError(
 						context.alCoreFacet,
@@ -2278,10 +2278,10 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should emit HookActionExecuted event on successful callback", async () => {
 					const affiliateAddress = await context.accountManager.getAddress()
-					const bindToPartyBSelector = context.accountFacet.interface.getFunction("bindToPartyB").selector
+					const bindToPartyBSelector = context.bindingFacet.interface.getFunction("bindToPartyB").selector
 					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], true)
 
-					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
 
 					const subAccountData = [createSubAccountData("EVENT_TEST_ACCOUNT", 0)]
@@ -2294,13 +2294,13 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should allow admin to whitelist multiple selectors at once", async () => {
 					const affiliateAddress = await context.accountManager.getAddress()
-					const bindToPartyBSelector = context.accountFacet.interface.getFunction("bindToPartyB").selector
+					const bindToPartyBSelector = context.bindingFacet.interface.getFunction("bindToPartyB").selector
 					const allocateSelector = context.accountFacet.interface.getFunction("allocate").selector
 
 					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector, allocateSelector], true)
 
 					// Both should be whitelisted now - verify by using bindToPartyB
-					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
 
 					const subAccountData = [createSubAccountData("MULTI_SELECTOR_ACCOUNT", 0)]
@@ -2310,7 +2310,7 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should allow admin to revoke whitelisted selectors", async () => {
 					const affiliateAddress = await context.accountManager.getAddress()
-					const bindToPartyBSelector = context.accountFacet.interface.getFunction("bindToPartyB").selector
+					const bindToPartyBSelector = context.bindingFacet.interface.getFunction("bindToPartyB").selector
 
 					// First whitelist
 					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], true)
@@ -2319,7 +2319,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], false)
 
 					// Configure hook to call bindToPartyB (now revoked)
-					const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
 
 					const subAccountData = [createSubAccountData("REVOKED_SELECTOR_ACCOUNT", 0)]

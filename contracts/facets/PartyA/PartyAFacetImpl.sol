@@ -35,7 +35,6 @@ library PartyAFacetImpl {
 		uint256 lf,
 		uint256 partyAmm,
 		uint256 partyBmm,
-		uint256 maxFundingRate,
 		uint256 deadline,
 		address affiliate,
 		SingleUpnlAndPriceSig memory upnlSig,
@@ -107,6 +106,9 @@ library PartyAFacetImpl {
 		uint256 currentId = ++quoteLayout.lastId;
 
 		// create quote.
+		// NOTE: maxFundingRate is set to 1 (effectively disabled) because funding rate caps
+		// for the accumulated funding system are postponed to a later version.
+		// The field is kept for backward compatibility with existing quotes.
 		Quote memory quote = Quote({
 			id: currentId,
 			partyBsWhiteList: partyBsWhiteList,
@@ -121,7 +123,7 @@ library PartyAFacetImpl {
 			closedAmount: 0,
 			lockedValues: lockedValues,
 			initialLockedValues: lockedValues,
-			maxFundingRate: maxFundingRate,
+			maxFundingRate: 1, // Funding caps postponed to a later version
 			partyA: signer,
 			partyB: address(0),
 			quoteStatus: QuoteStatus.PENDING,

@@ -90,7 +90,7 @@ library LibMuonLiquidation {
 				address(this),
 				"verifyCrossLiquidation",
 				partyB,
-				LibAccount.getPartyBSignatureNonce(partyB, address(0), true), // this is for clearing house which we are always in master account mode
+				LibAccount.getPartyBSignatureNonce(partyB, address(0), true), // this is for clearing house which we are always in cross partyB mode
 				liquidationSig.upnl,
 				liquidationSig.timestamp,
 				liquidationSig.liquidationBlockNumber,

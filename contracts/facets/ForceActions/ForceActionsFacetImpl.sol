@@ -63,7 +63,7 @@ library ForceActionsFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
 
-		require(!accountLayout.masterAccountMode[partyB], "ForceActionsFacet: Master account mode enabled");
+		require(!accountLayout.isCrossPartyB[partyB], "ForceActionsFacet: Cross partyB mode enabled");
 
 		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
@@ -90,7 +90,7 @@ library ForceActionsFacetImpl {
 
 	/**
 	 * @dev DEPRECATED: This function is kept for backward compatibility. Use settleUpnlUnified in ForceCloseStepsImpl instead,
-	 *      which supports both masterAccount and normal partyB modes with a unified signature format.
+	 *      which supports both crossPartyB and normal partyB modes with a unified signature format.
 	 */
 	function settleUPNL(uint256 quoteId, SettlementSig memory sig, uint256[] memory updatedPrices) internal {
 		address partyA = QuoteStorage.layout().quotes[quoteId].partyA;

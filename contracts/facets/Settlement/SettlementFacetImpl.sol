@@ -24,8 +24,8 @@ library SettlementFacetImpl {
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
-		bool isMasterAccountMode = AccountStorage.layout().masterAccountMode[sig.partyB];
-		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isMasterAccountMode);
-		return LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
+		bool isCrossPartyB = AccountStorage.layout().isCrossPartyB[sig.partyB];
+		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB);
+		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
 	}
 }

@@ -104,17 +104,18 @@ library LibSettlement {
 
 			int256 settlementAmount = settleAmounts[i];
 
+			// Use correct allocation key based on cross mode
+			address allocKey = LibAccount.partyBAllocationKey(partyB, partyA);
+
 			totalSettlementAmount += settlementAmount;
 			if (settlementAmount >= 0) {
-				accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(settlementAmount);
+				accountLayout.partyBAllocatedBalances[partyB][allocKey] -= uint256(settlementAmount);
 				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			} else {
-				if (AccountStorage.layout().masterAccountMode[partyB])
-					accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(-settlementAmount);
-				else accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-settlementAmount);
+				accountLayout.partyBAllocatedBalances[partyB][allocKey] += uint256(-settlementAmount);
 				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			}
-			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][partyA];
+			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][allocKey];
 		}
 		if (totalSettlementAmount >= 0) {
 			accountLayout.allocatedBalances[partyA] += uint256(totalSettlementAmount);
@@ -126,7 +127,7 @@ library LibSettlement {
 	}
 
 	/**
-	 * @notice Unified settlement function that works for both masterAccount and normal partyB modes
+	 * @notice Unified settlement function that works for both crossPartyB and normal partyB modes
 	 * @dev Settles quotes for a single partyB across one or more partyAs
 	 * @param sig The unified settlement signature containing quote data and UPNLs
 	 * @param updatedPrices Array of new prices to set as openedPrice for each quote
@@ -137,13 +138,13 @@ library LibSettlement {
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices,
 		bool isForceClose
-	) public returns (uint256[] memory newPartyAsAllocatedBalances) {
+	) public returns (uint256[] memory newPartyAsAllocatedBalances, int256[] memory settleAmountsPerPartyA) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		address partyB = sig.partyB;
-		bool isMasterAccountMode = accountLayout.masterAccountMode[partyB];
+		bool isCrossPartyB = accountLayout.isCrossPartyB[partyB];
 
 		// 1. Validate lengths
 		require(sig.quotesSettlementsData.length > 0, "LibSettlement: Empty quotes array");
@@ -152,7 +153,7 @@ library LibSettlement {
 		require(sig.partyAs.length == sig.upnlPartyAs.length, "LibSettlement: Invalid upnlPartyAs length");
 
 		// 2. Validate UPNL structure matches mode
-		if (!isMasterAccountMode) {
+		if (!isCrossPartyB) {
 			require(sig.upnlPartyBPerPartyA.length == sig.partyAs.length, "LibSettlement: Invalid upnlPartyBPerPartyA length");
 		}
 
@@ -176,7 +177,7 @@ library LibSettlement {
 		require(!accountLayout.crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
 
 		// 5. Validate partyB solvency based on mode
-		if (isMasterAccountMode) {
+		if (isCrossPartyB) {
 			require(
 				LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyB, partyB, address(0)) >= 0,
 				"LibSettlement: PartyB is insolvent"
@@ -202,7 +203,7 @@ library LibSettlement {
 		}
 
 		// 7. Process quotes and calculate settlement amounts per partyA
-		int256[] memory settleAmountsPerPartyA = new int256[](sig.partyAs.length);
+		settleAmountsPerPartyA = new int256[](sig.partyAs.length);
 
 		for (uint256 i = 0; i < sig.quotesSettlementsData.length; i++) {
 			UnifiedQuoteSettlementData memory data = sig.quotesSettlementsData[i];
@@ -270,7 +271,7 @@ library LibSettlement {
 			LibAccount.increasePartyBNonce(partyB, partyA);
 
 			// Get allocation key based on mode
-			address allocKey = isMasterAccountMode ? address(0) : partyA;
+			address allocKey = isCrossPartyB ? address(0) : partyA;
 
 			// Update partyB balance
 			if (settlementAmount >= 0) {

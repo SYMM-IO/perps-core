@@ -27,7 +27,7 @@ library GlobalAppStorage {
 		bool externalTransferPaused;
 		mapping(address => mapping(uint256 => Fee)) affiliateFee; // affiliate => symbolId => fee
 		bool instantLayerPaused;
-		bool masterAccountEnabled;
+		bool crossEnabled;
 		mapping(address => bool) virtualProviders;
 		mapping(address => bool) expressProviders;
 		bool deprecateOldWithdrawalPaused;
@@ -37,6 +37,7 @@ library GlobalAppStorage {
 		bool iterativeFundingDeprecationFlag;
 		bool accumulativeFundingRateActivationFlag;
 		bool partyBOpenPositionsPaused;
+		bool legacyDeallocateDisabled;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

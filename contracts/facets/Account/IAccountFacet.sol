@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { IAccountEvents } from "./IAccountEvents.sol";
-import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 
 interface IAccountFacet is IAccountEvents {
 	//Party A
@@ -33,44 +33,11 @@ interface IAccountFacet is IAccountEvents {
 
 	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) external;
 
+	function safeDeallocate(uint256 amount, SingleUpnlWithPendingBalanceSig memory upnlSig) external;
+
+	function zeroUpnlDeallocate(uint256 amount) external;
+
 	function internalTransfer(address user, uint256 amount) external;
 
 	function internalTransferToBalance(address user, uint256 amount) external;
-
-	function externalTransfer(address receiver, uint256 amount, address target) external;
-
-	function bindToPartyB(address partyB) external;
-
-	function requestToUnbindFromPartyB() external;
-
-	function cancelUnbindRequest() external;
-
-	function completeUnbindRequest(address partyA) external;
-
-	function activateInstantActionMode() external;
-
-	function proposeToDeactivateInstantActionMode() external;
-
-	function deactivateInstantActionMode() external;
-
-	// PartyB
-	function allocateForPartyB(uint256 amount, address partyA) external;
-
-	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) external;
-
-	function activateMasterAccountMode() external;
-
-	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) external;
-
-	function depositToReserveVault(uint256 amount, address partyB) external;
-
-	function withdrawFromReserveVault(uint256 amount) external;
-
-	// Virtual External Transfer
-
-	function virtualExternalTransfer(address receiver, uint256 amount,address target, address virtualProvider) external;
-
-	function acceptVirtualExternalTransfer(uint256 id) external;
-
-	function cancelVirtualExternalTransfer(uint256 id) external;
 }

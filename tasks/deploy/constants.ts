@@ -1,16 +1,22 @@
 export const FacetNames = [
 	"AccountFacet",
-	"MasterAccountMigrationFacet",
+	"PartyBAccountFacet",
+	"ExternalTransferFacet",
+	"BindingFacet",
+	"AssuranceFacet",
+	"MigrationFacet",
 	"contracts/facets/Control/ControlFacet.sol:ControlFacet",
 	"SymbolControlFacet",
 	"PauseControlFacet",
 	"DiamondLoupeFacet",
-	"LiquidationFacet",
+	"PartyALiquidationFacet",
+	"PartyBLiquidationFacet",
 	"PartyAFacet",
 	"BridgeFacet",
 	"contracts/facets/ViewFacet/ViewFacet.sol:ViewFacet",
 	"ViewFacetSymbol",
 	"ViewFacetQuote",
+	"ViewFacetAggregate",
 	"FundingRateFacet",
 	"ForceActionsFacet",
 	"ForceCloseStepsFacet",
@@ -19,6 +25,7 @@ export const FacetNames = [
 	"PartyBQuoteActionsFacet",
 	"ClearingHouseFacet",
 	"PartyBBatchActionsFacet",
+	"PartyBEmergencyActionsFacet",
 	"WithdrawFacet"
 ]
 

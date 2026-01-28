@@ -14,12 +14,13 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyAFacet: ["LibQuoteClose"],
 	PartyBPositionActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
+	PartyBEmergencyActionsFacet: ["LibQuoteClose"],
 	PartyBQuoteActionsFacet: ["LibQuoteClose"],
 	ForceActionsFacet: ["LibQuoteClose", "LibSettlement"],
 	ForceCloseStepsFacet: ["LibQuoteClose", "LibSettlement"],
-	ViewFacetSymbol: ["LibQuoteFunding"],
+	ViewFacetQuote: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
-	LiquidationFacet: ["LibQuoteFunding"],
+	PartyALiquidationFacet: ["LibQuoteFunding"],
 	SettlementFacet: ["LibSettlement"],
 }
 

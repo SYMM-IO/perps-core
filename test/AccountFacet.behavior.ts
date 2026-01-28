@@ -13,8 +13,8 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
-import { getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
+import { getDummySingleUpnlSig, getDummySingleUpnlWithPendingBalanceSig } from "./utils/SignatureUtils.js"
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"))
 
@@ -168,6 +168,274 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 
 			await context.controlFacet.connect(provider).setSigner(ZeroAddress)
+		})
+	})
+
+	describe("Assurance collateral", function () {
+		beforeEach(async function () {
+			context = await loadFixture(initializeFixture)
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL)
+			await context.collateral.connect(context.signers.hedger).mint(await hedger.getAddress(), decimal(1000n))
+			await context.collateral.connect(context.signers.hedger).approve(context.diamond, ethers.MaxUint256)
+		})
+
+		it("reverts assurance collateral actions when accounting is paused", async function () {
+			const amount = decimal(1n)
+			await context.pauseControlFacet.pauseAccounting()
+
+			await expect(
+				context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount),
+			).to.be.revertedWith("Pausable: Accounting paused")
+
+			await expect(
+				context.assuranceFacet
+					.connect(hedger.signer)
+					.requestAssuranceWithdraw(await context.collateral.getAddress(), amount, context.signers.user.address),
+			).to.be.revertedWith("Pausable: Accounting paused")
+
+			await expect(context.assuranceFacet.connect(hedger.signer).cancelAssuranceWithdraw()).to.be.revertedWith("Pausable: Accounting paused")
+
+			await expect(
+				context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, await context.collateral.getAddress()),
+			).to.be.revertedWith("Pausable: Accounting paused")
+
+			await expect(
+				context.assuranceFacet.slashUser(await hedger.getAddress(), await context.collateral.getAddress(), amount, context.signers.user.address),
+			).to.be.revertedWith("Pausable: Accounting paused")
+		})
+
+		it("reverts assurance collateral actions for suspended user", async function () {
+			const amount = decimal(1n)
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await hedger.getAddress())
+
+			await expect(
+				context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount),
+			).to.be.revertedWith("Accessibility: Sender is Suspended")
+
+			await expect(
+				context.assuranceFacet
+					.connect(hedger.signer)
+					.requestAssuranceWithdraw(await context.collateral.getAddress(), amount, context.signers.user.address),
+			).to.be.revertedWith("Accessibility: Sender is Suspended")
+
+			await expect(context.assuranceFacet.connect(hedger.signer).cancelAssuranceWithdraw()).to.be.revertedWith("Accessibility: Sender is Suspended")
+		})
+
+		it("validates depositAssuranceCollateral require checks", async function () {
+			await expect(
+				context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), 0n),
+			).to.be.revertedWith("AccountFacet: invalid amount")
+		})
+
+		it("validates requestAssuranceWithdraw require checks", async function () {
+			const token = await context.collateral.getAddress()
+			const recipient = context.signers.user.address
+
+			await expect(context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, 0n, recipient)).to.be.revertedWith(
+				"AccountFacet: invalid amount",
+			)
+
+			await expect(context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, decimal(1n), ZeroAddress)).to.be.revertedWith(
+				"AccountFacet: invalid recipient",
+			)
+
+			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(token, decimal(10n))
+			await expect(context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, decimal(11n), recipient)).to.be.revertedWith(
+				"AccountFacet: insufficient Assurance collateral",
+			)
+
+			await expect(context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, decimal(5n), recipient)).to.not.be.reverted
+			await expect(context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, decimal(1n), recipient)).to.be.revertedWith(
+				"AccountFacet: withdraw pending",
+			)
+		})
+
+		it("validates cancelAssuranceWithdraw require checks", async function () {
+			await expect(context.assuranceFacet.connect(hedger.signer).cancelAssuranceWithdraw()).to.be.revertedWith(
+				"AccountFacet: no pending Assurance withdraw",
+			)
+		})
+
+		it("validates acceptAssuranceWithdraw require checks", async function () {
+			const token = await context.collateral.getAddress()
+			const amount = decimal(10n)
+			const recipient = context.signers.user.address
+
+			// role check
+			await expect(
+				context.assuranceFacet.connect(context.signers.user).acceptAssuranceWithdraw(await hedger.getAddress(), amount, token),
+			).to.be.revertedWith("Accessibility: Must has role")
+
+			// pending check
+			await expect(context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, token)).to.be.revertedWith(
+				"AccountFacet: no pending Assurance withdraw",
+			)
+
+			// params mismatch
+			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(token, amount)
+			await context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, amount, recipient)
+			await expect(context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, ZeroAddress)).to.be.revertedWith(
+				"AccountFacet: params mismatch",
+			)
+
+			// amount mismatch
+			await expect(context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount + 1n, token)).to.be.revertedWith(
+				"AccountFacet: params mismatch",
+			)
+		})
+
+		it("reverts acceptAssuranceWithdraw when approved amount exceeds requested amount", async function () {
+			const token = await context.collateral.getAddress()
+			const recipient = context.signers.user.address
+			const depositAmount = decimal(1000n)
+			const requestedWithdrawAmount = decimal(500n)
+
+			// Deposit 1000 assurance collateral
+			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(token, depositAmount)
+
+			// Request to withdraw 500
+			await context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, requestedWithdrawAmount, recipient)
+
+			// Try to accept with 501 (more than requested) - should fail with params mismatch
+			await expect(
+				context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), requestedWithdrawAmount + 1n, token),
+			).to.be.revertedWith("AccountFacet: params mismatch")
+
+			// Try to accept with 1000 (full deposit, but more than requested) - should fail with params mismatch
+			await expect(context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), depositAmount, token)).to.be.revertedWith(
+				"AccountFacet: params mismatch",
+			)
+
+			// Accept with exact requested amount - should succeed
+			await expect(context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), requestedWithdrawAmount, token)).to.not.be.reverted
+		})
+
+		it("allows partial approval of assurance withdrawal up to requested amount", async function () {
+			const token = await context.collateral.getAddress()
+			const recipient = context.signers.user.address
+			const depositAmount = decimal(1000n)
+			const requestedWithdrawAmount = decimal(500n)
+			const partialApprovalAmount = decimal(300n)
+
+			// Deposit 1000 assurance collateral
+			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(token, depositAmount)
+
+			// Request to withdraw 500
+			await context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, requestedWithdrawAmount, recipient)
+
+			const recipientBalanceBefore = await context.collateral.balanceOf(recipient)
+
+			// Accept with 300 (less than requested) - should succeed (partial approval allowed)
+			await expect(context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), partialApprovalAmount, token)).to.not.be.reverted
+
+			// Verify recipient received the partial amount
+			const recipientBalanceAfter = await context.collateral.balanceOf(recipient)
+			expect(recipientBalanceAfter - recipientBalanceBefore).to.equal(partialApprovalAmount)
+		})
+
+		it("validates acceptAssuranceWithdraw requester mismatch check (corrupted storage)", async function () {
+			const token = await context.collateral.getAddress()
+			const amount = decimal(10n)
+			const recipient = context.signers.user.address
+			const partyB = await hedger.getAddress()
+
+			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(token, amount)
+			await context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, amount, recipient)
+
+			// Corrupt `assuranceWithdrawalRequests[partyB].requester` in diamond storage to hit the `requester mismatch` require.
+			const accountStorageBaseSlot = BigInt(ethers.keccak256(toUtf8Bytes("diamond.standard.storage.account")))
+			const assuranceWithdrawalRequestsSlot = accountStorageBaseSlot + 35n
+			const entryBase = BigInt(
+				ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [partyB, assuranceWithdrawalRequestsSlot])),
+			)
+			const requesterAndStatusSlot = ethers.toBeHex(entryBase + 3n, 32)
+			const packedRequesterAndStatus = ethers.toBeHex(0n + (1n << 160n), 32) // requester=0x0, status=PENDING(1)
+
+			await ethers.provider.send("hardhat_setStorageAt", [context.diamond, requesterAndStatusSlot, packedRequesterAndStatus])
+			await ethers.provider.send("hardhat_mine", ["0x1"])
+
+			await expect(context.assuranceFacet.acceptAssuranceWithdraw(partyB, amount, token)).to.be.revertedWith("AccountFacet: requester mismatch")
+		})
+
+		it("validates slashUser require checks", async function () {
+			const token = await context.collateral.getAddress()
+			const recipient = context.signers.user.address
+
+			await expect(context.assuranceFacet.connect(context.signers.user).slashUser(await hedger.getAddress(), token, 1n, recipient)).to.be.revertedWith(
+				"Accessibility: Must has role",
+			)
+
+			await expect(context.assuranceFacet.slashUser(await hedger.getAddress(), token, 0n, recipient)).to.be.revertedWith(
+				"AccountFacet: invalid penalty",
+			)
+
+			await expect(context.assuranceFacet.slashUser(await hedger.getAddress(), token, 1n, recipient)).to.be.revertedWith(
+				"AccountFacet: insufficient Assurance collateral",
+			)
+		})
+
+		it("deposits assurance collateral", async function () {
+			const amount = decimal(200n)
+			const beforeDiamond = await context.collateral.balanceOf(context.diamond)
+			await expect(context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount))
+				.to.emit(context.assuranceFacet, "AssuranceCollateralDeposited")
+				.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount)
+			const afterDiamond = await context.collateral.balanceOf(context.diamond)
+			expect(afterDiamond - beforeDiamond).to.equal(amount)
+		})
+
+		it("requests and cancels assurance withdraw", async function () {
+			const amount = decimal(150n)
+			const recipient = context.signers.user.address
+			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount)
+			await expect(context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(await context.collateral.getAddress(), amount, recipient))
+				.to.emit(context.assuranceFacet, "AssuranceWithdrawRequested")
+				.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount, recipient)
+
+			await expect(context.assuranceFacet.connect(hedger.signer).cancelAssuranceWithdraw())
+				.to.emit(context.assuranceFacet, "AssuranceWithdrawCancelled")
+				.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount)
+
+			// can request again after cancel
+			await expect(context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(await context.collateral.getAddress(), amount, recipient)).to
+				.not.be.reverted
+		})
+
+		it("approves assurance withdraw and transfers to recipient", async function () {
+			const amount = decimal(180n)
+			const recipient = context.signers.user.address
+			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount)
+			await context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(await context.collateral.getAddress(), amount, recipient)
+			const beforeRecipient = await context.collateral.balanceOf(recipient)
+			const beforeDiamond = await context.collateral.balanceOf(context.diamond)
+
+			await expect(context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, await context.collateral.getAddress()))
+				.to.emit(context.assuranceFacet, "AssuranceWithdrawApproved")
+				.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount)
+
+			const afterRecipient = await context.collateral.balanceOf(recipient)
+			const afterDiamond = await context.collateral.balanceOf(context.diamond)
+			expect(afterRecipient - beforeRecipient).to.equal(amount)
+			expect(beforeDiamond - afterDiamond).to.equal(amount)
+		})
+
+		it("slashes user from assurance collateral", async function () {
+			const amount = decimal(120n)
+			const recipient = context.signers.user.address
+			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(await context.collateral.getAddress(), amount)
+			const beforeRecipient = await context.collateral.balanceOf(recipient)
+			const beforeDiamond = await context.collateral.balanceOf(context.diamond)
+
+			await expect(context.assuranceFacet.slashUser(await hedger.getAddress(), await context.collateral.getAddress(), amount, recipient))
+				.to.emit(context.assuranceFacet, "UserSlashed")
+				.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount, recipient)
+
+			const afterRecipient = await context.collateral.balanceOf(recipient)
+			const afterDiamond = await context.collateral.balanceOf(context.diamond)
+			expect(afterRecipient - beforeRecipient).to.equal(amount)
+			expect(beforeDiamond - afterDiamond).to.equal(amount)
 		})
 	})
 
@@ -385,7 +653,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
 
 			const notional = (quote.quantity * quote.requestedOpenPrice) / decimal(1n)
-			await context.accountFacet.connect(context.signers.hedger).allocateForPartyB((notional * QUOTE_NOTIONAL_MULTIPLIER) / decimal(1n), quote.partyA)
+			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB((notional * QUOTE_NOTIONAL_MULTIPLIER) / decimal(1n), quote.partyA)
 
 			await context.partyBQuoteActionsFacet.connect(context.signers.hedger).lockQuote(quoteId, await getDummySingleUpnlSig(UPNL_VALUES.ZERO))
 		})
@@ -393,7 +661,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should fail if amount be higher than partyBAllocatedBalances", async () => {
 			const excessiveAmount = decimal(210n)
 			await expect(
-				context.accountFacet
+				context.partyBAccountFacet
 					.connect(context.signers.hedger)
 					.deallocateForPartyB(excessiveAmount, await user.getAddress(), await getDummySingleUpnlSig()),
 			).to.be.revertedWith("AccountFacet: Insufficient allocated balance")
@@ -402,7 +670,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should fail if deallocation would make partyB liquidatable", async () => {
 			const liquidatableAmount = decimal(101n)
 			await expect(
-				context.accountFacet
+				context.partyBAccountFacet
 					.connect(context.signers.hedger)
 					.deallocateForPartyB(liquidatableAmount, await user.getAddress(), await getDummySingleUpnlSig()),
 			).to.be.revertedWith("AccountFacet: Will be liquidatable")
@@ -413,7 +681,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const expectedAllocated = BALANCES.HEDGER_ALLOCATE - deallocateAmount
 
 			await expect(
-				context.accountFacet
+				context.partyBAccountFacet
 					.connect(context.signers.hedger)
 					.deallocateForPartyB(deallocateAmount, await user.getAddress(), await getDummySingleUpnlSig()),
 			).to.not.be.reverted
@@ -499,6 +767,133 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig())
 			await time.increase(LIMITS.DEALLOCATE_COOLDOWN)
 			await expect(context.accountFacet.connect(context.signers.user).withdraw(BALANCES.DEALLOCATE_AMOUNT)).to.not.be.reverted
+		})
+	})
+
+	describe("SafeDeallocate", async function () {
+		beforeEach(async function () {
+			context = await loadFixture(initializeFixture)
+			user = new User(context, context.signers.user)
+			await user.setup()
+			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.DEPOSIT_AMOUNT, BALANCES.DEPOSIT_AMOUNT)
+		})
+
+		it("Should fail on insufficient allocated Balance", async function () {
+			const excessiveAmount = BALANCES.DEPOSIT_AMOUNT + BALANCES.ALLOCATE_AMOUNT
+			await expect(
+				context.accountFacet.connect(context.signers.user).safeDeallocate(excessiveAmount, await getDummySingleUpnlWithPendingBalanceSig()),
+			).to.be.revertedWith("AccountFacet: Insufficient allocated Balance")
+		})
+
+		it("Should fail when accounting is paused", async function () {
+			await context.pauseControlFacet.pauseAccounting()
+			await expect(
+				context.accountFacet.connect(context.signers.user).safeDeallocate(BALANCES.DEPOSIT_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
+			).to.be.revertedWith("Pausable: Accounting paused")
+		})
+
+		it("Should fail on available balance is lower than zero", async function () {
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(BALANCES.DEPOSIT_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.NEGATIVE_LARGE)),
+			).to.be.revertedWith("AccountFacet: Available balance is lower than zero")
+		})
+
+		it("Should fail on partyA becoming liquidatable", async function () {
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(BALANCES.DEPOSIT_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.NEGATIVE_SMALL)),
+			).to.be.revertedWith("AccountFacet: Insufficient balance considering pending allocations")
+		})
+
+		it("Should fail when pendingBalance makes partyA liquidatable", async function () {
+			// With pendingBalance of 200, user can only deallocate up to (300 - 200) = 100
+			// Trying to deallocate 150 should fail
+			const pendingBalance = decimal(200n)
+			const deallocateAmount = decimal(150n)
+			await expect(
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.ZERO, pendingBalance)),
+			).to.be.revertedWith("AccountFacet: Insufficient balance considering pending allocations")
+		})
+
+		it("Should safeDeallocate with zero pending balance", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const deallocateAmount = BALANCES.DEALLOCATE_AMOUNT
+			const expectedAllocated = BALANCES.DEPOSIT_AMOUNT - deallocateAmount
+
+			await context.accountFacet.connect(context.signers.user).safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig())
+
+			expect(await context.viewFacet.balanceOf(userAddress)).to.equal(deallocateAmount)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(expectedAllocated)
+		})
+
+		it("Should safeDeallocate with pending balance when enough available", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			// Allocated: 300, pendingBalance: 100, deallocate: 50
+			// Available after: 300 - 100 - 50 = 150 >= 0, should succeed
+			const pendingBalance = decimal(100n)
+			const deallocateAmount = BALANCES.DEALLOCATE_AMOUNT
+			const expectedAllocated = BALANCES.DEPOSIT_AMOUNT - deallocateAmount
+
+			await context.accountFacet
+				.connect(context.signers.user)
+				.safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig(UPNL_VALUES.ZERO, pendingBalance))
+
+			expect(await context.viewFacet.balanceOf(userAddress)).to.equal(deallocateAmount)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(expectedAllocated)
+		})
+
+		it("Should fail to safeDeallocate too often", async function () {
+			const deallocateAmount = BALANCES.SMALL_AMOUNT
+
+			await context.accountFacet.connect(context.signers.user).safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig())
+			await expect(
+				context.accountFacet.connect(context.signers.user).safeDeallocate(deallocateAmount, await getDummySingleUpnlWithPendingBalanceSig()),
+			).to.be.revertedWith("AccountFacet: Too many deallocate in a short window")
+		})
+	})
+
+	describe("Legacy Deallocate Disabling", async function () {
+		beforeEach(async function () {
+			context = await loadFixture(initializeFixture)
+			user = new User(context, context.signers.user)
+			await user.setup()
+			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.DEPOSIT_AMOUNT, BALANCES.DEPOSIT_AMOUNT)
+		})
+
+		it("Should allow legacy deallocate when not disabled", async function () {
+			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(false)
+			await expect(
+				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
+			).to.not.be.reverted
+		})
+
+		it("Should block legacy deallocate when disabled", async function () {
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
+			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(true)
+			await expect(
+				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
+			).to.be.revertedWith("AccountFacet: Legacy deallocate is disabled")
+		})
+
+		it("Should allow safeDeallocate when legacy is disabled", async function () {
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
+			await expect(
+				context.accountFacet.connect(context.signers.user).safeDeallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
+			).to.not.be.reverted
+		})
+
+		it("Should re-enable legacy deallocate", async function () {
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(false)
+			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(false)
+			await expect(
+				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
+			).to.not.be.reverted
 		})
 	})
 
@@ -833,7 +1228,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should allow authorized users to call externalTransfer", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.not.be.reverted
 		})
 
@@ -841,7 +1236,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
 		})
 
@@ -849,7 +1244,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const initialBalance = await context.viewFacet.balanceOf(context.signers.user.address)
 			const expectedBalance = initialBalance - BALANCES.TRANSFER_AMOUNT
 
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress)
 
@@ -861,7 +1256,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const userBalance = await context.viewFacet.balanceOf(context.signers.user.address)
 			const excessiveAmount = userBalance + BALANCES.TRANSFER_AMOUNT
 
-			await expect(context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, excessiveAmount, targetAddress))
+			await expect(context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, excessiveAmount, targetAddress))
 				.to.be.reverted
 		})
 
@@ -869,7 +1264,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const initialRelayerBalance = await context.collateral.balanceOf(targetAddress)
 			const expectedBalance = initialRelayerBalance + BALANCES.TRANSFER_AMOUNT
 
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress)
 
@@ -881,7 +1276,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const receiverAddress = context.signers.user2.address
 			const senderAddress = context.signers.user.address
 
-			await context.accountFacet.connect(context.signers.user).externalTransfer(receiverAddress, BALANCES.TRANSFER_AMOUNT, targetAddress)
+			await context.externalTransferFacet.connect(context.signers.user).externalTransfer(receiverAddress, BALANCES.TRANSFER_AMOUNT, targetAddress)
 
 			const lastTransfer = await mockTarget.lastTransfer()
 			expect(lastTransfer.collateral).to.equal(await context.collateral.getAddress())
@@ -893,31 +1288,31 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail with zero amount transfers", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, 0, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, 0, targetAddress),
 			).to.be.revertedWith("AccountFacet: Amount is zero")
 		})
 
 		it("Should fail with zero receiver address", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(ZeroAddress, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(ZeroAddress, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("AccountFacet: Zero receiver or target")
 		})
 
 		it("Should fail with zero target address", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, ZeroAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, ZeroAddress),
 			).to.be.revertedWith("AccountFacet: Zero receiver or target")
 		})
 
 		it("Should handle self-transfers", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.not.be.reverted
 		})
 
 		it("Should fail when target is not whitelisted", async function () {
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress2),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress2),
 			).to.be.revertedWith("AccountFacet: Target not whitelisted")
 		})
 
@@ -925,7 +1320,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).removeRelayerForExternalTransferTarget(targetAddress)
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("AccountFacet: Target not whitelisted")
 		})
 
@@ -934,7 +1329,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await mockTarget.setShouldRevert(true, revertMessage)
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Relayer error")
 		})
 
@@ -942,7 +1337,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseExternalTransfer()
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Pausable: External transfer paused")
 		})
 
@@ -950,7 +1345,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Pausable: Accounting paused")
 		})
 
@@ -958,7 +1353,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
 			await expect(
-				context.accountFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Pausable: Global paused")
 		})
 	})
@@ -1001,7 +1396,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.addRelayerForExternalTransferTarget(targetContext.diamond, await relayer.getAddress())
 
 			// first external transfer
-			await sourceContext.accountFacet
+			await sourceContext.externalTransferFacet
 				.connect(sourceContext.signers.user)
 				.externalTransfer(receiver, firstExternalTransferAmount, targetContext.diamond)
 
@@ -1016,7 +1411,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			expect(await sourceContext.collateral.allowance(await relayer.getAddress(), targetContext.diamond)).to.equal(0n)
 
 			// second external transfer
-			await sourceContext.accountFacet
+			await sourceContext.externalTransferFacet
 				.connect(sourceContext.signers.user)
 				.externalTransfer(receiver, secondExternalTransferAmount, targetContext.diamond)
 
@@ -1060,7 +1455,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should virtual external transfer correctly", async function () {
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress),
 			).to.not.be.reverted
@@ -1069,7 +1464,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should accept virtual external transfer correctly", async function () {
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
 			await expect(mockProvider.acceptVirtualExternalTransfer(1)).not.reverted
@@ -1079,10 +1474,10 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should cancel virtual external transfer correctly", async function () {
 			const beforeBalance = await context.viewFacet.balanceOf(user.address)
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
-			await expect(context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).not.reverted
+			await expect(context.externalTransferFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).not.reverted
 			const externalTransfer = await context.viewFacet.getVirtualExternalTransfer(1)
 			expect(externalTransfer.status).to.equal(ExternalTransferStatus.CANCELED)
 			const afterBalance = await context.viewFacet.balanceOf(user.address)
@@ -1091,10 +1486,10 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should change balance in cancel virtual external transfer correctly", async function () {
 			const beforeBalance = await context.viewFacet.balanceOf(user.address)
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
-			await expect(context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).not.reverted
+			await expect(context.externalTransferFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).not.reverted
 			const afterBalance = await context.viewFacet.balanceOf(user.address)
 			expect(afterBalance).to.equal(beforeBalance)
 		})
@@ -1102,7 +1497,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should correctly update sender balance", async function () {
 			const initialBalance = await context.viewFacet.balanceOf(context.signers.user.address)
 
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
 
@@ -1113,7 +1508,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should fail when sender is suspended", async function () {
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress),
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
@@ -1124,7 +1519,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const excessiveAmount = userBalance + BigInt(transferAmount)
 
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, excessiveAmount, context.diamond, providerAddress),
 			).to.be.revertedWith("AccountFacet: Insufficient balance")
@@ -1132,7 +1527,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail with zero amount transfers", async function () {
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, 0, context.diamond, providerAddress),
 			).to.be.revertedWith("AccountFacet: Amount is zero")
@@ -1140,7 +1535,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail with zero receiver address", async function () {
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(ethers.ZeroAddress, transferAmount, context.diamond, providerAddress),
 			).to.be.revertedWith("AccountFacet: Zero Receiver or Zero Target")
@@ -1148,66 +1543,66 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail with zero target address", async function () {
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, transferAmount, ethers.ZeroAddress, providerAddress),
 			).to.be.revertedWith("AccountFacet: Zero Receiver or Zero Target")
 		})
 
 		it("Should fail to accept virtual external transfer with invalid status", async function () {
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
 			await mockProvider.acceptVirtualExternalTransfer(1)
 			await expect(mockProvider.acceptVirtualExternalTransfer(1)).to.revertedWith("AccountFacet: External transfer already processed")
 
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
-			await context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(2)
+			await context.externalTransferFacet.connect(context.signers.user).cancelVirtualExternalTransfer(2)
 			await expect(mockProvider.acceptVirtualExternalTransfer(2)).to.revertedWith("AccountFacet: External transfer already processed")
 		})
 
 		it("Should fail to accept virtual external transfer with invalid status", async function () {
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
 			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(providerAddress2)
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress2)
 			await expect(mockProvider2.acceptVirtualExternalTransfer(1)).to.revertedWith("AccountFacet: Only provider can accept the transfer")
 		})
 
 		it("Should fail to cancel virtual external transfer with invalid status", async function () {
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
 			await mockProvider.acceptVirtualExternalTransfer(1)
-			await expect(context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).to.revertedWith(
+			await expect(context.externalTransferFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).to.revertedWith(
 				"AccountFacet: External transfer already processed",
 			)
 
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
-			await context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(2)
-			await expect(context.accountFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).to.revertedWith(
+			await context.externalTransferFacet.connect(context.signers.user).cancelVirtualExternalTransfer(2)
+			await expect(context.externalTransferFacet.connect(context.signers.user).cancelVirtualExternalTransfer(1)).to.revertedWith(
 				"AccountFacet: External transfer already processed",
 			)
 		})
 		it("Should fail to cancel virtual external transfer with invalid sender", async function () {
-			await context.accountFacet
+			await context.externalTransferFacet
 				.connect(context.signers.user)
 				.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress)
-			await expect(context.accountFacet.connect(context.signers.admin).cancelVirtualExternalTransfer(1)).to.revertedWith(
+			await expect(context.externalTransferFacet.connect(context.signers.admin).cancelVirtualExternalTransfer(1)).to.revertedWith(
 				"AccountFacet: Invalid Sender",
 			)
 		})
 
 		it("Should fail with zero provider address", async function () {
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, ethers.ZeroAddress),
 			).to.be.revertedWith("AccountFacet: Invalid virtual provider")
@@ -1215,7 +1610,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should handle self-transfers", async function () {
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user.address, transferAmount, context.diamond, providerAddress),
 			).to.not.be.reverted
@@ -1223,7 +1618,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail when provider is not registered", async function () {
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress2),
 			).to.be.revertedWith("AccountFacet: Invalid virtual provider")
@@ -1233,7 +1628,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseExternalTransfer()
 
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress),
 			).to.be.revertedWith("Pausable: External transfer paused")
@@ -1243,7 +1638,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
 
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress),
 			).to.be.revertedWith("Pausable: Accounting paused")
@@ -1253,7 +1648,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
 			await expect(
-				context.accountFacet
+				context.externalTransferFacet
 					.connect(context.signers.user)
 					.virtualExternalTransfer(context.signers.user2.address, transferAmount, context.diamond, providerAddress),
 			).to.be.revertedWith("Pausable: Global paused")
@@ -1296,7 +1691,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.virtualDepositFor(sourceContext.diamond, sourceContext.signers.user.address, virtualDepositAmount)
 
 			// first external transfer
-			await sourceContext.accountFacet
+			await sourceContext.externalTransferFacet
 				.connect(sourceContext.signers.user)
 				.virtualExternalTransfer(receiver, firstExternalTransferAmount, targetContext.diamond, await virtualProvider.getAddress())
 			await virtualProvider.connect(sourceContext.signers.admin).acceptVirtualExternalTransfer(1)
@@ -1306,7 +1701,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			expect(await targetContext.viewFacet.balanceOf(receiver)).to.equal(firstExternalTransferAmount)
 
 			// second external transfer
-			await sourceContext.accountFacet
+			await sourceContext.externalTransferFacet
 				.connect(sourceContext.signers.user)
 				.virtualExternalTransfer(receiver, secondExternalTransferAmount, targetContext.diamond, await virtualProvider.getAddress())
 			await virtualProvider.connect(sourceContext.signers.admin).acceptVirtualExternalTransfer(2)
@@ -1349,24 +1744,24 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail when user suspended", async () => {
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
-			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"Accessibility: Sender is Suspended",
 			)
 		})
 
 		it("Should fail when user is not partyA", async () => {
-			await expect(context.accountFacet.connect(context.signers.hedger).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.hedger).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"Accessibility: Shouldn't be partyB",
 			)
 		})
 
 		it("should failed when partyB be zero address", async () => {
-			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(ZeroAddress)).to.be.revertedWith("AccountFacet: Zero address")
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(ZeroAddress)).to.be.revertedWith("AccountFacet: Zero address")
 		})
 
 		it("Should fail when bound", async () => {
-			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
-			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"AccountFacet: Invalid state",
 			)
 		})
@@ -1374,7 +1769,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should fail to bind to hedger when have locked quote with another hedger", async function () {
 			await hedger.lockQuote(1)
 			await hedger2.lockQuote(2)
-			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.revertedWith(
 				"AccountFacet : Have Locked Quotes with Other Party B",
 			)
 		})
@@ -1384,14 +1779,14 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await hedger2.lockQuote(2)
 			await hedger.openPosition(1)
 			await hedger2.openPosition(2)
-			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.revertedWith(
 				"AccountFacet : Have Open Positions with Other Party B",
 			)
 		})
 
 		it("Should fail to bind to a non-bindable party B", async () => {
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, false)
-			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"AccountFacet: Not Bindable",
 			)
 		})
@@ -1403,7 +1798,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				REQUESTED_TO_UNBIND: 2,
 			}
 
-			await expect(context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
 
 			const bindState = await context.viewFacet.getBindState(context.signers.user.address)
 			expect(bindState.partyB).to.equal(context.signers.hedger.address)
@@ -1429,31 +1824,31 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail when user suspended", async () => {
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
-			await expect(context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith(
 				"Accessibility: Sender is Suspended",
 			)
 		})
 
 		it("Should fail when user is not partyA", async () => {
-			await expect(context.accountFacet.connect(context.signers.hedger).requestToUnbindFromPartyB()).to.be.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.hedger).requestToUnbindFromPartyB()).to.be.revertedWith(
 				"Accessibility: Shouldn't be partyB",
 			)
 		})
 
 		it("Should fail when not bound", async () => {
-			await expect(context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith("AccountFacet: Invalid state")
+			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith("AccountFacet: Invalid state")
 		})
 
 		it("Should fail when request to unbound before", async () => {
-			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
-			await context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()
-			await expect(context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith("AccountFacet: Invalid state")
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith("AccountFacet: Invalid state")
 		})
 
 		it("Should request unbind successfully", async () => {
-			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 
-			await expect(context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.not.be.reverted
+			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.not.be.reverted
 
 			const bindState = await context.viewFacet.getBindState(context.signers.user.address)
 			expect(bindState.status).to.equal(BIND_STATUS.REQUESTED_TO_UNBIND)
@@ -1479,24 +1874,24 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail when user suspended", async () => {
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
-			await expect(context.accountFacet.connect(context.signers.user).cancelUnbindRequest()).to.be.revertedWith("Accessibility: Sender is Suspended")
+			await expect(context.bindingFacet.connect(context.signers.user).cancelUnbindRequest()).to.be.revertedWith("Accessibility: Sender is Suspended")
 		})
 
 		it("Should fail when user is not partyA", async () => {
-			await expect(context.accountFacet.connect(context.signers.hedger).cancelUnbindRequest()).to.be.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.hedger).cancelUnbindRequest()).to.be.revertedWith(
 				"Accessibility: Shouldn't be partyB",
 			)
 		})
 
 		it("Should fail when not request to unbound", async () => {
-			await expect(context.accountFacet.connect(context.signers.user).cancelUnbindRequest()).to.be.revertedWith("AccountFacet: Invalid state")
+			await expect(context.bindingFacet.connect(context.signers.user).cancelUnbindRequest()).to.be.revertedWith("AccountFacet: Invalid state")
 		})
 
 		it("Should cancel request unbind successfully", async () => {
-			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
-			await context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
 
-			await expect(context.accountFacet.connect(context.signers.user).cancelUnbindRequest()).to.not.be.reverted
+			await expect(context.bindingFacet.connect(context.signers.user).cancelUnbindRequest()).to.not.be.reverted
 
 			const bindState = await context.viewFacet.getBindState(context.signers.user.address)
 			expect(bindState.status).to.equal(BIND_STATUS.BOUND)
@@ -1518,34 +1913,34 @@ export function shouldBehaveLikeAccountFacet(): void {
 			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 
-			await context.accountFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await context.controlFacet.connect(context.signers.admin).setUnbindCooldown(LIMITS.UNBIND_COOLDOWN)
 		})
 
 		it("Should fail when user suspended", async () => {
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.hedger.address)
-			await expect(context.accountFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.be.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.be.revertedWith(
 				"Accessibility: Sender is Suspended",
 			)
 		})
 
 		it("Should fail when not request to unbound", async () => {
-			await expect(context.accountFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.be.revertedWith(
+			await expect(context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.be.revertedWith(
 				"AccountFacet: Invalid state",
 			)
 		})
 
 		it("Should fail when the bind state partyB not same as caller", async () => {
-			await context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()
-			await expect(context.accountFacet.connect(context.signers.hedger2).completeUnbindRequest(context.signers.user.address)).to.be.revertedWith(
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+			await expect(context.bindingFacet.connect(context.signers.hedger2).completeUnbindRequest(context.signers.user.address)).to.be.revertedWith(
 				"AccountFacet: Cooldown not reached",
 			)
 		})
 
 		it("Should complete unbind successfully by partyB", async () => {
-			await context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
 
-			await expect(context.accountFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.not.be.reverted
+			await expect(context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.not.be.reverted
 
 			const bindState = await context.viewFacet.getBindState(context.signers.user.address)
 			expect(bindState.status).to.equal(BIND_STATUS.UNBOUND)
@@ -1553,12 +1948,12 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should complete unbind successfully after cooldown", async () => {
-			await context.accountFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
 
 			const unbindCooldown = await context.viewFacet.unbindCooldown()
 			await time.increase(unbindCooldown + 1n)
 
-			await expect(context.accountFacet.connect(context.signers.user2).completeUnbindRequest(context.signers.user.address)).to.not.be.reverted
+			await expect(context.bindingFacet.connect(context.signers.user2).completeUnbindRequest(context.signers.user.address)).to.not.be.reverted
 
 			const bindState = await context.viewFacet.getBindState(context.signers.user.address)
 			expect(bindState.status).to.equal(BIND_STATUS.UNBOUND)
@@ -1566,20 +1961,20 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 	})
 
-	describe("Master account activation gating", () => {
+	describe("Cross partyB activation gating", () => {
 		beforeEach(async () => {
 			context = await loadFixture(initializeFixture)
 		})
-		it("should revert when master account activation is disabled", async () => {
-			await expect(context.accountFacet.connect(context.signers.hedger).activateMasterAccountMode()).to.be.revertedWith(
-				"AccountFacet: Master account disabled",
+		it("should revert when cross partyB activation is disabled", async () => {
+			await expect(context.partyBAccountFacet.connect(context.signers.hedger).activateCrossPartyB()).to.be.revertedWith(
+				"AccountFacet: Cross disabled",
 			)
 		})
 
-		it("should allow master account activation after enabled by admin", async () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
-			await migratePartyBToMaster(context, hedger, [])
-			expect(await context.viewFacet.isInMasterAccountMode(context.signers.hedger.address)).to.equal(true)
+		it("should allow cross partyB activation after enabled by admin", async () => {
+			await context.controlFacet.connect(context.signers.admin).setCrossEnabled(true)
+			await migratePartyBToCross(context, hedger, [])
+			expect(await context.viewFacet.isCrossPartyB(context.signers.hedger.address)).to.equal(true)
 		})
 	})
 }

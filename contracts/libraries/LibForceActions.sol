@@ -154,13 +154,13 @@ library LibForceActions {
 	}
 
 	/**
-	 * @notice Closes a master-account quote using full uPNL if possible, otherwise a price-only fallback.
+	 * @notice Closes a cross-partyB quote using full uPNL if possible, otherwise a price-only fallback.
 	 * @param quoteId The ID of the quote to close.
 	 * @param currentPrice The current market price used for solvency checks.
 	 * @param upnlPartyB The PartyB uPNL used for the primary solvency path.
 	 * @param closePrice The force-close price to apply.
 	 */
-	function closeQuoteMasterAccountWithRespectToUpnl(
+	function closeQuoteCrossWithRespectToUpnl(
 		uint256 quoteId,
 		uint256 currentPrice,
 		int256 upnlPartyB,
