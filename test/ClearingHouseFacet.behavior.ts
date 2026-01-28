@@ -85,7 +85,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet
 						.connect(context.signers.user)
 						.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
-				).to.be.revertedWith("Accessibility: Must has role")
+				).to.be.revertedWith("Accessibility: Must have role")
 			})
 
 			it("Should succeed when caller has CLEARING_HOUSE_ROLE", async function () {
@@ -547,7 +547,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						context.clearingHouseFacet
 							.connect(context.signers.liquidator)
 							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), 0),
-					).to.revertedWith("Accessibility: Must has role")
+					).to.revertedWith("Accessibility: Must have role")
 				})
 
 				it("should fail to soft liquid if penalty is more than balance", async () => {

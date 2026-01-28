@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IAffiliateFacet } from "./IAffiliateFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
@@ -252,6 +251,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		bytes4 selector = bytes4(callData[:4]);
+		if (!afLayout.callAllowedSelectors[affiliate][selector]) revert SelectorNotAllowed(selector);
 		if (afLayout.affiliates[affiliate].admin != msg.sender && !afLayout.operators[affiliate][selector][msg.sender]) revert Unauthorized();
 		if (!afLayout.affiliates[affiliate].symmioCores.contains(symmio)) revert SymmioCoreNotAllowed();
 

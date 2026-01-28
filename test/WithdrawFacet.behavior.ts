@@ -1933,7 +1933,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.acceptSpeedUpRequest(user.address, 1, 10)
-			).to.revertedWith("Accessibility: Must has role");
+			).to.revertedWith("Accessibility: Must have role");
 		});
 
 		it("Should speed up withdraw for classic withdrawals", async function() {

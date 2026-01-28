@@ -1,6 +1,8 @@
 import { loadFixture } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 import { ethers } from "./helpers/hardhat-connection.js"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
 
 const symmioInterface = new ethers.Interface([
 	"function depositFor(address account,uint256 amount)",
@@ -9,40 +11,23 @@ const symmioInterface = new ethers.Interface([
 ])
 
 const coreInterface = new ethers.Interface([
+	"function depositForAccount(address account,uint256 amount)",
+	"function depositAndAllocateForAccount(address account,uint256 amount)",
 	"function depositForAccountWithExpressRate(address account,uint256 amount)",
 	"function depositAndAllocateForAccountWithExpressRate(address account,uint256 amount)",
 ])
 
 async function accountManagerFixture() {
-	const [deployer, user, user2, distributor] = await ethers.getSigners()
-
-	const Token = await ethers.getContractFactory("MockToken")
-	const token = await Token.deploy("Mock Collateral", "MCOL")
-
-	const SymmioCore = await ethers.getContractFactory("MockSymmioCoreForAccountManager")
-	const symmioCore = await SymmioCore.deploy()
-	await symmioCore.setCollateral(await token.getAddress())
-
-	const AffiliateHubMock = await ethers.getContractFactory("MockAffiliateHubForAccountManager")
-	const affiliateHubMock = await AffiliateHubMock.deploy()
-
-	const AccountHubMock = await ethers.getContractFactory("MockAccountHubForAccountManager")
-	const accountHubMock = await AccountHubMock.deploy()
-	// Set affiliateHub on accountHubMock so AccountManager can access it
-	await accountHubMock.setAffiliateHub(await affiliateHubMock.getAddress())
-
-	const AccountManager = await ethers.getContractFactory("AccountManager")
-	const accountManager = await AccountManager.deploy(await accountHubMock.getAddress())
-
-	await accountHubMock.setAffiliateCores(await accountManager.getAddress(), [await symmioCore.getAddress()])
-
+	const context = await initializeFixture()
 	return {
-		token,
-		symmioCore,
-		accountHubMock,
-		affiliateHubMock,
-		accountManager,
-		signers: { deployer, user, user2, distributor },
+		...context,
+		token: context.collateral,
+		signers: {
+			deployer: context.signers.admin,
+			user: context.signers.user,
+			user2: context.signers.user2,
+			distributor: context.signers.feeCollector,
+		},
 	}
 }
 
@@ -51,313 +36,390 @@ export function shouldBehaveLikeAccountManager(): void {
 		describe("constructor", function () {
 			it("stores the account hub reference", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				expect(await context.accountManager.getAccountHub()).to.equal(await context.accountHubMock.getAddress())
+				expect(await context.accountManager.getAccountHub()).to.equal(context.accountLayerDiamond)
 			})
 		})
 
 		describe("addAccount", function () {
 			it("creates a sub-account through AccountHub and emits events", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const expectedAccount = ethers.Wallet.createRandom().address
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.configureNextCreateResult([expectedAccount])
-
-				const prediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Desk-1")
-				await expect(context.accountManager.connect(context.signers.user).addAccount("Desk-1"))
+				const prediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Trading account")
+				await expect(context.accountManager.connect(context.signers.user).addAccount("Trading account"))
 					.to.emit(context.accountManager, "AddAccount")
-					.withArgs(context.signers.user.address, expectedAccount, "Desk-1")
+					.withArgs(context.signers.user.address, prediction[0], "Trading account")
 
-				expect(prediction[0]).to.equal(expectedAccount)
-				expect(await context.accountHubMock.lastCreateAffiliate()).to.equal(await context.accountManager.getAddress())
+				expect(prediction[0]).to.not.equal(ethers.ZeroAddress)
 
-				const createData = await context.accountHubMock.getLastCreateData()
-				expect(createData.length).to.equal(1)
-				expect(createData[0].name).to.equal("Desk-1")
-				expect(createData[0].metadata).to.equal("0x")
-				expect(createData[0].symmioCore).to.equal(await context.symmioCore.getAddress())
-				expect(createData[0].isolationType).to.equal(3n)
+				const details = await context.alViewFacet.getUserSubAccounts(context.signers.user.address, 0, 10)
+				expect(details.length).to.equal(1)
+				expect(details[0].accountAddress).to.equal(prediction[0])
+				expect(details[0].owner).to.equal(context.signers.user.address)
+				expect(details[0].affiliate).to.equal(await context.accountManager.getAddress())
+				expect(details[0].name).to.equal("Trading account")
+				expect(details[0].metadata).to.equal("0x")
+				expect(details[0].symmioCore).to.equal(context.diamond)
+				expect(details[0].isolationType).to.equal(3n)
 
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 
 			it("always picks the first configured symmio core", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const coreA = ethers.Wallet.createRandom().address
-				const coreB = ethers.Wallet.createRandom().address
-				await context.accountHubMock.setAffiliateCores(await context.accountManager.getAddress(), [coreA, coreB])
+				const MockSymmioCore = await ethers.getContractFactory("MockAffiliateHub")
+				const coreA = await MockSymmioCore.deploy()
+				await coreA.setCollateral(await context.token.getAddress())
+				await context.alControlFacet.connect(context.signers.deployer).setWhitelistedSymmioCore(await coreA.getAddress(), true)
 
-				await context.accountHubMock.resetTracking()
-				await context.accountManager.connect(context.signers.user).addAccount("Desk-2")
+				const affiliateData = {
+					name: "test affiliate multi core",
+					brandColor: "d69d00",
+					admin: context.signers.deployer.address,
+					stakeholders: [
+						{
+							receiver: context.signers.deployer.address,
+							share: 900000000000000000n,
+						},
+					],
+					symmioShare: 100000000000000000n,
+					metadata: "0x",
+					legacyMultiAccounts: [],
+					symmioCores: [await coreA.getAddress(), context.diamond],
+				}
 
-				const createData = await context.accountHubMock.getLastCreateData()
-				expect(createData[0].symmioCore).to.equal(coreA)
+				const affiliateAddress =
+					await context.alAffiliateFacet.connect(context.signers.deployer).requestToRegisterAffiliate.staticCall(affiliateData)
+				await context.alAffiliateFacet.connect(context.signers.deployer).requestToRegisterAffiliate(affiliateData)
+				await context.alAffiliateFacet.connect(context.signers.deployer).approveAffiliate(affiliateAddress)
+
+				const accManager = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", affiliateAddress)
+
+				const prediction = await accManager.connect(context.signers.user).addAccount.staticCall("Trading account")
+				await accManager.connect(context.signers.user).addAccount("Trading account")
+
+				const details = await context.alViewFacet.getUserSubAccounts(context.signers.user.address, 0, 10)
+				expect(details.length).to.equal(1)
+				expect(details[0].accountAddress).to.equal(prediction[0])
+				expect(details[0].symmioCore).to.equal(await coreA.getAddress())
 			})
 
 			it("reverts if affiliate hub has no configured cores", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				await context.accountHubMock.setAffiliateCores(await context.accountManager.getAddress(), [])
-				await expect(context.accountManager.connect(context.signers.user).addAccount("Desk-3")).to.be.revertedWith("MockAffiliateHub: no cores configured")
+				const affiliateData = {
+					name: "test affiliate no cores",
+					brandColor: "d69d00",
+					admin: context.signers.deployer.address,
+					stakeholders: [
+						{
+							receiver: context.signers.deployer.address,
+							share: 900000000000000000n,
+						},
+					],
+					symmioShare: 100000000000000000n,
+					metadata: "0x",
+					legacyMultiAccounts: [],
+					symmioCores: [],
+				}
+
+				const affiliateAddress =
+					await context.alAffiliateFacet.connect(context.signers.deployer).requestToRegisterAffiliate.staticCall(affiliateData)
+				await context.alAffiliateFacet.connect(context.signers.deployer).requestToRegisterAffiliate(affiliateData)
+				await context.alAffiliateFacet.connect(context.signers.deployer).approveAffiliate(affiliateAddress)
+
+				const accManager = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", affiliateAddress)
+				await expect(accManager.connect(context.signers.user).addAccount("Trading account")).to.be.reverted
 			})
 
 			it("resets the signer even when createSubAccounts reverts", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.setRevertOnCreate(true)
-				await expect(context.accountManager.connect(context.signers.user).addAccount("Desk-Err")).to.be.revertedWith("MockAccountHub: create reverted")
-
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog.length).to.equal(0)
-				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
+				await expect(context.accountManager.connect(context.signers.user).addAccount("")).to.be.revertedWithCustomError(
+					context.alCoreFacet,
+					"InvalidNameLength",
+				)
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 		})
 
-		describe("depositForAccount", function () {
-			it("pulls collateral, approves AccountHub, and forwards call", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("250", 18)
+			describe("depositForAccount", function () {
+				it("forwards the deposit call via AccountHub with signer wrapper", async function () {
+					const context = await loadFixture(accountManagerFixture)
+					const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Deposit account")
+					await context.accountManager.connect(context.signers.user).addAccount("Deposit account")
+					const account = accountPrediction[0]
+					const amount = ethers.parseUnits("250", 18)
 
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-				await context.accountHubMock.resetTracking()
+					await context.token.mint(context.signers.user.address, amount)
+					await context.token.connect(context.signers.user).approve(context.diamond, amount)
 
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount)
+					const userBalanceBefore = await context.token.balanceOf(context.signers.user.address)
+					const hubBalanceBefore = await context.token.balanceOf(context.accountLayerDiamond)
+					const managerBalanceBefore = await context.token.balanceOf(await context.accountManager.getAddress())
+					const coreBalanceBefore = await context.token.balanceOf(context.diamond)
+					const balanceBefore = await context.viewFacet.balanceOf(account)
 
-				await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, amount)).to.not.be.reverted
+					await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, amount)).to.not.be.reverted
 
-				const allowance = await context.token.allowance(await context.accountManager.getAddress(), await context.accountHubMock.getAddress())
-				expect(allowance).to.equal(amount)
+					const userBalanceAfter = await context.token.balanceOf(context.signers.user.address)
+					const hubBalanceAfter = await context.token.balanceOf(context.accountLayerDiamond)
+					const managerBalanceAfter = await context.token.balanceOf(await context.accountManager.getAddress())
+					const coreBalanceAfter = await context.token.balanceOf(context.diamond)
+					const balanceAfter = await context.viewFacet.balanceOf(account)
 
-				const callData = await context.accountHubMock.getLastCallData()
-				expect(callData.length).to.equal(1)
-				expect(callData[0]).to.equal(symmioInterface.encodeFunctionData("depositFor", [account, amount]))
-				expect(await context.accountHubMock.lastCallAccount()).to.equal(account)
+					expect(userBalanceBefore - userBalanceAfter).to.equal(amount)
+					expect(hubBalanceAfter - hubBalanceBefore).to.equal(0n)
+					expect(managerBalanceAfter - managerBalanceBefore).to.equal(0n)
+					expect(coreBalanceAfter - coreBalanceBefore).to.equal(amount)
+					expect(balanceAfter - balanceBefore).to.equal(amount)
 
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+					expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
+				})
+
+				it("resets signer when AccountHub call reverts", async function () {
+					const context = await loadFixture(accountManagerFixture)
+					const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Deposit account")
+					await context.accountManager.connect(context.signers.user).addAccount("Deposit account")
+					const account = accountPrediction[0]
+
+					await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, 0)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"ZeroAmount",
+					)
+					expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
+				})
 			})
 
-			it("reverts when caller lacks allowance", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("10", 18)
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, amount)).to.be.revertedWith(
-					"ERC20: insufficient allowance",
-				)
+			describe("depositAndAllocateForAccount", function () {
+				it("forwards the deposit+allocate call via AccountHub with signer wrapper", async function () {
+					const context = await loadFixture(accountManagerFixture)
+					const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Deposit and allocate account")
+					await context.accountManager.connect(context.signers.user).addAccount("Deposit and allocate account")
+					const account = accountPrediction[0]
+					const amount = ethers.parseUnits("50", 18)
+
+					await context.token.mint(context.signers.user.address, amount)
+					await context.token.connect(context.signers.user).approve(context.diamond, amount)
+
+					const userBalanceBefore = await context.token.balanceOf(context.signers.user.address)
+					const hubBalanceBefore = await context.token.balanceOf(context.accountLayerDiamond)
+					const managerBalanceBefore = await context.token.balanceOf(await context.accountManager.getAddress())
+					const coreBalanceBefore = await context.token.balanceOf(context.diamond)
+					const balanceBefore = await context.viewFacet.balanceOf(account)
+					const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(account)
+
+					await expect(context.accountManager.connect(context.signers.user).depositAndAllocateForAccount(account, amount)).to.not.be.reverted
+
+					const userBalanceAfter = await context.token.balanceOf(context.signers.user.address)
+					const hubBalanceAfter = await context.token.balanceOf(context.accountLayerDiamond)
+					const managerBalanceAfter = await context.token.balanceOf(await context.accountManager.getAddress())
+					const coreBalanceAfter = await context.token.balanceOf(context.diamond)
+					const balanceAfter = await context.viewFacet.balanceOf(account)
+					const allocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(account)
+
+					expect(userBalanceBefore - userBalanceAfter).to.equal(amount)
+					expect(hubBalanceAfter - hubBalanceBefore).to.equal(0n)
+					expect(managerBalanceAfter - managerBalanceBefore).to.equal(0n)
+					expect(coreBalanceAfter - coreBalanceBefore).to.equal(amount)
+					expect(balanceAfter - balanceBefore).to.equal(0n)
+					expect(allocatedAfter - allocatedBefore).to.equal(amount)
+
+					expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
+				})
+
+				it("resets signer when AccountHub call reverts", async function () {
+					const context = await loadFixture(accountManagerFixture)
+					const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Deposit and allocate account")
+					await context.accountManager.connect(context.signers.user).addAccount("Deposit and allocate account")
+					const account = accountPrediction[0]
+
+					await expect(
+						context.accountManager.connect(context.signers.user).depositAndAllocateForAccount(account, 0),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "ZeroAmount")
+
+					expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
+				})
 			})
-
-			it("increments allowance across multiple deposits", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount1 = ethers.parseUnits("5", 18)
-				const amount2 = ethers.parseUnits("7", 18)
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount1 + amount2)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount1 + amount2)
-
-				await context.accountManager.connect(context.signers.user).depositForAccount(account, amount1)
-				await context.accountManager.connect(context.signers.user).depositForAccount(account, amount2)
-
-				const allowance = await context.token.allowance(await context.accountManager.getAddress(), await context.accountHubMock.getAddress())
-				expect(allowance).to.equal(amount1 + amount2)
-			})
-
-			it("requires the related core to be configured", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.setRequireRelatedCore(true)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("1", 18)
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount)
-				await expect(context.accountManager.connect(context.signers.user).depositForAccount(account, amount)).to.be.revertedWith(
-					"MockAccountHub: core not set",
-				)
-			})
-		})
-
-		describe("depositAndAllocateForAccount", function () {
-			it("routes the allocate call with the signer wrapper", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("50", 18)
-
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-				await context.accountHubMock.resetTracking()
-
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount)
-
-				await expect(context.accountManager.connect(context.signers.user).depositAndAllocateForAccount(account, amount)).to.not.be.reverted
-
-				const callData = await context.accountHubMock.getLastCallData()
-				expect(callData[0]).to.equal(symmioInterface.encodeFunctionData("depositAndAllocateFor", [account, amount]))
-
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
-			})
-
-			it("resets signer when AccountHub call reverts", async function () {
-				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("25", 18)
-				await context.accountHubMock.configureRelatedCore(account, await context.symmioCore.getAddress())
-				await context.token.connect(context.signers.deployer).transfer(context.signers.user.address, amount)
-				await context.token.connect(context.signers.user).approve(await context.accountManager.getAddress(), amount)
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.setRevertOnCall(true)
-				await expect(context.accountManager.connect(context.signers.user).depositAndAllocateForAccount(account, amount)).to.be.revertedWith(
-					"MockAccountHub: call reverted",
-				)
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog.length).to.equal(0)
-				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
-			})
-		})
 
 		describe("depositForAccountWithExpressRate", function () {
 			it("forwards express deposit call via AccountHub", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit account")
+				await context.accountManager.connect(context.signers.user).addAccount("Express deposit account")
+				const account = accountPrediction[0]
 				const amount = ethers.parseUnits("25", 18)
 
-				await context.accountHubMock.resetTracking()
+				await context.token.mint(context.signers.user.address, amount)
+				await context.token.connect(context.signers.user).approve(context.accountLayerDiamond, amount)
 
-				await context.accountManager.connect(context.signers.user).depositForAccountWithExpressRate(account, amount)
+				const userBalanceBefore = await context.token.balanceOf(context.signers.user.address)
+				const hubBalanceBefore = await context.token.balanceOf(context.accountLayerDiamond)
+				const managerBalanceBefore = await context.token.balanceOf(await context.accountManager.getAddress())
+				const coreBalanceBefore = await context.token.balanceOf(context.diamond)
+				const balanceBefore = await context.viewFacet.balanceOf(account)
 
-				const callData = await context.accountHubMock.getLastCallData()
-				expect(callData[0]).to.equal(coreInterface.encodeFunctionData("depositForAccountWithExpressRate", [account, amount]))
+				await expect(context.accountManager.connect(context.signers.user).depositForAccountWithExpressRate(account, amount)).to.not.be.reverted
 
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+				const userBalanceAfter = await context.token.balanceOf(context.signers.user.address)
+				const hubBalanceAfter = await context.token.balanceOf(context.accountLayerDiamond)
+				const managerBalanceAfter = await context.token.balanceOf(await context.accountManager.getAddress())
+				const coreBalanceAfter = await context.token.balanceOf(context.diamond)
+				const balanceAfter = await context.viewFacet.balanceOf(account)
+
+				expect(userBalanceBefore - userBalanceAfter).to.equal(amount)
+				expect(hubBalanceAfter - hubBalanceBefore).to.equal(0n)
+				expect(managerBalanceAfter - managerBalanceBefore).to.equal(0n)
+				expect(coreBalanceAfter - coreBalanceBefore).to.equal(amount)
+				expect(balanceAfter - balanceBefore).to.equal(amount)
+
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 
 			it("resets signer when AccountHub call reverts", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("25", 18)
-
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.setRevertOnCall(true)
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit account")
+				await context.accountManager.connect(context.signers.user).addAccount("Express deposit account")
+				const account = accountPrediction[0]
 
 				await expect(
-					context.accountManager.connect(context.signers.user).depositForAccountWithExpressRate(account, amount),
-				).to.be.revertedWith("MockAccountHub: call reverted")
+					context.accountManager.connect(context.signers.user).depositForAccountWithExpressRate(account, 0),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "ZeroAmount")
 
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog.length).to.equal(0)
-				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 		})
 
 		describe("depositAndAllocateForAccountWithExpressRate", function () {
 			it("forwards express deposit+allocate call via AccountHub", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit and allocate account")
+				await context.accountManager.connect(context.signers.user).addAccount("Express deposit and allocate account")
+				const account = accountPrediction[0]
 				const amount = ethers.parseUnits("40", 18)
 
-				await context.accountHubMock.resetTracking()
+				await context.token.mint(context.signers.user.address, amount)
+				await context.token.connect(context.signers.user).approve(context.accountLayerDiamond, amount)
 
-				await context.accountManager.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(account, amount)
+				const userBalanceBefore = await context.token.balanceOf(context.signers.user.address)
+				const hubBalanceBefore = await context.token.balanceOf(context.accountLayerDiamond)
+				const managerBalanceBefore = await context.token.balanceOf(await context.accountManager.getAddress())
+				const coreBalanceBefore = await context.token.balanceOf(context.diamond)
+				const balanceBefore = await context.viewFacet.balanceOf(account)
+				const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(account)
 
-				const callData = await context.accountHubMock.getLastCallData()
-				expect(callData[0]).to.equal(coreInterface.encodeFunctionData("depositAndAllocateForAccountWithExpressRate", [account, amount]))
+				await expect(
+					context.accountManager.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(account, amount),
+				).to.not.be.reverted
 
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+				const userBalanceAfter = await context.token.balanceOf(context.signers.user.address)
+				const hubBalanceAfter = await context.token.balanceOf(context.accountLayerDiamond)
+				const managerBalanceAfter = await context.token.balanceOf(await context.accountManager.getAddress())
+				const coreBalanceAfter = await context.token.balanceOf(context.diamond)
+				const balanceAfter = await context.viewFacet.balanceOf(account)
+				const allocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(account)
+
+				expect(userBalanceBefore - userBalanceAfter).to.equal(amount)
+				expect(hubBalanceAfter - hubBalanceBefore).to.equal(0n)
+				expect(managerBalanceAfter - managerBalanceBefore).to.equal(0n)
+				expect(coreBalanceAfter - coreBalanceBefore).to.equal(amount)
+				expect(balanceAfter - balanceBefore).to.equal(0n)
+				expect(allocatedAfter - allocatedBefore).to.equal(amount)
+
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 
 			it("resets signer when AccountHub call reverts", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const amount = ethers.parseUnits("40", 18)
-
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.setRevertOnCall(true)
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit and allocate account")
+				await context.accountManager.connect(context.signers.user).addAccount("Express deposit and allocate account")
+				const account = accountPrediction[0]
 
 				await expect(
-					context.accountManager.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(account, amount),
-				).to.be.revertedWith("MockAccountHub: call reverted")
+					context.accountManager.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(account, 0),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "ZeroAmount")
 
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog.length).to.equal(0)
-				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 		})
 
 		describe("withdrawFromAccount", function () {
 			it("generates the withdraw call and resets the signer", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Withdraw account")
+				await context.accountManager.connect(context.signers.user).addAccount("Withdraw account")
+				const account = accountPrediction[0]
 				const amount = ethers.parseUnits("10", 18)
 
-				await context.accountHubMock.resetTracking()
+				await context.token.mint(context.signers.user.address, amount)
+				await context.token.connect(context.signers.user).approve(context.diamond, amount)
+				await context.accountManager.connect(context.signers.user).depositForAccount(account, amount)
 
-				await expect(context.accountManager.connect(context.signers.user).withdrawFromAccount(account, amount)).to.not.be.reverted
+				const withdrawCallData = symmioInterface.encodeFunctionData("withdrawTo", [context.signers.user.address, amount])
+				await expect(context.accountManager.connect(context.signers.user).withdrawFromAccount(account, amount))
+					.to.emit(context.alCoreFacet, "Call")
+					.withArgs(context.signers.user.address, account, withdrawCallData, true, anyValue)
 
-				const callData = await context.accountHubMock.getLastCallData()
-				expect(callData[0]).to.equal(symmioInterface.encodeFunctionData("withdrawTo", [account, amount]))
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
+			})
 
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+			it("allows withdrawing to a custom recipient", async function () {
+				const context = await loadFixture(accountManagerFixture)
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Withdraw to recipient")
+				await context.accountManager.connect(context.signers.user).addAccount("Withdraw to recipient")
+				const account = accountPrediction[0]
+				const amount = ethers.parseUnits("10", 18)
+				const recipient = context.signers.user2.address
+
+				await context.token.mint(context.signers.user.address, amount)
+				await context.token.connect(context.signers.user).approve(context.diamond, amount)
+				await context.accountManager.connect(context.signers.user).depositForAccount(account, amount)
+
+				const withdrawCallData = symmioInterface.encodeFunctionData("withdrawTo", [recipient, amount])
+				await expect(context.accountManager.connect(context.signers.user).withdrawFromAccountTo(account, recipient, amount))
+					.to.emit(context.alCoreFacet, "Call")
+					.withArgs(context.signers.user.address, account, withdrawCallData, true, anyValue)
+
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 
 			it("resets signer even when AccountHub._call reverts", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Withdraw account")
+				await context.accountManager.connect(context.signers.user).addAccount("Withdraw account")
+				const account = accountPrediction[0]
 				const amount = ethers.parseUnits("2", 18)
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.setRevertOnCall(true)
-				await expect(context.accountManager.connect(context.signers.user).withdrawFromAccount(account, amount)).to.be.revertedWith(
-					"MockAccountHub: call reverted",
-				)
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog.length).to.equal(0)
-				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
+				await expect(context.accountManager.connect(context.signers.user).withdrawFromAccount(account, amount)).to.be.reverted
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 		})
 
 		describe("_call passthrough", function () {
 			it("forwards arbitrary calls via AccountHub with signer context", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
-				const payload = ethers.hexlify(ethers.randomBytes(32))
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Call account")
+				await context.accountManager.connect(context.signers.user).addAccount("Call account")
+				const account = accountPrediction[0]
+				const payload = context.viewFacet.interface.encodeFunctionData("balanceOf", [account])
 
-				await context.accountHubMock.resetTracking()
+				await expect(context.accountManager.connect(context.signers.user)._call(account, [payload]))
+					.to.emit(context.alCoreFacet, "Call")
+					.withArgs(context.signers.user.address, account, payload, true, anyValue)
 
-				await context.accountManager.connect(context.signers.user)._call(account, [payload])
-
-				expect(await context.accountHubMock.lastCallAccount()).to.equal(account)
-				const storedCallData = await context.accountHubMock.getLastCallData()
-				expect(storedCallData[0]).to.equal(payload)
-
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog).to.deep.equal([context.signers.user.address, ethers.ZeroAddress])
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 
 			it("resets signer when passthrough call reverts", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const account = ethers.Wallet.createRandom().address
+				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Call account")
+				await context.accountManager.connect(context.signers.user).addAccount("Call account")
+				const account = accountPrediction[0]
 				const payload = ethers.hexlify(ethers.randomBytes(32))
-				await context.accountHubMock.resetTracking()
-				await context.accountHubMock.setRevertOnCall(true)
-				await expect(context.accountManager.connect(context.signers.user)._call(account, [payload])).to.be.revertedWith(
-					"MockAccountHub: call reverted",
-				)
-				const signerLog = await context.accountHubMock.getSignerLog()
-				expect(signerLog.length).to.equal(0)
-				expect(await context.accountHubMock.signer()).to.equal(ethers.ZeroAddress)
+				await expect(context.accountManager.connect(context.signers.user)._call(account, [payload])).to.be.reverted
+				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 		})
 
 		describe("view helpers", function () {
 			it("exposes account hub address", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				expect(await context.accountManager.getAccountHub()).to.equal(await context.accountHubMock.getAddress())
+				expect(await context.accountManager.getAccountHub()).to.equal(context.accountLayerDiamond)
 			})
 		})
 	})

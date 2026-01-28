@@ -500,7 +500,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				// withdraw without sufficient role (as user)
 				await expect(
 					context.accountFacet.connect(context.signers.user).withdrawSuspendedUserFunds(userAddress, recipient, withdrawAmountStr),
-				).to.be.revertedWith("Accessibility: Must has role")
+				).to.be.revertedWith("Accessibility: Must have role")
 			})
 
 			it("Should fail when user is not suspended", async function () {
@@ -540,7 +540,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
 				await expect(
 					context.accountFacet.connect(context.signers.user).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr),
-				).to.be.revertedWith("Accessibility: Must has role")
+				).to.be.revertedWith("Accessibility: Must have role")
 			})
 
 			it("Should fail when user is not suspended", async function () {
@@ -1133,7 +1133,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should fail when caller does not have INTERNAL_TRANSFER_TO_BALANCE_ROLE", async () => {
 			await expect(
 				context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
-			).to.be.revertedWith("Accessibility: Must has role")
+			).to.be.revertedWith("Accessibility: Must have role")
 		})
 
 		it("Should transfer to balance (not allocatedBalance) when caller has role", async () => {

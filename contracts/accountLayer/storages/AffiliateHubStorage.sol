@@ -88,6 +88,8 @@ library AffiliateHubStorage {
 		HookContext hookContext;
 		// Allowed selectors for hooks per affiliate: affiliate => selector => allowed
 		mapping(address => mapping(bytes4 => bool)) hookAllowedSelectors;
+		// Allowed selectors for callAsAffiliate per affiliate: affiliate => selector => allowed
+		mapping(address => mapping(bytes4 => bool)) callAllowedSelectors;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

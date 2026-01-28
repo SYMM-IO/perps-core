@@ -772,6 +772,8 @@ export function shouldBehaveLikeAffiliateHub() {
 
             beforeEach(async function () {
                 affiliate = (await activateAffiliate()).affiliate
+                const selector = context.controlFacet.interface.getFunction("setAffiliateFee").selector
+                await context.alControlFacet.connect(context.signers.admin).setCallAllowedSelectors(affiliate, [selector], true)
             })
 
             it("lets affiliate admin manage operators per selector", async function () {
@@ -822,6 +824,45 @@ export function shouldBehaveLikeAffiliateHub() {
                 expect(fee.openFee).to.equal(openFee)
                 expect(fee.closeFee).to.equal(closeFee)
                 expect(fee.isSet).to.equal(true)
+            })
+
+            it("blocks non-whitelisted admin selectors via callAsAffiliate with SelectorNotAllowed", async function () {
+                const attacker = affiliate
+                const victim = (await activateAffiliate({ name: "VictimAffiliate", admin: context.signers.user2.address })).affiliate
+                const attackerCollector = context.signers.others[0].address
+
+                expect(await context.viewFacet.isAffiliate(victim)).to.equal(true)
+                const beforeCollector = await context.viewFacet.getFeeCollector(victim)
+
+                const selector = context.controlFacet.interface.getFunction("setFeeCollector").selector
+                const callData = context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victim, attackerCollector])
+
+                await expect(context.alAffiliateFacet.connect(context.signers.user).callAsAffiliate(attacker, context.diamond, callData))
+                    .to.be.revertedWithCustomError(context.alAffiliateFacet, "SelectorNotAllowed")
+                    .withArgs(selector)
+
+                expect(await context.viewFacet.getFeeCollector(victim)).to.equal(beforeCollector)
+            })
+
+            it("blocks whitelisted admin selectors via Symmio core proxy protection", async function () {
+                const attacker = affiliate
+                const victim = (await activateAffiliate({ name: "VictimAffiliate2", admin: context.signers.user2.address })).affiliate
+                const attackerCollector = context.signers.others[0].address
+
+                expect(await context.viewFacet.isAffiliate(victim)).to.equal(true)
+                const beforeCollector = await context.viewFacet.getFeeCollector(victim)
+
+                // Even if admin accidentally whitelists an admin selector...
+                const selector = context.controlFacet.interface.getFunction("setFeeCollector").selector
+                await context.alControlFacet.connect(context.signers.admin).setCallAllowedSelectors(attacker, [selector], true)
+
+                const callData = context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victim, attackerCollector])
+
+                // ...Symmio core's onlyRole modifier blocks it because signer is set (proxied call)
+                await expect(context.alAffiliateFacet.connect(context.signers.user).callAsAffiliate(attacker, context.diamond, callData))
+                    .to.be.revertedWith("Accessibility: Cannot call via proxy")
+
+                expect(await context.viewFacet.getFeeCollector(victim)).to.equal(beforeCollector)
             })
 
             it("rejects unauthorized calls and enforces ACTIVE affiliates", async function () {

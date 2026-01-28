@@ -123,7 +123,7 @@ export function shouldBehaveLikeBridgeFacet(): void {
 		})
 
 		it("Should fail when caller lacks SUSPENDER_ROLE", async function () {
-			await expect(context.bridgeFacet.connect(context.signers.user).suspendBridgeTransaction(1)).to.be.revertedWith("Accessibility: Must has role")
+			await expect(context.bridgeFacet.connect(context.signers.user).suspendBridgeTransaction(1)).to.be.revertedWith("Accessibility: Must have role")
 		})
 
 		it("Should suspend transaction successfully", async function () {
@@ -165,7 +165,7 @@ export function shouldBehaveLikeBridgeFacet(): void {
 
 		it("Should fail when caller lacks DISPUTE_ROLE", async function () {
 			await expect(context.bridgeFacet.connect(context.signers.user).restoreBridgeTransaction(1, decimal(50n))).to.be.revertedWith(
-				"Accessibility: Must has role",
+				"Accessibility: Must have role",
 			)
 		})
 

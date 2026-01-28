@@ -1,6 +1,11 @@
 [
     {
         "inputs": [],
+        "name": "AccountAlreadyExists",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "AccountDoesNotExist",
         "type": "error"
     },
@@ -93,7 +98,17 @@
     },
     {
         "inputs": [],
+        "name": "InvalidIsolationType",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "InvalidNameLength",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidNonce",
         "type": "error"
     },
     {
@@ -578,7 +593,43 @@
                 "type": "uint256"
             }
         ],
+        "name": "depositAndAllocateForAccount",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
         "name": "depositAndAllocateForAccountWithExpressRate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "depositForAccount",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -2429,6 +2480,31 @@
                 "type": "uint256"
             }
         ],
+        "name": "EmergencyMarginRecovered",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
         "name": "RemoveMargin",
         "type": "event"
     },
@@ -2474,6 +2550,24 @@
             }
         ],
         "name": "addMarginToNextVA",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "nonce",
+                "type": "uint256"
+            }
+        ],
+        "name": "emergencyRecoverMargin",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -2581,6 +2675,31 @@
             }
         ],
         "name": "AccountManagerImplementationUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "allowed",
+                "type": "bool"
+            }
+        ],
+        "name": "CallAllowedSelectorsSet",
         "type": "event"
     },
     {
@@ -2859,6 +2978,29 @@
             }
         ],
         "name": "setAccountManagerImplementation",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            },
+            {
+                "internalType": "bool",
+                "name": "allowed",
+                "type": "bool"
+            }
+        ],
+        "name": "setCallAllowedSelectors",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

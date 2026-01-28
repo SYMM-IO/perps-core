@@ -494,7 +494,7 @@ export function shouldBehaveLikeControlFacet(): void {
 				context.controlFacet
 					.connect(context.signers.user)
 					.addRelayerForExternalTransferTarget(context.signers.others[0].address, context.signers.others[1].address),
-			).to.be.revertedWith("Accessibility: Must has role")
+			).to.be.revertedWith("Accessibility: Must have role")
 		})
 
 		it("Should fail when non-admin tries to remove external transfer target", async function () {
@@ -504,7 +504,7 @@ export function shouldBehaveLikeControlFacet(): void {
 
 			await expect(
 				context.controlFacet.connect(context.signers.user).removeRelayerForExternalTransferTarget(context.signers.others[0].address),
-			).to.be.revertedWith("Accessibility: Must has role")
+			).to.be.revertedWith("Accessibility: Must have role")
 		})
 
 		it("Should fail to add zero address as external transfer target", async function () {
@@ -741,7 +741,7 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 
 		it("should revert when caller dont have admin role for cross partyB activation set", async function () {
-			await expect(context.controlFacet.connect(user2).setCrossEnabled(true)).to.be.revertedWith("Accessibility: Must has role")
+			await expect(context.controlFacet.connect(user2).setCrossEnabled(true)).to.be.revertedWith("Accessibility: Must have role")
 		})
 	})
 

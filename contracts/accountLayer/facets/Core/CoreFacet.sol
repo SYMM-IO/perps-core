@@ -98,50 +98,63 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	// ==================== Deposit Functions ====================
 
-	function depositForAccountWithExpressRate(
-		address account,
-		uint256 amount
-	) external whenNotPaused nonReentrant onlyAccountOwner(account) {
-		_depositForAccountWithExpressRate(account, amount, ISymmio.depositFor.selector);
+	function depositForAccount(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+		_depositToSymmio(account, amount, ISymmio.depositFor.selector);
+	}
+
+	function depositAndAllocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+		_depositToSymmio(account, amount, ISymmio.depositAndAllocateFor.selector);
+	}
+
+	function _depositToSymmio(address account, uint256 amount, bytes4 depositSelector) private {
+		if (amount == 0) revert ZeroAmount();
+
+		address core = LibAccountLayerUtils.getRelatedCore(account);
+
+		// Deposit directly from the signer into Symmio
+		address signer = LibAccountLayerUtils.getSigner();
+		_executeWithSymmioSigner(core, signer, abi.encodeWithSelector(depositSelector, account, amount));
+	}
+
+	function depositForAccountWithExpressRate(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
+		(uint256 expressRate, address virtualProvider) = _getExpressDepositConfig(account);
+		_depositWithExpressSplit(account, amount, ISymmio.depositFor.selector, expressRate, virtualProvider);
 	}
 
 	function depositAndAllocateForAccountWithExpressRate(
 		address account,
 		uint256 amount
 	) external whenNotPaused nonReentrant onlyAccountOwner(account) {
-		_depositForAccountWithExpressRate(account, amount, ISymmio.depositAndAllocateFor.selector);
+		(uint256 expressRate, address virtualProvider) = _getExpressDepositConfig(account);
+		_depositWithExpressSplit(account, amount, ISymmio.depositAndAllocateFor.selector, expressRate, virtualProvider);
 	}
 
-	function _depositForAccountWithExpressRate(
-		address account,
-		uint256 amount,
-		bytes4 depositSelector
-	) private {
-		if (amount == 0) revert ZeroAmount();
-
+	function _getExpressDepositConfig(address account) private view returns (uint256 expressRate, address virtualProvider) {
 		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 
-		// Get expressRate and virtualProvider from affiliate data
-		uint256 expressRate = afLayout.affiliates[affiliate].expressRate;
-		address virtualProvider = afLayout.affiliates[affiliate].virtualProvider;
+		expressRate = afLayout.affiliates[affiliate].expressRate;
+		virtualProvider = afLayout.affiliates[affiliate].virtualProvider;
 
-		// Validate express rate and virtual provider configuration
 		if (expressRate > 1e18) revert InvalidExpressRate();
 		if (expressRate > 0 && virtualProvider == address(0)) revert VirtualProviderRequired();
-		
+	}
+
+	function _depositWithExpressSplit(address account, uint256 amount, bytes4 depositSelector, uint256 expressRate, address virtualProvider) private {
+		if (amount == 0) revert ZeroAmount();
+
 		address core = LibAccountLayerUtils.getRelatedCore(account);
 		address collateral = ISymmio(core).getCollateral();
 		uint256 collateralDecimals = IERC20Metadata(collateral).decimals();
 
-		address signer = LibAccountLayerUtils.getSigner();
 		bool usesAllocation = depositSelector == ISymmio.depositAndAllocateFor.selector;
 
 		// Get balances before deposit to calculate increase
 		uint256 balanceBefore = ISymmio(core).balanceOf(account);
 		uint256 allocatedBefore = usesAllocation ? ISymmio(core).allocatedBalanceOfPartyA(account) : 0;
 
-		// Transfer total amount from user
+		// Pull funds into AccountLayer to support splitting between Symmio and VirtualProvider
+		address signer = LibAccountLayerUtils.getSigner();
 		LibAccountLayerSafeERC20.safeTransferFrom(collateral, signer, address(this), amount);
 
 		// Calculate split: virtualAmount = amount * expressRate / 1e18
@@ -155,7 +168,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		}
 
 		// Transfer virtual portion to Virtual Provider and invoke callback
-		if (virtualAmount > 0 && virtualProvider != address(0)) {
+		if (virtualAmount > 0) {
 			LibAccountLayerSafeERC20.safeTransfer(collateral, virtualProvider, virtualAmount);
 			// Use safe call to prevent virtualProvider from impersonating user via getSigner()
 			LibAccountLayerSafeCall.safeExternalCall(
@@ -164,7 +177,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			);
 		}
 
-		// Enforce invariant: input_amount == balanceOf(user) increase (including allocation if used)
+		// Enforce invariant: input_amount == balanceOf(account) increase (including allocation if used)
 		uint256 balanceAfter = ISymmio(core).balanceOf(account);
 		uint256 allocatedAfter = usesAllocation ? ISymmio(core).allocatedBalanceOfPartyA(account) : 0;
 		uint256 balanceIncrease = balanceAfter - balanceBefore;
@@ -174,9 +187,15 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	}
 
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
+		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		address previousSigner = ahLayout.globalSigner;
+		ahLayout.globalSigner = address(0);
+
 		ISymmio(symmio).setSigner(signer);
 		(bool success, bytes memory result) = symmio.call(callData);
 		ISymmio(symmio).setSigner(address(0));
+
+		ahLayout.globalSigner = previousSigner;
 
 		if (!success) {
 			assembly {
@@ -201,6 +220,19 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			bytes calldata cd = callDatas[i];
 			bytes4 selector = bytes4(cd[:4]);
+			if (selector == ISymmio.internalTransferToBalance.selector) revert Unauthorized();
+
+			bool isVirtualAccount = ahLayout.virtualAccounts[account].isExists;
+			bool isSubAccount = ahLayout.subAccounts[account].isExists;
+			if (!isVirtualAccount && !isSubAccount) {
+				// if its a deleted VA, parentAccount is still set and it must not be callable
+				if (ahLayout.virtualAccounts[account].parentAccount != address(0)) revert AccountDoesNotExist();
+
+				// legacy multi accounts
+				if (LibAccountLayerUtils.resolveAccountOwner(account) == address(0)) revert AccountDoesNotExist();
+				results[i] = _executeWithSigner(account, cd);
+				continue;
+			}
 
 			if (
 				selector == LibQuoteParams.SEND_QUOTE_SELECTOR ||
@@ -209,14 +241,14 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			) {
 				QuoteParams memory p = LibQuoteParams.decodeQuoteParams(cd);
 
-				if (ahLayout.virtualAccounts[account].isExists) {
+				if (isVirtualAccount) {
 					results[i] = _handleVirtualAccountSendQuote(account, cd, p);
-					return results;
+					continue;
 				}
 
-				if (ahLayout.subAccounts[account].isExists) {
+				if (isSubAccount) {
 					results[i] = _handleSubAccountSendQuote(account, cd, p);
-					return results;
+					continue;
 				}
 			}
 
@@ -262,6 +294,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		LibAccountLayerUtils.validateName(data.name);
 		if (!afLayout.whitelistedSymmioCores[data.symmioCore]) revert NotSymmioCore();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
+		if (!afLayout.affiliates[affiliate].symmioCores.contains(data.symmioCore)) revert SymmioCoreNotAllowed();
 
 		if (
 			data.singleVAMode &&
@@ -336,6 +369,35 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			ahLayout.activeVAByKey[parentAccount][isolationType][symbolId] = reusedAccount;
 		}
 
+		// Sync bind state with parent account
+		ISymmio symmio = ISymmio(parent.symmioCore);
+		ISymmio.BindState memory parentBindState = symmio.getBindState(parentAccount);
+		address parentPartyB =
+			parentBindState.status == ISymmio.BindStatus.BOUND || parentBindState.status == ISymmio.BindStatus.PENDING_UNBIND
+				? parentBindState.partyB
+				: address(0);
+		ISymmio.BindState memory vaBindState = symmio.getBindState(reusedAccount);
+
+		if (vaBindState.partyB != parentPartyB) {
+			if (vaBindState.partyB != address(0)) {
+				if (vaBindState.status == ISymmio.BindStatus.BOUND) {
+					_executeWithSymmioSigner(parent.symmioCore, reusedAccount, abi.encodeWithSelector(ISymmio.requestToUnbindFromPartyB.selector));
+				}
+
+				if (vaBindState.status == ISymmio.BindStatus.BOUND || vaBindState.status == ISymmio.BindStatus.PENDING_UNBIND) {
+					_executeWithSymmioSigner(
+						parent.symmioCore,
+						vaBindState.partyB,
+						abi.encodeWithSelector(ISymmio.completeUnbindRequest.selector, reusedAccount)
+					);
+				}
+			}
+
+			if (parentPartyB != address(0)) {
+				_executeWithSymmioSigner(parent.symmioCore, reusedAccount, abi.encodeWithSelector(ISymmio.bindToPartyB.selector, parentPartyB));
+			}
+		}
+
 		LibAccountLayerUtils.callHook(
 			parent.affiliate,
 			reusedAccount,
@@ -378,7 +440,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		ISymmio symmio = ISymmio(parent.symmioCore);
 
 		ISymmio.BindState memory bindState = symmio.getBindState(parentAccount);
-		if (bindState.status == ISymmio.BindStatus.BOUND) {
+		if (bindState.status == ISymmio.BindStatus.BOUND || bindState.status == ISymmio.BindStatus.PENDING_UNBIND) {
 			symmio.setSigner(virtualAccount);
 			symmio.bindToPartyB(bindState.partyB);
 			symmio.setSigner(address(0));

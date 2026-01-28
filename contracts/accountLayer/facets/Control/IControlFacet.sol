@@ -16,6 +16,7 @@ interface IControlFacetEvents {
 	event WhitelistedSymmioCoreSet(address indexed core, bool status);
 	event AccountManagerDeployed(address indexed affiliate, address indexed accountManager);
 	event HookAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
+	event CallAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
 }
 
 interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
@@ -52,5 +53,7 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	function setWhitelistedSymmioCore(address core, bool status) external;
 
 	function setHookAllowedSelectors(address affiliate, bytes4[] calldata selectors, bool allowed) external;
+
+	function setCallAllowedSelectors(address affiliate, bytes4[] calldata selectors, bool allowed) external;
 
 }

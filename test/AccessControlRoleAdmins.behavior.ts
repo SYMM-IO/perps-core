@@ -53,7 +53,7 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 					// outsider cannot add
 					await expect(
 						context.controlFacet.connect(outsider).addRoleAdmin(PROTOCOL_CONFIG_ROLE, await secondaryAdmin.getAddress()),
-					).to.be.revertedWith("Accessibility: Must has role")
+					).to.be.revertedWith("Accessibility: Must have role")
 				})
 
 				it("Should revert when role admin (non-default) tries to add another admin", async function () {
@@ -62,7 +62,7 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 					// secondaryAdmin cannot further delegate
 					await expect(
 						context.controlFacet.connect(secondaryAdmin).addRoleAdmin(PROTOCOL_CONFIG_ROLE, await operator.getAddress()),
-					).to.be.revertedWith("Accessibility: Must has role")
+					).to.be.revertedWith("Accessibility: Must have role")
 				})
 
 				it("Should revert when admin address is zero", async function () {
@@ -93,7 +93,7 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 					// outsider cannot remove
 					await expect(
 						context.controlFacet.connect(outsider).removeRoleAdmin(PROTOCOL_CONFIG_ROLE, await secondaryAdmin.getAddress()),
-					).to.be.revertedWith("Accessibility: Must has role")
+					).to.be.revertedWith("Accessibility: Must have role")
 				})
 
 				it("Should block delegated admins from removing other delegated admins", async function () {
@@ -101,14 +101,14 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 					await context.controlFacet.connect(admin).addRoleAdmin(PROTOCOL_CONFIG_ROLE, await operator.getAddress())
 					await expect(
 						context.controlFacet.connect(secondaryAdmin).removeRoleAdmin(PROTOCOL_CONFIG_ROLE, await operator.getAddress()),
-					).to.be.revertedWith("Accessibility: Must has role")
+					).to.be.revertedWith("Accessibility: Must have role")
 				})
 
 				it("Should block delegated admins from removing themselves", async function () {
 					// delegated admin cannot remove self
 					await expect(
 						context.controlFacet.connect(secondaryAdmin).removeRoleAdmin(PROTOCOL_CONFIG_ROLE, await secondaryAdmin.getAddress()),
-					).to.be.revertedWith("Accessibility: Must has role")
+					).to.be.revertedWith("Accessibility: Must have role")
 				})
 			})
 

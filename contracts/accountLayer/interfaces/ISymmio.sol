@@ -129,5 +129,7 @@ interface ISymmio {
 	function registerAffiliate(address affiliate) external;
 	function getFee(address affiliate, uint256 symbolId) external returns (Fee memory);
 	function bindToPartyB(address partyB) external;
+	function requestToUnbindFromPartyB() external;
+	function completeUnbindRequest(address partyA) external;
 	function getBindState(address user) external view returns (BindState memory);
 }

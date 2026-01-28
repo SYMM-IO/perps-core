@@ -2749,10 +2749,19 @@ export function shouldBehaveLikeInstantLayer(): void {
 		let subAccountAddress: string
 
 		beforeEach(async function () {
-			// Create a sub-account
-			await ctx.context.accountManager.connect(ctx.partyA1.signer).addAccount("testSubAccount")
-			const accounts = await ctx.context.accountManager.getAccounts(ctx.partyA1.address, 0, 100)
-			subAccountAddress = accounts[0].accountAddress
+			// Create a sub-account with MARKET isolation
+			const subAccountData = [
+				{
+					name: "testSubAccount",
+					metadata: ethers.keccak256(toUtf8Bytes("metadata")),
+					symmioCore: ctx.context.diamond,
+					isolationType: 1,
+					singleVAMode: false,
+				},
+			]
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), subAccountData)
+			const accounts = await ctx.context.alViewFacet.getUserSubAccountsAddresses(ctx.partyA1.address, 0, 100)
+			subAccountAddress = accounts[0]
 
 			// Fund the sub-account with collateral
 			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, ethers.MaxUint256)
