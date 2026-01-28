@@ -21,6 +21,7 @@ import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils
 import {
 	getDummyCrossLiquidationSig,
 	getDummyHighLowPriceSig,
+	getDummyPairUpnlAndPriceSig,
 	getDummySettlementSig,
 	getDummyUnifiedSettlementSig
 } from "./utils/SignatureUtils.js"
@@ -487,7 +488,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(updatePrice)
 
 			// force close
-			await expect(context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id)).not.to.be.reverted
+			await expect(context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(decimal(5n), 0n, decimal(150n)))).not.to.be.reverted
 			expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
 		})
 	})

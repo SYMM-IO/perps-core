@@ -46,7 +46,7 @@ export function shouldBehaveLikeMigration(): void {
 			// Grant MIGRATION_ROLE to admin (already done in initializeFixture)
 			await expect(
 				context.migrationFacet.connect(context.signers.user).migrateQuotes([1])
-			).to.be.revertedWith("Accessibility: Must has role")
+			).to.be.revertedWith("Accessibility: Must have role")
 
 			// Admin should be able to call it
 			await expect(
@@ -79,7 +79,7 @@ export function shouldBehaveLikeMigration(): void {
 
 			await expect(
 				context.migrationFacet.connect(context.signers.user).migrateCrossLockedValues(partyB, [])
-			).to.be.revertedWith("Accessibility: Must has role")
+			).to.be.revertedWith("Accessibility: Must have role")
 
 			// Admin should be able to call it
 			await expect(
@@ -152,7 +152,7 @@ export function shouldBehaveLikeMigration(): void {
 
 			await expect(
 				context.controlFacet.connect(context.signers.user).setCrossPartyB(partyB, true)
-			).to.be.revertedWith("Accessibility: Must has role")
+			).to.be.revertedWith("Accessibility: Must have role")
 
 			// Admin should be able to call it (has MIGRATION_ROLE)
 			await expect(

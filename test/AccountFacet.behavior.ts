@@ -266,7 +266,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			// role check
 			await expect(
 				context.assuranceFacet.connect(context.signers.user).acceptAssuranceWithdraw(await hedger.getAddress(), amount, token),
-			).to.be.revertedWith("Accessibility: Must has role")
+			).to.be.revertedWith("Accessibility: Must have role")
 
 			// pending check
 			await expect(context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, token)).to.be.revertedWith(
@@ -364,7 +364,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const recipient = context.signers.user.address
 
 			await expect(context.assuranceFacet.connect(context.signers.user).slashUser(await hedger.getAddress(), token, 1n, recipient)).to.be.revertedWith(
-				"Accessibility: Must has role",
+				"Accessibility: Must have role",
 			)
 
 			await expect(context.assuranceFacet.slashUser(await hedger.getAddress(), token, 0n, recipient)).to.be.revertedWith(

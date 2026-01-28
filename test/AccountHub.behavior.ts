@@ -1645,7 +1645,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 
 				// Bind the parent sub-account to PartyB
-				const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+				const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [bindCallData])
 
 				const parentBindBefore = await context.viewFacet.getBindState(positionSubAccountAddress)
@@ -1676,9 +1676,9 @@ export function shouldBehaveLikeAccountHub(): void {
 				// expect(deletedAccountData.isExists).to.false
 
 				// Unbind the parent sub-account VA should no longer be bound after it gets reused
-				const requestUnbindCallData = context.accountFacet.interface.encodeFunctionData("requestToUnbindFromPartyB", [])
+				const requestUnbindCallData = context.bindingFacet.interface.encodeFunctionData("requestToUnbindFromPartyB", [])
 				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [requestUnbindCallData])
-				await context.accountFacet.connect(context.signers.hedger).completeUnbindRequest(positionSubAccountAddress)
+				await context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(positionSubAccountAddress)
 
 				const parentBindAfter = await context.viewFacet.getBindState(positionSubAccountAddress)
 				expect(parentBindAfter.partyB).to.equal(ZeroAddress)
@@ -1696,11 +1696,11 @@ export function shouldBehaveLikeAccountHub(): void {
 				await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 
 				// Bind the parent sub-account to PartyB
-				const bindCallData = context.accountFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+				const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [bindCallData])
 
 				// Request unbind but do not complete it (status should be PENDING_UNBIND)
-				const requestUnbindCallData = context.accountFacet.interface.encodeFunctionData("requestToUnbindFromPartyB", [])
+				const requestUnbindCallData = context.bindingFacet.interface.encodeFunctionData("requestToUnbindFromPartyB", [])
 				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [requestUnbindCallData])
 
 				const parentBindState = await context.viewFacet.getBindState(positionSubAccountAddress)
