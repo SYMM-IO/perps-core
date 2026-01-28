@@ -920,7 +920,46 @@ export function shouldBehaveLikeInstantLayer(): void {
 				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.LOCKED)
 			})
 
-			it("still requires signature when PartyB is not the executor", async function () {
+			it("allows PartyA owner to skip signature when executing their own operations", async function () {
+				// Admin (account owner) has OPERATOR_ROLE and is the signer
+				// When admin calls executeBatch with their own operation, signature should be skipped
+				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
+
+				// Admin calls executeBatch with empty signature for their own operation
+				// This should succeed because signer == msg.sender
+				await expect(ctx.context.instantLayer.executeBatch([op], ["0x"])).not.to.be.reverted
+
+				// Verify the quote was created
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+			})
+
+			it("allows delegate to skip signature when executing delegated operations", async function () {
+				// Setup: Grant delegation to user2 for sendQuoteWithAffiliate
+				const selector = ctx.context.partyAFacet.interface.getFunction("sendQuoteWithAffiliate").selector as `0x${string}`
+				await ctx.context.instantLayer.connect(execCtx.partyA1.signer).grantDelegation({
+					account: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					delegatedSigner: ctx.context.signers.user2.address,
+					selectors: [selector],
+					expiryTimestamp: await getBlockTimestamp(DEFAULT_EXPIRY_OFFSET),
+				})
+
+				// Grant OPERATOR_ROLE to user2 so they can call executeBatch
+				await ctx.context.instantLayer.grantRole(ROLES.OPERATOR_ROLE, ctx.context.signers.user2.address)
+
+				// Create operation with user2 as signer (delegated)
+				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, ctx.context.signers.user2.address, 1n, execCtx.deadline)
+
+				// User2 calls executeBatch with empty signature for their delegated operation
+				// This should succeed because signer == msg.sender and delegation is valid
+				await expect(ctx.context.instantLayer.connect(ctx.context.signers.user2).executeBatch([op], ["0x"])).not.to.be.reverted
+
+				// Verify the quote was created
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+			})
+
+			it("still requires signature when signer is not the executor", async function () {
 				// First create a quote so PartyB has something to lock
 				const sendQuoteOp = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
 				const sendQuoteSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
@@ -939,6 +978,18 @@ export function shouldBehaveLikeInstantLayer(): void {
 				// Admin (not PartyB) calls executeBatch with empty signature - should fail
 				// Because msg.sender != signer, signature verification is required
 				await expect(ctx.context.instantLayer.executeBatch([lockOp], ["0x"])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidSignature",
+				)
+			})
+
+			it("still requires signature for PartyA when owner is not the executor", async function () {
+				// Create operation signed by partyA1 (owner)
+				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.partyA1.address, 1n, execCtx.deadline)
+
+				// Admin calls executeBatch with empty signature for partyA1's operation - should fail
+				// Because msg.sender (admin) != signer (partyA1), signature verification is required
+				await expect(ctx.context.instantLayer.executeBatch([op], ["0x"])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
 					"InvalidSignature",
 				)
