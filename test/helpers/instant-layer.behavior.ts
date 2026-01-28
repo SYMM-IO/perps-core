@@ -881,6 +881,68 @@ export function shouldBehaveLikeInstantLayer(): void {
 					.to.be.revertedWithCustomError(ctx.context.instantLayer, "MismatchSignerAndAccount")
 					.withArgs(await execCtx.context.symmioPartyB.getAddress(), execCtx.partyB2.address)
 			})
+
+			it("allows PartyB to skip signature when executing their own operations", async function () {
+				// First create a quote so PartyB has something to lock
+				const sendQuoteOp = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
+				const sendQuoteSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
+				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig])
+
+				// Verify quote was created
+				const quoteBefore = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quoteBefore.quoteStatus).to.equal(QuoteStatus.PENDING)
+
+				// Setup: Whitelist InstantLayer in SymmioPartyB's multicast whitelist
+				const partyBAddress = await ctx.context.symmioPartyB.getAddress()
+				const instantLayerAddress = await ctx.context.instantLayer.getAddress()
+				await ctx.context.symmioPartyB.connect(ctx.context.signers.admin).setMulticastWhitelist(instantLayerAddress, true)
+				await ctx.context.symmioPartyB.grantRole(ROLES.TRUSTED_ROLE, ctx.context.signers.hedger.address)
+
+				// Create PartyB lock operation with empty signature
+				const lockOp: InstantLayer.SignedOperationStruct = {
+					signer: partyBAddress,
+					target: execCtx.symmioAddress,
+					callData: execCtx.lockQuoteCallData,
+					signerAccount: { addr: partyBAddress, isPartyB: true },
+					replayAttackHeader: { nonce: 1n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				// Encode executeBatch call with empty signature
+				const executeBatchCallData = ctx.context.instantLayer.interface.encodeFunctionData("executeBatch", [[lockOp], ["0x"]])
+
+				// PartyB calls InstantLayer.executeBatch via _multicastCall (msg.sender = PartyB contract)
+				// This should succeed because PartyB is executing their own operation, so signature is skipped
+				await expect(ctx.context.symmioPartyB.connect(ctx.context.signers.hedger)._multicastCall([instantLayerAddress], [executeBatchCallData])).not.to
+					.be.reverted
+
+				// Verify the quote was locked
+				const quoteAfter = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.LOCKED)
+			})
+
+			it("still requires signature when PartyB is not the executor", async function () {
+				// First create a quote so PartyB has something to lock
+				const sendQuoteOp = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
+				const sendQuoteSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
+				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig])
+
+				// Create PartyB lock operation with empty signature
+				const partyBAddress = await ctx.context.symmioPartyB.getAddress()
+				const lockOp: InstantLayer.SignedOperationStruct = {
+					signer: partyBAddress,
+					target: execCtx.symmioAddress,
+					callData: execCtx.lockQuoteCallData,
+					signerAccount: { addr: partyBAddress, isPartyB: true },
+					replayAttackHeader: { nonce: 1n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				// Admin (not PartyB) calls executeBatch with empty signature - should fail
+				// Because msg.sender != signer, signature verification is required
+				await expect(ctx.context.instantLayer.executeBatch([lockOp], ["0x"])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidSignature",
+				)
+			})
 		})
 
 		describe("executeBatch - Operation Execution", function () {
