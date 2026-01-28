@@ -859,9 +859,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			}
 		}
 
-		// Verify signature
-		if (!SignatureChecker.isValidSignatureNow(signer, hash, sigCallData)) {
-			revert InvalidSignature();
+		// Verify signature - skip if signer is the executor (msg.sender proves identity)
+		// Authorization was already verified above (PartyB registration or PartyA owner/delegation)
+		if (signer != msg.sender) {
+			if (!SignatureChecker.isValidSignatureNow(signer, hash, sigCallData)) {
+				revert InvalidSignature();
+			}
 		}
 
 		// Check for replay attacks
