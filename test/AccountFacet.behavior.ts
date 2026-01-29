@@ -483,6 +483,37 @@ export function shouldBehaveLikeAccountFacet(): void {
 			expect(await context.collateral.balanceOf(user2Address)).to.equal(withdrawAmount)
 		})
 
+		it("Should not allow legacy withdraw to bypass locked collateral", async function () {
+			user2 = new User(context, context.signers.user2)
+			await user2.setup()
+
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(context.signers.admin.address)
+			const user2Address = await context.signers.user2.getAddress()
+			const virtualBalance = decimal(150n)
+			await context.accountFacet.connect(context.signers.admin).virtualDepositFor(user2Address, virtualBalance)
+
+			const receiver = ethers.dataSlice(await context.signers.user.getAddress(), 0, 20)
+			const chainId = (await ethers.provider.getNetwork()).chainId
+			const parts = [
+				{
+					id: 1,
+					amount: BALANCES.WITHDRAW_AMOUNT,
+					chainId,
+					receiver,
+					virtualProvider: ZeroAddress,
+					expressProvider: ZeroAddress,
+				},
+			]
+
+			await context.controlFacet.connect(context.signers.admin).setMaxWithdrawParts(10)
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+
+			await time.increase(200)
+			await expect(context.accountFacet.connect(context.signers.user2).withdraw(virtualBalance)).to.be.revertedWith(
+				"AccountFacet: Insufficient contract collateral",
+			)
+		})
+
 		describe("withdrawSuspendedUserFunds", function () {
 			let userAddress: string
 			let recipient: string

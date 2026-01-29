@@ -9,6 +9,7 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
+import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { LibMuonAccount } from "../../libraries/muon/LibMuonAccount.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
@@ -42,11 +43,16 @@ library AccountFacetImpl {
 	function withdraw(address user, uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(appLayout.deprecateOldWithdrawalPaused == false, "This Withdrawal has been deprecated use new one;");
 		require(
 			block.timestamp >= accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateCooldown,
 			"AccountFacet: Cooldown hasn't reached"
+		);
+		require(
+			IERC20Metadata(appLayout.collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= amount,
+			"AccountFacet: Insufficient contract collateral"
 		);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		accountLayout.balances[signer] -= amountWith18Decimals;
