@@ -66,6 +66,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     flag = int(sys.argv[1])
-    directory_path = "./contracts/libraries/muon"
+    directory_path = "./contracts/core/libraries/muon"
 
     process_directory(directory_path, flag)

@@ -219,7 +219,7 @@ export async function initializeExternalTransferRelayerFixture(): Promise<{
 }> {
 	const source = await initializeFixture()
 
-	const relayerFactory = await ethers.getContractFactory("contracts/helpers/SymmioExternalTransferRelayer.sol:ExternalTransferRelayer")
+	const relayerFactory = await ethers.getContractFactory("contracts/helpers/relayers/SymmioExternalTransferRelayer.sol:ExternalTransferRelayer")
 	const relayer = (await relayerFactory.deploy(await source.signers.admin.getAddress())) as unknown as SymmioExternalTransferRelayer
 	await relayer.waitForDeployment()
 
@@ -268,7 +268,7 @@ export async function initializeVirtualFixture(): Promise<{
 		reportGas: true,
 	})
 
-	const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+	const MockVirtualProvider = await ethers.getContractFactory("contracts/core/test/MockVirtualProvider.sol:VirtualProvider")
 	const provider = (await MockVirtualProvider.deploy(await targetDiamond.getAddress())) as unknown as VirtualProvider
 	await provider.waitForDeployment()
 

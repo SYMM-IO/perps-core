@@ -23,7 +23,7 @@ import {
 	getDummySingleUpnlAndPriceSig,
 	getDummyUnifiedSettlementSig,
 } from "./utils/SignatureUtils.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 
 export function shouldBehaveLikeSpecificScenario(): void {
 	let uSigner: HardhatEthersSigner
@@ -366,7 +366,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		await expectPartyBTotalsByPartyA(context, user2Address, user2LongAmountAfterForceClose, price5, amount3, updatedShortPrice)
 	})
 
-	it("Updates partyB notionals after master-account settlement", async function () {
+	it("Updates partyB notionals after cross-partyB settlement", async function () {
 		const context: RunContext = this.context
 
 		const user = new User(context, context.signers.user)
@@ -416,7 +416,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		await hedger.openPosition(quote1.id, limitOpenRequestBuilder().filledAmount(amount1).openPrice(price1).price(price1).build())
 		await hedger.openPosition(quote2.id, limitOpenRequestBuilder().filledAmount(amount2).openPrice(price2).price(price2).build())
 
-		await migratePartyBToMaster(context, hedger, [quote1.id, quote2.id])
+		await migratePartyBToCross(context, hedger, [quote1.id, quote2.id])
 
 		const totalAmount = amount1 + amount2
 		const avgBefore = avgPrice(totalAmount, amount1 * price1 + amount2 * price2)
@@ -453,7 +453,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		const settlementSig = await getDummyUnifiedSettlementSig(
 			await hedger.getAddress(), // partyB
 			0n, // upnlPartyB
-			[], // upnlPartyBPerPartyA (empty for masterAccount mode)
+			[], // upnlPartyBPerPartyA (empty for crossPartyB mode)
 			[user2Address], // partyAs
 			[0n], // upnlPartyAs
 			[
@@ -466,6 +466,9 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		)
 
 		await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1.id, settlementSig, [updatedPrice])
+
+		const forceCloseDetail = await context.viewFacet.forceCloseDetails(quote1.id)
+		expect(forceCloseDetail.upnlPartyB).to.equal(amount2)
 
 		const avgAfter = avgPrice(totalAmount, amount1 * price1 + amount2 * updatedPrice)
 		await expectPartyBTotals(context, totalAmount, avgAfter, 0n, 0n)

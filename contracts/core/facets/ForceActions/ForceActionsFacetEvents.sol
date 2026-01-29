@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { QuoteStatus } from "../../storages/QuoteStorage.sol";
+
+interface ForceActionsFacetEvents {
+	event ForceCancelQuote(uint256 quoteId, QuoteStatus quoteStatus);
+	event ForceCancelCloseRequest(uint256 quoteId, QuoteStatus quoteStatus, uint256 closeId);
+	event ForceCloseInitialized(
+		address indexed initiator,
+		address indexed partyB,
+		uint256 quoteId,
+		bytes highLowPriceSigId,
+		uint256 closePrice,
+		uint256 timestamp
+	);
+	event ForceClosePosition(
+		uint256 quoteId,
+		address partyA,
+		address partyB,
+		uint256 filledAmount,
+		uint256 closedPrice,
+		QuoteStatus quoteStatus,
+		uint256 closeId
+	);
+	// Cross partyB mode force close event with solvency flag
+	event ForceClosePositionCross(
+		uint256 quoteId,
+		address partyA,
+		address partyB,
+		uint256 filledAmount,
+		uint256 closedPrice,
+		QuoteStatus quoteStatus,
+		uint256 closeId,
+		bool isSolvent
+	);
+	event ForceFetchAllocated(address partyB, address[] partyAs, uint256[] FetchedAmount, uint256[] newPartyBsAllocatedBalances);
+}

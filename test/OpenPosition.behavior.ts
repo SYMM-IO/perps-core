@@ -16,7 +16,7 @@ import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/re
 import { OpenPositionValidator } from "./models/validators/OpenPositionValidator.js"
 import { decimal, getQuoteQuantity, pausePartyB } from "./utils/Common.js"
 import { getDummyPairUpnlAndPriceSig, getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 
 export function shouldBehaveLikeOpenPosition(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
@@ -596,7 +596,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 		})
 	})
 
-	describe("Master account shared buckets", function () {
+	describe("Cross partyB shared buckets", function () {
 		beforeEach(async function () {
 			// Refresh PartyA balances to support larger quotes
 			await user.setBalances(decimal(3000n), decimal(1500n), decimal(1200n))
@@ -610,10 +610,10 @@ export function shouldBehaveLikeOpenPosition(): void {
 			await hedger.lockQuote(quoteUser1.id)
 			await hedger.lockQuote(quoteUser2.id)
 
-			await migratePartyBToMaster(context, hedger, [quoteUser1.id, quoteUser2.id])
+			await migratePartyBToCross(context, hedger, [quoteUser1.id, quoteUser2.id])
 		})
 
-		it("opens quotes into the shared master account and clears individual partyA account balances", async function () {
+		it("opens quotes into the shared cross partyB and clears individual partyA account balances", async function () {
 			await hedger.openPosition(
 				quoteUser1.id,
 				limitOpenRequestBuilder().filledAmount(quoteUser1.quantity).openPrice(quoteUser1.requestedOpenPrice).build(),
@@ -623,13 +623,13 @@ export function shouldBehaveLikeOpenPosition(): void {
 				limitOpenRequestBuilder().filledAmount(quoteUser2.quantity).openPrice(quoteUser2.requestedOpenPrice).build(),
 			)
 
-			const masterBucket = await hedger.getBalanceInfoMasterAccount()
-			expect(masterBucket.lockedCva).to.equal(quoteUser1.lockedValues.cva + quoteUser2.lockedValues.cva)
-			expect(masterBucket.lockedLf).to.equal(quoteUser1.lockedValues.lf + quoteUser2.lockedValues.lf)
-			expect(masterBucket.lockedMmPartyB).to.equal(quoteUser1.lockedValues.partyBmm + quoteUser2.lockedValues.partyBmm)
-			expect(masterBucket.pendingLockedCva).to.equal(0)
-			expect(masterBucket.pendingLockedLf).to.equal(0)
-			expect(masterBucket.pendingLockedMmPartyB).to.equal(0)
+			const crossBucket = await hedger.getBalanceInfoCrossPartyB()
+			expect(crossBucket.lockedCva).to.equal(quoteUser1.lockedValues.cva + quoteUser2.lockedValues.cva)
+			expect(crossBucket.lockedLf).to.equal(quoteUser1.lockedValues.lf + quoteUser2.lockedValues.lf)
+			expect(crossBucket.lockedMmPartyB).to.equal(quoteUser1.lockedValues.partyBmm + quoteUser2.lockedValues.partyBmm)
+			expect(crossBucket.pendingLockedCva).to.equal(0)
+			expect(crossBucket.pendingLockedLf).to.equal(0)
+			expect(crossBucket.pendingLockedMmPartyB).to.equal(0)
 
 			const partyABucket1 = await hedger.getBalanceInfo(await user.getAddress())
 
@@ -649,7 +649,7 @@ export function shouldBehaveLikeOpenPosition(): void {
 			expect(partyABucket2.pendingLockedMmPartyB).to.equal(0)
 		})
 
-		it("bumps both per-partyA and master nonces when opening in master mode", async function () {
+		it("bumps both per-partyA and cross nonces when opening in cross mode", async function () {
 			const partyB = await hedger.getAddress()
 			const partyA1 = await user.getAddress()
 			const partyA2 = await user2.getAddress()

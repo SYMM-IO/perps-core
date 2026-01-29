@@ -13,7 +13,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummySingleUpnlWithPendingBalanceSig } from "./utils/SignatureUtils.js"
 
 const SUSPENDED_FUNDS_WITHDRAWER_ROLE = ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE"))
@@ -266,7 +266,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			// role check
 			await expect(
 				context.assuranceFacet.connect(context.signers.user).acceptAssuranceWithdraw(await hedger.getAddress(), amount, token),
-			).to.be.revertedWith("Accessibility: Must has role")
+			).to.be.revertedWith("Accessibility: Must have role")
 
 			// pending check
 			await expect(context.assuranceFacet.acceptAssuranceWithdraw(await hedger.getAddress(), amount, token)).to.be.revertedWith(
@@ -364,7 +364,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const recipient = context.signers.user.address
 
 			await expect(context.assuranceFacet.connect(context.signers.user).slashUser(await hedger.getAddress(), token, 1n, recipient)).to.be.revertedWith(
-				"Accessibility: Must has role",
+				"Accessibility: Must have role",
 			)
 
 			await expect(context.assuranceFacet.slashUser(await hedger.getAddress(), token, 0n, recipient)).to.be.revertedWith(
@@ -500,7 +500,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				// withdraw without sufficient role (as user)
 				await expect(
 					context.accountFacet.connect(context.signers.user).withdrawSuspendedUserFunds(userAddress, recipient, withdrawAmountStr),
-				).to.be.revertedWith("Accessibility: Must has role")
+				).to.be.revertedWith("Accessibility: Must have role")
 			})
 
 			it("Should fail when user is not suspended", async function () {
@@ -540,7 +540,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 				await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(userAddress)
 				await expect(
 					context.accountFacet.connect(context.signers.user).deallocateSuspendedUserFunds(userAddress, allocatedAmountStr),
-				).to.be.revertedWith("Accessibility: Must has role")
+				).to.be.revertedWith("Accessibility: Must have role")
 			})
 
 			it("Should fail when user is not suspended", async function () {
@@ -1133,7 +1133,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should fail when caller does not have INTERNAL_TRANSFER_TO_BALANCE_ROLE", async () => {
 			await expect(
 				context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
-			).to.be.revertedWith("Accessibility: Must has role")
+			).to.be.revertedWith("Accessibility: Must have role")
 		})
 
 		it("Should transfer to balance (not allocatedBalance) when caller has role", async () => {
@@ -1214,7 +1214,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await user.setup()
 			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.DEPOSIT_AMOUNT)
 
-			const MockExternalTransferRelayer = await ethers.getContractFactory("contracts/test/MockExternalTransferTarget.sol:ExternalTransferRelayer")
+			const MockExternalTransferRelayer = await ethers.getContractFactory("contracts/core/test/MockExternalTransferTarget.sol:ExternalTransferRelayer")
 			mockTarget = await MockExternalTransferRelayer.deploy()
 			await mockTarget.waitForDeployment()
 			targetAddress = await mockTarget.getAddress()
@@ -1440,7 +1440,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			user = new User(context, context.signers.user)
 			await user.setup()
 
-			const MockVirtualProvider = await ethers.getContractFactory("contracts/test/MockVirtualProvider.sol:VirtualProvider")
+			const MockVirtualProvider = await ethers.getContractFactory("contracts/core/test/MockVirtualProvider.sol:VirtualProvider")
 			mockProvider = await MockVirtualProvider.deploy(context.diamond)
 			await mockProvider.waitForDeployment()
 			providerAddress = await mockProvider.getAddress()
@@ -1961,20 +1961,20 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 	})
 
-	describe("Master account activation gating", () => {
+	describe("Cross partyB activation gating", () => {
 		beforeEach(async () => {
 			context = await loadFixture(initializeFixture)
 		})
-		it("should revert when master account activation is disabled", async () => {
-			await expect(context.partyBAccountFacet.connect(context.signers.hedger).activateMasterAccountMode()).to.be.revertedWith(
-				"AccountFacet: Master account disabled",
+		it("should revert when cross partyB activation is disabled", async () => {
+			await expect(context.partyBAccountFacet.connect(context.signers.hedger).activateCrossPartyB()).to.be.revertedWith(
+				"AccountFacet: Cross disabled",
 			)
 		})
 
-		it("should allow master account activation after enabled by admin", async () => {
-			await context.controlFacet.connect(context.signers.admin).setMasterAccountEnabled(true)
-			await migratePartyBToMaster(context, hedger, [])
-			expect(await context.viewFacet.isInMasterAccountMode(context.signers.hedger.address)).to.equal(true)
+		it("should allow cross partyB activation after enabled by admin", async () => {
+			await context.controlFacet.connect(context.signers.admin).setCrossEnabled(true)
+			await migratePartyBToCross(context, hedger, [])
+			expect(await context.viewFacet.isCrossPartyB(context.signers.hedger.address)).to.equal(true)
 		})
 	})
 }

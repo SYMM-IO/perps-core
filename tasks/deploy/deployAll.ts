@@ -300,7 +300,7 @@ async function setupSystem(hre: any, deployedContracts: DeployedContracts, confi
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
 
-	const controlFacet = await ethers.getContractAt("contracts/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
 	const alControlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.accountLayerDiamond!)
 	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
 

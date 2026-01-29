@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { LockedValues } from "../storages/QuoteStorage.sol";
+
+enum LiquidationType {
+	NONE,
+	NORMAL,
+	LATE,
+	OVERDUE
+}
+
+enum AllocatedSettlementState {
+	NONE,
+	GATHER_ALLOCATED_CROSS
+}
+
+enum UPNLSettlementState {
+	NONE,
+	REALIZED,
+	REALIZED_CROSS
+}
+
+enum PartyBForceCloseState {
+	NONE,
+	INSOLVENT,
+	SOLVENT,
+	LIQUIDATED
+}
+
+struct SettlementState {
+	int256 actualAmount;
+	int256 expectedAmount;
+	uint256 cva;
+	bool pending;
+}
+
+struct ForceCloseDetail {
+	bytes priceSigId;
+	uint256 quoteId;
+	uint256 timestamp;
+	int256 partyBAvailableAfterClose;
+	uint256 closePrice;
+	int256 upnlPartyB;
+	uint256 currentPrice;
+	UPNLSettlementState settlementState;
+	AllocatedSettlementState allocatedSettlementState;
+	PartyBForceCloseState partyBState;
+	bool inProgress;
+}
+
+struct LiquidationDetail {
+	bytes liquidationId;
+	LiquidationType liquidationType;
+	int256 upnl;
+	int256 totalUnrealizedLoss;
+	uint256 deficit;
+	uint256 liquidationFee;
+	uint256 timestamp;
+	uint256 involvedPartyBCounts;
+	int256 partyAAccumulatedUpnl;
+	bool disputed;
+	uint256 liquidationTimestamp;
+}
+
+struct CrossLiquidationDetail {
+	bytes liquidationId;
+	int256 upnl;
+	uint256 timestamp;
+	uint256 deallocateForLiquidation;
+	bool inProgress;
+}
+
+struct DeferredWithdraw {
+	uint256 id;
+	uint256 amount;
+	address user;
+	address to;
+	uint256 timestamp;
+	DeferredWithdrawStatus status;
+}
+
+enum DeferredWithdrawStatus {
+	INITIATED,
+	CANCELED,
+	COMPLETED
+}
+
+struct BindState {
+	BindStatus status;
+	address partyB;
+	uint256 modifyTimestamp;
+}
+
+enum BindStatus {
+	NOT_BOUND,
+	BOUND,
+	PENDING_UNBIND
+}
+
+struct Price {
+	uint256 price;
+	uint256 timestamp;
+}
+
+enum ExternalTransferStatus {
+	PENDING,
+	COMPLETED,
+	CANCELED
+}
+
+enum AssuranceWithdrawStatus {
+	NONE,
+	PENDING,
+	APPROVED
+}
+
+struct AssuranceWithdrawalRequest {
+	address token;
+	uint256 amount;
+	address recipient;
+	address requester;
+	AssuranceWithdrawStatus status;
+}
+
+// External Transfer : Symmio1(user1) balance -> Symmio2(user2) balance
+struct ExternalTransferReq {
+	uint256 id;
+	address sender; // user1 in source contract
+	address receiver; // user2 in target contract
+	address source; // Symmio contract 1
+	address target; // Symmio contract 2
+	uint256 amount;
+	uint256 timestamp;
+	address provider; // virtual provider who handles the transfer
+	ExternalTransferStatus status;
+}
+
+library AccountStorage {
+	bytes32 internal constant ACCOUNT_STORAGE_SLOT = keccak256("diamond.standard.storage.account");
+
+	struct Layout {
+		// Users deposited amounts
+		mapping(address => uint256) balances;
+		mapping(address => uint256) allocatedBalances;
+		// position value will become pending locked before openPosition and will be locked after that
+		mapping(address => LockedValues) pendingLockedBalances;
+		mapping(address => LockedValues) lockedBalances;
+		mapping(address => mapping(address => uint256)) partyBAllocatedBalances;
+		mapping(address => mapping(address => LockedValues)) partyBPendingLockedBalances;
+		mapping(address => mapping(address => LockedValues)) partyBLockedBalances;
+		mapping(address => uint256) withdrawCooldown; // is better to call lastDeallocateTime
+		mapping(address => uint256) partyANonces;
+		mapping(address => mapping(address => uint256)) partyBNonces;
+		mapping(address => bool) suspendedAddresses;
+		mapping(address => LiquidationDetail) liquidationDetails;
+		mapping(address => mapping(uint256 => Price)) symbolsPrices;
+		mapping(address => address[]) liquidators;
+		mapping(address => uint256) partyAReimbursement;
+		// partyA => partyB => SettlementState
+		mapping(address => mapping(address => SettlementState)) settlementStates;
+		mapping(address => uint256) reserveVault;
+		mapping(address => BindState) bindState;
+		mapping(address => bool) isCrossPartyB;
+		mapping(address => CrossLiquidationDetail) crossLiquidationDetails;
+		mapping(address => address) externalTransferTargetsRelayers;
+		mapping(address => address) affiliateHooks;
+		// ---- Instant Actions ----
+		mapping(address => bool) instantActionsMode;
+		mapping(address => uint256) instantActionsModeDeactivateTime;
+		uint256 deactiveInstantActionModeCooldown;
+		// ---- symbol whitelisting ----
+		mapping(address => mapping(uint256 => bool)) partyBWhitelistedSymbolTypes;
+		mapping(address => mapping(uint256 => bool)) partyBWhitelistedSymbols;
+		mapping(address => mapping(uint256 => bool)) partyBBlacklistedSymbols; // PartyB => symbolId   => isBlackListed
+		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
+		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
+		// ---- force close ----
+		mapping(uint256 => ForceCloseDetail) forceCloseDetails; // quoteId => Force close status
+		uint256 lastExternalTransferId;
+		mapping(uint256 => ExternalTransferReq) externalTransfers;
+		mapping(address => bool) isPartyBBindable;
+		// ---- Assurance collateral (token decimals) ----
+		mapping(address => mapping(address => uint256)) assuranceCollateral; // partyB => token => amount (token decimals)
+		mapping(address => AssuranceWithdrawalRequest) assuranceWithdrawalRequests;
+	}
+
+	function layout() internal pure returns (Layout storage l) {
+		bytes32 slot = ACCOUNT_STORAGE_SLOT;
+		assembly {
+			l.slot := slot
+		}
+	}
+}

@@ -10,7 +10,7 @@ import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal } from "./utils/Common.js"
 import { getDummyCrossLiquidationSig, getDummyPriceSig } from "./utils/SignatureUtils.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { loadFixture } from "./helpers/network-helpers.js"
 
@@ -63,7 +63,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 		await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
 	})
 
-	describe("None master account mode", async function () {
+	describe("None cross partyB mode", async function () {
 		beforeEach(async function () {
 			// Quote1 -> opened
 			await hedger.lockQuote(1)
@@ -85,7 +85,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet
 						.connect(context.signers.user)
 						.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
-				).to.be.revertedWith("Accessibility: Must has role")
+				).to.be.revertedWith("Accessibility: Must have role")
 			})
 
 			it("Should succeed when caller has CLEARING_HOUSE_ROLE", async function () {
@@ -93,8 +93,8 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.admin)
 					.grantRole(context.signers.user2.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
 
-				// Activate master mode for hedger
-				await migratePartyBToMaster(context, hedger, [1, 2, 4, 5])
+				// Activate cross mode for hedger
+				await migratePartyBToCross(context, hedger, [1, 2, 4, 5])
 
 				await expect(
 					context.clearingHouseFacet
@@ -129,15 +129,15 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 	})
 
 	describe("liquidateCrossPartyB", async function () {
-		it("Should fail when partyB MasterMode not active", async function () {
+		it("Should fail when partyB CrossMode not active", async function () {
 			await expect(
 				context.clearingHouseFacet
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(context.signers.hedger.getAddress(), await getDummyCrossLiquidationSig()),
-			).to.be.revertedWith("ClearingHouseFacet: partyB is not using master account mode")
+			).to.be.revertedWith("ClearingHouseFacet: partyB is not using cross mode")
 		})
 
-		describe("With Master Mode Active", () => {
+		describe("With Cross Mode Active", () => {
 			beforeEach(async () => {
 				// Quote1 -> opened
 				await hedger.lockQuote(1)
@@ -153,7 +153,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				// Quote5 -> locked
 				await hedger.lockQuote(5)
 
-				await migratePartyBToMaster(context, hedger, [1, 2, 4, 5])
+				await migratePartyBToCross(context, hedger, [1, 2, 4, 5])
 			})
 
 			it("Should fail on partyB being solvent", async function () {
@@ -215,7 +215,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			// Quote5 -> locked
 			await hedger.lockQuote(5)
 
-			await migratePartyBToMaster(context, hedger, [1, 2, 4, 5])
+			await migratePartyBToCross(context, hedger, [1, 2, 4, 5])
 		})
 
 		it("should failed when partyB not marked as cross liquid", async () => {
@@ -237,7 +237,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should failed when deallocated amount be more than partyB allocation for for partyA", async () => {
-				const allocated = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
+				const allocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
@@ -246,24 +246,24 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should deallocated amount successfully", async () => {
-				const OldAllocated = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
+				const OldAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.deallocateForCrossLiquidation(context.signers.hedger, [context.signers.user], [OldAllocated]),
 				).to.not.reverted
 
-				const newAllocated = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
+				const newAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 				const d = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 				expect(newAllocated).to.equal(0)
 				expect(d.deallocateForLiquidation).to.equal(OldAllocated)
 			})
 
 			it("should deallocate for multiple partyAs in batch", async () => {
-				const OldAllocatedMaster = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
+				const OldAllocatedCross = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 
-				const deallocateAmount1 = OldAllocatedMaster / 4n
-				const deallocateAmount2 = OldAllocatedMaster / 4n
+				const deallocateAmount1 = OldAllocatedCross / 4n
+				const deallocateAmount2 = OldAllocatedCross / 4n
 
 				await expect(
 					context.clearingHouseFacet
@@ -275,10 +275,10 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						),
 				).to.not.reverted
 
-				const newAllocatedMaster = (await context.viewFacet.balanceInfoOfPartyBMasterAccount(context.signers.hedger))[0]
+				const newAllocatedCross = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 				const d = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 
-				expect(newAllocatedMaster).to.equal(OldAllocatedMaster - deallocateAmount1 - deallocateAmount2)
+				expect(newAllocatedCross).to.equal(OldAllocatedCross - deallocateAmount1 - deallocateAmount2)
 				expect(d.deallocateForLiquidation).to.equal(deallocateAmount1 + deallocateAmount2)
 			})
 		})
@@ -457,7 +457,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 		})
 
-		describe("Shared master bucket state", () => {
+		describe("Shared cross bucket state", () => {
 			let quoteUser1: QuoteStructOutput, quoteUser2: QuoteStructOutput
 
 			beforeEach(async () => {
@@ -473,7 +473,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await hedger2.lockQuote(quoteUser2.id)
 				await hedger2.openPosition(quoteUser2.id, limitOpenRequestBuilder().filledAmount(quoteUser2.quantity).build())
 
-				await migratePartyBToMaster(context, hedger2, [quoteUser1.id, quoteUser2.id])
+				await migratePartyBToCross(context, hedger2, [quoteUser1.id, quoteUser2.id])
 
 				await context.controlFacet
 					.connect(context.signers.admin)
@@ -481,11 +481,11 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("clears shared locked/pending bucket and bumps shared nonce after full liquidation", async () => {
-				const masterBucketBefore = await hedger2.getBalanceInfoMasterAccount()
+				const crossBucketBefore = await hedger2.getBalanceInfoCrossPartyB()
 
-				expect(masterBucketBefore.lockedCva).to.be.greaterThan(0)
-				expect(masterBucketBefore.lockedLf).to.be.greaterThan(0)
-				expect(masterBucketBefore.lockedMmPartyB).to.be.greaterThan(0)
+				expect(crossBucketBefore.lockedCva).to.be.greaterThan(0)
+				expect(crossBucketBefore.lockedLf).to.be.greaterThan(0)
+				expect(crossBucketBefore.lockedMmPartyB).to.be.greaterThan(0)
 
 				const nonceBefore = await context.viewFacet.nonceOfPartyB(await hedger2.getAddress(), ZeroAddress)
 
@@ -496,11 +496,11 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const priceSig = await getDummyPriceSig([quoteUser1.id, quoteUser2.id], [quoteUser1.openedPrice, quoteUser2.openedPrice])
 				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(hedger2.address, priceSig)
 
-				const masterBucketAfter = await hedger2.getBalanceInfoMasterAccount()
+				const crossBucketAfter = await hedger2.getBalanceInfoCrossPartyB()
 
-				expect(masterBucketAfter.lockedCva).to.equal(0)
-				expect(masterBucketAfter.lockedLf).to.equal(0)
-				expect(masterBucketAfter.lockedMmPartyB).to.equal(0)
+				expect(crossBucketAfter.lockedCva).to.equal(0)
+				expect(crossBucketAfter.lockedLf).to.equal(0)
+				expect(crossBucketAfter.lockedMmPartyB).to.equal(0)
 
 				const nonceAfter = await context.viewFacet.nonceOfPartyB(await hedger2.getAddress(), ZeroAddress)
 				expect(nonceAfter).to.be.greaterThan(nonceBefore)
@@ -509,8 +509,8 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 	})
 
 	describe("SoftLiquidation", () => {
-		describe("SoftLiquidation without master account mode enabled", () => {
-			it("should fail to soft liquidate without active master account mode", async () => {
+		describe("SoftLiquidation without cross partyB mode enabled", () => {
+			it("should fail to soft liquidate without active cross partyB mode", async () => {
 				await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
 				await context.controlFacet
 					.connect(context.signers.admin)
@@ -519,10 +519,10 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), 0),
-				).to.revertedWith("ClearingHouseFacet: partyB is not using master account mode")
+				).to.revertedWith("ClearingHouseFacet: partyB is not using cross mode")
 			})
 		})
-		describe("SoftLiquidation with master account mode enabled", () => {
+		describe("SoftLiquidation with cross partyB mode enabled", () => {
 			beforeEach(async () => {
 				// Quote1 -> opened
 				await hedger.lockQuote(1)
@@ -538,16 +538,16 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				// Quote5 -> locked
 				await hedger.lockQuote(5)
 
-				await migratePartyBToMaster(context, hedger, [1, 2, 4, 5])
+				await migratePartyBToCross(context, hedger, [1, 2, 4, 5])
 			})
-			describe("SoftLiquidation in none master account mode", () => {
+			describe("SoftLiquidation in none cross partyB mode", () => {
 				it("should fail to soft liquidate without role", async () => {
 					await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
 					await expect(
 						context.clearingHouseFacet
 							.connect(context.signers.liquidator)
 							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), 0),
-					).to.revertedWith("Accessibility: Must has role")
+					).to.revertedWith("Accessibility: Must have role")
 				})
 
 				it("should fail to soft liquid if penalty is more than balance", async () => {

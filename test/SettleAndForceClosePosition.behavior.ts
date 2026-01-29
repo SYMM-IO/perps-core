@@ -21,10 +21,11 @@ import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils
 import {
 	getDummyCrossLiquidationSig,
 	getDummyHighLowPriceSig,
+	getDummyPairUpnlAndPriceSig,
 	getDummySettlementSig,
 	getDummyUnifiedSettlementSig
 } from "./utils/SignatureUtils.js"
-import { migratePartyBToMaster } from "./utils/MasterAccount.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 
 export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger, user2: User
@@ -164,7 +165,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 		})
 	})
 
-	describe("Master Account", async function () {
+	describe("Cross PartyB", async function () {
 		beforeEach(async function () {
 			// prepare quotes and positions
 
@@ -180,7 +181,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			await hedger.lockQuote(quote2ShortOpened.id)
 			await hedger.openPosition(quote2ShortOpened.id, limitOpenRequestBuilder().filledAmount(quantityShort).build())
 
-			await migratePartyBToMaster(context, hedger, [quote1LongOpened.id, quote2ShortOpened.id])
+			await migratePartyBToCross(context, hedger, [quote1LongOpened.id, quote2ShortOpened.id])
 
 			await user.requestToClosePosition(
 				quote1LongOpened.id,
@@ -217,7 +218,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			settlementSigCross = await getDummyUnifiedSettlementSig(
 				await hedger.getAddress(), // partyB
 				0n, // upnlPartyB
-				[], // upnlPartyBPerPartyA (empty for masterAccount mode)
+				[], // upnlPartyBPerPartyA (empty for crossPartyB mode)
 				[await user.getAddress()], // partyAs
 				[0n], // upnlPartyAs
 				[
@@ -267,7 +268,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				})
 
 				it("Should revert when signature partyB does not match quote.partyB", async function () {
-					await migratePartyBToMaster(context, hedger2, [])
+					await migratePartyBToCross(context, hedger2, [])
 
 					// Wrong partyB inside sig (use any other address)
 					const wrongPartyB = await hedger2.getAddress()
@@ -307,7 +308,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			})
 
 			it("Should revert when signature partyB does not match quote.partyB", async function () {
-				await migratePartyBToMaster(context, hedger2, [])
+				await migratePartyBToCross(context, hedger2, [])
 
 				// Wrong partyB inside sig (use any other address)
 				const wrongPartyB = await hedger2.getAddress()
@@ -334,7 +335,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				const sig = await getDummyUnifiedSettlementSig(
 					await hedger.getAddress(), // partyB
 					0n, // upnlPartyB
-					[], // upnlPartyBPerPartyA (empty for masterAccount mode)
+					[], // upnlPartyBPerPartyA (empty for crossPartyB mode)
 					[await user.getAddress()], // partyAs
 					[0n], // upnlPartyAs
 					[
@@ -368,7 +369,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				const sigInsolventA = await getDummyUnifiedSettlementSig(
 					await hedger.getAddress(), // partyB
 					0n, // upnlPartyB
-					[], // upnlPartyBPerPartyA (empty for masterAccount mode)
+					[], // upnlPartyBPerPartyA (empty for crossPartyB mode)
 					[partyA], // partyAs
 					[insolventUpnlA], // upnlPartyAs
 					[
@@ -386,7 +387,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			})
 		})
 
-		it("settles multiple quotes across two partyAs in master account mode", async function () {
+		it("settles multiple quotes across two partyAs in cross partyB mode", async function () {
 			user2 = new User(context, context.signers.user2)
 			await user2.setup()
 			await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
@@ -416,7 +417,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const settlementSigMulti = await getDummyUnifiedSettlementSig(
 				await hedger.getAddress(), // partyB
 				0n, // upnlPartyB
-				[], // upnlPartyBPerPartyA (empty for masterAccount mode)
+				[], // upnlPartyBPerPartyA (empty for crossPartyB mode)
 				[await user.getAddress(), await user2.getAddress()], // partyAs
 				[0n, 0n], // upnlPartyAs
 				[
@@ -426,7 +427,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				],
 			)
 
-			const masterBalanceBefore = await hedger.getBalanceInfo(ethers.ZeroAddress)
+			const crossBalanceBefore = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const partyABalanceBefore = await user.getBalanceInfo()
 			const partyABalanceBefore2 = await user2.getBalanceInfo()
 
@@ -434,7 +435,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigMulti, [updatePrice1, updatePrice2, updatePrice3]),
 			).not.to.be.reverted
 
-			const masterBalanceAfter = await hedger.getBalanceInfo(ethers.ZeroAddress)
+			const crossBalanceAfter = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const partyABalanceAfter = await user.getBalanceInfo()
 			const partyABalanceAfter2 = await user2.getBalanceInfo()
 
@@ -445,14 +446,14 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 			expect(partyABalanceAfter.allocatedBalances - partyABalanceBefore.allocatedBalances).to.equal(expectedSettle1 + expectedSettle2)
 			expect(partyABalanceAfter2.allocatedBalances - partyABalanceBefore2.allocatedBalances).to.equal(expectedSettle3)
-			expect(masterBalanceBefore.allocatedBalances - masterBalanceAfter.allocatedBalances).to.equal(totalPayout)
+			expect(crossBalanceBefore.allocatedBalances - crossBalanceAfter.allocatedBalances).to.equal(totalPayout)
 
 			expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).openedPrice).to.equal(updatePrice1)
 			expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.equal(updatePrice2)
 			expect((await context.viewFacetQuote.getQuote(extraQuoteUser2.id)).openedPrice).to.equal(updatePrice3)
 		})
 
-		it("increments partyA and master partyB nonces on settleUpnlForForceClose", async function () {
+		it("increments partyA and cross partyB nonces on settleUpnlForForceClose", async function () {
 			const partyA = await user.getAddress()
 			const partyB = await hedger.getAddress()
 
@@ -471,23 +472,23 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			expect(afterNonceBPartyA).to.equal(beforeNonceBPartyA + 1n)
 		})
 
-		it("Should settle and forceClose the quote in master account mode", async function () {
-			const balanceInfoMasterB = await hedger.getBalanceInfo(ethers.ZeroAddress)
+		it("Should settle and forceClose the quote in cross partyB mode", async function () {
+			const balanceInfoCrossB = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const balanceInfoUserBefore = await user.getBalanceInfo()
 
 			await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigCross, [updatePrice])).not.to.be.reverted
 
-			const balanceInfoSettlementMasterSettledB = await hedger.getBalanceInfo(ethers.ZeroAddress)
+			const balanceInfoSettlementCrossSettledB = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const balanceInfoUserAfter = await user.getBalanceInfo()
 
 			// settlement amount check
 			const settledAmount = unDecimal((updatePrice - quote2ShortOpened.openedPrice) * quote2ShortOpened.quantity)
-			expect(balanceInfoSettlementMasterSettledB.allocatedBalances - balanceInfoMasterB.allocatedBalances).to.be.equal(settledAmount)
+			expect(balanceInfoSettlementCrossSettledB.allocatedBalances - balanceInfoCrossB.allocatedBalances).to.be.equal(settledAmount)
 			expect(balanceInfoUserBefore.allocatedBalances - balanceInfoUserAfter.allocatedBalances).to.be.equal(settledAmount)
 			expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(updatePrice)
 
 			// force close
-			await expect(context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id)).not.to.be.reverted
+			await expect(context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(decimal(5n), 0n, decimal(150n)))).not.to.be.reverted
 			expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
 		})
 	})

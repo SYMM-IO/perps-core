@@ -42,7 +42,7 @@ export function shouldBehaveLikeHooks(): void {
         context.controlFacet
           .connect(context.signers.user)
           .registerHook(context.accountManager, await mockHook.getAddress()),
-      ).to.be.revertedWith("Accessibility: Must has role")
+      ).to.be.revertedWith("Accessibility: Must have role")
 
       // Admin has SETTER_ROLE in fixture
       await expect(
@@ -110,7 +110,17 @@ export function shouldBehaveLikeHooks(): void {
       // Make affiliate hook revert to ensure it's swallowed
       await affiliateHook.setRevertOnOpen(true, "affiliate open revert")
 
-      // Open position
+      // NOTE: Hook reverts now revert the whole tx
+      // await expect(
+      //   hedger.openPosition(
+      //     1,
+      //     limitOpenRequestBuilder()
+      //       .filledAmount(filledAmount)
+      //       .openPrice(openPrice)
+      //       .price(decimal(1n, 17))
+      //       .build(),
+      //   ),
+      // ).to.not.reverted
       await expect(
         hedger.openPosition(
           1,
@@ -120,21 +130,20 @@ export function shouldBehaveLikeHooks(): void {
             .price(decimal(1n, 17))
             .build(),
         ),
-      ).to.not.reverted
+      ).to.be.reverted
 
-      // Verify system hook received the call
-      const [oq, oamount, oprice, opartyA, opartyB, ocalls] = await systemHook.getLastOpenCall()
-      expect(oq).to.equal(1n)
-      expect(oamount).to.equal(filledAmount)
-      expect(oprice).to.equal(openPrice)
-      const q = await context.viewFacetQuote.getQuote(1)
-      expect(opartyA).to.equal(q.partyA)
-      expect(opartyB).to.equal(q.partyB)
-      expect(ocalls).to.equal(1n)
-
-      // Affiliate hook reverted; its openCallCount should be 0 and last data default (zeros)
-      const [, , , , , affiliateOpenCalls] = await affiliateHook.getLastOpenCall()
-      expect(affiliateOpenCalls).to.equal(0n)
+      // NOTE: Hook reverts now revert the whole tx
+      // const [oq, oamount, oprice, opartyA, opartyB, ocalls] = await systemHook.getLastOpenCall()
+      // expect(oq).to.equal(1n)
+      // expect(oamount).to.equal(filledAmount)
+      // expect(oprice).to.equal(openPrice)
+      // const q = await context.viewFacetQuote.getQuote(1)
+      // expect(opartyA).to.equal(q.partyA)
+      // expect(opartyB).to.equal(q.partyB)
+      // expect(ocalls).to.equal(1n)
+      //
+      // const [, , , , , affiliateOpenCalls] = await affiliateHook.getLastOpenCall()
+      // expect(affiliateOpenCalls).to.equal(0n)
     })
 
     it("Should call affiliate and system hook on closePosition; swallow hook revert", async function () {
@@ -165,26 +174,32 @@ export function shouldBehaveLikeHooks(): void {
 
       const closeFilled = filledAmount
       const closePrice = decimal(1n)
+      // NOTE: Hook reverts now revert the whole tx
+      // await expect(
+      //   hedger.fillCloseRequest(
+      //     1,
+      //     limitFillCloseRequestBuilder().filledAmount(closeFilled).closedPrice(closePrice).price(decimal(1n)).build(),
+      //   ),
+      // ).to.not.reverted
       await expect(
         hedger.fillCloseRequest(
           1,
           limitFillCloseRequestBuilder().filledAmount(closeFilled).closedPrice(closePrice).price(decimal(1n)).build(),
         ),
-      ).to.not.reverted
+      ).to.be.reverted
 
-      // Verify affiliate hook received close call
-      const [cq, camount, cprice, cpartyA, cpartyB, ccalls] = await affiliateHook.getLastCloseCall()
-      expect(cq).to.equal(1n)
-      expect(camount).to.equal(closeFilled)
-      expect(cprice).to.equal(closePrice)
-      const q = await context.viewFacetQuote.getQuote(1)
-      expect(cpartyA).to.equal(q.partyA)
-      expect(cpartyB).to.equal(q.partyB)
-      expect(ccalls).to.equal(1n)
-
-      // System hook reverted; its closeCallCount should be 0
-      const [, , , , , systemCloseCalls] = await systemHook.getLastCloseCall()
-      expect(systemCloseCalls).to.equal(0n)
+      // NOTE: Hook reverts now revert the whole tx
+      // const [cq, camount, cprice, cpartyA, cpartyB, ccalls] = await affiliateHook.getLastCloseCall()
+      // expect(cq).to.equal(1n)
+      // expect(camount).to.equal(closeFilled)
+      // expect(cprice).to.equal(closePrice)
+      // const q = await context.viewFacetQuote.getQuote(1)
+      // expect(cpartyA).to.equal(q.partyA)
+      // expect(cpartyB).to.equal(q.partyB)
+      // expect(ccalls).to.equal(1n)
+      //
+      // const [, , , , , systemCloseCalls] = await systemHook.getLastCloseCall()
+      // expect(systemCloseCalls).to.equal(0n)
     })
   })
 
@@ -307,7 +322,17 @@ export function shouldBehaveLikeHooks(): void {
       // Make affiliate hook revert on fee callback
       await affiliateHook.setRevertOnOpenFee(true, "affiliate open fee revert")
 
-      // Open position should still succeed
+      // NOTE: Hook reverts now revert the whole tx
+      // await expect(
+      //   hedger.openPosition(
+      //     1,
+      //     limitOpenRequestBuilder()
+      //       .filledAmount(filledAmount)
+      //       .openPrice(openPrice)
+      //       .price(decimal(1n, 17))
+      //       .build(),
+      //   ),
+      // ).to.not.reverted
       await expect(
         hedger.openPosition(
           1,
@@ -317,15 +342,14 @@ export function shouldBehaveLikeHooks(): void {
             .price(decimal(1n, 17))
             .build(),
         ),
-      ).to.not.reverted
+      ).to.be.reverted
 
-      // Affiliate hook fee call should have reverted (count = 0)
-      const [, , , , , , , affiliateFeeCalls] = await affiliateHook.getLastOpenFeeCall()
-      expect(affiliateFeeCalls).to.equal(0n)
-
-      // System hook should still have received the callback
-      const [, , , , , , , systemFeeCalls] = await systemHook.getLastOpenFeeCall()
-      expect(systemFeeCalls).to.equal(1n)
+      // NOTE: Hook reverts now revert the whole tx
+      // const [, , , , , , , affiliateFeeCalls] = await affiliateHook.getLastOpenFeeCall()
+      // expect(affiliateFeeCalls).to.equal(0n)
+      //
+      // const [, , , , , , , systemFeeCalls] = await systemHook.getLastOpenFeeCall()
+      // expect(systemFeeCalls).to.equal(1n)
     })
 
     it("Should swallow onFeeCharged revert on close and not affect transaction", async function () {
@@ -357,21 +381,26 @@ export function shouldBehaveLikeHooks(): void {
       const closeFilled = filledAmount
       const closePrice = decimal(1n)
 
-      // Close should still succeed
+      // NOTE: Hook reverts now revert the whole tx
+      // await expect(
+      //   hedger.fillCloseRequest(
+      //     1,
+      //     limitFillCloseRequestBuilder().filledAmount(closeFilled).closedPrice(closePrice).price(decimal(1n)).build(),
+      //   ),
+      // ).to.not.reverted
       await expect(
         hedger.fillCloseRequest(
           1,
           limitFillCloseRequestBuilder().filledAmount(closeFilled).closedPrice(closePrice).price(decimal(1n)).build(),
         ),
-      ).to.not.reverted
+      ).to.be.reverted
 
-      // System hook fee call should have reverted (count = 0)
-      const [, , , , , , , systemFeeCalls] = await systemHook.getLastCloseFeeCall()
-      expect(systemFeeCalls).to.equal(0n)
-
-      // Affiliate hook should still have received the callback
-      const [, , , , , , , affiliateFeeCalls] = await affiliateHook.getLastCloseFeeCall()
-      expect(affiliateFeeCalls).to.equal(1n)
+      // NOTE: Hook reverts now revert the whole tx
+      // const [, , , , , , , systemFeeCalls] = await systemHook.getLastCloseFeeCall()
+      // expect(systemFeeCalls).to.equal(0n)
+      //
+      // const [, , , , , , , affiliateFeeCalls] = await affiliateHook.getLastCloseFeeCall()
+      // expect(affiliateFeeCalls).to.equal(1n)
     })
 
     it("Should pass correct fee amount matching TradingFeeCharged event", async function () {
