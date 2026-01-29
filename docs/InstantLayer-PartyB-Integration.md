@@ -2,9 +2,13 @@
 
 This document explains how PartyB integrators can sign operations for the InstantLayer system.
 
+For a high-level architectural overview, see the [InstantLayer Overview](./InstantLayer-Overview.md).
+
 ## Overview
 
 InstantLayer allows PartyB to sign operations off-chain that can be executed by anyone on-chain. This enables batched execution and delegated transaction submission.
+
+**New: Self-Execution Mode** - When PartyB is the transaction sender (`msg.sender`), signature verification is skipped for their own operations. This means PartyB can execute their operations directly without signing, while still providing user signatures for user operations in the same batch.
 
 ## What PartyB Needs to Sign
 
@@ -215,6 +219,83 @@ await instantLayer.executeBatch(
 );
 ```
 
+## Self-Execution Mode (No Signature Required)
+
+When PartyB is the transaction sender (`msg.sender`), signature verification is automatically skipped for operations where `signer == msg.sender`. This allows PartyB to execute operations directly without signing them.
+
+### How It Works
+
+1. The contract verifies that the signer is a registered PartyB
+2. If `signer == msg.sender`, signature verification is bypassed
+3. An empty signature (`"0x"`) can be provided for self-executed operations
+4. All other security checks (replay protection, nonce, deadline) still apply
+
+### Example: PartyB Self-Execution
+
+```typescript
+// PartyB executing their own operation - no signature needed
+function createSelfOperation(callData: string): SignedOperation {
+  return {
+    signer: PARTY_B_ADDRESS,        // Same as msg.sender when PartyB calls
+    target: SYMMIO_ADDRESS,
+    callData: callData,
+    signerAccount: {
+      addr: PARTY_B_ADDRESS,
+      isPartyB: true,
+    },
+    replayAttackHeader: {
+      nonce: 0n,
+      deadline: 0n,                  // No deadline needed
+      salt: generateSalt(),
+    },
+  };
+}
+
+// Execute directly as PartyB - empty signature
+const operation = createSelfOperation(lockQuoteCallData);
+await instantLayer.executeBatch([operation], ["0x"]);
+```
+
+### Example: Mixed Batch (User Signed + PartyB Self-Execution)
+
+This is the most common pattern - combining user-signed operations with PartyB self-executed operations:
+
+```typescript
+// User's sendQuote operation - requires signature
+const userOperation = {
+  signer: userAddress,
+  target: SYMMIO_ADDRESS,
+  callData: encodedSendQuote,
+  signerAccount: { addr: userAccountAddress, isPartyB: false },
+  replayAttackHeader: { nonce: 0n, deadline: deadline, salt: generateSalt() }
+};
+const userSignature = await userSigner.signTypedData(domain, types, userOperation);
+
+// PartyB's lockQuote operation - no signature needed when PartyB is msg.sender
+const partyBOperation = {
+  signer: PARTY_B_ADDRESS,
+  target: SYMMIO_ADDRESS,
+  callData: encodedLockQuote,
+  signerAccount: { addr: PARTY_B_ADDRESS, isPartyB: true },
+  replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
+};
+
+// PartyB calls executeBatch directly
+await instantLayer.executeBatch(
+  [userOperation, partyBOperation],
+  [userSignature, "0x"]  // User signature + empty for PartyB
+);
+```
+
+### When to Use Self-Execution
+
+| Scenario | Signature Required? |
+|----------|---------------------|
+| PartyB calls directly, executing own operation | No (empty `"0x"`) |
+| PartyB calls directly, executing user operation | Yes (user signature) |
+| Operator calls, executing PartyB operation | Yes (PartyB signature) |
+| Operator calls, executing user operation | Yes (user signature) |
+
 ## Nonce Modes
 
 ### Salt-Only Mode (nonce = 0)
@@ -264,7 +345,7 @@ function isValidSignature(bytes32 hash, bytes memory signature)
 
 ## Validation Rules
 
-Your signed operations must satisfy:
+Your operations must satisfy:
 
 | Rule | Description |
 |------|-------------|
@@ -274,6 +355,7 @@ Your signed operations must satisfy:
 | `nonce == 0 OR nonce == currentNonce + 1` | Valid nonce |
 | `callData.length >= 4` | Must include function selector |
 | Unique salt | Salt must not have been used before |
+| Valid signature OR self-execution | Signature required unless `signer == msg.sender` |
 
 ## Error Reference
 
@@ -282,7 +364,7 @@ Your signed operations must satisfy:
 | `InstantLayerInvalidCallDataLength` | callData is less than 4 bytes |
 | `InstantLayerOperationExpired` | Deadline has passed |
 | `InstantLayerTargetNotWhitelisted` | Target contract not whitelisted |
-| `InstantLayerInvalidOperationSignature` | Signature verification failed |
+| `InstantLayerInvalidOperationSignature` | Signature verification failed (skipped if `signer == msg.sender`) |
 | `InstantLayerInvalidNonce` | Nonce is not sequential (when > 0) |
 | `InstantLayerOperationAlreadyUsed` | Salt/operation already executed |
 | `InstantLayerSignerMismatch` | Signer doesn't match signerAccount.addr |
@@ -291,7 +373,7 @@ Your signed operations must satisfy:
 ## Quick Reference
 
 ```typescript
-// Minimal signing example
+// Option 1: Signed operation (when executed by a third-party operator)
 const operation = {
   signer: PARTY_B_ADDRESS,
   target: SYMMIO_ADDRESS,
@@ -299,6 +381,22 @@ const operation = {
   signerAccount: { addr: PARTY_B_ADDRESS, isPartyB: true },
   replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
 };
-
 const signature = await signer.signTypedData(domain, types, operation);
+await instantLayer.connect(operator).executeBatch([operation], [signature]);
+
+// Option 2: Self-execution (when PartyB calls directly)
+const operation = {
+  signer: PARTY_B_ADDRESS,
+  target: SYMMIO_ADDRESS,
+  callData: encodedFunctionCall,
+  signerAccount: { addr: PARTY_B_ADDRESS, isPartyB: true },
+  replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
+};
+await instantLayer.connect(partyB).executeBatch([operation], ["0x"]); // Empty signature
 ```
+
+---
+
+## Related Documentation
+
+- [InstantLayer Overview](./InstantLayer-Overview.md) - High-level architecture and concepts
