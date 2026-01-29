@@ -35,28 +35,25 @@ for arg in "$@"; do
     fi
 done
 
-python3 utils/update_sig_checks.py 1
-
 # Number of parallel jobs
 JOBS=${PARALLEL_JOBS:-8}
 
 # Build the test command
 if [ "$SEQUENTIAL" = true ]; then
-    # Run original sequential tests via Main.ts
+    # Sequential mode: handle Muon signatures manually
+    python3 utils/update_sig_checks.py 1
     if [ "$COVERAGE" = true ]; then
         npx hardhat test mocha --coverage "${ARGS[@]}" -- test/Main.ts || true
     else
         npx hardhat test mocha "${ARGS[@]}" -- test/Main.ts || true
     fi
+    python3 utils/update_sig_checks.py 0
+elif [ "$COVERAGE" = true ]; then
+    # Coverage mode: handle Muon signatures manually
+    python3 utils/update_sig_checks.py 1
+    npx hardhat test mocha --coverage "${ARGS[@]}" -- test/parallel/*.test.ts || true
+    python3 utils/update_sig_checks.py 0
 else
-    # Run parallel tests
-    if [ "$COVERAGE" = true ]; then
-        # Coverage doesn't support parallel well, run sequentially
-        npx hardhat test mocha --coverage "${ARGS[@]}" -- test/parallel/*.test.ts || true
-    else
-        # Run parallel tests with formatted output
-        node utils/parallel-test-runner.js $JOBS "${ARGS[@]}" || true
-    fi
+    # Parallel mode: the runner handles Muon signatures internally
+    node utils/parallel-test-runner.js $JOBS "${ARGS[@]}" || true
 fi
-
-python3 utils/update_sig_checks.py 0
