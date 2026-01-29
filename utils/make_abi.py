@@ -138,27 +138,36 @@ def generate_single_contract_abi(contract_path, contract_name, output_name):
 def main():
     os.makedirs("abis", exist_ok=True)  # Ensure the output directory exists
 
-    # Generate Symmio diamond ABI (combines facets, libraries, utils)
+    # Generate Symmio diamond ABI (combines facets, libraries, utils, interfaces, storages)
     print("\n=== Generating Symmio ABI ===")
-    generate_diamond_abi(["facets", "libraries", "utils"], "symmio")
+    generate_diamond_abi(
+        [
+            "core/facets",
+            "core/libraries",
+            "core/utils",
+            "core/storages",
+        ],
+        "symmio",
+    )
 
-    # Generate AccountLayer diamond ABI (combines accountLayer facets, libraries, utils)
+    # Generate AccountLayer diamond ABI (combines accountLayer facets, libraries, utils, interfaces, storages)
     print("\n=== Generating AccountLayer ABI ===")
     generate_diamond_abi(
         [
             "accountLayer/facets",
             "accountLayer/libraries",
             "accountLayer/utils",
+            "accountLayer/storages",
         ],
         "accountLayer",
     )
 
     # Generate ABIs for standalone contracts
     standalone_contracts = [
-        ("helpers/SymmioPartyB.sol", "SymmioPartyB", "partyB"),
-        ("helpers/InstantLayer.sol", "InstantLayer", "instantLayer"),
+        ("helpers/accounts/SymmioPartyB.sol", "SymmioPartyB", "partyB"),
+        ("instantLayer/InstantLayer.sol", "InstantLayer", "instantLayer"),
         ("accountLayer/AccountManager.sol", "AccountManager", "accountManager"),
-        ("multiAccount/MultiAccount.sol", "MultiAccount", "multiAccount"),
+        ("helpers/accounts/MultiAccount.sol", "MultiAccount", "multiAccount"),
     ]
 
     for contract_path, contract_name, output_name in standalone_contracts:
