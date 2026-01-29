@@ -16,9 +16,7 @@ struct BridgeTransaction {
 enum BridgeTransactionStatus {
 	RECEIVED,
 	SUSPENDED,
-	WITHDRAWN,
-	CANCEL_REQUESTED,
-	CANCELED
+	WITHDRAWN
 }
 
 library BridgeStorage {

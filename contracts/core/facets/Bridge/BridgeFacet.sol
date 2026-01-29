@@ -49,18 +49,4 @@ contract BridgeFacet is Accessibility, Pausable, IBridgeFacet {
 		BridgeFacetImpl.restoreBridgeTransaction(transactionId, validAmount);
 		emit RestoreBridgeTransaction(transactionId, validAmount);
 	}
-
-	/// @notice Requests to cancel a bridge transaction.
-	/// @param transactionId The transaction ID of the bridge transaction to be cancelled.
-	function requestToCancelBridgeTransaction(uint256 transactionId) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
-		BridgeFacetImpl.requestToCancelBridgeTransaction(transactionId);
-		emit RequestToCancelBridgeTransaction(LibSigner.getSigner(), transactionId);
-	}
-
-	/// @notice Accepts a cancelled bridge transaction.
-	/// @param transactionId The transaction ID of the bridge transaction to be accepted.
-	function acceptCancelBridgeTransactionRequest(uint256 transactionId) external whenNotAccountingPaused notSuspended(msg.sender) {
-		BridgeFacetImpl.acceptCancelBridgeTransactionRequest(transactionId);
-		emit AcceptCancelBridgeTransactionRequest(msg.sender, transactionId);
-	}
 }
