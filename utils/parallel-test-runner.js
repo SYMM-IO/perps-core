@@ -122,10 +122,45 @@ function runTest(file) {
 	return new Promise(resolve => {
 		const basename = path.basename(file, ".test.ts")
 		const startTime = Date.now()
+		let resolved = false
 
-		const proc = spawn("npx", ["hardhat", "test", "mocha", "--no-compile", ...extraArgs, "--", file], {
-			stdio: ["ignore", "pipe", "pipe"],
-			env: { ...process.env, FORCE_COLOR: "1" },
+		const doResolve = (result) => {
+			if (resolved) return
+			resolved = true
+			resolve(result)
+		}
+
+		let proc
+		try {
+			proc = spawn("npx", ["hardhat", "test", "mocha", "--no-compile", ...extraArgs, "--", file], {
+				stdio: ["ignore", "pipe", "pipe"],
+				env: { ...process.env, FORCE_COLOR: "1" },
+			})
+		} catch (err) {
+			// Handle spawn failure (e.g., ENFILE)
+			doResolve({
+				file: basename,
+				passed: 0,
+				failed: 1,
+				pending: 0,
+				duration: Date.now() - startTime,
+				stdout: `Spawn error: ${err.message}`,
+				code: 1,
+			})
+			return
+		}
+
+		proc.on("error", err => {
+			// Handle spawn error event
+			doResolve({
+				file: basename,
+				passed: 0,
+				failed: 1,
+				pending: 0,
+				duration: Date.now() - startTime,
+				stdout: `Spawn error: ${err.message}`,
+				code: 1,
+			})
 		})
 
 		let stdout = ""
@@ -139,7 +174,7 @@ function runTest(file) {
 			const failMatch = stdout.match(/(\d+) failing/)
 			const pendingMatch = stdout.match(/(\d+) pending/)
 
-			resolve({
+			doResolve({
 				file: basename,
 				passed: passMatch ? parseInt(passMatch[1]) : 0,
 				failed: failMatch ? parseInt(failMatch[1]) : 0,
@@ -221,10 +256,10 @@ function printResults(totalDuration) {
 			const lines = rawOutput.split("\n")
 
 			let inFailureBlock = false
-			let printedLines = 0
-			const maxLines = 30
+			let lastWasStackTrace = false
+			let hasPrintedSomething = false
 
-			for (let i = 0; i < lines.length && printedLines < maxLines; i++) {
+			for (let i = 0; i < lines.length; i++) {
 				const line = lines[i]
 				const trimmed = line.trim()
 
@@ -237,65 +272,67 @@ function printResults(totalDuration) {
 				if (!inFailureBlock) continue
 
 				// Skip empty lines at the start
-				if (printedLines === 0 && trimmed === "") continue
+				if (!hasPrintedSomething && trimmed === "") continue
 
 				// Stop at "passing" line (end of failures)
 				if (trimmed.match(/^\d+ passing/)) break
 
 				// Numbered failure line (e.g., "1) Suite name")
 				if (line.match(/^\s+\d+\)/)) {
+					lastWasStackTrace = false
+					hasPrintedSomething = true
 					console.log(style("brightRed", `    ${trimmed}`))
-					printedLines++
+					continue
+				}
+
+				// Skip additional stack trace lines after we've printed one
+				if (lastWasStackTrace && trimmed.startsWith("at ")) {
 					continue
 				}
 
 				// Test hierarchy lines (indented)
 				if (line.match(/^\s{6,}\S/) && !trimmed.startsWith("at ") && !trimmed.startsWith("+") && !trimmed.startsWith("-") && !trimmed.includes("expected")) {
 					console.log(style("white", `       ${trimmed}`))
-					printedLines++
-					continue
+										continue
 				}
 
 				// AssertionError line
 				if (trimmed.startsWith("AssertionError") || trimmed.match(/^Error:/)) {
+					lastWasStackTrace = false
 					console.log()
 					console.log(style("red", `    ${trimmed}`))
-					printedLines++
-					continue
+										continue
 				}
 
 				// "+ expected - actual" header
 				if (trimmed === "+ expected - actual") {
 					console.log(style("gray", `    ${trimmed}`))
-					printedLines++
-					continue
+										continue
 				}
 
 				// Diff lines (expected/actual values)
 				if (trimmed.startsWith("+")) {
 					console.log(style("green", `    ${trimmed}`))
-					printedLines++
-					continue
+										continue
 				}
 				if (trimmed.startsWith("-")) {
 					console.log(style("red", `    ${trimmed}`))
-					printedLines++
-					continue
+										continue
 				}
 
-				// Stack trace - show relevant test file lines
-				if (trimmed.startsWith("at ") && trimmed.includes("test/")) {
+				// Stack trace - show first relevant line (test file, contract file, or Context)
+				if (trimmed.startsWith("at ") && (trimmed.includes("test/") || trimmed.includes("contracts/") || trimmed.includes("Context.<anonymous>"))) {
 					console.log()
 					console.log(style("gray", `    ${trimmed}`))
-					printedLines++
-					break // Only show first relevant stack line
+					console.log() // Add spacing before next failure
+					lastWasStackTrace = true
+					continue
 				}
 
 				// Revert messages
 				if (trimmed.includes("revert") || trimmed.includes("VM Exception") || trimmed.includes("reverted with")) {
 					console.log(style("red", `    ${trimmed}`))
-					printedLines++
-					continue
+										continue
 				}
 			}
 		}
@@ -347,7 +384,12 @@ async function disableMuonSignatures() {
 	}
 }
 
+let muonSignaturesRestored = false
+
 async function enableMuonSignatures() {
+	if (muonSignaturesRestored) return
+	muonSignaturesRestored = true
+
 	console.log(style("cyan", "  ⟳ Re-enabling Muon signature checks..."))
 	try {
 		const result = await runCommand("python3", ["utils/update_sig_checks.py", "0"], {
