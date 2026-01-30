@@ -56,13 +56,13 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
 	logger.deployed("Diamond", await diamond.getAddress())
 
-	// Deploy DiamondInit
-	const DiamondInit = await ethers.getContractFactory("DiamondInit")
-	const diamondInit = await DiamondInit.deploy()
-	await diamondInit.waitForDeployment()
-	receipt = (await diamondInit.deploymentTransaction()!.wait())!
+	// Deploy Init
+	const InitFactory = await ethers.getContractFactory("contracts/core/Init.sol:Init")
+	const init = await InitFactory.deploy()
+	await init.waitForDeployment()
+	receipt = (await init.deploymentTransaction()!.wait())!
 	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	logger.deployed("DiamondInit", await diamondInit.getAddress())
+	logger.deployed("Init", await init.getAddress())
 
 	// Deploy external libraries first
 	logger.subsection("Libraries")
@@ -151,14 +151,14 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	const diamondCut = await ethers.getContractAt("IDiamondCut", await diamond.getAddress())
 
 	// Call Initializer
-	const call = diamondInit.interface.encodeFunctionData("init")
+	const call = init.interface.encodeFunctionData("init")
 	const chunkSize = 6
 	const totalChunks = Math.ceil(cut.length / chunkSize)
 	for (let i = 0; i < cut.length; i += chunkSize) {
 		const chunk = cut.slice(i, i + chunkSize)
 		const chunkNum = Math.floor(i / chunkSize) + 1
 		const isFirst = i === 0
-		const initTarget = isFirst ? await diamondInit.getAddress() : ethers.ZeroAddress
+		const initTarget = isFirst ? await init.getAddress() : ethers.ZeroAddress
 		const initCalldata = isFirst ? call : "0x"
 		const tx = await diamondCut.diamondCut(chunk, initTarget, initCalldata)
 		receipt = (await tx.wait())!
@@ -173,7 +173,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 	logger.complete("Diamond Deployment", [
 		{ name: "Diamond", address: await diamond.getAddress() },
 		{ name: "DiamondCutFacet", address: await diamondCutFacet.getAddress() },
-		{ name: "DiamondInit", address: await diamondInit.getAddress() },
+		{ name: "Init", address: await init.getAddress() },
 	])
 
 	// if (reportGas) { //FIXME
@@ -194,8 +194,8 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 				constructorArguments: [owner.address, await diamondCutFacet.getAddress()],
 			},
 			{
-				name: "DiamondInit",
-				address: await diamondInit.getAddress(),
+				name: "Init",
+				address: await init.getAddress(),
 				constructorArguments: [],
 			},
 			{

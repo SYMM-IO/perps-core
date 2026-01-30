@@ -219,6 +219,11 @@
     },
     {
         "inputs": [],
+        "name": "PendingQuotesExist",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "PositionTypeNotAllowedForThisAccount",
         "type": "error"
     },
@@ -246,6 +251,11 @@
     {
         "inputs": [],
         "name": "SingleVAModeNotApplicable",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "SubAccountNotEmpty",
         "type": "error"
     },
     {

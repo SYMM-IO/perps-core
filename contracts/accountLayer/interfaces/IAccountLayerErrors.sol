@@ -40,6 +40,8 @@ interface IAccountLayerErrors {
 	error HasActiveVirtualAccounts();
 	error AlreadyDeleted();
 	error OpenPositionsExist();
+	error SubAccountNotEmpty();
+	error PendingQuotesExist();
 	error NoActiveHookContext();
 	error PositionTypeNotAllowedForThisAccount();
 	error SymbolNotAllowedForThisAccount();

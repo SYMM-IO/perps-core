@@ -9,6 +9,7 @@ import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
 
 interface ICoreFacetEvents {
 	event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
+	event SubAccountDeleted(address indexed account, address indexed owner, address indexed affiliate);
 	event VirtualAccountCreated(address indexed account, address indexed parent);
 	event VirtualAccountReused(address indexed account, address indexed parent);
 	event VirtualAccountDeleted(address indexed account, address indexed parent);
@@ -27,6 +28,8 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	function editAccountName(address account, string memory name) external;
 
 	function setSingleVAMode(address subAccount, bool enabled) external;
+
+	function deleteSubAccount(address subAccount) external;
 
 	// ==================== Virtual Account Management ====================
 

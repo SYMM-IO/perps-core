@@ -959,6 +959,293 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 		})
 
+		describe("deleteSubAccount", async () => {
+			describe("successful deletion", async () => {
+				it("should delete an empty subAccount successfully", async () => {
+					// Create a sub-account without any deposits
+					const subAccountData = [createSubAccountData("TO_DELETE", 0, "DELETE_ME")]
+					const subAccountAddress = await createSubAccount(context.signers.user, subAccountData)
+
+					// Verify it exists
+					const accountBefore = await context.alViewFacet.getSubAccount(subAccountAddress)
+					expect(accountBefore.isExists).to.be.true
+
+					// Delete the sub-account
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress))
+						.to.emit(context.alCoreFacet, "SubAccountDeleted")
+						.withArgs(subAccountAddress, context.signers.user.address, await context.accountManager.getAddress())
+
+					// Verify it's marked as deleted
+					const accountAfter = await context.alViewFacet.getSubAccount(subAccountAddress)
+					expect(accountAfter.isExists).to.be.false
+
+					// Verify it's removed from user's sub-accounts list
+					const userSubAccounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					expect(userSubAccounts).to.not.include(subAccountAddress)
+				})
+
+				it("should delete subAccount after withdrawing all funds", async () => {
+					// Create and deposit to sub-account
+					const subAccountData = [createSubAccountData("WITHDRAW_AND_DELETE", 0, "TEST")]
+					const subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+
+					// Verify balance exists
+					const balanceBefore = await context.viewFacet.balanceOf(subAccountAddress)
+					expect(balanceBefore).to.equal(BALANCES.DEPOSIT_AMOUNT)
+
+					// Withdraw all funds
+					const withdrawCallData = context.accountFacet.interface.encodeFunctionData("withdrawTo", [
+						context.signers.user.address,
+						BALANCES.DEPOSIT_AMOUNT,
+					])
+					await context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, [withdrawCallData])
+
+					// Verify balance is now 0
+					const balanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
+					expect(balanceAfter).to.equal(0)
+
+					// Now delete should succeed
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.not.be.reverted
+
+					// Verify deletion
+					const account = await context.alViewFacet.getSubAccount(subAccountAddress)
+					expect(account.isExists).to.be.false
+				})
+			})
+
+			describe("access control", async () => {
+				let subAccountAddress: string
+
+				beforeEach(async () => {
+					const subAccountData = [createSubAccountData("ACCESS_TEST", 0, "TEST")]
+					subAccountAddress = await createSubAccount(context.signers.user, subAccountData)
+				})
+
+				it("should revert when non-owner tries to delete", async () => {
+					await expect(
+						context.alCoreFacet.connect(context.signers.others[0]).deleteSubAccount(subAccountAddress),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
+				})
+
+				it("should revert when trying to delete non-existent account", async () => {
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(context.signers.others[0].address),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
+				})
+
+				it("should revert when trying to delete already deleted account", async () => {
+					// Delete the account first
+					await context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)
+
+					// Try to delete again - should fail with AccountDoesNotExist (owner check passes but isExists is false)
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
+				})
+			})
+
+			describe("balance checks", async () => {
+				it("should revert when subAccount has balance", async () => {
+					const subAccountData = [createSubAccountData("HAS_BALANCE", 0, "TEST")]
+					const subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "SubAccountNotEmpty")
+				})
+
+				it("should revert when subAccount has allocated balance", async () => {
+					const subAccountData = [createSubAccountData("HAS_ALLOCATED", 0, "TEST")]
+					const subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT, true)
+
+					// Verify allocated balance exists
+					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
+					expect(allocatedBalance).to.equal(BALANCES.DEPOSIT_AMOUNT)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "SubAccountNotEmpty")
+				})
+
+				it("should revert when subAccount has both balance and allocated balance", async () => {
+					const subAccountData = [createSubAccountData("HAS_BOTH", 0, "TEST")]
+					const subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+
+					// Allocate half
+					const allocateCallData = context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.DEPOSIT_AMOUNT / 2n])
+					await context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, [allocateCallData])
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "SubAccountNotEmpty")
+				})
+			})
+
+			describe("virtual account checks", async () => {
+				it("should revert when subAccount has active virtual accounts", async () => {
+					// Create sub-account with POSITION isolation (will create VAs on sendQuote)
+					const subAccountData = [createSubAccountData("HAS_VA", 0, "TEST")]
+					const subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
+
+					// Send quote to create a virtual account
+					const quoteRequest = limitQuoteRequestBuilder().build()
+					await sendQuoteAndGetVirtualAccount(subAccountAddress, quoteRequest)
+
+					// Verify VA exists
+					const vaCount = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(subAccountAddress)
+					expect(vaCount).to.be.greaterThan(0)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "HasActiveVirtualAccounts")
+				})
+			})
+
+			describe("position and quote checks", async () => {
+				it("should revert with PendingQuotesExist when CUSTOM subAccount has pending position", async () => {
+					// Create CUSTOM isolation sub-account with funds
+					const depositAmount = decimal(5000n)
+					const subAccountData = [createSubAccountData("OPEN_POS_TEST", 3, "CUSTOM")] // 3 = CUSTOM
+					const subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, depositAmount, true)
+
+					// Send a quote
+					const quoteRequest = limitQuoteRequestBuilder().build()
+					const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+					await context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, [sendQuoteCallData])
+
+					// Verify pending quote exists
+					const pendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(subAccountAddress)
+					expect(pendingQuotes.length).to.equal(1)
+
+					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
+					expect(allocatedBalance).to.be.greaterThan(0)
+
+					await context.alCoreFacet.connect(context.signers.user)._call(
+						subAccountAddress,
+						[
+							context.accountFacet.interface.encodeFunctionData("deallocate", [
+								allocatedBalance,
+								await getDummySingleUpnlSig(BigInt(1e30))
+							])
+						]
+					)
+					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
+
+					await context.alCoreFacet.connect(context.signers.user)._call(
+						subAccountAddress,
+						[
+							context.accountFacet.interface.encodeFunctionData("withdraw", [
+								allocatedBalance
+							])
+						]
+					)
+
+					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
+					expect(allocatedBalanceAfter).to.equal(0)
+
+					const balance = await context.viewFacet.balanceOf(subAccountAddress)
+					expect(balance).to.equal(0)
+
+		
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "PendingQuotesExist")
+				})
+
+				it("should revert with OpenPositionsExist when CUSTOM subAccount has open position", async () => {
+					// Create CUSTOM isolation sub-account with funds
+					const depositAmount = decimal(5000n)
+					const subAccountData = [createSubAccountData("OPEN_POS_TEST", 3, "CUSTOM")] // 3 = CUSTOM
+					const subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, depositAmount, true)
+
+					// Send a quote
+					const quoteRequest = limitQuoteRequestBuilder().build()
+					const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+					await context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, [sendQuoteCallData])
+
+					// Get the quote ID and have hedger open the position
+					const quoteId = (await context.viewFacetQuote.getPartyAPendingQuotes(subAccountAddress))[0]
+					await hedger.lockQuote(quoteId)
+					const openRequest = limitOpenRequestBuilder().build()
+					await context.partyBPositionActionsFacet
+						.connect(context.signers.hedger)
+						.openPosition(
+							quoteId,
+							openRequest.filledAmount,
+							openRequest.openPrice,
+							await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
+						)
+
+					// Verify position is open
+					const positionCount = await context.viewFacetQuote.partyAPositionsCount(subAccountAddress)
+					expect(positionCount).to.equal(1)
+
+					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
+					expect(allocatedBalance).to.be.greaterThan(0)
+
+					await context.alCoreFacet.connect(context.signers.user)._call(
+						subAccountAddress,
+						[
+							context.accountFacet.interface.encodeFunctionData("deallocate", [
+								allocatedBalance,
+								await getDummySingleUpnlSig(BigInt(1e30))
+							])
+						]
+					)
+					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
+
+					await context.alCoreFacet.connect(context.signers.user)._call(
+						subAccountAddress,
+						[
+							context.accountFacet.interface.encodeFunctionData("withdraw", [
+								allocatedBalance
+							])
+						]
+					)
+
+					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
+					expect(allocatedBalanceAfter).to.equal(0)
+
+					const balance = await context.viewFacet.balanceOf(subAccountAddress)
+					expect(balance).to.equal(0)
+
+		
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "OpenPositionsExist")
+				})
+			})
+
+			describe("hook integration", async () => {
+				let mockHook: MockAccountHubHook
+
+				beforeEach(async () => {
+					// Deploy mock hook
+					const MockAccountHubHook = await ethers.getContractFactory("MockAccountHubHook")
+					mockHook = await MockAccountHubHook.deploy()
+					await mockHook.waitForDeployment()
+
+					// Register the hook for onSubAccountDeletion
+					const affiliateAddress = await context.accountManager.getAddress()
+					const onSubAccountDeletionSelector = IAccountHubHook__factory.createInterface().getFunction("onSubAccountDeletion").selector
+					await context.alAffiliateFacet.setHook(affiliateAddress, onSubAccountDeletionSelector, await mockHook.getAddress())
+				})
+
+				it("should call affiliate hook on deletion", async () => {
+					const subAccountData = [createSubAccountData("HOOK_TEST", 0, "TEST")]
+					const subAccountAddress = await createSubAccount(context.signers.user, subAccountData)
+
+					// Delete the sub-account
+					await context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)
+
+					// Verify hook was called
+					const onSubAccountDeletionSelector = IAccountHubHook__factory.createInterface().getFunction("onSubAccountDeletion").selector
+					const callCount = await mockHook.selectorCallCount(onSubAccountDeletionSelector)
+					expect(callCount).to.equal(1)
+				})
+			})
+		})
+
 		describe("_call", async () => {
 			describe("General behavior", async () => {
 				let subAccountAddress: string
@@ -1601,18 +1888,17 @@ export function shouldBehaveLikeAccountHub(): void {
 				expect(quotesBeforeClose.length).to.equal(1)
 				const quoteId = quotesBeforeClose[0]
 
-				// NOTE: Hook reverts now revert the whole tx
-				// await openPositionForQuote(quoteId)
-				await expect(openPositionForQuote(quoteId)).to.be.reverted
-				// await expect(closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)).to.be.reverted
-				// const quotesAfterClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
-				// expect(quotesAfterClose.length).to.equal(0)
-				//
-				// const virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
-				// expect(virtualAccountData.isExists).to.false
-				//
-				// const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
-				// expect(allocatedBalance).to.equal(0n)
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+				const quotesAfterClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesAfterClose.length).to.equal(0)
+
+				const virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.false
+
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
+				expect(allocatedBalance).to.equal(0n)
 			})
 
 			it("Should add the removed virtualAccount to deletedVirtualAccountsPool for reuse", async () => {
@@ -1623,21 +1909,20 @@ export function shouldBehaveLikeAccountHub(): void {
 				expect(quotesBeforeClose.length).to.equal(1)
 				const quoteId = quotesBeforeClose[0]
 
-				// NOTE: Hook reverts now revert the whole tx
-				// await openPositionForQuote(quoteId)
-				await expect(openPositionForQuote(quoteId)).to.be.reverted
-				// await expect(closePositionForQuote(context.signers.user, quoteId, initialVirtualAccountAddress)).to.be.reverted
-								// const deletedAccountData = await context.alViewFacet.getVirtualAccount(initialVirtualAccountAddress)
-				// expect(deletedAccountData.isExists).to.false
-				//
-				// const reusedVirtualAccountAddresses = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest)
-				// const reusedVirtualAccountAddress = reusedVirtualAccountAddresses[0]
-				//
-				// expect(reusedVirtualAccountAddress).to.equal(initialVirtualAccountAddress)
-				// expect(await context.alViewFacet.getVirtualAccountsCountOfSubAccount(positionSubAccountAddress)).to.equal(1)
-				//
-				// const reusedAccountData = await context.alViewFacet.getVirtualAccount(reusedVirtualAccountAddress)
-				// expect(reusedAccountData.isExists).to.true
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, initialVirtualAccountAddress)
+
+				const deletedAccountData = await context.alViewFacet.getVirtualAccount(initialVirtualAccountAddress)
+				expect(deletedAccountData.isExists).to.be.false
+
+				const reusedVirtualAccountAddresses = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest)
+				const reusedVirtualAccountAddress = reusedVirtualAccountAddresses[0]
+
+				expect(reusedVirtualAccountAddress).to.equal(initialVirtualAccountAddress)
+				expect(await context.alViewFacet.getVirtualAccountsCountOfSubAccount(positionSubAccountAddress)).to.equal(1)
+
+				const reusedAccountData = await context.alViewFacet.getVirtualAccount(reusedVirtualAccountAddress)
+				expect(reusedAccountData.isExists).to.be.true
 			})
 
 			it("should sync PartyB binding when reusing a virtual account", async () => {
@@ -1668,14 +1953,13 @@ export function shouldBehaveLikeAccountHub(): void {
 				expect(quotesBeforeClose.length).to.equal(1)
 				const quoteId = quotesBeforeClose[0]
 
-				// NOTE: Hook reverts now revert the whole tx
-				// await openPositionForQuote(quoteId)
-				await expect(openPositionForQuote(quoteId)).to.be.reverted
-				// await expect(closePositionForQuote(context.signers.user, quoteId, initialVirtualAccountAddress)).to.be.reverted
-				// const deletedAccountData = await context.alViewFacet.getVirtualAccount(initialVirtualAccountAddress)
-				// expect(deletedAccountData.isExists).to.false
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, initialVirtualAccountAddress)
 
-				// Unbind the parent sub-account VA should no longer be bound after it gets reused
+				const deletedAccountData = await context.alViewFacet.getVirtualAccount(initialVirtualAccountAddress)
+				expect(deletedAccountData.isExists).to.be.false
+
+				// Unbind the parent sub-account - VA should no longer be bound after it gets reused
 				const requestUnbindCallData = context.bindingFacet.interface.encodeFunctionData("requestToUnbindFromPartyB", [])
 				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [requestUnbindCallData])
 				await context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(positionSubAccountAddress)
@@ -1683,12 +1967,11 @@ export function shouldBehaveLikeAccountHub(): void {
 				const parentBindAfter = await context.viewFacet.getBindState(positionSubAccountAddress)
 				expect(parentBindAfter.partyB).to.equal(ZeroAddress)
 
-				// NOTE: Hook reverts now revert the whole tx
-				// const reusedVirtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
-				// expect(reusedVirtualAccountAddress).to.equal(initialVirtualAccountAddress)
-				//
-				// const reusedVABind = await context.viewFacet.getBindState(reusedVirtualAccountAddress)
-				// expect(reusedVABind.partyB).to.equal(parentBindAfter.partyB)
+				const reusedVirtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+				expect(reusedVirtualAccountAddress).to.equal(initialVirtualAccountAddress)
+
+				const reusedVABind = await context.viewFacet.getBindState(reusedVirtualAccountAddress)
+				expect(reusedVABind.partyB).to.equal(parentBindAfter.partyB)
 			})
 
 			it("should enforce PartyB binding while parent is pending unbind", async () => {
@@ -1816,18 +2099,17 @@ export function shouldBehaveLikeAccountHub(): void {
 				const parentBalanceBefore = await context.viewFacet.balanceOf(positionSubAccountAddress)
 				const parentAllocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(positionSubAccountAddress)
 
-				// NOTE: Hook reverts now revert the whole tx
-				// await openPositionForQuote(quoteId)
-				await expect(openPositionForQuote(quoteId)).to.be.reverted
-				// await expect(closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)).to.be.reverted
-				// const virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
-				// expect(virtualAccountData.isExists).to.false
-				//
-				// const parentBalanceAfter = await context.viewFacet.balanceOf(positionSubAccountAddress)
-				// const parentAllocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(positionSubAccountAddress)
-				//
-				// expect(parentBalanceAfter).to.be.gt(parentBalanceBefore)
-				// expect(parentAllocatedAfter).to.equal(parentAllocatedBefore)
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+				const virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.false
+
+				const parentBalanceAfter = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				const parentAllocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(positionSubAccountAddress)
+
+				expect(parentBalanceAfter).to.be.gt(parentBalanceBefore)
+				expect(parentAllocatedAfter).to.equal(parentAllocatedBefore)
 			})
 
 			it("Should allow immediate creation of new virtual account with returned funds", async () => {
@@ -1837,19 +2119,18 @@ export function shouldBehaveLikeAccountHub(): void {
 				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(initialVirtualAccountAddress, 0, 10)
 				const quoteId = quotesBeforeClose[0]
 
-				// NOTE: Hook reverts now revert the whole tx
-				// await openPositionForQuote(quoteId)
-				await expect(openPositionForQuote(quoteId)).to.be.reverted
-				// await expect(closePositionForQuote(context.signers.user, quoteId, initialVirtualAccountAddress)).to.be.reverted
-				// const parentBalance = await context.viewFacet.balanceOf(positionSubAccountAddress)
-				// expect(parentBalance).to.be.gt(0n)
-				//
-				// const newQuoteRequest = limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()
-				// const newVirtualAddresses = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, newQuoteRequest)
-				// expect(newVirtualAddresses.length).to.equal(1)
-				//
-				// const newVirtualAccountData = await context.alViewFacet.getVirtualAccount(newVirtualAddresses[0])
-				// expect(newVirtualAccountData.isExists).to.true
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, initialVirtualAccountAddress)
+
+				const parentBalance = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				expect(parentBalance).to.be.gt(0n)
+
+				const newQuoteRequest = limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()
+				const newVirtualAddresses = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, newQuoteRequest)
+				expect(newVirtualAddresses.length).to.equal(1)
+
+				const newVirtualAccountData = await context.alViewFacet.getVirtualAccount(newVirtualAddresses[0])
+				expect(newVirtualAccountData.isExists).to.be.true
 			})
 
 			it("Should set withdrawCooldown on parent when funds are returned", async () => {
@@ -1859,12 +2140,11 @@ export function shouldBehaveLikeAccountHub(): void {
 				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 				const quoteId = quotesBeforeClose[0]
 
-				// NOTE: Hook reverts now revert the whole tx
-				// await openPositionForQuote(quoteId)
-				await expect(openPositionForQuote(quoteId)).to.be.reverted
-				// await expect(closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)).to.be.reverted
-				// const cooldown = await context.viewFacet.withdrawCooldownOf(positionSubAccountAddress)
-				// expect(cooldown).to.be.gt(0n)
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+				const cooldown = await context.viewFacet.withdrawCooldownOf(positionSubAccountAddress)
+				expect(cooldown).to.be.gt(0n)
 			})
 		})
 
@@ -2119,12 +2399,11 @@ export function shouldBehaveLikeAccountHub(): void {
 
 					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountDeletion)
 
-					// NOTE: Hook reverts now revert the whole tx
-					// await openPositionForQuote(quoteId)
-					await expect(openPositionForQuote(quoteId)).to.be.reverted
-					// await expect(closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)).to.be.reverted
-					// const callCountAfter = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountDeletion)
-					// expect(callCountAfter).to.equal(callCountBefore + 1n)
+					await openPositionForQuote(quoteId)
+					await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+					const callCountAfter = await hookContract.getCallCount(HOOK_SELECTORS.onVirtualAccountDeletion)
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
 				})
 
 				it("should call onVirtualAccountDeletion when quote is cancelled", async () => {
@@ -3127,23 +3406,23 @@ export function shouldBehaveLikeAccountHub(): void {
 				// Close the position to delete the virtual account
 				const quotes = await context.alViewFacet.getVirtualAccountQuoteIds(initialVirtualAccount, 0, 10)
 				const quoteId = quotes[0]
-				// NOTE: Hook reverts now revert the whole tx
-				// await openPositionForQuote(quoteId)
-				await expect(openPositionForQuote(quoteId)).to.be.reverted
-				// await expect(closePositionForQuote(context.signers.user, quoteId, initialVirtualAccount)).to.be.reverted
-				// const deletedAccountData = await context.alViewFacet.getVirtualAccount(initialVirtualAccount)
-				// expect(deletedAccountData.isExists).to.false
-				//
-				// const predictedAddress = await context.alViewFacet.predictNextVirtualAccountAddress(
-				// 	positionSubAccountAddress,
-				// 	0, // VirtualAccountIsolationType.POSITION
-				// 	1, // symbolId (0 for position isolation)
-				// )
-				//
-				// expect(predictedAddress).to.equal(initialVirtualAccount)
-				//
-				// const reusedVirtualAccounts = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest)
-				// expect(reusedVirtualAccounts[0]).to.equal(initialVirtualAccount)
+
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, initialVirtualAccount)
+
+				const deletedAccountData = await context.alViewFacet.getVirtualAccount(initialVirtualAccount)
+				expect(deletedAccountData.isExists).to.be.false
+
+				const predictedAddress = await context.alViewFacet.predictNextVirtualAccountAddress(
+					positionSubAccountAddress,
+					0, // VirtualAccountIsolationType.POSITION
+					1, // symbolId (0 for position isolation)
+				)
+
+				expect(predictedAddress).to.equal(initialVirtualAccount)
+
+				const reusedVirtualAccounts = await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest)
+				expect(reusedVirtualAccounts[0]).to.equal(initialVirtualAccount)
 			})
 
 			it("should handle different isolation types correctly", async () => {

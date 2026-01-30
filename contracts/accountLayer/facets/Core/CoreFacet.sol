@@ -80,6 +80,56 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		emit SingleVAModeChanged(subAccount, enabled);
 	}
 
+	function deleteSubAccount(address subAccount) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		SubAccountData storage s = ahLayout.subAccounts[subAccount];
+
+		if (!s.isExists) revert AccountDoesNotExist();
+
+		// Require all VirtualAccounts to be deleted first
+		if (ahLayout.subAccountToVirtualAccounts[subAccount].length() > 0) {
+			revert HasActiveVirtualAccounts();
+		}
+
+		// Check that the account is empty in symmio
+		ISymmio symmio = ISymmio(s.symmioCore);
+
+		// Check balance is 0
+		if (symmio.balanceOf(subAccount) > 0) revert SubAccountNotEmpty();
+
+		// Check allocated balance is 0
+		if (symmio.allocatedBalanceOfPartyA(subAccount) > 0) revert SubAccountNotEmpty();
+
+		// Check no open positions
+		if (symmio.partyAPositionsCount(subAccount) > 0) revert OpenPositionsExist();
+
+		// Check no pending quotes
+		uint256[] memory pendingQuotes = symmio.getPartyAPendingQuotes(subAccount);
+		if (pendingQuotes.length > 0) revert PendingQuotesExist();
+
+		// Store values before deletion for event and hook
+		address owner = s.owner;
+		address affiliate = s.affiliate;
+		address symmioCore = s.symmioCore;
+
+		// Mark as deleted
+		s.isExists = false;
+
+		// Remove from user's subAccounts set
+		ahLayout.userToSubAccounts[owner].remove(subAccount);
+
+		// Call affiliate hook
+		LibAccountLayerUtils.callHook(
+			affiliate,
+			subAccount,
+			symmioCore,
+			IAccountHubHook.onSubAccountDeletion.selector,
+			abi.encodeWithSelector(IAccountHubHook.onSubAccountDeletion.selector, subAccount, owner)
+		);
+
+		emit SubAccountDeleted(subAccount, owner, affiliate);
+	}
+
 	// ==================== Virtual Account Management ====================
 
 	function createCustomVirtualAccount(

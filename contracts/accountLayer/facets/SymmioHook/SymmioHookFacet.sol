@@ -17,6 +17,17 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
 
+	function onOpenPosition(
+		uint256 /* quoteId */,
+		uint256 /* filledAmount */,
+		uint256 /* openedPrice */,
+		address /* partyA */,
+		address /* partyB */
+	) external onlySymmio whenNotPaused {
+		// No-op: Account layer doesn't need to track position opens
+		// This function exists to prevent hook reverts when positions are opened
+	}
+
 	function onClosePosition(
 		uint256 quoteId,
 		uint256 /* filledAmount */,
@@ -29,6 +40,19 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 
 	function onCancelQuote(uint256 quoteId, address partyA, address /* partyB */) external onlySymmio whenNotPaused {
 		_removeQuoteFromAccount(quoteId, partyA);
+	}
+
+	function onFeeCharged(
+		uint256 /* quoteId */,
+		uint256 /* amount */,
+		address /* partyA */,
+		address /* partyB */,
+		uint256 /* symbolId */,
+		address /* affiliate */,
+		uint8 /* feeType */
+	) external onlySymmio whenNotPaused {
+		// No-op: Account layer doesn't need to track fee charges
+		// This function exists to prevent hook reverts when fees are charged
 	}
 
 	// ==================== Internal Functions ====================

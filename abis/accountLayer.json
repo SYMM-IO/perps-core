@@ -208,6 +208,11 @@
     },
     {
         "inputs": [],
+        "name": "PendingQuotesExist",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "PositionTypeNotAllowedForThisAccount",
         "type": "error"
     },
@@ -235,6 +240,11 @@
     {
         "inputs": [],
         "name": "SingleVAModeNotApplicable",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "SubAccountNotEmpty",
         "type": "error"
     },
     {
@@ -1488,6 +1498,31 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "SubAccountDeleted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "parent",
                 "type": "address"
             }
@@ -1639,6 +1674,19 @@
                 "type": "address[]"
             }
         ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            }
+        ],
+        "name": "deleteSubAccount",
+        "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
@@ -1866,6 +1914,82 @@
             }
         ],
         "name": "onClosePosition",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            },
+            {
+                "internalType": "uint8",
+                "name": "",
+                "type": "uint8"
+            }
+        ],
+        "name": "onFeeCharged",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "name": "onOpenPosition",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

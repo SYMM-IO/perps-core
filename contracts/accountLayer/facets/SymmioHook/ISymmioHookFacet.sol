@@ -11,8 +11,19 @@ interface ISymmioHookFacetEvents {
 }
 
 interface ISymmioHookFacet is ISymmioHookFacetEvents, IAccountLayerErrors {
+	function onOpenPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, address partyA, address partyB) external;
+
 	function onClosePosition(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, address partyA, address partyB) external;
 
 	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external;
 
+	function onFeeCharged(
+		uint256 quoteId,
+		uint256 amount,
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		address affiliate,
+		uint8 feeType
+	) external;
 }

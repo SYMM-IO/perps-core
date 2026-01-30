@@ -55,13 +55,13 @@ export async function deployAccountLayerDiamond(
 	const diamondAddress = await diamond.getAddress()
 	logger.deployed("AccountLayerDiamond", diamondAddress)
 
-	// Deploy AccountLayerInit
-	const AccountLayerInitFactory = await ethers.getContractFactory("AccountLayerInit")
-	const accountLayerInit = await AccountLayerInitFactory.deploy()
-	await accountLayerInit.waitForDeployment()
-	receipt = (await accountLayerInit.deploymentTransaction()!.wait())!
+	// Deploy Init
+	const InitFactory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
+	const init = await InitFactory.deploy()
+	await init.waitForDeployment()
+	receipt = (await init.deploymentTransaction()!.wait())!
 	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	logger.deployed("AccountLayerInit", await accountLayerInit.getAddress())
+	logger.deployed("Init", await init.getAddress())
 
 	// Deploy external libraries
 	logger.subsection("Libraries")
@@ -141,7 +141,7 @@ export async function deployAccountLayerDiamond(
 	const diamondCut = await ethers.getContractAt("IDiamondCut", diamondAddress)
 
 	// Call Initializer with params
-	const call = accountLayerInit.interface.encodeFunctionData("init", [
+	const call = init.interface.encodeFunctionData("init", [
 		admin.address,
 		symmioFeeReceiver.address,
 		accountManagerBytecode,
@@ -153,7 +153,7 @@ export async function deployAccountLayerDiamond(
 		const chunk = cut.slice(i, i + chunkSize)
 		const chunkNum = Math.floor(i / chunkSize) + 1
 		const isFirst = i === 0
-		const initTarget = isFirst ? await accountLayerInit.getAddress() : ethers.ZeroAddress
+		const initTarget = isFirst ? await init.getAddress() : ethers.ZeroAddress
 		const initCalldata = isFirst ? call : "0x"
 		const tx = await diamondCut.diamondCut(chunk, initTarget, initCalldata)
 		receipt = (await tx.wait())!
@@ -168,13 +168,13 @@ export async function deployAccountLayerDiamond(
 	logger.complete("AccountLayer Diamond Deployment", [
 		{ name: "AccountLayerDiamond", address: diamondAddress },
 		{ name: "DiamondCutFacet", address: await diamondCutFacet.getAddress() },
-		{ name: "AccountLayerInit", address: await accountLayerInit.getAddress() },
+		{ name: "Init", address: await init.getAddress() },
 	])
 
 	return {
 		diamond: diamondAddress,
 		diamondCutFacet: await diamondCutFacet.getAddress(),
-		accountLayerInit: await accountLayerInit.getAddress(),
+		init: await init.getAddress(),
 		libraryAddresses,
 		deployedFacets,
 	}
