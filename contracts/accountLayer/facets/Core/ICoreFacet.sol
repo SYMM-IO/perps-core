@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { SubAccountCreationData, VirtualAccountIsolationType } from "../../storages/AccountHubStorage.sol";
+import { SubAccountCreationData, VirtualAccountIsolationType, LegacyAccountImportData } from "../../storages/AccountHubStorage.sol";
 import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
 
 interface ICoreFacetEvents {
@@ -16,6 +16,7 @@ interface ICoreFacetEvents {
 	event EditAccountName(address indexed account, string name);
 	event Call(address indexed sender, address indexed account, bytes callData, bool success, bytes resultData);
 	event HookActionExecuted(address indexed account, address indexed affiliate, bytes4 selector);
+	event LegacyAccountImported(address indexed account, address indexed owner, address indexed legacyContract, address affiliate);
 }
 
 interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
@@ -66,4 +67,12 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 
 	function executeForAccount(bytes calldata callData) external;
 
+	// ==================== Legacy Account Migration ====================
+
+	function importLegacyAccounts(
+		address legacyContract,
+		address affiliate,
+		address[] calldata symmioCores,
+		LegacyAccountImportData[] calldata accountsData
+	) external returns (address[] memory importedAccounts);
 }

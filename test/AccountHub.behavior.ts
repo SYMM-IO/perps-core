@@ -3411,5 +3411,245 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 			})
 		})
+
+		describe("Legacy Account Migration", async () => {
+			let legacyMultiAccount: any
+			let legacyAccounts: string[]
+
+			beforeEach(async () => {
+				context = await loadFixture(initializeFixture)
+
+				// Get the legacy multi-account contract
+				const legacyMultiAccounts = await context.alViewFacet.getLegacyMultiAccounts()
+				expect(legacyMultiAccounts.length).to.be.greaterThan(0)
+				legacyMultiAccount = await ethers.getContractAt("MockMultiAccount", legacyMultiAccounts[0])
+
+				// Create multiple legacy accounts for the user
+				legacyAccounts = []
+				for (let i = 0; i < 3; i++) {
+					const tx = await legacyMultiAccount.createMockAccountWithName(
+						context.signers.user.address,
+						`Legacy Account ${i + 1}`,
+					)
+					const receipt = await tx.wait()
+					for (const log of receipt!.logs) {
+						try {
+							const parsed = legacyMultiAccount.interface.parseLog(log)
+							if (parsed?.name === "AccountCreated") {
+								legacyAccounts.push(parsed.args.account)
+								break
+							}
+						} catch {}
+					}
+				}
+				expect(legacyAccounts.length).to.equal(3)
+			})
+
+			describe("getLegacyAccountsOfUser", async () => {
+				it("should return all legacy accounts for a user", async () => {
+					const [accounts, hasMore] = await context.alViewFacet.getLegacyAccountsOfUser(context.signers.user.address, 100)
+
+					expect(accounts.length).to.equal(3)
+					expect(hasMore).to.be.false
+
+					for (let i = 0; i < accounts.length; i++) {
+						expect(accounts[i].accountAddress).to.equal(legacyAccounts[i])
+						expect(accounts[i].legacyContract).to.equal(await legacyMultiAccount.getAddress())
+						expect(accounts[i].alreadyImported).to.be.false
+					}
+				})
+
+				it("should respect maxResults limit", async () => {
+					const [accounts, hasMore] = await context.alViewFacet.getLegacyAccountsOfUser(context.signers.user.address, 2)
+
+					expect(accounts.length).to.equal(2)
+					expect(hasMore).to.be.true
+				})
+
+				it("should return empty array for user with no legacy accounts", async () => {
+					const [accounts, hasMore] = await context.alViewFacet.getLegacyAccountsOfUser(
+						context.signers.others[1].address,
+						100,
+					)
+
+					expect(accounts.length).to.equal(0)
+					expect(hasMore).to.be.false
+				})
+
+				it("should mark imported accounts correctly", async () => {
+					// Import first account
+					await context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+						await legacyMultiAccount.getAddress(),
+						await context.accountManager.getAddress(),
+						[context.diamond],
+						[{ account: legacyAccounts[0], name: "Imported Account 1", coreIndex: 0 }],
+					)
+
+					const [accounts] = await context.alViewFacet.getLegacyAccountsOfUser(context.signers.user.address, 100)
+
+					expect(accounts[0].alreadyImported).to.be.true
+					expect(accounts[1].alreadyImported).to.be.false
+					expect(accounts[2].alreadyImported).to.be.false
+				})
+			})
+
+			describe("importLegacyAccounts", async () => {
+				it("should successfully import legacy accounts", async () => {
+					const accountsData = [
+						{ account: legacyAccounts[0], name: "New Name 1", coreIndex: 0 },
+						{ account: legacyAccounts[1], name: "New Name 2", coreIndex: 0 },
+					]
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							accountsData,
+						),
+					).to.emit(context.alCoreFacet, "LegacyAccountImported")
+
+					// Verify imported accounts
+					for (let i = 0; i < accountsData.length; i++) {
+						const subAccount = await context.alViewFacet.getSubAccount(accountsData[i].account)
+						expect(subAccount.isExists).to.be.true
+						expect(subAccount.owner).to.equal(context.signers.user.address)
+						expect(subAccount.name).to.equal(accountsData[i].name)
+						expect(subAccount.affiliate).to.equal(await context.accountManager.getAddress())
+						expect(subAccount.symmioCore).to.equal(context.diamond)
+						expect(subAccount.isolationType).to.equal(3) // CUSTOM
+					}
+				})
+
+				it("should add imported accounts to user's sub-accounts list", async () => {
+					const countBefore = await context.alViewFacet.getSubAccountsCountOfUser(context.signers.user.address)
+
+					await context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+						await legacyMultiAccount.getAddress(),
+						await context.accountManager.getAddress(),
+						[context.diamond],
+						[{ account: legacyAccounts[0], name: "Imported", coreIndex: 0 }],
+					)
+
+					const countAfter = await context.alViewFacet.getSubAccountsCountOfUser(context.signers.user.address)
+					expect(countAfter).to.equal(countBefore + 1n)
+				})
+
+				it("should reject import of account not owned by caller", async () => {
+					await expect(
+						context.alCoreFacet.connect(context.signers.others[0]).importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							[{ account: legacyAccounts[0], name: "Stolen Account", coreIndex: 0 }],
+						),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "LegacyAccountNotOwned")
+				})
+
+				it("should reject double import", async () => {
+					// First import
+					await context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+						await legacyMultiAccount.getAddress(),
+						await context.accountManager.getAddress(),
+						[context.diamond],
+						[{ account: legacyAccounts[0], name: "First Import", coreIndex: 0 }],
+					)
+
+					// Second import attempt
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							[{ account: legacyAccounts[0], name: "Second Import", coreIndex: 0 }],
+						),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "AccountAlreadyExists")
+				})
+
+				it("should reject import with unregistered legacy contract", async () => {
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+							context.signers.others[0].address, // Not a registered legacy contract
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							[{ account: legacyAccounts[0], name: "Account", coreIndex: 0 }],
+						),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "LegacyContractNotRegistered")
+				})
+
+				it("should reject import with inactive affiliate", async () => {
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							context.signers.others[0].address, // Not an active affiliate
+							[context.diamond],
+							[{ account: legacyAccounts[0], name: "Account", coreIndex: 0 }],
+						),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "AffiliateNotActive")
+				})
+
+				it("should reject import with invalid core index", async () => {
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							[{ account: legacyAccounts[0], name: "Account", coreIndex: 5 }], // Invalid index
+						),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "InvalidCallData")
+				})
+
+				it("should reject import with empty accounts array", async () => {
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							[],
+						),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "EmptyArray")
+				})
+
+				it("should reject import with invalid name length", async () => {
+					const maxNameLength = await context.alViewFacet.MAX_NAME_LENGTH()
+					const tooLongName = "A".repeat(Number(maxNameLength) + 1)
+
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							[{ account: legacyAccounts[0], name: tooLongName, coreIndex: 0 }],
+						),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "InvalidNameLength")
+				})
+
+				it("should allow _call on imported accounts", async () => {
+					// Import account
+					await context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+						await legacyMultiAccount.getAddress(),
+						await context.accountManager.getAddress(),
+						[context.diamond],
+						[{ account: legacyAccounts[0], name: "Imported", coreIndex: 0 }],
+					)
+
+					// Deposit
+					const depositAmount = decimal(1000n)
+					await context.collateral.connect(context.signers.user).mint(context.signers.user.address, depositAmount)
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), depositAmount)
+					await context.accountFacet.connect(context.signers.user).depositFor(legacyAccounts[0], depositAmount)
+
+					// Allocate via _call
+					const allocateAmount = decimal(500n)
+					const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [allocateAmount])]
+
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(legacyAccounts[0], callData)).to.not.be
+						.reverted
+
+					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(legacyAccounts[0])
+					expect(allocatedBalance).to.equal(allocateAmount)
+				})
+			})
+		})
 	})
 }

@@ -53,4 +53,6 @@ interface IAccountLayerErrors {
 	error EnforcedPause();
 	error ExpectedPause();
 	error ExternalCallFailed();
+	error LegacyAccountNotOwned();
+	error LegacyContractNotRegistered();
 }

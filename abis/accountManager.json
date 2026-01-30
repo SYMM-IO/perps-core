@@ -144,6 +144,16 @@
     },
     {
         "inputs": [],
+        "name": "LegacyAccountNotOwned",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "LegacyContractNotRegistered",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "MustBeRoleAdmin",
         "type": "error"
     },
