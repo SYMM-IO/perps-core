@@ -170,11 +170,26 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 		it("Should change the insurance vault correctly", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
-			const fundingFee = await getFundingFee()
 			const price = decimal(572n, 16)
+
+			// Get values needed for calculation
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const quote = await context.viewFacetQuote.getQuote(1)
+			const lf = quote.lockedValues.lf
+			const cva = quote.lockedValues.cva
+			const fundingFee = await getFundingFee()
+			const upnl = await user.getUpnl(getPriceFetcher([1n], [price])) - fundingFee
+
+			// Calculate expected vault balance (matching contract logic)
+			const availableBalance = allocatedBalance - lf - cva + upnl
+			let remainingLf = 0n
+			if (lf > -availableBalance) remainingLf = lf + availableBalance
+			const maxProfitPerPos = (await context.viewFacet.getLiquidationInsuranceVaultParams())[1]
+			const expectedVaultBalance = remainingLf > maxProfitPerPos ? remainingLf - maxProfitPerPos : 0n
+
 			await user.liquidateAndSetSymbolPrices([1n], [price],[1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
-			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(decimal(1n) - fundingFee)
+			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(expectedVaultBalance)
 			await expectConnected(user.address, hedger.address, true)
 			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
 
@@ -366,10 +381,25 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 		it("Should change the insurance vault correctly in deferred liquidation", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
-			const fundingFee = await getFundingFee()
 			const price = decimal(572n, 16)
+
+			// Get values needed for calculation
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const quote = await context.viewFacetQuote.getQuote(1)
+			const lf = quote.lockedValues.lf
+			const cva = quote.lockedValues.cva
+			const fundingFee = await getFundingFee()
+			const upnl = await user.getUpnl(getPriceFetcher([1n], [price])) - fundingFee
+
+			// Calculate expected vault balance (matching contract logic)
+			const availableBalance = allocatedBalance - lf - cva + upnl
+			let remainingLf = 0n
+			if (lf > -availableBalance) remainingLf = lf + availableBalance
+			const maxProfitPerPos = (await context.viewFacet.getLiquidationInsuranceVaultParams())[1]
+			const expectedVaultBalance = remainingLf > maxProfitPerPos ? remainingLf - maxProfitPerPos : 0n
+
 			await user.deferredLiquidateAndSetSymbolPrices([1n], [price], [1n])
-			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(decimal(1n)-fundingFee)
+			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(expectedVaultBalance)
 			await expectConnected(user.address, hedger.address, true)
 
 		})
