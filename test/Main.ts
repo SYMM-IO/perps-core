@@ -9,6 +9,7 @@ import { shouldBehaveLikeOpenPosition } from "./OpenPosition.behavior"
 import { shouldBehaveLikeCancelQuote } from "./CancelQuote.behavior"
 import { shouldBehaveLikeClosePosition } from "./ClosePosition.behavior"
 import { shouldBehaveLikeEmergencyClosePosition } from "./EmergencyClosePosition.behavior"
+import { shouldBehaveLikeADLClose } from "./ADLClose.behavior"
 import { shouldBehaveLikeForceClosePosition } from "./ForceClosePosition.behavior"
 import { shouldBehaveLikeLiquidationFacet } from "./LiquidationFacet.behavior"
 import { shouldBehaveLikeFundingRate } from "./FundingRate.behavior"
@@ -54,6 +55,10 @@ import { shouldBehaveLikePreUpgradeTest } from "./PreUpgrade.behavior"
 
 		describe("EmergencyClosePosition", async function () {
 			shouldBehaveLikeEmergencyClosePosition()
+		})
+
+		describe("ADLClose", async function () {
+			shouldBehaveLikeADLClose()
 		})
 
 		describe("ForceClosePosition", async function () {

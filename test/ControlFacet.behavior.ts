@@ -105,6 +105,13 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("setADLEnabled", () => {
+		it("Should setADLEnabled successfully", async function () {
+			await expect(context.controlFacet.connect(owner).setADLEnabled(await hedger.getAddress(), true)).to.not.reverted
+			await expect(context.controlFacet.connect(owner).setADLEnabled(await hedger.getAddress(), false)).to.not.reverted
+		})
+	})
+
 	describe("setCollateral", () => {
 		it("Should setCollateral successfully", async function () {
 			await expect(context.controlFacet.connect(owner).setCollateral(await context.collateral.getAddress())).to.not.reverted

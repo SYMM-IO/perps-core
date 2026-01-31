@@ -21,6 +21,8 @@ interface IControlFacet is IControlEvents {
 
 	function deregisterPartyB(address partyB, uint256 index) external;
 
+	function setADLEnabled(address partyB, bool enabled) external;
+
 	function registerAffiliate(address affiliate) external;
 
 	function deregisterAffiliate(address affiliate) external;

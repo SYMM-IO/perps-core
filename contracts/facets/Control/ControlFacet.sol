@@ -81,6 +81,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit DeregisterPartyB(partyB, index);
 	}
 
+	/// @notice Enables or disables Auto-Deleveraging (ADL) for a Party B. When enabled, positions can be force-closed to reduce risk.
+	/// @param partyB The address of the Party B to configure ADL for.
+	/// @param enabled True to enable ADL for this Party B, false to disable.
+	function setADLEnabled(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		MAStorage.layout().adlEnabled[partyB] = enabled;
+		emit SetADLEnabled(partyB, enabled);
+	}
+
 	/// @notice Registers an affiliate into the system.
 	/// @param affiliate The address of the affiliate to be registered.
 	function registerAffiliate(address affiliate) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {

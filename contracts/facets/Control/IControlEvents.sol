@@ -71,6 +71,7 @@ interface IControlEvents {
 	event SetBalanceLimitPerUser(uint256 balanceLimitPerUser);
 	event RegisterPartyB(address partyB);
 	event DeregisterPartyB(address partyB, uint256 index);
+	event SetADLEnabled(address partyB, bool enabled);
 	event RegisterAffiliate(address affilate);
 	event DeregisterAffiliate(address affilate);
 	event AddBridge(address bridge);

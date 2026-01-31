@@ -121,7 +121,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	 */
 	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external whenNotPartyBActionsPaused returns (uint256) {
 		uint256 closedAmount = PartyBPositionActionsFacetImpl.adlClose(quoteId, amount, price);
-		emit LibPartiesEvents.ADLClose(quoteId, amount, price, closedAmount);
+		emit ADLClose(quoteId, amount, price, closedAmount);
 		return closedAmount;
 	}
 }
