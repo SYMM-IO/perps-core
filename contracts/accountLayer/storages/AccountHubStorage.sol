@@ -69,6 +69,19 @@ struct VirtualAccountDetail {
 	VirtualAccountIsolationType isolationType;
 }
 
+struct LegacyAccountInfo {
+	address accountAddress;
+	string name;
+	address legacyContract;
+	bool alreadyImported;
+}
+
+struct LegacyAccountImportData {
+	address account;
+	string name;
+	uint256 coreIndex;
+}
+
 /// @title AccountHubStorage
 /// @notice Unified account management with SubAccounts and Virtual Accounts (VAs)
 /// @dev Replaces per-affiliate MultiAccount deployments with a single hub. Creates a

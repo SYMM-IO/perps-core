@@ -131,7 +131,7 @@ export default defineConfig({
 		artifacts: "./artifacts",
 		cache: "./cache",
 		sources: "./contracts",
-		tests: "./test",
+		tests: "./test/sequential",
 	},
 	typechain: {
 		outDir: resolve(process.cwd(), "src/types"),

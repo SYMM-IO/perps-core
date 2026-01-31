@@ -169,6 +169,29 @@ contract MockAccountHubHook {
 	}
 
 	/**
+	 * @notice Hook called when a sub-account is deleted
+	 * @param subAccount The sub-account address being deleted
+	 * @param owner The owner of the sub-account
+	 */
+	function onSubAccountDeletion(address subAccount, address owner) external {
+		bytes4 selector = this.onSubAccountDeletion.selector;
+
+		if (shouldRevert[selector]) {
+			revert(revertMessages[selector]);
+		}
+
+		accountHookCalled[subAccount] = true;
+		lastAccountForSelector[selector] = subAccount;
+		selectorCallCount[selector]++;
+
+		if (recordCalls) {
+			hookCalls.push(
+				HookCall({ selector: selector, data: abi.encode(subAccount, owner), timestamp: block.timestamp, callCount: selectorCallCount[selector] })
+			);
+		}
+	}
+
+	/**
 	 * @notice Hook called when _call is executed on an account
 	 * @param account The account address
 	 * @param callDatas Array of call data
@@ -278,6 +301,7 @@ contract MockAccountHubHook {
 		selectorCallCount[this.onAccountCreation.selector] = 0;
 		selectorCallCount[this.onVirtualAccountCreation.selector] = 0;
 		selectorCallCount[this.onVirtualAccountDeletion.selector] = 0;
+		selectorCallCount[this.onSubAccountDeletion.selector] = 0;
 		selectorCallCount[this.onCall.selector] = 0;
 	}
 
@@ -380,17 +404,25 @@ contract MockAccountHubHook {
 	 * @return onAccountCreationCount Number of account creation hooks
 	 * @return onVirtualAccountCreationCount Number of virtual account creation hooks
 	 * @return onVirtualAccountDeletionCount Number of virtual account deletion hooks
+	 * @return onSubAccountDeletionCount Number of sub-account deletion hooks
 	 * @return onCallCount Number of call hooks
 	 */
 	function getAllCallCounts()
 		external
 		view
-		returns (uint256 onAccountCreationCount, uint256 onVirtualAccountCreationCount, uint256 onVirtualAccountDeletionCount, uint256 onCallCount)
+		returns (
+			uint256 onAccountCreationCount,
+			uint256 onVirtualAccountCreationCount,
+			uint256 onVirtualAccountDeletionCount,
+			uint256 onSubAccountDeletionCount,
+			uint256 onCallCount
+		)
 	{
 		return (
 			selectorCallCount[this.onAccountCreation.selector],
 			selectorCallCount[this.onVirtualAccountCreation.selector],
 			selectorCallCount[this.onVirtualAccountDeletion.selector],
+			selectorCallCount[this.onSubAccountDeletion.selector],
 			selectorCallCount[this.onCall.selector]
 		);
 	}

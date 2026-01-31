@@ -83,20 +83,6 @@ function createProgressBar(percent, width = 30) {
 	return bar
 }
 
-function runCommand(cmd, args = [], options = {}) {
-	return new Promise((resolve, reject) => {
-		const proc = spawn(cmd, args, { stdio: "pipe", ...options })
-		let stdout = ""
-		let stderr = ""
-		proc.stdout?.on("data", data => (stdout += data.toString()))
-		proc.stderr?.on("data", data => (stderr += data.toString()))
-		proc.on("close", code => {
-			if (code === 0) resolve({ stdout, stderr })
-			else reject(new Error(stderr || stdout || `Exit code ${code}`))
-		})
-	})
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -370,37 +356,8 @@ function printResults(totalDuration) {
 	console.log()
 }
 
-async function disableMuonSignatures() {
-	console.log(style("cyan", "  ⟳ Disabling Muon signature checks..."))
-	try {
-		const result = await runCommand("python3", ["utils/update_sig_checks.py", "1"], {
-			env: { ...process.env, PYTHONPATH: "." }
-		})
-		const count = (result.stdout.match(/Removed/g) || []).length
-		console.log(style("brightGreen", `  ✓ Disabled signature checks in ${count} files`))
-	} catch (e) {
-		console.error(style("brightRed", `  ✗ Failed to disable signature checks: ${e.message}`))
-		throw e
-	}
-}
-
-let muonSignaturesRestored = false
-
-async function enableMuonSignatures() {
-	if (muonSignaturesRestored) return
-	muonSignaturesRestored = true
-
-	console.log(style("cyan", "  ⟳ Re-enabling Muon signature checks..."))
-	try {
-		const result = await runCommand("python3", ["utils/update_sig_checks.py", "0"], {
-			env: { ...process.env, PYTHONPATH: "." }
-		})
-		const count = (result.stdout.match(/Added/g) || []).length
-		console.log(style("brightGreen", `  ✓ Re-enabled signature checks in ${count} files`))
-	} catch (e) {
-		console.error(style("brightRed", `  ✗ Failed to re-enable signature checks: ${e.message}`))
-	}
-}
+// Note: Muon signature verification is now handled via MockMuonSignatureVerifier
+// deployed in test initialization. No source code modification needed.
 
 async function compile() {
 	console.log(style("cyan", "  ⟳ Compiling contracts..."))
@@ -418,10 +375,6 @@ async function main() {
 
 	console.log(style("gray", `  → Test files: ${style("white", testFiles.length)}`))
 	console.log(style("gray", `  → Workers: ${style("white", jobs)}`))
-	console.log()
-
-	// Disable Muon signatures
-	await disableMuonSignatures()
 	console.log()
 
 	// Compile
@@ -474,31 +427,22 @@ async function main() {
 
 		const totalDuration = Date.now() - startTime
 		printResults(totalDuration)
-
-		// Re-enable Muon signatures
-		console.log()
-		await enableMuonSignatures()
-		console.log()
 	}
 
 	process.exit(results.failed > 0 ? 1 : 0)
 }
 
-process.on("SIGINT", async () => {
+process.on("SIGINT", () => {
 	console.log(style("yellow", "\n\n  Interrupted by user"))
-	console.log()
-	await enableMuonSignatures()
 	process.exit(130)
 })
 
-process.on("uncaughtException", async err => {
+process.on("uncaughtException", err => {
 	console.error(style("red", `\n  Error: ${err.message}`))
-	await enableMuonSignatures()
 	process.exit(1)
 })
 
-main().catch(async err => {
+main().catch(err => {
 	console.error(style("red", `\n  Error: ${err.message}`))
-	await enableMuonSignatures()
 	process.exit(1)
 })

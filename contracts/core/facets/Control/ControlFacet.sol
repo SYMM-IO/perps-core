@@ -14,7 +14,7 @@ import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { IControlFacet } from "./IControlFacet.sol";
-import { LibDiamond } from "../../libraries/LibDiamond.sol";
+import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { BridgeStorage } from "../../storages/BridgeStorage.sol";

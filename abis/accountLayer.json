@@ -133,6 +133,16 @@
     },
     {
         "inputs": [],
+        "name": "LegacyAccountNotOwned",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "LegacyContractNotRegistered",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "MustBeRoleAdmin",
         "type": "error"
     },
@@ -198,6 +208,11 @@
     },
     {
         "inputs": [],
+        "name": "PendingQuotesExist",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "PositionTypeNotAllowedForThisAccount",
         "type": "error"
     },
@@ -225,6 +240,11 @@
     {
         "inputs": [],
         "name": "SingleVAModeNotApplicable",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "SubAccountNotEmpty",
         "type": "error"
     },
     {
@@ -342,6 +362,37 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "legacyContract",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "LegacyAccountImported",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": false,
                 "internalType": "address",
                 "name": "account",
@@ -399,6 +450,31 @@
             }
         ],
         "name": "SubAccountCreated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "SubAccountDeleted",
         "type": "event"
     },
     {
@@ -584,6 +660,19 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            }
+        ],
+        "name": "deleteSubAccount",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "account",
                 "type": "address"
             },
@@ -687,6 +776,57 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "legacyContract",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "address[]",
+                "name": "symmioCores",
+                "type": "address[]"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "account",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "coreIndex",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct LegacyAccountImportData[]",
+                "name": "accountsData",
+                "type": "tuple[]"
+            }
+        ],
+        "name": "importLegacyAccounts",
+        "outputs": [
+            {
+                "internalType": "address[]",
+                "name": "importedAccounts",
+                "type": "address[]"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "subAccount",
                 "type": "address"
             },
@@ -753,6 +893,82 @@
             }
         ],
         "name": "onClosePosition",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "uint8",
+                "name": "feeType",
+                "type": "uint8"
+            }
+        ],
+        "name": "onFeeCharged",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "openedPrice",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "onOpenPosition",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1029,6 +1245,57 @@
                 "internalType": "address",
                 "name": "",
                 "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maxResults",
+                "type": "uint256"
+            }
+        ],
+        "name": "getLegacyAccountsOfUser",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "accountAddress",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "legacyContract",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "alreadyImported",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct LegacyAccountInfo[]",
+                "name": "accounts",
+                "type": "tuple[]"
+            },
+            {
+                "internalType": "bool",
+                "name": "hasMore",
+                "type": "bool"
             }
         ],
         "stateMutability": "view",
