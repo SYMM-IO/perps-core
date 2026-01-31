@@ -15,5 +15,5 @@ interface IPartyBPositionActionsFacet is IPartyBPositionActionsEvents {
 
 	function emergencyClosePosition(uint256 quoteId, PairUpnlAndPriceSig memory upnlSig) external;
 
-	function adlClose(uint256[] calldata quoteIds, uint256 ratios, uint256 prices) external returns (uint256 closedAmount);
+	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external returns (uint256 closedAmount);
 }

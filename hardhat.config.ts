@@ -29,6 +29,8 @@ export enum TestMode {
 	PRE_UPGRADE = "PRE_UPGRADE",
 }
 
+const testMode = (process.env.TEST_MODE || TestMode.STATIC).toUpperCase() as TestMode
+
 const arbitrumApiKey: string = process.env.ARBITRUM_API_KEY || ""
 const bnbApiKey: string = process.env.BNB_API_KEY || ""
 const baseApiKey: string = process.env.BASE_API_KEY || ""
@@ -83,14 +85,14 @@ const config: HardhatUserConfig = {
 
 	// Network configurations
 	networks: {
-		hardhat: {
-			forking:
-				process.env.TEST_MODE != TestMode.STATIC
-					? {
-							url: "https://base-mainnet.infura.io/v3/{API_KEY}",
-							blockNumber: 23478537,
-					  }
-					: undefined,
+			hardhat: {
+				forking:
+					testMode != TestMode.STATIC
+						? {
+								url: "https://base-mainnet.infura.io/v3/{API_KEY}",
+								blockNumber: 23478537,
+						  }
+						: undefined,
 
 			loggingEnabled: false,
 			allowUnlimitedContractSize: false,
@@ -286,12 +288,12 @@ const config: HardhatUserConfig = {
 	},
 
 	// Testing configuration
-	gasReporter: {
-		currency: "USD",
-		enabled: true,
-		excludeContracts: [],
-		src: "./contracts",
-	},
+		gasReporter: {
+			currency: "USD",
+			enabled: process.env.REPORT_GAS === "true" || process.env.REPORT_GAS === "1",
+			excludeContracts: [],
+			src: "./contracts",
+		},
 
 	typechain: {
 		outDir: "src/types",
