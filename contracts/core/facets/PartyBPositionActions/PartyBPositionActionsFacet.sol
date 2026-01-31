@@ -8,7 +8,7 @@ import { PartyBPositionActionsFacetImpl } from "./PartyBPositionActionsFacetImpl
 import { IPartyBPositionActionsFacet } from "./IPartyBPositionActionsFacet.sol";
 import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
-import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 

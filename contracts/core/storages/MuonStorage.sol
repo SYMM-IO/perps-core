@@ -166,15 +166,40 @@ struct CrossLiquidationSig {
 	IMuonSignatureVerifier.SchnorrSign sigs; // Schnorr signature for additional verification
 }
 
+/// @title MuonStorage
+/// @notice Configuration for Muon oracle signature verification
+/// @dev Muon is the oracle network that provides UPNL, price, and liquidation signatures.
+///      These parameters control signature freshness and verification keys.
 library MuonStorage {
 	bytes32 internal constant MUON_STORAGE_SLOT = keccak256("diamond.standard.storage.muon");
 
 	struct Layout {
+		/// @notice How long UPNL signatures remain valid (seconds)
+		/// @dev Signatures older than this are rejected. Balance between security
+		///      (fresher data) and usability (more time to submit tx).
 		uint256 upnlValidTime;
+		/// @notice Configured validity period for price signatures (seconds)
+		/// @dev Currently stored but NOT actively used in on-chain validation logic.
+		///      Price signature validation uses upnlValidTime instead. This field is
+		///      configurable via setMuonConfig() for potential future use or off-chain
+		///      reference.
 		uint256 priceValidTime;
-		uint256 priceQuantityValidTime; // UNUSED: Should be deleted later
+		/// @notice UNUSED - Legacy field kept for storage compatibility
+		/// @dev Was for price+quantity validation time. No longer used but cannot be
+		///      removed without storage migration.
+		uint256 priceQuantityValidTime;
+		/// @notice Muon application identifier
+		/// @dev Identifies which Muon app generated the signatures. Must match
+		///      the deployed Muon app configuration.
 		uint256 muonAppId;
+		/// @notice DEPRECATED - Public key now managed by external signatureVerifier
+		/// @dev Kept for storage layout compatibility. Signature verification is now
+		///      delegated to GlobalAppStorage.signatureVerifier contract which manages
+		///      its own public key configuration.
 		IMuonSignatureVerifier.PublicKey muonPublicKey;
+		/// @notice DEPRECATED - Gateway validation now handled by external signatureVerifier
+		/// @dev Kept for storage layout compatibility. Gateway signature checks are now
+		///      delegated to GlobalAppStorage.signatureVerifier contract.
 		address validGateway;
 	}
 

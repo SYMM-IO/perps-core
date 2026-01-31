@@ -23,6 +23,8 @@ interface IPauseControlFacet is IControlEvents {
 
 	function pauseExternalTransfer() external;
 
+	function pauseInstantLayer() external;
+
 	function activeEmergencyMode() external;
 
 	function unpauseGlobal() external;
@@ -40,6 +42,8 @@ interface IPauseControlFacet is IControlEvents {
 	function unpauseInternalTransfer() external;
 
 	function unpauseExternalTransfer() external;
+
+	function unpauseInstantLayer() external;
 
 	function deactiveEmergencyMode() external;
 

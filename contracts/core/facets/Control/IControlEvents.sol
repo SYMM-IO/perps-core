@@ -74,6 +74,7 @@ interface IControlEvents {
 	event PausePartyBOpenPositions();
 	event PauseInternalTransfer();
 	event PauseExternalTransfer();
+	event PauseInstantLayer();
 	event ActiveEmergencyMode();
 	event UnpauseGlobal();
 	event UnpauseLiquidation();
@@ -83,6 +84,7 @@ interface IControlEvents {
 	event UnpausePartyBOpenPositions();
 	event UnpauseInternalTransfer();
 	event UnpauseExternalTransfer();
+	event UnpauseInstantLayer();
 	event DeactiveEmergencyMode();
 	event SetLiquidationTimeout(uint256 oldLiquidationTimeout, uint256 newLiquidationTimeout);
 	event SetSuspendedAddress(address user, bool isSuspended);

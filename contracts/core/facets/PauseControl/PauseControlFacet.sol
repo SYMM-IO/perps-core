@@ -59,6 +59,12 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		emit PauseExternalTransfer();
 	}
 
+	/// @notice Pauses instant layer operations for bound PartyAs.
+	function pauseInstantLayer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+		GlobalAppStorage.layout().instantLayerPaused = true;
+		emit PauseInstantLayer();
+	}
+
 	/// @notice Activates emergency mode which enables emergency withdrawals and restricts normal protocol operations.
 	function activeEmergencyMode() external onlyRole(LibAccessibility.EMERGENCY_ADMIN_ROLE) {
 		GlobalAppStorage.layout().emergencyMode = true;
@@ -111,6 +117,12 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	function unpauseExternalTransfer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
 		GlobalAppStorage.layout().externalTransferPaused = false;
 		emit UnpauseExternalTransfer();
+	}
+
+	/// @notice Resumes instant layer operations for bound PartyAs.
+	function unpauseInstantLayer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
+		GlobalAppStorage.layout().instantLayerPaused = false;
+		emit UnpauseInstantLayer();
 	}
 
 	/// @notice Deactivates emergency mode, returning the protocol to normal operations and disabling emergency withdrawals.

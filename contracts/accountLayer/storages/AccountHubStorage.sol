@@ -69,26 +69,53 @@ struct VirtualAccountDetail {
 	VirtualAccountIsolationType isolationType;
 }
 
+/// @title AccountHubStorage
+/// @notice Unified account management with SubAccounts and Virtual Accounts (VAs)
+/// @dev Replaces per-affiliate MultiAccount deployments with a single hub. Creates a
+///      three-tier hierarchy: User → SubAccounts → Virtual Accounts. SubAccounts define
+///      isolation strategy, VAs are the actual trading addresses interacting with Symmio.
 library AccountHubStorage {
 	bytes32 internal constant ACCOUNT_HUB_STORAGE_SLOT = keccak256("diamond.standard.storage.accounthub");
 
 	struct Layout {
-		// Sub-account data
+		/// @notice SubAccount configuration by address
+		/// @dev SubAccount addresses are deterministic via CREATE2. Contains owner,
+		///      affiliate, symmioCore, and isolation type (POSITION/MARKET/MARKET_DIRECTION/CUSTOM).
 		mapping(address => SubAccountData) subAccounts;
+		/// @notice SubAccounts owned by each user
+		/// @dev Maps user => set of their SubAccount addresses. A user can have multiple
+		///      SubAccounts for different affiliates, cores, or isolation strategies.
 		mapping(address => EnumerableSet.AddressSet) userToSubAccounts;
-		// Virtual account data
+		/// @notice Virtual Account configuration by address
+		/// @dev VA addresses are deterministic. Contains parent SubAccount, symbolId,
+		///      isolation type, and tracked quoteIds for lifecycle management.
 		mapping(address => VirtualAccountData) virtualAccounts;
+		/// @notice Virtual Accounts under each SubAccount
+		/// @dev Maps SubAccount => set of its VA addresses. Used for iteration and cleanup.
 		mapping(address => EnumerableSet.AddressSet) subAccountToVirtualAccounts;
-		// Pool of deleted virtual accounts for reuse: parentAccount => isolationType => symbolId => stack of addresses
+		/// @notice Pool of inactive VAs available for reuse
+		/// @dev When VAs are deactivated (all positions closed), they're pooled here
+		///      instead of discarded. Maps parent => isolationType => symbolId => addresses.
+		///      Reusing addresses avoids unbounded address growth over time.
 		mapping(address => mapping(VirtualAccountIsolationType => mapping(uint256 => address[]))) deletedVirtualAccountsPool;
-		// Active virtual account by key (for singleVAMode): subAccount => isolationType => symbolId => VA address
+		/// @notice Currently active VA per isolation key (used in singleVAMode)
+		/// @dev Maps subAccount => isolationType => symbolId => active VA. In singleVAMode,
+		///      only one VA can be active per key, simplifying frontend address management.
 		mapping(address => mapping(VirtualAccountIsolationType => mapping(uint256 => address))) activeVAByKey;
-		// Nonces
+		/// @notice Global counter for SubAccount address generation
+		/// @dev Part of CREATE2 salt. Incremented on each SubAccount creation.
 		uint256 globalNonce;
+		/// @notice Per-SubAccount counter for VA address generation
+		/// @dev Maps SubAccount => nonce. Next VA address = _generateVirtualAccountAddress(parent, nonce).
 		mapping(address => uint256) subAccountVirtualNonces;
-		// Configuration
+		/// @notice Authorized signer for protocol-level operations
+		/// @dev Used for operations requiring protocol authorization.
 		address globalSigner;
+		/// @notice Bytecode for AccountManager proxy deployment
+		/// @dev AccountManagers are minimal proxies deployed per affiliate.
 		bytes accountManagerImplementation;
+		/// @notice Expected code hash after AccountManager initialization
+		/// @dev Used to verify AccountManagers deployed correctly.
 		bytes32 initAccountManagerCodeHash;
 	}
 

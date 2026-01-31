@@ -2879,6 +2879,12 @@
     {
         "anonymous": false,
         "inputs": [],
+        "name": "PauseInstantLayer",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [],
         "name": "PauseInternalTransfer",
         "type": "event"
     },
@@ -4115,6 +4121,12 @@
         "anonymous": false,
         "inputs": [],
         "name": "UnpauseGlobal",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [],
+        "name": "UnpauseInstantLayer",
         "type": "event"
     },
     {
@@ -6097,44 +6109,6 @@
         "inputs": [
             {
                 "indexed": false,
-                "internalType": "address",
-                "name": "bridge",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "transactionId",
-                "type": "uint256"
-            }
-        ],
-        "name": "AcceptCancelBridgeTransactionRequest",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "transactionId",
-                "type": "uint256"
-            }
-        ],
-        "name": "RequestToCancelBridgeTransaction",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
                 "internalType": "uint256",
                 "name": "transactionId",
                 "type": "uint256"
@@ -6218,32 +6192,6 @@
         ],
         "name": "WithdrawReceivedBridgeValues",
         "type": "event"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "transactionId",
-                "type": "uint256"
-            }
-        ],
-        "name": "acceptCancelBridgeTransactionRequest",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "transactionId",
-                "type": "uint256"
-            }
-        ],
-        "name": "requestToCancelBridgeTransaction",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
     },
     {
         "inputs": [
@@ -6378,6 +6326,13 @@
     },
     {
         "inputs": [],
+        "name": "pauseInstantLayer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "pauseInternalTransfer",
         "outputs": [],
         "stateMutability": "nonpayable",
@@ -6459,6 +6414,13 @@
     {
         "inputs": [],
         "name": "unpauseGlobal",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "unpauseInstantLayer",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
