@@ -8,5 +8,6 @@ interface IAccountHubHook {
 	function onAccountCreation(address user, address subAccount, bytes memory metadata) external returns (bool);
 	function onVirtualAccountCreation(address virtualAccount, address parent, bytes memory metadata) external returns (bool);
 	function onVirtualAccountDeletion(address account) external;
+	function onSubAccountDeletion(address subAccount, address owner) external;
 	function onCall(address account, bytes[] memory callDatas) external;
 }

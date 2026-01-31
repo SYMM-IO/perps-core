@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { SubAccountDetail, VirtualAccountDetail, VirtualAccountIsolationType } from "../../storages/AccountHubStorage.sol";
+import { SubAccountDetail, VirtualAccountDetail, VirtualAccountIsolationType, LegacyAccountInfo } from "../../storages/AccountHubStorage.sol";
 import { AffiliateState, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
 
 interface IViewFacet {
@@ -81,6 +81,11 @@ interface IViewFacet {
 	function isLegacyMultiAccount(address account) external view returns (bool);
 
 	function getLegacyMultiAccounts() external view returns (address[] memory);
+
+	function getLegacyAccountsOfUser(
+		address owner,
+		uint256 maxResults
+	) external view returns (LegacyAccountInfo[] memory accounts, bool hasMore);
 
 	function getHook(address affiliate, bytes4 selector) external view returns (address);
 

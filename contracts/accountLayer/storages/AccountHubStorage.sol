@@ -69,6 +69,19 @@ struct VirtualAccountDetail {
 	VirtualAccountIsolationType isolationType;
 }
 
+struct LegacyAccountInfo {
+	address accountAddress;
+	string name;
+	address legacyContract;
+	bool alreadyImported;
+}
+
+struct LegacyAccountImportData {
+	address account;
+	string name;
+	uint256 coreIndex;
+}
+
 library AccountHubStorage {
 	bytes32 internal constant ACCOUNT_HUB_STORAGE_SLOT = keccak256("diamond.standard.storage.accounthub");
 

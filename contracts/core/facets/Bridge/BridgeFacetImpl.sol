@@ -59,10 +59,7 @@ library BridgeFacetImpl {
 
 		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];
 
-		require(
-			bridgeTransaction.status == BridgeTransactionStatus.RECEIVED || bridgeTransaction.status == BridgeTransactionStatus.CANCEL_REQUESTED,
-			"BridgeFacet: Invalid state"
-		);
+		require(bridgeTransaction.status == BridgeTransactionStatus.RECEIVED, "BridgeFacet: Already withdrawn");
 		require(block.timestamp >= MAStorage.layout().deallocateCooldown + bridgeTransaction.timestamp, "BridgeFacet: Cooldown hasn't reached");
 		if (bridgeLayout.bridges[bridgeTransaction.bridge]) {
 			require(msg.sender == bridgeTransaction.bridge, "BridgeFacet: Sender is not the transaction's bridge");
@@ -85,10 +82,7 @@ library BridgeFacetImpl {
 		for (uint256 i = transactionIds.length; i != 0; i--) {
 			require(transactionIds[i - 1] <= bridgeLayout.lastId, "BridgeFacet: Invalid transactionId");
 			BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionIds[i - 1]];
-			require(
-				bridgeTransaction.status == BridgeTransactionStatus.RECEIVED || bridgeTransaction.status == BridgeTransactionStatus.CANCEL_REQUESTED,
-				"BridgeFacet: Invalid state"
-			);
+			require(bridgeTransaction.status == BridgeTransactionStatus.RECEIVED, "BridgeFacet: Already withdrawn");
 			require(block.timestamp >= MAStorage.layout().deallocateCooldown + bridgeTransaction.timestamp, "BridgeFacet: Cooldown hasn't reached");
 
 			if (bridgeLayout.bridges[bridgeTransaction.bridge]) {
@@ -128,31 +122,5 @@ library BridgeFacetImpl {
 			((bridgeTransaction.amount - validAmount) * (10 ** 18)) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		bridgeTransaction.status = BridgeTransactionStatus.RECEIVED;
 		bridgeTransaction.amount = validAmount;
-	}
-
-	function requestToCancelBridgeTransaction(uint256 transactionId) internal {
-		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
-		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];
-
-		require(LibSigner.getSigner() == bridgeTransaction.user, "BridgeFacet: Sender is not the transaction's user");
-		require(bridgeTransaction.status == BridgeTransactionStatus.RECEIVED, "BridgeFacet: Invalid status");
-
-		bridgeTransaction.status = BridgeTransactionStatus.CANCEL_REQUESTED;
-	}
-
-	function acceptCancelBridgeTransactionRequest(uint256 transactionId) internal {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
-
-		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];
-
-		require(msg.sender == bridgeTransaction.bridge, "BridgeFacet: Sender is not the transaction's bridge");
-		require(bridgeTransaction.status == BridgeTransactionStatus.CANCEL_REQUESTED, "BridgeFacet: Invalid status");
-
-		bridgeTransaction.status = BridgeTransactionStatus.CANCELED;
-		uint256 amountWith18Decimals = (bridgeTransaction.amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
-		AccountStorage.layout().balances[bridgeTransaction.user] += amountWith18Decimals;
-		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-		withdrawLayout.withdrawLockedBalance -= bridgeTransaction.amount;
 	}
 }
