@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { LibDiamond } from "../../libraries/LibDiamond.sol";
+import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { AccountStorage, LiquidationDetail, SettlementState, CrossLiquidationDetail, BindState, ExternalTransferReq, ForceCloseDetail } from "../../storages/AccountStorage.sol";
 import { WithdrawStorage, WithdrawRequest } from "../../storages/WithdrawStorage.sol";

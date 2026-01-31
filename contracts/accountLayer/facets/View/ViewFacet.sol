@@ -12,10 +12,12 @@ import {
 	SubAccountDetail,
 	VirtualAccountData,
 	VirtualAccountDetail,
-	VirtualAccountIsolationType
+	VirtualAccountIsolationType,
+	LegacyAccountInfo
 } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage, AffiliateState, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 contract ViewFacet is IViewFacet {
 	using EnumerableSet for EnumerableSet.AddressSet;
@@ -298,6 +300,51 @@ contract ViewFacet is IViewFacet {
 
 	function getLegacyMultiAccounts() external view returns (address[] memory) {
 		return AffiliateHubStorage.layout().legacyMultiAccounts.values();
+	}
+
+	function getLegacyAccountsOfUser(
+		address owner,
+		uint256 maxResults
+	) external view returns (LegacyAccountInfo[] memory accounts, bool hasMore) {
+		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+
+		address[] memory legacyContracts = afLayout.legacyMultiAccounts.values();
+
+		// Count total accounts across all legacy contracts (number of legacy contracts is very limited)
+		uint256 totalCount = 0;
+		for (uint256 i = 0; i < legacyContracts.length; i++) {
+			totalCount += IMultiAccount(legacyContracts[i]).getAccountsLength(owner);
+		}
+
+		if (totalCount == 0) {
+			return (new LegacyAccountInfo[](0), false);
+		}
+
+		hasMore = totalCount > maxResults;
+		uint256 resultSize = hasMore ? maxResults : totalCount;
+		accounts = new LegacyAccountInfo[](resultSize);
+
+		uint256 filled = 0;
+		for (uint256 i = 0; i < legacyContracts.length && filled < resultSize; i++) {
+			IMultiAccount multiAccount = IMultiAccount(legacyContracts[i]);
+			uint256 count = multiAccount.getAccountsLength(owner);
+
+			if (count == 0) continue;
+
+			uint256 toFetch = count > (resultSize - filled) ? (resultSize - filled) : count;
+			IMultiAccount.Account[] memory batch = multiAccount.getAccounts(owner, 0, toFetch);
+
+			for (uint256 j = 0; j < batch.length && filled < resultSize; j++) {
+				accounts[filled] = LegacyAccountInfo({
+					accountAddress: batch[j].accountAddress,
+					name: batch[j].name,
+					legacyContract: legacyContracts[i],
+					alreadyImported: ahLayout.subAccounts[batch[j].accountAddress].isExists
+				});
+				filled++;
+			}
+		}
 	}
 
 	function getHook(address affiliate, bytes4 selector) external view returns (address) {
