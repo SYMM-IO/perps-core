@@ -52,20 +52,10 @@ library TradingModeStorage {
 		/// @notice How long to wait before instant actions mode deactivation completes
 		/// @dev Prevents instant on/off toggling that could be used to game the solvers.
 		uint256 deactiveInstantActionModeCooldown;
-		/// @notice Stops instant layer operations when true
-		/// @dev The instant layer enables fast trading for PartyAs. When paused,
-		///      instant actions revert but normal trading continues.
-		bool instantLayerPaused;
 		/// @notice How long PartyA must wait to complete unbinding from PartyB
 		/// @dev Unbinding is a two-step process: request, wait cooldown, complete.
 		///      Prevents instant unbinding that could be used to dodge obligations.
 		uint256 unbindCooldown;
-		/// @notice Flag indicating calls should be treated as instant layer operations
-		/// @dev Set via setCallFromInstantLayer() by authorized callers. This is a persistent
-		///      state flag, not automatically reset - the caller must manage its lifecycle.
-		///      When true, instant actions mode checks pass for bound PartyAs. Checked in
-		///      Accessibility modifiers to allow/restrict certain operations.
-		bool callFromInstantLayer;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

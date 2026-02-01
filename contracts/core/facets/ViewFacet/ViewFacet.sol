@@ -748,7 +748,7 @@ contract ViewFacet is IViewFacet {
 	 * @return Whether the call is from instant layer
 	 */
 	function isCallFromInstantLayer() external view returns (bool) {
-		return TradingModeStorage.layout().callFromInstantLayer;
+		return GlobalAppStorage.layout().callFromInstantLayer;
 	}
 
 	/**

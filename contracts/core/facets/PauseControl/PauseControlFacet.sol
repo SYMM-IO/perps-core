@@ -8,7 +8,6 @@ import { Accessibility } from "../../utils/Accessibility.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { ExternalTransferStorage } from "../../storages/ExternalTransferStorage.sol";
-import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { IPauseControlFacet } from "./IPauseControlFacet.sol";
@@ -65,7 +64,7 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 
 	/// @notice Pauses instant layer operations for bound PartyAs.
 	function pauseInstantLayer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
-		TradingModeStorage.layout().instantLayerPaused = true;
+		GlobalAppStorage.layout().instantLayerPaused = true;
 		emit PauseInstantLayer();
 	}
 
@@ -125,7 +124,7 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 
 	/// @notice Resumes instant layer operations for bound PartyAs.
 	function unpauseInstantLayer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
-		TradingModeStorage.layout().instantLayerPaused = false;
+		GlobalAppStorage.layout().instantLayerPaused = false;
 		emit UnpauseInstantLayer();
 	}
 

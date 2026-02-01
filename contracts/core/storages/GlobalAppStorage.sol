@@ -101,6 +101,16 @@ library GlobalAppStorage {
 		///      LibSigner.getSigner() returns this if set, otherwise msg.sender.
 		///      Used to support gasless transactions and account abstraction.
 		address signer;
+		/// @notice Stops instant layer operations when true
+		/// @dev The instant layer enables fast trading for PartyAs. When paused,
+		///      instant actions revert but normal trading continues.
+		bool instantLayerPaused;
+		/// @notice Flag indicating calls should be treated as instant layer operations
+		/// @dev Set via setCallFromInstantLayer() by authorized callers. This is a persistent
+		///      state flag, not automatically reset - the caller must manage its lifecycle.
+		///      When true, instant actions mode checks pass for bound PartyAs. Checked in
+		///      Accessibility modifiers to allow/restrict certain operations.
+		bool callFromInstantLayer;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -502,8 +502,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Indicates if the current operation is being executed via the instant layer.
 	/// @dev instant layer sets this flag to true before execution and MUST reset it back to false after its operation. Core can use this flag to know if this request is coming from instant layer.
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		require(!(_callFromInstantLayer && TradingModeStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
-		TradingModeStorage.layout().callFromInstantLayer = _callFromInstantLayer;
+		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
+		GlobalAppStorage.layout().callFromInstantLayer = _callFromInstantLayer;
 	}
 
 	/// @notice Enables or disables Auto-Deleveraging (ADL) for a Party B. When enabled, positions can be force-closed to reduce risk.

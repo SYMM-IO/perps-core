@@ -119,7 +119,7 @@ abstract contract Accessibility {
 	}
 
 	modifier whenInstantModeIsNotActive(address sender) {
-		require(!(TradingModeStorage.layout().instantActionsMode[sender] && !TradingModeStorage.layout().callFromInstantLayer), "Instant Mode Not Active");
+		require(!(TradingModeStorage.layout().instantActionsMode[sender] && !GlobalAppStorage.layout().callFromInstantLayer), "Instant Mode Not Active");
 		_;
 	}
 
