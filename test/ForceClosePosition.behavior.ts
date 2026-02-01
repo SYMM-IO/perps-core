@@ -889,7 +889,11 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
 							const detailBefore = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
-							await expect(context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, BigInt(highLowSig.upnlPartyB))))
+							const tx = await context.forceCloseStepsFacet.finalizeForceClose(
+								quote1LongOpened.id,
+								await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, BigInt(highLowSig.upnlPartyB)),
+							)
+							await expect(tx)
 								.to.emit(context.forceCloseStepsFacet, "ForceClosePositionCross")
 								.withArgs(
 									quote1LongOpened.id,
@@ -900,6 +904,17 @@ export function shouldBehaveLikeForceClosePosition(): void {
 									anyValue,
 									anyValue,
 									false,
+								)
+							await expect(tx)
+								.to.emit(context.forceCloseStepsFacet, "ForceClosePartyBInsolvent")
+								.withArgs(
+									quote1LongOpened.id,
+									quote1LongOpened.partyA,
+									quote1LongOpened.partyB,
+									anyValue,
+									highLowSig.currentPrice,
+									highLowSig.upnlPartyB,
+									anyValue,
 								)
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()

@@ -37,5 +37,16 @@ interface ForceActionsFacetEvents {
 		uint256 closeId,
 		bool isSolvent
 	);
+	/// @notice Emitted when a cross-partyB force close completes by closing the position *ignoring* partyB uPNL.
+	/// @dev This means partyB could not remain solvent when accounting for uPNL at `currentPrice`.
+	event ForceClosePartyBInsolvent(
+		uint256 quoteId,
+		address partyA,
+		address partyB,
+		uint256 closedPrice,
+		uint256 currentPrice,
+		int256 upnlPartyB,
+		int256 partyBAvailableAfterClose
+	);
 	event ForceFetchAllocated(address partyB, address[] partyAs, uint256[] FetchedAmount, uint256[] newPartyBsAllocatedBalances);
 }

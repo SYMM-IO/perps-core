@@ -105,6 +105,8 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		address partyB = quote.partyB;
 
 		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB];
+		int256 snapshotUpnlPartyB = accountLayout.forceCloseDetails[quoteId].upnlPartyB;
+		uint256 snapshotCurrentPrice = accountLayout.forceCloseDetails[quoteId].currentPrice;
 		(bool succeed, int256 upnlPartyB) = ForceCloseStepsImpl.finalizeForceClose(quoteId);
 
 		if (isCrossPartyB) {
@@ -119,6 +121,17 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 				quoteLayout.closeIds[quoteId],
 				succeed
 			);
+			if (!succeed) {
+				emit ForceClosePartyBInsolvent(
+					quoteId,
+					quote.partyA,
+					partyB,
+					accountLayout.forceCloseDetails[quoteId].closePrice,
+					snapshotCurrentPrice,
+					snapshotUpnlPartyB,
+					accountLayout.forceCloseDetails[quoteId].partyBAvailableAfterClose
+				);
+			}
 		} else {
 			// Normal partyB mode
 			if (succeed) {
