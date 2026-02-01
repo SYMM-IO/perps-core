@@ -90,7 +90,7 @@ interface IControlFacet is IControlEvents {
 
 	function setCallFromInstantLayer(bool callFromInstantLayer) external;
 
-	function setCustomAffiliateFee(
+	function setAffiliateFeeForUser(
 		address affiliate,
 		address[] calldata users,
 		uint256[] calldata symbolIds,

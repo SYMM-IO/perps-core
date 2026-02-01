@@ -25,7 +25,7 @@ interface IControlEvents {
 		uint256 fundingRateWindowTime
 	);
 	event SetFeeCollector(address affiliate, address oldFeeCollector, address newFeeCollector);
-	event SetCustomAffiliateFee(
+	event SetAffiliateFeeForUser(
 		address affiliate,
 		address user,
 		uint256 symbolId,

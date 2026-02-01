@@ -190,8 +190,9 @@ library AccountStorage {
 		///      if their allocated balance is insufficient. Not used in cross mode.
 		mapping(address => uint256) reserveVault;
 		/// @notice List of PartyBs that PartyA has open positions with
-		/// @dev Maintained for efficient iteration when calculating PartyA UPNL across
-		///      all their hedgers. Added when first position opens, removed when last closes.
+		/// @dev Used for symbol access control - PartyA can only trade symbols that ALL connected
+		///      PartyBs support (not blacklisted and whitelisted). Also enforces maxPartyAConnectionLimit.
+		///      Added when first position opens with a PartyB, removed when last position closes.
 		mapping(address => address[]) connectedPartyBs;
 		/// @notice Fast lookup for whether PartyA has positions with a specific PartyB
 		/// @dev O(1) check instead of iterating connectedPartyBs array.

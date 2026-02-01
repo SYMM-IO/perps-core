@@ -242,7 +242,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param symbolIds The list of trading symbol IDs (0 for default fee across all symbols).
 	/// @param openFees The list of open fees (in 1e18 precision).
 	/// @param closeFees The list of close fees (in 1e18 precision).
-	function setCustomAffiliateFee(
+	function setAffiliateFeeForUser(
 		address affiliate,
 		address[] calldata users,
 		uint256[] calldata symbolIds,
@@ -272,16 +272,16 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 			address user = users[i];
 			uint256 symbolId = symbolIds[i];
-			emit SetCustomAffiliateFee(
+			emit SetAffiliateFeeForUser(
 				affiliate,
 				user,
 				symbolId,
-				affiliateLayout.customAffiliateFee[affiliate][user][symbolId].openFee,
+				affiliateLayout.affiliateFeeForUser[affiliate][user][symbolId].openFee,
 				openFee,
-				affiliateLayout.customAffiliateFee[affiliate][user][symbolId].closeFee,
+				affiliateLayout.affiliateFeeForUser[affiliate][user][symbolId].closeFee,
 				closeFee
 			);
-			affiliateLayout.customAffiliateFee[affiliate][user][symbolId] = Fee(openFee, closeFee, true);
+			affiliateLayout.affiliateFeeForUser[affiliate][user][symbolId] = Fee(openFee, closeFee, true);
 		}
 	}
 

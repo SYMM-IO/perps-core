@@ -3209,6 +3209,55 @@
         "inputs": [
             {
                 "indexed": false,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "oldOpenFee",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newOpenFee",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "oldCloseFee",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newCloseFee",
+                "type": "uint256"
+            }
+        ],
+        "name": "SetAffiliateFeeForUser",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
                 "internalType": "uint256",
                 "name": "balanceLimitPerUser",
                 "type": "uint256"
@@ -3266,55 +3315,6 @@
             }
         ],
         "name": "SetCrossPartyBModeActivated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "oldOpenFee",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "newOpenFee",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "oldCloseFee",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "newCloseFee",
-                "type": "uint256"
-            }
-        ],
-        "name": "SetCustomAffiliateFee",
         "type": "event"
     },
     {
@@ -6790,6 +6790,52 @@
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getAffiliateFeeForUser",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "openFee",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "closeFee",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isSet",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct Fee",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
             }
         ],
         "name": "getAffiliateHook",
@@ -7016,52 +7062,6 @@
                     }
                 ],
                 "internalType": "struct CrossLiquidationDetail",
-                "name": "",
-                "type": "tuple"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getCustomAffiliateFee",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "openFee",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "closeFee",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isSet",
-                        "type": "bool"
-                    }
-                ],
-                "internalType": "struct Fee",
                 "name": "",
                 "type": "tuple"
             }
@@ -15913,6 +15913,39 @@
                 "type": "address"
             },
             {
+                "internalType": "address[]",
+                "name": "users",
+                "type": "address[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "symbolIds",
+                "type": "uint256[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "openFees",
+                "type": "uint256[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "closeFees",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "setAffiliateFeeForUser",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
                 "components": [
                     {
                         "internalType": "string",
@@ -16006,39 +16039,6 @@
             }
         ],
         "name": "setCrossPartyBModeActivated",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "address[]",
-                "name": "users",
-                "type": "address[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "symbolIds",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "openFees",
-                "type": "uint256[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "closeFees",
-                "type": "uint256[]"
-            }
-        ],
-        "name": "setCustomAffiliateFee",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
