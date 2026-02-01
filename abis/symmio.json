@@ -16574,61 +16574,6 @@
         "type": "event"
     },
     {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "closePrice",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quantityToClose",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum OrderType",
-                "name": "orderType",
-                "type": "uint8"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "deadline",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum QuoteStatus",
-                "name": "quoteStatus",
-                "type": "uint8"
-            }
-        ],
-        "name": "RequestToClosePosition",
-        "type": "event"
-    },
-    {
         "inputs": [],
         "name": "AFFILIATE_MANAGER_ROLE",
         "outputs": [

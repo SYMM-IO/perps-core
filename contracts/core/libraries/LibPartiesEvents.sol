@@ -25,17 +25,6 @@ library LibPartiesEvents {
 		uint256 closeId
 	);
 
-	event RequestToClosePosition(
-		address partyA,
-		address partyB,
-		uint256 quoteId,
-		uint256 closePrice,
-		uint256 quantityToClose,
-		OrderType orderType,
-		uint256 deadline,
-		QuoteStatus quoteStatus
-	);
-
 	event SendQuote(
 		address partyA,
 		uint256 quoteId,
