@@ -510,16 +510,87 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 	describe("SoftLiquidation", () => {
 		describe("SoftLiquidation without cross partyB mode enabled", () => {
-			it("should soft liquidate without active cross partyB mode using partyA allocation", async () => {
+			beforeEach(async () => {
 				await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
 				await context.controlFacet
 					.connect(context.signers.admin)
 					.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
+				// Allocate more for non-cross mode tests
+				await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(500n), context.signers.user.address)
+				await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(500n), context.signers.user2.address)
+			})
+
+			it("should soft liquidate without penalty", async () => {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, 0, 0),
 				).not.to.be.reverted
+			})
+
+			it("should deduct from partyB allocated balance for specific partyA", async () => {
+				const beforeCollectorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+				const beforeAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, decimal(200n), 0)
+
+				const afterCollectorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+				const afterAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+
+				expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(decimal(200n))
+				expect(afterCollectorBalance - beforeCollectorBalance).to.equal(decimal(200n))
+			})
+
+			it("should not affect other partyA allocations when deducting from one", async () => {
+				const beforeUser2Allocation = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user2.address)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, decimal(200n), 0)
+
+				const afterUser2Allocation = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user2.address)
+
+				expect(beforeUser2Allocation).to.equal(afterUser2Allocation)
+			})
+
+			it("should deduct from both allocated and balance for non-cross partyB", async () => {
+				const beforeCollectorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+				const beforeAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				const beforeHedgerBalance = await context.viewFacet.balanceOf(context.signers.hedger.address)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, decimal(100n), decimal(100n))
+
+				const afterCollectorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+				const afterAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				const afterHedgerBalance = await context.viewFacet.balanceOf(context.signers.hedger.address)
+
+				expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(decimal(100n))
+				expect(beforeHedgerBalance - afterHedgerBalance).to.equal(decimal(100n))
+				expect(afterCollectorBalance - beforeCollectorBalance).to.equal(decimal(200n))
+			})
+
+			it("should fail if penalty from allocated exceeds partyA specific allocation", async () => {
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, allocatedBalance + 1n, 0),
+				).to.be.revertedWith("ClearingHouse: Insufficient Allocated Balance")
+			})
+
+			it("should emit event with correct partyA", async () => {
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, decimal(50n), decimal(50n)),
+				)
+					.to.emit(context.clearingHouseFacet, "SoftPartyBLiquidation")
+					.withArgs(context.signers.hedger.address, context.signers.user.address, decimal(50n), decimal(50n))
 			})
 		})
 		describe("SoftLiquidation with cross partyB mode enabled", () => {
