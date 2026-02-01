@@ -119,9 +119,8 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	 * @param amount Amount to close (token decimals).
 	 * @param price Execution price.
 	 */
-	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external whenNotPartyBActionsPaused returns (uint256) {
-		uint256 closedAmount = PartyBPositionActionsFacetImpl.adlClose(quoteId, amount, price);
-		emit ADLClose(quoteId, amount, price, closedAmount);
-		return closedAmount;
+	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external whenNotPartyBActionsPaused{
+		PartyBPositionActionsFacetImpl.adlClose(quoteId, amount, price);
+		emit ADLClose(quoteId, amount, price);
 	}
 }

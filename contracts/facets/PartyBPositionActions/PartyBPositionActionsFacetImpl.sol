@@ -126,7 +126,7 @@ library PartyBPositionActionsFacetImpl {
 	 * @param amount Amount to close (token decimals).
 	 * @param price Execution price used for the ADL close.
 	 */
-	function adlClose(uint256 quoteId, uint256 amount, uint256 price) internal returns (uint256 closedAmount) {
+	function adlClose(uint256 quoteId, uint256 amount, uint256 price) internal  {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -215,7 +215,6 @@ library PartyBPositionActionsFacetImpl {
 		emit LibPartiesEvents.FillCloseRequest(quote.id, quote.partyA, quote.partyB, amount, price, quote.quoteStatus, adlCloseId);
 		emit LibPartiesEvents.FillCloseRequest(quote.id, quote.partyA, quote.partyB, amount, price, quote.quoteStatus);
 			uint256 remainingOpen = LibQuote.quoteOpenAmount(quote);
-			closedAmount = amount;
 
 			if ((wasClosePending || wasCancelClosePending) && remainingOpen > 0) {
 				uint256 newQuantity = remainingOpen >= prevRequestedQuantityToClose ? prevRequestedQuantityToClose : remainingOpen;

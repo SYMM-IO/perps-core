@@ -103,7 +103,6 @@ export function shouldBehaveLikeADLClose(): void {
 			expect(adlEvents[0].quoteId).to.equal(quoteId)
 			expect(adlEvents[0].amount).to.equal(closeAmount)
 			expect(adlEvents[0].price).to.equal(closePrice)
-			expect(adlEvents[0].closedAmount).to.equal(closeAmount)
 
 			const q = await context.viewFacet.getQuote(quoteId)
 			expect(q.closedAmount).to.equal(closeAmount)
