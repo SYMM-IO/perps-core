@@ -123,16 +123,6 @@ library PartyBEmergencyActionsFacetImpl {
 			QuoteStatus.CLOSE_PENDING,
 			adlCloseId
 		);
-		emit LibPartiesEvents.RequestToClosePosition(
-			quote.partyA,
-			quote.partyB,
-			quote.id,
-			price,
-			amount,
-			OrderType.MARKET,
-			block.timestamp,
-			QuoteStatus.CLOSE_PENDING
-		);
 
 		//Update nonce
 		LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
@@ -171,16 +161,6 @@ library PartyBEmergencyActionsFacetImpl {
 				block.timestamp,
 				QuoteStatus.CLOSE_PENDING,
 				newCloseId
-			);
-			emit LibPartiesEvents.RequestToClosePosition(
-				quote.partyA,
-				quote.partyB,
-				quote.id,
-				prevRequestedClosePrice,
-				newQuantity,
-				quote.orderType,
-				block.timestamp,
-				QuoteStatus.CLOSE_PENDING
 			);
 			if (wasCancelClosePending) {
 				emit LibPartiesEvents.RequestToCancelCloseRequest(quote.partyA, quote.partyB, quote.id, QuoteStatus.CANCEL_CLOSE_PENDING, newCloseId);
