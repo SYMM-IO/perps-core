@@ -29,26 +29,6 @@ struct SymbolWithType {
 	uint256 symbolType;
 }
 
-/**
- * @notice Tracks funding rates and their weighted averages over time
- * @dev Funding rates are stored as price-adjusted values (rate * marketPrice)
- *      to avoid repeated multiplication during fee calculations
- */
-struct FundingFee {
-	// Current epoch's funding rates (price-adjusted: rate * marketPrice / 1e18)
-	int256 currentLongRate; // Current rate for long positions
-	int256 currentShortRate; // Current rate for short positions
-	// Weighted average rates over all tracked epochs
-	int256 accumulatedLongRate; // Historical weighted average for longs
-	int256 accumulatedShortRate; // Historical weighted average for shorts
-	// Epoch tracking
-	uint256 lastUpdatedEpoch; // Epoch number when rates were last updated
-	uint256 lastUpdatedTimeStamp;
-	uint256 startEpochTimeStamp;
-	uint256 startEpoch; // Epoch when funding tracking started
-	uint256 epochDuration; // Duration of each funding period in seconds
-}
-
 /// @title SymbolStorage
 /// @notice Symbol configurations, funding rates, and market categorization
 library SymbolStorage {
@@ -67,11 +47,6 @@ library SymbolStorage {
 		///      For SHORT: sig.lowest <= requestedClosePrice * (1 - gapRatio).
 		///      Ensures price genuinely exceeded the threshold accounting for volatility.
 		mapping(uint256 => uint256) forceCloseGapRatio;
-		/// @notice Funding rate configuration per symbol per PartyB
-		/// @dev Maps symbolId => partyB => FundingFee. Each hedger sets their own funding
-		///      rates for each symbol. Contains current rates, accumulated averages,
-		///      and epoch tracking for the weighted average funding system.
-		mapping(uint256 => mapping(address => FundingFee)) fundingFees;
 		/// @notice Market category per symbol (e.g., 1 = crypto, 2 = forex)
 		/// @dev Used with PartyB symbol type whitelisting to restrict which markets
 		///      each hedger want to have exposure too.

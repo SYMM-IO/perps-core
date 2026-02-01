@@ -9,6 +9,8 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibPartyBQuoteActions } from "../../libraries/LibPartyBQuoteActions.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
+import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
@@ -26,9 +28,10 @@ library PartyBQuoteActionsFacetImpl {
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		address signer = LibSigner.getSigner();
 
-		if (AccountStorage.layout().bindState[quote.partyA].partyB != address(0)) {
-			require(AccountStorage.layout().bindState[quote.partyA].partyB == signer, "PartyBFacet: PartyB is not bounded to this partyA");
-			require(AccountStorage.layout().isPartyBBindable[signer], "PartyBFacet: PartyB is not bindable");
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
+		if (tradingLayout.bindState[quote.partyA].partyB != address(0)) {
+			require(tradingLayout.bindState[quote.partyA].partyB == signer, "PartyBFacet: PartyB is not bounded to this partyA");
+			require(tradingLayout.isPartyBBindable[signer], "PartyBFacet: PartyB is not bindable");
 		} else {
 			LibMuonPartyB.verifyPartyBUpnl(upnlSig, signer, quote.partyA);
 			int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, quote.partyA);
@@ -76,8 +79,8 @@ library PartyBQuoteActionsFacetImpl {
 		LibQuote.removeFromPendingQuotes(quote);
 		QuoteStorage.layout().partyALockQuotesCount[quote.partyA]--;
 
-		address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-		address systemHook = accountLayout.affiliateHooks[address(0)];
+		address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
+		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 
 		LibHook.safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
 		LibHook.safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);

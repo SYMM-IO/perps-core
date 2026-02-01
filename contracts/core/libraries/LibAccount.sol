@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../storages/AccountStorage.sol";
+import { CrossPartyBStorage } from "../storages/CrossPartyBStorage.sol";
 import { Quote, LockedValues } from "../storages/QuoteStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 
@@ -182,7 +183,7 @@ library LibAccount {
 	 * @return bucket Party B allocation mapping key.
 	 */
 	function partyBAllocationKey(address partyB, address partyA) internal view returns (address) {
-		return AccountStorage.layout().isCrossPartyB[partyB] ? address(0) : partyA;
+		return CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB] ? address(0) : partyA;
 	}
 
 	/**
@@ -263,7 +264,7 @@ library LibAccount {
 	 */
 	function getPartyBSignatureNonce(address partyB, address partyA, bool useCrossNonce) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		if (accountLayout.isCrossPartyB[partyB]) {
+		if (CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB]) {
 			return useCrossNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
 		}
 		return accountLayout.partyBNonces[partyB][partyA];

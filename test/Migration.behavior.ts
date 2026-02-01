@@ -144,7 +144,7 @@ export function shouldBehaveLikeMigration(): void {
 	describe("setCrossPartyB", function () {
 		beforeEach(async function () {
 			// Enable cross partyB feature globally
-			await context.controlFacet.connect(context.signers.admin).setCrossEnabled(true)
+			await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(true)
 		})
 
 		it("Should allow only MIGRATION_ROLE to call setCrossPartyB", async function () {
@@ -164,7 +164,7 @@ export function shouldBehaveLikeMigration(): void {
 			const partyB = await hedger.getAddress()
 
 			// Disable cross partyB feature
-			await context.controlFacet.connect(context.signers.admin).setCrossEnabled(false)
+			await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(false)
 
 			await expect(
 				context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)
@@ -213,7 +213,7 @@ export function shouldBehaveLikeMigration(): void {
 			const allocateA2 = decimal(150n)
 
 			// Enable cross partyB feature globally
-			await context.controlFacet.connect(context.signers.admin).setCrossEnabled(true)
+			await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(true)
 
 			// Set up allocations
 			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA1, partyA1)

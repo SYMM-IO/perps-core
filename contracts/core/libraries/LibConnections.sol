@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
 pragma solidity >=0.8.18;
 
-import { AccountStorage, BindStatus } from "../storages/AccountStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { TradingModeStorage, BindStatus } from "../storages/TradingModeStorage.sol";
+import { PartyBControlStorage } from "../storages/PartyBControlStorage.sol";
 import { QuoteStorage } from "../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
@@ -50,9 +52,11 @@ library LibConnections {
 	 */
 	function isSymbolAllowedForPartyA(address partyA, uint256 symbolId) internal view returns (bool) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
+		PartyBControlStorage.Layout storage partyBLayout = PartyBControlStorage.layout();
 		address[] storage connections = accountLayout.connectedPartyBs[partyA];
 
-		if ((accountLayout.bindState[partyA].status == BindStatus.BOUND && accountLayout.isPartyBBindable[accountLayout.bindState[partyA].partyB]) || connections.length == 0) {
+		if ((tradingLayout.bindState[partyA].status == BindStatus.BOUND && tradingLayout.isPartyBBindable[tradingLayout.bindState[partyA].partyB]) || connections.length == 0) {
 			return true;
 		}
 
@@ -61,8 +65,8 @@ library LibConnections {
 			address partyB = connections[i];
 
 			if (
-				accountLayout.partyBBlacklistedSymbols[partyB][symbolId] ||
-				(!accountLayout.partyBWhitelistedSymbols[partyB][symbolId] && !accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType])
+				partyBLayout.partyBBlacklistedSymbols[partyB][symbolId] ||
+				(!partyBLayout.partyBWhitelistedSymbols[partyB][symbolId] && !partyBLayout.partyBWhitelistedSymbolTypes[partyB][symbolType])
 			) {
 				return false;
 			}
@@ -74,10 +78,10 @@ library LibConnections {
 	 * @notice Checks if a symbol is allowed for partyA based on their connections
 	 */
 	function isSymbolAllowedForPartyB(address partyB, uint256 symbolId) internal view returns (bool) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		PartyBControlStorage.Layout storage partyBLayout = PartyBControlStorage.layout();
 
 		uint256 symbolType = SymbolStorage.layout().symbolTypes[symbolId];
-		return (!accountLayout.partyBBlacklistedSymbols[partyB][symbolId] &&
-			(accountLayout.partyBWhitelistedSymbols[partyB][symbolId] || accountLayout.partyBWhitelistedSymbolTypes[partyB][symbolType]));
+		return (!partyBLayout.partyBBlacklistedSymbols[partyB][symbolId] &&
+			(partyBLayout.partyBWhitelistedSymbols[partyB][symbolId] || partyBLayout.partyBWhitelistedSymbolTypes[partyB][symbolType]));
 	}
 }

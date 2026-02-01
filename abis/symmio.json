@@ -2693,6 +2693,12 @@
     {
         "anonymous": false,
         "inputs": [],
+        "name": "AccumulatedFundingActivated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [],
         "name": "ActiveEmergencyMode",
         "type": "event"
     },
@@ -2793,7 +2799,7 @@
                 "type": "address"
             },
             {
-                "indexed": true,
+                "indexed": false,
                 "internalType": "uint256[]",
                 "name": "symbolId",
                 "type": "uint256[]"
@@ -2806,18 +2812,6 @@
         "anonymous": false,
         "inputs": [],
         "name": "DeactiveEmergencyMode",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [],
-        "name": "DeprecateOldFundingFee",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [],
-        "name": "DeprecateOldWithdrawalPaused",
         "type": "event"
     },
     {
@@ -2855,7 +2849,13 @@
     {
         "anonymous": false,
         "inputs": [],
-        "name": "EnableNewFundingFee",
+        "name": "LegacyFundingDeprecated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [],
+        "name": "LegacyWithdrawalDeprecated",
         "type": "event"
     },
     {
@@ -3038,7 +3038,7 @@
                 "type": "address"
             },
             {
-                "indexed": true,
+                "indexed": false,
                 "internalType": "uint256[]",
                 "name": "symbolId",
                 "type": "uint256[]"
@@ -3234,25 +3234,6 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "oldValue",
-                "type": "bool"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "newValue",
-                "type": "bool"
-            }
-        ],
-        "name": "SetCrossEnabled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
                 "indexed": true,
                 "internalType": "address",
                 "name": "partyB",
@@ -3266,6 +3247,25 @@
             }
         ],
         "name": "SetCrossPartyB",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "oldValue",
+                "type": "bool"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "newValue",
+                "type": "bool"
+            }
+        ],
+        "name": "SetCrossPartyBModeActivated",
         "type": "event"
     },
     {
@@ -3602,7 +3602,7 @@
                 "type": "bool"
             }
         ],
-        "name": "SetLegacyDeallocateDisabled",
+        "name": "SetLegacyDeallocateDeprecated",
         "type": "event"
     },
     {
@@ -6270,6 +6270,13 @@
     },
     {
         "inputs": [],
+        "name": "activateAccumulatedFunding",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "activeEmergencyMode",
         "outputs": [],
         "stateMutability": "nonpayable",
@@ -6284,21 +6291,14 @@
     },
     {
         "inputs": [],
-        "name": "deprecateOldFundingFee",
+        "name": "deprecateLegacyFunding",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
     {
         "inputs": [],
-        "name": "deprecateOldWithdrawal",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "enableNewFundingFee",
+        "name": "deprecateLegacyWithdrawal",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -6738,19 +6738,6 @@
                 "internalType": "uint256",
                 "name": "",
                 "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "getAccumulativeFundingRateActivationFlag",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
             }
         ],
         "stateMutability": "view",
@@ -7218,19 +7205,6 @@
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "getIterativeFundingDeprecationFlag",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [
             {
                 "internalType": "address",
@@ -7619,12 +7593,12 @@
                         "type": "address"
                     },
                     {
-                        "internalType": "enum ExternalTransferStatus",
+                        "internalType": "enum VirtualExternalTransferStatus",
                         "name": "status",
                         "type": "uint8"
                     }
                 ],
-                "internalType": "struct ExternalTransferReq",
+                "internalType": "struct VirtualExternalTransferRequest",
                 "name": "",
                 "type": "tuple"
             }
@@ -7812,6 +7786,19 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "isAccumulatedFundingActivated",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -7863,19 +7850,6 @@
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "isCrossEnabled",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [
             {
                 "internalType": "address",
@@ -7914,6 +7888,19 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "isCrossPartyBModeActivated",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -7934,7 +7921,20 @@
     },
     {
         "inputs": [],
-        "name": "isLegacyDeallocateDisabled",
+        "name": "isLegacyDeallocateDeprecated",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "isLegacyFundingDeprecated",
         "outputs": [
             {
                 "internalType": "bool",
@@ -14718,7 +14718,7 @@
                 "type": "address"
             },
             {
-                "indexed": true,
+                "indexed": false,
                 "internalType": "address[]",
                 "name": "partyAs",
                 "type": "address[]"
@@ -14805,7 +14805,7 @@
                 "type": "address"
             },
             {
-                "indexed": true,
+                "indexed": false,
                 "internalType": "address[]",
                 "name": "partyAs",
                 "type": "address[]"
@@ -16013,6 +16013,19 @@
     {
         "inputs": [
             {
+                "internalType": "bool",
+                "name": "activated",
+                "type": "bool"
+            }
+        ],
+        "name": "setCrossPartyBModeActivated",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
@@ -16205,11 +16218,11 @@
         "inputs": [
             {
                 "internalType": "bool",
-                "name": "disabled",
+                "name": "deprecated",
                 "type": "bool"
             }
         ],
-        "name": "setLegacyDeallocateDisabled",
+        "name": "setLegacyDeallocateDeprecated",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -16538,19 +16551,6 @@
             }
         ],
         "name": "unregisterVirtualProvider",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "bool",
-                "name": "enabled",
-                "type": "bool"
-            }
-        ],
-        "name": "setCrossEnabled",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

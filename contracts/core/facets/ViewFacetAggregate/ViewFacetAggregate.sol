@@ -4,7 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStorage, PositionType, PartiesAggregatedPositions, PartiesAggregatedFunding } from "../../storages/QuoteStorage.sol";
+import { PositionType } from "../../storages/QuoteStorage.sol";
+import { AggregatedDataStorage, PartiesAggregatedPositions, PartiesAggregatedFunding } from "../../storages/AggregatedDataStorage.sol";
 import { IViewFacetAggregate } from "./IViewFacetAggregate.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 
@@ -27,8 +28,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		address partyB,
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyBAggregatedPositions[partyB][symbolId];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId];
 		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
 		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
 		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
@@ -50,8 +51,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		address partyA,
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][
 			partyA
 		][symbolId];
 		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
@@ -75,8 +76,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		address partyB,
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId];
 		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
 		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
 		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
@@ -102,7 +103,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 symbolId,
 		PositionType positionType
 	) external view returns (int256 weightedPaidFunding) {
-		return QuoteStorage.layout().partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding;
+		return AggregatedDataStorage.layout().partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding;
 	}
 
 	/**
@@ -119,7 +120,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 symbolId,
 		PositionType positionType
 	) external view returns (int256 weightedPaidFunding) {
-		return QuoteStorage.layout().partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding;
+		return AggregatedDataStorage.layout().partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding;
 	}
 
 	/**
@@ -135,7 +136,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 symbolId,
 		PositionType positionType
 	) external view returns (int256 weightedPaidFunding) {
-		return QuoteStorage.layout().partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding;
+		return AggregatedDataStorage.layout().partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding;
 	}
 
 	/**
@@ -197,7 +198,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	 * @return The number of active symbols
 	 */
 	function getPartyBActiveSymbolsCount(address partyB) external view returns (uint256) {
-		return QuoteStorage.layout().partyBActiveSymbols[partyB].length;
+		return AggregatedDataStorage.layout().partyBActiveSymbols[partyB].length;
 	}
 
 	/**
@@ -208,7 +209,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	 * @return An array of symbol IDs
 	 */
 	function getPartyBActiveSymbols(address partyB, uint256 start, uint256 size) external view returns (uint256[] memory) {
-		uint256[] storage activeSymbols = QuoteStorage.layout().partyBActiveSymbols[partyB];
+		uint256[] storage activeSymbols = AggregatedDataStorage.layout().partyBActiveSymbols[partyB];
 		uint256 totalLength = activeSymbols.length;
 		if (totalLength <= start) return new uint256[](0);
 		if (start + size > totalLength) size = totalLength - start;
@@ -228,7 +229,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	 * @return The number of active symbols
 	 */
 	function getPartyBActiveSymbolsCountPerPartyA(address partyB, address partyA) external view returns (uint256) {
-		return QuoteStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA].length;
+		return AggregatedDataStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA].length;
 	}
 
 	/**
@@ -239,7 +240,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	 * @return The number of active symbols with this hedger
 	 */
 	function getPartyAActiveSymbolsCountPerPartyB(address partyA, address partyB) external view returns (uint256) {
-		return QuoteStorage.layout().partyAActiveSymbolsPerPartyB[partyA][partyB].length;
+		return AggregatedDataStorage.layout().partyAActiveSymbolsPerPartyB[partyA][partyB].length;
 	}
 
 	/**
@@ -252,7 +253,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	 * @return An array of symbol IDs
 	 */
 	function getPartyAActiveSymbolsPerPartyB(address partyA, address partyB, uint256 start, uint256 size) external view returns (uint256[] memory) {
-		uint256[] storage activeSymbols = QuoteStorage.layout().partyAActiveSymbolsPerPartyB[partyA][partyB];
+		uint256[] storage activeSymbols = AggregatedDataStorage.layout().partyAActiveSymbolsPerPartyB[partyA][partyB];
 		uint256 totalLength = activeSymbols.length;
 		if (totalLength <= start) return new uint256[](0);
 		if (start + size > totalLength) size = totalLength - start;
@@ -274,7 +275,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	 * @return An array of symbol IDs
 	 */
 	function getPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 start, uint256 size) external view returns (uint256[] memory) {
-		uint256[] storage activeSymbols = QuoteStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA];
+		uint256[] storage activeSymbols = AggregatedDataStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA];
 		uint256 totalLength = activeSymbols.length;
 		if (totalLength <= start) return new uint256[](0);
 		if (start + size > totalLength) size = totalLength - start;
@@ -301,8 +302,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbols[partyB];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbols[partyB];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
@@ -315,7 +316,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		for (uint256 i = start; i < end; ) {
 			uint256 symbolId = activeSymbols[i];
 
-			PartiesAggregatedPositions storage longPos = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -325,7 +326,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			PartiesAggregatedPositions storage shortPos = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -355,8 +356,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
@@ -369,7 +370,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		for (uint256 i = start; i < end; ) {
 			uint256 symbolId = activeSymbols[i];
 
-			PartiesAggregatedPositions storage longPos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -379,7 +380,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			PartiesAggregatedPositions storage shortPos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -409,8 +410,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (AggregatedPositionBySymbol[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
@@ -423,7 +424,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		for (uint256 i = start; i < end; ) {
 			uint256 symbolId = activeSymbols[i];
 
-			PartiesAggregatedPositions storage longPos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -433,7 +434,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			PartiesAggregatedPositions storage shortPos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -463,8 +464,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
@@ -477,7 +478,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		for (uint256 i = start; i < end; ) {
 			uint256 symbolId = activeSymbols[i];
 
-			if (quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
+			if (aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
 				results[count++] = AggregatedFundingDebtBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
@@ -485,7 +486,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			if (quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
+			if (aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
 				results[count++] = AggregatedFundingDebtBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
@@ -513,8 +514,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
@@ -527,7 +528,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		for (uint256 i = start; i < end; ) {
 			uint256 symbolId = activeSymbols[i];
 
-			if (quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmount > 0) {
+			if (aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmount > 0) {
 				results[count++] = AggregatedFundingDebtBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
@@ -535,7 +536,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			if (quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
+			if (aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
 				results[count++] = AggregatedFundingDebtBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
@@ -562,8 +563,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbols[partyB];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbols[partyB];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
@@ -576,7 +577,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		for (uint256 i = start; i < end; ) {
 			uint256 symbolId = activeSymbols[i];
 
-			if (quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
+			if (aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
 				results[count++] = AggregatedFundingDebtBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.LONG,
@@ -584,7 +585,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			if (quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
+			if (aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT].aggregatedAmount > 0) {
 				results[count++] = AggregatedFundingDebtBySymbol({
 					symbolId: symbolId,
 					positionType: PositionType.SHORT,
@@ -617,8 +618,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (UpnlData[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new UpnlData[](0);
@@ -632,7 +633,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
-			PartiesAggregatedPositions storage longPos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,
@@ -644,7 +645,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 
 			// SHORT position data
-			PartiesAggregatedPositions storage shortPos = quoteLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,
@@ -678,8 +679,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (UpnlData[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new UpnlData[](0);
@@ -693,7 +694,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
-			PartiesAggregatedPositions storage longPos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,
@@ -705,7 +706,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 
 			// SHORT position data
-			PartiesAggregatedPositions storage shortPos = quoteLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,
@@ -737,8 +738,8 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 start,
 		uint256 size
 	) external view returns (UpnlData[] memory results) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] storage activeSymbols = quoteLayout.partyBActiveSymbols[partyB];
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbols[partyB];
 		uint256 totalLength = activeSymbols.length;
 
 		if (totalLength <= start || size == 0) return new UpnlData[](0);
@@ -752,7 +753,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
-			PartiesAggregatedPositions storage longPos = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,
@@ -764,7 +765,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 
 			// SHORT position data
-			PartiesAggregatedPositions storage shortPos = quoteLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,

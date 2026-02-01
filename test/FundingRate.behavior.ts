@@ -42,7 +42,7 @@ export function shouldBehaveLikeFundingRate(): void {
 		await user.requestToClosePosition(3)
 		await hedger.fillCloseRequest(3)
 
-		await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
+		await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
 	})
 
 	it("Should fail on different length", async function () {

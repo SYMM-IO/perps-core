@@ -4,14 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { AccountStorage, BindState, BindStatus } from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
+import { TradingModeStorage, BindState, BindStatus } from "../../storages/TradingModeStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 
 library BindingFacetImpl {
 	function bindToPartyB(address partyB) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(partyB != address(0), "AccountFacet: Zero address");
@@ -23,8 +22,8 @@ library BindingFacetImpl {
 			quoteLayout.partyALockQuotesCount[signer] == quoteLayout.partyBPendingQuotes[partyB][signer].length,
 			"AccountFacet : Have Locked Quotes with Other Party B"
 		);
-		require(accountLayout.isPartyBBindable[partyB], "AccountFacet: Not Bindable");
-		BindState storage bindState = accountLayout.bindState[signer];
+		require(tradingLayout.isPartyBBindable[partyB], "AccountFacet: Not Bindable");
+		BindState storage bindState = tradingLayout.bindState[signer];
 		require(bindState.status == BindStatus.NOT_BOUND, "AccountFacet: Invalid state");
 
 		bindState.partyB = partyB;
@@ -33,9 +32,9 @@ library BindingFacetImpl {
 	}
 
 	function requestToUnbindFromPartyB() internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 
-		BindState storage bindState = accountLayout.bindState[LibSigner.getSigner()];
+		BindState storage bindState = tradingLayout.bindState[LibSigner.getSigner()];
 		require(bindState.status == BindStatus.BOUND, "AccountFacet: Invalid state");
 
 		bindState.status = BindStatus.PENDING_UNBIND;
@@ -43,9 +42,9 @@ library BindingFacetImpl {
 	}
 
 	function cancelUnbindRequest() internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 
-		BindState storage bindState = accountLayout.bindState[LibSigner.getSigner()];
+		BindState storage bindState = tradingLayout.bindState[LibSigner.getSigner()];
 		require(bindState.status == BindStatus.PENDING_UNBIND, "AccountFacet: Invalid state");
 
 		bindState.status = BindStatus.BOUND;
@@ -53,13 +52,13 @@ library BindingFacetImpl {
 	}
 
 	function completeUnbindRequest(address partyA) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		BindState storage bindState = accountLayout.bindState[partyA];
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
+		BindState storage bindState = tradingLayout.bindState[partyA];
 
 		require(bindState.status == BindStatus.PENDING_UNBIND, "AccountFacet: Invalid state");
 
 		if (LibSigner.getSigner() != bindState.partyB)
-			require(block.timestamp >= bindState.modifyTimestamp + MAStorage.layout().unbindCooldown, "AccountFacet: Cooldown not reached");
+			require(block.timestamp >= bindState.modifyTimestamp + tradingLayout.unbindCooldown, "AccountFacet: Cooldown not reached");
 
 		bindState.partyB = address(0);
 		bindState.status = BindStatus.NOT_BOUND;
@@ -68,17 +67,17 @@ library BindingFacetImpl {
 
 	function activateInstantActionMode() internal {
 		address signer = LibSigner.getSigner();
-		require(AccountStorage.layout().bindState[signer].status == BindStatus.BOUND, "AccountFacet: Invalid state");
-		AccountStorage.layout().instantActionsMode[signer] = true;
+		require(TradingModeStorage.layout().bindState[signer].status == BindStatus.BOUND, "AccountFacet: Invalid state");
+		TradingModeStorage.layout().instantActionsMode[signer] = true;
 	}
 
 	function proposeToDeactivateInstantActionMode() internal {
-		AccountStorage.Layout storage layout = AccountStorage.layout();
+		TradingModeStorage.Layout storage layout = TradingModeStorage.layout();
 		layout.instantActionsModeDeactivateTime[LibSigner.getSigner()] = block.timestamp + layout.deactiveInstantActionModeCooldown;
 	}
 
 	function deactivateInstantActionMode() internal {
-		AccountStorage.Layout storage layout = AccountStorage.layout();
+		TradingModeStorage.Layout storage layout = TradingModeStorage.layout();
 		address signer = LibSigner.getSigner();
 
 		if (layout.instantActionsModeDeactivateTime[signer] == 0) revert("Instant Action Deactivation not proposed yet");

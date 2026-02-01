@@ -105,10 +105,10 @@ library MAStorage {
 		/// @dev Affiliates can set custom fees and receive fee revenue. Must be registered
 		///      here before their affiliate address can be used in quotes.
 		mapping(address => bool) affiliateStatus;
-	   /// @notice Minimum time between UPNL settlements by the same third-party signer                                                                                                                                              
-       /// @dev Only enforced when: (1) not a force close operation, AND (2) signer != partyB.                                                                                                                                       
-       ///      PartyB settling their own positions and force close operations bypass this.                                                                                                                                          
-       ///      Prevents third parties from spamming settlements on the same partyB-partyA pair.  
+	   /// @notice Minimum time between UPNL settlements by the same third-party signer
+       /// @dev Only enforced when: (1) not a force close operation, AND (2) signer != partyB.
+       ///      PartyB settling their own positions and force close operations bypass this.
+       ///      Prevents third parties from spamming settlements on the same partyB-partyA pair.
 		uint256 settlementCooldown;
 		/// @notice Timestamp of last UPNL settlement by each third-party signer
 		/// @dev Maps signer => partyB => partyA => timestamp. Only updated/checked when
@@ -123,20 +123,6 @@ library MAStorage {
 		/// @dev Prevents excessive liquidator profits on large positions. Excess goes
 		///      to insurance vault.
 		uint256 maxLiquidationProfitPerPosition;
-		/// @notice How long PartyA must wait to complete unbinding from PartyB
-		/// @dev Unbinding is a two-step process: request, wait cooldown, complete.
-		///      Prevents instant unbinding that could be used to dodge obligations.
-		uint256 unbindCooldown;
-		/// @notice Flag indicating calls should be treated as instant layer operations
-		/// @dev Set via setCallFromInstantLayer() by authorized callers. This is a persistent
-		///      state flag, not automatically reset - the caller must manage its lifecycle.
-		///      When true, instant actions mode checks pass for bound PartyAs. Checked in
-		///      Accessibility modifiers to allow/restrict certain operations.
-		bool callFromInstantLayer;
-		/// @notice Whether a PartyB can use auto-deleveraging to close positions unilaterally
-		/// @dev When enabled, PartyB can call adlClose() to close positions at a specified price
-		///      without PartyA consent. Used for risk management. Enabled by PARTY_B_MANAGER_ROLE.
-		mapping(address => bool) adlEnabled;
 		/// @notice Display metadata for registered entities
 		/// @dev Maps entity address => metadata. Used by frontends to show hedger
 		///      and affiliate branding information.
@@ -150,10 +136,6 @@ library MAStorage {
 		///      LibSigner.getSigner() returns this if set, otherwise msg.sender.
 		///      Used to support gasless transactions and account abstraction.
 		address signer;
-		/// @notice Address that receives soft liquidation penalties from cross PartyBs
-		/// @dev Used in softPartyBLiquidation() for cross PartyBs. Penalty is deducted
-		///      from PartyB's allocated balance and sent here.
-		address softLiquidationPenaltyCollector;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

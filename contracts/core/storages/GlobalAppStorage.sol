@@ -4,8 +4,6 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { Fee } from "./QuoteStorage.sol";
-
 /// @title GlobalAppStorage
 /// @notice Central configuration and pause state for the entire Symmio protocol
 /// @dev Uses diamond storage pattern with a unique slot to avoid collisions.
@@ -81,60 +79,10 @@ library GlobalAppStorage {
 		///      All Muon signature checks go through this contract. If this is wrong or
 		///      compromised, signature verification breaks entirely.
 		address signatureVerifier;
-		/// @notice Stops cross protocol balance transfers when true
-		/// @dev External transfers move funds between different protocols via
-		///      relayer contracts. Pause this if the relayers are compromised.
-		bool externalTransferPaused;
-		/// @notice Trading fee configuration per affiliate and symbol
-		/// @dev Maps affiliate => symbolId => Fee struct (openFee, closeFee, isSet).
-		///      If isSet is false, falls back to symbol's default fee. Enables affiliates
-		///      to offer custom fee tiers to their users.
-		mapping(address => mapping(uint256 => Fee)) affiliateFee;
-		/// @notice Stops instant layer operations when true
-		/// @dev The instant layer enables fast trading for PartyAs. When paused,
-		///      instant actions revert but normal trading continues.
-		bool instantLayerPaused;
-		/// @notice Master switch for cross (master account) mode
-		/// @dev When false, PartyBs cannot activate cross mode. This is the global
-		///      gate - individual PartyBs still need to activate separately.
-		///      Once activated, turning this off doesn't affect existing
-		///      cross PartyBs.
-		bool crossEnabled;
-		/// @notice Whitelist of addresses that can act as virtual deposit/withdrawal providers
-		/// @dev Virtual providers handle cross-chain deposits and withdrawals. They're trusted
-		///      to credit user balances when funds are received on other chains.
-		mapping(address => bool) virtualProviders;
-		/// @notice Whitelist of addresses that can act as express withdrawal providers
-		/// @dev Express providers front withdrawal funds to users immediately, then reclaim
-		///      from Symmio after cooldown. They charge fees for this service. Must be
-		///      registered here before they can accept withdrawal requests.
-		mapping(address => bool) expressProviders;
-		/// @notice Disables the legacy withdrawal path when true
-		/// @dev The old withdrawal system is being phased out in favor of the new multi-part
-		///      withdrawal system. Set this true once all users have migrated.
-		bool deprecateOldWithdrawalPaused;
-		/// @notice Floor for affiliate trading fees (in 18 decimals)
-		/// @dev Prevents affiliates from setting fees below this threshold. Ensures minimum
-		///      protocol revenue. Set as a percentage (e.g., 1e16 = 1%). Checked when
-		///      affiliates configure their fee structure.
-		uint256 minAffiliateFee;
-		/// @notice Custom fee overrides per affiliate, per user, per symbol
-		/// @dev Maps affiliate => user => symbolId => Fee. Enables VIP tiers or promotional
-		///      rates for specific users. Takes precedence over affiliateFee when set.
-		mapping(address => mapping(address => mapping(uint256 => Fee))) customAffiliateFee;
 		/// @notice Who can grant/revoke each role
 		/// @dev Maps role hash => admin address => is_admin. Role admins can modify hasRole
 		///      for their role.
 		mapping(bytes32 => mapping(address => bool)) roleAdmins;
-		/// @notice Flag to disable the old per-quote funding iteration system
-		/// @dev The old system required iterating through quotes to charge funding. When true,
-		///      the new accumulative funding system is used exclusively. Set true once all
-		///      solvers have migrated to the new system.
-		bool iterativeFundingDeprecationFlag;
-		/// @notice Enables the new accumulative funding rate system
-		/// @dev The new system tracks weighted average funding rates at the symbol level.
-		///      Both this and iterativeFundingDeprecationFlag control the funding transition.
-		bool accumulativeFundingRateActivationFlag;
 		/// @notice Stops PartyBs from opening new positions when true
 		/// @dev PartyBs can still fill close requests and manage existing positions, but
 		///      cannot lock or open new quotes. Useful during maintenance or when restricting
@@ -142,7 +90,12 @@ library GlobalAppStorage {
 		bool partyBOpenPositionsPaused;
 		/// @notice Disables the legacy deallocate function when true
 		/// @dev The old version signature was not unique and therefore muon had no control over it.
-		bool legacyDeallocateDisabled;
+		bool legacyDeallocateDeprecated;
+		/// @notice Address that receives excess liquidation fees above the profit cap
+		/// @dev During PartyA liquidation, if remainingLf > maxLiquidationProfitPerPosition * positionsCount,
+		///      the excess goes here. Also receives soft liquidation penalties from cross PartyBs.
+		///      These funds are used to cover deficits later in overdue liquidations.
+		address softLiquidationPenaltyCollector;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

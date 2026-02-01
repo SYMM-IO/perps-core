@@ -102,93 +102,12 @@ struct LiquidationDetail {
 	uint256 liquidationTimestamp;
 }
 
-/// @notice Liquidation state for a cross-margin PartyB affecting all their counterparties
-/// @dev Cross-margin (master account) PartyB liquidation is handled by the ClearingHouse
-///      and affects all PartyAs at once.
-///      inProgress prevents any actions with this PartyB during liquidation.
-struct CrossLiquidationDetail {
-	bytes liquidationId;
-	int256 upnl;
-	uint256 timestamp;
-	uint256 deallocateForLiquidation;
-	bool inProgress;
-}
-
-/// @notice PartyA's binding state to a specific PartyB for instant and oracle-less trading
-/// @dev Binding is required for instant actions mode. Once bound, PartyA can only trade
-///      with their bound PartyB. modifyTimestamp tracks when binding changed for cooldown.
-struct BindState {
-	BindStatus status;
-	address partyB;
-	uint256 modifyTimestamp;
-}
-
-/// @notice The three states of PartyA-PartyB binding
-/// @dev Binding is required for instant actions mode.
-///      NOT_BOUND = can trade with any PartyB
-///      BOUND = locked to one PartyB (required for instant actions)
-///      PENDING_UNBIND = waiting for unbind cooldown to complete
-enum BindStatus {
-	NOT_BOUND,
-	BOUND,
-	PENDING_UNBIND
-}
-
 /// @notice A price snapshot at a specific time
 /// @dev Used during liquidation to record prices at the moment of insolvency.
 ///      The timestamp ensures prices are fresh and match the liquidation event.
 struct Price {
 	uint256 price;
 	uint256 timestamp;
-}
-
-/// @notice Status of a cross-diamond external transfer
-/// @dev Tracks the lifecycle of external transfers between Symmio diamonds.
-///      PENDING = initiated but not yet completed/canceled by provider
-///      COMPLETED = provider accepted and deposited on target
-///      CANCELED = user canceled
-enum ExternalTransferStatus {
-	PENDING,
-	COMPLETED,
-	CANCELED
-}
-
-/// @notice Status of a PartyB assurance collateral withdrawal request
-/// @dev Assurance collateral is PartyB's skin-in-the-game. Withdrawing requires approval.
-///      NONE = no pending request
-///      PENDING = waiting for admin approval
-///      APPROVED = can execute withdrawal
-enum AssuranceWithdrawStatus {
-	NONE,
-	PENDING,
-	APPROVED
-}
-
-/// @notice Request to withdraw PartyB assurance collateral
-/// @dev PartyBs deposit assurance collateral as a trust signal. Withdrawing is a multi-step
-///      process requiring admin approval to prevent sudden rug-pulls.
-struct AssuranceWithdrawalRequest {
-	address token;
-	uint256 amount;
-	address recipient;
-	address requester;
-	AssuranceWithdrawStatus status;
-}
-
-/// @notice Transfer request moving funds between Symmio deployments or to other trusted protocols
-/// @dev Enables fund movement between different diamonds (e.g., perps and options).
-///      Uses virtual providers as intermediaries who deposit on the target diamond.
-///      The provider must accept the transfer, or user can cancel after timeout.
-struct ExternalTransferReq {
-	uint256 id;
-	address sender; // user1 in source contract
-	address receiver; // user2 in target contract
-	address source;
-	address target;
-	uint256 amount;
-	uint256 timestamp;
-	address provider; // virtual provider who handles the transfer
-	ExternalTransferStatus status;
 }
 
 /// @title AccountStorage
@@ -277,52 +196,6 @@ library AccountStorage {
 		/// @dev Extra collateral PartyB deposits as a safety buffer. Used during force close
 		///      if their allocated balance is insufficient. Not used in cross mode.
 		mapping(address => uint256) reserveVault;
-		/// @notice PartyA's binding state to a specific PartyB
-		/// @dev Enables oracle-less trading. Required for instant actions. When bound,
-		///      PartyA can only trade with their bound PartyB.
-		///      Contains status (NOT_BOUND/BOUND/PENDING_UNBIND), the partyB
-		///      address, and timestamp for unbind cooldown tracking.
-		mapping(address => BindState) bindState;
-		/// @notice Whether a PartyB is operating in cross (master account) mode
-		/// @dev Cross-margin PartyBs have one shared balance across all PartyAs instead of
-		///      isolated per-PartyA allocations. When true, uses address(0) for allocation
-		///      mappings and has different liquidation flow via ClearingHouse.
-		mapping(address => bool) isCrossPartyB;
-		/// @notice Liquidation state for cross PartyBs
-		/// @dev Similar to liquidationDetails but for cross-mode PartyB liquidation.
-		mapping(address => CrossLiquidationDetail) crossLiquidationDetails;
-		/// @notice Relayer contracts authorized for external transfers to specific targets
-		/// @dev Maps target address => authorized relayer. The relayer receives
-		///      funds and deposits them on the target for the user.
-		mapping(address => address) externalTransferTargetsRelayers;
-		/// @notice Hook contracts called on protocol events per affiliate
-		/// @dev Called on onOpenPosition, onClosePosition, onCancelQuote events.
-		///      address(0) key is the system-wide hook. Enables custom integrations.
-		mapping(address => address) affiliateHooks;
-		/// @notice Whether PartyA has instant actions mode enabled
-		/// @dev Instant mode allows solver to be sure that partyA is not going to do any on-chain actions.
-		///      Requires PartyA to be bound to a specific PartyB first.
-		mapping(address => bool) instantActionsMode;
-		/// @notice When PartyA's instant actions mode deactivation can be finalized
-		/// @dev Deactivating instant mode is a two-step process: request deactivation, wait
-		///      for cooldown, then finalize. This stores when the cooldown ends.
-		mapping(address => uint256) instantActionsModeDeactivateTime;
-		/// @notice How long to wait before instant actions mode deactivation completes
-		/// @dev Prevents instant on/off toggling that could be used to game the solvers.
-		uint256 deactiveInstantActionModeCooldown;
-		/// @notice Symbol types a PartyB allows itself to trade
-		/// @dev Set BY PartyB to control their own exposure. Maps partyB => symbolType => allowed.
-		///      Not whitelisted = effectively blacklisted (same effect).
-		///      Example: a PartyB may only whitelist crypto (type 1), blocking stocks (type 3).
-		mapping(address => mapping(uint256 => bool)) partyBWhitelistedSymbolTypes;
-		/// @notice Specific symbols a PartyB allows itself to trade
-		/// @dev Set BY PartyB for granular control. Maps partyB => symbolId => allowed.
-		///      Not whitelisted = effectively blacklisted (same effect).
-		mapping(address => mapping(uint256 => bool)) partyBWhitelistedSymbols;
-		/// @notice Specific symbols a PartyB has explicitly blocked
-		/// @dev Set BY PartyB. If a PartyB blacklists a symbol, any PartyA connected to them
-		///      cannot open trades on that symbol even with OTHER PartyBs.
-		mapping(address => mapping(uint256 => bool)) partyBBlacklistedSymbols;
 		/// @notice List of PartyBs that PartyA has open positions with
 		/// @dev Maintained for efficient iteration when calculating PartyA UPNL across
 		///      all their hedgers. Added when first position opens, removed when last closes.
@@ -336,28 +209,6 @@ library AccountStorage {
 		///      PartyB solvency result. The inProgress flag gates step progression but does
 		///      NOT prevent re-initialization - quote status is the primary guard.
 		mapping(uint256 => ForceCloseDetail) forceCloseDetails;
-		/// @notice Counter for external transfer IDs
-		/// @dev Auto-incremented when creating external transfers. Used as unique identifier
-		///      for each external transfer request.
-		uint256 lastExternalTransferId;
-		/// @notice External transfer request data by ID
-		/// @dev Stores the full transfer request: sender, receiver, source/target contracts,
-		///      amount, provider, and status. Provider must accept or user can cancel.
-		mapping(uint256 => ExternalTransferReq) externalTransfers;
-		/// @notice Whether PartyB is allowed to be bound to PartyAs
-		/// @dev If false, PartyAs cannot bind to this PartyB. Not every solver is allowed to
-		///      have oracle-less trading.
-		mapping(address => bool) isPartyBBindable;
-		/// @notice PartyB's assurance collateral deposits by token
-		/// @dev Extra collateral PartyBs deposit as trust signal. Not used for trading,
-		///      just shows skin in the game. Maps partyB => token => amount.
-		///      Will be slashed if PartyB misuses ADL or other actions.
-		///      Note: stored in token decimals, not normalized to 18.
-		mapping(address => mapping(address => uint256)) assuranceCollateral;
-		/// @notice Pending assurance collateral withdrawal requests
-		/// @dev PartyBs must request and get approval before withdrawing assurance collateral.
-		///      Prevents sudden removal of trust collateral.
-		mapping(address => AssuranceWithdrawalRequest) assuranceWithdrawalRequests;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

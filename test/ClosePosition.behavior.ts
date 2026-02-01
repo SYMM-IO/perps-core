@@ -106,7 +106,7 @@ export function shouldBehaveLikeClosePosition(): void {
 	})
 
 	it("Should net funding fee and realized PnL on close (no intermediate balance requirement)", async function () {
-		await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
+		await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
 
 		const epochDurationSec = 3600
 		const latest = BigInt(await time.latest())

@@ -7,9 +7,9 @@ pragma solidity >=0.8.18;
 interface IClearingHouseFacetEvents {
 	event LiquidateCrossPartyB(address indexed initiator, address indexed partyB, bytes liquidationId, int256 upnl, uint256 timestamp);
 
-	event DeallocateForCrossLiquidation(address indexed partyB, address[] indexed partyAs, uint256[] amounts);
+	event DeallocateForCrossLiquidation(address indexed partyB, address[] partyAs, uint256[] amounts);
 	event DistributeForCrossLiquidation(address indexed partyB, address[] partyA, uint256[] amount);
-	event LiquidatePendingPositionsForCrossLiquidation(address indexed partyB, address[] indexed partyAs);
+	event LiquidatePendingPositionsForCrossLiquidation(address indexed partyB, address[] partyAs);
 	event LiquidatePositionsForCrossLiquidation(
 		address indexed partyB,
 		uint256[] quoteIds,

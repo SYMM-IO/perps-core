@@ -345,8 +345,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, amount, recipient)
 
 			// Corrupt `assuranceWithdrawalRequests[partyB].requester` in diamond storage to hit the `requester mismatch` require.
-			const accountStorageBaseSlot = BigInt(ethers.keccak256(toUtf8Bytes("diamond.standard.storage.account")))
-			const assuranceWithdrawalRequestsSlot = accountStorageBaseSlot + 35n
+			// assuranceWithdrawalRequests is now in PartyBControlStorage at slot 4 (after 4 nested mappings)
+			const partyBControlStorageBaseSlot = BigInt(ethers.keccak256(toUtf8Bytes("diamond.standard.storage.partybcontrol")))
+			const assuranceWithdrawalRequestsSlot = partyBControlStorageBaseSlot + 4n
 			const entryBase = BigInt(
 				ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [partyB, assuranceWithdrawalRequestsSlot])),
 			)
@@ -866,31 +867,31 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should allow legacy deallocate when not disabled", async function () {
-			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(false)
+			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(false)
 			await expect(
 				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
 			).to.not.be.reverted
 		})
 
 		it("Should block legacy deallocate when disabled", async function () {
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
-			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(true)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
+			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(true)
 			await expect(
 				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
 			).to.be.revertedWith("AccountFacet: Legacy deallocate is disabled")
 		})
 
 		it("Should allow safeDeallocate when legacy is disabled", async function () {
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
 			await expect(
 				context.accountFacet.connect(context.signers.user).safeDeallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
 			).to.not.be.reverted
 		})
 
 		it("Should re-enable legacy deallocate", async function () {
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(false)
-			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(false)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(false)
+			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(false)
 			await expect(
 				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
 			).to.not.be.reverted
@@ -1972,7 +1973,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("should allow cross partyB activation after enabled by admin", async () => {
-			await context.controlFacet.connect(context.signers.admin).setCrossEnabled(true)
+			await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(true)
 			await migratePartyBToCross(context, hedger, [])
 			expect(await context.viewFacet.isCrossPartyB(context.signers.hedger.address)).to.equal(true)
 		})

@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
+import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { SharedEvents } from "./SharedEvents.sol";
@@ -190,8 +191,8 @@ library LibPartyBPositionsActions {
 
 		uint256 openFee = (filledAmount * quote.openedPrice * quote.tradingFee) / 1e36;
 		{
-			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-			address systemHook = accountLayout.affiliateHooks[address(0)];
+			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
+			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 
 			LibHook.safeCall(
 				affiliateHook,

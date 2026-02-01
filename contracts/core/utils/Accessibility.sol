@@ -7,6 +7,8 @@ pragma solidity >=0.8.18;
 import { MAStorage } from "../storages/MAStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { Quote, QuoteStatus, QuoteStorage } from "../storages/QuoteStorage.sol";
+import { TradingModeStorage } from "../storages/TradingModeStorage.sol";
+import { CrossPartyBStorage } from "../storages/CrossPartyBStorage.sol";
 import { LibAccessibility } from "../libraries/LibAccessibility.sol";
 import { LibSigner } from "../libraries/LibSigner.sol";
 
@@ -70,12 +72,12 @@ abstract contract Accessibility {
 
 	modifier notLiquidatedPartyB(address partyB, address partyA) {
 		require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "Accessibility: PartyB isn't solvent");
-		require(!AccountStorage.layout().crossLiquidationDetails[partyB].inProgress, "Accessibility: PartyB isn't solvent");
+		require(!CrossPartyBStorage.layout().crossLiquidationDetails[partyB].inProgress, "Accessibility: PartyB isn't solvent");
 		_;
 	}
 
 	modifier notCrossLiquidatedPartyB(address partyB) {
-		require(!AccountStorage.layout().crossLiquidationDetails[partyB].inProgress, "Accessibility: PartyB isn't solvent");
+		require(!CrossPartyBStorage.layout().crossLiquidationDetails[partyB].inProgress, "Accessibility: PartyB isn't solvent");
 		_;
 	}
 
@@ -83,7 +85,7 @@ abstract contract Accessibility {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		require(!MAStorage.layout().liquidationStatus[quote.partyA], "Accessibility: PartyA isn't solvent");
 		require(!MAStorage.layout().partyBLiquidationStatus[quote.partyB][quote.partyA], "Accessibility: PartyB isn't solvent");
-		require(!AccountStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "Accessibility: PartyB isn't solvent");
+		require(!CrossPartyBStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "Accessibility: PartyB isn't solvent");
 		require(
 			quote.quoteStatus != QuoteStatus.LIQUIDATED &&
 				quote.quoteStatus != QuoteStatus.LIQUIDATED_PENDING &&
@@ -116,12 +118,12 @@ abstract contract Accessibility {
 	}
 
 	modifier whenInstantModeIsNotActive(address sender) {
-		require(!(AccountStorage.layout().instantActionsMode[sender] && !MAStorage.layout().callFromInstantLayer), "Instant Mode Not Active");
+		require(!(TradingModeStorage.layout().instantActionsMode[sender] && !TradingModeStorage.layout().callFromInstantLayer), "Instant Mode Not Active");
 		_;
 	}
 
 	modifier whenInstantModeIsActive(address sender) {
-		require (AccountStorage.layout().instantActionsMode[sender],"Instant Mode Not Active");
+		require (TradingModeStorage.layout().instantActionsMode[sender],"Instant Mode Not Active");
 		_;
 	}
 }

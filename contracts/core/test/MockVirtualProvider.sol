@@ -3,7 +3,7 @@ pragma solidity >=0.8.18;
 
 import { IVirtualProvider } from "../interfaces/IVirtualProvider.sol";
 import { WithdrawRequest, WithdrawReceiverPart, WithdrawStatus } from "../storages/WithdrawStorage.sol";
-import { ExternalTransferReq } from "../storages/AccountStorage.sol";
+import { VirtualExternalTransferRequest } from "../storages/ExternalTransferStorage.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -19,7 +19,7 @@ interface ISymmioCore {
 contract VirtualProvider is IVirtualProvider {
 	address public symmioAddress;
 	uint256 public withdrawnAmount;
-	ExternalTransferReq public externalTransferData;
+	VirtualExternalTransferRequest public externalTransferData;
 
 	event WithdrawCalled(address sender, WithdrawReceiverPart part, bytes providerData);
 	event WithdrawSuspended(address indexed user, uint256 indexed requestId);
@@ -92,7 +92,7 @@ contract VirtualProvider is IVirtualProvider {
 		emit WithdrawSuspended(withdrawRequest.user, withdrawRequest.id);
 	}
 
-	function onExternalTransfer(ExternalTransferReq memory externalTransfer) external override {
+	function onExternalTransfer(VirtualExternalTransferRequest memory externalTransfer) external override {
 		require(true, "");
 		externalTransferData = externalTransfer;
 	}
@@ -163,7 +163,7 @@ contract ConfigurableMockVirtualProvider is IVirtualProvider {
 	function onForceWithdrawCancel(WithdrawRequest memory) external pure override {}
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory, uint256) external pure override {}
 	function onWithdrawSuspend(WithdrawRequest memory) external pure override {}
-	function onExternalTransfer(ExternalTransferReq memory) external pure override {}
+	function onExternalTransfer(VirtualExternalTransferRequest memory) external pure override {}
 	function onCancelExternalTransfer(uint256) external pure override {}
 }
 
@@ -216,6 +216,6 @@ contract MaliciousMockVirtualProvider is IVirtualProvider {
 	function onForceWithdrawCancel(WithdrawRequest memory) external pure override {}
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory, uint256) external pure override {}
 	function onWithdrawSuspend(WithdrawRequest memory) external pure override {}
-	function onExternalTransfer(ExternalTransferReq memory) external pure override {}
+	function onExternalTransfer(VirtualExternalTransferRequest memory) external pure override {}
 	function onCancelExternalTransfer(uint256) external pure override {}
 }

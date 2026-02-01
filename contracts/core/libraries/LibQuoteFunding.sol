@@ -10,7 +10,7 @@ import { LibQuote } from "./LibQuote.sol";
 import { LibAggregateFunding } from "./LibAggregateFunding.sol";
 import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
-import { SymbolStorage, FundingFee } from "../storages/SymbolStorage.sol";
+import { FundingStorage, FundingFee } from "../storages/FundingStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
 
 library LibQuoteFunding {
@@ -22,7 +22,7 @@ library LibQuoteFunding {
 	 */
 	function getAccumulatedFundingFee(uint256 quoteId) public view returns (int256 fee) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[quote.symbolId][quote.partyB];
+		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB];
 
 		// Early exit conditions:
 		// 1. No epoch duration set (accumulated funding not active)
@@ -96,7 +96,7 @@ library LibQuoteFunding {
 	 */
 	function updateAccumulatedPaidFunding(uint256 quoteId) public {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		FundingFee storage fundingFee = SymbolStorage.layout().fundingFees[quote.symbolId][quote.partyB];
+		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB];
 
 		if (fundingFee.epochDuration > 0) {
 			LibFundingRate.updateAccumulatedRates(fundingFee);

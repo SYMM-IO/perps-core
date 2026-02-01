@@ -4,7 +4,10 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { LiquidationDetail, SettlementState, CrossLiquidationDetail, BindState, ExternalTransferReq } from "../../storages/AccountStorage.sol";
+import { LiquidationDetail, SettlementState } from "../../storages/AccountStorage.sol";
+import { CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
+import { BindState } from "../../storages/TradingModeStorage.sol";
+import { VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
 import { BridgeTransaction } from "../../storages/BridgeStorage.sol";
 import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { WithdrawRequest } from "../../storages/WithdrawStorage.sol";
@@ -39,7 +42,7 @@ interface IViewFacet {
 
 	function isCrossPartyB(address partyB) external view returns (bool);
 
-	function isLegacyDeallocateDisabled() external view returns (bool);
+	function isLegacyDeallocateDeprecated() external view returns (bool);
 
 	function isCrossPartyBMigrationComplete(address partyB) external view returns (bool);
 
@@ -75,7 +78,7 @@ interface IViewFacet {
 
 	function getDefaultFeeCollector() external view returns (address);
 
-	function isCrossEnabled() external view returns (bool);
+	function isCrossPartyBModeActivated() external view returns (bool);
 
 	function isPartyALiquidated(address partyA) external view returns (bool);
 
@@ -180,7 +183,7 @@ interface IViewFacet {
 
 	function getMinAffiliateFee() external view returns (uint256);
 
-	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory);
+	function getVirtualExternalTransfer(uint256 id) external view returns (VirtualExternalTransferRequest memory);
 
 	function getEntityMetadata(address entity) external view returns (EntityMetadata memory);
 
@@ -190,7 +193,7 @@ interface IViewFacet {
 
 	function isBindable(address partyB) external view returns (bool);
 
-	function getIterativeFundingDeprecationFlag() external view returns (bool);
+	function isLegacyFundingDeprecated() external view returns (bool);
 
-	function getAccumulativeFundingRateActivationFlag() external view returns (bool);
+	function isAccumulatedFundingActivated() external view returns (bool);
 }

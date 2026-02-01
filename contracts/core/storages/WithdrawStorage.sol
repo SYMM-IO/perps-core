@@ -74,6 +74,19 @@ library WithdrawStorage {
 		/// @dev Only whitelisted addresses can set speedUp=true when requesting withdrawal.
 		///      Typically solvers and other trusted automated systems.
 		mapping(address => bool) speedUpWhitelist;
+		/// @notice Whitelist of addresses that can act as virtual deposit/withdrawal providers
+		/// @dev Virtual providers handle cross-chain deposits and withdrawals. They're trusted
+		///      to credit user balances when funds are received on other chains.
+		mapping(address => bool) virtualProviders;
+		/// @notice Whitelist of addresses that can act as express withdrawal providers
+		/// @dev Express providers front withdrawal funds to users immediately, then reclaim
+		///      from Symmio after cooldown. They charge fees for this service. Must be
+		///      registered here before they can accept withdrawal requests.
+		mapping(address => bool) expressProviders;
+		/// @notice Disables the legacy withdrawal path when true
+		/// @dev The old withdrawal system is being phased out in favor of the new multi-part
+		///      withdrawal system. Set this true once all users have migrated.
+		bool legacyWithdrawalDeprecated;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

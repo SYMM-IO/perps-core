@@ -21,7 +21,7 @@ export async function migratePartyBToCross(
 	const partyB = await hedger.getAddress()
 
 	// Enable cross partyB feature globally
-	await context.controlFacet.connect(context.signers.admin).setCrossEnabled(true)
+	await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(true)
 
 	// Collect unique partyAs and sum their allocated balances
 	const partyAs: string[] = []

@@ -10,8 +10,12 @@ import { LibQuoteFunding } from "./LibQuoteFunding.sol";
 import { LibConnections } from "./LibConnections.sol";
 import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
+import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
+import { FundingStorage } from "../storages/FundingStorage.sol";
+import { CrossPartyBStorage } from "../storages/CrossPartyBStorage.sol";
+import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 import { LibAccount } from "./LibAccount.sol";
@@ -67,7 +71,7 @@ library LibQuoteClose {
 			);
 		}
 
-		if (symbolLayout.fundingFees[quote.symbolId][quote.partyB].epochDuration > 0) {
+		if (FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB].epochDuration > 0) {
 			LibQuoteFunding.chargeAccumulatedFundingFee(quoteId);
 		}
 
@@ -133,8 +137,8 @@ library LibQuoteClose {
 		}
 
 		{
-			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-			address systemHook = accountLayout.affiliateHooks[address(0)];
+			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
+			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 
 			LibHook.safeCall(
 				affiliateHook,
@@ -196,7 +200,7 @@ library LibQuoteClose {
 		);
 		require(!MAStorage.layout().liquidationStatus[quote.partyA], "LibQuote: PartyA isn't solvent");
 		require(!MAStorage.layout().partyBLiquidationStatus[quote.partyB][quote.partyA], "LibQuote: PartyB isn't solvent");
-		require(!accountLayout.crossLiquidationDetails[quote.partyB].inProgress, "LibQuote: PartyB is in cross liquidation process");
+		require(!CrossPartyBStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "LibQuote: PartyB is in cross liquidation process");
 
 		if (quote.quoteStatus == QuoteStatus.PENDING || quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
 			quote.statusModifyTimestamp = block.timestamp;
@@ -218,8 +222,8 @@ library LibQuoteClose {
 			quote.quoteStatus = QuoteStatus.EXPIRED;
 			result = QuoteStatus.EXPIRED;
 
-			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-			address systemHook = accountLayout.affiliateHooks[address(0)];
+			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
+			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 
 			LibHook.safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
 			LibHook.safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);

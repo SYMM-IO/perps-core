@@ -11,6 +11,7 @@ import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -50,7 +51,7 @@ library PartyBPositionActionsFacetImpl {
 			LibConnections.addConnection(quote.partyA, quote.partyB);
 		}
 
-		if (accountLayout.bindState[quote.partyA].partyB != quote.partyB || !accountLayout.isPartyBBindable[quote.partyB]) {
+		if (TradingModeStorage.layout().bindState[quote.partyA].partyB != quote.partyB || !TradingModeStorage.layout().isPartyBBindable[quote.partyB]) {
 			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
 
 			uint256[] memory quoteIds = new uint256[](1);
@@ -72,9 +73,8 @@ library PartyBPositionActionsFacetImpl {
 	}
 
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		if (accountLayout.bindState[quote.partyA].partyB != LibSigner.getSigner() || !accountLayout.isPartyBBindable[LibSigner.getSigner()]) {
+		if (TradingModeStorage.layout().bindState[quote.partyA].partyB != LibSigner.getSigner() || !TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]) {
 			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
 			uint256[] memory quoteIds = new uint256[](1);
 			uint256[] memory filledAmounts = new uint256[](1);
@@ -96,7 +96,7 @@ library PartyBPositionActionsFacetImpl {
 			);
 		}
 		LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
-		accountLayout.partyANonces[quote.partyA] += 1;
+		AccountStorage.layout().partyANonces[quote.partyA] += 1;
 		LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmount, closedPrice);
 	}
 
