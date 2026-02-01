@@ -21,14 +21,14 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 
 	/// @notice Allows Party A to request to unbind from Party B
 	/// @dev Can only be called by Party A when not suspended
-	function requestToUnbindFromPartyB() external notSuspended(LibSigner.getSigner()) userNotPartyB(LibSigner.getSigner()) {
+	function requestToUnbindFromPartyB() external notSuspended(LibSigner.getSigner()) {
 		BindingFacetImpl.requestToUnbindFromPartyB();
 		emit RequestToUnbindFromPartyB(LibSigner.getSigner());
 	}
 
 	/// @notice Allows Party A to cancel the unbind request from Party B
 	/// @dev Can only be called by Party A when not suspended
-	function cancelUnbindRequest() external notSuspended(LibSigner.getSigner()) userNotPartyB(LibSigner.getSigner()) {
+	function cancelUnbindRequest() external notSuspended(LibSigner.getSigner()) {
 		BindingFacetImpl.cancelUnbindRequest();
 		emit CancelUnbindRequest(LibSigner.getSigner());
 	}
@@ -61,8 +61,6 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 	 */
 	function proposeToDeactivateInstantActionMode()
 		external
-		userNotPartyB(LibSigner.getSigner())
-		whenInstantModeIsActive(LibSigner.getSigner())
 		whenNotPartyAActionsPaused
 	{
 		BindingFacetImpl.proposeToDeactivateInstantActionMode();
@@ -73,7 +71,7 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 	 * @notice Completes the deactivation of instant action mode after proposal
 	 * @dev Only callable by PartyA accounts after the waiting period has passed
 	 */
-	function deactivateInstantActionMode() external userNotPartyB(LibSigner.getSigner()) whenNotPartyAActionsPaused {
+	function deactivateInstantActionMode() external whenNotPartyAActionsPaused {
 		BindingFacetImpl.deactivateInstantActionMode();
 		emit DeactivateInstantActionMode(LibSigner.getSigner(), block.timestamp);
 	}

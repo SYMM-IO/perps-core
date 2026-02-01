@@ -1925,11 +1925,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 		})
 
-		it("Should fail when user is not partyA", async () => {
-			await expect(context.bindingFacet.connect(context.signers.hedger).requestToUnbindFromPartyB()).to.be.revertedWith(
-				"Accessibility: Shouldn't be partyB",
-			)
-		})
 
 		it("Should fail when not bound", async () => {
 			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith("AccountFacet: Invalid state")
@@ -1973,11 +1968,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await expect(context.bindingFacet.connect(context.signers.user).cancelUnbindRequest()).to.be.revertedWith("Accessibility: Sender is Suspended")
 		})
 
-		it("Should fail when user is not partyA", async () => {
-			await expect(context.bindingFacet.connect(context.signers.hedger).cancelUnbindRequest()).to.be.revertedWith(
-				"Accessibility: Shouldn't be partyB",
-			)
-		})
 
 		it("Should fail when not request to unbound", async () => {
 			await expect(context.bindingFacet.connect(context.signers.user).cancelUnbindRequest()).to.be.revertedWith("AccountFacet: Invalid state")
