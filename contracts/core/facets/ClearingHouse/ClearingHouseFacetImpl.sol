@@ -83,6 +83,7 @@ library ClearingHouseFacetImpl {
 			for (uint256 i = 0; i < pendingQuotes.length; ) {
 				Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
 				if (quote.partyB == partyB) {
+					bool shouldDecrementLockCount = (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING);
 					accountLayout.pendingLockedBalances[partyA].subQuote(quote);
 					uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 					accountLayout.allocatedBalances[partyA] += fee;
@@ -91,6 +92,9 @@ library ClearingHouseFacetImpl {
 					pendingQuotes.pop();
 					quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 					quote.statusModifyTimestamp = block.timestamp;
+					if (shouldDecrementLockCount) {
+						quoteLayout.partyALockQuotesCount[partyA]--;
+					}
 				} else {
 					i++;
 				}
