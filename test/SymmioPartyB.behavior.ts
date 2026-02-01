@@ -32,8 +32,8 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 
 		const collateral = await context.viewFacet.getCollateral()
 		const depositCall = context.accountFacet.interface.encodeFunctionData("deposit", [decimal(1000n)])
-		const depositAssuranceCall = context.assuranceFacet.interface.encodeFunctionData("depositAssuranceCollateral", [collateral, decimal(1000n)])
-		await context.symmioPartyB.connect(context.signers.admin)._call([depositCall, depositAssuranceCall])
+		const depositPledgeCall = context.pledgeFacet.interface.encodeFunctionData("depositPledge", [collateral, decimal(1000n)])
+		await context.symmioPartyB.connect(context.signers.admin)._call([depositCall, depositPledgeCall])
 
 		return partyBAddress
 	}
