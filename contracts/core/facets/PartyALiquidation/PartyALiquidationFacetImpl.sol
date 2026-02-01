@@ -106,9 +106,8 @@ library PartyALiquidationFacetImpl {
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
 		for (uint256 index = 0; index < quoteLayout.partyAPendingQuotes[partyA].length; index++) {
 			Quote storage quote = quoteLayout.quotes[quoteLayout.partyAPendingQuotes[partyA][index]];
-			bool shouldDecrementLockCount = (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING);
 			if (
-				shouldDecrementLockCount &&
+				(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) &&
 				quoteLayout.partyBPendingQuotes[quote.partyB][partyA].length > 0
 			) {
 				delete quoteLayout.partyBPendingQuotes[quote.partyB][partyA];
@@ -124,9 +123,6 @@ library PartyALiquidationFacetImpl {
 			quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 			quote.statusModifyTimestamp = block.timestamp;
 			liquidatedAmounts[index] = quote.quantity;
-			if (shouldDecrementLockCount) {
-				quoteLayout.partyALockQuotesCount[partyA]--;
-			}
 		}
 		accountLayout.pendingLockedBalances[partyA].makeZero();
 		delete quoteLayout.partyAPendingQuotes[partyA];

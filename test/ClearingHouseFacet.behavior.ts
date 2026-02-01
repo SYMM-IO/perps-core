@@ -355,7 +355,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 			it("should liquidate pending quotes successfully", async () => {
 				const oldUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
-				const lockCountBefore = await context.viewFacet.getPartyALockedQuotesCount(context.signers.user)
+				const pendingBefore = (await user.getBalanceInfo()).totalPendingLockedPartyA
 				const targetedQuotes: QuoteStructOutput[] = []
 
 				for await (const qId of oldUserPendingQuotes) {
@@ -382,8 +382,12 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					expect(newUserPendingQuotes.indexOf(qq.id)).to.equal(-1)
 				}
 
-				const lockCountAfter = await context.viewFacet.getPartyALockedQuotesCount(context.signers.user)
-				expect(lockCountAfter).to.equal(lockCountBefore - BigInt(targetedQuotes.length))
+				let expectedDelta = 0n
+				for (const q of targetedQuotes) {
+					expectedDelta += q.lockedValues.cva + q.lockedValues.lf + q.lockedValues.partyAmm
+				}
+				const pendingAfter = (await user.getBalanceInfo()).totalPendingLockedPartyA
+				expect(pendingAfter).to.equal(pendingBefore - expectedDelta)
 			})
 
 			it("should liquidate pending quotes for multiple partyAs in batch", async () => {

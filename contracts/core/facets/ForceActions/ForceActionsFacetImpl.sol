@@ -43,7 +43,6 @@ library ForceActionsFacetImpl {
 		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 
 		LibQuote.removeFromPendingQuotes(quote);
-		QuoteStorage.layout().partyALockQuotesCount[quote.partyA]--;
 	}
 
 	function forceCancelCloseRequest(uint256 quoteId) internal {

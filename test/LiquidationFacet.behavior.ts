@@ -181,7 +181,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await user.liquidateAndSetSymbolPrices([1n], [decimal(8n)] , [1n])
 			await user.liquidatePendingPositions()
 
-			expect(await context.viewFacet.getPartyALockedQuotesCount(user.address)).to.equal(0n)
+			const pendingAfter = (await user.getBalanceInfo()).totalPendingLockedPartyA
+			expect(pendingAfter).to.equal(0n)
 
 			// Pending quotes (2 and 3) should be marked as LIQUIDATED_PENDING
 			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
