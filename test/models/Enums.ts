@@ -85,11 +85,6 @@ export enum ExternalTransferStatus {
 	CANCELED,
 }
 
-export enum UPNLSettlementState {
-	NONE,
-	REALIZED
-}
-
 export enum PartyBForceCloseState {
 	NONE,
 	INSOLVENT,

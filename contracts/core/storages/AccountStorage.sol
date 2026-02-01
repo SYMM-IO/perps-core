@@ -19,23 +19,17 @@ enum LiquidationType {
 	OVERDUE
 }
 
-/// @notice Settlement state for unrealized PnL during force close
-/// @dev Tracks whether UPNL has been realized as part of force close workflow.
-///      NONE = not settled
-///      REALIZED = settled in isolated mode
-///      REALIZED_CROSS = settled in cross-margin mode
-enum UPNLSettlementState {
-	NONE,
-	REALIZED,
-	REALIZED_CROSS
-}
-
 /// @notice PartyB's solvency state during a force close operation
 /// @dev Determines what happens after force close completes.
 ///      NONE = not in force close
-///      INSOLVENT = PartyB became insolvent during close
-///      SOLVENT = PartyB remained solvent
-///      LIQUIDATED = PartyB was liquidated
+///      INSOLVENT = (cross partyB mode) close succeeded but PartyB could not remain solvent when accounting for uPNL
+///      SOLVENT = close succeeded without liquidation/insolvency
+///      LIQUIDATED = (normal partyB mode) PartyB was liquidated during force close
+///
+///      Event mapping:
+///      - Cross partyB mode: `ForceClosePositionCross(..., isSolvent)` where `isSolvent` is true for SOLVENT and false for INSOLVENT.
+///        If insolvent, `ForceClosePartyBInsolvent(...)` is also emitted.
+///      - Normal partyB mode: `ForceClosePosition(...)` implies SOLVENT; `LiquidatePartyB(...)` implies LIQUIDATED.
 enum PartyBForceCloseState {
 	NONE,
 	INSOLVENT,
@@ -56,20 +50,30 @@ struct SettlementState {
 
 /// @notice Complete state tracking for a force close operation on a position
 /// @dev Force close is a multi-step process that lets PartyA close positions when PartyB
-///      isn't responding. This struct tracks every stage: price signature used, settlement
-///      states, and PartyB's resulting solvency. Note: inProgress is set during init but
+///      isn't responding. This struct tracks the workflow snapshot (uPNL/currentPrice),
+///      the derived closePrice, and PartyB's resulting solvency. Note: inProgress is set during init but
 ///      does NOT prevent re-initialization - it only gates progression to subsequent steps.
 ///      The quote's status (CLOSE_PENDING) is the primary guard against invalid force closes.
 struct ForceCloseDetail {
+	/// @notice The latest Muon request id used to fill/refresh the force-close snapshot.
+	/// @dev Observability-only metadata for off-chain correlation; NOT used in protocol logic.
 	bytes priceSigId;
+	/// @notice The quote id this struct corresponds to.
+	/// @dev Redundant with the mapping key; kept for convenience in off-chain reads.
 	uint256 quoteId;
+	/// @notice Last time the workflow snapshot was updated (init/refresh/settle/finalize depending on flow).
 	uint256 timestamp;
+	/// @notice PartyB available balance after close (set on finalize).
 	int256 partyBAvailableAfterClose;
+	/// @notice The close price computed at initialization (kept stable across refreshes).
 	uint256 closePrice;
+	/// @notice Snapshot uPNL for PartyB used during finalize (can be refreshed/adjusted).
 	int256 upnlPartyB;
+	/// @notice Snapshot current price used during finalize (can be refreshed).
 	uint256 currentPrice;
-	UPNLSettlementState settlementState;
+	/// @notice Final PartyB outcome for the force close workflow (set on finalize).
 	PartyBForceCloseState partyBState;
+	/// @notice Whether a 3-step force close workflow is active for this quoteId.
 	bool inProgress;
 }
 

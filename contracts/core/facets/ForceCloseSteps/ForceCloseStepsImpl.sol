@@ -38,10 +38,15 @@ library ForceCloseStepsImpl {
 		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
+		// Observability-only metadata: last Muon request id used for the stored snapshot.
+		detail.priceSigId = sig.reqId;
+		detail.quoteId = quoteId;
 		detail.timestamp = block.timestamp;
+		detail.partyBAvailableAfterClose = 0;
 		detail.closePrice = closePrice;
 		detail.upnlPartyB = sig.upnlPartyB;
 		detail.currentPrice = sig.currentPrice;
+		detail.partyBState = PartyBForceCloseState.NONE;
 		detail.inProgress = true;
 	}
 
@@ -69,6 +74,8 @@ library ForceCloseStepsImpl {
 		);
 		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
+		// Observability-only metadata: last Muon request id used for the stored snapshot.
+		detail.priceSigId = sig.reqId;
 		detail.upnlPartyB = sig.upnlPartyB;
 		detail.currentPrice = sig.price;
 		detail.timestamp = block.timestamp;
