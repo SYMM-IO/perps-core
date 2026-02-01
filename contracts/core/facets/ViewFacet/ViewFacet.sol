@@ -855,10 +855,6 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().softLiquidationPenaltyCollector;
 	}
 
-	function getPartyALockedQuotesCount(address user) external view returns (uint256) {
-		return QuoteStorage.layout().partyALockQuotesCount[user];
-	}
-
 	function isBindable(address partyB) external view returns (bool) {
 		return TradingModeStorage.layout().isPartyBBindable[partyB];
 	}

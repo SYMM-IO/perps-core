@@ -1793,17 +1793,34 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when bound", async () => {
+			// First clear pending quotes
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2])
+
 			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"AccountFacet: Invalid state",
 			)
 		})
 
-		it("Should fail to bind to hedger when have locked quote with another hedger", async function () {
-			await hedger.lockQuote(1)
-			await hedger2.lockQuote(2)
+		it("Should fail to bind when have pending quotes", async function () {
+			// Quote 1 and 2 are pending (sent in beforeEach)
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.revertedWith(
-				"AccountFacet : Have Locked Quotes with Other Party B",
+				"AccountFacet: Have pending quotes",
+			)
+		})
+
+		it("Should fail to bind when have locked quote even with the same hedger", async function () {
+			// Lock quote 1 first (while still valid)
+			await hedger.lockQuote(1)
+
+			// Expire quote 2
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([2])
+
+			// Even though the locked quote is with the same hedger, binding should fail
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.revertedWith(
+				"AccountFacet: Have pending quotes",
 			)
 		})
 
@@ -1818,58 +1835,51 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail to bind to a non-bindable party B", async () => {
+			// First clear pending quotes
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2])
+
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, false)
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"AccountFacet: Not Bindable",
 			)
 		})
 
-		it("Should allow binding after a partial fill clears the only locked quote", async () => {
-			// PartyB locks the quote
+		it("Should allow binding after all pending quotes are fully opened", async () => {
+			// Open both pending quotes fully
 			await hedger.lockQuote(1)
-			
-			// partially fills the quote
-			const quote = await context.viewFacetQuote.getQuote(1)
-			const filledAmount = BigInt(quote.quantity) / 2n
-			await hedger.openPosition(
-				1,
-				limitOpenRequestBuilder().filledAmount(filledAmount).openPrice(quote.requestedOpenPrice).price(quote.requestedOpenPrice).build(),
-			)
-			// User should be able to bind to the same PartyB (no other locked quotes)
-			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
-		})
-		
-		it("Should allow binding after a cancel-pending quote is partially filled", async () => {
-			// PartyB locks the quote
-			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+			await hedger.lockQuote(2)
+			await hedger.openPosition(2)
 
-			// PartyA requests cancel and quote becomes CANCEL_PENDING
-			await user.requestToCancelQuote(1)
-
-			// PartyB partially fills while cancel is pending
-			const quote = await context.viewFacetQuote.getQuote(1)
-			const filledAmount = BigInt(quote.quantity) / 2n
-			await hedger.openPosition(
-				1,
-				limitOpenRequestBuilder().filledAmount(filledAmount).openPrice(quote.requestedOpenPrice).price(quote.requestedOpenPrice).build(),
-			)
-
-			// User should be able to bind to the same PartyB
+			// User should be able to bind (no more pending quotes)
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
 		})
 
-		it("Should allow binding after a cancel-pending quote expires", async () => {
-			// PartyB locks the quote
-			await hedger.lockQuote(1)
-
-			// PartyA requests cancel and quote becomes CANCEL_PENDING
-			await user.requestToCancelQuote(1)
-
-			// expire the quote
+		it("Should allow binding after all pending quotes expire", async () => {
+			// expire both quotes
 			await time.increase(1000)
-			await context.partyAFacet.connect(context.signers.user).expireQuote([1])
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2])
 
-			// User should be able to bind to the same PartyB
+			// User should be able to bind
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
+		})
+
+		it("Should allow binding after locked quotes are cancelled", async () => {
+			// Lock quote 1
+			await hedger.lockQuote(1)
+
+			// PartyA requests cancel
+			await user.requestToCancelQuote(1)
+
+			// PartyB accepts cancel
+			await hedger.acceptCancelRequest(1)
+
+			// Expire quote 2
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([2])
+
+			// User should be able to bind
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
 		})
 
@@ -1879,6 +1889,10 @@ export function shouldBehaveLikeAccountFacet(): void {
 				BOUND: 1,
 				REQUESTED_TO_UNBIND: 2,
 			}
+
+			// First clear pending quotes
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2])
 
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
 

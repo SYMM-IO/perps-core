@@ -75,10 +75,6 @@ library LibPartyBPositionsActions {
 		LibQuote.removeFromPendingQuotes(quote);
 		quote.lastFundingPaymentTimestamp = block.timestamp;
 
-		if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
-			quoteLayout.partyALockQuotesCount[quote.partyA]--;
-		}
-
 		if (quote.quantity == filledAmount) {
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
 			LibAccount.subFromPartyBPendingLockedBalances(quote);

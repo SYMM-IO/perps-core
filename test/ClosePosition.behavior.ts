@@ -579,6 +579,11 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		it("Should skip check sig when bind", async function () {
 			let closePrice = decimal(11n, 17)
+
+			// First cancel pending quote 3 (sent but not locked in parent beforeEach)
+			// Since it's PENDING (not LOCKED), requestToCancelQuote will cancel it directly
+			await user.requestToCancelQuote(3)
+
 			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
