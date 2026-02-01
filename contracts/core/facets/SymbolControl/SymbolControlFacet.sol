@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { Accessibility } from "../../utils/Accessibility.sol";
 import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
-import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { ISymbolControlFacet } from "./ISymbolControlFacet.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
@@ -184,7 +184,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @param symbolType The category identifier to whitelist (e.g., all crypto symbols).
 	function whitelistSymbolType(address partyB, uint256 symbolType) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
-		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = true;
+		PartyBControlStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = true;
 		emit WhitelistSymbolType(partyB, symbolType);
 	}
 
@@ -193,11 +193,11 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @param symbolIds Array of symbol identifiers to whitelist (cannot conflict with blacklisted symbols).
 	function whitelistSymbols(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			uint256 id = symbolIds[i];
-			require(!accountLayout.partyBBlacklistedSymbols[partyB][id], "SymbolControlFacet: Blacklist conflict");
-			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
+			require(!partyBControlLayout.partyBBlacklistedSymbols[partyB][id], "SymbolControlFacet: Blacklist conflict");
+			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
 			unchecked { ++i; }
 		}
 		emit WhitelistSymbols(partyB, symbolIds);
@@ -208,7 +208,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @param symbolType The category identifier to remove from the whitelist.
 	function removeSymbolTypeFromWhitelist(address partyB, uint256 symbolType) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
-		AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = false;
+		PartyBControlStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType] = false;
 		emit RemoveSymbolTypeFromWhitelist(partyB, symbolType);
 	}
 
@@ -217,9 +217,9 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @param symbolIds Array of symbol identifiers to remove from the whitelist.
 	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
-			accountLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
+			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked { ++i; }
 		}
 		emit RemoveSymbolsFromWhitelist(partyB, symbolIds);
@@ -230,11 +230,11 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @param symbolIds Array of symbol identifiers to blacklist (cannot conflict with whitelisted symbols).
 	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			uint256 id = symbolIds[i];
-			require(!accountLayout.partyBWhitelistedSymbols[partyB][id], "SymbolControlFacet: Whitelist conflict");
-			accountLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
+			require(!partyBControlLayout.partyBWhitelistedSymbols[partyB][id], "SymbolControlFacet: Whitelist conflict");
+			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
 			unchecked { ++i; }
 		}
 		emit BlacklistSymbols(partyB, symbolIds);
@@ -245,9 +245,9 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @param symbolIds Array of symbol identifiers to remove from the blacklist.
 	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
-			accountLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
+			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked { ++i; }
 		}
 		emit RemoveSymbolsFromBlacklist(partyB, symbolIds);

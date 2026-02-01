@@ -29,35 +29,28 @@ struct SymbolWithType {
 	uint256 symbolType;
 }
 
-/**
- * @notice Tracks funding rates and their weighted averages over time
- * @dev Funding rates are stored as price-adjusted values (rate * marketPrice)
- *      to avoid repeated multiplication during fee calculations
- */
-struct FundingFee {
-	// Current epoch's funding rates (price-adjusted: rate * marketPrice / 1e18)
-	int256 currentLongRate; // Current rate for long positions
-	int256 currentShortRate; // Current rate for short positions
-	// Weighted average rates over all tracked epochs
-	int256 accumulatedLongRate; // Historical weighted average for longs
-	int256 accumulatedShortRate; // Historical weighted average for shorts
-	// Epoch tracking
-	uint256 lastUpdatedEpoch; // Epoch number when rates were last updated
-	uint256 lastUpdatedTimeStamp;
-	uint256 startEpochTimeStamp;
-	uint256 startEpoch; // Epoch when funding tracking started
-	uint256 epochDuration; // Duration of each funding period in seconds
-}
-
+/// @title SymbolStorage
+/// @notice Symbol configurations, funding rates, and market categorization
 library SymbolStorage {
 	bytes32 internal constant SYMBOL_STORAGE_SLOT = keccak256("diamond.standard.storage.symbol");
 
 	struct Layout {
+		/// @notice Symbol configuration by ID
+		/// @dev Contains all trading rules for each symbol: fees, leverage, funding timing.
+		///      Symbol IDs are sequential starting from 1 (ID 0 is invalid/unused).
 		mapping(uint256 => Symbol) symbols;
+		/// @notice Auto-incrementing counter for symbol IDs
+		/// @dev New symbols get lastId + 1. Never decreases.
 		uint256 lastId;
-		mapping(uint256 => uint256) forceCloseGapRatio; // symbolId -> forceCloseGapRatio
-		mapping(uint256 => mapping(address => FundingFee)) fundingFees; // SymbolId -> PartyB Address -> Funding Fee
-		mapping(uint256 => uint256) symbolTypes; // symbolId -> symbolType
+		/// @notice Price threshold percentage for force close validation per symbol (18 decimals)
+		/// @dev For LONG: sig.highest >= requestedClosePrice * (1 + gapRatio).
+		///      For SHORT: sig.lowest <= requestedClosePrice * (1 - gapRatio).
+		///      Ensures price genuinely exceeded the threshold accounting for volatility.
+		mapping(uint256 => uint256) forceCloseGapRatio;
+		/// @notice Market category per symbol (e.g., 1 = crypto, 2 = forex)
+		/// @dev Used with PartyB symbol type whitelisting to restrict which markets
+		///      each hedger want to have exposure too.
+		mapping(uint256 => uint256) symbolTypes;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

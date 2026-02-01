@@ -72,49 +72,41 @@ npx hardhat compile
 Run the test suite with:
 
 ```bash
-./utils/runTests.sh
+npx hardhat test mocha
 ```
 
-The reason we cannot simply use `npx hardhat test` is that there are some Muon signature verification parts in the code
-that need to be commented out for the tests to run without issues. This script automates that task.
+Tests use a `MockMuonSignatureVerifier` contract deployed during test initialization, which accepts all signatures without verification. This allows tests to run without needing real Muon signatures.
+
+#### Test Commands
+
+```bash
+# Run all tests sequentially
+npx hardhat test mocha
+
+# Run with coverage
+npx hardhat test mocha --coverage
+
+# Run specific tests
+npx hardhat test mocha --grep "MyTest"
+```
 
 #### Parallel Test Execution
 
-By default, tests run in parallel using 8 workers for faster execution. The test runner displays live progress and aggregated results with colorful output.
+For faster execution, use the parallel test runner which runs tests across multiple workers:
 
 ```bash
-# Run all tests in parallel (default, 8 workers)
-./utils/runTests.sh
+# Run all tests in parallel (default: 8 workers)
+./utils/runTestsInParallel.sh
 
 # Customize number of parallel workers
-PARALLEL_JOBS=4 ./utils/runTests.sh
-
-# Run tests sequentially (useful for debugging)
-./utils/runTests.sh --sequential
+PARALLEL_JOBS=4 ./utils/runTestsInParallel.sh
 ```
 
-#### Test Options
-
-```bash
-# Run all tests
-./utils/runTests.sh
-
-# Run with coverage (runs sequentially)
-./utils/runTests.sh --coverage
-
-# Run specific tests
-./utils/runTests.sh --grep "MyTest"
-
-# Run specific tests with coverage
-./utils/runTests.sh --coverage --grep "MyTest"
-```
+The parallel runner displays live progress and aggregated results with colorful output.
 
 #### Environment Configuration
 
-The test script supports the following environment configurations:
-
 - **`.env` file**: Automatically sourced if present in the project root
-- **`PYTHON_VENV`**: Set this to your Python virtual environment path to auto-activate it
 - **`PARALLEL_JOBS`**: Number of parallel test workers (default: 8)
 
 ### Log Levels
@@ -131,13 +123,13 @@ Examples:
 
 ```bash
 # Run tests with silent logs (default)
-./utils/runTests.sh
+npx hardhat test mocha
 
 # Run tests with verbose deployment logs
-DEPLOY_LOG_LEVEL=verbose ./utils/runTests.sh
+DEPLOY_LOG_LEVEL=verbose npx hardhat test mocha
 
-# Run tests with minimal logs
-DEPLOY_LOG_LEVEL=minimal ./utils/runTests.sh
+# Run parallel tests with minimal logs
+DEPLOY_LOG_LEVEL=minimal ./utils/runTestsInParallel.sh
 ```
 
 ## Documentation

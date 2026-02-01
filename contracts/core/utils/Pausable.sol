@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { ExternalTransferStorage } from "../storages/ExternalTransferStorage.sol";
 
 abstract contract Pausable {
 	modifier whenNotGlobalPaused() {
@@ -52,7 +53,7 @@ abstract contract Pausable {
 
 	modifier whenNotExternalTransferPaused() {
 		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
-		require(!GlobalAppStorage.layout().externalTransferPaused, "Pausable: External transfer paused");
+		require(!ExternalTransferStorage.layout().externalTransferPaused, "Pausable: External transfer paused");
 		require(!GlobalAppStorage.layout().accountingPaused, "Pausable: Accounting paused");
 		_;
 	}

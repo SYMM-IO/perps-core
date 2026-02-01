@@ -6,7 +6,8 @@ pragma solidity >=0.8.18;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { AccountStorage, ExternalTransferReq, ExternalTransferStatus } from "../../storages/AccountStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { ExternalTransferStorage, VirtualExternalTransferRequest, VirtualExternalTransferStatus } from "../../storages/ExternalTransferStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { IExternalTransferRelayer } from "../../interfaces/IExternalTransferRelayer.sol";
@@ -18,12 +19,13 @@ import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 library ExternalTransferFacetImpl {
 	function externalTransfer(address sender, address receiver, uint256 amount, address target) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		ExternalTransferStorage.Layout storage extLayout = ExternalTransferStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 
 		require(amount > 0, "AccountFacet: Amount is zero");
 		require(receiver != address(0) && target != address(0), "AccountFacet: Zero receiver or target");
-		address relayer = accountLayout.externalTransferTargetsRelayers[target];
+		address relayer = extLayout.externalTransferTargetsRelayers[target];
 		require(relayer != address(0), "AccountFacet: Target not whitelisted");
 
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
@@ -48,12 +50,14 @@ library ExternalTransferFacetImpl {
 		address virtualProvider
 	) internal returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		ExternalTransferStorage.Layout storage extLayout = ExternalTransferStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 
 		// Input Checks
 		require(amount > 0, "AccountFacet: Amount is zero");
 		require(receiver != address(0) && target != address(0), "AccountFacet: Zero Receiver or Zero Target");
-		require(appLayout.virtualProviders[virtualProvider], "AccountFacet: Invalid virtual provider");
+		require(withdrawLayout.virtualProviders[virtualProvider], "AccountFacet: Invalid virtual provider");
 
 		// Balance Adjustment
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
@@ -61,8 +65,8 @@ library ExternalTransferFacetImpl {
 		accountLayout.balances[sender] -= amountWith18Decimals;
 
 		// State Update
-		uint256 currentId = ++accountLayout.lastExternalTransferId;
-		ExternalTransferReq memory externalTransferReq = ExternalTransferReq({
+		uint256 currentId = ++extLayout.lastExternalTransferId;
+		VirtualExternalTransferRequest memory externalTransferReq = VirtualExternalTransferRequest({
 			id: currentId,
 			sender: sender,
 			receiver: receiver,
@@ -71,9 +75,9 @@ library ExternalTransferFacetImpl {
 			amount: amount,
 			timestamp: block.timestamp,
 			provider: virtualProvider,
-			status: ExternalTransferStatus.PENDING
+			status: VirtualExternalTransferStatus.PENDING
 		});
-		accountLayout.externalTransfers[currentId] = externalTransferReq;
+		extLayout.externalTransfers[currentId] = externalTransferReq;
 
 		// Callback to Virtual Provider
 		LibSafeCall.safeExternalCall(
@@ -84,28 +88,29 @@ library ExternalTransferFacetImpl {
 	}
 
 	function acceptVirtualExternalTransfer(uint256 id) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		ExternalTransferReq storage externalTransferReq = accountLayout.externalTransfers[id];
+		ExternalTransferStorage.Layout storage extLayout = ExternalTransferStorage.layout();
+		VirtualExternalTransferRequest storage externalTransferReq = extLayout.externalTransfers[id];
 
-		require(externalTransferReq.status == ExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
+		require(externalTransferReq.status == VirtualExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
 		require(externalTransferReq.provider == msg.sender, "AccountFacet: Only provider can accept the transfer");
 
-		externalTransferReq.status = ExternalTransferStatus.COMPLETED;
+		externalTransferReq.status = VirtualExternalTransferStatus.COMPLETED;
 	}
 
 	function cancelVirtualExternalTransfer(uint256 id) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		ExternalTransferStorage.Layout storage extLayout = ExternalTransferStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
-		ExternalTransferReq storage externalTransferReq = accountLayout.externalTransfers[id];
+		VirtualExternalTransferRequest storage externalTransferReq = extLayout.externalTransfers[id];
 
 		require(externalTransferReq.sender == LibSigner.getSigner(), "AccountFacet: Invalid Sender");
-		require(externalTransferReq.status == ExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
+		require(externalTransferReq.status == VirtualExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
 
 		uint256 amountWith18Decimals = (externalTransferReq.amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
 		accountLayout.balances[externalTransferReq.sender] += amountWith18Decimals;
 
-		externalTransferReq.status = ExternalTransferStatus.CANCELED;
+		externalTransferReq.status = VirtualExternalTransferStatus.CANCELED;
 
 		LibSafeCall.safeExternalCall(
 			externalTransferReq.provider,

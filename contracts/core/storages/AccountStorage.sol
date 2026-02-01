@@ -6,6 +6,12 @@ pragma solidity >=0.8.18;
 
 import { LockedValues } from "../storages/QuoteStorage.sol";
 
+/// @notice Classification of liquidation severity based on timing and deficit
+/// @dev Determines how remaining funds are distributed and who pays what.
+///      NONE = not liquidated
+///      NORMAL = liquidated on time (no deficit)
+///      LATE = liquidated with small deficit (more than LF but less than LF + CVA)
+///      OVERDUE = liquidated with large deficit (more than LF + CVA)
 enum LiquidationType {
 	NONE,
 	NORMAL,
@@ -13,17 +19,23 @@ enum LiquidationType {
 	OVERDUE
 }
 
-enum AllocatedSettlementState {
-	NONE,
-	GATHER_ALLOCATED_CROSS
-}
-
+/// @notice Settlement state for unrealized PnL during force close
+/// @dev Tracks whether UPNL has been realized as part of force close workflow.
+///      NONE = not settled
+///      REALIZED = settled in isolated mode
+///      REALIZED_CROSS = settled in cross-margin mode
 enum UPNLSettlementState {
 	NONE,
 	REALIZED,
 	REALIZED_CROSS
 }
 
+/// @notice PartyB's solvency state during a force close operation
+/// @dev Determines what happens after force close completes.
+///      NONE = not in force close
+///      INSOLVENT = PartyB became insolvent during close
+///      SOLVENT = PartyB remained solvent
+///      LIQUIDATED = PartyB was liquidated
 enum PartyBForceCloseState {
 	NONE,
 	INSOLVENT,
@@ -31,6 +43,10 @@ enum PartyBForceCloseState {
 	LIQUIDATED
 }
 
+/// @notice Tracks UPNL settlement progress between PartyA and PartyB
+/// @dev Used to reconcile unrealized PnL before force close or liquidation.
+///      actualAmount = what's been settled so far, expectedAmount = total to settle,
+///      cva = Credit Valuation Adjustment held, pending = settlement in progress.
 struct SettlementState {
 	int256 actualAmount;
 	int256 expectedAmount;
@@ -38,6 +54,12 @@ struct SettlementState {
 	bool pending;
 }
 
+/// @notice Complete state tracking for a force close operation on a position
+/// @dev Force close is a multi-step process that lets PartyA close positions when PartyB
+///      isn't responding. This struct tracks every stage: price signature used, settlement
+///      states, and PartyB's resulting solvency. Note: inProgress is set during init but
+///      does NOT prevent re-initialization - it only gates progression to subsequent steps.
+///      The quote's status (CLOSE_PENDING) is the primary guard against invalid force closes.
 struct ForceCloseDetail {
 	bytes priceSigId;
 	uint256 quoteId;
@@ -47,11 +69,16 @@ struct ForceCloseDetail {
 	int256 upnlPartyB;
 	uint256 currentPrice;
 	UPNLSettlementState settlementState;
-	AllocatedSettlementState allocatedSettlementState;
 	PartyBForceCloseState partyBState;
 	bool inProgress;
 }
 
+/// @notice Complete liquidation state for a PartyA being liquidated
+/// @dev This is the source of truth during PartyA liquidation. Contains everything needed
+///      to process the liquidation: UPNL at time of insolvency, total unrealized losses,
+///      any deficit that PartyB must cover, and the liquidator's fee. The disputed flag
+///      allows challenging incorrect liquidations. involvedPartyBCounts tracks how many
+///      hedgers have positions being liquidated.
 struct LiquidationDetail {
 	bytes liquidationId;
 	LiquidationType liquidationType;
@@ -66,126 +93,113 @@ struct LiquidationDetail {
 	uint256 liquidationTimestamp;
 }
 
-struct CrossLiquidationDetail {
-	bytes liquidationId;
-	int256 upnl;
-	uint256 timestamp;
-	uint256 deallocateForLiquidation;
-	bool inProgress;
-}
-
-struct DeferredWithdraw {
-	uint256 id;
-	uint256 amount;
-	address user;
-	address to;
-	uint256 timestamp;
-	DeferredWithdrawStatus status;
-}
-
-enum DeferredWithdrawStatus {
-	INITIATED,
-	CANCELED,
-	COMPLETED
-}
-
-struct BindState {
-	BindStatus status;
-	address partyB;
-	uint256 modifyTimestamp;
-}
-
-enum BindStatus {
-	NOT_BOUND,
-	BOUND,
-	PENDING_UNBIND
-}
-
+/// @notice A price snapshot at a specific time
+/// @dev Used during liquidation to record prices at the moment of insolvency.
+///      The timestamp ensures prices are fresh and match the liquidation event.
 struct Price {
 	uint256 price;
 	uint256 timestamp;
 }
 
-enum ExternalTransferStatus {
-	PENDING,
-	COMPLETED,
-	CANCELED
-}
-
-enum AssuranceWithdrawStatus {
-	NONE,
-	PENDING,
-	APPROVED
-}
-
-struct AssuranceWithdrawalRequest {
-	address token;
-	uint256 amount;
-	address recipient;
-	address requester;
-	AssuranceWithdrawStatus status;
-}
-
-// External Transfer : Symmio1(user1) balance -> Symmio2(user2) balance
-struct ExternalTransferReq {
-	uint256 id;
-	address sender; // user1 in source contract
-	address receiver; // user2 in target contract
-	address source; // Symmio contract 1
-	address target; // Symmio contract 2
-	uint256 amount;
-	uint256 timestamp;
-	address provider; // virtual provider who handles the transfer
-	ExternalTransferStatus status;
-}
-
+/// @title AccountStorage
+/// @notice All account balance and state data for PartyAs and PartyBs
+/// @dev The heart of the accounting system. Every balance, locked amount, and account state
+///      lives here.
 library AccountStorage {
 	bytes32 internal constant ACCOUNT_STORAGE_SLOT = keccak256("diamond.standard.storage.account");
 
 	struct Layout {
-		// Users deposited amounts
+		/// @notice Withdrawable balance per user (not yet committed to trading)
+		/// @dev Users can withdraw from this (after cooldown) or allocate it for trading.
+		///      Updated by: deposit, withdraw, deallocate, internal/external transfers.
 		mapping(address => uint256) balances;
+		/// @notice Funds committed to trading but not yet locked in positions
+		/// @dev When PartyA allocates, funds move here. This is their "margin account".
+		///      Can be used to open positions or deallocated back to balance.
 		mapping(address => uint256) allocatedBalances;
-		// position value will become pending locked before openPosition and will be locked after that
+		/// @notice Margin locked when a quote is sent but not yet opened
+		/// @dev When PartyA sends a quote, required margin (CVA + LF + partyAmm) moves here.
+		///      If PartyB opens the position, it moves to lockedBalances. If canceled, refunded.
+		///      Contains CVA (credit valuation adjustment), LF (liquidation fee), partyAmm
+		///      (PartyA maintenance margin).
 		mapping(address => LockedValues) pendingLockedBalances;
+		/// @notice Margin locked in open positions
+		/// @dev Once a quote is opened, locked values move from pending to here. Released when
+		///      position closes.
 		mapping(address => LockedValues) lockedBalances;
+		/// @notice PartyB's allocated balance per PartyA
+		/// @dev In isolated mode, PartyB allocates separately for each PartyA they trade with.
+		///      Maps partyB => partyA => amount. For cross-mode PartyB, address(0) is used
+		///      as the master bucket instead of per-partyA allocations.
 		mapping(address => mapping(address => uint256)) partyBAllocatedBalances;
+		/// @notice PartyB's pending locked values per PartyA
+		/// @dev Same as pendingLockedBalances but for the PartyB side of each trade.
+		///      Tracks how much PartyB has committed to quotes not yet opened.
 		mapping(address => mapping(address => LockedValues)) partyBPendingLockedBalances;
+		/// @notice PartyB's locked values in open positions per PartyA
+		/// @dev Same as lockedBalances but for the PartyB side.
 		mapping(address => mapping(address => LockedValues)) partyBLockedBalances;
-		mapping(address => uint256) withdrawCooldown; // is better to call lastDeallocateTime
+		/// @notice Timestamp of last deallocate action per user
+		/// @dev Despite the name, this tracks deallocate time, not withdraw time. Checked
+		///      against deallocateCooldown before allowing withdrawals.
+		mapping(address => uint256) withdrawCooldown;
+		/// @notice Replay protection counter for PartyA signatures
+		/// @dev Incremented with each action that changes the UPNL of partyA.
+		///      Muon signatures include this nonce to prevent replay attacks.
 		mapping(address => uint256) partyANonces;
+		/// @notice Replay protection counter for PartyB signatures per PartyA
+		/// @dev PartyB has separate nonces for each PartyA they trade with. Both
+		///      per-PartyA nonces AND the address(0) global nonce are always incremented
+		///      on every upnl changing operation. This nonce will be ignored for cross partyBs
+		///      when doing all operations except deallocation. The reason for that is to allow
+		///      parallel operations to solver.
 		mapping(address => mapping(address => uint256)) partyBNonces;
+		/// @notice Accounts frozen by admin due to suspicious activity
+		/// @dev Suspended users cannot open/close positions or have positions opened against them.
+		///      Checked via notSuspended modifier. Used when investigating potential exploits
+		///      or rule violations. Withdrawal requests have separate suspension handling.
 		mapping(address => bool) suspendedAddresses;
+		/// @notice Full liquidation state for PartyAs being liquidated
+		/// @dev Contains everything about an ongoing liquidation: UPNL, deficit, type, timestamp, etc.
 		mapping(address => LiquidationDetail) liquidationDetails;
+		/// @notice Oracle prices set during liquidation per symbol
+		/// @dev When liquidating, we lock in prices for each symbol at the moment of
+		///      insolvency. Maps user => symbolId => Price. Used to close positions at
+		///      consistent prices throughout the liquidation process.
 		mapping(address => mapping(uint256 => Price)) symbolsPrices;
+		/// @notice Addresses participating in a user's liquidation
+		/// @dev Multiple liquidators can process a single liquidation. Each gets a share
+		///      of the liquidation fee proportional to their contribution. Cleared after
+		///      liquidation completes.
 		mapping(address => address[]) liquidators;
+		/// @notice Reimbursement owed to PartyA from pending fees or new allocations during deferred liquidations
+		/// @dev This will be paid back to user at the end of liquidation process.
 		mapping(address => uint256) partyAReimbursement;
-		// partyA => partyB => SettlementState
+		/// @notice UPNL settlement state between PartyA-PartyB pairs during liquidation
+		/// @dev Used during PartyA liquidation to track UPNL reconciliation with each PartyB.
+		///      expectedAmount = full PnL for PartyA's accumulated UPNL tracking
+		///      actualAmount = amount actually transferred (may differ in OVERDUE due to deficit,
+		///                     or overridden via resolveLiquidationDispute)
+		///      cva = CVA held for this PartyB, pending = settlement in progress.
+		///      Cleared after liquidation completes via settlePartyALiquidation.
 		mapping(address => mapping(address => SettlementState)) settlementStates;
+		/// @notice PartyB's reserve funds for covering force close scenarios
+		/// @dev Extra collateral PartyB deposits as a safety buffer. Used during force close
+		///      if their allocated balance is insufficient. Not used in cross mode.
 		mapping(address => uint256) reserveVault;
-		mapping(address => BindState) bindState;
-		mapping(address => bool) isCrossPartyB;
-		mapping(address => CrossLiquidationDetail) crossLiquidationDetails;
-		mapping(address => address) externalTransferTargetsRelayers;
-		mapping(address => address) affiliateHooks;
-		// ---- Instant Actions ----
-		mapping(address => bool) instantActionsMode;
-		mapping(address => uint256) instantActionsModeDeactivateTime;
-		uint256 deactiveInstantActionModeCooldown;
-		// ---- symbol whitelisting ----
-		mapping(address => mapping(uint256 => bool)) partyBWhitelistedSymbolTypes;
-		mapping(address => mapping(uint256 => bool)) partyBWhitelistedSymbols;
-		mapping(address => mapping(uint256 => bool)) partyBBlacklistedSymbols; // PartyB => symbolId   => isBlackListed
-		mapping(address => address[]) connectedPartyBs; // PartyA => list of connected PartyBs (has open positions with)
-		mapping(address => mapping(address => bool)) isConnectedPartyB; // PartyA => PartyB => bool (for O(1) lookup)
-		// ---- force close ----
-		mapping(uint256 => ForceCloseDetail) forceCloseDetails; // quoteId => Force close status
-		uint256 lastExternalTransferId;
-		mapping(uint256 => ExternalTransferReq) externalTransfers;
-		mapping(address => bool) isPartyBBindable;
-		// ---- Assurance collateral (token decimals) ----
-		mapping(address => mapping(address => uint256)) assuranceCollateral; // partyB => token => amount (token decimals)
-		mapping(address => AssuranceWithdrawalRequest) assuranceWithdrawalRequests;
+		/// @notice List of PartyBs that PartyA has open positions with
+		/// @dev Maintained for efficient iteration when calculating PartyA UPNL across
+		///      all their hedgers. Added when first position opens, removed when last closes.
+		mapping(address => address[]) connectedPartyBs;
+		/// @notice Fast lookup for whether PartyA has positions with a specific PartyB
+		/// @dev O(1) check instead of iterating connectedPartyBs array.
+		mapping(address => mapping(address => bool)) isConnectedPartyB;
+		/// @notice State of force close operations per quote
+		/// @dev Force close lets PartyA close positions when PartyB isn't responding.
+		///      Tracks the multi-step process: settlement state, allocated balance state,
+		///      PartyB solvency result. The inProgress flag gates step progression but does
+		///      NOT prevent re-initialization - quote status is the primary guard.
+		mapping(uint256 => ForceCloseDetail) forceCloseDetails;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

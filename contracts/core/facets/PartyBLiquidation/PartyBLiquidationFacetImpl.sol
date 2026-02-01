@@ -15,6 +15,8 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { SingleUpnlSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
+import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 
@@ -22,8 +24,7 @@ library PartyBLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
 	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		require(!accountLayout.isCrossPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
+		require(!CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
 		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA);
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);
@@ -79,8 +80,8 @@ library PartyBLiquidationFacetImpl {
 			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1;
 			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 
-			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-			address systemHook = accountLayout.affiliateHooks[address(0)];
+			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
+			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 
 			LibHook.safeCall(
 				affiliateHook,

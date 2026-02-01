@@ -13,8 +13,11 @@ import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues, PositionType, OrderType } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
-import { GlobalAppStorage, Fee } from "../../storages/GlobalAppStorage.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
+import { Fee } from "../../storages/QuoteStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
@@ -44,7 +47,7 @@ library PartyAFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		AffiliateStorage.Layout storage affiliateLayout = AffiliateStorage.layout();
 		address signer = LibSigner.getSigner();
 
 		require(!LibAccessibility.hasRole(signer, LibAccessibility.LIQUIDATOR_ROLE), "PartyAFacet: Liquidator can't be partyA");
@@ -66,23 +69,24 @@ library PartyAFacetImpl {
 			require(partyBsWhiteList[i] != signer, "PartyAFacet: Sender isn't allowed in partyBWhiteList");
 		}
 
-		address boundedPartyB = accountLayout.bindState[signer].partyB;
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
+		address boundedPartyB = tradingLayout.bindState[signer].partyB;
 		if (boundedPartyB != address(0)) {
-			require(accountLayout.isPartyBBindable[boundedPartyB], "PartyAFacet: Bound Party B is not Bindable");
+			require(tradingLayout.isPartyBBindable[boundedPartyB], "PartyAFacet: Bound Party B is not Bindable");
 			require(partyBsWhiteList.length == 1 && partyBsWhiteList[0] == boundedPartyB, "PartyAFacet: PartyA is bound to a different PartyB");
 		} else {
 			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId);
 		}
 
 		Fee memory fee;
-		if (appLayout.customAffiliateFee[affiliate][signer][symbolId].isSet) {
-			fee = appLayout.customAffiliateFee[affiliate][signer][symbolId];
+		if (affiliateLayout.customAffiliateFee[affiliate][signer][symbolId].isSet) {
+			fee = affiliateLayout.customAffiliateFee[affiliate][signer][symbolId];
 		} else {
-			if (appLayout.affiliateFee[affiliate][symbolId].isSet) {
-				fee = appLayout.affiliateFee[affiliate][symbolId];
+			if (affiliateLayout.affiliateFee[affiliate][symbolId].isSet) {
+				fee = affiliateLayout.affiliateFee[affiliate][symbolId];
 			} else {
-				if (appLayout.affiliateFee[affiliate][0].isSet) {
-					fee = appLayout.affiliateFee[affiliate][0];
+				if (affiliateLayout.affiliateFee[affiliate][0].isSet) {
+					fee = affiliateLayout.affiliateFee[affiliate][0];
 				} else {
 					uint256 symbolTradingFee = symbolLayout.symbols[symbolId].tradingFee;
 					fee = Fee(symbolTradingFee, symbolTradingFee, true);
@@ -167,8 +171,8 @@ library PartyAFacetImpl {
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			result = QuoteStatus.CANCELED;
 
-			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-			address systemHook = accountLayout.affiliateHooks[address(0)];
+			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
+			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 
 			LibHook.safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
 			LibHook.safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);

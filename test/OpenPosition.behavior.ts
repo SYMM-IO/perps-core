@@ -272,18 +272,30 @@ export function shouldBehaveLikeOpenPosition(): void {
 		})
 
 		it("Should skip check sig when bind", async function () {
+			// First clear all pending quotes:
+			// - Open quote 1 with hedger
+			await hedger.openPosition(1)
+			// - Cancel quote 2 (locked by hedger2) so there are no positions with other partyB
 			await user.requestToCancelQuote(2)
 			await hedger2.acceptCancelRequest(2)
+			// - Cancel quotes 3 and 4 which are still PENDING (not locked)
+			await user.requestToCancelQuote(3)
+			await user.requestToCancelQuote(4)
+
 			await context.controlFacet
 				.connect(context.signers.admin)
 				.grantRole(context.signers.admin, ethers.keccak256(toUtf8Bytes("BINDABLE_SETTER_ROLE")))
-			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address,true)
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+
+			// Send a new quote targeting the bound partyB and open it with bad sig - should succeed because bound
+			await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([context.signers.hedger.address]).build())
+			await hedger.lockQuote(5)
 			await expect(
 				hedger.openPosition(
-					1,
+					5,
 					limitOpenRequestBuilder()
-						.filledAmount(await getQuoteQuantity(context, 1n))
+						.filledAmount(await getQuoteQuantity(context, 5n))
 						.openPrice(decimal(1n))
 						.price(decimal(1n, 17))
 						.upnlPartyB(decimal(-1000n))

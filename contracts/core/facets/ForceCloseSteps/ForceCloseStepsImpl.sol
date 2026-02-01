@@ -8,6 +8,7 @@ import { LibSettlement } from "../../libraries/LibSettlement.sol";
 import { LibForceActions } from "../../libraries/LibForceActions.sol";
 import { QuoteStorage, Quote, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage, ForceCloseDetail, PartyBForceCloseState } from "../../storages/AccountStorage.sol";
+import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { LibMuonUnifiedSettlement } from "../../libraries/muon/LibMuonUnifiedSettlement.sol";
@@ -87,7 +88,7 @@ library ForceCloseStepsImpl {
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
 		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
-		bool isCrossPartyB = accountLayout.isCrossPartyB[partyB];
+		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB];
 
 		if (isCrossPartyB) {
 			// Cross partyB mode: Use SOLVENT/INSOLVENT marking without liquidation
@@ -143,7 +144,7 @@ library ForceCloseStepsImpl {
 		bool isSamePartyB = forceCloseQuote.partyB == sig.partyB;
 
 		// Verify signature using unified settlement verification
-		bool isCrossPartyB = accountLayout.isCrossPartyB[sig.partyB];
+		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[sig.partyB];
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB);
 
 		// Use the unified settlement function with isForceClose=true

@@ -74,6 +74,7 @@ interface IControlEvents {
 	event PausePartyBOpenPositions();
 	event PauseInternalTransfer();
 	event PauseExternalTransfer();
+	event PauseInstantLayer();
 	event ActiveEmergencyMode();
 	event UnpauseGlobal();
 	event UnpauseLiquidation();
@@ -83,13 +84,14 @@ interface IControlEvents {
 	event UnpausePartyBOpenPositions();
 	event UnpauseInternalTransfer();
 	event UnpauseExternalTransfer();
+	event UnpauseInstantLayer();
 	event DeactiveEmergencyMode();
 	event SetLiquidationTimeout(uint256 oldLiquidationTimeout, uint256 newLiquidationTimeout);
 	event SetSuspendedAddress(address user, bool isSuspended);
 	event SetPartyBEmergencyStatus(address partyB, bool status);
 	event SetBalanceLimitPerUser(uint256 balanceLimitPerUser);
-	event SetCrossEnabled(bool oldValue, bool newValue);
-	event SetLegacyDeallocateDisabled(bool oldValue, bool newValue);
+	event SetCrossPartyBModeActivated(bool oldValue, bool newValue);
+	event SetLegacyDeallocateDeprecated(bool oldValue, bool newValue);
 	event RegisterPartyB(address partyB);
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);
@@ -101,8 +103,8 @@ interface IControlEvents {
 	event WhitelistSymbols(address partyB, uint256[] symbolIds);
 	event RemoveSymbolTypeFromWhitelist(address partyB, uint256 symbolType);
 	event RemoveSymbolsFromWhitelist(address partyB, uint256[] symbolIds);
-	event BlacklistSymbols(address indexed partyB, uint256[] indexed symbolId);
-	event RemoveSymbolsFromBlacklist(address indexed partyB, uint256[] indexed symbolId);
+	event BlacklistSymbols(address indexed partyB, uint256[] symbolId);
+	event RemoveSymbolsFromBlacklist(address indexed partyB, uint256[] symbolId);
 	event SetSignatureVerifierAddress(address SignatureVerifier);
 	event AddRelayerForExternalTransferTarget(address target, address relayer);
 	event RemoveRelayerForExternalTransferTarget(address target);
@@ -118,12 +120,12 @@ interface IControlEvents {
 	event UnregisterExpressProvider(address provider);
 	event SetSpeedUpUser(address user, bool speedUp);
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
-	event DeprecateOldWithdrawalPaused();
+	event LegacyWithdrawalDeprecated();
 	event SignerSet(address signer);
 	event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);
 	event SetSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector);
 	event SetPartyBBindable(address partyB, bool bindable);
-	event DeprecateOldFundingFee();
-	event EnableNewFundingFee();
+	event LegacyFundingDeprecated();
+	event AccumulatedFundingActivated();
 	event SetCrossPartyB(address indexed partyB, bool enabled);
 }

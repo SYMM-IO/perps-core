@@ -8,6 +8,7 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { LibMuonAccount } from "../../libraries/muon/LibMuonAccount.sol";
@@ -25,18 +26,17 @@ library AccountFacetImpl {
 	}
 
 	function virtualDepositFor(address user, uint256 amount) internal {
-		require(GlobalAppStorage.layout().virtualProviders[msg.sender], "AccountFacet : msg.sender not registered as virtual provider");
+		require(WithdrawStorage.layout().virtualProviders[msg.sender], "AccountFacet : msg.sender not registered as virtual provider");
 		AccountStorage.layout().balances[user] += amount;
 	}
 
 	function depositVirtualFunds(uint256 amount) internal {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		require(
-			appLayout.virtualProviders[msg.sender],
+			WithdrawStorage.layout().virtualProviders[msg.sender],
 			"AccountFacet: signer not registered as virtual provider"
 		);
 		// Transfer funds from virtual provider to Symmio
-		address collateral = appLayout.collateral;
+		address collateral = GlobalAppStorage.layout().collateral;
 		LibSafeERC20.safeTransferFrom(collateral, msg.sender, address(this), amount);
 	}
 
@@ -45,7 +45,7 @@ library AccountFacetImpl {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(appLayout.deprecateOldWithdrawalPaused == false, "This Withdrawal has been deprecated use new one;");
+		require(WithdrawStorage.layout().legacyWithdrawalDeprecated == false, "This Withdrawal has been deprecated use new one;");
 		require(
 			block.timestamp >= accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateCooldown,
 			"AccountFacet: Cooldown hasn't reached"
@@ -88,7 +88,7 @@ library AccountFacetImpl {
 
 
 	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) internal {
-		require(!GlobalAppStorage.layout().legacyDeallocateDisabled, "AccountFacet: Legacy deallocate is disabled");
+		require(!GlobalAppStorage.layout().legacyDeallocateDeprecated, "AccountFacet: Legacy deallocate is disabled");
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(

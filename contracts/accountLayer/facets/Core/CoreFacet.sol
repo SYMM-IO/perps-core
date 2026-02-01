@@ -16,7 +16,8 @@ import {
 	VirtualAccountData,
 	SubAccountCreationData,
 	VirtualAccountIsolationType,
-	SubAccountIsolationType
+	SubAccountIsolationType,
+	LegacyAccountImportData
 } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage, AffiliateState, HookContext } from "../../storages/AffiliateHubStorage.sol";
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
@@ -26,6 +27,7 @@ import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
 import { IVirtualProvider } from "../../../core/interfaces/IVirtualProvider.sol";
+import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
@@ -76,6 +78,56 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		s.singleVAMode = enabled;
 		emit SingleVAModeChanged(subAccount, enabled);
+	}
+
+	function deleteSubAccount(address subAccount) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		SubAccountData storage s = ahLayout.subAccounts[subAccount];
+
+		if (!s.isExists) revert AccountDoesNotExist();
+
+		// Require all VirtualAccounts to be deleted first
+		if (ahLayout.subAccountToVirtualAccounts[subAccount].length() > 0) {
+			revert HasActiveVirtualAccounts();
+		}
+
+		// Check that the account is empty in symmio
+		ISymmio symmio = ISymmio(s.symmioCore);
+
+		// Check balance is 0
+		if (symmio.balanceOf(subAccount) > 0) revert SubAccountNotEmpty();
+
+		// Check allocated balance is 0
+		if (symmio.allocatedBalanceOfPartyA(subAccount) > 0) revert SubAccountNotEmpty();
+
+		// Check no open positions
+		if (symmio.partyAPositionsCount(subAccount) > 0) revert OpenPositionsExist();
+
+		// Check no pending quotes
+		uint256[] memory pendingQuotes = symmio.getPartyAPendingQuotes(subAccount);
+		if (pendingQuotes.length > 0) revert PendingQuotesExist();
+
+		// Store values before deletion for event and hook
+		address owner = s.owner;
+		address affiliate = s.affiliate;
+		address symmioCore = s.symmioCore;
+
+		// Mark as deleted
+		s.isExists = false;
+
+		// Remove from user's subAccounts set
+		ahLayout.userToSubAccounts[owner].remove(subAccount);
+
+		// Call affiliate hook
+		LibAccountLayerUtils.callHook(
+			affiliate,
+			subAccount,
+			symmioCore,
+			IAccountHubHook.onSubAccountDeletion.selector,
+			abi.encodeWithSelector(IAccountHubHook.onSubAccountDeletion.selector, subAccount, owner)
+		);
+
+		emit SubAccountDeleted(subAccount, owner, affiliate);
 	}
 
 	// ==================== Virtual Account Management ====================
@@ -526,5 +578,76 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 					uint256(keccak256(abi.encodePacked(bytes1(0xff), affiliate, keccak256(abi.encodePacked(user, nonce)), ACCOUNT_INIT_CODE_HASH)))
 				)
 			);
+	}
+
+	// ==================== Legacy Account Migration ====================
+
+	function importLegacyAccounts(
+		address legacyContract,
+		address affiliate,
+		address[] calldata symmioCores,
+		LegacyAccountImportData[] calldata accountsData
+	) external whenNotPaused nonReentrant returns (address[] memory importedAccounts) {
+		if (accountsData.length == 0) revert EmptyArray();
+
+		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+
+		// Validate legacy contract is registered
+		if (!afLayout.legacyMultiAccounts.contains(legacyContract)) {
+			revert LegacyContractNotRegistered();
+		}
+
+		// Validate affiliate is active
+		if (afLayout.affiliates[affiliate].state != AffiliateState.ACTIVE) {
+			revert AffiliateNotActive();
+		}
+
+		// Validate all symmioCores are allowed for this affiliate (number of symmioCores is very limited)
+		for (uint256 i = 0; i < symmioCores.length; i++) {
+			if (!afLayout.affiliates[affiliate].symmioCores.contains(symmioCores[i])) {
+				revert SymmioCoreNotAllowed();
+			}
+		}
+
+		address signer = LibAccountLayerUtils.getSigner();
+		IMultiAccount multiAccount = IMultiAccount(legacyContract);
+		importedAccounts = new address[](accountsData.length);
+
+		for (uint256 i = 0; i < accountsData.length; i++) {
+			LegacyAccountImportData calldata data = accountsData[i];
+
+			// Validate coreIndex
+			if (data.coreIndex >= symmioCores.length) revert InvalidCallData();
+
+			// Validate ownership
+			if (multiAccount.owners(data.account) != signer) {
+				revert LegacyAccountNotOwned();
+			}
+
+			// Prevent double-import
+			if (ahLayout.subAccounts[data.account].isExists) {
+				revert AccountAlreadyExists();
+			}
+
+			// Validate name
+			LibAccountLayerUtils.validateName(data.name);
+
+			// Create SubAccountData
+			SubAccountData storage s = ahLayout.subAccounts[data.account];
+			s.owner = signer;
+			s.isExists = true;
+			s.singleVAMode = false;
+			s.name = data.name;
+			s.affiliate = affiliate;
+			s.metadata = "";
+			s.symmioCore = symmioCores[data.coreIndex];
+			s.isolationType = SubAccountIsolationType.CUSTOM;
+
+			ahLayout.userToSubAccounts[signer].add(data.account);
+			importedAccounts[i] = data.account;
+
+			emit LegacyAccountImported(data.account, signer, legacyContract, affiliate);
+		}
 	}
 }

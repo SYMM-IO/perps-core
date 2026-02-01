@@ -307,7 +307,7 @@ export class User extends PartyEntity {
 		liquidator: HardhatEthersSigner = this.context.signers.liquidator,
 	): Promise<LiquidationSigStruct> {
 		const upnl = await this.getUpnl(getPriceFetcher(symbolIds, prices)) - (await this.context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds))
-		const totalUnrealizedLoss = await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices))
+		const totalUnrealizedLoss = await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices)) - (await this.context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds))
 		const allocatedBalance = (await this.getBalanceInfo()).allocatedBalances
 		const sign = await getDummyLiquidationSig("0x10", upnl, symbolIds, prices, totalUnrealizedLoss, allocatedBalance)
 		await this.context.partyALiquidationFacet.connect(liquidator).deferredLiquidatePartyA(this.getAddress(), sign)

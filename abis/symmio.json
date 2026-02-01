@@ -2693,6 +2693,12 @@
     {
         "anonymous": false,
         "inputs": [],
+        "name": "AccumulatedFundingActivated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [],
         "name": "ActiveEmergencyMode",
         "type": "event"
     },
@@ -2793,7 +2799,7 @@
                 "type": "address"
             },
             {
-                "indexed": true,
+                "indexed": false,
                 "internalType": "uint256[]",
                 "name": "symbolId",
                 "type": "uint256[]"
@@ -2806,18 +2812,6 @@
         "anonymous": false,
         "inputs": [],
         "name": "DeactiveEmergencyMode",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [],
-        "name": "DeprecateOldFundingFee",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [],
-        "name": "DeprecateOldWithdrawalPaused",
         "type": "event"
     },
     {
@@ -2855,7 +2849,13 @@
     {
         "anonymous": false,
         "inputs": [],
-        "name": "EnableNewFundingFee",
+        "name": "LegacyFundingDeprecated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [],
+        "name": "LegacyWithdrawalDeprecated",
         "type": "event"
     },
     {
@@ -2874,6 +2874,12 @@
         "anonymous": false,
         "inputs": [],
         "name": "PauseGlobal",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [],
+        "name": "PauseInstantLayer",
         "type": "event"
     },
     {
@@ -3032,7 +3038,7 @@
                 "type": "address"
             },
             {
-                "indexed": true,
+                "indexed": false,
                 "internalType": "uint256[]",
                 "name": "symbolId",
                 "type": "uint256[]"
@@ -3228,25 +3234,6 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "oldValue",
-                "type": "bool"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "newValue",
-                "type": "bool"
-            }
-        ],
-        "name": "SetCrossEnabled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
                 "indexed": true,
                 "internalType": "address",
                 "name": "partyB",
@@ -3260,6 +3247,25 @@
             }
         ],
         "name": "SetCrossPartyB",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "oldValue",
+                "type": "bool"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "newValue",
+                "type": "bool"
+            }
+        ],
+        "name": "SetCrossPartyBModeActivated",
         "type": "event"
     },
     {
@@ -3596,7 +3602,7 @@
                 "type": "bool"
             }
         ],
-        "name": "SetLegacyDeallocateDisabled",
+        "name": "SetLegacyDeallocateDeprecated",
         "type": "event"
     },
     {
@@ -4115,6 +4121,12 @@
         "anonymous": false,
         "inputs": [],
         "name": "UnpauseGlobal",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [],
+        "name": "UnpauseInstantLayer",
         "type": "event"
     },
     {
@@ -6097,44 +6109,6 @@
         "inputs": [
             {
                 "indexed": false,
-                "internalType": "address",
-                "name": "bridge",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "transactionId",
-                "type": "uint256"
-            }
-        ],
-        "name": "AcceptCancelBridgeTransactionRequest",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "transactionId",
-                "type": "uint256"
-            }
-        ],
-        "name": "RequestToCancelBridgeTransaction",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
                 "internalType": "uint256",
                 "name": "transactionId",
                 "type": "uint256"
@@ -6225,32 +6199,6 @@
                 "internalType": "uint256",
                 "name": "transactionId",
                 "type": "uint256"
-            }
-        ],
-        "name": "acceptCancelBridgeTransactionRequest",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "transactionId",
-                "type": "uint256"
-            }
-        ],
-        "name": "requestToCancelBridgeTransaction",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "transactionId",
-                "type": "uint256"
             },
             {
                 "internalType": "uint256",
@@ -6322,6 +6270,13 @@
     },
     {
         "inputs": [],
+        "name": "activateAccumulatedFunding",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "activeEmergencyMode",
         "outputs": [],
         "stateMutability": "nonpayable",
@@ -6336,21 +6291,14 @@
     },
     {
         "inputs": [],
-        "name": "deprecateOldFundingFee",
+        "name": "deprecateLegacyFunding",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
     {
         "inputs": [],
-        "name": "deprecateOldWithdrawal",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "enableNewFundingFee",
+        "name": "deprecateLegacyWithdrawal",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -6372,6 +6320,13 @@
     {
         "inputs": [],
         "name": "pauseGlobal",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "pauseInstantLayer",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -6459,6 +6414,13 @@
     {
         "inputs": [],
         "name": "unpauseGlobal",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "unpauseInstantLayer",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -6776,19 +6738,6 @@
                 "internalType": "uint256",
                 "name": "",
                 "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "getAccumulativeFundingRateActivationFlag",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
             }
         ],
         "stateMutability": "view",
@@ -7256,19 +7205,6 @@
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "getIterativeFundingDeprecationFlag",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [
             {
                 "internalType": "address",
@@ -7433,25 +7369,6 @@
     {
         "inputs": [],
         "name": "getNextBridgeTransactionId",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            }
-        ],
-        "name": "getPartyALockedQuotesCount",
         "outputs": [
             {
                 "internalType": "uint256",
@@ -7657,12 +7574,12 @@
                         "type": "address"
                     },
                     {
-                        "internalType": "enum ExternalTransferStatus",
+                        "internalType": "enum VirtualExternalTransferStatus",
                         "name": "status",
                         "type": "uint8"
                     }
                 ],
-                "internalType": "struct ExternalTransferReq",
+                "internalType": "struct VirtualExternalTransferRequest",
                 "name": "",
                 "type": "tuple"
             }
@@ -7850,6 +7767,19 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "isAccumulatedFundingActivated",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -7901,19 +7831,6 @@
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "isCrossEnabled",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [
             {
                 "internalType": "address",
@@ -7952,6 +7869,19 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "isCrossPartyBModeActivated",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -7972,7 +7902,20 @@
     },
     {
         "inputs": [],
-        "name": "isLegacyDeallocateDisabled",
+        "name": "isLegacyDeallocateDeprecated",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "isLegacyFundingDeprecated",
         "outputs": [
             {
                 "internalType": "bool",
@@ -8674,11 +8617,6 @@
                     {
                         "internalType": "enum UPNLSettlementState",
                         "name": "settlementState",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "enum AllocatedSettlementState",
-                        "name": "allocatedSettlementState",
                         "type": "uint8"
                     },
                     {
@@ -14099,101 +14037,6 @@
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "bytes4",
-                "name": "_functionSelector",
-                "type": "bytes4"
-            }
-        ],
-        "name": "facetAddress",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "facetAddress_",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "facetAddresses",
-        "outputs": [
-            {
-                "internalType": "address[]",
-                "name": "facetAddresses_",
-                "type": "address[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "_facet",
-                "type": "address"
-            }
-        ],
-        "name": "facetFunctionSelectors",
-        "outputs": [
-            {
-                "internalType": "bytes4[]",
-                "name": "_facetFunctionSelectors",
-                "type": "bytes4[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "facets",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "facetAddress",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bytes4[]",
-                        "name": "functionSelectors",
-                        "type": "bytes4[]"
-                    }
-                ],
-                "internalType": "struct IDiamondLoupe.Facet[]",
-                "name": "facets_",
-                "type": "tuple[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "bytes4",
-                "name": "_interfaceId",
-                "type": "bytes4"
-            }
-        ],
-        "name": "supportsInterface",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "anonymous": false,
         "inputs": [
             {
@@ -14851,7 +14694,7 @@
                 "type": "address"
             },
             {
-                "indexed": true,
+                "indexed": false,
                 "internalType": "address[]",
                 "name": "partyAs",
                 "type": "address[]"
@@ -14938,7 +14781,7 @@
                 "type": "address"
             },
             {
-                "indexed": true,
+                "indexed": false,
                 "internalType": "address[]",
                 "name": "partyAs",
                 "type": "address[]"
@@ -14989,14 +14832,20 @@
             },
             {
                 "indexed": false,
-                "internalType": "int256",
-                "name": "marginDelta",
-                "type": "int256"
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
             },
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "penalty",
+                "name": "penaltyFromAllocated",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "penaltyFromBalance",
                 "type": "uint256"
             }
         ],
@@ -15224,13 +15073,18 @@
                 "type": "address"
             },
             {
-                "internalType": "int256",
-                "name": "marginDelta",
-                "type": "int256"
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
             },
             {
                 "internalType": "uint256",
-                "name": "penalty",
+                "name": "penaltyFromAllocated",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "penaltyFromBalance",
                 "type": "uint256"
             }
         ],
@@ -16146,6 +16000,19 @@
     {
         "inputs": [
             {
+                "internalType": "bool",
+                "name": "activated",
+                "type": "bool"
+            }
+        ],
+        "name": "setCrossPartyBModeActivated",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
@@ -16338,11 +16205,11 @@
         "inputs": [
             {
                 "internalType": "bool",
-                "name": "disabled",
+                "name": "deprecated",
                 "type": "bool"
             }
         ],
-        "name": "setLegacyDeallocateDisabled",
+        "name": "setLegacyDeallocateDeprecated",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -16676,101 +16543,6 @@
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "bool",
-                "name": "enabled",
-                "type": "bool"
-            }
-        ],
-        "name": "setCrossEnabled",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "facetAddress",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "enum IDiamondCut.FacetCutAction",
-                        "name": "action",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "bytes4[]",
-                        "name": "functionSelectors",
-                        "type": "bytes4[]"
-                    }
-                ],
-                "indexed": false,
-                "internalType": "struct IDiamondCut.FacetCut[]",
-                "name": "_diamondCut",
-                "type": "tuple[]"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "_init",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bytes",
-                "name": "_calldata",
-                "type": "bytes"
-            }
-        ],
-        "name": "DiamondCut",
-        "type": "event"
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "facetAddress",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "enum IDiamondCut.FacetCutAction",
-                        "name": "action",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "bytes4[]",
-                        "name": "functionSelectors",
-                        "type": "bytes4[]"
-                    }
-                ],
-                "internalType": "struct IDiamondCut.FacetCut[]",
-                "name": "_diamondCut",
-                "type": "tuple[]"
-            },
-            {
-                "internalType": "address",
-                "name": "_init",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes",
-                "name": "_calldata",
-                "type": "bytes"
-            }
-        ],
-        "name": "diamondCut",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
         "anonymous": false,
         "inputs": [
             {
@@ -16855,70 +16627,6 @@
         ],
         "name": "RequestToClosePosition",
         "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "pendingOwner",
-                "type": "address"
-            }
-        ],
-        "name": "OwnershipTransferCanceled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "currentOwner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "pendingOwner",
-                "type": "address"
-            }
-        ],
-        "name": "OwnershipTransferStarted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "previousOwner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "newOwner",
-                "type": "address"
-            }
-        ],
-        "name": "OwnershipTransferred",
-        "type": "event"
-    },
-    {
-        "inputs": [],
-        "name": "DIAMOND_STORAGE_POSITION",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
     },
     {
         "inputs": [],

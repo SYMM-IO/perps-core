@@ -187,9 +187,17 @@ export async function initializeFixture(): Promise<RunContext> {
 	// BINDABLE_SETTER_ROLE merged into PARTY_B_MANAGER_ROLE - no need to grant separately
 	await context.controlFacet.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
 
-	// // Set Muon configuration with sufficient validity time for tests
-	// await context.controlFacet.connect(context.signers.admin).setMuonConfig(3600, 3600) // 1 hour validity
-	// await context.controlFacet.connect(context.signers.admin).setMuonIds(1, ethers.ZeroAddress, { x: 0, parity: 0 })
+	// Deploy MockMuonSignatureVerifier for testing
+	// This allows tests to run without real Muon signatures by using a mock that accepts all signatures
+	const MockMuonSignatureVerifier = await ethers.getContractFactory("MockMuonSignatureVerifier")
+	const mockVerifier = await MockMuonSignatureVerifier.deploy()
+	await mockVerifier.waitForDeployment()
+	await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await mockVerifier.getAddress())
+
+	// Set Muon configuration with large validity time for tests (prevents expiration during time manipulation)
+	// Using 100 years in seconds - large enough for any test but won't cause overflow
+	const hundredYearsInSeconds = 100n * 365n * 24n * 60n * 60n // ~3,153,600,000 seconds
+	await context.controlFacet.connect(context.signers.admin).setMuonConfig(hundredYearsInSeconds, hundredYearsInSeconds)
 
 	await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([1], [1])
 	await context.symbolControlFacet.whitelistSymbolType(context.signers.hedger.address, 1)

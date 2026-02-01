@@ -176,7 +176,7 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				const quoteId = await openWith(hedger)
 
 				// Enable cross partyB mode for hedger directly (no migration to avoid double-counting locked values)
-				await context.controlFacet.connect(context.signers.admin).setCrossEnabled(true)
+				await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(true)
 				await context.controlFacet.connect(context.signers.admin).setCrossPartyB(await hedger.getAddress(), true)
 				// Allocate to cross bucket for solvency
 				const allocatedPerPartyA = await context.viewFacet.allocatedBalanceOfPartyB(await hedger.getAddress(), await user.getAddress())

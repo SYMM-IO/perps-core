@@ -13,13 +13,18 @@ import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
+import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
+import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
+import { ExternalTransferStorage } from "../../storages/ExternalTransferStorage.sol";
 import { IControlFacet } from "./IControlFacet.sol";
-import { LibDiamond } from "../../libraries/LibDiamond.sol";
+import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { BridgeStorage } from "../../storages/BridgeStorage.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
+import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 
 contract ControlFacet is Accessibility, Ownable, IControlFacet {
@@ -208,14 +213,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		require(length > 0 && openFees.length == length && closeFees.length == length, "ControlFacet: Invalid array length");
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		AffiliateStorage.Layout storage affiliateLayout = AffiliateStorage.layout();
 
 		for (uint256 i = 0; i < length; i++) {
 			uint256 openFee = openFees[i];
 			uint256 closeFee = closeFees[i];
 			require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
 			require(
-				openFee >= appLayout.minAffiliateFee && closeFee >= appLayout.minAffiliateFee,
+				openFee >= affiliateLayout.minAffiliateFee && closeFee >= affiliateLayout.minAffiliateFee,
 				"ControlFacet: Not allowed to set fee less than threshold"
 			);
 
@@ -223,12 +228,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 			emit SetAffiliateFee(
 				affiliate,
 				symbolId,
-				appLayout.affiliateFee[affiliate][symbolId].openFee,
+				affiliateLayout.affiliateFee[affiliate][symbolId].openFee,
 				openFee,
-				appLayout.affiliateFee[affiliate][symbolId].closeFee,
+				affiliateLayout.affiliateFee[affiliate][symbolId].closeFee,
 				closeFee
 			);
-			appLayout.affiliateFee[affiliate][symbolId] = Fee(openFee, closeFee, true);
+			affiliateLayout.affiliateFee[affiliate][symbolId] = Fee(openFee, closeFee, true);
 		}
 	}
 
@@ -254,14 +259,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		);
 		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
 
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		AffiliateStorage.Layout storage affiliateLayout = AffiliateStorage.layout();
 
 		for (uint256 i = 0; i < length; i++) {
 			uint256 openFee = openFees[i];
 			uint256 closeFee = closeFees[i];
 			require(openFee <= 1e18 && closeFee <= 1e18, "ControlFacet: High fee");
 			require(
-				openFee >= appLayout.minAffiliateFee && closeFee >= appLayout.minAffiliateFee,
+				openFee >= affiliateLayout.minAffiliateFee && closeFee >= affiliateLayout.minAffiliateFee,
 				"ControlFacet: Not allowed to set fee less than threshold"
 			);
 
@@ -271,12 +276,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 				affiliate,
 				user,
 				symbolId,
-				appLayout.customAffiliateFee[affiliate][user][symbolId].openFee,
+				affiliateLayout.customAffiliateFee[affiliate][user][symbolId].openFee,
 				openFee,
-				appLayout.customAffiliateFee[affiliate][user][symbolId].closeFee,
+				affiliateLayout.customAffiliateFee[affiliate][user][symbolId].closeFee,
 				closeFee
 			);
-			appLayout.customAffiliateFee[affiliate][user][symbolId] = Fee(openFee, closeFee, true);
+			affiliateLayout.customAffiliateFee[affiliate][user][symbolId] = Fee(openFee, closeFee, true);
 		}
 	}
 
@@ -298,8 +303,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the minimum fee that affiliates must charge. Prevents affiliates from setting fees below protocol requirements.
 	/// @param minAffiliateFee The minimum fee percentage (in 1e18 precision) that affiliates can set.
 	function setMinAffiliateFee(uint256 minAffiliateFee) external onlyRole(LibAccessibility.FEE_ADMIN_ROLE) {
-		emit SetMinAffiliateFee(GlobalAppStorage.layout().minAffiliateFee, minAffiliateFee);
-		GlobalAppStorage.layout().minAffiliateFee = minAffiliateFee;
+		emit SetMinAffiliateFee(AffiliateStorage.layout().minAffiliateFee, minAffiliateFee);
+		AffiliateStorage.layout().minAffiliateFee = minAffiliateFee;
 	}
 
 	// CoolDowns //////////////////////////////////////////////////\
@@ -391,8 +396,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the waiting period before Party A can unbind from a Party B after initiating the unbind process.
 	/// @param unbindCooldown The time in seconds Party A must wait before completing the unbind from Party B.
 	function setUnbindCooldown(uint256 unbindCooldown) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
-		emit SetUnbindCooldown(MAStorage.layout().unbindCooldown, unbindCooldown);
-		MAStorage.layout().unbindCooldown = unbindCooldown;
+		emit SetUnbindCooldown(TradingModeStorage.layout().unbindCooldown, unbindCooldown);
+		TradingModeStorage.layout().unbindCooldown = unbindCooldown;
 	}
 
 	/// @notice Sets the maximum number of Party B connections a single Party A can have simultaneously.
@@ -418,19 +423,19 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Enables or disables cross partyB functionality (feature flag for cross partyB mode).
-	/// @param enabled True to enable cross partyB functionality, false to disable.
-	function setCrossEnabled(bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		emit SetCrossEnabled(appLayout.crossEnabled, enabled);
-		appLayout.crossEnabled = enabled;
+	/// @param activated True to activate cross partyB functionality, false to deactivate.
+	function setCrossPartyBModeActivated(bool activated) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		CrossPartyBStorage.Layout storage crossLayout = CrossPartyBStorage.layout();
+		emit SetCrossPartyBModeActivated(crossLayout.crossPartyBModeActivated, activated);
+		crossLayout.crossPartyBModeActivated = activated;
 	}
 
-	/// @notice Enables or disables the legacy deallocate function. When disabled, users must use safeDeallocate.
-	/// @param disabled True to disable legacy deallocate (requiring safeDeallocate), false to allow legacy deallocate.
-	function setLegacyDeallocateDisabled(bool disabled) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+	/// @notice Enables or disables the legacy deallocate function. When deprecated, users must use safeDeallocate.
+	/// @param deprecated True to deprecate legacy deallocate (requiring safeDeallocate), false to allow legacy deallocate.
+	function setLegacyDeallocateDeprecated(bool deprecated) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		emit SetLegacyDeallocateDisabled(appLayout.legacyDeallocateDisabled, disabled);
-		appLayout.legacyDeallocateDisabled = disabled;
+		emit SetLegacyDeallocateDeprecated(appLayout.legacyDeallocateDeprecated, deprecated);
+		appLayout.legacyDeallocateDeprecated = deprecated;
 	}
 
 	/// @notice Registers a bridge contract.
@@ -474,7 +479,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param relayer The address authorized to relay transfers to the target.
 	function addRelayerForExternalTransferTarget(address target, address relayer) external onlyRole(LibAccessibility.INTEGRATION_ADMIN_ROLE) {
 		checkZeroAddress(target);
-		AccountStorage.layout().externalTransferTargetsRelayers[target] = relayer;
+		ExternalTransferStorage.layout().externalTransferTargetsRelayers[target] = relayer;
 		emit AddRelayerForExternalTransferTarget(target, relayer);
 	}
 
@@ -482,7 +487,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param target The external transfer destination address to remove the relayer authorization from.
 	function removeRelayerForExternalTransferTarget(address target) external onlyRole(LibAccessibility.INTEGRATION_ADMIN_ROLE) {
 		checkZeroAddress(target);
-		AccountStorage.layout().externalTransferTargetsRelayers[target] = address(0);
+		ExternalTransferStorage.layout().externalTransferTargetsRelayers[target] = address(0);
 		emit RemoveRelayerForExternalTransferTarget(target);
 	}
 
@@ -490,22 +495,22 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param affiliate The address of the affiliate to register the hook for.
 	/// @param hook The address of the hook contract to be called for this affiliate's events.
 	function registerHook(address affiliate, address hook) external onlyRole(LibAccessibility.INTEGRATION_ADMIN_ROLE) {
-		AccountStorage.layout().affiliateHooks[affiliate] = hook;
+		AffiliateStorage.layout().affiliateHooks[affiliate] = hook;
 		emit RegisterHook(affiliate, hook);
 	}
 
 	/// @notice Indicates if the current operation is being executed via the instant layer.
 	/// @dev instant layer sets this flag to true before execution and MUST reset it back to false after its operation. Core can use this flag to know if this request is coming from instant layer.
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
-		MAStorage.layout().callFromInstantLayer = _callFromInstantLayer;
+		require(!(_callFromInstantLayer && TradingModeStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
+		TradingModeStorage.layout().callFromInstantLayer = _callFromInstantLayer;
 	}
 
 	/// @notice Enables or disables Auto-Deleveraging (ADL) for a Party B. When enabled, positions can be force-closed to reduce risk.
 	/// @param partyB The address of the Party B to configure ADL for.
 	/// @param enabled True to enable ADL for this Party B, false to disable.
 	function setADLEnabled(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		MAStorage.layout().adlEnabled[partyB] = enabled;
+		PartyBControlStorage.layout().adlEnabled[partyB] = enabled;
 		emit SetADLEnabled(partyB, enabled);
 	}
 
@@ -536,34 +541,34 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Registers a virtual provider that can facilitate virtual deposits/withdrawals without actual token transfers.
 	/// @param provider The address to authorize as a virtual provider.
 	function registerVirtualProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE) {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		require(!appLayout.expressProviders[provider], "ControlFacet: Already a express provider");
-		require(!appLayout.virtualProviders[provider], "ControlFacet: Already a virtual provider");
-		appLayout.virtualProviders[provider] = true;
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		require(!withdrawLayout.expressProviders[provider], "ControlFacet: Already a express provider");
+		require(!withdrawLayout.virtualProviders[provider], "ControlFacet: Already a virtual provider");
+		withdrawLayout.virtualProviders[provider] = true;
 		emit RegisterVirtualProvider(provider);
 	}
 
 	/// @notice Removes a virtual provider's authorization, preventing them from facilitating virtual deposits/withdrawals.
 	/// @param provider The address to remove from authorized virtual providers.
 	function unregisterVirtualProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE) {
-		GlobalAppStorage.layout().virtualProviders[provider] = false;
+		WithdrawStorage.layout().virtualProviders[provider] = false;
 		emit UnregisterVirtualProvider(provider);
 	}
 
 	/// @notice Registers an express provider that can facilitate expedited withdrawals with reduced cooldown periods.
 	/// @param provider The address to authorize as an express provider.
 	function registerExpressProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE) {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		require(!appLayout.virtualProviders[provider], "ControlFacet: Already a virtual provider");
-		require(!appLayout.expressProviders[provider], "ControlFacet: Already a express provider");
-		appLayout.expressProviders[provider] = true;
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		require(!withdrawLayout.virtualProviders[provider], "ControlFacet: Already a virtual provider");
+		require(!withdrawLayout.expressProviders[provider], "ControlFacet: Already a express provider");
+		withdrawLayout.expressProviders[provider] = true;
 		emit RegisterExpressProvider(provider);
 	}
 
 	/// @notice Removes an express provider's authorization, preventing them from facilitating express withdrawals.
 	/// @param provider The address to remove from authorized express providers.
 	function unregisterExpressProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE) {
-		GlobalAppStorage.layout().expressProviders[provider] = false;
+		WithdrawStorage.layout().expressProviders[provider] = false;
 		emit UnregisterExpressProvider(provider);
 	}
 
@@ -598,7 +603,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the address that receives penalties from soft liquidations.
 	/// @param softLiquidationPenaltyCollector The address that will receive soft liquidation penalty funds.
 	function setSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector) external onlyRole(LibAccessibility.FEE_ADMIN_ROLE) {
-		MAStorage.layout().softLiquidationPenaltyCollector = softLiquidationPenaltyCollector;
+		GlobalAppStorage.layout().softLiquidationPenaltyCollector = softLiquidationPenaltyCollector;
 		emit SetSoftLiquidationPenaltyCollector(softLiquidationPenaltyCollector);
 	}
 
@@ -606,9 +611,9 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param partyB The address of the Party B to configure bindability for.
 	/// @param bindable True to allow Party As to bind exclusively to this Party B, false to disable binding.
 	function setPartyBBindable(address partyB, bool bindable) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
-		accountLayout.isPartyBBindable[partyB] = bindable;
+		tradingLayout.isPartyBBindable[partyB] = bindable;
 		emit SetPartyBBindable(partyB, bindable);
 	}
 
@@ -618,9 +623,9 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param partyB The address of the Party B to configure.
 	/// @param enabled True to enable cross partyB mode, false to disable.
 	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		require(GlobalAppStorage.layout().crossEnabled, "ControlFacet: Cross feature disabled");
+		require(CrossPartyBStorage.layout().crossPartyBModeActivated, "ControlFacet: Cross feature disabled");
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
-		AccountStorage.layout().isCrossPartyB[partyB] = enabled;
+		CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB] = enabled;
 		emit SetCrossPartyB(partyB, enabled);
 	}
 }

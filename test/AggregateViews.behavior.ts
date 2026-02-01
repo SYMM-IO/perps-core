@@ -38,7 +38,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 		await hedger.setBalances(decimal(5000n), decimal(5000n))
 
 		// Enable new funding fee system
-		await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
+		await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
 	})
 
 	// ============================================================================
@@ -1146,7 +1146,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			describe("Funding Debt Consistency Through Liquidation", function () {
 				it("should maintain funding aggregates through partyA liquidation", async function () {
 					// Setup
-					await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
+					await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
 					await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
 					await context.fundingRateFacet
 						.connect(context.signers.hedger)
@@ -1221,7 +1221,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 			describe("Precision Edge Cases", function () {
 				it("should handle standard position amounts correctly", async function () {
 					// Setup
-					await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
+					await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
 					await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
 					await context.fundingRateFacet
 						.connect(context.signers.hedger)
@@ -1248,7 +1248,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 				it("should handle funding debt calculation without overflow", async function () {
 					// Setup
-					await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
+					await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
 					await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
 					await context.fundingRateFacet
 						.connect(context.signers.hedger)
@@ -1285,7 +1285,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 				it("should accumulate aggregates correctly with multiple positions", async function () {
 					// Setup
-					await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
+					await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
 					await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
 					await context.fundingRateFacet
 						.connect(context.signers.hedger)
@@ -2200,7 +2200,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				it("keeps totals consistent after funding accrual and charge", async function () {
 					const before = await posContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(posHedger.address, posUser.address, 1)
 
-					await posContext.pauseControlFacet.enableNewFundingFee()
+					await posContext.pauseControlFacet.activateAccumulatedFunding()
 					await posContext.symbolControlFacet.connect(posContext.signers.admin).setSymbolFundingState(1, 3600, 1200)
 					await posContext.fundingRateFacet.connect(posContext.signers.hedger).setEpochDurations([1], [3600])
 					await posContext.fundingRateFacet
@@ -2358,7 +2358,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				)
 
 				// Enable new funding fee system
-				await clearingContext.pauseControlFacet.connect(clearingContext.signers.admin).enableNewFundingFee()
+				await clearingContext.pauseControlFacet.connect(clearingContext.signers.admin).activateAccumulatedFunding()
 				await clearingContext.fundingRateFacet.connect(clearingContext.signers.hedger).setEpochDurations([1], [EightHourInSec])
 				await clearingContext.fundingRateFacet
 					.connect(clearingContext.signers.hedger)
@@ -2507,7 +2507,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await forceCloseHedger.setBalances(decimal(5000n), decimal(5000n))
 
 				// Setup funding
-				await forceCloseContext.pauseControlFacet.connect(forceCloseContext.signers.admin).enableNewFundingFee()
+				await forceCloseContext.pauseControlFacet.connect(forceCloseContext.signers.admin).activateAccumulatedFunding()
 				await forceCloseContext.fundingRateFacet.connect(forceCloseContext.signers.hedger).setEpochDurations([1], [EightHourInSec])
 				await forceCloseContext.fundingRateFacet
 					.connect(forceCloseContext.signers.hedger)
@@ -2614,7 +2614,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 				await expireHedger.setBalances(decimal(5000n), decimal(5000n))
 
 				// Setup funding
-				await expireContext.pauseControlFacet.connect(expireContext.signers.admin).enableNewFundingFee()
+				await expireContext.pauseControlFacet.connect(expireContext.signers.admin).activateAccumulatedFunding()
 				await expireContext.fundingRateFacet.connect(expireContext.signers.hedger).setEpochDurations([1], [EightHourInSec])
 				await expireContext.fundingRateFacet
 					.connect(expireContext.signers.hedger)
@@ -2695,7 +2695,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 
 			beforeEach(async function () {
 				// Enable new funding fee system and setup funding rates for the hedger
-				await posContext.pauseControlFacet.enableNewFundingFee()
+				await posContext.pauseControlFacet.activateAccumulatedFunding()
 				await posContext.symbolControlFacet.connect(posContext.signers.admin).setSymbolFundingState(1, EightHourInSec, 1200)
 				await posContext.fundingRateFacet.connect(posContext.signers.hedger).setEpochDurations([1], [EightHourInSec])
 				await posContext.fundingRateFacet

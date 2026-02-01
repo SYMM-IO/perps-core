@@ -15,6 +15,8 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LiquidationSig, MuonStorage } from "../../storages/MuonStorage.sol";
 import { LiquidationType, LiquidationDetail, SettlementState, Price, AccountStorage } from "../../storages/AccountStorage.sol";
+import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
+import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 
@@ -167,7 +169,7 @@ library PartyALiquidationFacetImpl {
 				"LiquidationFacet: Invalid state"
 			);
 			require(!maLayout.partyBLiquidationStatus[quote.partyB][partyA], "LiquidationFacet: PartyB is in liquidation process");
-			require(!accountLayout.crossLiquidationDetails[quote.partyB].inProgress, "LiquidationFacet: PartyB is in cross liquidation process");
+			require(!CrossPartyBStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "LiquidationFacet: PartyB is in cross liquidation process");
 			require(quote.partyA == partyA, "LiquidationFacet: Invalid party");
 			require(
 				accountLayout.symbolsPrices[partyA][quote.symbolId].timestamp == accountLayout.liquidationDetails[partyA].timestamp,
@@ -245,8 +247,8 @@ library PartyALiquidationFacetImpl {
 				}
 			}
 
-			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-			address systemHook = accountLayout.affiliateHooks[address(0)];
+			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
+			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 			LibHook.safeCall(
 				affiliateHook,
 				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)),

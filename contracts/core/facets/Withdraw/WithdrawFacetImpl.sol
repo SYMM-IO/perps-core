@@ -40,10 +40,10 @@ library WithdrawFacetImpl {
 			require(withdrawLayout.speedUpWhitelist[signer], "WithdrawFacet : Not allowed to speed up withdraw");
 		}
 
-		InitiateWithdrawLocals memory locals = _processWithdrawParts(parts, appLayout);
+		InitiateWithdrawLocals memory locals = _processWithdrawParts(parts, withdrawLayout);
 
 		if (locals.hasExpress) {
-			require(appLayout.expressProviders[locals.expressProvider], "WithdrawFacet : Not registered express provider");
+			require(withdrawLayout.expressProviders[locals.expressProvider], "WithdrawFacet : Not registered express provider");
 		}
 
 		// Convert user amount to 18 decimals
@@ -94,7 +94,7 @@ library WithdrawFacetImpl {
 
 	function _processWithdrawParts(
 		WithdrawReceiverPart[] memory parts,
-		GlobalAppStorage.Layout storage appLayout
+		WithdrawStorage.Layout storage withdrawLayout
 	) private view returns (InitiateWithdrawLocals memory locals) {
 		for (uint256 i = 0; i < parts.length; i++) {
 			WithdrawReceiverPart memory part = parts[i];
@@ -118,7 +118,7 @@ library WithdrawFacetImpl {
 
 			// VIRTUAL REGISTRATION CHECK
 			if (isVirtual) {
-				require(appLayout.virtualProviders[part.virtualProvider], "WithdrawFacet : Not registered virtual provider");
+				require(withdrawLayout.virtualProviders[part.virtualProvider], "WithdrawFacet : Not registered virtual provider");
 				locals.totalVirtualAmount += part.amount;
 			} else {
 				require(part.chainId == int256(block.chainid), "WithdrawFacet : Invalid chainId for non-virtual part");

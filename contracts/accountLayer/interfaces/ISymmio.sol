@@ -123,6 +123,8 @@ interface ISymmio {
 	function internalTransferToBalance(address user, uint256 amount) external;
 	function zeroUpnlDeallocate(uint256 amount) external;
 	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory);
+	function partyAPositionsCount(address partyA) external view returns (uint256);
+	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 	function isCallFromInstantLayer() external view returns (bool);
 	function setFeeCollector(address affiliate, address feeCollector) external;
 	function getNextQuoteId() external returns (uint256);

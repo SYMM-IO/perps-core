@@ -16,7 +16,7 @@ enum AffiliateState {
 
 struct Stakeholder {
 	address receiver;
-	uint256 share; // in 18 decimals, must sum to 100% - symmioShare
+	uint256 share;
 }
 
 struct FeeDetails {
@@ -38,8 +38,8 @@ struct AffiliateData {
 	mapping(bytes4 => address) hooks;
 	address accountManager;
 	address registrant;
-	uint256 expressRate; // Express Withdraw rate (in 1e18, e.g., 3% = 0.03e18)
-	address virtualProvider; // Virtual Provider address for Express Withdraw
+	uint256 expressRate;
+	address virtualProvider;
 }
 
 struct AffiliateRegistration {
@@ -67,28 +67,52 @@ struct HookContext {
 	bool isActive;
 }
 
+/// @title AffiliateHubStorage
+/// @notice Affiliate registration, fee splits, and hook management
+/// @dev Replaces per-frontend MultiAccount deployments. Affiliates register via
+///      requestToRegisterAffiliate (PENDING) and are activated by APPROVER_ROLE.
+///      Fees accrue in a deterministic feeDistributor address and are split on-chain
+///      between stakeholders and Symmio (shares must sum to 1e18).
 library AffiliateHubStorage {
 	bytes32 internal constant AFFILIATE_HUB_STORAGE_SLOT = keccak256("diamond.standard.storage.affiliatehub");
 
 	struct Layout {
-		// Affiliate registry
+		/// @notice All registered affiliate configurations
+		/// @dev Maps affiliate address (= AccountManager address) => full config.
+		///      Affiliate address is deterministic: generateAccountManagerAddress(registrant, name).
 		mapping(address => AffiliateData) affiliates;
+		/// @notice Pending fee configuration changes awaiting approval
+		/// @dev Fee updates are two-step: requestFeeUpdate (admin) → approveFeeUpdate (APPROVER_ROLE).
+		///      Timestamp recorded for audit trail, no enforced delay.
 		mapping(address => PendingFeeUpdate) pendingFeeUpdates;
-		// Operators: affiliate => selector => operator => allowed
+		/// @notice Operator permissions per affiliate per function
+		/// @dev Affiliates can authorize operators for specific functions via callAsAffiliate.
+		///      Maps affiliate => selector => operator => allowed.
 		mapping(address => mapping(bytes4 => mapping(address => bool))) operators;
-		// Legacy multi-accounts
+		/// @notice Set of all legacy MultiAccount contracts
+		/// @dev For backward compatibility. AccountHub.ownerOf() scans these for ownership.
 		EnumerableSet.AddressSet legacyMultiAccounts;
-		// Whitelisted Symmio cores
+		/// @notice Whitelisted Symmio core contracts
+		/// @dev Affiliates can only operate on whitelisted cores. Prevents connection
+		///      to unauthorized diamonds. Managed by SETTER_ROLE.
 		mapping(address => bool) whitelistedSymmioCores;
-		// Fee configuration
+		/// @notice Protocol address receiving Symmio's share of fees
+		/// @dev When claimFees is called, symmioShare portion goes here.
 		address symmioFeeReceiver;
-		// Nonce for fee distributor address generation
+		/// @notice Counter for deterministic fee distributor address generation
+		/// @dev Each affiliate gets a unique fee distributor address via CREATE2.
 		uint256 globalNonce;
-		// Hook execution context
+		/// @notice Current context during hook execution
+		/// @dev Set when entering a hook, cleared on exit. Hooks can read this to
+		///      know which account/affiliate/core triggered them.
 		HookContext hookContext;
-		// Allowed selectors for hooks per affiliate: affiliate => selector => allowed
+		/// @notice Which selectors can trigger hooks per affiliate
+		/// @dev Maps affiliate => selector => allowed. Hooks are external calls that
+		///      can execute custom logic (mint NFT, issue cashback, etc.).
 		mapping(address => mapping(bytes4 => bool)) hookAllowedSelectors;
-		// Allowed selectors for callAsAffiliate per affiliate: affiliate => selector => allowed
+		/// @notice Which selectors affiliates can call via callAsAffiliate
+		/// @dev Maps affiliate => selector => allowed. callAsAffiliate executes with
+		///      setSigner(affiliate) on the target Symmio core.
 		mapping(address => mapping(bytes4 => bool)) callAllowedSelectors;
 	}
 

@@ -4,11 +4,17 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { LibDiamond } from "../../libraries/LibDiamond.sol";
+import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
-import { AccountStorage, LiquidationDetail, SettlementState, CrossLiquidationDetail, BindState, ExternalTransferReq, ForceCloseDetail } from "../../storages/AccountStorage.sol";
+import { AccountStorage, LiquidationDetail, SettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
+import { CrossPartyBStorage, CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
+import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
+import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
+import { FundingStorage } from "../../storages/FundingStorage.sol";
+import { ExternalTransferStorage, VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
 import { WithdrawStorage, WithdrawRequest } from "../../storages/WithdrawStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { MAStorage, EntityMetadata } from "../../storages/MAStorage.sol";
 import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
@@ -196,15 +202,15 @@ contract ViewFacet is IViewFacet {
 	 * @return A boolean indicating whether the party B is a cross partyB.
 	 */
 	function isCrossPartyB(address partyB) external view returns (bool) {
-		return AccountStorage.layout().isCrossPartyB[partyB];
+		return CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB];
 	}
 
 	/**
-	 * @notice Checks if the legacy deallocate function is disabled.
-	 * @return A boolean indicating whether legacy deallocate is disabled (true = must use safeDeallocate).
+	 * @notice Checks if the legacy deallocate function is deprecated.
+	 * @return A boolean indicating whether legacy deallocate is deprecated (true = must use safeDeallocate).
 	 */
-	function isLegacyDeallocateDisabled() external view returns (bool) {
-		return GlobalAppStorage.layout().legacyDeallocateDisabled;
+	function isLegacyDeallocateDeprecated() external view returns (bool) {
+		return GlobalAppStorage.layout().legacyDeallocateDeprecated;
 	}
 
 	/**
@@ -384,8 +390,8 @@ contract ViewFacet is IViewFacet {
 	 * @notice Indicates whether Party B accounts are allowed to activate cross partyB mode.
 	 * @return True if cross partyB functionality is globally enabled, false otherwise.
 	 */
-	function isCrossEnabled() external view returns (bool) {
-		return GlobalAppStorage.layout().crossEnabled;
+	function isCrossPartyBModeActivated() external view returns (bool) {
+		return CrossPartyBStorage.layout().crossPartyBModeActivated;
 	}
 
 	/**
@@ -530,7 +536,7 @@ contract ViewFacet is IViewFacet {
 	 * @return unbindCooldown The unbind cooldown.
 	 */
 	function unbindCooldown() external view returns (uint256) {
-		return MAStorage.layout().unbindCooldown;
+		return TradingModeStorage.layout().unbindCooldown;
 	}
 
 	/**
@@ -605,7 +611,7 @@ contract ViewFacet is IViewFacet {
 			appLayout.partyBActionsPaused,
 			appLayout.partyAActionsPaused,
 			appLayout.internalTransferPaused,
-			appLayout.externalTransferPaused,
+			ExternalTransferStorage.layout().externalTransferPaused,
 			appLayout.emergencyMode,
 			appLayout.partyBOpenPositionsPaused
 		);
@@ -670,7 +676,7 @@ contract ViewFacet is IViewFacet {
 	 * @return inProgress The cross liquidation status of the party B.
 	 */
 	function getPartyBCrossLiquidationStatus(address partyB) external view returns (bool) {
-		return AccountStorage.layout().crossLiquidationDetails[partyB].inProgress;
+		return CrossPartyBStorage.layout().crossLiquidationDetails[partyB].inProgress;
 	}
 
 	/**
@@ -679,7 +685,7 @@ contract ViewFacet is IViewFacet {
 	 * @return details The cross liquidation details of the party B.
 	 */
 	function getCrossLiquidationDetails(address partyB) external view returns (CrossLiquidationDetail memory) {
-		return AccountStorage.layout().crossLiquidationDetails[partyB];
+		return CrossPartyBStorage.layout().crossLiquidationDetails[partyB];
 	}
 
 	/**
@@ -696,7 +702,7 @@ contract ViewFacet is IViewFacet {
 	 * @return bindState The bind state of the user.
 	 */
 	function getBindState(address user) external view returns (BindState memory) {
-		return AccountStorage.layout().bindState[user];
+		return TradingModeStorage.layout().bindState[user];
 	}
 
 	/**
@@ -705,7 +711,7 @@ contract ViewFacet is IViewFacet {
 	 * @return hook The affiliate hook of the affiliate.
 	 */
 	function getAffiliateHook(address affiliate) external view returns (address hook) {
-		return AccountStorage.layout().affiliateHooks[affiliate];
+		return AffiliateStorage.layout().affiliateHooks[affiliate];
 	}
 
 	/**
@@ -716,7 +722,7 @@ contract ViewFacet is IViewFacet {
 	 * @return fee The affiliate fee of the affiliate.
 	 */
 	function getCustomAffiliateFee(address affiliate, address user, uint256 symbolId) external view returns (Fee memory) {
-		return GlobalAppStorage.layout().customAffiliateFee[affiliate][user][symbolId];
+		return AffiliateStorage.layout().customAffiliateFee[affiliate][user][symbolId];
 	}
 
 	/**
@@ -724,7 +730,7 @@ contract ViewFacet is IViewFacet {
 	 * @return fee The minimum affiliate fee.
 	 */
 	function getMinAffiliateFee() external view returns (uint256) {
-		return GlobalAppStorage.layout().minAffiliateFee;
+		return AffiliateStorage.layout().minAffiliateFee;
 	}
 
 	/**
@@ -734,7 +740,7 @@ contract ViewFacet is IViewFacet {
 	 * @return fee The affiliate fee of the affiliate.
 	 */
 	function getAffiliateFee(address affiliate, uint256 symbolId) external view returns (Fee memory) {
-		return GlobalAppStorage.layout().affiliateFee[affiliate][symbolId];
+		return AffiliateStorage.layout().affiliateFee[affiliate][symbolId];
 	}
 
 	/**
@@ -742,7 +748,7 @@ contract ViewFacet is IViewFacet {
 	 * @return Whether the call is from instant layer
 	 */
 	function isCallFromInstantLayer() external view returns (bool) {
-		return MAStorage.layout().callFromInstantLayer;
+		return TradingModeStorage.layout().callFromInstantLayer;
 	}
 
 	/**
@@ -751,7 +757,7 @@ contract ViewFacet is IViewFacet {
 	 * @return enabled The ADL enabled status of the party B.
 	 */
 	function isADLEnabled(address partyB) external view returns (bool) {
-		return MAStorage.layout().adlEnabled[partyB];
+		return PartyBControlStorage.layout().adlEnabled[partyB];
 	}
 
 	function getSigner() external view returns (address) {
@@ -759,11 +765,11 @@ contract ViewFacet is IViewFacet {
 	}
 
 	function getFee(address affiliate, uint256 symbolId) external view returns (Fee memory fee) {
-		if (GlobalAppStorage.layout().affiliateFee[affiliate][symbolId].isSet) {
-			fee = GlobalAppStorage.layout().affiliateFee[affiliate][symbolId];
+		if (AffiliateStorage.layout().affiliateFee[affiliate][symbolId].isSet) {
+			fee = AffiliateStorage.layout().affiliateFee[affiliate][symbolId];
 		} else {
-			if (GlobalAppStorage.layout().affiliateFee[affiliate][0].isSet) {
-				fee = GlobalAppStorage.layout().affiliateFee[affiliate][0];
+			if (AffiliateStorage.layout().affiliateFee[affiliate][0].isSet) {
+				fee = AffiliateStorage.layout().affiliateFee[affiliate][0];
 			} else {
 				uint256 symbolTradingFee = SymbolStorage.layout().symbols[symbolId].tradingFee;
 				fee = Fee(symbolTradingFee, symbolTradingFee, true);
@@ -786,7 +792,7 @@ contract ViewFacet is IViewFacet {
 	 * @return True if the address is a registered express provider, false otherwise.
 	 */
 	function isExpressProviderRegistered(address provider) external view returns (bool) {
-		return GlobalAppStorage.layout().expressProviders[provider];
+		return WithdrawStorage.layout().expressProviders[provider];
 	}
 
 	/**
@@ -795,7 +801,7 @@ contract ViewFacet is IViewFacet {
 	 * @return True if the address is a registered virtual provider, false otherwise.
 	 */
 	function isVirtualProviderRegistered(address provider) external view returns (bool) {
-		return GlobalAppStorage.layout().virtualProviders[provider];
+		return WithdrawStorage.layout().virtualProviders[provider];
 	}
 
 	/**
@@ -832,8 +838,8 @@ contract ViewFacet is IViewFacet {
 	 * @param id The ID of the virtual external transfer.
 	 * @return The virtual external transfer status.
 	 */
-	function getVirtualExternalTransfer(uint256 id) external view returns (ExternalTransferReq memory) {
-		return AccountStorage.layout().externalTransfers[id];
+	function getVirtualExternalTransfer(uint256 id) external view returns (VirtualExternalTransferRequest memory) {
+		return ExternalTransferStorage.layout().externalTransfers[id];
 	}
 
 	/**
@@ -846,22 +852,18 @@ contract ViewFacet is IViewFacet {
 	}
 
 	function getSoftLiquidationPenaltyCollector() external view returns (address) {
-		return MAStorage.layout().softLiquidationPenaltyCollector;
-	}
-
-	function getPartyALockedQuotesCount(address user) external view returns (uint256) {
-		return QuoteStorage.layout().partyALockQuotesCount[user];
+		return GlobalAppStorage.layout().softLiquidationPenaltyCollector;
 	}
 
 	function isBindable(address partyB) external view returns (bool) {
-		return AccountStorage.layout().isPartyBBindable[partyB];
+		return TradingModeStorage.layout().isPartyBBindable[partyB];
 	}
 
-	function getIterativeFundingDeprecationFlag() external view returns (bool) {
-		return GlobalAppStorage.layout().iterativeFundingDeprecationFlag;
+	function isLegacyFundingDeprecated() external view returns (bool) {
+		return FundingStorage.layout().legacyFundingDeprecated;
 	}
 
-	function getAccumulativeFundingRateActivationFlag() external view returns (bool) {
-		return GlobalAppStorage.layout().accumulativeFundingRateActivationFlag;
+	function isAccumulatedFundingActivated() external view returns (bool) {
+		return FundingStorage.layout().accumulatedFundingActivated;
 	}
 }

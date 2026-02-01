@@ -66,7 +66,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function virtualDepositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
-		emit Deposit(msg.sender, user, (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18);
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
 		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
@@ -218,6 +217,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit InternalTransferToBalance(signer, user, AccountStorage.layout().balances[user], amount);
 		uint256 amountInCollateralDecimals = (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / (10 ** 18);
 		emit Withdraw(signer, signer, amountInCollateralDecimals);
+		emit Deposit(signer, user, amountInCollateralDecimals);
 		emit Deposit(signer, user, amountInCollateralDecimals, false);
 	}
 }

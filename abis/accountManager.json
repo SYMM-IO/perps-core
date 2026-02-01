@@ -144,6 +144,16 @@
     },
     {
         "inputs": [],
+        "name": "LegacyAccountNotOwned",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "LegacyContractNotRegistered",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "MustBeRoleAdmin",
         "type": "error"
     },
@@ -209,6 +219,11 @@
     },
     {
         "inputs": [],
+        "name": "PendingQuotesExist",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "PositionTypeNotAllowedForThisAccount",
         "type": "error"
     },
@@ -236,6 +251,11 @@
     {
         "inputs": [],
         "name": "SingleVAModeNotApplicable",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "SubAccountNotEmpty",
         "type": "error"
     },
     {
