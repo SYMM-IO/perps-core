@@ -15,7 +15,7 @@ import {
 	getTradingFeeForQuotes,
 	unDecimal,
 } from "./utils/Common.js";
-import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { getDummyLiquidationSig, getDummyPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { ethers, toUtf8Bytes } from "ethers"
 import type { QuoteStruct } from "../src/types/interfaces/ISymmio.js"
@@ -622,6 +622,28 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			expect(balanceInfo.totalPendingLockedPartyB).to.be.equal("0")
 
 			expect((await context.viewFacetQuote.getQuote(5)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
+		})
+
+		it("Should clear connection after PartyB liquidation closes the last open position", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const hedgerAddress = await context.signers.hedger.getAddress()
+			const user2Address = await context.signers.user2.getAddress()
+
+			await expectConnected(userAddress, hedgerAddress, true)
+			await expectConnected(user2Address, hedgerAddress, true)
+
+			await context.partyBLiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePartyB(hedgerAddress, userAddress, await getDummySingleUpnlSig(decimal(-336n)))
+
+			const priceSig = await getDummyPriceSig([1n], [decimal(1n)])
+			priceSig.timestamp = await context.viewFacet.partyBLiquidationTimestamp(hedgerAddress, userAddress)
+			await context.partyBLiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyB(hedgerAddress, userAddress, priceSig)
+
+			await expectConnected(userAddress, hedgerAddress, false)
+			await expectConnected(user2Address, hedgerAddress, true)
 		})
 
 		it("Should fail to liquidate a partyB twice", async function () {

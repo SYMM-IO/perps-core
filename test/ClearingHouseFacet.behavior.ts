@@ -455,6 +455,20 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				expect(quote1After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
 				expect(quote4After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
 			})
+
+			it("should clear the Party A to B connection after the final position is cross-liquidated", async () => {
+				expect(await context.viewFacetSymbol.isConnectedPartyB(user.address, hedger.address)).to.equal(true)
+
+				const priceSig1 = await getDummyPriceSig([1n], [decimal(1n)])
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger, priceSig1)
+
+				expect(await context.viewFacetSymbol.isConnectedPartyB(user.address, hedger.address)).to.equal(true)
+
+				const priceSig2 = await getDummyPriceSig([4n], [decimal(1n)])
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger, priceSig2)
+
+				expect(await context.viewFacetSymbol.isConnectedPartyB(user.address, hedger.address)).to.equal(false)
+			})
 		})
 
 		describe("Shared cross bucket state", () => {

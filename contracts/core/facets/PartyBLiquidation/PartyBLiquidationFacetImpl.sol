@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -76,6 +77,7 @@ library PartyBLiquidationFacetImpl {
 			quoteLayout.partyAPositionsCount[partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1;
+			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];

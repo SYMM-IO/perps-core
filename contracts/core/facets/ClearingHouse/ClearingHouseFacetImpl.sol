@@ -12,6 +12,7 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { CrossLiquidationSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
@@ -155,6 +156,7 @@ library ClearingHouseFacetImpl {
 			quoteLayout.partyAPositionsCount[partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1; // total positions for partyB in cross partyB mode
+			LibConnections.removeConnectionIfNoPositions(partyA, partyB);
 
 			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
 			address systemHook = accountLayout.affiliateHooks[address(0)];
