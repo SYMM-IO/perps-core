@@ -71,6 +71,12 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				context.signers.admin.address,
 				roleHash("PROVIDER_ADMIN_ROLE")
 			);
+		await context.controlFacet
+			.connect(context.signers.admin)
+			.grantRole(
+				context.signers.admin.address,
+				roleHash("WITHDRAW_FORCE_CANCEL_ROLE")
+			);
 	});
 
 	describe("Provider Register", function() {
@@ -1089,27 +1095,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 					1
 				);
 			expect(withdrawRequest.status).to.equal(
-				WithdrawStatus.CANCEL_REQUESTED
-			);
-
-			await expect(
-				virtualProvider.acceptWithdrawCancelRequest(
-					user.address,
-					1
-				)
-			).not.to.reverted;
-
-			const updatedWithdrawRequest =
-				await context.viewFacet.getWithdrawRequests(
-					user.address,
-					1
-				);
-			expect(updatedWithdrawRequest.status).to.equal(
 				WithdrawStatus.CANCELLED
 			);
 		});
 
-		it("Should fail to force cancel withdraw before cooldown", async function() {
+		it("Should fail to cancel pure virtual within cancel window", async function() {
 			await virtualProvider.virtualDepositFor(
 				context.diamond,
 				user.address,
@@ -1126,15 +1116,51 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, false, "0x");
 			await virtualProvider.acceptWithdrawRequest(user.address, 1);
-			await context.withdrawFacet
-				.connect(context.signers.user)
-				.requestCancelWithdraw(1);
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.setPureVirtualWithdrawCancelWindow(5);
+			await time.increase(8);
 
 			await expect(
 				context.withdrawFacet
 					.connect(context.signers.user)
-					.forceCancelWithdraw(1)
-			).to.revertedWith("WithdrawFacet : Withdraw cooldown not over");
+					.requestCancelWithdraw(1)
+			).to.revertedWith("WithdrawFacet : Cancel window passed");
+		});
+
+		it("Should force cancel withdraw before cooldown", async function() {
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
+
+			receiver1 = context.signers.user.address;
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = await buildParts(["50", "20"], {
+				virtualProvider: vpAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.admin)
+					.forceCancelWithdraw(user.address, 1)
+			).not.reverted;
+
+			const updatedWithdrawRequest =
+				await context.viewFacet.getWithdrawRequests(
+					user.address,
+					1
+				);
+			expect(updatedWithdrawRequest.status).to.equal(
+				WithdrawStatus.CANCELLED
+			);
 		});
 
 		it("Should fail to force cancel withdraw with wrong request Id", async function() {
@@ -1154,14 +1180,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, false, "0x");
 			await virtualProvider.acceptWithdrawRequest(user.address, 1);
-			await context.withdrawFacet
-				.connect(context.signers.user)
-				.requestCancelWithdraw(1);
 
 			await expect(
 				context.withdrawFacet
-					.connect(context.signers.user)
-					.forceCancelWithdraw(2)
+					.connect(context.signers.admin)
+					.forceCancelWithdraw(user.address, 2)
 			).to.revertedWith("WithdrawFacet : Invalid withdraw request ID");
 		});
 
@@ -1182,15 +1205,18 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, false, "0x");
 			await virtualProvider.acceptWithdrawRequest(user.address, 1);
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.requestCancelWithdraw(1);
 
 			await expect(
 				context.withdrawFacet
-					.connect(context.signers.user)
-					.forceCancelWithdraw(1)
+					.connect(context.signers.admin)
+					.forceCancelWithdraw(user.address, 1)
 			).to.revertedWith("WithdrawFacet : Invalid withdraw request status");
 		});
 
-		it("Should force cancel withdraw after cooldown", async function() {
+		it("Should fail to force cancel withdraw after cooldown", async function() {
 			await virtualProvider.virtualDepositFor(
 				context.diamond,
 				user.address,
@@ -1207,25 +1233,13 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, false, "0x");
 			await virtualProvider.acceptWithdrawRequest(user.address, 1);
-			await context.withdrawFacet
-				.connect(context.signers.user)
-				.requestCancelWithdraw(1);
 			await time.increase(1000);
 
 			await expect(
 				context.withdrawFacet
-					.connect(context.signers.user)
-					.forceCancelWithdraw(1)
-			).not.reverted;
-
-			const updatedWithdrawRequest =
-				await context.viewFacet.getWithdrawRequests(
-					user.address,
-					1
-				);
-			expect(updatedWithdrawRequest.status).to.equal(
-				WithdrawStatus.CANCELLED
-			);
+					.connect(context.signers.admin)
+					.forceCancelWithdraw(user.address, 1)
+			).to.revertedWith("WithdrawFacet : Withdraw cooldown already over");
 		});
 	});
 
@@ -1608,7 +1622,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			).to.revertedWith("WithdrawFacet : Not allowed to accept cancel");
 		});
 
-		it("Should fail to force cancel withdraw with express provider", async function() {
+		it("Should force cancel withdraw with express provider", async function() {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();
 
@@ -1624,16 +1638,21 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				.initiateWithdraw(parts, false, "0x");
 
 			await expressProvider.acceptWithdrawRequest(user.address, 1);
-			await context.withdrawFacet
-				.connect(context.signers.user)
-				.requestCancelWithdraw(1);
-			await time.increase(1000);
 
 			await expect(
 				context.withdrawFacet
-					.connect(context.signers.user)
-					.forceCancelWithdraw(1)
-			).to.revertedWith("WithdrawFacet : Not a pure virtual withdraw");
+					.connect(context.signers.admin)
+					.forceCancelWithdraw(user.address, 1)
+			).not.reverted;
+
+			const updatedWithdrawRequest =
+				await context.viewFacet.getWithdrawRequests(
+					user.address,
+					1
+				);
+			expect(updatedWithdrawRequest.status).to.equal(
+				WithdrawStatus.CANCELLED
+			);
 		});
 	});
 

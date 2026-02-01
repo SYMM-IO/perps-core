@@ -589,6 +589,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		withdrawLayout.minWithdrawCooldown = cooldown;
 	}
 
+	/// @notice Sets the no-cancel window for pure virtual withdrawals.
+	/// @param cancelWindow The number of seconds before cooldown end in which cancellation is blocked.
+	function setPureVirtualWithdrawCancelWindow(uint256 cancelWindow) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		emit SetPureVirtualWithdrawCancelWindow(withdrawLayout.pureVirtualWithdrawCancelWindow, cancelWindow);
+		withdrawLayout.pureVirtualWithdrawCancelWindow = cancelWindow;
+	}
+
 	/// @notice Sets the trusted signer address whose signatures are accepted for protocol operations.
 	/// @param signer The address of the trusted signer for off-chain signature verification.
 	function setSigner(address signer) external onlyRoleAllowProxy(LibAccessibility.SIGNER_ADMIN_ROLE) {

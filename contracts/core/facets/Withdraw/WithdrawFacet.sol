@@ -105,9 +105,10 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @notice Requests cancellation of a withdrawal during the cooldown period.
 	 * @dev
 	 * - Classic parts are refunded immediately.
-	 * - Provider-managed parts:
+	 * - Pure virtual provider-managed parts cancel immediately and refund funds.
+	 * - Express-managed parts:
 	 *      - Request transitions to `CANCEL_REQUESTED`.
-	 *      - Providers receive a callback to accept/reject cancellation.
+	 *      - Provider receives a callback to accept/reject cancellation.
 	 *
 	 * Emits:
 	 * - `WithdrawCancelRequested`
@@ -120,23 +121,21 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	}
 
 	/**
-	 * @notice Force-cancels a withdrawal after cooldown for virtual-provider flows.
+	 * @notice Force-cancels a withdrawal before cooldown expiry.
 	 * @dev
-	 * - Only applicable when:
-	 *      - Request is `CANCEL_REQUESTED`
-	 *      - No express provider is present
-	 *      - Cooldown has fully expired
-	 * - This allows users to recover virtual-withdrawal funds when a virtual provider
-	 *   fails to accept cancellation.
+	 * - Only callable by an account with the force-cancel role.
+	 * - Request must be in `PENDING`, `PROVIDER_ACCEPTED`, or `CANCEL_REQUESTED`.
+	 * - Cancels and refunds immediately, with provider callbacks as needed.
 	 *
 	 * Emits:
 	 * - `WithdrawCancelled`
 	 *
+	 * @param user The owner of the withdrawal request.
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function forceCancelWithdraw(uint256 requestId) external notSuspended(LibSigner.getSigner()) nonReentrant {
-		WithdrawFacetImpl.forceCancelWithdraw(requestId);
-		emit WithdrawCancelled(requestId, LibSigner.getSigner());
+	function forceCancelWithdraw(address user, uint256 requestId) external onlyRole(LibAccessibility.WITHDRAW_FORCE_CANCEL_ROLE) notSuspended(user) nonReentrant {
+		WithdrawFacetImpl.forceCancelWithdraw(user, requestId);
+		emit WithdrawCancelled(requestId, user);
 	}
 
 	/**

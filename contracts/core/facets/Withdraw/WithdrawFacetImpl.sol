@@ -235,6 +235,7 @@ library WithdrawFacetImpl {
 	}
 
 	function requestCancelWithdraw(uint256 requestId) internal {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(LibSigner.getSigner(), requestId);
 
 		require(
@@ -242,32 +243,50 @@ library WithdrawFacetImpl {
 			"WithdrawFacet : Invalid withdraw request status"
 		);
 
+		if (withdrawRequest.isPureVirtual) {
+			uint256 cancelWindow = withdrawLayout.pureVirtualWithdrawCancelWindow;
+			if (cancelWindow > 0) {
+				require(block.timestamp + cancelWindow < withdrawRequest.cooldownEndTime, "WithdrawFacet : Cancel window passed");
+			}
+		}
+
 		if (withdrawRequest.status == WithdrawStatus.PENDING) {
 			_unlockAndRefund(withdrawRequest);
 			withdrawRequest.status = WithdrawStatus.CANCELLED;
 		} else {
-			// Provider must handle cancel
-			withdrawRequest.status = WithdrawStatus.CANCEL_REQUESTED;
-
-			if (!withdrawRequest.isPureVirtual) {
-				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onWithdrawCancelRequest, (withdrawRequest)));
-			} else {
+			if (withdrawRequest.isPureVirtual) {
+				_unlockAndRefund(withdrawRequest);
+				withdrawRequest.status = WithdrawStatus.CANCELLED;
 				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onWithdrawCancelRequest, (withdrawRequest)));
+			} else {
+				// Provider must handle cancel
+				withdrawRequest.status = WithdrawStatus.CANCEL_REQUESTED;
+				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onWithdrawCancelRequest, (withdrawRequest)));
 			}
 		}
 	}
 
-	function forceCancelWithdraw(uint256 requestId) internal {
-		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(LibSigner.getSigner(), requestId);
+	function forceCancelWithdraw(address user, uint256 requestId) internal {
+		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
-		require(withdrawRequest.isPureVirtual, "WithdrawFacet : Not a pure virtual withdraw");
-		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "WithdrawFacet : Invalid withdraw request status");
-		require(block.timestamp >= withdrawRequest.cooldownEndTime, "WithdrawFacet : Withdraw cooldown not over");
+		require(
+			withdrawRequest.status == WithdrawStatus.PENDING ||
+				withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED ||
+				withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED,
+			"WithdrawFacet : Invalid withdraw request status"
+		);
+		require(block.timestamp < withdrawRequest.cooldownEndTime, "WithdrawFacet : Withdraw cooldown already over");
 
 		_unlockAndRefund(withdrawRequest);
 		withdrawRequest.status = WithdrawStatus.CANCELLED;
 
-		LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onForceWithdrawCancel, (withdrawRequest)));
+		if (withdrawRequest.provider != address(0)) {
+			if (withdrawRequest.isPureVirtual) {
+				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onForceWithdrawCancel, (withdrawRequest)));
+			} else {
+				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onWithdrawCancelRequest, (withdrawRequest)));
+			}
+		}
 	}
 
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) internal {

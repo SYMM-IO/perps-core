@@ -58,6 +58,9 @@ library WithdrawStorage {
 		/// @dev Even privileged users (solvers) can't reduce cooldown below this.
 		///      Ensures some minimum time for monitoring.
 		uint256 minWithdrawCooldown;
+		/// @notice No-cancel window before cooldown expiry for pure virtual withdrawals (seconds)
+		/// @dev When set, users cannot cancel pure virtual withdrawals during the final window.
+		uint256 pureVirtualWithdrawCancelWindow;
 		/// @notice Total balance locked across pending withdrawals and bridge transactions
 		/// @dev Subtracted from contract balance to determine available funds. Ensures
 		///      new withdrawals/bridges/transfers don't use funds already committed.

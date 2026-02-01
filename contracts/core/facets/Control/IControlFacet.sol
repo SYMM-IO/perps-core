@@ -131,6 +131,8 @@ interface IControlFacet is IControlEvents {
 
 	function setMinWithdrawCooldown(uint256 cooldown) external;
 
+	function setPureVirtualWithdrawCancelWindow(uint256 cancelWindow) external;
+
 	function setSigner(address signer) external;
 
 	function setSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector) external;

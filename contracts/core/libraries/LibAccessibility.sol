@@ -26,6 +26,7 @@ library LibAccessibility {
 	bytes32 public constant UNSUSPENDER_ROLE = keccak256("UNSUSPENDER_ROLE");
 	bytes32 public constant SYMBOL_MANAGER_ROLE = keccak256("SYMBOL_MANAGER_ROLE");
 	bytes32 public constant WITHDRAW_SPEED_UP_ROLE = keccak256("WITHDRAW_SPEED_UP_ROLE");
+	bytes32 public constant WITHDRAW_FORCE_CANCEL_ROLE = keccak256("WITHDRAW_FORCE_CANCEL_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant SUSPENDER_ROLE = keccak256("SUSPENDER_ROLE");
 	bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
