@@ -761,7 +761,7 @@ contract ViewFacet is IViewFacet {
 	}
 
 	function getSigner() external view returns (address) {
-		return MAStorage.layout().signer == address(0) ? msg.sender : MAStorage.layout().signer;
+		return GlobalAppStorage.layout().signer == address(0) ? msg.sender : GlobalAppStorage.layout().signer;
 	}
 
 	function getFee(address affiliate, uint256 symbolId) external view returns (Fee memory fee) {

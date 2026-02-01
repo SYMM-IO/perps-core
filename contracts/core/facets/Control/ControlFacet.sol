@@ -592,7 +592,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the trusted signer address whose signatures are accepted for protocol operations.
 	/// @param signer The address of the trusted signer for off-chain signature verification.
 	function setSigner(address signer) external onlyRoleAllowProxy(LibAccessibility.SIGNER_ADMIN_ROLE) {
-		MAStorage.layout().signer = signer;
+		GlobalAppStorage.layout().signer = signer;
 		emit SignerSet(signer);
 	}
 

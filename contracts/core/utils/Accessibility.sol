@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { MAStorage } from "../storages/MAStorage.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { Quote, QuoteStatus, QuoteStorage } from "../storages/QuoteStorage.sol";
 import { TradingModeStorage } from "../storages/TradingModeStorage.sol";
@@ -35,7 +36,7 @@ abstract contract Accessibility {
 	///      based on the proxy's roles rather than the original caller's - allowing users to inherit
 	///      any privileged roles held by the proxy.
 	modifier onlyRoleAdmin(bytes32 role) {
-		require(MAStorage.layout().signer == address(0), "Accessibility: Cannot call via proxy");
+		require(GlobalAppStorage.layout().signer == address(0), "Accessibility: Cannot call via proxy");
 		require(LibAccessibility.isRoleAdmin(msg.sender, role), "Accessibility: Must be role admin");
 		_;
 	}
@@ -48,7 +49,7 @@ abstract contract Accessibility {
 	///
 	///      For functions that proxies legitimately need to call (e.g., setSigner), use onlyRoleAllowProxy instead.
 	modifier onlyRole(bytes32 role) {
-		require(MAStorage.layout().signer == address(0), "Accessibility: Cannot call via proxy");
+		require(GlobalAppStorage.layout().signer == address(0), "Accessibility: Cannot call via proxy");
 		require(LibAccessibility.hasRole(msg.sender, role), "Accessibility: Must have role");
 		_;
 	}

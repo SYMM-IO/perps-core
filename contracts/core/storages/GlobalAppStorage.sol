@@ -96,6 +96,11 @@ library GlobalAppStorage {
 		///      the excess goes here. Also receives soft liquidation penalties from cross PartyBs.
 		///      These funds are used to cover deficits later in overdue liquidations.
 		address softLiquidationPenaltyCollector;
+		/// @notice Current signer for meta-transaction/proxy pattern
+		/// @dev When a proxy calls on behalf of a user, this is set to the actual user.
+		///      LibSigner.getSigner() returns this if set, otherwise msg.sender.
+		///      Used to support gasless transactions and account abstraction.
+		address signer;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
