@@ -19,14 +19,6 @@ enum LiquidationType {
 	OVERDUE
 }
 
-/// @notice Settlement state for allocated balance transfers during force close
-/// @dev Used in force close flow to track if allocated balance from cross-mode
-///      PartyB needs to be gathered before closing.
-enum AllocatedSettlementState {
-	NONE,
-	GATHER_ALLOCATED_CROSS
-}
-
 /// @notice Settlement state for unrealized PnL during force close
 /// @dev Tracks whether UPNL has been realized as part of force close workflow.
 ///      NONE = not settled
@@ -77,7 +69,6 @@ struct ForceCloseDetail {
 	int256 upnlPartyB;
 	uint256 currentPrice;
 	UPNLSettlementState settlementState;
-	AllocatedSettlementState allocatedSettlementState;
 	PartyBForceCloseState partyBState;
 	bool inProgress;
 }
