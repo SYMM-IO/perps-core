@@ -1652,6 +1652,9 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await context.controlFacet
 				.connect(context.signers.admin)
 				.registerExpressProvider(expressProviderAddress);
+			
+			// Fund express provider
+			await context.collateral.mint(expressProviderAddress, ethers.parseEther("1000"));
 
 			const MockVirtualProvider = await ethers.getContractFactory(
 				"contracts/core/test/MockVirtualProvider.sol:VirtualProvider"
@@ -1761,6 +1764,58 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				expressBalanceAfter - expressBalanceBefore
 			).to.equal(0);
 		});
+
+		it("Should call express onWithdrawComplete for mixed parts", async function() {
+			await userDeposit("100");
+			const epAddress = await expressProvider.getAddress();
+			const vrAddress = await virtualProvider.getAddress();
+			const parts = await buildParts(["50", "20"], {
+				expressProvider: epAddress, virtualProvider: vrAddress
+			});
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expressProvider.acceptWithdrawRequest(user.address, 1);
+			await time.increase(1000);
+			await expressProvider.finalizeWithdrawRequest(user.address, 1);
+			expect(await expressProvider.completeCount()).to.equal(1);
+		});
+
+		it("Should call express onWithdrawComplete and transfer funds for express-only parts", async function() {
+			await userDeposit("100");
+			const epAddress = await expressProvider.getAddress();
+
+			const parts = await buildParts(["50"], {
+				expressProvider: epAddress,
+			});
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x");
+			await expressProvider.acceptWithdrawRequest(user.address, 1);
+
+			await time.increase(1000);
+			const balanceBefore = await context.collateral.balanceOf(epAddress);
+			await expressProvider.finalizeWithdrawRequest(user.address, 1);
+
+			const balanceAfter = await context.collateral.balanceOf(epAddress);
+			expect(balanceAfter - balanceBefore).to.equal(parts[0].amount);
+			expect(await expressProvider.completeCount()).to.equal(1);
+		});
+
+		it("Should not call express onWithdrawComplete for pure virtual parts", async function() {
+			await userDeposit("100");
+			const vrAddress = await virtualProvider.getAddress();
+			const parts = await buildParts(["50"], {
+				virtualProvider: vrAddress,
+			});
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1);
+
+			await time.increase(1000);
+			await context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(user.address, 1);
+			expect(await expressProvider.completeCount()).to.equal(0);
+		});
+
 		it("Should reject withdraw if provider wants", async function() {
 			await userDeposit("100");
 			const epAddress = await expressProvider.getAddress();

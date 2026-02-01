@@ -4,7 +4,10 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { AccountStorage, CrossLiquidationDetail } from "../../storages/AccountStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
+import { CrossPartyBStorage, CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
@@ -20,10 +23,10 @@ library ClearingHouseFacetImpl {
 	using LockedValuesOps for LockedValues;
 
 	function liquidateCrossPartyB(address partyB, CrossLiquidationSig memory liquidationSig) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		CrossPartyBStorage.Layout storage crossLayout = CrossPartyBStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
-		require(accountLayout.isCrossPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
+		require(crossLayout.crossModeEnabledForPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
 		LibMuonLiquidation.verifyCrossLiquidation(liquidationSig, partyB);
 
 		require(
@@ -31,7 +34,7 @@ library ClearingHouseFacetImpl {
 			"ClearingHouseFacet: partyB is solvent"
 		);
 		maLayout.partyBLiquidationTimestamp[partyB][address(0)] = liquidationSig.timestamp;
-		accountLayout.crossLiquidationDetails[partyB] = CrossLiquidationDetail({
+		crossLayout.crossLiquidationDetails[partyB] = CrossLiquidationDetail({
 			liquidationId: liquidationSig.liquidationId,
 			upnl: liquidationSig.upnl,
 			timestamp: liquidationSig.timestamp,
@@ -42,9 +45,10 @@ library ClearingHouseFacetImpl {
 
 	function deallocateForCrossLiquidation(address partyB, address[] memory partyAs, uint256[] memory amounts) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		CrossPartyBStorage.Layout storage crossLayout = CrossPartyBStorage.layout();
 
 		require(partyAs.length == amounts.length, "ClearingHouseFacet: Invalid length");
-		CrossLiquidationDetail storage crossLiquidationDetail = accountLayout.crossLiquidationDetails[partyB];
+		CrossLiquidationDetail storage crossLiquidationDetail = crossLayout.crossLiquidationDetails[partyB];
 		require(crossLiquidationDetail.inProgress == true, "ClearingHouseFacet: PartyB is solvent");
 		for (uint256 i = 0; i < partyAs.length; i++) {
 			address partyA = partyAs[i];
@@ -58,9 +62,10 @@ library ClearingHouseFacetImpl {
 
 	function distributeForCrossLiquidation(address partyB, address[] memory receivers, uint256[] memory amounts) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		CrossPartyBStorage.Layout storage crossLayout = CrossPartyBStorage.layout();
 
 		require(receivers.length == amounts.length, "ClearingHouseFacet: Invalid length");
-		CrossLiquidationDetail storage crossLiquidationDetail = accountLayout.crossLiquidationDetails[partyB];
+		CrossLiquidationDetail storage crossLiquidationDetail = crossLayout.crossLiquidationDetails[partyB];
 		require(crossLiquidationDetail.inProgress == true, "ClearingHouseFacet: PartyB is solvent");
 		for (uint256 i = 0; i < receivers.length; i++) {
 			require(crossLiquidationDetail.deallocateForLiquidation >= amounts[i], "ClearingHouseFacet: Insufficient allocated balance");
@@ -72,8 +77,9 @@ library ClearingHouseFacetImpl {
 	function liquidatePendingPositionsForCrossLiquidation(address partyB, address[] memory partyAs) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		CrossPartyBStorage.Layout storage crossLayout = CrossPartyBStorage.layout();
 
-		CrossLiquidationDetail storage crossLiquidationDetail = accountLayout.crossLiquidationDetails[partyB];
+		CrossLiquidationDetail storage crossLiquidationDetail = crossLayout.crossLiquidationDetails[partyB];
 		require(crossLiquidationDetail.inProgress == true, "ClearingHouseFacet: PartyB is solvent");
 
 		for (uint256 j = 0; j < partyAs.length; j++) {
@@ -110,11 +116,12 @@ library ClearingHouseFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		CrossPartyBStorage.Layout storage crossLayout = CrossPartyBStorage.layout();
 		address partyA;
 
 		LibMuonLiquidation.verifyQuotePrices(priceSig);
 
-		CrossLiquidationDetail storage crossLiquidationDetail = accountLayout.crossLiquidationDetails[partyB];
+		CrossLiquidationDetail storage crossLiquidationDetail = crossLayout.crossLiquidationDetails[partyB];
 		require(crossLiquidationDetail.inProgress == true, "ClearingHouseFacet: PartyB is solvent");
 
 		require(
@@ -156,8 +163,8 @@ library ClearingHouseFacetImpl {
 			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
 			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1; // total positions for partyB in cross partyB mode
 
-			address affiliateHook = accountLayout.affiliateHooks[quote.affiliate];
-			address systemHook = accountLayout.affiliateHooks[address(0)];
+			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
+			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 			LibHook.safeCall(
 				affiliateHook,
 				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)),
@@ -182,14 +189,25 @@ library ClearingHouseFacetImpl {
 		return (liquidatedAmounts, closeIds);
 	}
 
-	function softPartyBLiquidation(address partyB, uint256 penalty) internal {
+	function softPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		require(accountLayout.isCrossPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
-		if (penalty != 0) {
-			require(MAStorage.layout().softLiquidationPenaltyCollector != address(0), "ClearingHouse: No Penalty Collector");
-			require(penalty <= accountLayout.partyBAllocatedBalances[partyB][address(0)], "ClearingHouse: Insufficient Balance");
-			accountLayout.partyBAllocatedBalances[partyB][address(0)] -= penalty;
-			accountLayout.balances[MAStorage.layout().softLiquidationPenaltyCollector] += penalty;
+		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
+
+		uint256 totalPenalty = penaltyFromAllocated + penaltyFromBalance;
+		if (totalPenalty != 0) {
+			require(globalLayout.softLiquidationPenaltyCollector != address(0), "ClearingHouse: No Penalty Collector");
+
+			if (penaltyFromAllocated != 0) {
+				require(penaltyFromAllocated <= accountLayout.partyBAllocatedBalances[partyB][partyA], "ClearingHouse: Insufficient Allocated Balance");
+				accountLayout.partyBAllocatedBalances[partyB][partyA] -= penaltyFromAllocated;
+			}
+
+			if (penaltyFromBalance != 0) {
+				require(penaltyFromBalance <= accountLayout.balances[partyB], "ClearingHouse: Insufficient Balance");
+				accountLayout.balances[partyB] -= penaltyFromBalance;
+			}
+
+			accountLayout.balances[globalLayout.softLiquidationPenaltyCollector] += totalPenalty;
 		}
 	}
 }

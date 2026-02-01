@@ -10,6 +10,8 @@ import { LibSettlement } from "../../libraries/LibSettlement.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
+import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
 
 library SettlementFacetImpl {
 	function settleUpnl(
@@ -17,9 +19,9 @@ library SettlementFacetImpl {
 		uint256[] memory updatedPrices,
 		address partyA
 	) internal returns (uint256[] memory newPartyBsAllocatedBalances) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		address signer = LibSigner.getSigner();
-		if (accountLayout.bindState[partyA].partyB != signer || !accountLayout.isPartyBBindable[signer]) {
+		if (tradingLayout.bindState[partyA].partyB != signer || !tradingLayout.isPartyBBindable[signer]) {
 			LibMuonSettlement.verifySettlement(settleSig, partyA);
 		}
 		return LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, false);
@@ -29,7 +31,7 @@ library SettlementFacetImpl {
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
-		bool isCrossPartyB = AccountStorage.layout().isCrossPartyB[sig.partyB];
+		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[sig.partyB];
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB);
 		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
 	}

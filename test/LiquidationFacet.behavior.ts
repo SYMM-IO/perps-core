@@ -99,7 +99,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		// ========================================
 		// Enable funding fees that accumulate over time
 		// Epoch duration: 500 seconds - after this, funding fees are charged
-		await context.pauseControlFacet.enableNewFundingFee()
+		await context.pauseControlFacet.activateAccumulatedFunding()
 		await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [500])  // symbolId 1, epoch 500s
 		await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee(
 			[1],              // symbolId

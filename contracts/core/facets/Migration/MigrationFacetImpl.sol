@@ -10,7 +10,7 @@ import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibFundingRate } from "../../libraries/LibFundingRate.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType } from "../../storages/QuoteStorage.sol";
-import { SymbolStorage, FundingFee } from "../../storages/SymbolStorage.sol";
+import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 
 library MigrationFacetImpl {
@@ -68,8 +68,8 @@ library MigrationFacetImpl {
 	 * @param quote The quote to initialize funding for
 	 */
 	function _initializeQuoteFunding(Quote storage quote) internal {
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		FundingFee storage fundingFee = symbolLayout.fundingFees[quote.symbolId][quote.partyB];
+		FundingStorage.Layout storage fundingLayout = FundingStorage.layout();
+		FundingFee storage fundingFee = fundingLayout.fundingFees[quote.symbolId][quote.partyB];
 
 		// Skip if no funding fee configured for this symbol/partyB
 		if (fundingFee.epochDuration == 0) return;

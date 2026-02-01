@@ -10,6 +10,7 @@ import { Pausable } from "../../utils/Pausable.sol";
 import { SettlementFacetImpl } from "./SettlementFacetImpl.sol";
 import { SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
 
 contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 	/**
@@ -49,7 +50,7 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 		uint256[] memory newPartyAsAllocatedBalances = SettlementFacetImpl.settleUpnlUnified(sig, updatedPrices);
 
 		// Get partyB allocated balance based on mode
-		address allocKey = accountLayout.isCrossPartyB[sig.partyB] ? address(0) : sig.partyAs[0];
+		address allocKey = CrossPartyBStorage.layout().crossModeEnabledForPartyB[sig.partyB] ? address(0) : sig.partyAs[0];
 		uint256 newPartyBAllocatedBalance = accountLayout.partyBAllocatedBalances[sig.partyB][allocKey];
 
 		emit SettleUpnlUnified(

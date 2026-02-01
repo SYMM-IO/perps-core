@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { WithdrawRequest } from "../storages/WithdrawStorage.sol";
-import { ExternalTransferReq } from "../storages/AccountStorage.sol";
+import { VirtualExternalTransferRequest } from "../storages/ExternalTransferStorage.sol";
 
 interface IVirtualProvider {
 	function onWithdrawRequest(WithdrawRequest memory withdrawRequest) external;
@@ -14,7 +14,7 @@ interface IVirtualProvider {
 	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external;
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory withdrawRequest, uint256 newCooldown) external;
 	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) external;
-	function onExternalTransfer(ExternalTransferReq memory externalTransfer) external;
+	function onExternalTransfer(VirtualExternalTransferRequest memory externalTransfer) external;
 	function onCancelExternalTransfer(uint256 id) external;
 	function onExpressDeposit(address user, uint256 amount, address symmioCore) external;
 }

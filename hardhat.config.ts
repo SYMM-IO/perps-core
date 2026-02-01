@@ -88,16 +88,33 @@ export default defineConfig({
 	plugins: [hardhatToolboxMochaEthers, hardhatEthersPlugin, hardhatVerify],
 	tasks: deployTasks,
 	solidity: {
-		version: "0.8.18",
-		settings: {
-			metadata: {
-				bytecodeHash: "none",
+		profiles: {
+			default: {
+				version: "0.8.18",
+				settings: {
+					metadata: {
+						bytecodeHash: "none",
+					},
+					optimizer: {
+						enabled: true,
+						runs: 200,
+					},
+					viaIR: true,
+				},
 			},
-			optimizer: {
-				enabled: true,
-				runs: 200,
+			production: {
+				version: "0.8.18",
+				settings: {
+					metadata: {
+						bytecodeHash: "none",
+					},
+					optimizer: {
+						enabled: true,
+						runs: 200,
+					},
+					viaIR: true,
+				},
 			},
-			viaIR: true,
 		},
 	},
 	networks: {
@@ -131,7 +148,7 @@ export default defineConfig({
 		artifacts: "./artifacts",
 		cache: "./cache",
 		sources: "./contracts",
-		tests: "./test",
+		tests: "./test/sequential",
 	},
 	typechain: {
 		outDir: resolve(process.cwd(), "src/types"),

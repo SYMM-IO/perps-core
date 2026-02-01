@@ -4,7 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { Symbol, SymbolWithType, FundingFee } from "../../storages/SymbolStorage.sol";
+import { Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
+import { FundingFee } from "../../storages/FundingStorage.sol";
 
 interface IViewFacetSymbol {
 	function getSymbol(uint256 symbolId) external view returns (Symbol memory);

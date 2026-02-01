@@ -3,6 +3,6 @@
     "timeout": 40000,
     "parallel": false,
     "_": [
-        "test/Main.ts"
+        "test/sequential/Main.ts"
     ]
 }

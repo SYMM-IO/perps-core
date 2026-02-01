@@ -6,8 +6,10 @@ pragma solidity >=0.8.18;
 
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
+import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
-import { SymbolStorage, Symbol, SymbolWithType, FundingFee } from "../../storages/SymbolStorage.sol";
+import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
 import { IViewFacetSymbol } from "./IViewFacetSymbol.sol";
 
 contract ViewFacetSymbol is IViewFacetSymbol {
@@ -217,7 +219,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 	 * @return A boolean indicating whether the symbol type is whitelisted for the party B.
 	 */
 	function isWhitelistedSymbolType(address partyB, uint256 symbolType) external view returns (bool) {
-		return AccountStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType];
+		return PartyBControlStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType];
 	}
 
 	/**
@@ -236,7 +238,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 	 * @return fundingFee The funding rate of the party B.
 	 */
 	function getFundingFeesOfPartyB(uint256 symbolId, address partyB) external view returns (FundingFee memory) {
-		return SymbolStorage.layout().fundingFees[symbolId][partyB];
+		return FundingStorage.layout().fundingFees[symbolId][partyB];
 	}
 
 }

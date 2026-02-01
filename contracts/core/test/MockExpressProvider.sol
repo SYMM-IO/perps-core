@@ -14,6 +14,7 @@ interface ISymmioCore {
 
 contract ExpressProvider is IExpressProvider {
 	address public symmioAddress;
+	uint256 public completeCount;
 
 	event WithdrawSuspended(address indexed user, uint256 indexed requestId);
 
@@ -51,13 +52,11 @@ contract ExpressProvider is IExpressProvider {
 		require(isExpressProvider, "No parts for this express provider");
 	}
 
-	function onWithdrawComplete(WithdrawRequest memory _req) external override pure {
-		_req;
-		// no logic → pure
+	function onWithdrawComplete(WithdrawRequest memory) external override {
+		completeCount += 1;
 	}
 
-	function onWithdrawCancelRequest(WithdrawRequest memory _req) external override pure {
-		_req;
+	function onWithdrawCancelRequest(WithdrawRequest memory) external override pure {
 	}
 
 	function onWithdrawSuspend(WithdrawRequest memory _req) external override {

@@ -12,6 +12,7 @@ import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummySingleUpnlWithPendingBalanceSig } from "./utils/SignatureUtils.js"
@@ -345,8 +346,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.assuranceFacet.connect(hedger.signer).requestAssuranceWithdraw(token, amount, recipient)
 
 			// Corrupt `assuranceWithdrawalRequests[partyB].requester` in diamond storage to hit the `requester mismatch` require.
-			const accountStorageBaseSlot = BigInt(ethers.keccak256(toUtf8Bytes("diamond.standard.storage.account")))
-			const assuranceWithdrawalRequestsSlot = accountStorageBaseSlot + 35n
+			// assuranceWithdrawalRequests is now in PartyBControlStorage at slot 4 (after 4 nested mappings)
+			const partyBControlStorageBaseSlot = BigInt(ethers.keccak256(toUtf8Bytes("diamond.standard.storage.partybcontrol")))
+			const assuranceWithdrawalRequestsSlot = partyBControlStorageBaseSlot + 4n
 			const entryBase = BigInt(
 				ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [partyB, assuranceWithdrawalRequestsSlot])),
 			)
@@ -481,6 +483,37 @@ export function shouldBehaveLikeAccountFacet(): void {
 			expect(await context.viewFacet.balanceOf(user2Address)).to.equal(0)
 			expect(await context.collateral.balanceOf(userAddress)).to.equal(BALANCES.INITIAL_COLLATERAL - BALANCES.DEPOSIT_AMOUNT)
 			expect(await context.collateral.balanceOf(user2Address)).to.equal(withdrawAmount)
+		})
+
+		it("Should not allow legacy withdraw to bypass locked collateral", async function () {
+			user2 = new User(context, context.signers.user2)
+			await user2.setup()
+
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(context.signers.admin.address)
+			const user2Address = await context.signers.user2.getAddress()
+			const virtualBalance = decimal(150n)
+			await context.accountFacet.connect(context.signers.admin).virtualDepositFor(user2Address, virtualBalance)
+
+			const receiver = ethers.dataSlice(await context.signers.user.getAddress(), 0, 20)
+			const chainId = (await ethers.provider.getNetwork()).chainId
+			const parts = [
+				{
+					id: 1,
+					amount: BALANCES.WITHDRAW_AMOUNT,
+					chainId,
+					receiver,
+					virtualProvider: ZeroAddress,
+					expressProvider: ZeroAddress,
+				},
+			]
+
+			await context.controlFacet.connect(context.signers.admin).setMaxWithdrawParts(10)
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+
+			await time.increase(200)
+			await expect(context.accountFacet.connect(context.signers.user2).withdraw(virtualBalance)).to.be.revertedWith(
+				"AccountFacet: Insufficient contract collateral",
+			)
 		})
 
 		describe("withdrawSuspendedUserFunds", function () {
@@ -866,31 +899,31 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should allow legacy deallocate when not disabled", async function () {
-			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(false)
+			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(false)
 			await expect(
 				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
 			).to.not.be.reverted
 		})
 
 		it("Should block legacy deallocate when disabled", async function () {
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
-			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(true)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
+			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(true)
 			await expect(
 				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
 			).to.be.revertedWith("AccountFacet: Legacy deallocate is disabled")
 		})
 
 		it("Should allow safeDeallocate when legacy is disabled", async function () {
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
 			await expect(
 				context.accountFacet.connect(context.signers.user).safeDeallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
 			).to.not.be.reverted
 		})
 
 		it("Should re-enable legacy deallocate", async function () {
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(true)
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDisabled(false)
-			expect(await context.viewFacet.isLegacyDeallocateDisabled()).to.equal(false)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
+			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(false)
+			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(false)
 			await expect(
 				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
 			).to.not.be.reverted
@@ -1760,17 +1793,34 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail when bound", async () => {
+			// First clear pending quotes
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2])
+
 			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"AccountFacet: Invalid state",
 			)
 		})
 
-		it("Should fail to bind to hedger when have locked quote with another hedger", async function () {
-			await hedger.lockQuote(1)
-			await hedger2.lockQuote(2)
+		it("Should fail to bind when have pending quotes", async function () {
+			// Quote 1 and 2 are pending (sent in beforeEach)
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.revertedWith(
-				"AccountFacet : Have Locked Quotes with Other Party B",
+				"AccountFacet: Have pending quotes",
+			)
+		})
+
+		it("Should fail to bind when have locked quote even with the same hedger", async function () {
+			// Lock quote 1 first (while still valid)
+			await hedger.lockQuote(1)
+
+			// Expire quote 2
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([2])
+
+			// Even though the locked quote is with the same hedger, binding should fail
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.revertedWith(
+				"AccountFacet: Have pending quotes",
 			)
 		})
 
@@ -1785,10 +1835,52 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail to bind to a non-bindable party B", async () => {
+			// First clear pending quotes
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2])
+
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, false)
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"AccountFacet: Not Bindable",
 			)
+		})
+
+		it("Should allow binding after all pending quotes are fully opened", async () => {
+			// Open both pending quotes fully
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+			await hedger.lockQuote(2)
+			await hedger.openPosition(2)
+
+			// User should be able to bind (no more pending quotes)
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
+		})
+
+		it("Should allow binding after all pending quotes expire", async () => {
+			// expire both quotes
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2])
+
+			// User should be able to bind
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
+		})
+
+		it("Should allow binding after locked quotes are cancelled", async () => {
+			// Lock quote 1
+			await hedger.lockQuote(1)
+
+			// PartyA requests cancel
+			await user.requestToCancelQuote(1)
+
+			// PartyB accepts cancel
+			await hedger.acceptCancelRequest(1)
+
+			// Expire quote 2
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([2])
+
+			// User should be able to bind
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
 		})
 
 		it("Should bind successfully", async () => {
@@ -1797,6 +1889,10 @@ export function shouldBehaveLikeAccountFacet(): void {
 				BOUND: 1,
 				REQUESTED_TO_UNBIND: 2,
 			}
+
+			// First clear pending quotes
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2])
 
 			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.not.be.reverted
 
@@ -1972,7 +2068,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("should allow cross partyB activation after enabled by admin", async () => {
-			await context.controlFacet.connect(context.signers.admin).setCrossEnabled(true)
+			await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(true)
 			await migratePartyBToCross(context, hedger, [])
 			expect(await context.viewFacet.isCrossPartyB(context.signers.hedger.address)).to.equal(true)
 		})

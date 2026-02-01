@@ -539,7 +539,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		await hedger.openPosition(quoteId, limitOpenRequestBuilder().filledAmount(amount).openPrice(price).price(price).build())
 		await expectPartyBTotals(context, amount, price, 0n, 0n)
 
-		await context.pauseControlFacet.connect(context.signers.admin).enableNewFundingFee()
+		await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
 		await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [3600])
 		await context.fundingRateFacet
 			.connect(context.signers.hedger)

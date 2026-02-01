@@ -7,6 +7,10 @@ pragma solidity >=0.8.18;
 import { Accessibility } from "../../utils/Accessibility.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { ExternalTransferStorage } from "../../storages/ExternalTransferStorage.sol";
+import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
+import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
+import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { IPauseControlFacet } from "./IPauseControlFacet.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 
@@ -55,8 +59,14 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 
 	/// @notice Pauses external transfers to addresses outside the protocol (e.g., to other protocols or wallets).
 	function pauseExternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
-		GlobalAppStorage.layout().externalTransferPaused = true;
+		ExternalTransferStorage.layout().externalTransferPaused = true;
 		emit PauseExternalTransfer();
+	}
+
+	/// @notice Pauses instant layer operations for bound PartyAs.
+	function pauseInstantLayer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+		TradingModeStorage.layout().instantLayerPaused = true;
+		emit PauseInstantLayer();
 	}
 
 	/// @notice Activates emergency mode which enables emergency withdrawals and restricts normal protocol operations.
@@ -109,8 +119,14 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 
 	/// @notice Resumes external transfers to addresses outside the protocol.
 	function unpauseExternalTransfer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
-		GlobalAppStorage.layout().externalTransferPaused = false;
+		ExternalTransferStorage.layout().externalTransferPaused = false;
 		emit UnpauseExternalTransfer();
+	}
+
+	/// @notice Resumes instant layer operations for bound PartyAs.
+	function unpauseInstantLayer() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
+		TradingModeStorage.layout().instantLayerPaused = false;
+		emit UnpauseInstantLayer();
 	}
 
 	/// @notice Deactivates emergency mode, returning the protocol to normal operations and disabling emergency withdrawals.
@@ -147,23 +163,20 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	}
 
 	/// @notice Deprecates the legacy withdrawal mechanism, forcing users to use the new withdrawal system.
-	function deprecateOldWithdrawal() external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		appLayout.deprecateOldWithdrawalPaused = true;
-		emit DeprecateOldWithdrawalPaused();
+	function deprecateLegacyWithdrawal() external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		WithdrawStorage.layout().legacyWithdrawalDeprecated = true;
+		emit LegacyWithdrawalDeprecated();
 	}
 
 	/// @notice Deprecates the legacy iterative funding fee calculation, preparing for migration to accumulative funding rates.
-	function deprecateOldFundingFee() external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		appLayout.iterativeFundingDeprecationFlag = true;
-		emit DeprecateOldFundingFee();
+	function deprecateLegacyFunding() external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		FundingStorage.layout().legacyFundingDeprecated = true;
+		emit LegacyFundingDeprecated();
 	}
 
-	/// @notice Activates the new accumulative funding rate system which calculates funding more efficiently using stored rates.
-	function enableNewFundingFee() external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		appLayout.accumulativeFundingRateActivationFlag = true;
-		emit EnableNewFundingFee();
+	/// @notice Activates the new accumulated funding rate system which calculates funding more efficiently using stored rates.
+	function activateAccumulatedFunding() external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		FundingStorage.layout().accumulatedFundingActivated = true;
+		emit AccumulatedFundingActivated();
 	}
 }

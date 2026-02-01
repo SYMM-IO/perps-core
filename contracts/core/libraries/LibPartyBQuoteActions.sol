@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
+import { CrossPartyBStorage } from "../storages/CrossPartyBStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
@@ -31,7 +32,7 @@ library LibPartyBQuoteActions {
 			"PartyBFacet: Symbol not allowed due to connection restrictions"
 		);
 		require(!MAStorage.layout().partyBLiquidationStatus[signer][quote.partyA], "PartyBFacet: PartyB isn't solvent");
-		require(!accountLayout.crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+		require(!CrossPartyBStorage.layout().crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 		bool isValidPartyB;
 		if (quote.partyBsWhiteList.length == 0) {
 			require(signer != quote.partyA, "PartyBFacet: PartyA can't be partyB too");
@@ -52,6 +53,5 @@ library LibPartyBQuoteActions {
 		// lock funds for partyB
 		LibAccount.addToPartyBPendingLockedBalances(signer, quote.partyA, quote);
 		quoteLayout.partyBPendingQuotes[signer][quote.partyA].push(quote.id);
-		quoteLayout.partyALockQuotesCount[quote.partyA]++;
 	}
 }

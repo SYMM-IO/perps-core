@@ -118,10 +118,19 @@ export function shouldBehaveLikeLockQuote(): void {
 		})
 
 		it("Should check bind partyB when bound", async function () {
+			// First expire all pending quotes so we can bind
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2, 3, 4, 5])
+
 			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
-			await expect(hedger2.lockQuote(1)).to.be.revertedWith("PartyBFacet: PartyB is not bounded to this partyA")
+
+			// Send a new quote after binding - must target the bound partyB
+			await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([context.signers.hedger.address]).build())
+
+			// hedger2 should fail to lock the quote because partyA is bound to hedger
+			await expect(hedger2.lockQuote(6)).to.be.revertedWith("PartyBFacet: PartyB is not bounded to this partyA")
 		})
 
 		it("Should skip sig check when not bound", async function () {
