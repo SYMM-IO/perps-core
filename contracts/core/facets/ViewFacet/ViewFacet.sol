@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
-import { AccountStorage, LiquidationDetail, SettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
+import { AccountStorage, LiquidationDetail, LiquidationSettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
 import { CrossPartyBStorage, CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
 import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
@@ -304,8 +304,8 @@ contract ViewFacet is IViewFacet {
 	 * @param partyBs The addresses of Party Bs.
 	 * @return states The settlement states of Party Bs for Party A.
 	 */
-	function getSettlementStates(address partyA, address[] memory partyBs) external view returns (SettlementState[] memory) {
-		SettlementState[] memory states = new SettlementState[](partyBs.length);
+	function getSettlementStates(address partyA, address[] memory partyBs) external view returns (LiquidationSettlementState[] memory) {
+		LiquidationSettlementState[] memory states = new LiquidationSettlementState[](partyBs.length);
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			states[i] = AccountStorage.layout().settlementStates[partyA][partyBs[i]];
 		}

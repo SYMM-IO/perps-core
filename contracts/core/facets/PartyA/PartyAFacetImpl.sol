@@ -15,7 +15,6 @@ import { QuoteStorage, Quote, QuoteStatus, LockedValues, PositionType, OrderType
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
-import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";

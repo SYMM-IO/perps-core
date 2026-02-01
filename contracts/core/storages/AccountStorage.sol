@@ -43,11 +43,13 @@ enum PartyBForceCloseState {
 	LIQUIDATED
 }
 
-/// @notice Tracks UPNL settlement progress between PartyA and PartyB
-/// @dev Used to reconcile unrealized PnL before force close or liquidation.
-///      actualAmount = what's been settled so far, expectedAmount = total to settle,
-///      cva = Credit Valuation Adjustment held, pending = settlement in progress.
-struct SettlementState {
+/// @notice Tracks PnL settlement between PartyA and PartyB during PartyA liquidation
+/// @dev Used during PartyA liquidation to reconcile PnL with each PartyB.
+///      expectedAmount = full PnL for PartyA's accumulated UPNL tracking
+///      actualAmount = amount actually transferred to/from PartyB (may differ in OVERDUE due to deficit,
+///                     or overridden via resolveLiquidationDispute)
+///      cva = CVA returned to PartyB, pending = settlement in progress.
+struct LiquidationSettlementState {
 	int256 actualAmount;
 	int256 expectedAmount;
 	uint256 cva;
@@ -182,7 +184,7 @@ library AccountStorage {
 		///                     or overridden via resolveLiquidationDispute)
 		///      cva = CVA held for this PartyB, pending = settlement in progress.
 		///      Cleared after liquidation completes via settlePartyALiquidation.
-		mapping(address => mapping(address => SettlementState)) settlementStates;
+		mapping(address => mapping(address => LiquidationSettlementState)) settlementStates;
 		/// @notice PartyB's reserve funds for covering force close scenarios
 		/// @dev Extra collateral PartyB deposits as a safety buffer. Used during force close
 		///      if their allocated balance is insufficient. Not used in cross mode.

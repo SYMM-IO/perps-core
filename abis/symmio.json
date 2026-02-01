@@ -7474,7 +7474,7 @@
                         "type": "bool"
                     }
                 ],
-                "internalType": "struct SettlementState[]",
+                "internalType": "struct LiquidationSettlementState[]",
                 "name": "",
                 "type": "tuple[]"
             }
