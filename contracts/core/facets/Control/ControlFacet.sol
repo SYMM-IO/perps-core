@@ -15,7 +15,6 @@ import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
-import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { ExternalTransferStorage } from "../../storages/ExternalTransferStorage.sol";
 import { IControlFacet } from "./IControlFacet.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
@@ -510,7 +509,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param partyB The address of the Party B to configure ADL for.
 	/// @param enabled True to enable ADL for this Party B, false to disable.
 	function setADLEnabled(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		PartyBControlStorage.layout().adlEnabled[partyB] = enabled;
+		MAStorage.layout().adlEnabled[partyB] = enabled;
 		emit SetADLEnabled(partyB, enabled);
 	}
 

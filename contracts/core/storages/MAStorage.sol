@@ -132,6 +132,10 @@ library MAStorage {
 		///      PartyBs to verify none have blacklisted it. This limit bounds that loop's gas cost.
 		///      If at limit, must close positions with one PartyB before opening with another.
 		uint256 maxPartyAConnectionLimit;
+		/// @notice Whether a PartyB can use auto-deleveraging to close positions unilaterally
+		/// @dev When enabled, PartyB can call adlClose() to close positions at a specified price
+		///      without PartyA consent. Used for risk management. Enabled by PARTY_B_MANAGER_ROLE.
+		mapping(address => bool) adlEnabled;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

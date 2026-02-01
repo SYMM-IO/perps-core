@@ -56,10 +56,6 @@ library PartyBControlStorage {
 		/// @dev PartyBs must request and get approval before withdrawing assurance collateral.
 		///      Prevents sudden removal of trust collateral.
 		mapping(address => AssuranceWithdrawalRequest) assuranceWithdrawalRequests;
-		/// @notice Whether a PartyB can use auto-deleveraging to close positions unilaterally
-		/// @dev When enabled, PartyB can call adlClose() to close positions at a specified price
-		///      without PartyA consent. Used for risk management. Enabled by PARTY_B_MANAGER_ROLE.
-		mapping(address => bool) adlEnabled;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

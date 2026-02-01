@@ -9,7 +9,6 @@ import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { AccountStorage, LiquidationDetail, LiquidationSettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
 import { CrossPartyBStorage, CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
-import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { ExternalTransferStorage, VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
 import { WithdrawStorage, WithdrawRequest } from "../../storages/WithdrawStorage.sol";
@@ -757,7 +756,7 @@ contract ViewFacet is IViewFacet {
 	 * @return enabled The ADL enabled status of the party B.
 	 */
 	function isADLEnabled(address partyB) external view returns (bool) {
-		return PartyBControlStorage.layout().adlEnabled[partyB];
+		return MAStorage.layout().adlEnabled[partyB];
 	}
 
 	function getSigner() external view returns (address) {
