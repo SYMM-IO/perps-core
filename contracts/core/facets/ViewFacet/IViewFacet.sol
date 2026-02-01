@@ -189,8 +189,6 @@ interface IViewFacet {
 
 	function getSoftLiquidationPenaltyCollector() external view returns (address);
 
-	function getPartyALockedQuotesCount(address user) external view returns (uint256);
-
 	function isBindable(address partyB) external view returns (bool);
 
 	function isLegacyFundingDeprecated() external view returns (bool);

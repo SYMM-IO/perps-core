@@ -55,7 +55,6 @@ library PartyBQuoteActionsFacetImpl {
 			quote.quoteStatus = QuoteStatus.PENDING;
 			LibAccount.subFromPartyBPendingLockedBalances(quote);
 			LibQuote.removeFromPartyBPendingQuotes(quote);
-			quoteLayout.partyALockQuotesCount[quote.partyA]--;
 			quote.partyB = address(0);
 			return QuoteStatus.PENDING;
 		}
@@ -77,7 +76,6 @@ library PartyBQuoteActionsFacetImpl {
 		emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 
 		LibQuote.removeFromPendingQuotes(quote);
-		QuoteStorage.layout().partyALockQuotesCount[quote.partyA]--;
 
 		address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
 		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];

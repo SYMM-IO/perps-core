@@ -4,24 +4,26 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStorage } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, LockedValues } from "../../storages/QuoteStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage, BindState, BindStatus } from "../../storages/TradingModeStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 
 library BindingFacetImpl {
+	using LockedValuesOps for LockedValues;
+
 	function bindToPartyB(address partyB) internal {
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(partyB != address(0), "AccountFacet: Zero address");
 		require(
 			quoteLayout.partyAOpenPositions[signer].length == quoteLayout.partyBOpenPositions[partyB][signer].length,
 			"AccountFacet : Have Open Positions with Other Party B"
 		);
-		require(
-			quoteLayout.partyALockQuotesCount[signer] == quoteLayout.partyBPendingQuotes[partyB][signer].length,
-			"AccountFacet : Have Locked Quotes with Other Party B"
-		);
+		require(accountLayout.pendingLockedBalances[signer].totalForPartyA() == 0, "AccountFacet: Have pending quotes");
 		require(tradingLayout.isPartyBBindable[partyB], "AccountFacet: Not Bindable");
 		BindState storage bindState = tradingLayout.bindState[signer];
 		require(bindState.status == BindStatus.NOT_BOUND, "AccountFacet: Invalid state");

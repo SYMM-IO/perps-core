@@ -129,10 +129,6 @@ library QuoteStorage {
 		/// @dev When a close is requested, this links the quote to its close ID.
 		///      Used to match close events to specific close requests.
 		mapping(uint256 => uint256) closeIds;
-		/// @notice Count of quotes PartyA has that are locked by PartyB
-		/// @dev Tracks quotes in LOCKED or CANCEL_PENDING status. Incremented when
-		///      PartyB locks, decremented when opened/unlocked/cancelled by PartyB.
-		mapping(address => uint256) partyALockQuotesCount;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
