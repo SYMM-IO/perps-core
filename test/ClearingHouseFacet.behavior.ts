@@ -510,7 +510,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 	describe("SoftLiquidation", () => {
 		describe("SoftLiquidation without cross partyB mode enabled", () => {
-			it("should fail to soft liquidate without active cross partyB mode", async () => {
+			it("should soft liquidate without active cross partyB mode using partyA allocation", async () => {
 				await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
 				await context.controlFacet
 					.connect(context.signers.admin)
@@ -518,8 +518,8 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), 0),
-				).to.revertedWith("ClearingHouseFacet: partyB is not using cross mode")
+						.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, 0, 0),
+				).not.to.be.reverted
 			})
 		})
 		describe("SoftLiquidation with cross partyB mode enabled", () => {
@@ -540,17 +540,17 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				await migratePartyBToCross(context, hedger, [1, 2, 4, 5])
 			})
-			describe("SoftLiquidation in none cross partyB mode", () => {
+			describe("SoftLiquidation in cross partyB mode validation", () => {
 				it("should fail to soft liquidate without role", async () => {
 					await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
 					await expect(
 						context.clearingHouseFacet
 							.connect(context.signers.liquidator)
-							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), 0),
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.ZeroAddress, 0, 0),
 					).to.revertedWith("Accessibility: Must have role")
 				})
 
-				it("should fail to soft liquid if penalty is more than balance", async () => {
+				it("should fail to soft liquidate if penalty from allocated is more than allocated balance", async () => {
 					await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
 					await context.controlFacet
 						.connect(context.signers.admin)
@@ -558,18 +558,30 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					await expect(
 						context.clearingHouseFacet
 							.connect(context.signers.liquidator)
-							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), ethers.parseEther("2000")),
-					).to.revertedWith("ClearingHouse: Insufficient Balance")
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.ZeroAddress, ethers.parseEther("3000"), 0),
+					).to.revertedWith("ClearingHouse: Insufficient Allocated Balance")
 				})
 
-				it("should fail to soft liquid with penalty without collector", async () => {
+				it("should fail to soft liquidate if penalty from balance is more than balance", async () => {
+					await context.controlFacet.connect(context.signers.admin).setSoftLiquidationPenaltyCollector(context.signers.liquidator)
 					await context.controlFacet
 						.connect(context.signers.admin)
 						.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
 					await expect(
 						context.clearingHouseFacet
 							.connect(context.signers.liquidator)
-							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), ethers.parseEther("10")),
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.ZeroAddress, 0, ethers.parseEther("3000")),
+					).to.revertedWith("ClearingHouse: Insufficient Balance")
+				})
+
+				it("should fail to soft liquidate with penalty without collector", async () => {
+					await context.controlFacet
+						.connect(context.signers.admin)
+						.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("SOFT_LIQUIDATOR_ROLE")))
+					await expect(
+						context.clearingHouseFacet
+							.connect(context.signers.liquidator)
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.ZeroAddress, ethers.parseEther("10"), 0),
 					).to.revertedWith("ClearingHouse: No Penalty Collector")
 				})
 			})
@@ -586,24 +598,55 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					await expect(
 						context.clearingHouseFacet
 							.connect(context.signers.liquidator)
-							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), 0),
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.ZeroAddress, 0, 0),
 					)
 						.to.emit(context.clearingHouseFacet, "SoftPartyBLiquidation")
-						.withArgs(context.signers.hedger.address, ethers.parseEther("100"), 0)
+						.withArgs(context.signers.hedger.address, ethers.ZeroAddress, 0, 0)
 				})
 
-				it("should change balance in penalty soft liquidate correctly", async () => {
+				it("should change allocated balance in penalty soft liquidate correctly", async () => {
 					const beforeLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
 					const beforeAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, ethers.ZeroAddress)
 					await expect(
 						context.clearingHouseFacet
 							.connect(context.signers.liquidator)
-							.softPartyBLiquidation(context.signers.hedger.address, ethers.parseEther("100"), ethers.parseEther("10")),
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.ZeroAddress, ethers.parseEther("10"), 0),
 					).not.reverted
 					const afterLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
 					const afterAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, ethers.ZeroAddress)
 					expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(afterLiquidatorBalance - beforeLiquidatorBalance)
 					expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(ethers.parseEther("10"))
+				})
+
+				it("should change balance in penalty soft liquidate correctly", async () => {
+					const beforeLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+					const beforeHedgerBalance = await context.viewFacet.balanceOf(context.signers.hedger.address)
+					await expect(
+						context.clearingHouseFacet
+							.connect(context.signers.liquidator)
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.ZeroAddress, 0, ethers.parseEther("10")),
+					).not.reverted
+					const afterLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+					const afterHedgerBalance = await context.viewFacet.balanceOf(context.signers.hedger.address)
+					expect(beforeHedgerBalance - afterHedgerBalance).to.equal(afterLiquidatorBalance - beforeLiquidatorBalance)
+					expect(beforeHedgerBalance - afterHedgerBalance).to.equal(ethers.parseEther("10"))
+				})
+
+				it("should change both allocated and balance in penalty soft liquidate correctly", async () => {
+					const beforeLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+					const beforeAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, ethers.ZeroAddress)
+					const beforeHedgerBalance = await context.viewFacet.balanceOf(context.signers.hedger.address)
+					await expect(
+						context.clearingHouseFacet
+							.connect(context.signers.liquidator)
+							.softPartyBLiquidation(context.signers.hedger.address, ethers.ZeroAddress, ethers.parseEther("5"), ethers.parseEther("5")),
+					).not.reverted
+					const afterLiquidatorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+					const afterAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, ethers.ZeroAddress)
+					const afterHedgerBalance = await context.viewFacet.balanceOf(context.signers.hedger.address)
+					expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(ethers.parseEther("5"))
+					expect(beforeHedgerBalance - afterHedgerBalance).to.equal(ethers.parseEther("5"))
+					expect(afterLiquidatorBalance - beforeLiquidatorBalance).to.equal(ethers.parseEther("10"))
 				})
 			})
 		})

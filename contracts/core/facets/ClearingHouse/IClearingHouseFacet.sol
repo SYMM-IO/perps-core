@@ -18,5 +18,5 @@ interface IClearingHouseFacet is IClearingHouseFacetEvents {
 
 	function liquidatePositionsForCrossLiquidation(address partyB, QuotePriceSig memory priceSig) external;
 
-	function softPartyBLiquidation(address partyB, int256 marginDelta,uint256 penalty) external;
+	function softPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance) external;
 }

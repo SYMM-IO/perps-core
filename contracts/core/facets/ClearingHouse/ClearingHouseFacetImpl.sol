@@ -189,16 +189,25 @@ library ClearingHouseFacetImpl {
 		return (liquidatedAmounts, closeIds);
 	}
 
-	function softPartyBLiquidation(address partyB, uint256 penalty) internal {
+	function softPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		CrossPartyBStorage.Layout storage crossLayout = CrossPartyBStorage.layout();
 		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
-		require(crossLayout.crossModeEnabledForPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
-		if (penalty != 0) {
+
+		uint256 totalPenalty = penaltyFromAllocated + penaltyFromBalance;
+		if (totalPenalty != 0) {
 			require(globalLayout.softLiquidationPenaltyCollector != address(0), "ClearingHouse: No Penalty Collector");
-			require(penalty <= accountLayout.partyBAllocatedBalances[partyB][address(0)], "ClearingHouse: Insufficient Balance");
-			accountLayout.partyBAllocatedBalances[partyB][address(0)] -= penalty;
-			accountLayout.balances[globalLayout.softLiquidationPenaltyCollector] += penalty;
+
+			if (penaltyFromAllocated != 0) {
+				require(penaltyFromAllocated <= accountLayout.partyBAllocatedBalances[partyB][partyA], "ClearingHouse: Insufficient Allocated Balance");
+				accountLayout.partyBAllocatedBalances[partyB][partyA] -= penaltyFromAllocated;
+			}
+
+			if (penaltyFromBalance != 0) {
+				require(penaltyFromBalance <= accountLayout.balances[partyB], "ClearingHouse: Insufficient Balance");
+				accountLayout.balances[partyB] -= penaltyFromBalance;
+			}
+
+			accountLayout.balances[globalLayout.softLiquidationPenaltyCollector] += totalPenalty;
 		}
 	}
 }

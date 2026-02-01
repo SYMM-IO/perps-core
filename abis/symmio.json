@@ -8639,11 +8639,6 @@
                         "type": "uint8"
                     },
                     {
-                        "internalType": "enum AllocatedSettlementState",
-                        "name": "allocatedSettlementState",
-                        "type": "uint8"
-                    },
-                    {
                         "internalType": "enum PartyBForceCloseState",
                         "name": "partyBState",
                         "type": "uint8"
@@ -14856,14 +14851,20 @@
             },
             {
                 "indexed": false,
-                "internalType": "int256",
-                "name": "marginDelta",
-                "type": "int256"
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
             },
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "penalty",
+                "name": "penaltyFromAllocated",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "penaltyFromBalance",
                 "type": "uint256"
             }
         ],
@@ -15091,13 +15092,18 @@
                 "type": "address"
             },
             {
-                "internalType": "int256",
-                "name": "marginDelta",
-                "type": "int256"
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
             },
             {
                 "internalType": "uint256",
-                "name": "penalty",
+                "name": "penaltyFromAllocated",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "penaltyFromBalance",
                 "type": "uint256"
             }
         ],
