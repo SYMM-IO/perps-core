@@ -169,12 +169,17 @@ library WithdrawFacetImpl {
 		}
 
 		uint256 totalExpressAmount;
+		bool hasExpressPart;
 
 		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
 			WithdrawReceiverPart storage withdrawal = withdrawRequest.parts[i];
 
 			bool isExpress = withdrawal.expressProvider != address(0);
 			bool isVirtual = withdrawal.virtualProvider != address(0);
+
+			if (isExpress) {
+				hasExpressPart = true;
+			}
 
 			// Classic withdraw
 			if (!isExpress && !isVirtual) {
@@ -189,9 +194,11 @@ library WithdrawFacetImpl {
 			}
 		}
 
-		if (totalExpressAmount > 0) {
-			LibSafeERC20.safeTransfer(collateral, withdrawRequest.provider, totalExpressAmount);
-			withdrawLayout.withdrawLockedBalance -= totalExpressAmount;
+		if (hasExpressPart) {
+			if (totalExpressAmount > 0) {
+				LibSafeERC20.safeTransfer(collateral, withdrawRequest.provider, totalExpressAmount);
+				withdrawLayout.withdrawLockedBalance -= totalExpressAmount;
+			}
 			LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onWithdrawComplete, (withdrawRequest)));
 		}
 

@@ -217,7 +217,9 @@ library LibQuoteClose {
 				LibQuote.removeFromPartyBPendingQuotes(quote);
 			}
 
-			if (quote.quoteStatus == QuoteStatus.LOCKED) quoteLayout.partyALockQuotesCount[quote.partyA]--;
+			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
+				quoteLayout.partyALockQuotesCount[quote.partyA]--;
+			}
 
 			quote.quoteStatus = QuoteStatus.EXPIRED;
 			result = QuoteStatus.EXPIRED;
