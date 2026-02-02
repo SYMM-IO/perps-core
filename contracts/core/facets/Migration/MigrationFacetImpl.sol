@@ -24,6 +24,7 @@ library MigrationFacetImpl {
 	 */
 	function migrateQuotes(uint256[] calldata quoteIds) internal returns (uint256 quotesMigrated) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
@@ -46,6 +47,10 @@ library MigrationFacetImpl {
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 			if (openAmount == 0) continue;
 
+			// Skip invalid quotes without a counterparty (defensive)
+			// For all active positions, quote.partyB should be set.
+			if (quote.partyB == address(0)) continue;
+
 			// Initialize accumulatedPaidFunding if funding is enabled
 			_initializeQuoteFunding(quote);
 
@@ -56,8 +61,21 @@ library MigrationFacetImpl {
 			// Populate aggregate funding
 			LibAggregateFunding.addToPartiesAggregateFunding(quote, openAmount);
 
+			// Backfill new v0.8.5 derived state:
+			// - partyBPositionsCount[partyB][address(0)] tracks total positions for partyB (used by close/liquidation flows)
+			// - connectedPartyBs / isConnectedPartyB tracks PartyA↔PartyB connections (used by symbol access rules)
+			quoteLayout.partyBPositionsCount[quote.partyB][address(0)] += 1;
+			_backfillConnection(accountLayout, quote.partyA, quote.partyB);
+
 			migrationLayout.quoteMigrated[quoteId] = true;
 			quotesMigrated++;
+		}
+	}
+
+	function _backfillConnection(AccountStorage.Layout storage accountLayout, address partyA, address partyB) private {
+		if (!accountLayout.isConnectedPartyB[partyA][partyB]) {
+			accountLayout.connectedPartyBs[partyA].push(partyB);
+			accountLayout.isConnectedPartyB[partyA][partyB] = true;
 		}
 	}
 

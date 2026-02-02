@@ -11,8 +11,8 @@ pragma solidity >=0.8.18;
 ///      2. Aggregated Positions - O(symbols) UPNL/funding calculations instead of O(quotes)
 ///
 ///      Migration is performed via MigrationFacet with MIGRATION_ROLE:
-///      - migrateQuotes(): Populates aggregated positions and funding from existing quotes
-///      - migrateMasterAccountLockedValues(): Sums per-PartyA balances into master bucket
+///      - migrateQuotes(): Backfills aggregated positions/funding and other derived state for existing open positions
+///      - migrateCrossLockedValues(): Sums per-PartyA balances into master bucket
 library MigrationStorage {
 	bytes32 internal constant MIGRATION_STORAGE_SLOT = keccak256("diamond.standard.storage.migration");
 
@@ -20,10 +20,12 @@ library MigrationStorage {
 		/// @notice Whether each quote has been processed for aggregated position migration
 		/// @dev Maps quoteId => migrated. migrateQuotes() processes OPENED, CLOSE_PENDING,
 		///      and CANCEL_CLOSE_PENDING quotes to populate:
-		///      - partyBAggregatedPositions / partyAAggregatedPositionsPerPartyB
+///      - partyBAggregatedPositions / partyAAggregatedPositionsPerPartyB
 		///      - partyBAggregatedFunding / partyAAggregatedFundingPerPartyB
 		///      - activeSymbols arrays
 		///      - quote.accumulatedPaidFunding (initialized from current funding rates)
+		///      - quoteStorage.partyBPositionsCount[partyB][address(0)] total positions counter
+		///      - accountStorage.connectedPartyBs / isConnectedPartyB connection cache
 		///      Idempotent - skips already-migrated quotes.
 		mapping(uint256 => bool) quoteMigrated;
 		/// @notice Whether PartyB's per-PartyA balances have been summed into master bucket
