@@ -67,5 +67,5 @@ library LibPartiesEvents {
 		uint256 closeId,
 		LockedValues lockedValues
 	);
-	event ADLClose(uint256 quoteId, uint256 amount, uint256 price, uint256 closedAmount);
+	event ADLClose(uint256 quoteId, uint256 amount, uint256 price);
 }

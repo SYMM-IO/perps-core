@@ -10,5 +10,5 @@ import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 interface IPartyBEmergencyActionsFacet is IPartyBEmergencyActionsEvents {
 	function emergencyClosePosition(uint256 quoteId, PairUpnlAndPriceSig memory upnlSig) external;
 
-	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external returns (uint256);
+	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external;
 }

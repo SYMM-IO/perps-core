@@ -3821,6 +3821,25 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
+                "name": "oldBlackout",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newBlackout",
+                "type": "uint256"
+            }
+        ],
+        "name": "SetPureVirtualCancelBlackout",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
                 "name": "oldSettlementCooldown",
                 "type": "uint256"
             },
@@ -10187,13 +10206,7 @@
             }
         ],
         "name": "adlClose",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
+        "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
@@ -15381,6 +15394,11 @@
     {
         "inputs": [
             {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
                 "internalType": "uint256",
                 "name": "requestId",
                 "type": "uint256"
@@ -16411,6 +16429,19 @@
         "inputs": [
             {
                 "internalType": "uint256",
+                "name": "blackout",
+                "type": "uint256"
+            }
+        ],
+        "name": "setPureVirtualCancelBlackout",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
                 "name": "settlementCooldown",
                 "type": "uint256"
             }
@@ -16561,12 +16592,6 @@
                 "indexed": false,
                 "internalType": "uint256",
                 "name": "price",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "closedAmount",
                 "type": "uint256"
             }
         ],
@@ -16927,6 +16952,19 @@
     {
         "inputs": [],
         "name": "VIRTUAL_DEPOSITOR_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "WITHDRAW_FORCE_CANCEL_ROLE",
         "outputs": [
             {
                 "internalType": "bytes32",

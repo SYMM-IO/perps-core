@@ -588,6 +588,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		withdrawLayout.minWithdrawCooldown = cooldown;
 	}
 
+	/// @notice Sets the blackout period during which pure virtual withdrawals cannot be cancelled.
+	/// @param blackout The number of seconds before cooldown end during which cancellation is blocked.
+	function setPureVirtualCancelBlackout(uint256 blackout) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		emit SetPureVirtualCancelBlackout(withdrawLayout.pureVirtualCancelBlackout, blackout);
+		withdrawLayout.pureVirtualCancelBlackout = blackout;
+	}
+
 	/// @notice Sets the trusted signer address whose signatures are accepted for protocol operations.
 	/// @param signer The address of the trusted signer for off-chain signature verification.
 	function setSigner(address signer) external onlyRoleAllowProxy(LibAccessibility.SIGNER_ADMIN_ROLE) {
