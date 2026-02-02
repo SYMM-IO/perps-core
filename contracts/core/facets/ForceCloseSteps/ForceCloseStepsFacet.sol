@@ -105,23 +105,35 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		address partyB = quote.partyB;
 
 		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB];
-		(bool succeed, int256 upnlPartyB) = ForceCloseStepsImpl.finalizeForceClose(quoteId);
+		int256 snapshotUpnlPartyB = accountLayout.forceCloseDetails[quoteId].upnlPartyB;
+		uint256 snapshotCurrentPrice = accountLayout.forceCloseDetails[quoteId].currentPrice;
+		(bool isPartyBSolvent, int256 upnlPartyB) = ForceCloseStepsImpl.finalizeForceClose(quoteId);
 
 		if (isCrossPartyB) {
-			// Cross partyB mode: emit event with solvency flag
-			emit ForceClosePositionCross(
+			// Cross partyB mode: always emit ForceClosePosition, plus ForceClosePartyBInsolvent if insolvent
+			emit ForceClosePosition(
 				quoteId,
 				quote.partyA,
 				partyB,
 				quote.quantityToClose,
 				accountLayout.forceCloseDetails[quoteId].closePrice,
 				quoteLayout.quotes[quoteId].quoteStatus,
-				quoteLayout.closeIds[quoteId],
-				succeed
+				quoteLayout.closeIds[quoteId]
 			);
+			if (!isPartyBSolvent) {
+				emit ForceClosePartyBInsolvent(
+					quoteId,
+					quote.partyA,
+					partyB,
+					accountLayout.forceCloseDetails[quoteId].closePrice,
+					snapshotCurrentPrice,
+					snapshotUpnlPartyB,
+					accountLayout.forceCloseDetails[quoteId].partyBAvailableAfterClose
+				);
+			}
 		} else {
 			// Normal partyB mode
-			if (succeed) {
+			if (isPartyBSolvent) {
 				emit ForceClosePosition(
 					quoteId,
 					quote.partyA,
