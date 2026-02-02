@@ -87,7 +87,7 @@ export enum ExternalTransferStatus {
 
 export enum PartyBForceCloseState {
 	NONE,
-	INSOLVENT,
-	SOLVENT,
-	LIQUIDATED,
+	CLOSED_INSOLVENT,
+	CLOSED_SOLVENT,
+	CLOSED_LIQUIDATED,
 }

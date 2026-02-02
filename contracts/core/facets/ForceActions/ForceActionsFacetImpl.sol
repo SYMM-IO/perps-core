@@ -69,7 +69,7 @@ library ForceActionsFacetImpl {
 		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
-		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
+		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
 			quoteId,
 			sig.currentPrice,
 			sig.upnlPartyA,
@@ -80,7 +80,7 @@ library ForceActionsFacetImpl {
 		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
 		uint256 reservedBalance = accountLayout.reserveVault[partyB];
-		succeed = LibForceActions.closeQuote(quoteId, closePrice, partyBAvailableBalance, reservedBalance);
+		(succeed, ) = LibForceActions.closeQuoteWithReserveFallback(quoteId, sig.currentPrice, sig.upnlPartyB, closePrice);
 
 		if (!succeed) {
 			upnlPartyB = LibForceActions.liquidatePartyB(quoteId, closePrice, reservedBalance, sig.upnlPartyB, sig.currentPrice);

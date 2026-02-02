@@ -697,7 +697,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							const minRequired = crossBalance.lockedCva + crossBalance.lockedLf
 
 							expect(detailAfter.inProgress).to.equal(false)
-							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.SOLVENT)
+							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.CLOSED_SOLVENT)
 								expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
 							})
 
@@ -723,7 +723,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 									"finalizeForceClose(uint256,(bytes,uint256,int256,int256,uint256,bytes,(uint256,address,address)))"
 								](quote1LongOpened.id, refreshedSig)
 								await expect(tx)
-									.to.emit(context.forceCloseStepsFacet, "ForceClosePositionCross")
+									.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
 									.withArgs(
 										quote1LongOpened.id,
 										quote1LongOpened.partyA,
@@ -732,7 +732,6 @@ export function shouldBehaveLikeForceClosePosition(): void {
 										anyValue,
 										anyValue,
 										anyValue,
-										true,
 									)
 							})
 						})
@@ -751,7 +750,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 								.withArgs(anyValue, anyValue, quote1LongOpened.id, anyValue, anyValue, anyValue)
 							await expect(tx).to.emit(context.forceCloseStepsFacet, "SettleUpnlUnified")
 							await expect(tx)
-								.to.emit(context.forceCloseStepsFacet, "ForceClosePositionCross")
+								.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
 								.withArgs(
 									quote1LongOpened.id,
 									quote1LongOpened.partyA,
@@ -760,14 +759,13 @@ export function shouldBehaveLikeForceClosePosition(): void {
 									anyValue,
 									anyValue,
 									anyValue,
-									true,
 								)
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()
 							const minRequired = crossBalance.lockedCva + crossBalance.lockedLf
 							expect(detailAfter.inProgress).to.equal(false)
-							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.SOLVENT)
+							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.CLOSED_SOLVENT)
 							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
 						})
 
@@ -789,7 +787,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 							await expect(tx).to.emit(context.forceCloseStepsFacet, "ForceCloseInitialized")
 							await expect(tx).to.not.emit(context.forceCloseStepsFacet, "SettleUpnlUnified")
-							await expect(tx).to.emit(context.forceCloseStepsFacet, "ForceClosePositionCross")
+							await expect(tx).to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()
@@ -816,7 +814,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							)
 
 							await expect(tx)
-								.to.emit(context.forceCloseStepsFacet, "ForceClosePositionCross")
+								.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
 								.withArgs(
 									quote1LongOpened.id,
 									quote1LongOpened.partyA,
@@ -825,14 +823,13 @@ export function shouldBehaveLikeForceClosePosition(): void {
 									anyValue,
 									anyValue,
 									anyValue,
-									false,
 								)
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()
 							const minRequired = crossBalance.lockedCva + crossBalance.lockedLf
 							expect(detailAfter.inProgress).to.equal(false)
-							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.INSOLVENT)
+							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.CLOSED_INSOLVENT)
 							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
 						})
 					})
@@ -872,7 +869,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()
-							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.INSOLVENT)
+							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.CLOSED_INSOLVENT)
 							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(crossBalance.lockedCva + crossBalance.lockedLf)
 						})
 
@@ -894,7 +891,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 								await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, BigInt(highLowSig.upnlPartyB)),
 							)
 							await expect(tx)
-								.to.emit(context.forceCloseStepsFacet, "ForceClosePositionCross")
+								.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
 								.withArgs(
 									quote1LongOpened.id,
 									quote1LongOpened.partyA,
@@ -903,7 +900,6 @@ export function shouldBehaveLikeForceClosePosition(): void {
 									anyValue,
 									anyValue,
 									anyValue,
-									false,
 								)
 							await expect(tx)
 								.to.emit(context.forceCloseStepsFacet, "ForceClosePartyBInsolvent")
@@ -922,7 +918,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 							expect(detailBefore.inProgress).to.equal(true)
 							expect(detailAfter.inProgress).to.equal(false)
-							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.INSOLVENT)
+							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.CLOSED_INSOLVENT)
 							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
 						})
 					})

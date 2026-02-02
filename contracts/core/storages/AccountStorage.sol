@@ -22,19 +22,18 @@ enum LiquidationType {
 /// @notice PartyB's solvency state during a force close operation
 /// @dev Determines what happens after force close completes.
 ///      NONE = not in force close
-///      INSOLVENT = (cross partyB mode) close succeeded but PartyB could not remain solvent when accounting for uPNL
-///      SOLVENT = close succeeded without liquidation/insolvency
-///      LIQUIDATED = (normal partyB mode) PartyB was liquidated during force close
+///      CLOSED_INSOLVENT = (cross partyB mode) close succeeded but PartyB could not remain solvent when accounting for uPNL
+///      CLOSED_SOLVENT = close succeeded without liquidation/insolvency
+///      CLOSED_LIQUIDATED = (normal partyB mode) PartyB was liquidated during force close
 ///
 ///      Event mapping:
-///      - Cross partyB mode: `ForceClosePositionCross(..., isSolvent)` where `isSolvent` is true for SOLVENT and false for INSOLVENT.
-///        If insolvent, `ForceClosePartyBInsolvent(...)` is also emitted.
-///      - Normal partyB mode: `ForceClosePosition(...)` implies SOLVENT; `LiquidatePartyB(...)` implies LIQUIDATED.
+///      - Cross partyB mode: `ForceClosePosition(...)` is always emitted. If insolvent, `ForceClosePartyBInsolvent(...)` is also emitted.
+///      - Normal partyB mode: `ForceClosePosition(...)` implies CLOSED_SOLVENT; `LiquidatePartyB(...)` implies CLOSED_LIQUIDATED.
 enum PartyBForceCloseState {
 	NONE,
-	INSOLVENT,
-	SOLVENT,
-	LIQUIDATED
+	CLOSED_INSOLVENT,
+	CLOSED_SOLVENT,
+	CLOSED_LIQUIDATED
 }
 
 /// @notice Tracks UPNL settlement progress between PartyA and PartyB
