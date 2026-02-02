@@ -2,40 +2,6 @@ import { toUtf8Bytes } from "ethers"
 
 import { ethers } from "../test/helpers/hardhat-connection.js"
 
-async function main() {
-	const symmioAddress = "0xeBf201d84CddC358C93450EC33c58D320B0c1d2A"
-
-	const [signer] = await ethers.getSigners()
-	const controlFacet = await ethers.getContractAt("ControlFacet", "0xeBf201d84CddC358C93450EC33c58D320B0c1d2A", signer)
-
-	try {
-		const tx = await controlFacet.grantRole("0xc2297D77406179C7EA0247714d31A4aDd956FAF0", ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
-		ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE"))
-		console.log("txHash:", tx.hash)
-		await tx.wait()
-	} catch (err: any) {
-		console.log("Transaction failed!")
-
-		if (err.reason) {
-			console.log("Reason:", err.reason)
-		} else if (err.errorName) {
-			console.log("Custom error name:", err.errorName)
-			console.log("Custom error args:", err.errorArgs)
-		} else if (err.data || err.error?.data) {
-			const data = err.data ?? err.error?.data
-			console.log("Error data:", data)
-			await decodeCustomError(data, symmioAddress)
-		} else {
-			console.log(err)
-		}
-	}
-}
-
-main().catch(error => {
-	console.error(error)
-	process.exitCode = 1
-})
-
 async function decodeCustomError(data: string, address: string) {
 	const contract = await ethers.getContractAt("ControlFacet", address)
 	const iface = new ethers.Interface(contract.interface.fragments)
@@ -46,5 +12,32 @@ async function decodeCustomError(data: string, address: string) {
 		console.log("Custom error args:", parsed!.args)
 	} catch (e) {
 		console.log("Failed to parse error. Maybe no arguments? Only selector.")
+	}
+}
+
+const symmioAddress = ""
+
+const [signer] = await ethers.getSigners()
+const controlFacet = await ethers.getContractAt("ControlFacet", "", signer)
+
+try {
+	const tx = await controlFacet.grantRole("", ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
+	ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE"))
+	console.log("txHash:", tx.hash)
+	await tx.wait()
+} catch (err: any) {
+	console.log("Transaction failed!")
+
+	if (err.reason) {
+		console.log("Reason:", err.reason)
+	} else if (err.errorName) {
+		console.log("Custom error name:", err.errorName)
+		console.log("Custom error args:", err.errorArgs)
+	} else if (err.data || err.error?.data) {
+		const data = err.data ?? err.error?.data
+		console.log("Error data:", data)
+		await decodeCustomError(data, symmioAddress)
+	} else {
+		console.log(err)
 	}
 }

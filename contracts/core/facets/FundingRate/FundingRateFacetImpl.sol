@@ -15,7 +15,6 @@ import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
-import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { PairUpnlSig } from "../../storages/MuonStorage.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";
 
@@ -41,7 +40,6 @@ library FundingRateFacetImpl {
 		require(!FundingStorage.layout().legacyFundingDeprecated, "FundingRateFacet: Old Funding Fee Deprecated");
 
 		// Verify the signature contains valid unrealized PnL data
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(quoteIds.length == rates.length && quoteIds.length > 0, "ChargeFundingFacet: Length not match");
 

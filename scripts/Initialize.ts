@@ -1,13 +1,16 @@
 import { tasks } from "hardhat"
 
-import { createRunContext, RunContext } from "../test/models/RunContext"
-import { decimal } from "../test/utils/Common"
-import { runTx } from "../test/utils/TxUtils"
-import { ControlFacet } from "../src/types"
-import { symbolsMock } from "../test/models/SymbolManager"
-import { Addresses, loadAddresses, saveAddresses } from "./utils/file"
+import { createRunContext, RunContext } from "../test/models/RunContext.js"
+import { decimal } from "../test/utils/Common.js"
+import { runTx } from "../test/utils/TxUtils.js"
+import { ControlFacet } from "../src/types/index.js"
+import { symbolsMock } from "../test/models/SymbolManager.js"
+import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
 import { keccak256, toUtf8Bytes } from "ethers"
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+
+// Import to initialize the hardhat connection
+import "../test/helpers/hardhat-connection.js"
 
 export async function initialize(): Promise<RunContext> {
 	const runTask = (taskName: string, params: Record<string, unknown> = {}) => tasks.getTask(taskName).run(params)
@@ -77,12 +80,5 @@ export async function initialize(): Promise<RunContext> {
 	return context
 }
 
-async function main() {
-	await initialize()
-	console.log("Initialized successfully")
-}
-
-main().catch(error => {
-	console.error(error)
-	process.exitCode = 1
-})
+await initialize()
+console.log("Initialized successfully")

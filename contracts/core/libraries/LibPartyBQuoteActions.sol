@@ -5,10 +5,8 @@
 pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
-import { AccountStorage } from "../storages/AccountStorage.sol";
 import { CrossPartyBStorage } from "../storages/CrossPartyBStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
-import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { LibConnections } from "./LibConnections.sol";
 import { LibSigner } from "./LibSigner.sol";
@@ -19,7 +17,6 @@ library LibPartyBQuoteActions {
 
 	function lockQuote(uint256 quoteId) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
