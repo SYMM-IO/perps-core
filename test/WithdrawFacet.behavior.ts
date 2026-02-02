@@ -672,6 +672,36 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				WithdrawStatus.CANCELLED
 			);
 		});
+
+		it("Should force cancel classic withdraw", async function() {
+			await userDeposit("100");
+			const parts = await buildParts(["50", "20"]);
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			const balanceBefore = await context.viewFacet.balanceOf(user.address);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.admin)
+					.forceCancelWithdraw(user.address, 1)
+			).not.reverted;
+
+			const withdrawRequest =
+				await context.viewFacet.getWithdrawRequests(
+					user.address,
+					1
+				);
+			expect(withdrawRequest.status).to.equal(
+				WithdrawStatus.CANCELLED
+			);
+
+			// Balance should be restored
+			const balanceAfter = await context.viewFacet.balanceOf(user.address);
+			expect(balanceAfter).to.equal(balanceBefore + ethers.parseEther("70"));
+		});
 	});
 
 	describe("Virtual Withdraw", function() {
@@ -1241,6 +1271,136 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 					.forceCancelWithdraw(user.address, 1)
 			).to.revertedWith("WithdrawFacet : Withdraw cooldown already over");
 		});
+
+		it("Should fail to force cancel withdraw without role", async function() {
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
+
+			receiver1 = context.signers.user.address;
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = await buildParts(["50", "20"], {
+				virtualProvider: vpAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1);
+
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.forceCancelWithdraw(user.address, 1)
+			).to.revertedWith("Accessibility: Must have role");
+		});
+
+		it("Should force cancel withdraw on PENDING status", async function() {
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
+
+			receiver1 = context.signers.user.address;
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = await buildParts(["50", "20"], {
+				virtualProvider: vpAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			// Don't accept - status is still PENDING
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.admin)
+					.forceCancelWithdraw(user.address, 1)
+			).not.reverted;
+
+			const updatedWithdrawRequest =
+				await context.viewFacet.getWithdrawRequests(
+					user.address,
+					1
+				);
+			expect(updatedWithdrawRequest.status).to.equal(
+				WithdrawStatus.CANCELLED
+			);
+		});
+
+		it("Should restore user balance after force cancel", async function() {
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
+
+			receiver1 = context.signers.user.address;
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = await buildParts(["50", "20"], {
+				virtualProvider: vpAddress,
+			});
+
+			const balanceBefore = await context.viewFacet.balanceOf(user.address);
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1);
+
+			const balanceAfterWithdraw = await context.viewFacet.balanceOf(user.address);
+			expect(balanceAfterWithdraw).to.equal(balanceBefore - ethers.parseEther("70"));
+
+			await context.withdrawFacet
+				.connect(context.signers.admin)
+				.forceCancelWithdraw(user.address, 1);
+
+			const balanceAfterCancel = await context.viewFacet.balanceOf(user.address);
+			expect(balanceAfterCancel).to.equal(balanceBefore);
+		});
+
+		it("Should cancel pure virtual outside blackout period", async function() {
+			await virtualProvider.virtualDepositFor(
+				context.diamond,
+				user.address,
+				ethers.parseEther("100")
+			);
+
+			receiver1 = context.signers.user.address;
+			const vpAddress = await virtualProvider.getAddress();
+			const parts = await buildParts(["50", "20"], {
+				virtualProvider: vpAddress,
+			});
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+			await virtualProvider.acceptWithdrawRequest(user.address, 1);
+
+			// Set blackout but we're still outside it
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.setPureVirtualCancelBlackout(5);
+
+			// Should succeed - not in blackout yet
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.user)
+					.requestCancelWithdraw(1)
+			).not.reverted;
+		});
+
+		it("Should emit SetPureVirtualCancelBlackout event", async function() {
+			await expect(
+				context.controlFacet
+					.connect(context.signers.admin)
+					.setPureVirtualCancelBlackout(300)
+			).to.emit(context.controlFacet, "SetPureVirtualCancelBlackout")
+				.withArgs(0, 300);
+		});
 	});
 
 	describe("Express Withdraw", function() {
@@ -1639,6 +1799,51 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await expressProvider.acceptWithdrawRequest(user.address, 1);
 
+			await expect(
+				context.withdrawFacet
+					.connect(context.signers.admin)
+					.forceCancelWithdraw(user.address, 1)
+			).not.reverted;
+
+			const updatedWithdrawRequest =
+				await context.viewFacet.getWithdrawRequests(
+					user.address,
+					1
+				);
+			expect(updatedWithdrawRequest.status).to.equal(
+				WithdrawStatus.CANCELLED
+			);
+		});
+
+		it("Should force cancel express withdraw on CANCEL_REQUESTED status", async function() {
+			await userDeposit("100");
+			const epAddress = await expressProvider.getAddress();
+
+			const parts = [
+				await buildPart("50", {
+					expressProvider: epAddress,
+				}),
+				await buildPart("20"),
+			];
+
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw(parts, false, "0x");
+
+			await expressProvider.acceptWithdrawRequest(user.address, 1);
+
+			// User requests cancel - status becomes CANCEL_REQUESTED for express
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.requestCancelWithdraw(1);
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(
+				user.address,
+				1
+			);
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.CANCEL_REQUESTED);
+
+			// Admin can force cancel even in CANCEL_REQUESTED status
 			await expect(
 				context.withdrawFacet
 					.connect(context.signers.admin)
