@@ -99,8 +99,17 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		// ========================================
 		// Enable funding fees that accumulate over time
 		// Epoch duration: 500 seconds - after this, funding fees are charged
+		//
+		// IMPORTANT: Align timestamp to epoch boundary for consistent funding fee calculations.
+		// Without this, the number of epochs that pass can vary depending on the test's
+		// starting timestamp, causing flaky liquidation type assertions.
+		const epochDuration = 500
+		const latest = BigInt(await time.latest())
+		const aligned = (latest / BigInt(epochDuration) + 1n) * BigInt(epochDuration)
+		await time.setNextBlockTimestamp(Number(aligned))
+
 		await context.pauseControlFacet.activateAccumulatedFunding()
-		await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [500])  // symbolId 1, epoch 500s
+		await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [epochDuration])  // symbolId 1, epoch 500s
 		await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee(
 			[1],              // symbolId
 			[decimal(2n, 16)], // accumulatedLongRate: 0.02 (2%)
@@ -138,9 +147,11 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		// ========================================
 		// TIME ADVANCEMENT
 		// ========================================
-		// Advance time by 550 seconds (past the 500s epoch duration)
-		// This allows funding fees to accumulate
-		await time.increase(550)
+		// Advance time by exactly 1 epoch (500 seconds) to ensure exactly 1 epoch
+		// of funding fees accumulates. Using setNextBlockTimestamp instead of
+		// time.increase() for deterministic behavior.
+		const currentTime = BigInt(await time.latest())
+		await time.setNextBlockTimestamp(Number(currentTime + BigInt(epochDuration)))
 		await context.controlFacet.setMuonConfig(1000n , 1000n)
 
 	})
