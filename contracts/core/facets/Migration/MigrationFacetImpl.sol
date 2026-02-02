@@ -8,10 +8,10 @@ import { LockedValuesOps, LockedValues } from "../../libraries/LibLockedValues.s
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibFundingRate } from "../../libraries/LibFundingRate.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType } from "../../storages/QuoteStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 
 library MigrationFacetImpl {
@@ -24,14 +24,12 @@ library MigrationFacetImpl {
 	 *      - aggregated positions/funding + active symbols (used by new UPNL/funding flows)
 	 *      - quote.accumulatedPaidFunding baseline (when accumulated funding is configured)
 	 *      - partyBPositionsCount[partyB][address(0)] total positions counter
-	 *      - connectedPartyBs / isConnectedPartyB (bounded by maxPartyAConnectionLimit)
+	 *      - connectedPartyBs / isConnectedPartyB via LibConnections.addConnection (bounded by maxPartyAConnectionLimit)
 	 * @param quoteIds Array of quote IDs to migrate
 	 * @return quotesMigrated Number of quotes actually migrated (excluding already migrated or invalid quotes)
 	 */
 	function migrateQuotes(uint256[] calldata quoteIds) internal returns (uint256 quotesMigrated) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		MAStorage.Layout storage maLayout = MAStorage.layout();
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
@@ -67,23 +65,10 @@ library MigrationFacetImpl {
 
 			// Backfill v0.8.5 derived state not covered by the aggregate libs.
 			quoteLayout.partyBPositionsCount[quote.partyB][address(0)] += 1;
-			_backfillConnection(accountLayout, maLayout.maxPartyAConnectionLimit, quote.partyA, quote.partyB);
+			LibConnections.addConnection(quote.partyA, quote.partyB);
 
 			migrationLayout.quoteMigrated[quoteId] = true;
 			quotesMigrated++;
-		}
-	}
-
-	function _backfillConnection(
-		AccountStorage.Layout storage accountLayout,
-		uint256 maxPartyAConnectionLimit,
-		address partyA,
-		address partyB
-	) private {
-		if (!accountLayout.isConnectedPartyB[partyA][partyB]) {
-			require(accountLayout.connectedPartyBs[partyA].length < maxPartyAConnectionLimit, "MigrationFacet: PartyA max connection limit exceeded");
-			accountLayout.connectedPartyBs[partyA].push(partyB);
-			accountLayout.isConnectedPartyB[partyA][partyB] = true;
 		}
 	}
 
