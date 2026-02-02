@@ -20,7 +20,7 @@ library MigrationStorage {
 		/// @notice Whether each quote has been processed for aggregated position migration
 		/// @dev Maps quoteId => migrated. migrateQuotes() processes OPENED, CLOSE_PENDING,
 		///      and CANCEL_CLOSE_PENDING quotes to populate:
-///      - partyBAggregatedPositions / partyAAggregatedPositionsPerPartyB
+		///      - partyBAggregatedPositions / partyAAggregatedPositionsPerPartyB
 		///      - partyBAggregatedFunding / partyAAggregatedFundingPerPartyB
 		///      - activeSymbols arrays
 		///      - quote.accumulatedPaidFunding (initialized from current funding rates)

@@ -47,10 +47,6 @@ library MigrationFacetImpl {
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 			if (openAmount == 0) continue;
 
-			// Skip invalid quotes without a counterparty (defensive)
-			// For all active positions, quote.partyB should be set.
-			if (quote.partyB == address(0)) continue;
-
 			// Initialize accumulatedPaidFunding if funding is enabled
 			_initializeQuoteFunding(quote);
 
@@ -72,6 +68,9 @@ library MigrationFacetImpl {
 		}
 	}
 
+	/// @dev Unlike LibConnections.addConnection(), this skips maxPartyAConnectionLimit validation
+	///      since we're backfilling existing positions that were created before this limit existed
+	///     (the current active partyBs in the system are low enough).
 	function _backfillConnection(AccountStorage.Layout storage accountLayout, address partyA, address partyB) private {
 		if (!accountLayout.isConnectedPartyB[partyA][partyB]) {
 			accountLayout.connectedPartyBs[partyA].push(partyB);
@@ -99,9 +98,7 @@ library MigrationFacetImpl {
 		LibFundingRate.updateAccumulatedRates(fundingFee);
 
 		// Calculate the current accumulated fee that would be used for this position type
-		int256 rate = quote.positionType == PositionType.LONG
-			? fundingFee.accumulatedLongRate
-			: fundingFee.accumulatedShortRate;
+		int256 rate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
 
 		// Set the accumulatedPaidFunding to current rate * epochs since start
 		// This means when funding is charged later, it will be calculated relative to this baseline
@@ -118,10 +115,7 @@ library MigrationFacetImpl {
 	 * @param partyAs Array of partyA addresses that have balances with this partyB
 	 * @return partyAsProcessed Number of partyAs actually processed
 	 */
-	function migrateCrossLockedValues(
-		address partyB,
-		address[] calldata partyAs
-	) internal returns (uint256 partyAsProcessed) {
+	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) internal returns (uint256 partyAsProcessed) {
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -137,14 +131,11 @@ library MigrationFacetImpl {
 			accountLayout.partyBLockedBalances[partyB][address(0)].add(accountLayout.partyBLockedBalances[partyB][partyA]);
 
 			// Aggregate pending locked balances to cross bucket (only for pre-v8.5 data)
-			accountLayout.partyBPendingLockedBalances[partyB][address(0)].add(
-				accountLayout.partyBPendingLockedBalances[partyB][partyA]
-			);
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].add(accountLayout.partyBPendingLockedBalances[partyB][partyA]);
 
 			partyAsProcessed++;
 		}
 
 		migrationLayout.partyBLockedValuesMigrated[partyB] = true;
 	}
-
 }
