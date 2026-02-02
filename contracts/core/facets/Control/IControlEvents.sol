@@ -120,6 +120,7 @@ interface IControlEvents {
 	event UnregisterExpressProvider(address provider);
 	event SetSpeedUpUser(address user, bool speedUp);
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
+	event SetPureVirtualCancelBlackout(uint256 oldBlackout, uint256 newBlackout);
 	event LegacyWithdrawalDeprecated();
 	event SignerSet(address signer);
 	event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);

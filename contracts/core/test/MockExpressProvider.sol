@@ -59,6 +59,9 @@ contract ExpressProvider is IExpressProvider {
 	function onWithdrawCancelRequest(WithdrawRequest memory) external override pure {
 	}
 
+	function onForceWithdrawCancel(WithdrawRequest memory) external override pure {
+	}
+
 	function onWithdrawSuspend(WithdrawRequest memory _req) external override {
 		emit WithdrawSuspended(_req.user, _req.id);
 	}
