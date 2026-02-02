@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import { IMigrationEvents } from "./IMigrationEvents.sol";
 
 interface IMigrationFacet is IMigrationEvents {
-	/// @notice Migrate quotes to populate aggregated positions, funding, and active symbols
+	/// @notice Backfill v0.8.5 quote-derived state for existing active positions
 	/// @param quoteIds Array of quote IDs to migrate (batch)
 	function migrateQuotes(uint256[] calldata quoteIds) external;
 

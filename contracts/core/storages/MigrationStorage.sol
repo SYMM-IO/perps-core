@@ -27,9 +27,9 @@ library MigrationStorage {
 		///      - quoteStorage.partyBPositionsCount[partyB][address(0)] total positions counter
 		///      - accountStorage.connectedPartyBs / isConnectedPartyB connection cache
 		///      Idempotent - skips already-migrated quotes.
-		mapping(uint256 => bool) quoteMigrated;
+			mapping(uint256 => bool) quoteMigrated;
 		/// @notice Whether PartyB's per-PartyA balances have been summed into master bucket
-		/// @dev Maps partyB => migrated. migrateMasterAccountLockedValues() aggregates:
+		/// @dev Maps partyB => migrated. migrateCrossLockedValues() aggregates:
 		///      - partyBAllocatedBalances[partyB][partyA] → partyBAllocatedBalances[partyB][address(0)]
 		///      - partyBLockedBalances[partyB][partyA] → partyBLockedBalances[partyB][address(0)]
 		///      - partyBPendingLockedBalances[partyB][partyA] → partyBPendingLockedBalances[partyB][address(0)]

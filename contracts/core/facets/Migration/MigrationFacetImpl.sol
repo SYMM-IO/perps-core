@@ -11,20 +11,27 @@ import { LibFundingRate } from "../../libraries/LibFundingRate.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType } from "../../storages/QuoteStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 
 library MigrationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
 	/**
-	 * @notice Migrates quotes to populate aggregated positions, funding, and active symbols
-	 * @dev This function is idempotent - calling it multiple times with the same quote IDs will not cause issues
+	 * @notice Backfills v0.8.5 quote-derived state for existing active positions
+	 * @dev This function is idempotent - calling it multiple times with the same quote IDs will not cause issues.
+	 *      For each migrated quote, it backfills:
+	 *      - aggregated positions/funding + active symbols (used by new UPNL/funding flows)
+	 *      - quote.accumulatedPaidFunding baseline (when accumulated funding is configured)
+	 *      - partyBPositionsCount[partyB][address(0)] total positions counter
+	 *      - connectedPartyBs / isConnectedPartyB (bounded by maxPartyAConnectionLimit)
 	 * @param quoteIds Array of quote IDs to migrate
 	 * @return quotesMigrated Number of quotes actually migrated (excluding already migrated or invalid quotes)
 	 */
 	function migrateQuotes(uint256[] calldata quoteIds) internal returns (uint256 quotesMigrated) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
@@ -47,7 +54,8 @@ library MigrationFacetImpl {
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 			if (openAmount == 0) continue;
 
-			// Initialize accumulatedPaidFunding if funding is enabled
+			// Backfill v0.8.5 derived state for this quote.
+			// Initialize accumulatedPaidFunding if funding is enabled.
 			_initializeQuoteFunding(quote);
 
 			// Populate aggregated positions (handles active symbols internally)
@@ -57,22 +65,23 @@ library MigrationFacetImpl {
 			// Populate aggregate funding
 			LibAggregateFunding.addToPartiesAggregateFunding(quote, openAmount);
 
-			// Backfill new v0.8.5 derived state:
-			// - partyBPositionsCount[partyB][address(0)] tracks total positions for partyB (used by close/liquidation flows)
-			// - connectedPartyBs / isConnectedPartyB tracks PartyA↔PartyB connections (used by symbol access rules)
+			// Backfill v0.8.5 derived state not covered by the aggregate libs.
 			quoteLayout.partyBPositionsCount[quote.partyB][address(0)] += 1;
-			_backfillConnection(accountLayout, quote.partyA, quote.partyB);
+			_backfillConnection(accountLayout, maLayout.maxPartyAConnectionLimit, quote.partyA, quote.partyB);
 
 			migrationLayout.quoteMigrated[quoteId] = true;
 			quotesMigrated++;
 		}
 	}
 
-	/// @dev Unlike LibConnections.addConnection(), this skips maxPartyAConnectionLimit validation
-	///      since we're backfilling existing positions that were created before this limit existed
-	///     (the current active partyBs in the system are low enough).
-	function _backfillConnection(AccountStorage.Layout storage accountLayout, address partyA, address partyB) private {
+	function _backfillConnection(
+		AccountStorage.Layout storage accountLayout,
+		uint256 maxPartyAConnectionLimit,
+		address partyA,
+		address partyB
+	) private {
 		if (!accountLayout.isConnectedPartyB[partyA][partyB]) {
+			require(accountLayout.connectedPartyBs[partyA].length < maxPartyAConnectionLimit, "MigrationFacet: PartyA max connection limit exceeded");
 			accountLayout.connectedPartyBs[partyA].push(partyB);
 			accountLayout.isConnectedPartyB[partyA][partyB] = true;
 		}
