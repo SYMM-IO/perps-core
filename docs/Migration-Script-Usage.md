@@ -6,6 +6,7 @@ This document explains how to use the migration script for upgrading SYMMIO from
 
 The migration script (`scripts/migrate.ts`) handles:
 - Migrating quotes to populate aggregated positions
+- Backfilling PartyA ↔ PartyB connections for active positions (`connectedPartyBs` / `isConnectedPartyB`)
 - Migrating partyB balances to the master bucket
 
 Key features:
@@ -192,6 +193,12 @@ The script retries with exponential backoff. Check:
 - RPC endpoint health
 - Executor has sufficient gas
 - Executor has `MIGRATION_ROLE`
+
+### "PartyA max connection limit exceeded"
+If a PartyA has too many distinct connected PartyBs, the quote migration transaction can revert with:
+- `AccountFacet: PartyA max connection limit exceeded`
+
+Increase the limit before migrating via `ControlFacet.setMaxPartyAConnectionLimit`, then re-run the script (it will resume/skip already-migrated quotes).
 
 ### Stuck migration
 Delete `migration-progress.json` to start fresh (already-migrated items will be skipped via on-chain checks).

@@ -8,6 +8,7 @@ import { LockedValuesOps, LockedValues } from "../../libraries/LibLockedValues.s
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibFundingRate } from "../../libraries/LibFundingRate.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType } from "../../storages/QuoteStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
@@ -17,8 +18,13 @@ library MigrationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
 	/**
-	 * @notice Migrates quotes to populate aggregated positions, funding, and active symbols
-	 * @dev This function is idempotent - calling it multiple times with the same quote IDs will not cause issues
+	 * @notice Backfills v0.8.5 quote-derived state for existing active positions
+	 * @dev This function is idempotent - calling it multiple times with the same quote IDs will not cause issues.
+	 *      For each migrated quote, it backfills:
+	 *      - aggregated positions/funding + active symbols (used by new UPNL/funding flows)
+	 *      - quote.accumulatedPaidFunding baseline (when accumulated funding is configured)
+	 *      - partyBPositionsCount[partyB][address(0)] total positions counter
+	 *      - connectedPartyBs / isConnectedPartyB via LibConnections.addConnection (bounded by maxPartyAConnectionLimit)
 	 * @param quoteIds Array of quote IDs to migrate
 	 * @return quotesMigrated Number of quotes actually migrated (excluding already migrated or invalid quotes)
 	 */
@@ -46,7 +52,8 @@ library MigrationFacetImpl {
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 			if (openAmount == 0) continue;
 
-			// Initialize accumulatedPaidFunding if funding is enabled
+			// Backfill v0.8.5 derived state for this quote.
+			// Initialize accumulatedPaidFunding if funding is enabled.
 			_initializeQuoteFunding(quote);
 
 			// Populate aggregated positions (handles active symbols internally)
@@ -55,6 +62,10 @@ library MigrationFacetImpl {
 
 			// Populate aggregate funding
 			LibAggregateFunding.addToPartiesAggregateFunding(quote, openAmount);
+
+			// Backfill v0.8.5 derived state not covered by the aggregate libs.
+			quoteLayout.partyBPositionsCount[quote.partyB][address(0)] += 1;
+			LibConnections.addConnection(quote.partyA, quote.partyB);
 
 			migrationLayout.quoteMigrated[quoteId] = true;
 			quotesMigrated++;
@@ -81,9 +92,7 @@ library MigrationFacetImpl {
 		LibFundingRate.updateAccumulatedRates(fundingFee);
 
 		// Calculate the current accumulated fee that would be used for this position type
-		int256 rate = quote.positionType == PositionType.LONG
-			? fundingFee.accumulatedLongRate
-			: fundingFee.accumulatedShortRate;
+		int256 rate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
 
 		// Set the accumulatedPaidFunding to current rate * epochs since start
 		// This means when funding is charged later, it will be calculated relative to this baseline
@@ -100,10 +109,7 @@ library MigrationFacetImpl {
 	 * @param partyAs Array of partyA addresses that have balances with this partyB
 	 * @return partyAsProcessed Number of partyAs actually processed
 	 */
-	function migrateCrossLockedValues(
-		address partyB,
-		address[] calldata partyAs
-	) internal returns (uint256 partyAsProcessed) {
+	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) internal returns (uint256 partyAsProcessed) {
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -119,14 +125,11 @@ library MigrationFacetImpl {
 			accountLayout.partyBLockedBalances[partyB][address(0)].add(accountLayout.partyBLockedBalances[partyB][partyA]);
 
 			// Aggregate pending locked balances to cross bucket (only for pre-v8.5 data)
-			accountLayout.partyBPendingLockedBalances[partyB][address(0)].add(
-				accountLayout.partyBPendingLockedBalances[partyB][partyA]
-			);
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].add(accountLayout.partyBPendingLockedBalances[partyB][partyA]);
 
 			partyAsProcessed++;
 		}
 
 		migrationLayout.partyBLockedValuesMigrated[partyB] = true;
 	}
-
 }
