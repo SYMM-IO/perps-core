@@ -1978,29 +1978,29 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "filledAmount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
                 "name": "closedPrice",
                 "type": "uint256"
             },
             {
                 "indexed": false,
-                "internalType": "enum QuoteStatus",
-                "name": "quoteStatus",
-                "type": "uint8"
+                "internalType": "uint256",
+                "name": "currentPrice",
+                "type": "uint256"
             },
             {
                 "indexed": false,
-                "internalType": "uint256",
-                "name": "closeId",
-                "type": "uint256"
+                "internalType": "int256",
+                "name": "upnlPartyB",
+                "type": "int256"
+            },
+            {
+                "indexed": false,
+                "internalType": "int256",
+                "name": "partyBAvailableAfterClose",
+                "type": "int256"
             }
         ],
-        "name": "ForceClosePosition",
+        "name": "ForceClosePartyBInsolvent",
         "type": "event"
     },
     {
@@ -2047,15 +2047,9 @@
                 "internalType": "uint256",
                 "name": "closeId",
                 "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "isSolvent",
-                "type": "bool"
             }
         ],
-        "name": "ForceClosePositionCross",
+        "name": "ForceClosePosition",
         "type": "event"
     },
     {
@@ -8396,11 +8390,6 @@
                         "internalType": "uint256",
                         "name": "currentPrice",
                         "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum UPNLSettlementState",
-                        "name": "settlementState",
-                        "type": "uint8"
                     },
                     {
                         "internalType": "enum PartyBForceCloseState",

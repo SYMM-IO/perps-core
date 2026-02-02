@@ -38,10 +38,15 @@ library ForceCloseStepsImpl {
 		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
 		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
+		// Observability-only metadata: last Muon request id used for the stored snapshot.
+		detail.priceSigId = sig.reqId;
+		detail.quoteId = quoteId;
 		detail.timestamp = block.timestamp;
+		detail.partyBAvailableAfterClose = 0;
 		detail.closePrice = closePrice;
 		detail.upnlPartyB = sig.upnlPartyB;
 		detail.currentPrice = sig.currentPrice;
+		detail.partyBState = PartyBForceCloseState.NONE;
 		detail.inProgress = true;
 	}
 
@@ -69,6 +74,8 @@ library ForceCloseStepsImpl {
 		);
 		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
+		// Observability-only metadata: last Muon request id used for the stored snapshot.
+		detail.priceSigId = sig.reqId;
 		detail.upnlPartyB = sig.upnlPartyB;
 		detail.currentPrice = sig.price;
 		detail.timestamp = block.timestamp;
@@ -77,12 +84,12 @@ library ForceCloseStepsImpl {
 	/**
 	 * @notice Finalizes the 3-step force close flow (handles both normal and cross partyB modes).
 	 * @dev For normal partyB: Uses reserveVault fallback and triggers liquidation if needed.
-	 *      For cross partyB: Uses SOLVENT/INSOLVENT marking without liquidation.
+	 *      For cross partyB: Uses CLOSED_SOLVENT/CLOSED_INSOLVENT marking without liquidation.
 	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @return succeed Whether the close was successful without liquidation/insolvency.
-	 * @return upnlPartyB The upnl used for liquidation (only set for normal partyB when succeed is false).
+	 * @return isPartyBSolvent Whether PartyB remained solvent after the close.
+	 * @return upnlPartyB The upnl used for liquidation (only set for normal partyB when isPartyBSolvent is false).
 	 */
-	function finalizeForceClose(uint256 quoteId) internal returns (bool succeed, int256 upnlPartyB) {
+	function finalizeForceClose(uint256 quoteId) internal returns (bool isPartyBSolvent, int256 upnlPartyB) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
@@ -91,34 +98,29 @@ library ForceCloseStepsImpl {
 		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB];
 
 		if (isCrossPartyB) {
-			// Cross partyB mode: Use SOLVENT/INSOLVENT marking without liquidation
-			(succeed, detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteCrossWithRespectToUpnl(
+			// Cross partyB mode: Use CLOSED_SOLVENT/CLOSED_INSOLVENT marking without liquidation
+			(isPartyBSolvent, detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteCrossIgnoringUpnl(
 				quoteId,
 				detail.currentPrice,
 				detail.upnlPartyB,
 				detail.closePrice
 			);
-			detail.partyBState = succeed ? PartyBForceCloseState.SOLVENT : PartyBForceCloseState.INSOLVENT;
+			detail.partyBState = isPartyBSolvent ? PartyBForceCloseState.CLOSED_SOLVENT : PartyBForceCloseState.CLOSED_INSOLVENT;
 		} else {
 			// Normal partyB mode: Use reserveVault fallback and liquidation
-			uint256 reservedBalance = accountLayout.reserveVault[partyB];
-
-			(int256 partyBAvailableBalance, ) = LibForceActions.getAvailableBalancesAfterClose(
+			(isPartyBSolvent, detail.partyBAvailableAfterClose) = LibForceActions.closeQuoteWithReserveFallback(
 				quoteId,
 				detail.currentPrice,
-				0,
 				detail.upnlPartyB,
 				detail.closePrice
 			);
 
-			succeed = LibForceActions.closeQuote(quoteId, detail.closePrice, partyBAvailableBalance, reservedBalance);
-			detail.partyBAvailableAfterClose = partyBAvailableBalance;
-
-			if (succeed) {
-				detail.partyBState = PartyBForceCloseState.SOLVENT;
+			if (isPartyBSolvent) {
+				detail.partyBState = PartyBForceCloseState.CLOSED_SOLVENT;
 			} else {
+				uint256 reservedBalance = accountLayout.reserveVault[partyB];
 				upnlPartyB = LibForceActions.liquidatePartyB(quoteId, detail.closePrice, reservedBalance, detail.upnlPartyB, detail.currentPrice);
-				detail.partyBState = PartyBForceCloseState.LIQUIDATED;
+				detail.partyBState = PartyBForceCloseState.CLOSED_LIQUIDATED;
 			}
 		}
 

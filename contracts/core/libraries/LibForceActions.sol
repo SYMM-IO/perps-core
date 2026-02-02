@@ -126,17 +126,34 @@ library LibForceActions {
 		);
 	}
 
-	function closeQuote(uint256 quoteId, uint256 closePrice, int256 partyBAvailableBalance, uint256 reservedBalance) internal returns (bool succeed) {
+	/**
+	 * @notice Closes a quote for normal partyB mode, using reserveVault as fallback if insolvent.
+	 * @param quoteId The ID of the quote to close.
+	 * @param currentPrice The current market price used for solvency checks.
+	 * @param upnlPartyB The PartyB uPNL used for solvency calculation.
+	 * @param closePrice The force-close price to apply.
+	 * @return isPartyBSolvent Whether PartyB remained solvent after the close.
+	 * @return partyBAvailableBalance The available balance of PartyB after close.
+	 */
+	function closeQuoteWithReserveFallback(
+		uint256 quoteId,
+		uint256 currentPrice,
+		int256 upnlPartyB,
+		uint256 closePrice
+	) internal returns (bool isPartyBSolvent, int256 partyBAvailableBalance) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		address partyB = quote.partyB;
+
+		(partyBAvailableBalance, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
 
 		if (partyBAvailableBalance >= 0) {
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
-			return true;
+			return (true, partyBAvailableBalance);
 		}
 
-		address partyB = quote.partyB;
 		address allocationKey = LibAccount.partyBAllocationKey(partyB, quote.partyA);
+		uint256 reservedBalance = accountLayout.reserveVault[partyB];
 
 		if (partyBAvailableBalance + int256(reservedBalance) >= 0) {
 			uint256 available = uint256(-partyBAvailableBalance);
@@ -149,37 +166,41 @@ library LibForceActions {
 			LibAccount.increasePartyBNonce(partyB, quote.partyA);
 
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
-			return true;
+			return (true, partyBAvailableBalance);
 		}
+
+		return (false, partyBAvailableBalance);
 	}
 
 	/**
-	 * @notice Closes a cross-partyB quote using full uPNL if possible, otherwise a price-only fallback.
+	 * @notice Closes a quote for cross partyB mode, ignoring uPNL as fallback if insolvent.
 	 * @param quoteId The ID of the quote to close.
 	 * @param currentPrice The current market price used for solvency checks.
 	 * @param upnlPartyB The PartyB uPNL used for the primary solvency path.
 	 * @param closePrice The force-close price to apply.
+	 * @return isPartyBSolvent Whether PartyB remained solvent after the close.
+	 * @return partyBAvailableBalance The available balance of PartyB after close.
 	 */
-	function closeQuoteCrossWithRespectToUpnl(
+	function closeQuoteCrossIgnoringUpnl(
 		uint256 quoteId,
 		uint256 currentPrice,
 		int256 upnlPartyB,
 		uint256 closePrice
-	) internal returns (bool isSolvent, int256 partyBAvailableForClose) {
+	) internal returns (bool isPartyBSolvent, int256 partyBAvailableBalance) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
 		// Close using UPNL
-		(partyBAvailableForClose, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
-		if (partyBAvailableForClose >= 0) {
+		(partyBAvailableBalance, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
+		if (partyBAvailableBalance >= 0) {
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
-			return (true, partyBAvailableForClose);
+			return (true, partyBAvailableBalance);
 		}
 
 		// Close ignoring UPNL
-		(partyBAvailableForClose, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, 0, closePrice);
-		require(partyBAvailableForClose >= 0, "ForceActionsFacet: Insufficient balance");
+		(partyBAvailableBalance, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, 0, closePrice);
+		require(partyBAvailableBalance >= 0, "ForceActionsFacet: Insufficient balance");
 		LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 
-		return (false, partyBAvailableForClose);
+		return (false, partyBAvailableBalance);
 	}
 }

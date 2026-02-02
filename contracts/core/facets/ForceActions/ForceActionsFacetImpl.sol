@@ -10,7 +10,7 @@ import { LibForceActions } from "../../libraries/LibForceActions.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
-import { AccountStorage, ForceCloseDetail, UPNLSettlementState } from "../../storages/AccountStorage.sol";
+import { AccountStorage, ForceCloseDetail } from "../../storages/AccountStorage.sol";
 import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -69,7 +69,7 @@ library ForceActionsFacetImpl {
 		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
-		(int256 partyBAvailableBalance, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
+		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
 			quoteId,
 			sig.currentPrice,
 			sig.upnlPartyA,
@@ -80,7 +80,7 @@ library ForceActionsFacetImpl {
 		require(partyAAvailableBalance >= 0, "PartyAFacet: PartyA will be insolvent");
 
 		uint256 reservedBalance = accountLayout.reserveVault[partyB];
-		succeed = LibForceActions.closeQuote(quoteId, closePrice, partyBAvailableBalance, reservedBalance);
+		(succeed, ) = LibForceActions.closeQuoteWithReserveFallback(quoteId, sig.currentPrice, sig.upnlPartyB, closePrice);
 
 		if (!succeed) {
 			upnlPartyB = LibForceActions.liquidatePartyB(quoteId, closePrice, reservedBalance, sig.upnlPartyB, sig.currentPrice);
@@ -99,10 +99,5 @@ library ForceActionsFacetImpl {
 		//realize uPNL
 		LibMuonSettlement.verifySettlement(sig, partyA);
 		LibSettlement.settleUpnl(sig, updatedPrices, partyA, true);
-
-		//update force close detail struct
-		ForceCloseDetail storage detail = AccountStorage.layout().forceCloseDetails[quoteId];
-		detail.timestamp = block.timestamp;
-		detail.settlementState = UPNLSettlementState.REALIZED;
 	}
 }
