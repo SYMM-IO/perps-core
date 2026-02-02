@@ -35,3 +35,5 @@ pnpm-lock.yaml
 
 .yarn/
 .venv
+
+CLAUDE.md

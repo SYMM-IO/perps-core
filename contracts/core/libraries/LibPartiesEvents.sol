@@ -25,17 +25,6 @@ library LibPartiesEvents {
 		uint256 closeId
 	);
 
-	event RequestToClosePosition(
-		address partyA,
-		address partyB,
-		uint256 quoteId,
-		uint256 closePrice,
-		uint256 quantityToClose,
-		OrderType orderType,
-		uint256 deadline,
-		QuoteStatus quoteStatus
-	);
-
 	event SendQuote(
 		address partyA,
 		uint256 quoteId,
@@ -78,5 +67,5 @@ library LibPartiesEvents {
 		uint256 closeId,
 		LockedValues lockedValues
 	);
-	event ADLClose(uint256 quoteId, uint256 amount, uint256 price, uint256 closedAmount);
+	event ADLClose(uint256 quoteId, uint256 amount, uint256 price);
 }

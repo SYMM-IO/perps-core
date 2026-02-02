@@ -14,7 +14,6 @@ import { Symbol, SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, OrderType } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
-import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
@@ -54,7 +53,7 @@ library PartyBEmergencyActionsFacetImpl {
 	 * @param amount Amount to close (token decimals).
 	 * @param price Execution price used for the ADL close.
 	 */
-	function adlClose(uint256 quoteId, uint256 amount, uint256 price) internal returns (uint256 closedAmount) {
+	function adlClose(uint256 quoteId, uint256 amount, uint256 price) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -63,7 +62,7 @@ library PartyBEmergencyActionsFacetImpl {
 		address signer = LibSigner.getSigner();
 
 		require(quote.partyB == signer, "PartyBFacet: Sender isn't partyB of quote");
-		require(PartyBControlStorage.layout().adlEnabled[signer], "PartyBFacet: ADL disabled");
+		require(MAStorage.layout().adlEnabled[signer], "PartyBFacet: ADL disabled");
 		require(!CrossPartyBStorage.layout().crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 		require(!maLayout.partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
 		require(!maLayout.liquidationStatus[quote.partyA], "PartyAFacet: PartyA is in liquidation process");
@@ -123,16 +122,6 @@ library PartyBEmergencyActionsFacetImpl {
 			QuoteStatus.CLOSE_PENDING,
 			adlCloseId
 		);
-		emit LibPartiesEvents.RequestToClosePosition(
-			quote.partyA,
-			quote.partyB,
-			quote.id,
-			price,
-			amount,
-			OrderType.MARKET,
-			block.timestamp,
-			QuoteStatus.CLOSE_PENDING
-		);
 
 		//Update nonce
 		LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
@@ -151,7 +140,6 @@ library PartyBEmergencyActionsFacetImpl {
 			quote.lockedValues
 		);
 		uint256 remainingOpen = LibQuote.quoteOpenAmount(quote);
-		closedAmount = amount;
 
 		if ((wasClosePending || wasCancelClosePending) && remainingOpen > 0) {
 			uint256 newQuantity = remainingOpen >= prevRequestedQuantityToClose ? prevRequestedQuantityToClose : remainingOpen;
@@ -171,16 +159,6 @@ library PartyBEmergencyActionsFacetImpl {
 				block.timestamp,
 				QuoteStatus.CLOSE_PENDING,
 				newCloseId
-			);
-			emit LibPartiesEvents.RequestToClosePosition(
-				quote.partyA,
-				quote.partyB,
-				quote.id,
-				prevRequestedClosePrice,
-				newQuantity,
-				quote.orderType,
-				block.timestamp,
-				QuoteStatus.CLOSE_PENDING
 			);
 			if (wasCancelClosePending) {
 				emit LibPartiesEvents.RequestToCancelCloseRequest(quote.partyA, quote.partyB, quote.id, QuoteStatus.CANCEL_CLOSE_PENDING, newCloseId);

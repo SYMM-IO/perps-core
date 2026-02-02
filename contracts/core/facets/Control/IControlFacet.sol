@@ -90,7 +90,7 @@ interface IControlFacet is IControlEvents {
 
 	function setCallFromInstantLayer(bool callFromInstantLayer) external;
 
-	function setCustomAffiliateFee(
+	function setAffiliateFeeForUser(
 		address affiliate,
 		address[] calldata users,
 		uint256[] calldata symbolIds,
@@ -130,6 +130,8 @@ interface IControlFacet is IControlEvents {
 	function setSpeedUpUser(address user, bool speedUp) external;
 
 	function setMinWithdrawCooldown(uint256 cooldown) external;
+
+	function setPureVirtualCancelBlackout(uint256 blackout) external;
 
 	function setSigner(address signer) external;
 

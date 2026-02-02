@@ -745,10 +745,10 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
-	describe("setCustomAffiliateFee", () => {
+	describe("setAffiliateFeeForUser", () => {
 		it("should fail when the provided address as affiliate is not affiliate", async () => {
 			await expect(
-				context.controlFacet.setCustomAffiliateFee(
+				context.controlFacet.setAffiliateFeeForUser(
 					context.signers.hedger.address,
 					[context.signers.user.address],
 					[1],
@@ -761,7 +761,7 @@ export function shouldBehaveLikeControlFacet(): void {
 		it("should set fee for affiliate and user successfully", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
 			await expect(
-				context.controlFacet.setCustomAffiliateFee(
+				context.controlFacet.setAffiliateFeeForUser(
 					context.signers.hedger.address,
 					[context.signers.user.address],
 					[1],
@@ -770,7 +770,7 @@ export function shouldBehaveLikeControlFacet(): void {
 				),
 			).to.not.reverted
 
-			const fee = await context.viewFacet.getCustomAffiliateFee(context.signers.hedger, context.signers.user, 1)
+			const fee = await context.viewFacet.getAffiliateFeeForUser(context.signers.hedger, context.signers.user, 1)
 
 			expect(fee.openFee).to.equal(BigInt(1e18))
 			expect(fee.closeFee).to.equal(BigInt(1e18))
@@ -779,7 +779,7 @@ export function shouldBehaveLikeControlFacet(): void {
 		it("should fail if array lengths mismatch", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
 			await expect(
-				context.controlFacet.setCustomAffiliateFee(
+				context.controlFacet.setAffiliateFeeForUser(
 					context.signers.hedger.address,
 					[context.signers.user.address, context.signers.user2.address],
 					[1],
@@ -791,14 +791,14 @@ export function shouldBehaveLikeControlFacet(): void {
 
 		it("should fail if empty array", async () => {
 			await expect(
-				context.controlFacet.setCustomAffiliateFee(context.signers.hedger.address, [], [], [], []),
+				context.controlFacet.setAffiliateFeeForUser(context.signers.hedger.address, [], [], [], []),
 			).to.revertedWith("ControlFacet: Invalid array length")
 		})
 
 		it("should fail if fee is high", async () => {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
 			await expect(
-				context.controlFacet.setCustomAffiliateFee(
+				context.controlFacet.setAffiliateFeeForUser(
 					context.signers.hedger.address,
 					[context.signers.user.address],
 					[1],
@@ -807,7 +807,7 @@ export function shouldBehaveLikeControlFacet(): void {
 				),
 			).to.revertedWith("ControlFacet: High fee")
 			await expect(
-				context.controlFacet.setCustomAffiliateFee(
+				context.controlFacet.setAffiliateFeeForUser(
 					context.signers.hedger.address,
 					[context.signers.user.address],
 					[1],
@@ -816,7 +816,7 @@ export function shouldBehaveLikeControlFacet(): void {
 				),
 			).to.revertedWith("ControlFacet: High fee")
 			await expect(
-				context.controlFacet.setCustomAffiliateFee(
+				context.controlFacet.setAffiliateFeeForUser(
 					context.signers.hedger.address,
 					[context.signers.user.address],
 					[1],
@@ -830,7 +830,7 @@ export function shouldBehaveLikeControlFacet(): void {
 			await context.controlFacet.registerAffiliate(context.signers.hedger)
 			await context.controlFacet.setMinAffiliateFee(BigInt(5e17))
 			await expect(
-				context.controlFacet.setCustomAffiliateFee(
+				context.controlFacet.setAffiliateFeeForUser(
 					context.signers.hedger.address,
 					[context.signers.user.address],
 					[1],
@@ -839,7 +839,7 @@ export function shouldBehaveLikeControlFacet(): void {
 				),
 			).to.revertedWith("ControlFacet: Not allowed to set fee less than threshold")
 			await expect(
-				context.controlFacet.setCustomAffiliateFee(
+				context.controlFacet.setAffiliateFeeForUser(
 					context.signers.hedger.address,
 					[context.signers.user.address],
 					[1],

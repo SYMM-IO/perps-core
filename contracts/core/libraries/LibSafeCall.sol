@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { MAStorage } from "../storages/MAStorage.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 
 /**
  * @title LibSafeCall
@@ -19,17 +19,17 @@ library LibSafeCall {
 	 * @param data The encoded function call data
 	 */
 	function safeExternalCall(address target, bytes memory data) internal {
-		MAStorage.Layout storage maLayout = MAStorage.layout();
+		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
 		require(target != address(0), "LibSafeCall: Zero address");
 
 		// Save and clear signer before external call to prevent target from impersonating user
-		address previousSigner = maLayout.signer;
-		maLayout.signer = address(0);
+		address previousSigner = globalLayout.signer;
+		globalLayout.signer = address(0);
 
 		(bool success, bytes memory reason) = target.call(data);
 
 		// Restore signer after external call
-		maLayout.signer = previousSigner;
+		globalLayout.signer = previousSigner;
 
 		// Revert with the original error if the call failed
 		if (!success) {

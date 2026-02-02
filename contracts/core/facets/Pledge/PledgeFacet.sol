@@ -6,65 +6,65 @@ pragma solidity >=0.8.18;
 
 import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
-import { IAssuranceFacet } from "./IAssuranceFacet.sol";
-import { AssuranceFacetImpl } from "./AssuranceFacetImpl.sol";
+import { IPledgeFacet } from "./IPledgeFacet.sol";
+import { PledgeFacetImpl } from "./PledgeFacetImpl.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 
-contract AssuranceFacet is Accessibility, Pausable, IAssuranceFacet {
-	/// @notice Deposit assurance collateral (PartyB-only) used to enable Assurance.
+contract PledgeFacet is Accessibility, Pausable, IPledgeFacet {
+	/// @notice Deposit pledge (PartyB-only) used to enable Pledge.
 	/// @param token ERC20 token to deposit (token decimals, not normalized).
 	/// @param amount Amount to deposit.
-	function depositAssuranceCollateral(address token, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
+	function depositPledge(address token, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
 		address signer = LibSigner.getSigner();
-		AssuranceFacetImpl.depositAssuranceCollateral(amount, token);
-		emit AssuranceCollateralDeposited(signer, token, amount);
+		PledgeFacetImpl.depositPledge(amount, token);
+		emit PledgeCollateralDeposited(signer, token, amount);
 	}
 
-	/// @notice Request to withdraw assurance collateral to a specific recipient.
+	/// @notice Request to withdraw pledge to a specific recipient.
 	/// @param token ERC20 token to withdraw.
 	/// @param amount Amount to withdraw.
 	/// @param recipient Address receiving the withdrawal if approved.
-	function requestAssuranceWithdraw(
+	function requestPledgeWithdraw(
 		address token,
 		uint256 amount,
 		address recipient
 	) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
-		AssuranceFacetImpl.requestAssuranceWithdraw(amount, token, recipient);
-		emit AssuranceWithdrawRequested(LibSigner.getSigner(), token, amount, recipient);
+		PledgeFacetImpl.requestPledgeWithdraw(amount, token, recipient);
+		emit PledgeWithdrawRequested(LibSigner.getSigner(), token, amount, recipient);
 	}
 
-	/// @notice Cancel a pending assurance withdrawal request.
-	function cancelAssuranceWithdraw() external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
-		(address token, uint256 amount) = AssuranceFacetImpl.cancelAssuranceWithdraw();
-		emit AssuranceWithdrawCancelled(LibSigner.getSigner(), token, amount);
+	/// @notice Cancel a pending pledge withdrawal request.
+	function cancelPledgeWithdraw() external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
+		(address token, uint256 amount) = PledgeFacetImpl.cancelPledgeWithdraw();
+		emit PledgeWithdrawCancelled(LibSigner.getSigner(), token, amount);
 	}
 
-	/// @notice Approve a pending assurance withdrawal and transfer funds to the requested recipient.
+	/// @notice Approve a pending pledge withdrawal and transfer funds to the requested recipient.
 	/// @param user User whose request is being approved.
 	/// @param amount Amount to withdraw.
 	/// @param token ERC20 token to withdraw.
-	function acceptAssuranceWithdraw(
+	function acceptPledgeWithdraw(
 		address user,
 		uint256 amount,
 		address token
 	) external whenNotAccountingPaused onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		AssuranceFacetImpl.acceptAssuranceWithdraw(user, amount, token);
-		emit AssuranceWithdrawApproved(user, token, amount);
+		PledgeFacetImpl.acceptPledgeWithdraw(user, amount, token);
+		emit PledgeWithdrawApproved(user, token, amount);
 	}
 
-	/// @notice Apply a solver penalty against a user's assurance collateral.
+	/// @notice Apply a solver penalty against a user's pledge.
 	/// @param user Penalized user.
 	/// @param token Token to deduct.
 	/// @param amount Penalty amount.
 	/// @param recipient Address receiving the penalty funds.
-	function slashUser(
+	function slashPledge(
 		address user,
 		address token,
 		uint256 amount,
 		address recipient
 	) external whenNotAccountingPaused onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		AssuranceFacetImpl.slashUser(user, token, amount, recipient);
+		PledgeFacetImpl.slashPledge(user, token, amount, recipient);
 		emit UserSlashed(user, token, amount, recipient);
 	}
 }

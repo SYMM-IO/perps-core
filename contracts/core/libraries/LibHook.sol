@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { MAStorage } from "../storages/MAStorage.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { SharedEvents } from "./SharedEvents.sol";
 
 /**
@@ -27,8 +27,8 @@ library LibHook {
 		if (hook == address(0)) return;
 
 		// Save and clear signer before external call to prevent hook from impersonating user
-		address previousSigner = MAStorage.layout().signer;
-		MAStorage.layout().signer = address(0);
+		address previousSigner = GlobalAppStorage.layout().signer;
+		GlobalAppStorage.layout().signer = address(0);
 
 		(bool success, bytes memory reason) = hook.call(data);
 
@@ -38,6 +38,6 @@ library LibHook {
 		}
 
 		// Restore signer after hook call
-		MAStorage.layout().signer = previousSigner;
+		GlobalAppStorage.layout().signer = previousSigner;
 	}
 }

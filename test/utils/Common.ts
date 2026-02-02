@@ -108,7 +108,8 @@ export async function getTradingFeeForQuotes(context: RunContext, quoteIds: bigi
 	let out = 0n
 	for (const quoteId of quoteIds) {
 		let q = await context.viewFacetQuote.getQuote(quoteId)
-		let tf = (await context.viewFacetSymbol.getSymbol(q.symbolId)).tradingFee
+		// Use the quote's actual trading fee, not the symbol's default
+		let tf = q.tradingFee
 		if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(q.quantity * q.requestedOpenPrice * tf, 36)
 		else out += unDecimal(q.quantity * q.marketPrice * tf, 36)
 	}

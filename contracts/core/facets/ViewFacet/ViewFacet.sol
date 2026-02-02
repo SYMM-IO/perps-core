@@ -6,10 +6,9 @@ pragma solidity >=0.8.18;
 
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
-import { AccountStorage, LiquidationDetail, SettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
+import { AccountStorage, LiquidationDetail, LiquidationSettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
 import { CrossPartyBStorage, CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
-import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { ExternalTransferStorage, VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
 import { WithdrawStorage, WithdrawRequest } from "../../storages/WithdrawStorage.sol";
@@ -304,8 +303,8 @@ contract ViewFacet is IViewFacet {
 	 * @param partyBs The addresses of Party Bs.
 	 * @return states The settlement states of Party Bs for Party A.
 	 */
-	function getSettlementStates(address partyA, address[] memory partyBs) external view returns (SettlementState[] memory) {
-		SettlementState[] memory states = new SettlementState[](partyBs.length);
+	function getSettlementStates(address partyA, address[] memory partyBs) external view returns (LiquidationSettlementState[] memory) {
+		LiquidationSettlementState[] memory states = new LiquidationSettlementState[](partyBs.length);
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			states[i] = AccountStorage.layout().settlementStates[partyA][partyBs[i]];
 		}
@@ -715,14 +714,14 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/**
-	 * @notice Retrieves the custom affiliate fee of an affiliate for specific user and symbol.
+	 * @notice Retrieves the affiliate fee for a specific user and symbol.
 	 * @param affiliate The address of the affiliate.
 	 * @param user The address of the user.
 	 * @param symbolId The id of the symbol.
-	 * @return fee The affiliate fee of the affiliate.
+	 * @return fee The affiliate fee for the user.
 	 */
-	function getCustomAffiliateFee(address affiliate, address user, uint256 symbolId) external view returns (Fee memory) {
-		return AffiliateStorage.layout().customAffiliateFee[affiliate][user][symbolId];
+	function getAffiliateFeeForUser(address affiliate, address user, uint256 symbolId) external view returns (Fee memory) {
+		return AffiliateStorage.layout().affiliateFeeForUser[affiliate][user][symbolId];
 	}
 
 	/**
@@ -748,7 +747,7 @@ contract ViewFacet is IViewFacet {
 	 * @return Whether the call is from instant layer
 	 */
 	function isCallFromInstantLayer() external view returns (bool) {
-		return TradingModeStorage.layout().callFromInstantLayer;
+		return GlobalAppStorage.layout().callFromInstantLayer;
 	}
 
 	/**
@@ -757,11 +756,11 @@ contract ViewFacet is IViewFacet {
 	 * @return enabled The ADL enabled status of the party B.
 	 */
 	function isADLEnabled(address partyB) external view returns (bool) {
-		return PartyBControlStorage.layout().adlEnabled[partyB];
+		return MAStorage.layout().adlEnabled[partyB];
 	}
 
 	function getSigner() external view returns (address) {
-		return MAStorage.layout().signer == address(0) ? msg.sender : MAStorage.layout().signer;
+		return GlobalAppStorage.layout().signer == address(0) ? msg.sender : GlobalAppStorage.layout().signer;
 	}
 
 	function getFee(address affiliate, uint256 symbolId) external view returns (Fee memory fee) {

@@ -52,6 +52,10 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
+		// Use request.affiliate if explicitly set (non-zero), otherwise fall back to accountManager
+		const affiliate = request.affiliate && request.affiliate !== "0x0000000000000000000000000000000000000000"
+			? request.affiliate
+			: this.context.accountManager
 		let tx = await this.context.partyAFacet
 			.connect(this.signer)
 			.sendQuoteWithAffiliate(
@@ -67,7 +71,7 @@ export class User extends PartyEntity {
 				request.partyBmm,
 				request.maxFundingRate,
 				await request.deadline,
-				this.context.accountManager,
+				affiliate,
 				await request.upnlSig,
 			)
 		const receipt = await tx.wait()
