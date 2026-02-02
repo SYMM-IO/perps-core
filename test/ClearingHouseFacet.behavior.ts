@@ -199,6 +199,52 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 		})
 	})
 
+	describe("Cross liquidation (pending-only)", () => {
+		beforeEach(async () => {
+			// Create a pending quote for hedger without opening any positions
+			await hedger.lockQuote(1)
+
+			await migratePartyBToCross(context, hedger, [1])
+			await context.clearingHouseFacet
+				.connect(context.signers.liquidator)
+				.liquidateCrossPartyB(
+					context.signers.hedger.getAddress(),
+					await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+				)
+		})
+
+		it("should clear cross liquidation after pending cleanup when there are no open positions", async () => {
+			// no open positions exist for partyB
+			expect((await context.viewFacetQuote.getPartyBOpenPositions(context.signers.hedger, context.signers.user, 0, 10)).length).to.equal(0)
+			expect((await context.viewFacetQuote.getPartyBOpenPositions(context.signers.hedger, context.signers.user2, 0, 10)).length).to.equal(0)
+			expect(await context.viewFacetQuote.partyBPositionsCount(context.signers.hedger, ZeroAddress)).to.equal(0)
+			expect((await context.viewFacetQuote.getPartyBPendingQuotes(context.signers.hedger, context.signers.user)).length).to.be.greaterThan(0)
+			expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
+
+			// on cross liquidation is actived, partyB operations should not allowed
+			await expect(hedger.lockQuote(2, decimal(1_000_000n))).to.be.revertedWith("PartyBFacet: PartyB is in cross liquidation process")
+
+			// Liquidate pending quotes
+			await context.clearingHouseFacet
+				.connect(context.signers.liquidator)
+				.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user])
+
+			// Cross liquidation should not remain "in progress" when there are no open positions left
+			expect((await context.viewFacetQuote.getPartyBPendingQuotes(context.signers.hedger, context.signers.user)).length).to.equal(0)
+			expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(false)
+
+			// PartyB should be able to resume normal operations
+			await expect(hedger.lockQuote(2, decimal(1_000_000n))).to.not.reverted
+
+			// Once cleared a pending cleanup should be rejected
+			await expect(
+				context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user]),
+			).to.be.revertedWith("ClearingHouseFacet: PartyB is solvent")
+		})
+	})
+
 	describe("deallocateForCrossLiquidation", () => {
 		beforeEach(async () => {
 			// Quote1 -> opened

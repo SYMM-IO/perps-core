@@ -108,6 +108,12 @@ library ClearingHouseFacetImpl {
 				accountLayout.partyBPendingLockedBalances[partyB][partyA].makeZero();
 			}
 		}
+
+		// end cross liquidation
+		if (quoteLayout.partyBPositionsCount[partyB][address(0)] == 0) {
+			crossLiquidationDetail.inProgress = false;
+			crossLiquidationDetail.timestamp = 0;
+		}
 	}
 
 	function liquidatePositionsForCrossLiquidation(
