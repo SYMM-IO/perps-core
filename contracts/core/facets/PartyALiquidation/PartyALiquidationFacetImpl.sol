@@ -14,7 +14,7 @@ import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LiquidationSig, MuonStorage } from "../../storages/MuonStorage.sol";
-import { LiquidationType, LiquidationDetail, SettlementState, Price, AccountStorage } from "../../storages/AccountStorage.sol";
+import { LiquidationType, LiquidationDetail, LiquidationSettlementState, Price, AccountStorage } from "../../storages/AccountStorage.sol";
 import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
@@ -186,7 +186,7 @@ library PartyALiquidationFacetImpl {
 
 			int256 accumulatedFundingFee = LibQuoteFunding.getAccumulatedFundingFee(quote.id);
 			int256 pnlWithFunding = (hasMadeProfit ? int256(amount) : -int256(amount)) - accumulatedFundingFee;
-			SettlementState storage settlementState = accountLayout.settlementStates[partyA][quote.partyB];
+			LiquidationSettlementState storage settlementState = accountLayout.settlementStates[partyA][quote.partyB];
 			LiquidationDetail storage liquidationDetail = accountLayout.liquidationDetails[partyA];
 
 			if (!settlementState.pending) {

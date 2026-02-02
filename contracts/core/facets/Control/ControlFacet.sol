@@ -15,7 +15,6 @@ import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
-import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { ExternalTransferStorage } from "../../storages/ExternalTransferStorage.sol";
 import { IControlFacet } from "./IControlFacet.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
@@ -242,7 +241,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param symbolIds The list of trading symbol IDs (0 for default fee across all symbols).
 	/// @param openFees The list of open fees (in 1e18 precision).
 	/// @param closeFees The list of close fees (in 1e18 precision).
-	function setCustomAffiliateFee(
+	function setAffiliateFeeForUser(
 		address affiliate,
 		address[] calldata users,
 		uint256[] calldata symbolIds,
@@ -272,16 +271,16 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 			address user = users[i];
 			uint256 symbolId = symbolIds[i];
-			emit SetCustomAffiliateFee(
+			emit SetAffiliateFeeForUser(
 				affiliate,
 				user,
 				symbolId,
-				affiliateLayout.customAffiliateFee[affiliate][user][symbolId].openFee,
+				affiliateLayout.affiliateFeeForUser[affiliate][user][symbolId].openFee,
 				openFee,
-				affiliateLayout.customAffiliateFee[affiliate][user][symbolId].closeFee,
+				affiliateLayout.affiliateFeeForUser[affiliate][user][symbolId].closeFee,
 				closeFee
 			);
-			affiliateLayout.customAffiliateFee[affiliate][user][symbolId] = Fee(openFee, closeFee, true);
+			affiliateLayout.affiliateFeeForUser[affiliate][user][symbolId] = Fee(openFee, closeFee, true);
 		}
 	}
 
@@ -502,15 +501,15 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Indicates if the current operation is being executed via the instant layer.
 	/// @dev instant layer sets this flag to true before execution and MUST reset it back to false after its operation. Core can use this flag to know if this request is coming from instant layer.
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		require(!(_callFromInstantLayer && TradingModeStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
-		TradingModeStorage.layout().callFromInstantLayer = _callFromInstantLayer;
+		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
+		GlobalAppStorage.layout().callFromInstantLayer = _callFromInstantLayer;
 	}
 
 	/// @notice Enables or disables Auto-Deleveraging (ADL) for a Party B. When enabled, positions can be force-closed to reduce risk.
 	/// @param partyB The address of the Party B to configure ADL for.
 	/// @param enabled True to enable ADL for this Party B, false to disable.
 	function setADLEnabled(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		PartyBControlStorage.layout().adlEnabled[partyB] = enabled;
+		MAStorage.layout().adlEnabled[partyB] = enabled;
 		emit SetADLEnabled(partyB, enabled);
 	}
 
@@ -589,10 +588,18 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		withdrawLayout.minWithdrawCooldown = cooldown;
 	}
 
+	/// @notice Sets the blackout period during which pure virtual withdrawals cannot be cancelled.
+	/// @param blackout The number of seconds before cooldown end during which cancellation is blocked.
+	function setPureVirtualCancelBlackout(uint256 blackout) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		emit SetPureVirtualCancelBlackout(withdrawLayout.pureVirtualCancelBlackout, blackout);
+		withdrawLayout.pureVirtualCancelBlackout = blackout;
+	}
+
 	/// @notice Sets the trusted signer address whose signatures are accepted for protocol operations.
 	/// @param signer The address of the trusted signer for off-chain signature verification.
 	function setSigner(address signer) external onlyRoleAllowProxy(LibAccessibility.SIGNER_ADMIN_ROLE) {
-		MAStorage.layout().signer = signer;
+		GlobalAppStorage.layout().signer = signer;
 		emit SignerSet(signer);
 	}
 

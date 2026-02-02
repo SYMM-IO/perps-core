@@ -15,7 +15,6 @@ import { QuoteStorage, Quote, QuoteStatus, LockedValues, PositionType, OrderType
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
-import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
@@ -79,19 +78,17 @@ library PartyAFacetImpl {
 		}
 
 		Fee memory fee;
-		if (affiliateLayout.customAffiliateFee[affiliate][signer][symbolId].isSet) {
-			fee = affiliateLayout.customAffiliateFee[affiliate][signer][symbolId];
+		if (affiliateLayout.affiliateFeeForUser[affiliate][signer][symbolId].isSet) {
+			fee = affiliateLayout.affiliateFeeForUser[affiliate][signer][symbolId];
+		} else if (affiliateLayout.affiliateFeeForUser[affiliate][signer][0].isSet) {
+			fee = affiliateLayout.affiliateFeeForUser[affiliate][signer][0];
+		} else if (affiliateLayout.affiliateFee[affiliate][symbolId].isSet) {
+			fee = affiliateLayout.affiliateFee[affiliate][symbolId];
+		} else if (affiliateLayout.affiliateFee[affiliate][0].isSet) {
+			fee = affiliateLayout.affiliateFee[affiliate][0];
 		} else {
-			if (affiliateLayout.affiliateFee[affiliate][symbolId].isSet) {
-				fee = affiliateLayout.affiliateFee[affiliate][symbolId];
-			} else {
-				if (affiliateLayout.affiliateFee[affiliate][0].isSet) {
-					fee = affiliateLayout.affiliateFee[affiliate][0];
-				} else {
-					uint256 symbolTradingFee = symbolLayout.symbols[symbolId].tradingFee;
-					fee = Fee(symbolTradingFee, symbolTradingFee, true);
-				}
-			}
+			uint256 symbolTradingFee = symbolLayout.symbols[symbolId].tradingFee;
+			fee = Fee(symbolTradingFee, symbolTradingFee, true);
 		}
 
 		{

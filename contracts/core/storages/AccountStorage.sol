@@ -19,35 +19,30 @@ enum LiquidationType {
 	OVERDUE
 }
 
-/// @notice Settlement state for unrealized PnL during force close
-/// @dev Tracks whether UPNL has been realized as part of force close workflow.
-///      NONE = not settled
-///      REALIZED = settled in isolated mode
-///      REALIZED_CROSS = settled in cross-margin mode
-enum UPNLSettlementState {
-	NONE,
-	REALIZED,
-	REALIZED_CROSS
-}
-
 /// @notice PartyB's solvency state during a force close operation
 /// @dev Determines what happens after force close completes.
 ///      NONE = not in force close
-///      INSOLVENT = PartyB became insolvent during close
-///      SOLVENT = PartyB remained solvent
-///      LIQUIDATED = PartyB was liquidated
+///      CLOSED_INSOLVENT = (cross partyB mode) close succeeded but PartyB could not remain solvent when accounting for uPNL
+///      CLOSED_SOLVENT = close succeeded without liquidation/insolvency
+///      CLOSED_LIQUIDATED = (normal partyB mode) PartyB was liquidated during force close
+///
+///      Event mapping:
+///      - Cross partyB mode: `ForceClosePosition(...)` is always emitted. If insolvent, `ForceClosePartyBInsolvent(...)` is also emitted.
+///      - Normal partyB mode: `ForceClosePosition(...)` implies CLOSED_SOLVENT; `LiquidatePartyB(...)` implies CLOSED_LIQUIDATED.
 enum PartyBForceCloseState {
 	NONE,
-	INSOLVENT,
-	SOLVENT,
-	LIQUIDATED
+	CLOSED_INSOLVENT,
+	CLOSED_SOLVENT,
+	CLOSED_LIQUIDATED
 }
 
-/// @notice Tracks UPNL settlement progress between PartyA and PartyB
-/// @dev Used to reconcile unrealized PnL before force close or liquidation.
-///      actualAmount = what's been settled so far, expectedAmount = total to settle,
-///      cva = Credit Valuation Adjustment held, pending = settlement in progress.
-struct SettlementState {
+/// @notice Tracks PnL settlement between PartyA and PartyB during PartyA liquidation
+/// @dev Used during PartyA liquidation to reconcile PnL with each PartyB.
+///      expectedAmount = full PnL for PartyA's accumulated UPNL tracking
+///      actualAmount = amount actually transferred to/from PartyB (may differ in OVERDUE due to deficit,
+///                     or overridden via resolveLiquidationDispute)
+///      cva = CVA returned to PartyB, pending = settlement in progress.
+struct LiquidationSettlementState {
 	int256 actualAmount;
 	int256 expectedAmount;
 	uint256 cva;
@@ -56,20 +51,30 @@ struct SettlementState {
 
 /// @notice Complete state tracking for a force close operation on a position
 /// @dev Force close is a multi-step process that lets PartyA close positions when PartyB
-///      isn't responding. This struct tracks every stage: price signature used, settlement
-///      states, and PartyB's resulting solvency. Note: inProgress is set during init but
+///      isn't responding. This struct tracks the workflow snapshot (uPNL/currentPrice),
+///      the derived closePrice, and PartyB's resulting solvency. Note: inProgress is set during init but
 ///      does NOT prevent re-initialization - it only gates progression to subsequent steps.
 ///      The quote's status (CLOSE_PENDING) is the primary guard against invalid force closes.
 struct ForceCloseDetail {
+	/// @notice The latest Muon request id used to fill/refresh the force-close snapshot.
+	/// @dev Observability-only metadata for off-chain correlation; NOT used in protocol logic.
 	bytes priceSigId;
+	/// @notice The quote id this struct corresponds to.
+	/// @dev Redundant with the mapping key; kept for convenience in off-chain reads.
 	uint256 quoteId;
+	/// @notice Last time the workflow snapshot was updated (init/refresh/settle/finalize depending on flow).
 	uint256 timestamp;
+	/// @notice PartyB available balance after close (set on finalize).
 	int256 partyBAvailableAfterClose;
+	/// @notice The close price computed at initialization (kept stable across refreshes).
 	uint256 closePrice;
+	/// @notice Snapshot uPNL for PartyB used during finalize (can be refreshed/adjusted).
 	int256 upnlPartyB;
+	/// @notice Snapshot current price used during finalize (can be refreshed).
 	uint256 currentPrice;
-	UPNLSettlementState settlementState;
+	/// @notice Final PartyB outcome for the force close workflow (set on finalize).
 	PartyBForceCloseState partyBState;
+	/// @notice Whether a 3-step force close workflow is active for this quoteId.
 	bool inProgress;
 }
 
@@ -182,14 +187,15 @@ library AccountStorage {
 		///                     or overridden via resolveLiquidationDispute)
 		///      cva = CVA held for this PartyB, pending = settlement in progress.
 		///      Cleared after liquidation completes via settlePartyALiquidation.
-		mapping(address => mapping(address => SettlementState)) settlementStates;
+		mapping(address => mapping(address => LiquidationSettlementState)) settlementStates;
 		/// @notice PartyB's reserve funds for covering force close scenarios
 		/// @dev Extra collateral PartyB deposits as a safety buffer. Used during force close
 		///      if their allocated balance is insufficient. Not used in cross mode.
 		mapping(address => uint256) reserveVault;
 		/// @notice List of PartyBs that PartyA has open positions with
-		/// @dev Maintained for efficient iteration when calculating PartyA UPNL across
-		///      all their hedgers. Added when first position opens, removed when last closes.
+		/// @dev Used for symbol access control - PartyA can only trade symbols that ALL connected
+		///      PartyBs support (not blacklisted and whitelisted). Also enforces maxPartyAConnectionLimit.
+		///      Added when first position opens with a PartyB, removed when last position closes.
 		mapping(address => address[]) connectedPartyBs;
 		/// @notice Fast lookup for whether PartyA has positions with a specific PartyB
 		/// @dev O(1) check instead of iterating connectedPartyBs array.

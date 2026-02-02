@@ -111,8 +111,7 @@ library LibQuoteParams {
 				uint256 partyAmm,
 				,
 				,
-				,
-				,
+				address affiliate,
 				ISymmio.SingleUpnlAndPriceSig memory sig,
 
 			) = abi.decode(
@@ -129,13 +128,12 @@ library LibQuoteParams {
 						uint256,
 						uint256,
 						uint256,
-						uint256,
 						address,
 						ISymmio.SingleUpnlAndPriceSig,
 						bytes
 					)
 				);
-			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, affiliate);
 		}
 		revert IAccountLayerErrors.InvalidSelector();
 	}

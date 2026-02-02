@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { MAStorage } from "../storages/MAStorage.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 
 /**
  * @title LibSafeERC20
@@ -23,16 +23,16 @@ library LibSafeERC20 {
 	 * @param amount The amount to transfer
 	 */
 	function safeTransfer(address token, address to, uint256 amount) internal {
-		MAStorage.Layout storage maLayout = MAStorage.layout();
+		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
 
 		// Save and clear signer before external call
-		address previousSigner = maLayout.signer;
-		maLayout.signer = address(0);
+		address previousSigner = globalLayout.signer;
+		globalLayout.signer = address(0);
 
 		IERC20(token).safeTransfer(to, amount);
 
 		// Restore signer after external call
-		maLayout.signer = previousSigner;
+		globalLayout.signer = previousSigner;
 	}
 
 	/**
@@ -43,15 +43,15 @@ library LibSafeERC20 {
 	 * @param amount The amount to transfer
 	 */
 	function safeTransferFrom(address token, address from, address to, uint256 amount) internal {
-		MAStorage.Layout storage maLayout = MAStorage.layout();
+		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
 
 		// Save and clear signer before external call
-		address previousSigner = maLayout.signer;
-		maLayout.signer = address(0);
+		address previousSigner = globalLayout.signer;
+		globalLayout.signer = address(0);
 
 		IERC20(token).safeTransferFrom(from, to, amount);
 
 		// Restore signer after external call
-		maLayout.signer = previousSigner;
+		globalLayout.signer = previousSigner;
 	}
 }

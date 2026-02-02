@@ -75,7 +75,9 @@ library BindingFacetImpl {
 
 	function proposeToDeactivateInstantActionMode() internal {
 		TradingModeStorage.Layout storage layout = TradingModeStorage.layout();
-		layout.instantActionsModeDeactivateTime[LibSigner.getSigner()] = block.timestamp + layout.deactiveInstantActionModeCooldown;
+		address signer = LibSigner.getSigner();
+		require(layout.instantActionsMode[signer],"AccountFacet: Instant Mode Not Active");
+		layout.instantActionsModeDeactivateTime[signer] = block.timestamp + layout.deactiveInstantActionModeCooldown;
 	}
 
 	function deactivateInstantActionMode() internal {

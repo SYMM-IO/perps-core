@@ -59,7 +59,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
-		delete afLayout.affiliates[affiliate];
+		_clearAffiliateData(afLayout, affiliate);
 		emit RegistrationCancelled(affiliate);
 	}
 
@@ -67,7 +67,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
-		delete afLayout.affiliates[affiliate];
+		_clearAffiliateData(afLayout, affiliate);
 		emit RegistrationRejected(affiliate, msg.sender);
 	}
 
@@ -269,6 +269,25 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	}
 
 	// ==================== Internal Functions ====================
+
+	/// @dev Properly clears AffiliateData including nested EnumerableSet before deletion.
+	///      Mappings inside structs are not cleared by `delete`, so we must explicitly
+	///      remove all elements from the EnumerableSet to prevent stale data.
+	function _clearAffiliateData(AffiliateHubStorage.Layout storage afLayout, address affiliate) private {
+		AffiliateData storage data = afLayout.affiliates[affiliate];
+
+		// Clear the EnumerableSet (contains internal mappings that `delete` won't clear)
+		uint256 length = data.symmioCores.length();
+		for (uint256 i = length; i > 0; i--) {
+			data.symmioCores.remove(data.symmioCores.at(i - 1));
+		}
+
+		// Clear the stakeholders array
+		delete data.feeDetails.stakeholders;
+
+		// Now delete the struct (clears all non-mapping fields)
+		delete afLayout.affiliates[affiliate];
+	}
 
 	function _validateFeeShares(Stakeholder[] memory stakeholders, uint256 symmioShare) private pure {
 		if (symmioShare > SHARE_PRECISION) revert InvalidShare();

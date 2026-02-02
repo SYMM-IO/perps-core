@@ -172,7 +172,7 @@ export function shouldBehaveLikeSendQuote(): void {
 	it("should send quote with correct custom affiliate fee", async function () {
 		await context.controlFacet.registerAffiliate(context.signers.hedger)
 		await context.controlFacet.setAffiliateFee(context.signers.hedger.address, [1], [18], [18])
-		await context.controlFacet.setCustomAffiliateFee(
+		await context.controlFacet.setAffiliateFeeForUser(
 			context.signers.hedger.address,
 			[context.signers.user.address],
 			[1],
@@ -183,6 +183,85 @@ export function shouldBehaveLikeSendQuote(): void {
 		const before = await validator.before(context, { user: user })
 		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
 		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
+	})
+
+	it("should use user-specific default fee (symbolId 0) when no symbol-specific user fee is set", async function () {
+		// Fee resolution order:
+		// 1. affiliateFeeForUser[affiliate][user][symbolId]
+		// 2. affiliateFeeForUser[affiliate][user][0] <-- testing this fallback
+		// 3. affiliateFee[affiliate][symbolId]
+		// 4. affiliateFee[affiliate][0]
+		// 5. symbols[symbolId].tradingFee
+
+		const userDefaultFee = BigInt(15e15) // 1.5%
+		const affiliateSymbolFee = BigInt(20e15) // 2%
+
+		const hedgerAddress = await context.signers.hedger.getAddress()
+		const userAddress = await user.getAddress()
+
+		await context.controlFacet.registerAffiliate(context.signers.hedger)
+		// Set affiliate's symbol-specific fee (should be overridden by user's default)
+		await context.controlFacet.setAffiliateFee(hedgerAddress, [1], [affiliateSymbolFee], [affiliateSymbolFee])
+		// Set user's default fee with symbolId 0 (should take precedence)
+		await context.controlFacet.setAffiliateFeeForUser(
+			hedgerAddress,
+			[userAddress],
+			[0], // symbolId 0 = default for user
+			[userDefaultFee],
+			[userDefaultFee],
+		)
+
+		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(hedgerAddress).build())
+		const quote = await context.viewFacetQuote.getQuote(qId)
+
+		// Verify the user's default fee was used, not the affiliate's symbol fee
+		expect(quote.tradingFee).to.equal(userDefaultFee)
+		expect(quote.closeFee).to.equal(userDefaultFee)
+	})
+
+	it("should prioritize user symbol-specific fee over user default fee", async function () {
+		const userDefaultFee = BigInt(15e15) // 1.5%
+		const userSymbolFee = BigInt(12e15) // 1.2%
+
+		await context.controlFacet.registerAffiliate(context.signers.hedger)
+		// Set user's default fee with symbolId 0
+		await context.controlFacet.setAffiliateFeeForUser(
+			context.signers.hedger.address,
+			[context.signers.user.address],
+			[0], // symbolId 0 = default
+			[userDefaultFee],
+			[userDefaultFee],
+		)
+		// Set user's symbol-specific fee (should take precedence over default)
+		await context.controlFacet.setAffiliateFeeForUser(
+			context.signers.hedger.address,
+			[context.signers.user.address],
+			[1], // symbolId 1 = specific
+			[userSymbolFee],
+			[userSymbolFee],
+		)
+
+		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
+		const quote = await context.viewFacetQuote.getQuote(qId)
+
+		// Verify the user's symbol-specific fee was used, not the default
+		expect(quote.tradingFee).to.equal(userSymbolFee)
+		expect(quote.closeFee).to.equal(userSymbolFee)
+	})
+
+	it("should fall back to affiliate default fee (symbolId 0) when no user fee is set", async function () {
+		const affiliateDefaultFee = BigInt(18e15) // 1.8%
+
+		await context.controlFacet.registerAffiliate(context.signers.hedger)
+		// Set affiliate's default fee with symbolId 0
+		await context.controlFacet.setAffiliateFee(context.signers.hedger.address, [0], [affiliateDefaultFee], [affiliateDefaultFee])
+
+		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
+		const quote = await context.viewFacetQuote.getQuote(qId)
+
+		// Verify the affiliate's default fee was used
+		expect(quote.tradingFee).to.equal(affiliateDefaultFee)
+		expect(quote.closeFee).to.equal(affiliateDefaultFee)
 	})
 
 	it("Should decode new SendQuote event paramsData correctly using abi.decode", async function () {

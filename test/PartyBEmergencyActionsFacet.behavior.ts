@@ -48,7 +48,7 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 			const collateral = await context.viewFacet.getCollateral()
 			await context.collateral.connect(hedger.signer).mint(await hedger.getAddress(), decimal(2000n))
 			await context.collateral.connect(hedger.signer).approve(context.diamond, ethers.MaxUint256)
-			await context.assuranceFacet.connect(hedger.signer).depositAssuranceCollateral(collateral, decimal(1000n))
+			await context.pledgeFacet.connect(hedger.signer).depositPledge(collateral, decimal(1000n))
 			await context.controlFacet.connect(context.signers.admin).setADLEnabled(await hedger.getAddress(), true)
 		})
 

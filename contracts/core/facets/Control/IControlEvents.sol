@@ -25,7 +25,7 @@ interface IControlEvents {
 		uint256 fundingRateWindowTime
 	);
 	event SetFeeCollector(address affiliate, address oldFeeCollector, address newFeeCollector);
-	event SetCustomAffiliateFee(
+	event SetAffiliateFeeForUser(
 		address affiliate,
 		address user,
 		uint256 symbolId,
@@ -120,6 +120,7 @@ interface IControlEvents {
 	event UnregisterExpressProvider(address provider);
 	event SetSpeedUpUser(address user, bool speedUp);
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
+	event SetPureVirtualCancelBlackout(uint256 oldBlackout, uint256 newBlackout);
 	event LegacyWithdrawalDeprecated();
 	event SignerSet(address signer);
 	event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);

@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { LiquidationDetail, SettlementState } from "../../storages/AccountStorage.sol";
+import { LiquidationDetail, LiquidationSettlementState } from "../../storages/AccountStorage.sol";
 import { CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
 import { BindState } from "../../storages/TradingModeStorage.sol";
 import { VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
@@ -62,7 +62,7 @@ interface IViewFacet {
 
 	function getInvalidBridgedAmountsPool() external view returns (address);
 
-	function getSettlementStates(address partyA, address[] memory partyBs) external view returns (SettlementState[] memory);
+	function getSettlementStates(address partyA, address[] memory partyBs) external view returns (LiquidationSettlementState[] memory);
 
 	// Role
 	function hasRole(address user, bytes32 role) external view returns (bool);
@@ -179,7 +179,7 @@ interface IViewFacet {
 
 	function getWithdrawLockedBalance() external view returns (uint256);
 
-	function getCustomAffiliateFee(address affiliate, address user, uint256 symbolId) external view returns (Fee memory);
+	function getAffiliateFeeForUser(address affiliate, address user, uint256 symbolId) external view returns (Fee memory);
 
 	function getMinAffiliateFee() external view returns (uint256);
 

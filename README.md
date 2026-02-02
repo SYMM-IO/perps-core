@@ -12,7 +12,7 @@ and modularity. Currently, we have 29 facets:
 1. **DiamondCutFacet** - Diamond upgrade operations (EIP-2535)
 2. **DiamondLoupeFacet** - Diamond introspection (EIP-2535)
 3. **AccountFacet** - Account management operations
-4. **AssuranceFacet** - Assurance collateral management
+4. **PledgeFacet** - Pledge collateral management
 5. **BindingFacet** - PartyA-PartyB binding operations
 6. **BridgeFacet** - Fast withdrawals
 7. **ClearingHouseFacet** - Clearing house functionality

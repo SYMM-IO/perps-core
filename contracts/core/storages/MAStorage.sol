@@ -128,14 +128,14 @@ library MAStorage {
 		///      and affiliate branding information.
 		mapping(address => EntityMetadata) entitiesMetadata;
 		/// @notice Maximum number of PartyBs a PartyA can have open positions with
-		/// @dev Limits complexity of PartyA UPNL calculations. If at limit, must close
-		///      positions with one PartyB before opening with another.
+		/// @dev When checking if a symbol is allowed for PartyA, we loop through all connected
+		///      PartyBs to verify none have blacklisted it. This limit bounds that loop's gas cost.
+		///      If at limit, must close positions with one PartyB before opening with another.
 		uint256 maxPartyAConnectionLimit;
-		/// @notice Current signer for meta-transaction/proxy pattern
-		/// @dev When a proxy calls on behalf of a user, this is set to the actual user.
-		///      LibSigner.getSigner() returns this if set, otherwise msg.sender.
-		///      Used to support gasless transactions and account abstraction.
-		address signer;
+		/// @notice Whether a PartyB can use auto-deleveraging to close positions unilaterally
+		/// @dev When enabled, PartyB can call adlClose() to close positions at a specified price
+		///      without PartyA consent. Used for risk management. Enabled by PARTY_B_MANAGER_ROLE.
+		mapping(address => bool) adlEnabled;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

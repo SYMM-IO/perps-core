@@ -3,7 +3,7 @@ export const FacetNames = [
 	"PartyBAccountFacet",
 	"ExternalTransferFacet",
 	"BindingFacet",
-	"AssuranceFacet",
+	"PledgeFacet",
 	"MigrationFacet",
 	"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
 	"SymbolControlFacet",
