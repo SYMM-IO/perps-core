@@ -1009,6 +1009,66 @@ export function shouldBehaveLikeInstantLayer(): void {
 				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
 			})
 
+			it("executes sendQuoteWithAffiliateAndData successfully", async function () {
+				// This test verifies sendQuoteWithAffiliateAndData has the correct selector (0xa7f3b34b)
+				// and can be executed via InstantLayer
+
+				// Encode sendQuoteWithAffiliateAndData call data (note: no maxFundingRate, but has data param)
+				const quoteWithDataCallData = ctx.context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliateAndData", [
+					execCtx.requestSendQuote.partyBWhiteList,
+					execCtx.requestSendQuote.symbolId,
+					execCtx.requestSendQuote.positionType,
+					execCtx.requestSendQuote.orderType,
+					execCtx.requestSendQuote.price,
+					execCtx.requestSendQuote.quantity,
+					execCtx.requestSendQuote.cva,
+					execCtx.requestSendQuote.lf,
+					execCtx.requestSendQuote.partyAmm,
+					execCtx.requestSendQuote.partyBmm,
+					await execCtx.requestSendQuote.deadline,
+					execCtx.requestSendQuote.affiliate,
+					await execCtx.requestSendQuote.upnlSig,
+					"0xdeadbeef", // arbitrary data bytes
+				])
+
+				// Verify the selector is correct (0xa7f3b34b)
+				expect(quoteWithDataCallData.slice(0, 10)).to.equal("0xa7f3b34b")
+
+				// Grant delegation for sendQuoteWithAffiliateAndData selector
+				const selectorQuoteWithData = quoteWithDataCallData.slice(0, 10) as `0x${string}`
+				await ctx.context.instantLayer.connect(ctx.partyA1.signer).grantDelegation({
+					account: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					delegatedSigner: ctx.context.signers.admin.address,
+					selectors: [selectorQuoteWithData],
+					expiryTimestamp: await getBlockTimestamp(DEFAULT_EXPIRY_OFFSET),
+				})
+
+				const op = createSignedOperation(
+					execCtx.context.signers.admin.address,
+					execCtx.symmioAddress,
+					quoteWithDataCallData,
+					{ addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					1n,
+					execCtx.deadline,
+				)
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+
+				// Verify all decoded parameters are correct
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+				// Verify LibQuoteParams.decodeQuoteParams decoded these correctly:
+				expect(quote.symbolId).to.equal(execCtx.requestSendQuote.symbolId)
+				expect(quote.positionType).to.equal(execCtx.requestSendQuote.positionType)
+				expect(quote.orderType).to.equal(execCtx.requestSendQuote.orderType)
+				expect(quote.requestedOpenPrice).to.equal(execCtx.requestSendQuote.price)
+				expect(quote.quantity).to.equal(execCtx.requestSendQuote.quantity)
+				expect(quote.lockedValues.cva).to.equal(execCtx.requestSendQuote.cva)
+				expect(quote.lockedValues.lf).to.equal(execCtx.requestSendQuote.lf)
+				expect(quote.lockedValues.partyAmm).to.equal(execCtx.requestSendQuote.partyAmm)
+			})
+
 			it("executes multiple operations in batch", async function () {
 				const op1 = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
 				const op2 = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.partyA1.address, 2n, execCtx.deadline)
@@ -2121,6 +2181,85 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			const quoteIds = await ctx.context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 			expect(quoteIds.length).to.equal(2)
+		})
+
+			it("decodes sendQuoteWithAffiliateAndData params correctly via _handleSubAccountSendQuote", async function () {
+			// This test verifies LibQuoteParams.decodeQuoteParams correctly decodes sendQuoteWithAffiliateAndData
+			// by going through the SubAccount flow: _call -> selector match -> decodeQuoteParams -> _handleSubAccountSendQuote
+
+			// Create a NEW SubAccount with POSITION isolation (each quote gets its own VA)
+			const subAccountData = [
+				{
+					name: "sendQuoteWithDataTest",
+					metadata: ethers.keccak256(toUtf8Bytes("positionIsolation")),
+					symmioCore: ctx.context.diamond,
+					isolationType: 2, // POSITION isolation - each quote creates a new VA
+					singleVAMode: false,
+				},
+			]
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), subAccountData)
+			const subAccounts = await ctx.context.alViewFacet.getUserSubAccountsAddresses(ctx.partyA1.address, 0, 100)
+			const newSubAccountAddress = subAccounts[subAccounts.length - 1] // Get the newly created one
+
+			// Fund the sub-account
+			await ctx.context.collateral.connect(ctx.partyA1.signer).mint(newSubAccountAddress, decimal(5000n))
+			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, ethers.MaxUint256)
+			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositFor(newSubAccountAddress, decimal(3000n))
+
+			// Bind to PartyB
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer)._call(newSubAccountAddress, [ctx.bindToPartyBCallData])
+
+			// Encode sendQuoteWithAffiliateAndData call data
+			const quoteWithDataCallData = ctx.context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliateAndData", [
+				ctx.requestSendQuote.partyBWhiteList,
+				ctx.requestSendQuote.symbolId,
+				ctx.requestSendQuote.positionType,
+				ctx.requestSendQuote.orderType,
+				ctx.requestSendQuote.price,
+				ctx.requestSendQuote.quantity,
+				ctx.requestSendQuote.cva,
+				ctx.requestSendQuote.lf,
+				ctx.requestSendQuote.partyAmm,
+				ctx.requestSendQuote.partyBmm,
+				await ctx.requestSendQuote.deadline,
+				ctx.requestSendQuote.affiliate,
+				await ctx.requestSendQuote.upnlSig,
+				"0xdeadbeef", // arbitrary data bytes
+			])
+
+			// Verify the selector is correct (0xa7f3b34b)
+			expect(quoteWithDataCallData.slice(0, 10)).to.equal("0xa7f3b34b")
+
+			// Pre-fund the predicted VirtualAccount (POSITION isolation uses symbolId for VA prediction)
+			const predictedVA = await ctx.context.alViewFacet.predictNextVirtualAccountAddress(newSubAccountAddress, 2, ctx.requestSendQuote.symbolId)
+			await ctx.context.collateral.connect(ctx.partyA1.signer).mint(ctx.partyA1.address, decimal(1000n))
+			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, decimal(1000n))
+			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositAndAllocateFor(predictedVA, decimal(1000n))
+
+			// Execute sendQuoteWithAffiliateAndData via SubAccount._call
+			// This goes through: CoreFacet._call -> selector match -> LibQuoteParams.decodeQuoteParams -> _handleSubAccountSendQuote
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer)._call(newSubAccountAddress, [quoteWithDataCallData])
+
+			// Verify a VirtualAccount was created
+			const virtualAccounts = await ctx.context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(newSubAccountAddress, 0, 10)
+			expect(virtualAccounts.length).to.equal(1)
+			expect(virtualAccounts[0]).to.equal(predictedVA)
+
+			// Verify the quote was created with correct parameters (proves decodeQuoteParams worked correctly)
+			const quoteIds = await ctx.context.alViewFacet.getVirtualAccountQuoteIds(virtualAccounts[0], 0, 10)
+			expect(quoteIds.length).to.equal(1)
+
+			const quote = await ctx.context.viewFacetQuote.getQuote(quoteIds[0])
+			expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+			// These verify LibQuoteParams.decodeQuoteParams decoded each field correctly:
+			expect(quote.symbolId).to.equal(ctx.requestSendQuote.symbolId)
+			expect(quote.positionType).to.equal(ctx.requestSendQuote.positionType)
+			expect(quote.orderType).to.equal(ctx.requestSendQuote.orderType)
+			expect(quote.requestedOpenPrice).to.equal(ctx.requestSendQuote.price)
+			expect(quote.quantity).to.equal(ctx.requestSendQuote.quantity)
+			expect(quote.lockedValues.cva).to.equal(ctx.requestSendQuote.cva)
+			expect(quote.lockedValues.lf).to.equal(ctx.requestSendQuote.lf)
+			expect(quote.lockedValues.partyAmm).to.equal(ctx.requestSendQuote.partyAmm)
 		})
 
 		it("rejects operation when delegate lacks parent's delegation", async function () {
