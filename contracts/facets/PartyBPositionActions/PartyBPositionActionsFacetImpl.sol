@@ -135,7 +135,6 @@ library PartyBPositionActionsFacetImpl {
 		address signer = msg.sender;
 
 		require(quote.partyB == signer, "PartyBFacet: Sender isn't partyB of quote");
-		require(maLayout.adlEnabled[signer], "PartyBFacet: ADL disabled");
 		require(!maLayout.partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
 		require(!maLayout.liquidationStatus[quote.partyA], "PartyAFacet: PartyA is in liquidation process");
 

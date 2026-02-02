@@ -31,7 +31,6 @@ library MAStorage {
 		mapping(address => bool) affiliateStatus;
 		uint256 settlementCooldown;
 		mapping(address => mapping(address => mapping(address => uint256))) lastUpnlSettlementTimestamp; // subject partyB => object partyB => partyA => timestamp
-		mapping(address => bool) adlEnabled;
 		}
 
 	function layout() internal pure returns (Layout storage l) {

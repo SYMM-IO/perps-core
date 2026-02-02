@@ -21,7 +21,6 @@ async function deployAndFundSymmioPartyB(context: RunContext): Promise<SymmioPar
 	await symmioPartyB.waitForDeployment()
 
 	await context.controlFacet.connect(context.signers.admin).registerPartyB(await symmioPartyB.getAddress())
-	await context.controlFacet.connect(context.signers.admin).setADLEnabled(await symmioPartyB.getAddress(), true)
 
 	await context.collateral.connect(context.signers.admin).mint(await symmioPartyB.getAddress(), decimal(1000000n))
 	await symmioPartyB.connect(context.signers.hedger)._approve(await context.collateral.getAddress(), decimal(10000n))
