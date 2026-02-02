@@ -1099,7 +1099,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			);
 		});
 
-		it("Should fail to cancel pure virtual within cancel window", async function() {
+		it("Should fail to cancel pure virtual during blackout period", async function() {
 			await virtualProvider.virtualDepositFor(
 				context.diamond,
 				user.address,
@@ -1119,14 +1119,14 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await context.controlFacet
 				.connect(context.signers.admin)
-				.setPureVirtualWithdrawCancelWindow(5);
+				.setPureVirtualCancelBlackout(5);
 			await time.increase(8);
 
 			await expect(
 				context.withdrawFacet
 					.connect(context.signers.user)
 					.requestCancelWithdraw(1)
-			).to.revertedWith("WithdrawFacet : Cancel window passed");
+			).to.revertedWith("WithdrawFacet : Cancel blackout active");
 		});
 
 		it("Should force cancel withdraw before cooldown", async function() {

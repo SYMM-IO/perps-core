@@ -244,9 +244,9 @@ library WithdrawFacetImpl {
 		);
 
 		if (withdrawRequest.isPureVirtual) {
-			uint256 cancelWindow = withdrawLayout.pureVirtualWithdrawCancelWindow;
-			if (cancelWindow > 0) {
-				require(block.timestamp + cancelWindow < withdrawRequest.cooldownEndTime, "WithdrawFacet : Cancel window passed");
+			uint256 blackout = withdrawLayout.pureVirtualCancelBlackout;
+			if (blackout > 0) {
+				require(block.timestamp + blackout < withdrawRequest.cooldownEndTime, "WithdrawFacet : Cancel blackout active");
 			}
 		}
 
@@ -284,7 +284,7 @@ library WithdrawFacetImpl {
 			if (withdrawRequest.isPureVirtual) {
 				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onForceWithdrawCancel, (withdrawRequest)));
 			} else {
-				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onWithdrawCancelRequest, (withdrawRequest)));
+				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onForceWithdrawCancel, (withdrawRequest)));
 			}
 		}
 	}
