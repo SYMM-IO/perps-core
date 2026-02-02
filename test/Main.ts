@@ -9,6 +9,7 @@ import { shouldBehaveLikeOpenPosition } from "./OpenPosition.behavior"
 import { shouldBehaveLikeCancelQuote } from "./CancelQuote.behavior"
 import { shouldBehaveLikeClosePosition } from "./ClosePosition.behavior"
 import { shouldBehaveLikeEmergencyClosePosition } from "./EmergencyClosePosition.behavior"
+import { shouldBehaveLikeADLClose } from "./ADLClose.behavior"
 import { shouldBehaveLikeForceClosePosition } from "./ForceClosePosition.behavior"
 import { shouldBehaveLikeLiquidationFacet } from "./LiquidationFacet.behavior"
 import { shouldBehaveLikeFundingRate } from "./FundingRate.behavior"
@@ -20,11 +21,13 @@ import { shouldBehaveLikeSettlement } from "./Settlement.behavior"
 import { TestMode } from "../hardhat.config"
 import { shouldBehaveLikePreUpgradeTest } from "./PreUpgrade.behavior"
 
-describe("UnitTests", function () {
-	if (process.env.TEST_MODE == TestMode.STATIC) {
-		describe("Diamond", async function () {
-			shouldBehaveLikeDiamond()
-		})
+	describe("UnitTests", function () {
+		const testMode = (process.env.TEST_MODE || TestMode.STATIC).toUpperCase()
+
+		if (testMode == TestMode.STATIC) {
+			describe("Diamond", async function () {
+				shouldBehaveLikeDiamond()
+			})
 
 		describe("AccountFacet", async function () {
 			shouldBehaveLikeAccountFacet()
@@ -54,6 +57,10 @@ describe("UnitTests", function () {
 			shouldBehaveLikeEmergencyClosePosition()
 		})
 
+		describe("ADLClose", async function () {
+			shouldBehaveLikeADLClose()
+		})
+
 		describe("ForceClosePosition", async function () {
 			shouldBehaveLikeForceClosePosition()
 		})
@@ -66,9 +73,9 @@ describe("UnitTests", function () {
 			shouldBehaveLikeLiquidationFacet()
 		})
 
-		describe.only("FundingRate", async function () {
-			shouldBehaveLikeFundingRate()
-		})
+			describe("FundingRate", async function () {
+				shouldBehaveLikeFundingRate()
+			})
 
 		describe("SpecificScenario", async function () {
 			shouldBehaveLikeSpecificScenario()
@@ -93,15 +100,15 @@ describe("UnitTests", function () {
 		describe("FeeDistributor", async function () {
 			shouldBehaveLikeFeeDistributor()
 		})
-	} else if (process.env.TEST_MODE == TestMode.FUZZ) {
-		describe("Fuzz Test", async function () {
-			shouldBehaveLikeFuzzTest()
-		})
-	} else if (process.env.TEST_MODE == TestMode.PRE_UPGRADE) {
-		describe("Pre Upgrade Test", async function () {
-			shouldBehaveLikePreUpgradeTest()
-		})
-	} else {
+		} else if (testMode == TestMode.FUZZ) {
+			describe("Fuzz Test", async function () {
+				shouldBehaveLikeFuzzTest()
+			})
+		} else if (testMode == TestMode.PRE_UPGRADE) {
+			describe("Pre Upgrade Test", async function () {
+				shouldBehaveLikePreUpgradeTest()
+			})
+		} else {
 		throw new Error("Invalid TEST_MODE env property")
 	}
 })
