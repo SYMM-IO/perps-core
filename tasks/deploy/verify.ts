@@ -407,17 +407,17 @@ interface VerificationResult {
 }
 
 const EXPECTED_CORE_FACETS = 29
-const EXPECTED_AL_FACETS = 6
+const EXPECTED_AL_FACETS = 8
 
 async function verifySystemParameters(ethers: any, diamondAddress: string, results: VerificationResult[]) {
 	const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamondAddress)
 
 	const checks = [
 		{ name: "Balance limit per user", fn: () => view.getBalanceLimitPerUser(), minValue: BigInt(0) },
-		{ name: "Deallocate cooldown", fn: () => view.getDeallocateCooldown(), minValue: BigInt(0) },
-		{ name: "Liquidator share", fn: () => view.getLiquidatorShare(), minValue: BigInt(0) },
-		{ name: "Liquidation timeout", fn: () => view.getLiquidationTimeout(), minValue: BigInt(0) },
-		{ name: "Pending quotes valid length", fn: () => view.getPendingQuotesValidLength(), minValue: BigInt(0) },
+		{ name: "Deallocate debounce time", fn: () => view.getDeallocateDebounceTime(), minValue: BigInt(0) },
+		{ name: "Liquidator share", fn: () => view.liquidatorShare(), minValue: BigInt(0) },
+		{ name: "Liquidation timeout", fn: () => view.liquidationTimeout(), minValue: BigInt(0) },
+		{ name: "Pending quotes valid length", fn: () => view.pendingQuotesValidLength(), minValue: BigInt(0) },
 	]
 
 	for (const check of checks) {
@@ -930,7 +930,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 
 					// Check Diamond whitelisted
 					try {
-						const isWhitelisted = await instantLayer.targetWhitelist(addresses.diamond)
+						const isWhitelisted = await instantLayer.whitelistedTargets(addresses.diamond)
 						if (isWhitelisted) {
 							results.push({
 								category: "InstantLayer",
@@ -956,43 +956,65 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 						console.log(`   [FAIL] Could not check whitelist: ${e.message}`)
 					}
 
-					// Check templates
+					// Check templates (templates are indexed by uint256, not string)
 					try {
-						const openTemplate = await instantLayer.templates("OpenPosition")
-						const closeTemplate = await instantLayer.templates("ClosePosition")
+						const nextTemplateId = await instantLayer.nextTemplateId()
+						const templateCount = Number(nextTemplateId)
 
-						if (openTemplate.length > 0) {
-							results.push({
-								category: "InstantLayer",
-								check: "OpenPosition template",
-								status: "pass",
-								actual: `${openTemplate.length} operations`,
-							})
-							console.log(`   [PASS] OpenPosition template: ${openTemplate.length} operations`)
+						if (templateCount > 0) {
+							// Get all templates and check for OpenPosition and ClosePosition by name
+							const templateNames: string[] = []
+							for (let i = 0; i < templateCount; i++) {
+								const template = await instantLayer.getTemplate(i)
+								templateNames.push(template.name)
+							}
+
+							const hasOpenPosition = templateNames.includes("OpenPosition")
+							const hasClosePosition = templateNames.includes("ClosePosition")
+
+							if (hasOpenPosition) {
+								results.push({
+									category: "InstantLayer",
+									check: "OpenPosition template",
+									status: "pass",
+									actual: "configured",
+								})
+								console.log("   [PASS] OpenPosition template configured")
+							} else {
+								results.push({
+									category: "InstantLayer",
+									check: "OpenPosition template",
+									status: "fail",
+								})
+								console.log("   [FAIL] OpenPosition template not found")
+							}
+
+							if (hasClosePosition) {
+								results.push({
+									category: "InstantLayer",
+									check: "ClosePosition template",
+									status: "pass",
+									actual: "configured",
+								})
+								console.log("   [PASS] ClosePosition template configured")
+							} else {
+								results.push({
+									category: "InstantLayer",
+									check: "ClosePosition template",
+									status: "fail",
+								})
+								console.log("   [FAIL] ClosePosition template not found")
+							}
+
+							console.log(`   [INFO] Total templates: ${templateCount} (${templateNames.join(", ")})`)
 						} else {
 							results.push({
 								category: "InstantLayer",
-								check: "OpenPosition template",
+								check: "Templates",
 								status: "fail",
+								message: "No templates configured",
 							})
-							console.log("   [FAIL] OpenPosition template not set")
-						}
-
-						if (closeTemplate.length > 0) {
-							results.push({
-								category: "InstantLayer",
-								check: "ClosePosition template",
-								status: "pass",
-								actual: `${closeTemplate.length} operations`,
-							})
-							console.log(`   [PASS] ClosePosition template: ${closeTemplate.length} operations`)
-						} else {
-							results.push({
-								category: "InstantLayer",
-								check: "ClosePosition template",
-								status: "fail",
-							})
-							console.log("   [FAIL] ClosePosition template not set")
+							console.log("   [FAIL] No templates configured")
 						}
 					} catch (e: any) {
 						results.push({
