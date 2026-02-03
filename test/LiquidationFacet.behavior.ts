@@ -166,6 +166,16 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	}
 
 	describe("Liquidate PartyA", async function () {
+		it("Should fail on partyA having no open positions", async function () {
+			// liquidator has no open positions - liquidation should fail even with negative upnl signature
+			await expect(
+				context.partyALiquidationFacet.liquidatePartyA(
+					context.signers.liquidator.getAddress(),
+					await getDummyLiquidationSig("0x10", decimal(-1000n), [], [], decimal(-1000n), 0n),
+				),
+			).to.be.revertedWith("LiquidationFacet: PartyA has no open positions")
+		})
+
 		it("Should fail on partyA being solvent", async function () {
 			// With UPNL=0 and no loss, user is solvent - liquidation should fail
 			await expect(

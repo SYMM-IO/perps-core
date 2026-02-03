@@ -470,10 +470,18 @@ export function shouldBehaveLikeMigration(): void {
 				const partyA = await user.getAddress()
 				const partyB = await hedger.getAddress()
 
-				// Send quote and lock (creates pending locked values)
+				// First open a position (required for liquidation)
 				await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([partyB]).build())
-				const quoteId = await context.viewFacetQuote.getNextQuoteId()
-				await hedger.lockQuote(quoteId)
+				const openedQuoteId = await context.viewFacetQuote.getNextQuoteId()
+				await hedger.lockQuote(openedQuoteId)
+				const openedQuote = await context.viewFacetQuote.getQuote(openedQuoteId)
+				const upnlSig = await getDummyPairUpnlAndPricesSig([openedQuote.requestedOpenPrice], [1n])
+				await context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([openedQuoteId], [decimal(100n)], [openedQuote.requestedOpenPrice], upnlSig)
+
+				// Send another quote and lock (creates pending locked values)
+				await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([partyB]).build())
+				const pendingQuoteId = await context.viewFacetQuote.getNextQuoteId()
+				await hedger.lockQuote(pendingQuoteId)
 
 				// Verify pending locked values exist in cross bucket
 				const crossBalanceBefore = await hedger.getBalanceInfoCrossPartyB()

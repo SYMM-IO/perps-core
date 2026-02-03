@@ -27,6 +27,7 @@ library PartyALiquidationFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
+		require(QuoteStorage.layout().partyAPositionsCount[partyA] > 0, "LiquidationFacet: PartyA has no open positions");
 		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA);
 		require(block.timestamp <= liquidationSig.timestamp + MuonStorage.layout().upnlValidTime, "LiquidationFacet: Expired signature");
 		int256 availableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
