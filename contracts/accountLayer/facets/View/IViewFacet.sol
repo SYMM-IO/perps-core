@@ -96,4 +96,14 @@ interface IViewFacet {
 	function dryClaimAllFees(address affiliate, address symmio) external view returns (address[] memory holders, uint256[] memory shares);
 
 	function MAX_NAME_LENGTH() external view returns (uint256);
+
+	// ==================== Role Management ====================
+
+	function hasRole(address user, bytes32 role) external view returns (bool);
+
+	function isRoleAdmin(address user, bytes32 role) external view returns (bool);
+
+	// ==================== Pause Control ====================
+
+	function paused() external view returns (bool);
 }

@@ -28,17 +28,11 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 
 	function setRoleAdmin(address user, bytes32 role, bool status) external;
 
-	function hasRole(address user, bytes32 role) external view returns (bool);
-
-	function isRoleAdmin(address user, bytes32 role) external view returns (bool);
-
 	// ==================== Pause Control ====================
 
 	function pause() external;
 
 	function unpause() external;
-
-	function paused() external view returns (bool);
 
 	// ==================== AccountHub Configuration ====================
 
