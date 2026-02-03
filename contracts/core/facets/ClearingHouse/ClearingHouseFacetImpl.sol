@@ -109,8 +109,11 @@ library ClearingHouseFacetImpl {
 			}
 		}
 
-		// end cross liquidation
-		if (quoteLayout.partyBPositionsCount[partyB][address(0)] == 0) {
+		// NOTE: we are using partyBPendingLockedBalances to check for pendings. it can be zero even with pending quotes!
+		if (
+			quoteLayout.partyBPositionsCount[partyB][address(0)] == 0 &&
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0
+		) {
 			crossLiquidationDetail.inProgress = false;
 			crossLiquidationDetail.timestamp = 0;
 		}
@@ -188,8 +191,11 @@ library ClearingHouseFacetImpl {
 			}
 		}
 
-		// If no more positions left for partyB in cross partyB mode, clear locked balances and cross liquidation status
-		if (quoteLayout.partyBPositionsCount[partyB][address(0)] == 0) {
+		// NOTE: we are using partyBPendingLockedBalances to check for pendings. it can be zero even with pending quotes!
+		if (
+			quoteLayout.partyBPositionsCount[partyB][address(0)] == 0 &&
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0
+		) {
 			crossLiquidationDetail.inProgress = false;
 			crossLiquidationDetail.timestamp = 0;
 		}

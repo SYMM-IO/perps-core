@@ -399,6 +399,16 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					)
 			})
 
+			it("should keep cross liquidation active when positions remain after pending cleanup", async () => {
+				expect(await context.viewFacetQuote.partyBPositionsCount(context.signers.hedger, ZeroAddress)).to.be.greaterThan(0)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user])
+
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
+			})
+
 			it("should liquidate pending quotes successfully", async () => {
 				const oldUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
 				const pendingBefore = (await user.getBalanceInfo()).totalPendingLockedPartyA
@@ -508,6 +518,36 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				expect(quote1After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
 				expect(quote4After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
+			})
+
+			it("should keep cross liquidation active while pending quotes remain", async () => {
+				expect((await context.viewFacetQuote.getPartyBPendingQuotes(context.signers.hedger, context.signers.user)).length).to.be.greaterThan(0)
+
+				const priceSig = await getDummyPriceSig([1n, 4n], [decimal(1n), decimal(1n)])
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger, priceSig)
+
+				expect(await context.viewFacetQuote.partyBPositionsCount(context.signers.hedger, ZeroAddress)).to.equal(0)
+				expect((await context.viewFacetQuote.getPartyBPendingQuotes(context.signers.hedger, context.signers.user)).length).to.be.greaterThan(0)
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
+			})
+
+			it("should clear cross liquidation only after positions and pending are cleared", async () => {
+				const balancesBefore = await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger)
+				const pendingBefore = balancesBefore[5] + balancesBefore[6] + balancesBefore[7] + balancesBefore[8]
+				expect(pendingBefore).to.be.greaterThan(0)
+
+				const priceSig = await getDummyPriceSig([1n, 4n], [decimal(1n), decimal(1n)])
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger, priceSig)
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user])
+
+				const balancesAfter = await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger)
+				const pendingAfter = balancesAfter[5] + balancesAfter[6] + balancesAfter[7] + balancesAfter[8]
+				expect(pendingAfter).to.equal(0)
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(false)
 			})
 
 			it("should clear the Party A to B connection after the final position is cross-liquidated", async () => {
