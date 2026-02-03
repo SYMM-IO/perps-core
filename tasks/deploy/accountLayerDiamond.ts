@@ -22,6 +22,7 @@ const AccountLayerFacetNames = [
 	"ControlFacet",
 	"ViewFacet",
 	"AffiliateFacet",
+	"DiamondLoupeFacet",
 ]
 
 // Library dependencies for AccountLayer facets
@@ -193,15 +194,16 @@ export async function deployAccountLayerDiamond(
 			} else {
 				// Map facet names to their paths
 				const facetPathMap: Record<string, string> = {
-					CoreFacet: "Core",
-					MarginFacet: "Margin",
-					SymmioHookFacet: "SymmioHook",
-					ControlFacet: "Control",
-					ViewFacet: "View",
-					AffiliateFacet: "Affiliate",
+					CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
+					MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
+					SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
+					ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+					ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
+					AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
+					DiamondLoupeFacet: "DiamondLoupeFacet",
 				}
-				const path = facetPathMap[facetName]
-				FacetFactory = await ethers.getContractFactory(`contracts/accountLayer/facets/${path}/${facetName}.sol:${facetName}`)
+				const contractName = facetPathMap[facetName]
+				FacetFactory = await ethers.getContractFactory(contractName)
 			}
 
 			const facet = await FacetFactory.deploy()
@@ -220,16 +222,17 @@ export async function deployAccountLayerDiamond(
 		}
 
 		// Get facet contract for selectors
-		const facetPathMap: Record<string, string> = {
-			CoreFacet: "Core",
-			MarginFacet: "Margin",
-			SymmioHookFacet: "SymmioHook",
-			ControlFacet: "Control",
-			ViewFacet: "View",
-			AffiliateFacet: "Affiliate",
+		const facetContractMap: Record<string, string> = {
+			CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
+			MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
+			SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
+			ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+			ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
+			AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
+			DiamondLoupeFacet: "DiamondLoupeFacet",
 		}
-		const path = facetPathMap[facetName]
-		const facet = await ethers.getContractAt(`contracts/accountLayer/facets/${path}/${facetName}.sol:${facetName}`, facetAddress)
+		const contractName = facetContractMap[facetName]
+		const facet = await ethers.getContractAt(contractName, facetAddress)
 		cut.push({
 			facetAddress,
 			action: FacetCutAction.Add,
@@ -315,13 +318,15 @@ export async function deployAccountLayerDiamond(
 
 	// Write deployment log for verification
 	if (logData) {
-		const facetPathMap: Record<string, string> = {
-			CoreFacet: "Core",
-			MarginFacet: "Margin",
-			SymmioHookFacet: "SymmioHook",
-			ControlFacet: "Control",
-			ViewFacet: "View",
-			AffiliateFacet: "Affiliate",
+		// Map facet names to their full contract paths for verification
+		const facetVerificationMap: Record<string, string> = {
+			CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
+			MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
+			SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
+			ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+			ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
+			AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
+			DiamondLoupeFacet: "contracts/diamond/facets/DiamondLoup/DiamondLoupeFacet.sol:DiamondLoupeFacet",
 		}
 		writeData(ACCOUNTLAYER_DEPLOYMENT_FILE, [
 			{
@@ -345,7 +350,7 @@ export async function deployAccountLayerDiamond(
 				constructorArguments: [],
 			})),
 			...deployedFacets.map(facet => ({
-				name: `contracts/accountLayer/facets/${facetPathMap[facet.name] || facet.name.replace("Facet", "")}/${facet.name}.sol:${facet.name}`,
+				name: facetVerificationMap[facet.name] || `contracts/accountLayer/facets/${facet.name.replace("Facet", "")}/${facet.name}.sol:${facet.name}`,
 				address: facet.address,
 				constructorArguments: [],
 			})),
