@@ -27,7 +27,13 @@ export async function deploySymmioPartyB(hre: any, { symmioAddress, admin, logDa
 		proxy: await symmioPartyB.getAddress(),
 		...(await getUpgradeAddresses(upgrades, symmioPartyB)),
 	}
-	logger.debug("SymmioPartyB deployed to", addresses.proxy)
+	logger.deployed("SymmioPartyB (Proxy)", addresses.proxy)
+	if (addresses.implementation) {
+		logger.deployed("SymmioPartyB (Implementation)", addresses.implementation)
+	}
+	if (addresses.admin) {
+		logger.deployed("SymmioPartyB (Admin)", addresses.admin)
+	}
 
 	// Update the deployed addresses JSON file
 	if (logData) {

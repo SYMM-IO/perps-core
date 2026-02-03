@@ -2,7 +2,7 @@ import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers"
 import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers"
 import hardhatVerify from "@nomicfoundation/hardhat-verify"
 import { config as dotenvConfig } from "dotenv"
-import { defineConfig } from "hardhat/config"
+import { configVariable, defineConfig } from "hardhat/config"
 import { resolve } from "node:path"
 
 import { deployTasks } from "./tasks/deploy/index.js"
@@ -11,8 +11,8 @@ const dotenvConfigPath = process.env.DOTENV_CONFIG_PATH || "./.env"
 dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
 
 const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
-const privateKey = process.env.PRIVATE_KEY || DUMMY_PRIVATE_KEY
-const etherscanApiKey = process.env.ETHERSCAN_API_KEY || ""
+const privateKey = (configVariable("TEAM_DEPLOYER") as any) || DUMMY_PRIVATE_KEY
+const etherscanApiKey = (configVariable("ETHERSCAN_APIKEY") as any) || ""
 
 const createNetworkConfig = (url: string) =>
 	({

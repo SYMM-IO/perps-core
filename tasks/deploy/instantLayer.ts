@@ -67,6 +67,7 @@ async function deployInstantLayerContract(symmioAddress: string, admin: string, 
 	const instantLayer = await InstantLayerFactory.connect(deployer).deploy(symmioAddress, admin)
 	await instantLayer.waitForDeployment()
 	await instantLayer.deploymentTransaction()!.wait()
+	logger.deployed("InstantLayer", await instantLayer.getAddress())
 
 	return instantLayer
 }

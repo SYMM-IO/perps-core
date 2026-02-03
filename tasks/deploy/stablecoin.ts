@@ -22,7 +22,7 @@ export async function deployStablecoin(hre: any, { logData = true }: DeployStabl
 	await stablecoin.waitForDeployment()
 
 	await stablecoin.deploymentTransaction()!.wait()
-	logger.debug("FakeStablecoin deployed:", await stablecoin.getAddress())
+	logger.deployed("FakeStablecoin", await stablecoin.getAddress())
 
 	if (logData) {
 		// Read existing data

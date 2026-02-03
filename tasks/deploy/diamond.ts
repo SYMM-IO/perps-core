@@ -133,7 +133,7 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		receipt = (await facet.deploymentTransaction()!.wait())!
 		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
 		const facetAddress = await facet.getAddress()
-		logger.progress(i + 1, FacetNames.length, facetName)
+		logger.deployed(`[${i + 1}/${FacetNames.length}] ${facetName}`, facetAddress)
 		cut.push({
 			facetAddress,
 			action: FacetCutAction.Add,

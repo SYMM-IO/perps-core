@@ -301,7 +301,10 @@ async function setupSystem(hre: any, deployedContracts: DeployedContracts, confi
 	const [deployer] = await ethers.getSigners()
 
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
-	const alControlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.accountLayerDiamond!)
+	const alControlFacet = await ethers.getContractAt(
+		"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+		deployedContracts.accountLayerDiamond!,
+	)
 	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
 
 	// Helper to get role hash
@@ -433,7 +436,10 @@ async function registerDummyAffiliate(
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
 
-	const alAffiliateFacet = await ethers.getContractAt("contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet", deployedContracts.accountLayerDiamond!)
+	const alAffiliateFacet = await ethers.getContractAt(
+		"contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
+		deployedContracts.accountLayerDiamond!,
+	)
 
 	console.log("  Registering dummy affiliate...")
 
