@@ -17,7 +17,7 @@ const etherscanApiKey = (configVariable("ETHERSCAN_APIKEY") as any) || ""
 const createNetworkConfig = (network: string, defaultUrl: string) =>
 	({
 		type: "http",
-		url: process.env[`RPC_${network.toUpperCase()}`] || defaultUrl,
+		url: (configVariable(`RPC_${network.toUpperCase()}`) as any) || defaultUrl,
 		accounts: [privateKey],
 	}) as {
 		type: "http"

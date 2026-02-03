@@ -1,18 +1,32 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { readData, writeData } from "../utils/fs.js"
-import { DEPLOYMENT_LOG_FILE } from "./constants.js"
+import { writeData } from "../utils/fs.js"
+import { STABLECOIN_DEPLOYMENT_FILE } from "./constants.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import {
+	DeploymentCheckpoint,
+	createDeployedContract,
+	saveCheckpoint,
+} from "./checkpoint.js"
 
 type DeployStablecoinArgs = {
 	logData?: boolean
+	checkpoint?: DeploymentCheckpoint
 }
 
-export async function deployStablecoin(hre: any, { logData = true }: DeployStablecoinArgs = {}) {
+export async function deployStablecoin(hre: any, { logData = true, checkpoint }: DeployStablecoinArgs = {}) {
 	const { ethers } = await getConnection(hre)
+
+	// Check if already deployed from checkpoint
+	if (checkpoint?.contracts.collateral) {
+		const address = checkpoint.contracts.collateral.address
+		logger.info(`  ⏭ FakeStablecoin already deployed at ${address}`)
+		const stablecoin = await ethers.getContractAt("FakeStablecoin", address)
+		return stablecoin
+	}
 
 	const signers: HardhatEthersSigner[] = await ethers.getSigners()
 	const owner: HardhatEthersSigner = signers[0]
@@ -22,24 +36,23 @@ export async function deployStablecoin(hre: any, { logData = true }: DeployStabl
 	await stablecoin.waitForDeployment()
 
 	await stablecoin.deploymentTransaction()!.wait()
-	logger.deployed("FakeStablecoin", await stablecoin.getAddress())
+	const address = await stablecoin.getAddress()
+	logger.deployed("FakeStablecoin", address)
+
+	// Save checkpoint
+	if (checkpoint) {
+		checkpoint.contracts.collateral = createDeployedContract(address)
+		saveCheckpoint(checkpoint)
+	}
 
 	if (logData) {
-		// Read existing data
-		let deployedData = []
-		try {
-			deployedData = readData(DEPLOYMENT_LOG_FILE)
-		} catch (err) {}
-
-		// Append new data
-		deployedData.push({
-			name: "FakeStablecoin",
-			address: await stablecoin.getAddress(),
-			constructorArguments: [],
-		})
-
-		// Write updated data back to JSON file
-		writeData(DEPLOYMENT_LOG_FILE, deployedData)
+		writeData(STABLECOIN_DEPLOYMENT_FILE, [
+			{
+				name: "FakeStablecoin",
+				address,
+				constructorArguments: [],
+			},
+		])
 	}
 
 	return stablecoin

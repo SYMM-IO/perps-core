@@ -8,10 +8,11 @@ import { multicallTask } from "./multicall.js"
 import { partyBTask } from "./partyB.js"
 import { signatureVerifierTask } from "./signatureVerifier.js"
 import { stablecoinTask } from "./stablecoin.js"
-import { verifyAccountHubTask, verifyAccountLayerTask, verifyAffiliateHubTask, verifyDeploymentTask, verifyInstantLayerTask } from "./verify.js"
+import { checkDeploymentTask, verifyAccountHubTask, verifyAccountLayerTask, verifyAffiliateHubTask, verifyAllTask, verifyDeploymentTask, verifyInstantLayerTask } from "./verify.js"
 
 export const deployTasks = [
 	accountLayerDiamondTask,
+	checkDeploymentTask,
 	deployAllTask,
 	diamondTask,
 	feeDistributorTask,
@@ -21,6 +22,7 @@ export const deployTasks = [
 	partyBTask,
 	signatureVerifierTask,
 	stablecoinTask,
+	verifyAllTask,
 	verifyDeploymentTask,
 	verifyAccountLayerTask,
 	verifyAffiliateHubTask,
