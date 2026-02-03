@@ -5858,14 +5858,14 @@
         "inputs": [
             {
                 "indexed": false,
-                "internalType": "uint256[]",
-                "name": "quoteIds",
-                "type": "uint256[]"
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
             },
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "ratio",
+                "name": "amount",
                 "type": "uint256"
             },
             {
@@ -5873,58 +5873,9 @@
                 "internalType": "uint256",
                 "name": "price",
                 "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "closedAmount",
-                "type": "uint256"
             }
         ],
         "name": "ADLClose",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "filledAmount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "closedPrice",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "closeId",
-                "type": "uint256"
-            }
-        ],
-        "name": "ADLClosePosition",
         "type": "event"
     },
     {
@@ -6294,13 +6245,13 @@
     {
         "inputs": [
             {
-                "internalType": "uint256[]",
-                "name": "quoteIds",
-                "type": "uint256[]"
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
             },
             {
                 "internalType": "uint256",
-                "name": "ratio",
+                "name": "amount",
                 "type": "uint256"
             },
             {
@@ -6310,13 +6261,7 @@
             }
         ],
         "name": "adlClose",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
+        "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
@@ -8340,6 +8285,25 @@
             }
         ],
         "name": "RoleRevoked",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "enabled",
+                "type": "bool"
+            }
+        ],
+        "name": "SetADLEnabled",
         "type": "event"
     },
     {
