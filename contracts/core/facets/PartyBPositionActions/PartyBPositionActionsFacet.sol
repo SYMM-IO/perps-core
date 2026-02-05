@@ -92,4 +92,26 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		PartyBPositionActionsFacetImpl.acceptCancelCloseRequest(quoteId);
 		emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED, QuoteStorage.layout().closeIds[quoteId]);
 	}
+
+	/**
+	 * @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation.
+	 *         Use this when the standard fillCloseRequest would revert due to PartyA insolvency.
+	 *         This calculates and closes only the amount that brings PartyA to exactly 0 available balance.
+	 *         Reverts if even a full close keeps PartyA insolvent.
+	 * @param quoteId The ID of the quote for which the close request is filled.
+	 * @param closedPrice The closed price for the close request.
+	 * @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
+	 * @return filledAmount The actual amount that was filled.
+	 */
+	function fillCloseRequestToLiquidation(
+		uint256 quoteId,
+		uint256 closedPrice,
+		PairUpnlAndPriceSig memory upnlSig
+	) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) returns (uint256 filledAmount) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		Quote storage quote = quoteLayout.quotes[quoteId];
+		filledAmount = PartyBPositionActionsFacetImpl.fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig);
+		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
+		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId], quote.lockedValues);
+	}
 }

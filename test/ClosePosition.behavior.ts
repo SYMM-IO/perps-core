@@ -448,11 +448,15 @@ export function shouldBehaveLikeClosePosition(): void {
 			let quantity = await getQuoteQuantity(context, 1n)
 			let price = decimal(11n, 17)
 			let closePrice = decimal(1n)
+			let quote1 = await context.viewFacetQuote.getQuote(1n)
+			// Close fee: filledAmount * closedPrice * closeFee / 1e36
+			let closeFee1 = (quantity * closePrice * quote1.closeFee) / WAD_36
 			let userAvailable =
 				this.user_allocated -
 				(await getTotalLockedValuesForQuoteIds(context, [2n, 4n], false)) -
 				(await getTradingFeeForQuotes(context, [1n, 2n, 3n, 4n])) -
-				unDecimal(quantity * (price - closePrice))
+				unDecimal(quantity * (price - closePrice)) -
+				closeFee1
 
 			await expect(
 				hedger.fillCloseRequest(
@@ -469,11 +473,15 @@ export function shouldBehaveLikeClosePosition(): void {
 			quantity = await getQuoteQuantity(context, 1n)
 			price = decimal(1n, 17)
 			closePrice = decimal(1n)
+			let quote2 = await context.viewFacetQuote.getQuote(2n)
+			// Close fee: filledAmount * closedPrice * closeFee / 1e36
+			let closeFee2 = (quantity * closePrice * quote2.closeFee) / WAD_36
 			userAvailable =
 				this.user_allocated -
 				(await getTotalLockedValuesForQuoteIds(context, [1n, 4n], false)) -
 				(await getTradingFeeForQuotes(context, [1n, 2n, 3n, 4n])) -
-				unDecimal(quantity * (closePrice - price))
+				unDecimal(quantity * (closePrice - price)) -
+				closeFee2
 
 			await expect(
 				hedger.fillCloseRequest(

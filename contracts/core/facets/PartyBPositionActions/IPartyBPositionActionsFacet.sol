@@ -12,5 +12,11 @@ interface IPartyBPositionActionsFacet is IPartyBPositionActionsEvents {
 
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) external;
 
+	function fillCloseRequestToLiquidation(
+		uint256 quoteId,
+		uint256 closedPrice,
+		PairUpnlAndPriceSig memory upnlSig
+	) external returns (uint256 filledAmount);
+
 	function acceptCancelCloseRequest(uint256 quoteId) external;
 }

@@ -164,6 +164,43 @@ export class Hedger extends PartyEntity {
 		await runTx(this.context.partyBPositionActionsFacet.connect(this.signer).acceptCancelCloseRequest(id))
 	}
 
+	public async fillCloseRequestToLiquidation(id: BigNumberish, request: FillCloseRequest = limitFillCloseRequestBuilder().build()): Promise<bigint> {
+		const quote = await this.context.viewFacetQuote.getQuote(id)
+		const user = this.context.manager.getUser(quote.partyA)
+		logger.detailedDebug(
+			serializeToJson({
+				request: request,
+				hedgerBalanceInfo: await this.getBalanceInfo(quote.partyA),
+				hedgerUpnl: await this.getUpnl(quote.partyA),
+				userBalanceInfo: await user.getBalanceInfo(),
+				userUpnl: await user.getUpnl(),
+			}),
+		)
+		// runTx already returns the receipt (calls .wait() internally)
+		const receipt = await runTx(
+			this.context.partyBPositionActionsFacet
+				.connect(this.signer)
+				.fillCloseRequestToLiquidation(
+					id,
+					request.closedPrice,
+					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
+				),
+		)
+		// Parse the FillCloseRequest event to get the filled amount
+		const iface = this.context.partyBPositionActionsFacet.interface
+		for (const log of receipt?.logs || []) {
+			try {
+				const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data })
+				if (parsed?.name === "FillCloseRequest") {
+					return parsed.args.filledAmount
+				}
+			} catch {
+				// Not this event, continue
+			}
+		}
+		return 0n
+	}
+
 	public async liquidate(partyA: string, sig: SingleUpnlSigStructOutput | Promise<SingleUpnlSigStructOutput> = getDummySingleUpnlSig()) {
 		let signature = sig instanceof Promise ? await sig : sig
 		await runTx(

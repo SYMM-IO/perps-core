@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
+import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { AccountStorage, LiquidationDetail, LiquidationSettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
 import { CrossPartyBStorage, CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
@@ -864,5 +865,25 @@ contract ViewFacet is IViewFacet {
 
 	function isAccumulatedFundingActivated() external view returns (bool) {
 		return FundingStorage.layout().accumulatedFundingActivated;
+	}
+
+	/**
+	 * @notice Calculates the maximum close amount that keeps PartyA at the liquidation threshold.
+	 * @dev Use this to preview the result of `fillCloseRequestToLiquidation` before calling it.
+	 *      This helps frontends determine if a partial close is possible and what amount will be filled.
+	 * @param quoteId The ID of the quote with a pending close request
+	 * @param closedPrice The price at which the position would be closed
+	 * @param marketPrice The current market price
+	 * @param upnlPartyA The unrealized PnL of PartyA
+	 * @return maxCloseAmount The maximum amount that can be closed while keeping PartyA solvent
+	 * @return canCloseAll True if the full quantityToClose can be closed without making PartyA insolvent
+	 */
+	function getMaxCloseAmountToLiquidation(
+		uint256 quoteId,
+		uint256 closedPrice,
+		uint256 marketPrice,
+		int256 upnlPartyA
+	) external view returns (uint256 maxCloseAmount, bool canCloseAll) {
+		return LibSolvency.calculateMaxCloseAmountToLiquidation(quoteId, closedPrice, marketPrice, upnlPartyA);
 	}
 }

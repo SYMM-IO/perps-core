@@ -15,13 +15,13 @@ async function decodeCustomError(data: string, address: string) {
 	}
 }
 
-const symmioAddress = ""
+const symmioAddress = "0xa805FE5baA301D4e72C789694F3967452c77D6fD"
 
 const [signer] = await ethers.getSigners()
-const controlFacet = await ethers.getContractAt("ControlFacet", "", signer)
+const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", symmioAddress, signer)
 
 try {
-	const tx = await controlFacet.grantRole("", ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
+	const tx = await controlFacet.grantRole("0xFb480340F2DD912bb6D06F5B8e9Aa21b92BA93Bf", ethers.keccak256(toUtf8Bytes("SYMBOL_MANAGER_ROLE")))
 	ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE"))
 	console.log("txHash:", tx.hash)
 	await tx.wait()

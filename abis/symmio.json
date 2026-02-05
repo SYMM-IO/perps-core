@@ -7076,6 +7076,45 @@
         "type": "function"
     },
     {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "closedPrice",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "marketPrice",
+                "type": "uint256"
+            },
+            {
+                "internalType": "int256",
+                "name": "upnlPartyA",
+                "type": "int256"
+            }
+        ],
+        "name": "getMaxCloseAmountToLiquidation",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "maxCloseAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bool",
+                "name": "canCloseAll",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [],
         "name": "getMinAffiliateFee",
         "outputs": [
@@ -9885,6 +9924,89 @@
         ],
         "name": "fillCloseRequest",
         "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "closedPrice",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyA",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnlPartyB",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "price",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct PairUpnlAndPriceSig",
+                "name": "upnlSig",
+                "type": "tuple"
+            }
+        ],
+        "name": "fillCloseRequestToLiquidation",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "filledAmount",
+                "type": "uint256"
+            }
+        ],
         "stateMutability": "nonpayable",
         "type": "function"
     },
