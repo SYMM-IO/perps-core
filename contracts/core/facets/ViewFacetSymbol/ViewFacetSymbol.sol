@@ -6,11 +6,12 @@ pragma solidity >=0.8.18;
 
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { AggregatedDataStorage } from "../../storages/AggregatedDataStorage.sol";
 import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
-import { IViewFacetSymbol } from "./IViewFacetSymbol.sol";
+import { IViewFacetSymbol, PartyBSymbolCount } from "./IViewFacetSymbol.sol";
 
 contract ViewFacetSymbol is IViewFacetSymbol {
 	/**
@@ -241,4 +242,30 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return FundingStorage.layout().fundingFees[symbolId][partyB];
 	}
 
+	/**
+	 * @notice Returns all connected PartyBs for a PartyA with the count of unique symbols
+	 *         that have active positions for each PartyB.
+	 * @param partyA The address of Party A.
+	 * @return An array of PartyBSymbolCount structs containing partyB address and symbol count.
+	 */
+	function getConnectedPartyBsWithSymbolCounts(address partyA) external view returns (PartyBSymbolCount[] memory) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+
+		address[] memory connectedPartyBs = accountLayout.connectedPartyBs[partyA];
+		PartyBSymbolCount[] memory result = new PartyBSymbolCount[](connectedPartyBs.length);
+
+		for (uint256 i = 0; i < connectedPartyBs.length; ) {
+			address partyB = connectedPartyBs[i];
+			result[i] = PartyBSymbolCount({
+				partyB: partyB,
+				symbolCount: aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB].length
+			});
+			unchecked {
+				++i;
+			}
+		}
+
+		return result;
+	}
 }

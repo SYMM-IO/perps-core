@@ -313,6 +313,183 @@ export function shouldBehaveLikeAggregateViews(): void {
 	})
 
 	// ============================================================================
+	// SECTION 1.5: CONNECTED PARTYBS WITH SYMBOL COUNTS
+	// Tests for getConnectedPartyBsWithSymbolCounts view function
+	// ============================================================================
+
+	describe("Connected PartyBs With Symbol Counts", function () {
+		beforeEach(async function () {
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+		})
+
+		it("should return empty array when no connected PartyBs", async function () {
+			const result = await context.viewFacetSymbol.getConnectedPartyBsWithSymbolCounts(await user.getAddress())
+			expect(result.length).to.equal(0)
+		})
+
+		it("should return connected PartyB with symbol count after opening position", async function () {
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			const result = await context.viewFacetSymbol.getConnectedPartyBsWithSymbolCounts(await user.getAddress())
+			expect(result.length).to.equal(1)
+			expect(result[0].partyB).to.equal(await hedger.getAddress())
+			expect(result[0].symbolCount).to.equal(1n)
+		})
+
+		it("should not increase symbol count for multiple positions in same symbol", async function () {
+			// Open two positions in symbol 1
+			const firstQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(firstQuoteId)
+			await hedger.openPosition(firstQuoteId)
+
+			const secondQuoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(secondQuoteId)
+			await hedger.openPosition(secondQuoteId)
+
+			const result = await context.viewFacetSymbol.getConnectedPartyBsWithSymbolCounts(await user.getAddress())
+			expect(result.length).to.equal(1)
+			expect(result[0].symbolCount).to.equal(1n) // Still only 1 symbol
+		})
+
+		it("should increase symbol count for positions in different symbols", async function () {
+			// Add symbol 2
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2], [EightHourInSec])
+
+			// Open positions in both symbols
+			const quote1 = await user.sendQuote(limitQuoteRequestBuilder().symbolId(1).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quote1)
+			await hedger.openPosition(quote1)
+
+			const quote2 = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quote2)
+			await hedger.openPosition(quote2)
+
+			const result = await context.viewFacetSymbol.getConnectedPartyBsWithSymbolCounts(await user.getAddress())
+			expect(result.length).to.equal(1)
+			expect(result[0].symbolCount).to.equal(2n)
+		})
+
+		it("should decrease symbol count when all positions in a symbol close", async function () {
+			// Add symbol 2
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2], [EightHourInSec])
+
+			// Open positions in both symbols
+			const quote1 = await user.sendQuote(limitQuoteRequestBuilder().symbolId(1).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quote1)
+			await hedger.openPosition(quote1)
+
+			const quote2 = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quote2)
+			await hedger.openPosition(quote2)
+
+			// Close position in symbol 2
+			await user.requestToClosePosition(quote2)
+			await hedger.fillCloseRequest(quote2)
+
+			const result = await context.viewFacetSymbol.getConnectedPartyBsWithSymbolCounts(await user.getAddress())
+			expect(result.length).to.equal(1)
+			expect(result[0].symbolCount).to.equal(1n) // Back to 1 symbol
+		})
+
+		it("should handle multiple PartyBs correctly", async function () {
+			// Setup hedger2
+			const hedger2 = new Hedger(context, context.signers.hedger2)
+			await hedger2.setBalances(decimal(5000n), decimal(5000n))
+
+			// Open position with first hedger
+			const quote1 = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quote1)
+			await hedger.openPosition(quote1)
+
+			// Open position with second hedger
+			const quote2 = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).partyBWhiteList([await hedger2.getAddress()]).build())
+			await hedger2.lockQuote(quote2)
+			await hedger2.openPosition(quote2)
+
+			const result = await context.viewFacetSymbol.getConnectedPartyBsWithSymbolCounts(await user.getAddress())
+			expect(result.length).to.equal(2)
+
+			const hedgerAddr = await hedger.getAddress()
+			const hedger2Addr = await hedger2.getAddress()
+			const hedgerResult = result.find(r => r.partyB === hedgerAddr)
+			const hedger2Result = result.find(r => r.partyB === hedger2Addr)
+
+			expect(hedgerResult).to.not.be.undefined
+			expect(hedgerResult!.symbolCount).to.equal(1n)
+			expect(hedger2Result).to.not.be.undefined
+			expect(hedger2Result!.symbolCount).to.equal(1n)
+		})
+
+		it("should track different symbol counts per PartyB", async function () {
+			// Add symbol 2
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("SYMBOL2", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([2], [EightHourInSec])
+
+			// Setup hedger2
+			const hedger2 = new Hedger(context, context.signers.hedger2)
+			await hedger2.setBalances(decimal(5000n), decimal(5000n))
+			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([1, 2], [EightHourInSec, EightHourInSec])
+
+			// Open 2 positions in different symbols with first hedger
+			const quote1 = await user.sendQuote(limitQuoteRequestBuilder().symbolId(1).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quote1)
+			await hedger.openPosition(quote1)
+
+			const quote2 = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quote2)
+			await hedger.openPosition(quote2)
+
+			// Open 1 position with second hedger
+			const quote3 = await user.sendQuote(limitQuoteRequestBuilder().symbolId(1).maxFundingRate(decimal(1n)).partyBWhiteList([await hedger2.getAddress()]).build())
+			await hedger2.lockQuote(quote3)
+			await hedger2.openPosition(quote3)
+
+			const result = await context.viewFacetSymbol.getConnectedPartyBsWithSymbolCounts(await user.getAddress())
+			expect(result.length).to.equal(2)
+
+			const hedgerAddr = await hedger.getAddress()
+			const hedger2Addr = await hedger2.getAddress()
+			const hedgerResult = result.find(r => r.partyB === hedgerAddr)
+			const hedger2Result = result.find(r => r.partyB === hedger2Addr)
+
+			expect(hedgerResult!.symbolCount).to.equal(2n) // hedger has 2 symbols
+			expect(hedger2Result!.symbolCount).to.equal(1n) // hedger2 has 1 symbol
+		})
+
+		it("should remove PartyB from result when all positions close", async function () {
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1n)).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			let result = await context.viewFacetSymbol.getConnectedPartyBsWithSymbolCounts(await user.getAddress())
+			expect(result.length).to.equal(1)
+
+			// Close position
+			await user.requestToClosePosition(quoteId)
+			await hedger.fillCloseRequest(quoteId)
+
+			result = await context.viewFacetSymbol.getConnectedPartyBsWithSymbolCounts(await user.getAddress())
+			expect(result.length).to.equal(0)
+		})
+	})
+
+	// ============================================================================
 	// SECTION 2: AGGREGATE FUNDING
 	// Tests for funding rate tracking and debt calculations
 	// ============================================================================
