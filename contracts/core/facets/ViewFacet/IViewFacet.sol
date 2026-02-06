@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { LiquidationDetail, LiquidationSettlementState } from "../../storages/AccountStorage.sol";
-import { CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
+import { CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { BindState } from "../../storages/TradingModeStorage.sol";
 import { VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
 import { BridgeTransaction } from "../../storages/BridgeStorage.sol";
@@ -201,4 +201,8 @@ interface IViewFacet {
 		uint256 marketPrice,
 		int256 upnlPartyA
 	) external view returns (uint256 maxCloseAmount, bool canCloseAll);
+
+	function partyAReimbursement(address partyA) external view returns (uint256);
+
+	function getPartyATakeoverDetails(address partyA) external view returns (PartyATakeoverDetail memory);
 }

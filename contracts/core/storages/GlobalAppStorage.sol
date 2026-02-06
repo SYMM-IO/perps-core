@@ -111,6 +111,12 @@ library GlobalAppStorage {
 		///      When true, instant actions mode checks pass for bound PartyAs. Checked in
 		///      Accessibility modifiers to allow/restrict certain operations.
 		bool callFromInstantLayer;
+		/// @notice Master switch for cross (master account) mode
+		/// @dev When false, PartyBs cannot activate cross mode. This is the global
+		///      gate - individual PartyBs still need to activate separately.
+		///      Once activated, turning this off doesn't affect existing
+		///      cross PartyBs.
+		bool crossPartyBModeActivated;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

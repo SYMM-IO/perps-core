@@ -10,7 +10,7 @@ import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsAct
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
+import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
@@ -74,7 +74,7 @@ library PartyBBatchActionsFacetImpl {
 		// Solvency checks
 		require(!maLayout.liquidationStatus[firstQuote.partyA], "PartyBFacet: PartyA isn't solvent");
 		require(!maLayout.partyBLiquidationStatus[firstQuote.partyB][firstQuote.partyA], "PartyBFacet: PartyB isn't solvent");
-		require(!CrossPartyBStorage.layout().crossLiquidationDetails[firstQuote.partyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+		require(!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuote.partyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 
 		// Verify the upnl and prices
 		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
@@ -175,7 +175,7 @@ library PartyBBatchActionsFacetImpl {
 		// Solvency checks
 		require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
 		require(!maLayout.partyBLiquidationStatus[firstQuotePartyB][firstQuotePartyA], "PartyBFacet: PartyB isn't solvent");
-		require(!CrossPartyBStorage.layout().crossLiquidationDetails[firstQuotePartyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+		require(!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuotePartyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 
 		LibAccount.increasePartyBNonce(firstQuotePartyB, firstQuotePartyA);
 		accountLayout.partyANonces[firstQuotePartyA] += 1;

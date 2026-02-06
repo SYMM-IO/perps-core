@@ -11,7 +11,6 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage, ForceCloseDetail } from "../../storages/AccountStorage.sol";
-import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
@@ -64,7 +63,7 @@ library ForceActionsFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
 
-		require(!CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB], "ForceActionsFacet: Cross partyB mode enabled");
+		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "ForceActionsFacet: Cross partyB mode enabled");
 
 		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);

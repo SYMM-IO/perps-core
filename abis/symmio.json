@@ -7199,6 +7199,42 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
+        "name": "getPartyATakeoverDetails",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "liquidationId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "deallocatedPool",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "inProgress",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct PartyATakeoverDetail",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "partyB",
                 "type": "address"
             }
@@ -8004,6 +8040,25 @@
                 "internalType": "address",
                 "name": "",
                 "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
+        "name": "partyAReimbursement",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
             }
         ],
         "stateMutability": "view",
@@ -14814,13 +14869,19 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "partyB",
+                "name": "subject",
                 "type": "address"
             },
             {
                 "indexed": false,
                 "internalType": "address[]",
-                "name": "partyAs",
+                "name": "parties",
+                "type": "address[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "address[]",
+                "name": "allocationKeys",
                 "type": "address[]"
             },
             {
@@ -14830,7 +14891,7 @@
                 "type": "uint256[]"
             }
         ],
-        "name": "DeallocateForCrossLiquidation",
+        "name": "DeallocateForClearingHouse",
         "type": "event"
     },
     {
@@ -14839,23 +14900,29 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "partyB",
+                "name": "subject",
                 "type": "address"
             },
             {
                 "indexed": false,
                 "internalType": "address[]",
-                "name": "partyA",
+                "name": "receivers",
+                "type": "address[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "address[]",
+                "name": "allocationKeys",
                 "type": "address[]"
             },
             {
                 "indexed": false,
                 "internalType": "uint256[]",
-                "name": "amount",
+                "name": "amounts",
                 "type": "uint256[]"
             }
         ],
-        "name": "DistributeForCrossLiquidation",
+        "name": "DistributeForClearingHouse",
         "type": "event"
     },
     {
@@ -14901,17 +14968,23 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "partyB",
+                "name": "subject",
                 "type": "address"
             },
             {
                 "indexed": false,
                 "internalType": "address[]",
-                "name": "partyAs",
+                "name": "counterparties",
                 "type": "address[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "liquidatedAmounts",
+                "type": "uint256[]"
             }
         ],
-        "name": "LiquidatePendingPositionsForCrossLiquidation",
+        "name": "LiquidatePendingPositionsForClearingHouse",
         "type": "event"
     },
     {
@@ -14920,7 +14993,7 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "partyB",
+                "name": "subject",
                 "type": "address"
             },
             {
@@ -14940,9 +15013,47 @@
                 "internalType": "uint256[]",
                 "name": "closeIds",
                 "type": "uint256[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "prices",
+                "type": "uint256[]"
             }
         ],
-        "name": "LiquidatePositionsForCrossLiquidation",
+        "name": "LiquidatePositionsForClearingHouse",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "SettleCrossPartyBLiquidation",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "liquidationId",
+                "type": "bytes"
+            }
+        ],
+        "name": "SettlePartyATakeover",
         "type": "event"
     },
     {
@@ -14977,15 +15088,45 @@
         "type": "event"
     },
     {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "liquidationId",
+                "type": "bytes"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "timestamp",
+                "type": "uint256"
+            }
+        ],
+        "name": "TakeoverPartyALiquidation",
+        "type": "event"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
-                "name": "partyB",
+                "name": "subject",
                 "type": "address"
             },
             {
                 "internalType": "address[]",
-                "name": "partyAs",
+                "name": "parties",
+                "type": "address[]"
+            },
+            {
+                "internalType": "address[]",
+                "name": "allocationKeys",
                 "type": "address[]"
             },
             {
@@ -14994,7 +15135,7 @@
                 "type": "uint256[]"
             }
         ],
-        "name": "deallocateForCrossLiquidation",
+        "name": "deallocateForClearingHouse",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -15003,7 +15144,7 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "partyB",
+                "name": "subject",
                 "type": "address"
             },
             {
@@ -15012,12 +15153,17 @@
                 "type": "address[]"
             },
             {
+                "internalType": "address[]",
+                "name": "allocationKeys",
+                "type": "address[]"
+            },
+            {
                 "internalType": "uint256[]",
                 "name": "amounts",
                 "type": "uint256[]"
             }
         ],
-        "name": "distributeForCrossLiquidation",
+        "name": "distributeForClearingHouse",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -15108,16 +15254,39 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "partyB",
+                "name": "subject",
                 "type": "address"
             },
             {
                 "internalType": "address[]",
-                "name": "partyAs",
+                "name": "counterparties",
                 "type": "address[]"
             }
         ],
-        "name": "liquidatePendingPositionsForCrossLiquidation",
+        "name": "liquidatePendingPositionsForClearingHouse",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subject",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "quoteIds",
+                "type": "uint256[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "prices",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "liquidatePositionsForClearingHouse",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -15128,63 +15297,27 @@
                 "internalType": "address",
                 "name": "partyB",
                 "type": "address"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "bytes",
-                        "name": "reqId",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256[]",
-                        "name": "quoteIds",
-                        "type": "uint256[]"
-                    },
-                    {
-                        "internalType": "uint256[]",
-                        "name": "prices",
-                        "type": "uint256[]"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "gatewaySignature",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "signature",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "owner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "nonce",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct IMuonSignatureVerifier.SchnorrSign",
-                        "name": "sigs",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct QuotePriceSig",
-                "name": "priceSig",
-                "type": "tuple"
             }
         ],
-        "name": "liquidatePositionsForCrossLiquidation",
+        "name": "settleCrossPartyBLiquidation",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address[]",
+                "name": "settledPartyBs",
+                "type": "address[]"
+            }
+        ],
+        "name": "settlePartyATakeover",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -15213,6 +15346,19 @@
             }
         ],
         "name": "softPartyBLiquidation",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
+        "name": "takeoverPartyALiquidation",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

@@ -2415,10 +2415,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 					)
 
 				// Liquidate positions
-				const priceSig = await getDummyPriceSig(openedQuoteIds, openedQuoteIds.map(() => decimal(1n)))
+				const prices = openedQuoteIds.map(() => decimal(1n))
 				await clearingContext.clearingHouseFacet
 					.connect(clearingContext.signers.liquidator)
-					.liquidatePositionsForCrossLiquidation(await clearingHedger.getAddress(), priceSig)
+					.liquidatePositionsForClearingHouse(await clearingHedger.getAddress(), openedQuoteIds, prices)
 
 				// Verify position aggregates are zeroed
 				const { longPosition: longAfter, shortPosition: shortAfter } = await clearingContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbol(
@@ -2472,10 +2472,10 @@ export function shouldBehaveLikeAggregateViews(): void {
 						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999"))
 					)
 
-				const priceSig = await getDummyPriceSig(openedQuoteIds, openedQuoteIds.map(() => decimal(1n)))
+				const prices = openedQuoteIds.map(() => decimal(1n))
 				await clearingContext.clearingHouseFacet
 					.connect(clearingContext.signers.liquidator)
-					.liquidatePositionsForCrossLiquidation(await clearingHedger.getAddress(), priceSig)
+					.liquidatePositionsForClearingHouse(await clearingHedger.getAddress(), openedQuoteIds, prices)
 
 				// Verify per-partyA aggregates are zeroed
 				const { longPosition: user1LongAfter, shortPosition: user1ShortAfter } = await clearingContext.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(

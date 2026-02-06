@@ -11,6 +11,7 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValues, QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LiquidationType, LiquidationDetail, Price, AccountStorage } from "../../storages/AccountStorage.sol";
 import { DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
+import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 
 library DeferredLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -19,6 +20,7 @@ library DeferredLiquidationFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
+		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA);
 
 		int256 liquidationAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
@@ -39,6 +41,7 @@ library DeferredLiquidationFacetImpl {
 		}
 
 		maLayout.liquidationStatus[partyA] = true;
+		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		accountLayout.liquidationDetails[partyA] = LiquidationDetail({
 			liquidationId: liquidationSig.liquidationId,
 			liquidationType: LiquidationType.NONE,
@@ -59,12 +62,14 @@ library DeferredLiquidationFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
+		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA);
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 
 		LiquidationDetail storage detail = accountLayout.liquidationDetails[partyA];
 		require(keccak256(detail.liquidationId) == keccak256(liquidationSig.liquidationId), "LiquidationFacet: Invalid liquidationId");
 
+		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		for (uint256 index = 0; index < liquidationSig.symbolIds.length; index++) {
 			accountLayout.symbolsPrices[partyA][liquidationSig.symbolIds[index]] = Price(liquidationSig.prices[index], detail.timestamp);
 		}

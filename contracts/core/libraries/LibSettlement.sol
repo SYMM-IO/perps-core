@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { MAStorage } from "../storages/MAStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
-import { CrossPartyBStorage } from "../storages/CrossPartyBStorage.sol";
+import { ClearingHouseStorage } from "../storages/ClearingHouseStorage.sol";
 import { QuoteStorage, Quote, PositionType, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { SettlementSig, QuoteSettlementData, UnifiedSettlementSig, UnifiedQuoteSettlementData } from "../storages/MuonStorage.sol";
 import { LibQuote } from "./LibQuote.sol";
@@ -92,7 +92,7 @@ library LibSettlement {
 				"LibSettlement: PartyB should be solvent"
 			);
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
-			require(!CrossPartyBStorage.layout().crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
+			require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
 
 			if (!isForceClose && signer != partyB) {
 				require(
@@ -145,7 +145,7 @@ library LibSettlement {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		address partyB = sig.partyB;
-		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB];
+		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[partyB];
 
 		// 1. Validate lengths
 		require(sig.quotesSettlementsData.length > 0, "LibSettlement: Empty quotes array");
@@ -175,7 +175,7 @@ library LibSettlement {
 		}
 
 		// 4. Validate partyB not in cross liquidation
-		require(!CrossPartyBStorage.layout().crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
+		require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
 
 		// 5. Validate partyB solvency based on mode
 		if (isCrossPartyB) {

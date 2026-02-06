@@ -136,6 +136,15 @@ library MAStorage {
 		/// @dev When enabled, PartyB can call adlClose() to close positions at a specified price
 		///      without PartyA consent. Used for risk management. Enabled by PARTY_B_MANAGER_ROLE.
 		mapping(address => bool) adlEnabled;
+		/// @notice Timestamp of last liquidator action for a PartyA
+		/// @dev Updated on every liquidation step (setSymbolsPrice, liquidatePositions, etc.)
+		///      Can be used later to enforce timeouts if liquidators become inactive.
+		mapping(address => uint256) partyALiquidatorLastActionTimestamp;
+		/// @notice Whether a PartyB is operating in cross (master account) mode
+		/// @dev Cross-margin PartyBs have one shared balance across all PartyAs instead of
+		///      isolated per-PartyA allocations. When true, uses address(0) for allocation
+		///      mappings and has different liquidation flow via ClearingHouse.
+		mapping(address => bool) crossModeEnabledForPartyB;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
