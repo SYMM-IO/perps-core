@@ -11,7 +11,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
-import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 
 library SettlementFacetImpl {
 	function settleUpnl(
@@ -31,7 +31,7 @@ library SettlementFacetImpl {
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
-		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[sig.partyB];
+		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[sig.partyB];
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB);
 		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
 	}

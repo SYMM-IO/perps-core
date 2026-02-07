@@ -15,7 +15,6 @@ import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/Q
 import { SingleUpnlSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
-import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 
@@ -23,7 +22,7 @@ library PartyBLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
 	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
-		require(!CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
+		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
 		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA);
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);

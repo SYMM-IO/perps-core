@@ -8,7 +8,7 @@ import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { AccountStorage, LiquidationDetail, LiquidationSettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
-import { CrossPartyBStorage, CrossLiquidationDetail } from "../../storages/CrossPartyBStorage.sol";
+import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
 import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { ExternalTransferStorage, VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
@@ -202,7 +202,7 @@ contract ViewFacet is IViewFacet {
 	 * @return A boolean indicating whether the party B is a cross partyB.
 	 */
 	function isCrossPartyB(address partyB) external view returns (bool) {
-		return CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB];
+		return MAStorage.layout().crossModeEnabledForPartyB[partyB];
 	}
 
 	/**
@@ -391,7 +391,7 @@ contract ViewFacet is IViewFacet {
 	 * @return True if cross partyB functionality is globally enabled, false otherwise.
 	 */
 	function isCrossPartyBModeActivated() external view returns (bool) {
-		return CrossPartyBStorage.layout().crossPartyBModeActivated;
+		return GlobalAppStorage.layout().crossPartyBModeActivated;
 	}
 
 	/**
@@ -676,7 +676,7 @@ contract ViewFacet is IViewFacet {
 	 * @return inProgress The cross liquidation status of the party B.
 	 */
 	function getPartyBCrossLiquidationStatus(address partyB) external view returns (bool) {
-		return CrossPartyBStorage.layout().crossLiquidationDetails[partyB].inProgress;
+		return ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress;
 	}
 
 	/**
@@ -685,7 +685,7 @@ contract ViewFacet is IViewFacet {
 	 * @return details The cross liquidation details of the party B.
 	 */
 	function getCrossLiquidationDetails(address partyB) external view returns (CrossLiquidationDetail memory) {
-		return CrossPartyBStorage.layout().crossLiquidationDetails[partyB];
+		return ClearingHouseStorage.layout().crossLiquidationDetails[partyB];
 	}
 
 	/**
@@ -865,6 +865,24 @@ contract ViewFacet is IViewFacet {
 
 	function isAccumulatedFundingActivated() external view returns (bool) {
 		return FundingStorage.layout().accumulatedFundingActivated;
+	}
+
+	/**
+	 * @notice Returns the reimbursement amount for Party A during liquidation.
+	 * @param partyA The address of Party A.
+	 * @return The reimbursement amount.
+	 */
+	function partyAReimbursement(address partyA) external view returns (uint256) {
+		return AccountStorage.layout().partyAReimbursement[partyA];
+	}
+
+	/**
+	 * @notice Returns the takeover details for a Party A liquidation.
+	 * @param partyA The address of Party A.
+	 * @return The PartyATakeoverDetail struct.
+	 */
+	function getPartyATakeoverDetails(address partyA) external view returns (PartyATakeoverDetail memory) {
+		return ClearingHouseStorage.layout().partyATakeoverDetails[partyA];
 	}
 
 	/**

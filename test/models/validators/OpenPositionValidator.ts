@@ -27,6 +27,15 @@ export type OpenPositionValidatorBeforeOutput = {
 	balanceInfoPartyB: BalanceInfo
 	quote: QuoteStructOutput
 	feeCollectorBalance: bigint
+	partyAPositionsCount: bigint
+	partyBPositionsCount: bigint
+	partyAPendingQuotes: bigint[]
+	partyBPendingQuotes: bigint[]
+	partyAOpenPositionCount: bigint
+	partyBOpenPositionCount: bigint
+	isConnected: boolean
+	partyANonce: bigint
+	partyBNonce: bigint
 }
 
 export type OpenPositionValidatorAfterArg = {
@@ -43,17 +52,33 @@ export type OpenPositionValidatorAfterArg = {
 export class OpenPositionValidator implements TransactionValidator {
 	async before(context: RunContext, arg: OpenPositionValidatorBeforeArg): Promise<OpenPositionValidatorBeforeOutput> {
 		logger.debug("Before OpenPositionValidator...")
+		const userAddress = await arg.user.getAddress()
+		const hedgerAddress = await arg.hedger.getAddress()
 		const quote = await context.viewFacetQuote.getQuote(arg.quoteId)
+		const partyAOpenPositions = await context.viewFacetQuote.getPartyAOpenPositions(userAddress, 0, 1000)
+		const partyBOpenPositions = await context.viewFacetQuote.getPartyBOpenPositions(hedgerAddress, userAddress, 0, 1000)
 		return {
 			balanceInfoPartyA: await arg.user.getBalanceInfo(),
-			balanceInfoPartyB: await arg.hedger.getBalanceInfo(await arg.user.getAddress()),
+			balanceInfoPartyB: await arg.hedger.getBalanceInfo(userAddress),
 			quote: quote,
 			feeCollectorBalance: await context.viewFacet.balanceOf(await context.viewFacet.getFeeCollector(quote.affiliate)),
+			partyAPositionsCount: await context.viewFacetQuote.partyAPositionsCount(userAddress),
+			partyBPositionsCount: await context.viewFacetQuote.partyBPositionsCount(hedgerAddress, userAddress),
+			partyAPendingQuotes: [...(await context.viewFacetQuote.getPartyAPendingQuotes(userAddress))],
+			partyBPendingQuotes: [...(await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress))],
+			partyAOpenPositionCount: BigInt(partyAOpenPositions.length),
+			partyBOpenPositionCount: BigInt(partyBOpenPositions.length),
+			isConnected: (await context.viewFacetSymbol.getConnectedPartyBs(userAddress)).map(a => a.toLowerCase()).includes(hedgerAddress.toLowerCase()),
+			partyANonce: await context.viewFacet.nonceOfPartyA(userAddress),
+			partyBNonce: await context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress),
 		}
 	}
 
 	async after(context: RunContext, arg: OpenPositionValidatorAfterArg) {
 		logger.debug("After OpenPositionValidator...")
+		const userAddress = await arg.user.getAddress()
+		const hedgerAddress = await arg.hedger.getAddress()
+
 		// Check Quote
 		const newQuote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		const oldQuote = arg.beforeOutput.quote
@@ -110,7 +135,7 @@ export class OpenPositionValidator implements TransactionValidator {
 		}
 
 		// Check Balances partyB
-		const newBalanceInfoPartyB = await arg.hedger.getBalanceInfo(await arg.user.getAddress())
+		const newBalanceInfoPartyB = await arg.hedger.getBalanceInfo(userAddress)
 		const oldBalanceInfoPartyB = arg.beforeOutput.balanceInfoPartyB
 
 		if (arg.newQuoteTargetStatus == QuoteStatus.CANCELED) {
@@ -122,5 +147,39 @@ export class OpenPositionValidator implements TransactionValidator {
 		}
 		expectToBeApproximately(newBalanceInfoPartyB.totalLockedPartyB, oldBalanceInfoPartyB.totalLockedPartyB + partialWithPriceLockedValuesPartyB)
 		expect(newBalanceInfoPartyB.allocatedBalances).to.be.equal(oldBalanceInfoPartyB.allocatedBalances.toString())
+
+		// ---- Enhanced State Checks ----
+
+		// Verify positions count increased by 1
+		const newPositionsCountA = await context.viewFacetQuote.partyAPositionsCount(userAddress)
+		expect(newPositionsCountA).to.equal(arg.beforeOutput.partyAPositionsCount + 1n)
+
+		const newPositionsCountB = await context.viewFacetQuote.partyBPositionsCount(hedgerAddress, userAddress)
+		expect(newPositionsCountB).to.equal(arg.beforeOutput.partyBPositionsCount + 1n)
+
+		// Verify quote removed from pending arrays and added to open positions
+		const newPartyAPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
+		expect(newPartyAPendingQuotes.map(q => q.toString())).to.not.include(arg.quoteId.toString())
+
+		const newPartyBPendingQuotes = await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress)
+		expect(newPartyBPendingQuotes.map(q => q.toString())).to.not.include(arg.quoteId.toString())
+
+		// Verify open positions arrays grew
+		const newPartyAOpenPositions = await context.viewFacetQuote.getPartyAOpenPositions(userAddress, 0, 1000)
+		expect(BigInt(newPartyAOpenPositions.length)).to.equal(arg.beforeOutput.partyAOpenPositionCount + 1n)
+		expect(newPartyAOpenPositions.map(q => q.id.toString())).to.include(arg.quoteId.toString())
+
+		const newPartyBOpenPositions = await context.viewFacetQuote.getPartyBOpenPositions(hedgerAddress, userAddress, 0, 1000)
+		expect(BigInt(newPartyBOpenPositions.length)).to.equal(arg.beforeOutput.partyBOpenPositionCount + 1n)
+
+		// Verify connection established
+		const connectedPartyBs = await context.viewFacetSymbol.getConnectedPartyBs(userAddress)
+		expect(connectedPartyBs.map(a => a.toLowerCase())).to.include(hedgerAddress.toLowerCase())
+
+		// Verify nonces incremented (openPosition increments both partyA and partyB nonces)
+		const newPartyANonce = await context.viewFacet.nonceOfPartyA(userAddress)
+		expect(newPartyANonce).to.equal(arg.beforeOutput.partyANonce + 1n)
+		const newPartyBNonce = await context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress)
+		expect(newPartyBNonce).to.equal(arg.beforeOutput.partyBNonce + 1n)
 	}
 }

@@ -19,6 +19,11 @@ export type FillCloseRequestValidatorBeforeOutput = {
 	balanceInfoPartyA: BalanceInfo
 	balanceInfoPartyB: BalanceInfo
 	quote: QuoteStructOutput
+	partyAPositionsCount: bigint
+	partyBPositionsCount: bigint
+	partyAOpenPositionCount: bigint
+	partyBOpenPositionCount: bigint
+	connectedPartyBs: string[]
 }
 
 export type FillCloseRequestValidatorAfterArg = {
@@ -33,16 +38,28 @@ export type FillCloseRequestValidatorAfterArg = {
 export class FillCloseRequestValidator implements TransactionValidator {
 	async before(context: RunContext, arg: FillCloseRequestValidatorBeforeArg): Promise<FillCloseRequestValidatorBeforeOutput> {
 		logger.debug("Before FillCloseRequestValidator...")
+		const userAddress = await arg.user.getAddress()
+		const hedgerAddress = await arg.hedger.getAddress()
+		const partyAOpenPositions = await context.viewFacetQuote.getPartyAOpenPositions(userAddress, 0, 1000)
+		const partyBOpenPositions = await context.viewFacetQuote.getPartyBOpenPositions(hedgerAddress, userAddress, 0, 1000)
 		return {
 			balanceInfoPartyA: await arg.user.getBalanceInfo(),
-			balanceInfoPartyB: await arg.hedger.getBalanceInfo(await arg.user.getAddress()),
+			balanceInfoPartyB: await arg.hedger.getBalanceInfo(userAddress),
 			quote: await context.viewFacetQuote.getQuote(arg.quoteId),
+			partyAPositionsCount: await context.viewFacetQuote.partyAPositionsCount(userAddress),
+			partyBPositionsCount: await context.viewFacetQuote.partyBPositionsCount(hedgerAddress, userAddress),
+			partyAOpenPositionCount: BigInt(partyAOpenPositions.length),
+			partyBOpenPositionCount: BigInt(partyBOpenPositions.length),
+			connectedPartyBs: [...(await context.viewFacetSymbol.getConnectedPartyBs(userAddress))].map(a => a.toLowerCase()),
 		}
 	}
 
 	async after(context: RunContext, arg: FillCloseRequestValidatorAfterArg) {
 		logger.debug("After FillCloseRequestValidator...")
-// Check Quote
+		const userAddress = await arg.user.getAddress()
+		const hedgerAddress = await arg.hedger.getAddress()
+
+		// Check Quote
 		const newQuote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		const oldQuote = arg.beforeOutput.quote
 		const zeroToClose = newQuote.quantityToClose === 0n
@@ -58,15 +75,10 @@ export class FillCloseRequestValidator implements TransactionValidator {
 
 		expect(newQuote.closedAmount.toString()).to.equal((BigInt(oldQuote.closedAmount) + BigInt(arg.fillAmount)).toString())
 
-// TODO: Sometimes fillCloseRequest has Error
-
 		expect(newQuote.quantityToClose.toString()).to.equal((BigInt(oldQuote.quantityToClose) - BigInt(arg.fillAmount)).toString())
 
 		const oldLockedValuesPartyA = await getTotalPartyALockedValuesForQuotes([oldQuote])
-		const newLockedValuesPartyA = await getTotalPartyALockedValuesForQuotes([newQuote])
-
 		const oldLockedValuesPartyB = await getTotalPartyBLockedValuesForQuotes([oldQuote])
-		const newLockedValuesPartyB = await getTotalPartyBLockedValuesForQuotes([newQuote])
 
 		let profit
 		if (newQuote.positionType === BigInt(PositionType.LONG)) {
@@ -78,7 +90,7 @@ export class FillCloseRequestValidator implements TransactionValidator {
 		const returnedLockedValuesPartyA = (BigInt(oldLockedValuesPartyA) * BigInt(arg.fillAmount)) / BigInt(oldQuote.quantity)
 		const returnedLockedValuesPartyB = (BigInt(oldLockedValuesPartyB) * BigInt(arg.fillAmount)) / BigInt(oldQuote.quantity)
 
-// Check Balances partyA
+		// Check Balances partyA
 		const newBalanceInfoPartyA = await arg.user.getBalanceInfo()
 		const oldBalanceInfoPartyA = arg.beforeOutput.balanceInfoPartyA
 
@@ -87,18 +99,56 @@ export class FillCloseRequestValidator implements TransactionValidator {
 			BigInt(newBalanceInfoPartyA.totalLockedPartyA),
 			BigInt(oldBalanceInfoPartyA.totalLockedPartyA) - returnedLockedValuesPartyA,
 		)
-		// expectToBeApproximately(BigInt(newBalanceInfoPartyA.allocatedBalances), BigInt(oldBalanceInfoPartyA.allocatedBalances) + profit)
 		expect(newBalanceInfoPartyA.allocatedBalances).to.be.approximately(
 			oldBalanceInfoPartyA.allocatedBalances - (await getCloseTradingFeeForQuotes(context, [arg.quoteId])) + profit,
 			oldBalanceInfoPartyA.allocatedBalances / 1000n,
 		)
 		// Check Balances partyB
-		const newBalanceInfoPartyB = await arg.hedger.getBalanceInfo(await arg.user.getAddress())
+		const newBalanceInfoPartyB = await arg.hedger.getBalanceInfo(userAddress)
 		const oldBalanceInfoPartyB = arg.beforeOutput.balanceInfoPartyB
 
 		expect(newBalanceInfoPartyB.totalPendingLockedPartyB.toString()).to.equal(oldBalanceInfoPartyB.totalPendingLockedPartyB.toString())
 		expectToBeApproximately(BigInt(newBalanceInfoPartyB.totalLockedPartyB), BigInt(oldBalanceInfoPartyB.totalLockedPartyB) - returnedLockedValuesPartyB)
 		expectToBeApproximately(BigInt(newBalanceInfoPartyB.allocatedBalances), BigInt(oldBalanceInfoPartyB.allocatedBalances) - profit)
 
+		// ---- Enhanced State Checks ----
+
+		if (isFullyClosed) {
+			// Position count should decrease by 1
+			const newPositionsCountA = await context.viewFacetQuote.partyAPositionsCount(userAddress)
+			expect(newPositionsCountA).to.equal(arg.beforeOutput.partyAPositionsCount - 1n)
+
+			const newPositionsCountB = await context.viewFacetQuote.partyBPositionsCount(hedgerAddress, userAddress)
+			expect(newPositionsCountB).to.equal(arg.beforeOutput.partyBPositionsCount - 1n)
+
+			// Open positions arrays should shrink
+			const newPartyAOpenPositions = await context.viewFacetQuote.getPartyAOpenPositions(userAddress, 0, 1000)
+			expect(BigInt(newPartyAOpenPositions.length)).to.equal(arg.beforeOutput.partyAOpenPositionCount - 1n)
+			expect(newPartyAOpenPositions.map(q => q.id.toString())).to.not.include(arg.quoteId.toString())
+
+			const newPartyBOpenPositions = await context.viewFacetQuote.getPartyBOpenPositions(hedgerAddress, userAddress, 0, 1000)
+			expect(BigInt(newPartyBOpenPositions.length)).to.equal(arg.beforeOutput.partyBOpenPositionCount - 1n)
+
+			// If this was the last position with this hedger, connection should be removed
+			if (arg.beforeOutput.partyBPositionsCount === 1n) {
+				const newConnectedPartyBs = (await context.viewFacetSymbol.getConnectedPartyBs(userAddress)).map(a => a.toLowerCase())
+				expect(newConnectedPartyBs).to.not.include(hedgerAddress.toLowerCase())
+			}
+		} else {
+			// Position count should remain unchanged for partial close
+			const newPositionsCountA = await context.viewFacetQuote.partyAPositionsCount(userAddress)
+			expect(newPositionsCountA).to.equal(arg.beforeOutput.partyAPositionsCount)
+
+			const newPositionsCountB = await context.viewFacetQuote.partyBPositionsCount(hedgerAddress, userAddress)
+			expect(newPositionsCountB).to.equal(arg.beforeOutput.partyBPositionsCount)
+
+			// Open positions arrays should remain the same size
+			const newPartyAOpenPositions = await context.viewFacetQuote.getPartyAOpenPositions(userAddress, 0, 1000)
+			expect(BigInt(newPartyAOpenPositions.length)).to.equal(arg.beforeOutput.partyAOpenPositionCount)
+
+			// Connection should remain
+			const newConnectedPartyBs = (await context.viewFacetSymbol.getConnectedPartyBs(userAddress)).map(a => a.toLowerCase())
+			expect(newConnectedPartyBs).to.include(hedgerAddress.toLowerCase())
+		}
 	}
 }
