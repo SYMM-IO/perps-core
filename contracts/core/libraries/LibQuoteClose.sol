@@ -204,9 +204,7 @@ library LibQuoteClose {
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
 
 			// send trading Fee back to partyA
-			uint256 fee = LibQuote.getOpenTradingFee(quote.id);
-			accountLayout.allocatedBalances[quote.partyA] += fee;
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+			LibAccount.refundOpenTradingFee(quote.id, quote.partyA);
 
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {

@@ -232,12 +232,10 @@ library ClearingHouseFacetImpl {
 					Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
 					if (quote.partyB == partyB) {
 						accountLayout.pendingLockedBalances[partyA].subQuote(quote);
-						uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 						if (MAStorage.layout().liquidationStatus[partyA]) {
-							accountLayout.partyAReimbursement[partyA] += fee;
+							accountLayout.partyAReimbursement[partyA] += LibQuote.getOpenTradingFee(quote.id);
 						} else {
-							accountLayout.allocatedBalances[partyA] += fee;
-							emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+							LibAccount.refundOpenTradingFee(quote.id, partyA);
 						}
 						_callCancelQuoteHooksAndUpdateStatus(quote, partyA, partyB);
 						pendingQuotes[i] = pendingQuotes[pendingQuotes.length - 1];

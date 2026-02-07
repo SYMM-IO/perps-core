@@ -157,9 +157,7 @@ library LibPartyBPositionsActions {
 
 			if (newStatus == QuoteStatus.CANCELED) {
 				// send trading Fee back to partyA
-				uint256 fee = LibQuote.getOpenTradingFee(newQuote.id);
-				accountLayout.allocatedBalances[newQuote.partyA] += fee;
-				emit SharedEvents.BalanceChangePartyA(newQuote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+				LibAccount.refundOpenTradingFee(newQuote.id, newQuote.partyA);
 
 				// part of quote has been filled and part of it has been canceled
 				accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);

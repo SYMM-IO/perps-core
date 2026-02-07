@@ -161,9 +161,7 @@ library PartyAFacetImpl {
 			result = LibQuoteClose.expireQuote(quoteId);
 		} else if (quote.quoteStatus == QuoteStatus.PENDING) {
 			quote.quoteStatus = QuoteStatus.CANCELED;
-			uint256 fee = LibQuote.getOpenTradingFee(quote.id);
-			accountLayout.allocatedBalances[quote.partyA] += fee;
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+			LibAccount.refundOpenTradingFee(quote.id, quote.partyA);
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			result = QuoteStatus.CANCELED;

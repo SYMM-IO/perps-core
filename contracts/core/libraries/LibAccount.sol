@@ -8,6 +8,8 @@ import { AccountStorage } from "../storages/AccountStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { Quote, LockedValues } from "../storages/QuoteStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
+import { SharedEvents } from "./SharedEvents.sol";
+import { LibQuote } from "./LibQuote.sol";
 
 library LibAccount {
 	using LockedValuesOps for LockedValues;
@@ -286,5 +288,16 @@ library LibAccount {
 			return useCrossNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
 		}
 		return accountLayout.partyBNonces[partyB][partyA];
+	}
+
+	/**
+	 * @notice Refunds the open trading fee for a quote back to Party A's allocated balance.
+	 * @param quoteId The ID of the quote whose fee is being refunded.
+	 * @param partyA The address of Party A receiving the refund.
+	 */
+	function refundOpenTradingFee(uint256 quoteId, address partyA) internal {
+		uint256 fee = LibQuote.getOpenTradingFee(quoteId);
+		AccountStorage.layout().allocatedBalances[partyA] += fee;
+		emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 	}
 }
