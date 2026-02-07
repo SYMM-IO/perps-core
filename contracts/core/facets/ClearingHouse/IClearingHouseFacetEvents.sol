@@ -23,6 +23,9 @@ interface IClearingHouseFacetEvents {
 		uint256[] prices
 	);
 
+	// Auto-takeover event (emitted from ClearingHouseFacetImpl library)
+	event AutoTakeoverPartyALiquidation(address indexed partyA, bytes liquidationId);
+
 	// Settlement events
 	event SettlePartyATakeover(address indexed partyA, bytes liquidationId);
 	event SettleCrossPartyBLiquidation(address indexed partyB);

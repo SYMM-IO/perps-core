@@ -68,23 +68,12 @@ library ClearingHouseFacetImpl {
 	/// @notice Takes over a stuck PartyA liquidation
 	function takeoverPartyALiquidation(address partyA) internal returns (bytes memory liquidationId) {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 
 		require(maLayout.liquidationStatus[partyA], "ClearingHouseFacet: PartyA is not being liquidated");
 		require(!chLayout.partyATakeoverDetails[partyA].inProgress, "ClearingHouseFacet: Takeover already in progress");
 
-		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
-
-		// Clear disputed flag
-		accountLayout.liquidationDetails[partyA].disputed = false;
-		// Clear liquidation fee - original liquidators get nothing
-		accountLayout.liquidationDetails[partyA].liquidationFee = 0;
-		// Delete liquidators array
-		delete accountLayout.liquidators[partyA];
-
-		// Set takeover state
-		chLayout.partyATakeoverDetails[partyA] = PartyATakeoverDetail({ liquidationId: liquidationId, deallocatedPool: 0, inProgress: true });
+		liquidationId = _executeTakeover(partyA);
 	}
 
 	/// @notice Deallocates funds from parties for clearing house liquidation
@@ -187,8 +176,15 @@ library ClearingHouseFacetImpl {
 				emit SharedEvents.BalanceChangePartyB(receivers[i], allocationKeys[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 			} else {
 				// Receiver is a partyA or other address
-				accountLayout.allocatedBalances[receivers[i]] += amount;
-				emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				if (maLayout.liquidationStatus[receivers[i]]) {
+					// PartyA is being liquidated — route to reimbursement so funds survive settlement.
+					// No BalanceChangePartyA event here: reimbursement is escrow, not usable balance.
+					// The event will be emitted at settlement when reimbursement becomes allocatedBalances.
+					accountLayout.partyAReimbursement[receivers[i]] += amount;
+				} else {
+					accountLayout.allocatedBalances[receivers[i]] += amount;
+					emit SharedEvents.BalanceChangePartyA(receivers[i], amount, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				}
 			}
 		}
 	}
@@ -230,14 +226,19 @@ library ClearingHouseFacetImpl {
 			address partyB = subject;
 			for (uint256 j = 0; j < counterparties.length; j++) {
 				address partyA = counterparties[j];
+				_autoTakeoverPartyALiquidation(partyA);
 				uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
 				for (uint256 i = 0; i < pendingQuotes.length; ) {
 					Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
 					if (quote.partyB == partyB) {
 						accountLayout.pendingLockedBalances[partyA].subQuote(quote);
 						uint256 fee = LibQuote.getOpenTradingFee(quote.id);
-						accountLayout.allocatedBalances[partyA] += fee;
-						emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+						if (MAStorage.layout().liquidationStatus[partyA]) {
+							accountLayout.partyAReimbursement[partyA] += fee;
+						} else {
+							accountLayout.allocatedBalances[partyA] += fee;
+							emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+						}
 						_callCancelQuoteHooksAndUpdateStatus(quote, partyA, partyB);
 						pendingQuotes[i] = pendingQuotes[pendingQuotes.length - 1];
 						pendingQuotes.pop();
@@ -260,6 +261,8 @@ library ClearingHouseFacetImpl {
 				}
 				uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 				accountLayout.partyAReimbursement[partyA] += fee;
+				// No BalanceChangePartyA event: reimbursement is escrow during takeover.
+				// settlePartyATakeover handles final fund distribution.
 				_callCancelQuoteHooksAndUpdateStatus(quote, partyA, quote.partyB);
 				liquidatedAmounts[index] = quote.quantity;
 			}
@@ -279,6 +282,7 @@ library ClearingHouseFacetImpl {
 	) internal returns (uint256[] memory liquidatedAmounts, uint256[] memory closeIds) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		require(quoteIds.length == prices.length, "ClearingHouseFacet: Invalid length");
 
@@ -307,9 +311,10 @@ library ClearingHouseFacetImpl {
 			// Validate the quote belongs to the subject
 			if (liqType == LiquidationType.CROSS_PARTY_B) {
 				require(partyB == subject, "ClearingHouseFacet: Invalid party");
+				_autoTakeoverPartyALiquidation(partyA);
 			} else {
 				require(partyA == subject, "ClearingHouseFacet: Invalid party");
-				require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "ClearingHouseFacet: PartyB is in liquidation process");
+				require(!maLayout.partyBLiquidationStatus[partyB][partyA], "ClearingHouseFacet: PartyB is in liquidation process");
 				require(
 					!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress,
 					"ClearingHouseFacet: PartyB is in cross liquidation process"
@@ -449,6 +454,33 @@ library ClearingHouseFacetImpl {
 
 		detail.inProgress = false;
 		detail.timestamp = 0;
+	}
+
+	event AutoTakeoverPartyALiquidation(address indexed partyA, bytes liquidationId);
+
+	/// @dev Shared takeover logic: clears disputed flag, liquidation fee, liquidators, and sets takeover state.
+	function _executeTakeover(address partyA) private returns (bytes memory liquidationId) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
+
+		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
+
+		accountLayout.liquidationDetails[partyA].disputed = false;
+		accountLayout.liquidationDetails[partyA].liquidationFee = 0;
+		delete accountLayout.liquidators[partyA];
+
+		chLayout.partyATakeoverDetails[partyA] = PartyATakeoverDetail({ liquidationId: liquidationId, deallocatedPool: 0, inProgress: true });
+	}
+
+	/// @dev Automatically takes over a partyA liquidation during cross partyB processing.
+	///      Safe to call multiple times; only the first call has effect.
+	function _autoTakeoverPartyALiquidation(address partyA) private returns (bool) {
+		if (!MAStorage.layout().liquidationStatus[partyA]) return false;
+		if (ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress) return false;
+
+		bytes memory liquidationId = _executeTakeover(partyA);
+		emit AutoTakeoverPartyALiquidation(partyA, liquidationId);
+		return true;
 	}
 
 	function softPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance) internal {

@@ -340,6 +340,10 @@ library PartyALiquidationFacetImpl {
 		settleAmounts = new int256[](partyBs.length);
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			address partyB = partyBs[i];
+			require(
+				!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress,
+				"LiquidationFacet: PartyB is in cross liquidation"
+			);
 			require(accountLayout.settlementStates[partyA][partyB].pending, "LiquidationFacet: PartyB is not in settlement");
 			accountLayout.settlementStates[partyA][partyB].pending = false;
 			accountLayout.liquidationDetails[partyA].involvedPartyBCounts -= 1;

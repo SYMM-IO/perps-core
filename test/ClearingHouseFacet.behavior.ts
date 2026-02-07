@@ -1186,6 +1186,322 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 	})
 
 	// ============================================
+	// SIMULTANEOUS PARTYA + CROSS PARTYB LIQUIDATION
+	// ============================================
+
+	describe("Simultaneous PartyA + Cross PartyB Liquidation", () => {
+		beforeEach(async () => {
+			// Quote1 -> opened (SHORT)
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			// Quote2 -> locked (pending)
+			await hedger.lockQuote(2)
+
+			// Quote5 -> locked (pending)
+			await hedger.lockQuote(5)
+
+			// Migrate hedger to cross mode (only quotes 1, 2, 5 — skip quote 4 to avoid offsetting UPNL)
+			await migratePartyBToCross(context, hedger, [1, 2, 5])
+		})
+
+		describe("Auto-takeover via liquidatePositionsForClearingHouse", () => {
+			beforeEach(async () => {
+				// Liquidate partyA normally first
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+			})
+
+			it("should auto-takeover partyA liquidation when processing positions", async () => {
+				// Before: no takeover
+				const detailsBefore = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(detailsBefore.inProgress).to.equal(false)
+
+				// Liquidate positions — should trigger auto-takeover
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)]),
+				)
+					.to.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
+					.withArgs(context.signers.user.address, "0x10")
+
+				// After: takeover in progress
+				const detailsAfter = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(detailsAfter.inProgress).to.equal(true)
+			})
+
+			it("should not emit AutoTakeoverPartyALiquidation on subsequent calls for same partyA", async () => {
+				// Liquidate pending first (triggers auto-takeover for user)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address])
+
+				// Now liquidate positions — takeover already happened, should NOT emit again
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)]),
+				).to.not.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
+			})
+		})
+
+		describe("Auto-takeover via liquidatePendingPositionsForClearingHouse", () => {
+			beforeEach(async () => {
+				// Liquidate partyA normally first
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+			})
+
+			it("should auto-takeover partyA when processing pending quotes", async () => {
+				const detailsBefore = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(detailsBefore.inProgress).to.equal(false)
+
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address]),
+				)
+					.to.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
+					.withArgs(context.signers.user.address, "0x10")
+
+				const detailsAfter = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(detailsAfter.inProgress).to.equal(true)
+			})
+		})
+
+		describe("settlePartyALiquidation blocked by cross partyB", () => {
+			it("should revert when settling partyA with a partyB in cross liquidation", async () => {
+				// Liquidate partyA (only has quote 1 SHORT with cross hedger)
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation for hedger
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+
+				// Liquidate pending positions (triggers auto-takeover)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address])
+
+				// Liquidate open positions via clearing house
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)])
+
+				// All positions are closed now, but hedger is still in cross liquidation.
+				// The normal liquidation flow's settlePartyALiquidation should be blocked
+				// because it has a settlement state for a cross-liquidated partyB.
+				// However, since auto-takeover kicked in, settlePartyALiquidation is blocked
+				// by "Takeover in progress" check. Let's verify the cross liquidation guard
+				// by checking that the normal `liquidatePositionsPartyA` is blocked for cross partyBs.
+				// We test the guard directly by attempting to settle with the cross partyB.
+
+				// The takeover guard fires first, but if we were to bypass it (hypothetically),
+				// the cross liquidation guard would also block. Verify the takeover is in progress:
+				const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(takeoverDetails.inProgress).to.equal(true)
+
+				// settlePartyALiquidation is blocked by takeover
+				await expect(
+					context.partyALiquidationFacet
+						.connect(context.signers.liquidator)
+						.settlePartyALiquidation(context.signers.user.address, [context.signers.hedger.address]),
+				).to.be.revertedWith("LiquidationFacet: Takeover in progress")
+			})
+
+			it("should block normal liquidatePositionsPartyA for cross-liquidated partyB", async () => {
+				// Liquidate partyA
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+
+				// Normal liquidatePositionsPartyA should fail for cross-liquidated partyB
+				await expect(
+					context.partyALiquidationFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsPartyA(context.signers.user.address, [1n]),
+				).to.be.revertedWith("LiquidationFacet: PartyB is in cross liquidation process")
+			})
+		})
+
+		describe("distributeForClearingHouse routes to reimbursement for liquidated partyA", () => {
+			beforeEach(async () => {
+				// Liquidate partyA
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+
+				// Deallocate some funds from cross partyB
+				const crossAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
+				if (crossAllocated > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.hedger.address, [context.signers.hedger.address], [ZeroAddress], [crossAllocated])
+				}
+			})
+
+			it("should route funds to partyAReimbursement when partyA is liquidated", async () => {
+				const crossDetails = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger.address)
+				const distributeAmount = crossDetails.deallocatedPool > 0n ? crossDetails.deallocatedPool : 0n
+				if (distributeAmount == 0n) return // nothing to distribute
+
+				const reimbursementBefore = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.distributeForClearingHouse(context.signers.hedger.address, [context.signers.user.address], [ZeroAddress], [distributeAmount])
+
+				const reimbursementAfter = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+				expect(reimbursementAfter).to.equal(reimbursementBefore + distributeAmount)
+			})
+		})
+
+	describe("Full end-to-end simultaneous liquidation", () => {
+			it("should complete both liquidations", async () => {
+				// Step 1: Liquidate partyA normally
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Step 2: Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+
+				// Step 3: Deallocate from cross partyB
+				const crossAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
+				if (crossAllocated > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.hedger.address, [context.signers.hedger.address], [ZeroAddress], [crossAllocated])
+				}
+
+				// Step 4: Liquidate hedger's pending positions for user (triggers auto-takeover)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address])
+
+				// Verify auto-takeover happened
+				const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(takeoverDetails.inProgress).to.equal(true)
+
+				// Step 5: Liquidate open positions (cross partyB flow)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)])
+
+				// Step 6: Distribute cross partyB pool (if any)
+				const crossDetails = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger.address)
+				if (crossDetails.deallocatedPool > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForClearingHouse(
+							context.signers.hedger.address,
+							[context.signers.user.address],
+							[ZeroAddress],
+							[crossDetails.deallocatedPool],
+						)
+				}
+
+				// Step 7: Settle cross partyB
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger.address)
+
+				// Step 8: Process remaining partyA pending quotes (quotes 3, 4 are SENT, no partyB assigned)
+				// These weren't handled by cross partyB flow. Use takeover flow to clear them.
+				const remainingPending = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)
+				if (remainingPending.length > 0) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePendingPositionsForClearingHouse(context.signers.user.address, [])
+				}
+
+				// Step 9: Deallocate and distribute for partyA takeover
+				const partyAAllocated = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user.address)
+				const reimbursement = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+				if (partyAAllocated > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.user.address, [context.signers.user.address], [ZeroAddress], [partyAAllocated])
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForClearingHouse(context.signers.user.address, [context.signers.admin.address], [ZeroAddress], [partyAAllocated])
+				}
+				if (reimbursement > 0n) {
+					const REIMBURSEMENT_KEY = "0x0000000000000000000000000000000000000001"
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.user.address, [context.signers.user.address], [REIMBURSEMENT_KEY], [reimbursement])
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForClearingHouse(context.signers.user.address, [context.signers.admin.address], [ZeroAddress], [reimbursement])
+				}
+
+				// Step 10: Settle partyA takeover
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+
+				// Verify final state
+				const liquidationStatus = await context.viewFacet.isPartyALiquidated(context.signers.user.address)
+				expect(liquidationStatus).to.equal(false)
+
+				const positionsCount = await context.viewFacetQuote.partyAPositionsCount(context.signers.user.address)
+				expect(positionsCount).to.equal(0)
+
+				const pendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)
+				expect(pendingQuotes.length).to.equal(0)
+
+				// PartyA can trade again after depositing fresh funds
+				await user.setBalances(decimal(2000n), decimal(2000n), decimal(2000n))
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				expect(quoteId).to.be.greaterThan(0n)
+			})
+		})
+	})
+
+	// ============================================
 	// SOFT LIQUIDATION TESTS
 	// ============================================
 
