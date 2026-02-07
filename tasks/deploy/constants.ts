@@ -29,8 +29,13 @@ export const FacetNames = [
 	"WithdrawFacet"
 ]
 
-export const DEPLOYMENT_LOG_FILE = "deployed.json"
-export const ACCOUNTHUB_DEPLOYMENT_LOG_FILE = "accounthub.json"
-export const AFFILIATEHUB_DEPLOYMENT_FILE = "affiliatehub.json"
+// Deployment log files for verification
+export const DEPLOYMENT_LOG_FILE = "deployed.json"           // Core Diamond contracts
 export const ACCOUNTLAYER_DEPLOYMENT_FILE = "accountlayer.json"
 export const INSTANTLAYER_DEPLOYMENT_FILE = "instantlayer.json"
+export const PARTYB_DEPLOYMENT_FILE = "partyb.json"
+export const STABLECOIN_DEPLOYMENT_FILE = "stablecoin.json"
+
+// Legacy files (kept for backwards compatibility)
+export const ACCOUNTHUB_DEPLOYMENT_LOG_FILE = "accounthub.json"
+export const AFFILIATEHUB_DEPLOYMENT_FILE = "affiliatehub.json"

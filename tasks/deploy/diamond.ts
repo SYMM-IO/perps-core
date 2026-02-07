@@ -8,6 +8,12 @@ import { writeData } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE, FacetNames } from "./constants.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
+import {
+	DeploymentCheckpoint,
+	DiamondCheckpoint,
+	createDeployedContract,
+	saveCheckpoint,
+} from "./checkpoint.js"
 
 // Define which facets need which external libraries (based on compiled artifacts)
 const FacetLibraryDependencies: Record<string, string[]> = {
@@ -28,9 +34,10 @@ type DeployDiamondArgs = {
 	genABI?: boolean
 	logData?: boolean
 	reportGas?: boolean
+	checkpoint?: DeploymentCheckpoint
 }
 
-export async function deployDiamond(hre: any, { logData = true, genABI = false, reportGas = true }: DeployDiamondArgs = {}) {
+export async function deployDiamond(hre: any, { logData = true, genABI = false, reportGas = true, checkpoint }: DeployDiamondArgs = {}) {
 	const { ethers } = await getConnection(hre)
 	const signers: HardhatEthersSigner[] = await ethers.getSigners()
 	const owner: HardhatEthersSigner = signers[0]
@@ -39,65 +46,155 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 
 	logger.section("Diamond Deployment")
 
+	// Initialize or restore checkpoint data
+	const diamondCheckpoint: DiamondCheckpoint = checkpoint?.contracts.diamond || {}
+	const libraryAddresses: Record<string, string> = {}
+
+	// Restore library addresses from checkpoint
+	if (diamondCheckpoint.libraries) {
+		for (const [name, data] of Object.entries(diamondCheckpoint.libraries)) {
+			libraryAddresses[name] = data.address
+		}
+	}
+
 	// Deploy DiamondCutFacet
 	logger.subsection("Core Contracts")
-	const DiamondCutFacetFactory = await ethers.getContractFactory("DiamondCutFacet")
-	const diamondCutFacet = await DiamondCutFacetFactory.deploy()
-	await diamondCutFacet.waitForDeployment()
-	receipt = (await diamondCutFacet.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	logger.deployed("DiamondCutFacet", await diamondCutFacet.getAddress())
+	let diamondCutFacetAddress: string
+	if (diamondCheckpoint.diamondCutFacet) {
+		diamondCutFacetAddress = diamondCheckpoint.diamondCutFacet.address
+		logger.info(`  ⏭ DiamondCutFacet already deployed at ${diamondCutFacetAddress}`)
+	} else {
+		const DiamondCutFacetFactory = await ethers.getContractFactory("DiamondCutFacet")
+		const diamondCutFacet = await DiamondCutFacetFactory.deploy()
+		await diamondCutFacet.waitForDeployment()
+		receipt = (await diamondCutFacet.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		diamondCutFacetAddress = await diamondCutFacet.getAddress()
+		logger.deployed("DiamondCutFacet", diamondCutFacetAddress)
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.diamondCutFacet = createDeployedContract(diamondCutFacetAddress)
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Deploy Diamond
-	const DiamondFactory = await ethers.getContractFactory("Diamond")
-	const diamond = await DiamondFactory.deploy(owner.address, await diamondCutFacet.getAddress())
-	await diamond.waitForDeployment()
-	receipt = (await diamond.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	logger.deployed("Diamond", await diamond.getAddress())
+	let diamondAddress: string
+	let diamond: any
+	if (diamondCheckpoint.diamond) {
+		diamondAddress = diamondCheckpoint.diamond.address
+		diamond = await ethers.getContractAt("Diamond", diamondAddress)
+		logger.info(`  ⏭ Diamond already deployed at ${diamondAddress}`)
+	} else {
+		const DiamondFactory = await ethers.getContractFactory("Diamond")
+		diamond = await DiamondFactory.deploy(owner.address, diamondCutFacetAddress)
+		await diamond.waitForDeployment()
+		receipt = (await diamond.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		diamondAddress = await diamond.getAddress()
+		logger.deployed("Diamond", diamondAddress)
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.diamond = createDeployedContract(diamondAddress, [owner.address, diamondCutFacetAddress])
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Deploy Init
-	const InitFactory = await ethers.getContractFactory("contracts/core/Init.sol:Init")
-	const init = await InitFactory.deploy()
-	await init.waitForDeployment()
-	receipt = (await init.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	logger.deployed("Init", await init.getAddress())
+	let initAddress: string
+	if (diamondCheckpoint.init) {
+		initAddress = diamondCheckpoint.init.address
+		logger.info(`  ⏭ Init already deployed at ${initAddress}`)
+	} else {
+		const InitFactory = await ethers.getContractFactory("contracts/core/Init.sol:Init")
+		const init = await InitFactory.deploy()
+		await init.waitForDeployment()
+		receipt = (await init.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		initAddress = await init.getAddress()
+		logger.deployed("Init", initAddress)
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.init = createDeployedContract(initAddress)
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Deploy external libraries first
 	logger.subsection("Libraries")
-	const libraryAddresses: Record<string, string> = {}
+	if (!diamondCheckpoint.libraries) {
+		diamondCheckpoint.libraries = {}
+	}
 
 	// Deploy LibQuoteFunding first (no dependencies)
-	const LibQuoteFundingFactory = await ethers.getContractFactory("LibQuoteFunding")
-	const libQuoteFunding = await LibQuoteFundingFactory.deploy()
-	await libQuoteFunding.waitForDeployment()
-	receipt = (await libQuoteFunding.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	libraryAddresses["LibQuoteFunding"] = await libQuoteFunding.getAddress()
-	logger.deployed("LibQuoteFunding", libraryAddresses["LibQuoteFunding"])
+	if (libraryAddresses["LibQuoteFunding"]) {
+		logger.info(`  ⏭ LibQuoteFunding already deployed at ${libraryAddresses["LibQuoteFunding"]}`)
+	} else {
+		const LibQuoteFundingFactory = await ethers.getContractFactory("LibQuoteFunding")
+		const libQuoteFunding = await LibQuoteFundingFactory.deploy()
+		await libQuoteFunding.waitForDeployment()
+		receipt = (await libQuoteFunding.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		libraryAddresses["LibQuoteFunding"] = await libQuoteFunding.getAddress()
+		logger.deployed("LibQuoteFunding", libraryAddresses["LibQuoteFunding"])
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.libraries!["LibQuoteFunding"] = createDeployedContract(libraryAddresses["LibQuoteFunding"])
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Deploy LibQuoteClose (depends on LibQuoteFunding)
-	const LibQuoteCloseFactory = await ethers.getContractFactory("LibQuoteClose", {
-		libraries: {
-			"project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding": libraryAddresses["LibQuoteFunding"],
-		},
-	})
-	const libQuoteClose = await LibQuoteCloseFactory.deploy()
-	await libQuoteClose.waitForDeployment()
-	receipt = (await libQuoteClose.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	libraryAddresses["LibQuoteClose"] = await libQuoteClose.getAddress()
-	logger.deployed("LibQuoteClose", libraryAddresses["LibQuoteClose"])
+	if (libraryAddresses["LibQuoteClose"]) {
+		logger.info(`  ⏭ LibQuoteClose already deployed at ${libraryAddresses["LibQuoteClose"]}`)
+	} else {
+		const LibQuoteCloseFactory = await ethers.getContractFactory("LibQuoteClose", {
+			libraries: {
+				"project/contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding": libraryAddresses["LibQuoteFunding"],
+			},
+		})
+		const libQuoteClose = await LibQuoteCloseFactory.deploy()
+		await libQuoteClose.waitForDeployment()
+		receipt = (await libQuoteClose.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		libraryAddresses["LibQuoteClose"] = await libQuoteClose.getAddress()
+		logger.deployed("LibQuoteClose", libraryAddresses["LibQuoteClose"])
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.libraries!["LibQuoteClose"] = createDeployedContract(libraryAddresses["LibQuoteClose"])
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Deploy LibSettlement (no dependencies)
-	const LibSettlementFactory = await ethers.getContractFactory("LibSettlement")
-	const libSettlement = await LibSettlementFactory.deploy()
-	await libSettlement.waitForDeployment()
-	receipt = (await libSettlement.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	libraryAddresses["LibSettlement"] = await libSettlement.getAddress()
-	logger.deployed("LibSettlement", libraryAddresses["LibSettlement"])
+	if (libraryAddresses["LibSettlement"]) {
+		logger.info(`  ⏭ LibSettlement already deployed at ${libraryAddresses["LibSettlement"]}`)
+	} else {
+		const LibSettlementFactory = await ethers.getContractFactory("LibSettlement")
+		const libSettlement = await LibSettlementFactory.deploy()
+		await libSettlement.waitForDeployment()
+		receipt = (await libSettlement.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		libraryAddresses["LibSettlement"] = await libSettlement.getAddress()
+		logger.deployed("LibSettlement", libraryAddresses["LibSettlement"])
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.libraries!["LibSettlement"] = createDeployedContract(libraryAddresses["LibSettlement"])
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Deploy Facets
 	const cut: Array<{
@@ -111,29 +208,53 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		address: string
 	}> = []
 
+	if (!diamondCheckpoint.facets) {
+		diamondCheckpoint.facets = {}
+	}
+
 	logger.subsection(`Facets (${FacetNames.length} total)`)
 	for (let i = 0; i < FacetNames.length; i++) {
 		const facetName = FacetNames[i]
-		// Check if this facet needs library linking
-		const requiredLibraries = FacetLibraryDependencies[facetName]
-		let FacetFactory
+		const shortName = facetName.includes(":") ? facetName.split(":").pop()! : facetName
 
-		if (requiredLibraries && requiredLibraries.length > 0) {
-			const libraries: Record<string, string> = {}
-			for (const lib of requiredLibraries) {
-				libraries[`project/contracts/core/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
-			}
-			FacetFactory = await ethers.getContractFactory(facetName, { libraries })
+		let facetAddress: string
+
+		// Check if already deployed
+		if (diamondCheckpoint.facets[shortName]) {
+			facetAddress = diamondCheckpoint.facets[shortName].address
+			logger.info(`  ⏭ [${i + 1}/${FacetNames.length}] ${shortName} already deployed at ${facetAddress}`)
 		} else {
-			FacetFactory = await ethers.getContractFactory(facetName)
+			// Check if this facet needs library linking
+			const requiredLibraries = FacetLibraryDependencies[shortName]
+			let FacetFactory
+
+			if (requiredLibraries && requiredLibraries.length > 0) {
+				const libraries: Record<string, string> = {}
+				for (const lib of requiredLibraries) {
+					libraries[`project/contracts/core/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
+				}
+				FacetFactory = await ethers.getContractFactory(facetName, { libraries })
+			} else {
+				FacetFactory = await ethers.getContractFactory(facetName)
+			}
+
+			const facet = await FacetFactory.deploy()
+			await facet.waitForDeployment()
+			receipt = (await facet.deploymentTransaction()!.wait())!
+			totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+			facetAddress = await facet.getAddress()
+			logger.deployed(`[${i + 1}/${FacetNames.length}] ${shortName}`, facetAddress)
+
+			// Save checkpoint
+			if (checkpoint) {
+				diamondCheckpoint.facets![shortName] = createDeployedContract(facetAddress)
+				checkpoint.contracts.diamond = diamondCheckpoint
+				saveCheckpoint(checkpoint)
+			}
 		}
 
-		const facet = await FacetFactory.deploy()
-		await facet.waitForDeployment()
-		receipt = (await facet.deploymentTransaction()!.wait())!
-		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-		const facetAddress = await facet.getAddress()
-		logger.progress(i + 1, FacetNames.length, facetName)
+		// Get facet contract for selectors
+		const facet = await ethers.getContractAt(facetName, facetAddress)
 		cut.push({
 			facetAddress,
 			action: FacetCutAction.Add,
@@ -146,56 +267,87 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		})
 	}
 
-	// Upgrade Diamond with Facets
-	logger.subsection("Diamond Cut")
-	const diamondCut = await ethers.getContractAt("IDiamondCut", await diamond.getAddress())
-
-	// Call Initializer
-	const call = init.interface.encodeFunctionData("init")
-	const chunkSize = 6
-	const totalChunks = Math.ceil(cut.length / chunkSize)
-	for (let i = 0; i < cut.length; i += chunkSize) {
-		const chunk = cut.slice(i, i + chunkSize)
-		const chunkNum = Math.floor(i / chunkSize) + 1
-		const isFirst = i === 0
-		const initTarget = isFirst ? await init.getAddress() : ethers.ZeroAddress
-		const initCalldata = isFirst ? call : "0x"
-		const tx = await diamondCut.diamondCut(chunk, initTarget, initCalldata)
-		receipt = (await tx.wait())!
-		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-
-		if (!receipt.status) {
-			throw Error(`Diamond upgrade failed: ${tx.hash}`)
+	// Upgrade Diamond with Facets (only if not already done)
+	// First check on-chain if diamond cut was already done (handles case where tx succeeded but checkpoint wasn't saved)
+	let diamondCutAlreadyDone = diamondCheckpoint.diamondCutComplete
+	if (!diamondCutAlreadyDone) {
+		try {
+			// Try calling facets() from DiamondLoupeFacet - only exists after diamond cut
+			const loupe = await ethers.getContractAt("IDiamondLoupe", diamondAddress)
+			const facets = await loupe.facets()
+			// If we get more than just DiamondCutFacet, the diamond cut was done
+			if (facets.length > 1) {
+				logger.info("  ⏭ Diamond cut already complete (verified on-chain)")
+				diamondCutAlreadyDone = true
+				// Update checkpoint to reflect on-chain state
+				if (checkpoint) {
+					diamondCheckpoint.diamondCutComplete = true
+					checkpoint.contracts.diamond = diamondCheckpoint
+					saveCheckpoint(checkpoint)
+				}
+			}
+		} catch {
+			// facets() doesn't exist yet, diamond cut not done
 		}
-		logger.progress(chunkNum, totalChunks, `Chunk ${chunkNum} (${chunk.length} facets)`)
+	}
+
+	if (!diamondCutAlreadyDone) {
+		logger.subsection("Diamond Cut")
+		const diamondCut = await ethers.getContractAt("IDiamondCut", diamondAddress)
+		const init = await ethers.getContractAt("contracts/core/Init.sol:Init", initAddress)
+
+		// Call Initializer
+		const call = init.interface.encodeFunctionData("init")
+		const chunkSize = 6
+		const totalChunks = Math.ceil(cut.length / chunkSize)
+		for (let i = 0; i < cut.length; i += chunkSize) {
+			const chunk = cut.slice(i, i + chunkSize)
+			const chunkNum = Math.floor(i / chunkSize) + 1
+			const isFirst = i === 0
+			const initTarget = isFirst ? initAddress : ethers.ZeroAddress
+			const initCalldata = isFirst ? call : "0x"
+			const tx = await diamondCut.diamondCut(chunk, initTarget, initCalldata)
+			receipt = (await tx.wait())!
+			totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+
+			if (!receipt.status) {
+				throw Error(`Diamond upgrade failed: ${tx.hash}`)
+			}
+			logger.progress(chunkNum, totalChunks, `Chunk ${chunkNum} (${chunk.length} facets)`)
+		}
+
+		// Mark diamond cut as complete
+		if (checkpoint) {
+			diamondCheckpoint.diamondCutComplete = true
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	} else {
+		logger.info("  ⏭ Diamond cut already complete")
 	}
 
 	logger.complete("Diamond Deployment", [
-		{ name: "Diamond", address: await diamond.getAddress() },
-		{ name: "DiamondCutFacet", address: await diamondCutFacet.getAddress() },
-		{ name: "Init", address: await init.getAddress() },
+		{ name: "Diamond", address: diamondAddress },
+		{ name: "DiamondCutFacet", address: diamondCutFacetAddress },
+		{ name: "Init", address: initAddress },
 	])
-
-	// if (reportGas) { //FIXME
-	// 	await generateGasReport(ethers.provider as any, totalGasUsed)
-	// }
 
 	// Write addresses to JSON file for etherscan verification
 	if (logData) {
 		writeData(DEPLOYMENT_LOG_FILE, [
 			{
 				name: "DiamondCut",
-				address: await diamondCutFacet.getAddress(),
+				address: diamondCutFacetAddress,
 				constructorArguments: [],
 			},
 			{
 				name: "Diamond",
-				address: await diamond.getAddress(),
-				constructorArguments: [owner.address, await diamondCutFacet.getAddress()],
+				address: diamondAddress,
+				constructorArguments: [owner.address, diamondCutFacetAddress],
 			},
 			{
 				name: "Init",
-				address: await init.getAddress(),
+				address: initAddress,
 				constructorArguments: [],
 			},
 			{

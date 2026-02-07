@@ -1,14 +1,5 @@
-import { ethers } from "./helpers/hardhat-connection"
+import { ethers } from "../test/helpers/hardhat-connection.js"
 
-async function main() {
-	let symmioAddress = ""
-	let facet = await ethers.getContractAt("PartyBFacet", symmioAddress)
-	// console.log(await facet.settleUpnl(564))
-}
-
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
-main().catch(error => {
-	console.error(error)
-	process.exitCode = 1
-})
+const symmioAddress = ""
+const facet = await ethers.getContractAt("PartyBFacet", symmioAddress)
+// console.log(await facet.settleUpnl(564))

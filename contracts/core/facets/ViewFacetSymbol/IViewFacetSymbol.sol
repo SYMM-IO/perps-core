@@ -7,6 +7,11 @@ pragma solidity >=0.8.18;
 import { Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
 import { FundingFee } from "../../storages/FundingStorage.sol";
 
+struct PartyBSymbolCount {
+	address partyB;
+	uint256 symbolCount;
+}
+
 interface IViewFacetSymbol {
 	function getSymbol(uint256 symbolId) external view returns (Symbol memory);
 
@@ -35,4 +40,6 @@ interface IViewFacetSymbol {
 	function forceCloseGapRatio(uint256 symbolId) external view returns (uint256);
 
 	function getFundingFeesOfPartyB(uint256 symbolId, address partyB) external view returns (FundingFee memory);
+
+	function getConnectedPartyBsWithSymbolCounts(address partyA) external view returns (PartyBSymbolCount[] memory);
 }

@@ -23,7 +23,7 @@ struct QuoteParams {
 library LibQuoteParams {
 	bytes4 internal constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
 	bytes4 internal constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
-	bytes4 internal constant SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR = 0x7cd6168d;
+	bytes4 internal constant SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR = 0xa7f3b34b;
 
 	function decodeQuoteParams(bytes calldata cd) external pure returns (QuoteParams memory) {
 		bytes4 selector = bytes4(cd[:4]);

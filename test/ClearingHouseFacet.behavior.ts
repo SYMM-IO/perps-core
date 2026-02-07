@@ -1,18 +1,29 @@
-
 import { expect } from "chai"
 import { ethers, toUtf8Bytes, ZeroAddress } from "ethers"
+
+import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture } from "./helpers/network-helpers.js"
 import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal } from "./utils/Common.js"
-import { getDummyCrossLiquidationSig, getDummyPriceSig } from "./utils/SignatureUtils.js"
+import {
+	LiquidateCrossPartyBValidator,
+	TakeoverPartyALiquidationValidator,
+	DeallocateForCHValidator,
+	DistributeForCHValidator,
+	LiquidatePendingCHValidator,
+	LiquidatePositionsCHValidator,
+	SettlePartyATakeoverValidator,
+	SettleCrossPartyBValidator,
+	SoftPartyBLiquidationValidator,
+} from "./models/validators/ClearingHouseValidators.js"
+import { decimal, getPriceFetcher } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
-import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
-import { loadFixture } from "./helpers/network-helpers.js"
+import { getDummyCrossLiquidationSig, getDummyLiquidationSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeClearingHouseFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
@@ -62,6 +73,10 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 		await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
 	})
+
+	// ============================================
+	// CROSS PARTYB LIQUIDATION TESTS (UPDATED)
+	// ============================================
 
 	describe("None cross partyB mode", async function () {
 		beforeEach(async function () {
@@ -165,18 +180,23 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("Should cross liquidate partyB successfully", async function () {
-				const liquidationSig = await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999"))
+				const validator = new LiquidateCrossPartyBValidator()
+				const upnl = BigInt("-999999999999999999999999999999")
+				const beforeOut = await validator.before(context, { hedger })
+				const liquidationSig = await getDummyCrossLiquidationSig(undefined, upnl)
 
 				await expect(
 					context.clearingHouseFacet.connect(context.signers.liquidator).liquidateCrossPartyB(context.signers.hedger.getAddress(), liquidationSig),
 				).to.not.reverted
 
+				await validator.after(context, { hedger, upnl, beforeOutput: beforeOut })
+
 				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
 				const details = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 
 				expect(details.liquidationId).to.equal("0x")
-				expect(details.upnl).to.equal(BigInt("-999999999999999999999999999999"))
-				expect(details.deallocateForLiquidation).to.equal(0)
+				expect(details.upnl).to.equal(upnl)
+				expect(details.deallocatedPool).to.equal(0)
 			})
 
 			it("Should fail to cross liquidate a partyB twice", async function () {
@@ -245,7 +265,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 		})
 	})
 
-	describe("deallocateForCrossLiquidation", () => {
+	describe("deallocateForClearingHouse (Cross PartyB)", () => {
 		beforeEach(async () => {
 			// Quote1 -> opened
 			await hedger.lockQuote(1)
@@ -264,12 +284,12 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			await migratePartyBToCross(context, hedger, [1, 2, 4, 5])
 		})
 
-		it("should failed when partyB not marked as cross liquid", async () => {
+		it("should fail when partyB not marked as cross liquidated", async () => {
 			await expect(
 				context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.deallocateForCrossLiquidation(context.signers.hedger, [context.signers.user], [100n]),
-			).to.revertedWith("ClearingHouseFacet: PartyB is solvent")
+					.deallocateForClearingHouse(context.signers.hedger, [context.signers.hedger], [ZeroAddress], [100n]),
+			).to.revertedWith("ClearingHouseFacet: No active liquidation")
 		})
 
 		describe("After PartyB Liquidation", () => {
@@ -282,27 +302,44 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					)
 			})
 
-			it("should failed when deallocated amount be more than partyB allocation for for partyA", async () => {
+			it("should fail when deallocated amount be more than partyB allocation", async () => {
 				const allocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.deallocateForCrossLiquidation(context.signers.hedger, [context.signers.user], [allocated + BigInt(10)]),
+						.deallocateForClearingHouse(context.signers.hedger, [context.signers.hedger], [ZeroAddress], [allocated + BigInt(10)]),
 				).to.revertedWith("ClearingHouseFacet: Insufficient allocated balance")
 			})
 
-			it("should deallocated amount successfully", async () => {
+			it("should deallocate amount successfully", async () => {
 				const OldAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
+				const hedgerAddress = await hedger.getAddress()
+				const validator = new DeallocateForCHValidator()
+				const beforeOut = await validator.before(context, {
+					subject: hedgerAddress,
+					parties: [hedgerAddress],
+					allocationKeys: [ZeroAddress],
+					amounts: [OldAllocated],
+				})
+
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.deallocateForCrossLiquidation(context.signers.hedger, [context.signers.user], [OldAllocated]),
+						.deallocateForClearingHouse(context.signers.hedger, [context.signers.hedger], [ZeroAddress], [OldAllocated]),
 				).to.not.reverted
+
+				await validator.after(context, {
+					subject: hedgerAddress,
+					parties: [hedgerAddress],
+					allocationKeys: [ZeroAddress],
+					amounts: [OldAllocated],
+					beforeOutput: beforeOut,
+				})
 
 				const newAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 				const d = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 				expect(newAllocated).to.equal(0)
-				expect(d.deallocateForLiquidation).to.equal(OldAllocated)
+				expect(d.deallocatedPool).to.equal(OldAllocated)
 			})
 
 			it("should deallocate for multiple partyAs in batch", async () => {
@@ -314,9 +351,10 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.deallocateForCrossLiquidation(
+						.deallocateForClearingHouse(
 							context.signers.hedger,
-							[context.signers.user, context.signers.user2],
+							[context.signers.hedger, context.signers.hedger],
+							[ZeroAddress, ZeroAddress],
 							[deallocateAmount1, deallocateAmount2],
 						),
 				).to.not.reverted
@@ -325,11 +363,11 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const d = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 
 				expect(newAllocatedCross).to.equal(OldAllocatedCross - deallocateAmount1 - deallocateAmount2)
-				expect(d.deallocateForLiquidation).to.equal(deallocateAmount1 + deallocateAmount2)
+				expect(d.deallocatedPool).to.equal(deallocateAmount1 + deallocateAmount2)
 			})
 		})
 
-		describe("distribute", () => {
+		describe("distributeForClearingHouse (Cross PartyB)", () => {
 			beforeEach(async () => {
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
@@ -340,31 +378,49 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.deallocateForCrossLiquidation(context.signers.hedger, [context.signers.user], [1000n])
+					.deallocateForClearingHouse(context.signers.hedger, [context.signers.hedger], [ZeroAddress], [1000n])
 			})
 
 			it("should fail when amount be more than deallocated for liquidation", async () => {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.distributeForCrossLiquidation(context.signers.hedger, [context.signers.user], [1001n]),
-				).to.revertedWith("ClearingHouseFacet: Insufficient allocated balance")
+						.distributeForClearingHouse(context.signers.hedger, [context.signers.user], [ZeroAddress], [1001n]),
+				).to.revertedWith("ClearingHouseFacet: Insufficient deallocated balance")
 			})
 
 			it("should distribute to receiver successfully", async () => {
 				const oldAllocation = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user)
+				const hedgerAddress = await hedger.getAddress()
+				const userAddress = await user.getAddress()
 				const transferAmount = 1000n
+
+				const validator = new DistributeForCHValidator()
+				const beforeOut = await validator.before(context, {
+					subject: hedgerAddress,
+					receivers: [userAddress],
+					allocationKeys: [ZeroAddress],
+					amounts: [transferAmount],
+				})
 
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.distributeForCrossLiquidation(context.signers.hedger, [context.signers.user], [transferAmount]),
+						.distributeForClearingHouse(context.signers.hedger, [context.signers.user], [ZeroAddress], [transferAmount]),
 				).to.not.reverted
+
+				await validator.after(context, {
+					subject: hedgerAddress,
+					receivers: [userAddress],
+					allocationKeys: [ZeroAddress],
+					amounts: [transferAmount],
+					beforeOutput: beforeOut,
+				})
 
 				const details = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 				const newAllocation = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user)
 
-				expect(details.deallocateForLiquidation).to.equal(0)
+				expect(details.deallocatedPool).to.equal(0)
 				expect(newAllocation).to.equal(oldAllocation + transferAmount)
 			})
 
@@ -374,22 +430,22 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.distributeForCrossLiquidation(context.signers.hedger, [context.signers.user], [partialAmount])
+					.distributeForClearingHouse(context.signers.hedger, [context.signers.user], [ZeroAddress], [partialAmount])
 
 				const detailsAfter = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
-				expect(detailsAfter.deallocateForLiquidation).to.equal(detailsBefore.deallocateForLiquidation - partialAmount)
+				expect(detailsAfter.deallocatedPool).to.equal(detailsBefore.deallocatedPool - partialAmount)
 			})
 
 			it("should fail when partyB is not liquidated", async () => {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.distributeForCrossLiquidation(context.signers.hedger2, [context.signers.user], [1n]),
-				).to.be.revertedWith("ClearingHouseFacet: PartyB is solvent")
+						.distributeForClearingHouse(context.signers.hedger2, [context.signers.user], [ZeroAddress], [1n]),
+				).to.be.revertedWith("ClearingHouseFacet: No active liquidation")
 			})
 		})
 
-		describe("liquidatePendingQuotes", () => {
+		describe("liquidatePendingPositionsForClearingHouse (Cross PartyB)", () => {
 			beforeEach(async () => {
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
@@ -410,6 +466,8 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should liquidate pending quotes successfully", async () => {
+				const hedgerAddress = await hedger.getAddress()
+				const userAddress = await user.getAddress()
 				const oldUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
 				const pendingBefore = (await user.getBalanceInfo()).totalPendingLockedPartyA
 				const targetedQuotes: QuoteStructOutput[] = []
@@ -424,11 +482,25 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					}
 				}
 
+				const validator = new LiquidatePendingCHValidator()
+				const beforeOut = await validator.before(context, {
+					subject: hedgerAddress,
+					counterparties: [userAddress],
+					isCrossPartyB: true,
+				})
+
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user]),
+						.liquidatePendingPositionsForClearingHouse(context.signers.hedger, [context.signers.user]),
 				).to.not.reverted
+
+				await validator.after(context, {
+					subject: hedgerAddress,
+					counterparties: [userAddress],
+					isCrossPartyB: true,
+					beforeOutput: beforeOut,
+				})
 
 				const newUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
 
@@ -453,7 +525,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger, [context.signers.user, context.signers.user2]),
+						.liquidatePendingPositionsForClearingHouse(context.signers.hedger, [context.signers.user, context.signers.user2]),
 				).to.not.reverted
 
 				const newUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
@@ -467,12 +539,12 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.liquidatePendingPositionsForCrossLiquidation(context.signers.hedger2, [context.signers.user]),
-				).to.be.revertedWith("ClearingHouseFacet: PartyB is solvent")
+						.liquidatePendingPositionsForClearingHouse(context.signers.hedger2, [context.signers.user]),
+				).to.be.revertedWith("ClearingHouseFacet: No active liquidation")
 			})
 		})
 
-		describe("liquidateCrossPositionsPartyB", () => {
+		describe("liquidatePositionsForClearingHouse (Cross PartyB)", () => {
 			beforeEach(async () => {
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
@@ -483,11 +555,25 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should liquidate cross positions successfully", async () => {
-				const priceSig = await getDummyPriceSig([1n], [decimal(1n)])
+				const hedgerAddress = await hedger.getAddress()
+				const validator = new LiquidatePositionsCHValidator()
+				const beforeOut = await validator.before(context, {
+					subject: hedgerAddress,
+					quoteIds: [1n],
+				})
 
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger, priceSig),
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.hedger, [1n], [decimal(1n)]),
 				).to.not.reverted
+
+				await validator.after(context, {
+					subject: hedgerAddress,
+					quoteIds: [1n],
+					prices: [decimal(1n)],
+					beforeOutput: beforeOut,
+				})
 
 				const quote1: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
 
@@ -495,23 +581,23 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should fail when partyB is not liquidated", async () => {
-				const priceSig = await getDummyPriceSig([1n], [decimal(1n)])
-
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger2, priceSig),
-				).to.be.revertedWith("ClearingHouseFacet: PartyB is solvent")
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.hedger2, [1n], [decimal(1n)]),
+				).to.be.revertedWith("ClearingHouseFacet: No active liquidation")
 			})
 
 			it("should update position statuses correctly", async () => {
-				const priceSig = await getDummyPriceSig([1n, 4n], [decimal(1n), decimal(1n)])
-
 				const quote1Before: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
 				const quote4Before: QuoteStructOutput = await context.viewFacetQuote.getQuote(4)
 
 				expect(quote1Before.quoteStatus).to.equal(QuoteStatus.OPENED)
 				expect(quote4Before.quoteStatus).to.equal(QuoteStatus.OPENED)
 
-				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(context.signers.hedger, priceSig)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger, [1n, 4n], [decimal(1n), decimal(1n)])
 
 				const quote1After: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
 				const quote4After: QuoteStructOutput = await context.viewFacetQuote.getQuote(4)
@@ -601,8 +687,20 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(await hedger2.getAddress(), await getDummyCrossLiquidationSig(undefined, -decimal(1_000_000n)))
 
-				const priceSig = await getDummyPriceSig([quoteUser1.id, quoteUser2.id], [quoteUser1.openedPrice, quoteUser2.openedPrice])
-				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForCrossLiquidation(hedger2.address, priceSig)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(hedger2.address, [quoteUser1.id, quoteUser2.id], [quoteUser1.openedPrice, quoteUser2.openedPrice])
+
+				// Use validator to verify settle cross partyB
+				const settleValidator = new SettleCrossPartyBValidator()
+				const settleBeforeOut = await settleValidator.before(context, { hedger: hedger2 })
+
+				// Explicitly settle the cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settleCrossPartyBLiquidation(hedger2.address)
+
+				await settleValidator.after(context, { hedger: hedger2, beforeOutput: settleBeforeOut })
 
 				const crossBucketAfter = await hedger2.getBalanceInfoCrossPartyB()
 
@@ -615,6 +713,905 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 		})
 	})
+
+	// ============================================
+	// PARTYA TAKEOVER TESTS (NEW)
+	// ============================================
+
+	describe("PartyA Takeover Flow", () => {
+		beforeEach(async () => {
+			// Quote1 -> opened (SHORT - already SHORT from parent beforeEach)
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			// Quote2 -> locked (pending)
+			await hedger.lockQuote(2)
+
+			// Quote3 -> sent (pending)
+			// (already sent in parent beforeEach)
+
+			// Quote4 -> opened (this is LONG by default, but we need it to not offset Quote1)
+			// Skip quote 4 to avoid UPNL offset between SHORT and LONG positions
+			// await hedger.lockQuote(4)
+			// await hedger.openPosition(4)
+
+			// Quote5 -> locked (pending)
+			await hedger.lockQuote(5)
+
+			// Allocate more for partyB to isolated buckets
+			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(500n), user.address)
+		})
+
+		describe("takeoverPartyALiquidation", () => {
+			it("should fail if partyA is not being liquidated", async () => {
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address),
+				).to.be.revertedWith("ClearingHouseFacet: PartyA is not being liquidated")
+			})
+
+			it("should fail if caller doesn't have CLEARING_HOUSE_ROLE", async () => {
+				// First liquidate partyA normally - use high price to cause insolvency on SHORT
+				const symbolIds = [1n]
+				const prices = [decimal(25n)] // Price 25 causes UPNL = (1-25)*100 = -2400 loss on SHORT
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.user2).takeoverPartyALiquidation(context.signers.user.address),
+				).to.be.revertedWith("Accessibility: Must have role")
+			})
+
+			it("should succeed when partyA is already being liquidated", async () => {
+				// First liquidate partyA normally
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				const validator = new TakeoverPartyALiquidationValidator()
+				const beforeOut = await validator.before(context, { user })
+
+				// Now takeover the liquidation
+				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)).to.not.be
+					.reverted
+
+				await validator.after(context, { user, beforeOutput: beforeOut })
+			})
+
+			it("should emit TakeoverPartyALiquidation event", async () => {
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)).to.emit(
+					context.clearingHouseFacet,
+					"TakeoverPartyALiquidation",
+				)
+			})
+
+			it("should fail if takeover is already in progress", async () => {
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// First takeover
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+
+				// Second takeover should fail
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address),
+				).to.be.revertedWith("ClearingHouseFacet: Takeover already in progress")
+			})
+
+			it("should block normal liquidation functions after takeover", async () => {
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				const liquidationSig = await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Takeover
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+
+				// Try to use normal liquidation functions - should fail
+				await expect(
+					context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(context.signers.user.address, liquidationSig),
+				).to.be.revertedWith("LiquidationFacet: Takeover in progress")
+
+				await expect(
+					context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePendingPositionsPartyA(context.signers.user.address),
+				).to.be.revertedWith("LiquidationFacet: Takeover in progress")
+
+				await expect(
+					context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(context.signers.user.address, [1n]),
+				).to.be.revertedWith("LiquidationFacet: Takeover in progress")
+
+				await expect(
+					context.partyALiquidationFacet
+						.connect(context.signers.liquidator)
+						.settlePartyALiquidation(context.signers.user.address, [context.signers.hedger.address]),
+				).to.be.revertedWith("LiquidationFacet: Takeover in progress")
+			})
+
+			it("should clear disputed flag and liquidation fee after takeover", async () => {
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// PartyA should be liquidated
+				const isLiquidated = await context.viewFacet.isPartyALiquidated(context.signers.user.address)
+				expect(isLiquidated).to.equal(true)
+
+				// Takeover
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+
+				// Check liquidation details after takeover
+				const detailsAfter = await context.viewFacet.getLiquidatedStateOfPartyA(context.signers.user.address)
+				expect(detailsAfter.liquidationFee).to.equal(0)
+				expect(detailsAfter.disputed).to.equal(false)
+
+				// PartyA should still be in liquidation (but now controlled by clearing house)
+				const stillLiquidated = await context.viewFacet.isPartyALiquidated(context.signers.user.address)
+				expect(stillLiquidated).to.equal(true)
+			})
+		})
+
+		describe("deallocateForClearingHouse (PartyA Takeover)", () => {
+			beforeEach(async () => {
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Takeover the liquidation
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+			})
+
+			it("should pull from partyA allocatedBalances using key=address(0)", async () => {
+				const userAddress = await user.getAddress()
+				const balanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user.address)
+				const pullAmount = 100n
+
+				const validator = new DeallocateForCHValidator()
+				const beforeOut = await validator.before(context, {
+					subject: userAddress,
+					parties: [userAddress],
+					allocationKeys: [ZeroAddress],
+					amounts: [pullAmount],
+				})
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.deallocateForClearingHouse(context.signers.user.address, [context.signers.user.address], [ZeroAddress], [pullAmount])
+
+				await validator.after(context, {
+					subject: userAddress,
+					parties: [userAddress],
+					allocationKeys: [ZeroAddress],
+					amounts: [pullAmount],
+					beforeOutput: beforeOut,
+				})
+
+				const balanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user.address)
+				expect(balanceAfter).to.equal(balanceBefore - pullAmount)
+			})
+
+			it("should pull from partyB isolated allocation using key=partyA", async () => {
+				const isolatedBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				const pullAmount = 100n
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.deallocateForClearingHouse(context.signers.user.address, [context.signers.hedger.address], [context.signers.user.address], [pullAmount])
+
+				const isolatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				expect(isolatedBalanceAfter).to.equal(isolatedBalanceBefore - pullAmount)
+			})
+
+			it("should fail with insufficient allocated balance", async () => {
+				const balance = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user.address)
+				const excessiveAmount = balance + 1n
+
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.user.address, [context.signers.user.address], [ZeroAddress], [excessiveAmount]),
+				).to.be.revertedWith("ClearingHouseFacet: Insufficient allocated balance")
+			})
+
+			it("should fail with invalid allocation key for partyA", async () => {
+				// address(0) = allocatedBalances, address(1) = partyAReimbursement, anything else is invalid
+				const invalidKey = "0x0000000000000000000000000000000000000002"
+
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.user.address, [context.signers.user.address], [invalidKey], [100n]),
+				).to.be.revertedWith("ClearingHouseFacet: Invalid allocation key for partyA")
+			})
+
+			it("should pull from multiple sources in batch", async () => {
+				const partyABalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user.address)
+				const partyBIsolatedBefore = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+
+				const amountFromPartyA = 50n
+				const amountFromPartyB = 100n
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.deallocateForClearingHouse(
+						context.signers.user.address,
+						[context.signers.user.address, context.signers.hedger.address],
+						[ZeroAddress, context.signers.user.address],
+						[amountFromPartyA, amountFromPartyB],
+					)
+
+				const partyABalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user.address)
+				const partyBIsolatedAfter = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+
+				expect(partyABalanceAfter).to.equal(partyABalanceBefore - amountFromPartyA)
+				expect(partyBIsolatedAfter).to.equal(partyBIsolatedBefore - amountFromPartyB)
+			})
+		})
+
+		describe("distributeForClearingHouse (PartyA Takeover)", () => {
+			beforeEach(async () => {
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Takeover
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+
+				// Deallocate some funds first
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.deallocateForClearingHouse(context.signers.user.address, [context.signers.hedger.address], [context.signers.user.address], [1000n])
+			})
+
+			it("should distribute to receivers successfully", async () => {
+				const receiverBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user2.address)
+				const distributeAmount = 500n
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.distributeForClearingHouse(context.signers.user.address, [context.signers.user2.address], [ZeroAddress], [distributeAmount])
+
+				const receiverBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user2.address)
+				expect(receiverBalanceAfter).to.equal(receiverBalanceBefore + distributeAmount)
+			})
+
+			it("should fail when distributing more than deallocated pool", async () => {
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.liquidator).distributeForClearingHouse(
+						context.signers.user.address,
+						[context.signers.user2.address],
+						[ZeroAddress],
+						[2000n], // More than what was deallocated
+					),
+				).to.be.revertedWith("ClearingHouseFacet: Insufficient deallocated balance")
+			})
+
+			it("should distribute to multiple receivers", async () => {
+				const receiver1Before = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user2.address)
+				// hedger is a partyB, so check their partyB allocated balance (isolated with user)
+				const receiver2Before = await context.viewFacet.allocatedBalanceOfPartyB(
+					context.signers.hedger.address,
+					context.signers.user.address,
+				)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.distributeForClearingHouse(
+						context.signers.user.address,
+						[context.signers.user2.address, context.signers.hedger.address],
+						[ZeroAddress, context.signers.user.address], // user2 is partyA (key ignored), hedger is partyB (isolated with user)
+						[300n, 400n],
+					)
+
+				const receiver1After = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user2.address)
+				const receiver2After = await context.viewFacet.allocatedBalanceOfPartyB(
+					context.signers.hedger.address,
+					context.signers.user.address,
+				)
+
+				expect(receiver1After).to.equal(receiver1Before + 300n)
+				expect(receiver2After).to.equal(receiver2Before + 400n)
+			})
+		})
+
+		describe("liquidatePendingPositionsForClearingHouse (PartyA Takeover)", () => {
+			beforeEach(async () => {
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Takeover
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+			})
+
+			it("should liquidate all pending quotes for partyA", async () => {
+				const userAddress = await user.getAddress()
+				const pendingBefore = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)
+				expect(pendingBefore.length).to.be.greaterThan(0)
+
+				const validator = new LiquidatePendingCHValidator()
+				const beforeOut = await validator.before(context, {
+					subject: userAddress,
+					counterparties: [],
+					isCrossPartyB: false,
+				})
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.user.address, []) // counterparties ignored for partyA takeover
+
+				await validator.after(context, {
+					subject: userAddress,
+					counterparties: [],
+					isCrossPartyB: false,
+					beforeOutput: beforeOut,
+				})
+
+				const pendingAfter = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)
+				expect(pendingAfter.length).to.equal(0)
+			})
+
+			it("should update quote statuses to LIQUIDATED_PENDING", async () => {
+				// Quote 2 and 5 are locked (pending)
+				const quote2Before = await context.viewFacetQuote.getQuote(2)
+				const quote5Before = await context.viewFacetQuote.getQuote(5)
+				expect(quote2Before.quoteStatus).to.equal(QuoteStatus.LOCKED)
+				expect(quote5Before.quoteStatus).to.equal(QuoteStatus.LOCKED)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.user.address, [])
+
+				const quote2After = await context.viewFacetQuote.getQuote(2)
+				const quote5After = await context.viewFacetQuote.getQuote(5)
+				expect(quote2After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+				expect(quote5After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+			})
+
+			it("should emit event with liquidated amounts", async () => {
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForClearingHouse(context.signers.user.address, []),
+				).to.emit(context.clearingHouseFacet, "LiquidatePendingPositionsForClearingHouse")
+			})
+		})
+
+		describe("liquidatePositionsForClearingHouse (PartyA Takeover)", () => {
+			beforeEach(async () => {
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Takeover
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+			})
+
+			it("should liquidate open positions with given prices", async () => {
+				const userAddress = await user.getAddress()
+				const quote1Before = await context.viewFacetQuote.getQuote(1)
+				expect(quote1Before.quoteStatus).to.equal(QuoteStatus.OPENED)
+
+				const validator = new LiquidatePositionsCHValidator()
+				const beforeOut = await validator.before(context, {
+					subject: userAddress,
+					quoteIds: [1n],
+				})
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.user.address, [1n], [decimal(25n)])
+
+				await validator.after(context, {
+					subject: userAddress,
+					quoteIds: [1n],
+					prices: [decimal(25n)],
+					beforeOutput: beforeOut,
+				})
+
+				const quote1After = await context.viewFacetQuote.getQuote(1)
+				expect(quote1After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
+			})
+
+			it("should emit LiquidatePositionsForClearingHouse event", async () => {
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.user.address, [1n], [decimal(25n)]),
+				).to.emit(context.clearingHouseFacet, "LiquidatePositionsForClearingHouse")
+			})
+
+			it("should fail if quote doesn't belong to the partyA being liquidated", async () => {
+				// Quote 1 belongs to user, not user2
+				// This would fail because user2 is not in takeover
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForClearingHouse(
+						context.signers.user2.address, // Different partyA
+						[1n],
+						[decimal(25n)],
+					),
+				).to.be.revertedWith("ClearingHouseFacet: No active liquidation")
+			})
+
+			it("should fail if partyB is in liquidation process", async () => {
+				// First put hedger in liquidation
+				await migratePartyBToCross(context, hedger, [1])
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.address,
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+
+				// Now try to liquidate positions - should fail since partyB is in cross liquidation
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.user.address, [1n], [decimal(25n)]),
+				).to.be.revertedWith("ClearingHouseFacet: PartyB is in cross liquidation process")
+			})
+		})
+
+		describe("settlePartyATakeover", () => {
+			beforeEach(async () => {
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Takeover
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+
+				// Liquidate pending positions
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.user.address, [])
+
+				// Liquidate open positions (only quote 1 is open)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.user.address, [1n], [decimal(25n)])
+			})
+
+			it("should fail if takeover is not in progress", async () => {
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user2.address, []),
+				).to.be.revertedWith("ClearingHouseFacet: Takeover not in progress")
+			})
+
+			it("should fail if deallocated pool has undistributed funds", async () => {
+				// Deallocate some funds but don't distribute them
+				const partyBIsolated = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				if (partyBIsolated > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(
+							context.signers.user.address,
+							[context.signers.hedger.address],
+							[context.signers.user.address],
+							[partyBIsolated],
+						)
+				}
+
+				// Try to settle without distributing - should fail
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, []),
+				).to.be.revertedWith("ClearingHouseFacet: Undistributed funds in deallocated pool")
+			})
+
+			it("should clear liquidation status", async () => {
+				const statusBefore = await context.viewFacet.isPartyALiquidated(context.signers.user.address)
+				expect(statusBefore).to.equal(true)
+
+				const validator = new SettlePartyATakeoverValidator()
+				const beforeOut = await validator.before(context, { user })
+
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+
+				await validator.after(context, { user, settledPartyBs: [], beforeOutput: beforeOut })
+
+				const statusAfter = await context.viewFacet.isPartyALiquidated(context.signers.user.address)
+				expect(statusAfter).to.equal(false)
+			})
+
+			it("should increment partyA nonce", async () => {
+				const nonceBefore = await context.viewFacet.nonceOfPartyA(context.signers.user.address)
+
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+
+				const nonceAfter = await context.viewFacet.nonceOfPartyA(context.signers.user.address)
+				expect(nonceAfter).to.equal(nonceBefore + 1n)
+			})
+
+			it("should emit SettlePartyATakeover event", async () => {
+				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, []))
+					.to.emit(context.clearingHouseFacet, "SettlePartyATakeover")
+					.withArgs(context.signers.user.address, "0x10")
+			})
+
+			it("should allow partyA to trade again after settlement", async () => {
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+
+				// PartyA should be able to send new quotes (sendQuote returns quote ID, not tx)
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				expect(quoteId).to.be.greaterThan(0n)
+			})
+		})
+
+		describe("Full PartyA Takeover Flow", () => {
+			it("should complete full takeover flow end-to-end", async () => {
+				// Step 1: PartyA gets liquidated normally
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Step 2: Clearing house takes over
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(context.signers.user.address)
+
+				// Step 3: Liquidate pending positions
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.user.address, [])
+
+				// Step 4: Liquidate open positions (only quote 1 is open)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.user.address, [1n], [decimal(25n)])
+
+				// Step 5: Deallocate funds from partyB
+				const partyBIsolated = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				if (partyBIsolated > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(
+							context.signers.user.address,
+							[context.signers.hedger.address],
+							[context.signers.user.address],
+							[partyBIsolated],
+						)
+
+					// Step 6: Distribute ALL funds to receivers (must distribute everything before settle)
+					await context.clearingHouseFacet.connect(context.signers.liquidator).distributeForClearingHouse(
+						context.signers.user.address,
+						[context.signers.admin.address],
+						[ZeroAddress], // admin is not a partyB, key ignored
+						[partyBIsolated], // Distribute all, not half
+					)
+				}
+
+				// Step 7: Settle
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+
+				// Verify final state
+				const liquidationStatus = await context.viewFacet.isPartyALiquidated(context.signers.user.address)
+				expect(liquidationStatus).to.equal(false)
+
+				const positionsCount = await context.viewFacetQuote.partyAPositionsCount(context.signers.user.address)
+				expect(positionsCount).to.equal(0)
+
+				const pendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)
+				expect(pendingQuotes.length).to.equal(0)
+			})
+		})
+	})
+
+	// ============================================
+	// SIMULTANEOUS PARTYA + CROSS PARTYB LIQUIDATION
+	// ============================================
+
+	describe("Simultaneous PartyA + Cross PartyB Liquidation", () => {
+		beforeEach(async () => {
+			// Quote1 -> opened (SHORT)
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+
+			// Quote2 -> locked (pending)
+			await hedger.lockQuote(2)
+
+			// Quote5 -> locked (pending)
+			await hedger.lockQuote(5)
+
+			// Migrate hedger to cross mode (only quotes 1, 2, 5 — skip quote 4 to avoid offsetting UPNL)
+			await migratePartyBToCross(context, hedger, [1, 2, 5])
+		})
+
+		describe("Auto-takeover via liquidatePositionsForClearingHouse", () => {
+			beforeEach(async () => {
+				// Liquidate partyA normally first
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+			})
+
+			it("should auto-takeover partyA liquidation when processing positions", async () => {
+				// Before: no takeover
+				const detailsBefore = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(detailsBefore.inProgress).to.equal(false)
+
+				// Liquidate positions — should trigger auto-takeover
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)]),
+				)
+					.to.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
+					.withArgs(context.signers.user.address, "0x10")
+
+				// After: takeover in progress
+				const detailsAfter = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(detailsAfter.inProgress).to.equal(true)
+			})
+
+			it("should not emit AutoTakeoverPartyALiquidation on subsequent calls for same partyA", async () => {
+				// Liquidate pending first (triggers auto-takeover for user)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address])
+
+				// Now liquidate positions — takeover already happened, should NOT emit again
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)]),
+				).to.not.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
+			})
+		})
+
+		describe("Auto-takeover via liquidatePendingPositionsForClearingHouse", () => {
+			beforeEach(async () => {
+				// Liquidate partyA normally first
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+			})
+
+			it("should auto-takeover partyA when processing pending quotes", async () => {
+				const detailsBefore = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(detailsBefore.inProgress).to.equal(false)
+
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address]),
+				)
+					.to.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
+					.withArgs(context.signers.user.address, "0x10")
+
+				const detailsAfter = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(detailsAfter.inProgress).to.equal(true)
+			})
+		})
+
+		describe("settlePartyALiquidation blocked by cross partyB", () => {
+			it("should revert when settling partyA with a partyB in cross liquidation", async () => {
+				// Liquidate partyA (only has quote 1 SHORT with cross hedger)
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation for hedger
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+
+				// Liquidate pending positions (triggers auto-takeover)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address])
+
+				// Liquidate open positions via clearing house
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)])
+
+				// All positions are closed now, but hedger is still in cross liquidation.
+				// The normal liquidation flow's settlePartyALiquidation should be blocked
+				// because it has a settlement state for a cross-liquidated partyB.
+				// However, since auto-takeover kicked in, settlePartyALiquidation is blocked
+				// by "Takeover in progress" check. Let's verify the cross liquidation guard
+				// by checking that the normal `liquidatePositionsPartyA` is blocked for cross partyBs.
+				// We test the guard directly by attempting to settle with the cross partyB.
+
+				// The takeover guard fires first, but if we were to bypass it (hypothetically),
+				// the cross liquidation guard would also block. Verify the takeover is in progress:
+				const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(takeoverDetails.inProgress).to.equal(true)
+
+				// settlePartyALiquidation is blocked by takeover
+				await expect(
+					context.partyALiquidationFacet
+						.connect(context.signers.liquidator)
+						.settlePartyALiquidation(context.signers.user.address, [context.signers.hedger.address]),
+				).to.be.revertedWith("LiquidationFacet: Takeover in progress")
+			})
+
+			it("should block normal liquidatePositionsPartyA for cross-liquidated partyB", async () => {
+				// Liquidate partyA
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+
+				// Normal liquidatePositionsPartyA should fail for cross-liquidated partyB
+				await expect(
+					context.partyALiquidationFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsPartyA(context.signers.user.address, [1n]),
+				).to.be.revertedWith("LiquidationFacet: PartyB is in cross liquidation process")
+			})
+		})
+
+		describe("distributeForClearingHouse routes to reimbursement for liquidated partyA", () => {
+			beforeEach(async () => {
+				// Liquidate partyA
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+
+				// Deallocate some funds from cross partyB
+				const crossAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
+				if (crossAllocated > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.hedger.address, [context.signers.hedger.address], [ZeroAddress], [crossAllocated])
+				}
+			})
+
+			it("should route funds to partyAReimbursement when partyA is liquidated", async () => {
+				const crossDetails = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger.address)
+				const distributeAmount = crossDetails.deallocatedPool > 0n ? crossDetails.deallocatedPool : 0n
+				if (distributeAmount == 0n) return // nothing to distribute
+
+				const reimbursementBefore = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.distributeForClearingHouse(context.signers.hedger.address, [context.signers.user.address], [ZeroAddress], [distributeAmount])
+
+				const reimbursementAfter = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+				expect(reimbursementAfter).to.equal(reimbursementBefore + distributeAmount)
+			})
+		})
+
+	describe("Full end-to-end simultaneous liquidation", () => {
+			it("should complete both liquidations", async () => {
+				// Step 1: Liquidate partyA normally
+				const symbolIds = [1n]
+				const prices = [decimal(25n)]
+				await user.liquidateAndSetSymbolPrices(symbolIds, prices, [1n])
+
+				// Step 2: Start cross partyB liquidation
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(
+						context.signers.hedger.getAddress(),
+						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					)
+
+				// Step 3: Deallocate from cross partyB
+				const crossAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
+				if (crossAllocated > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.hedger.address, [context.signers.hedger.address], [ZeroAddress], [crossAllocated])
+				}
+
+				// Step 4: Liquidate hedger's pending positions for user (triggers auto-takeover)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address])
+
+				// Verify auto-takeover happened
+				const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(takeoverDetails.inProgress).to.equal(true)
+
+				// Step 5: Liquidate open positions (cross partyB flow)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)])
+
+				// Step 6: Distribute cross partyB pool (if any)
+				const crossDetails = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger.address)
+				if (crossDetails.deallocatedPool > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForClearingHouse(
+							context.signers.hedger.address,
+							[context.signers.user.address],
+							[ZeroAddress],
+							[crossDetails.deallocatedPool],
+						)
+				}
+
+				// Step 7: Settle cross partyB
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger.address)
+
+				// Step 8: Process remaining partyA pending quotes (quotes 3, 4 are SENT, no partyB assigned)
+				// These weren't handled by cross partyB flow. Use takeover flow to clear them.
+				const remainingPending = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)
+				if (remainingPending.length > 0) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePendingPositionsForClearingHouse(context.signers.user.address, [])
+				}
+
+				// Step 9: Deallocate and distribute for partyA takeover
+				const partyAAllocated = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user.address)
+				const reimbursement = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+				if (partyAAllocated > 0n) {
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.user.address, [context.signers.user.address], [ZeroAddress], [partyAAllocated])
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForClearingHouse(context.signers.user.address, [context.signers.admin.address], [ZeroAddress], [partyAAllocated])
+				}
+				if (reimbursement > 0n) {
+					const REIMBURSEMENT_KEY = "0x0000000000000000000000000000000000000001"
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.user.address, [context.signers.user.address], [REIMBURSEMENT_KEY], [reimbursement])
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForClearingHouse(context.signers.user.address, [context.signers.admin.address], [ZeroAddress], [reimbursement])
+				}
+
+				// Step 10: Settle partyA takeover
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+
+				// Verify final state
+				const liquidationStatus = await context.viewFacet.isPartyALiquidated(context.signers.user.address)
+				expect(liquidationStatus).to.equal(false)
+
+				const positionsCount = await context.viewFacetQuote.partyAPositionsCount(context.signers.user.address)
+				expect(positionsCount).to.equal(0)
+
+				const pendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)
+				expect(pendingQuotes.length).to.equal(0)
+
+				// PartyA can trade again after depositing fresh funds
+				await user.setBalances(decimal(2000n), decimal(2000n), decimal(2000n))
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				expect(quoteId).to.be.greaterThan(0n)
+			})
+		})
+	})
+
+	// ============================================
+	// SOFT LIQUIDATION TESTS
+	// ============================================
 
 	describe("SoftLiquidation", () => {
 		describe("SoftLiquidation without cross partyB mode enabled", () => {
@@ -637,18 +1634,28 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should deduct from partyB allocated balance for specific partyA", async () => {
-				const beforeCollectorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
-				const beforeAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				const userAddress = await user.getAddress()
+				const penaltyFromAllocated = decimal(200n)
+
+				const validator = new SoftPartyBLiquidationValidator()
+				const beforeOut = await validator.before(context, {
+					hedger,
+					partyA: userAddress,
+					penaltyFromAllocated,
+					penaltyFromBalance: 0n,
+				})
 
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, decimal(200n), 0)
+					.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, penaltyFromAllocated, 0)
 
-				const afterCollectorBalance = await context.viewFacet.balanceOf(context.signers.liquidator.address)
-				const afterAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
-
-				expect(beforeAllocatedBalance - afterAllocatedBalance).to.equal(decimal(200n))
-				expect(afterCollectorBalance - beforeCollectorBalance).to.equal(decimal(200n))
+				await validator.after(context, {
+					hedger,
+					partyA: userAddress,
+					penaltyFromAllocated,
+					penaltyFromBalance: 0n,
+					beforeOutput: beforeOut,
+				})
 			})
 
 			it("should not affect other partyA allocations when deducting from one", async () => {

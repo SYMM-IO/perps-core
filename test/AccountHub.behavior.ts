@@ -230,7 +230,7 @@ export function shouldBehaveLikeAccountHub(): void {
 			it("should initialize successfully", async () => {
 				expect(await context.accountLayerDiamond).to.equal(context.accountLayerDiamond)
 				const defaultAdminRole = roleHash("DEFAULT_ADMIN_ROLE")
-				expect(await context.alControlFacet.hasRole(context.signers.admin.address, defaultAdminRole)).to.be.true
+				expect(await context.alViewFacet.hasRole(context.signers.admin.address, defaultAdminRole)).to.be.true
 			})
 		})
 
@@ -241,8 +241,8 @@ export function shouldBehaveLikeAccountHub(): void {
 				const subAccountData = buildExampleSubAccountData()
 				const oldNonce = await context.alViewFacet.globalNonce()
 				let newNonce = oldNonce
-				await expect(context.alCoreFacet.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData)).to
-					.not.reverted
+				await expect(context.alCoreFacet.connect(context.signers.user).createSubAccounts(await context.accountManager.getAddress(), subAccountData))
+					.to.not.reverted
 
 				const subAccountAddresses = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
 
@@ -1022,9 +1022,10 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 
 				it("should revert when non-owner tries to delete", async () => {
-					await expect(
-						context.alCoreFacet.connect(context.signers.others[0]).deleteSubAccount(subAccountAddress),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "NotOwner")
+					await expect(context.alCoreFacet.connect(context.signers.others[0]).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"NotOwner",
+					)
 				})
 
 				it("should revert when trying to delete non-existent account", async () => {
@@ -1038,9 +1039,10 @@ export function shouldBehaveLikeAccountHub(): void {
 					await context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)
 
 					// Try to delete again - should fail with AccountDoesNotExist (owner check passes but isExists is false)
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"AccountDoesNotExist",
+					)
 				})
 			})
 
@@ -1049,9 +1051,10 @@ export function shouldBehaveLikeAccountHub(): void {
 					const subAccountData = [createSubAccountData("HAS_BALANCE", 0, "TEST")]
 					const subAccountAddress = await createSubAccountAndDeposit(context.signers.user, subAccountData, BALANCES.DEPOSIT_AMOUNT)
 
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "SubAccountNotEmpty")
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"SubAccountNotEmpty",
+					)
 				})
 
 				it("should revert when subAccount has allocated balance", async () => {
@@ -1062,9 +1065,10 @@ export function shouldBehaveLikeAccountHub(): void {
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.equal(BALANCES.DEPOSIT_AMOUNT)
 
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "SubAccountNotEmpty")
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"SubAccountNotEmpty",
+					)
 				})
 
 				it("should revert when subAccount has both balance and allocated balance", async () => {
@@ -1075,9 +1079,10 @@ export function shouldBehaveLikeAccountHub(): void {
 					const allocateCallData = context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.DEPOSIT_AMOUNT / 2n])
 					await context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, [allocateCallData])
 
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "SubAccountNotEmpty")
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"SubAccountNotEmpty",
+					)
 				})
 			})
 
@@ -1095,9 +1100,10 @@ export function shouldBehaveLikeAccountHub(): void {
 					const vaCount = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(subAccountAddress)
 					expect(vaCount).to.be.greaterThan(0)
 
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "HasActiveVirtualAccounts")
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"HasActiveVirtualAccounts",
+					)
 				})
 			})
 
@@ -1120,25 +1126,16 @@ export function shouldBehaveLikeAccountHub(): void {
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
 
-					await context.alCoreFacet.connect(context.signers.user)._call(
-						subAccountAddress,
-						[
-							context.accountFacet.interface.encodeFunctionData("deallocate", [
-								allocatedBalance,
-								await getDummySingleUpnlSig(BigInt(1e30))
-							])
-						]
-					)
+					await context.alCoreFacet
+						.connect(context.signers.user)
+						._call(subAccountAddress, [
+							context.accountFacet.interface.encodeFunctionData("deallocate", [allocatedBalance, await getDummySingleUpnlSig(BigInt(1e30))]),
+						])
 					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
 
-					await context.alCoreFacet.connect(context.signers.user)._call(
-						subAccountAddress,
-						[
-							context.accountFacet.interface.encodeFunctionData("withdraw", [
-								allocatedBalance
-							])
-						]
-					)
+					await context.alCoreFacet
+						.connect(context.signers.user)
+						._call(subAccountAddress, [context.accountFacet.interface.encodeFunctionData("withdraw", [allocatedBalance])])
 
 					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalanceAfter).to.equal(0)
@@ -1146,10 +1143,10 @@ export function shouldBehaveLikeAccountHub(): void {
 					const balance = await context.viewFacet.balanceOf(subAccountAddress)
 					expect(balance).to.equal(0)
 
-		
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "PendingQuotesExist")
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"PendingQuotesExist",
+					)
 				})
 
 				it("should revert with OpenPositionsExist when CUSTOM subAccount has open position", async () => {
@@ -1183,25 +1180,16 @@ export function shouldBehaveLikeAccountHub(): void {
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalance).to.be.greaterThan(0)
 
-					await context.alCoreFacet.connect(context.signers.user)._call(
-						subAccountAddress,
-						[
-							context.accountFacet.interface.encodeFunctionData("deallocate", [
-								allocatedBalance,
-								await getDummySingleUpnlSig(BigInt(1e30))
-							])
-						]
-					)
+					await context.alCoreFacet
+						.connect(context.signers.user)
+						._call(subAccountAddress, [
+							context.accountFacet.interface.encodeFunctionData("deallocate", [allocatedBalance, await getDummySingleUpnlSig(BigInt(1e30))]),
+						])
 					await time.increase((await context.viewFacet.getDeallocateDebounceTime()) + 1n)
 
-					await context.alCoreFacet.connect(context.signers.user)._call(
-						subAccountAddress,
-						[
-							context.accountFacet.interface.encodeFunctionData("withdraw", [
-								allocatedBalance
-							])
-						]
-					)
+					await context.alCoreFacet
+						.connect(context.signers.user)
+						._call(subAccountAddress, [context.accountFacet.interface.encodeFunctionData("withdraw", [allocatedBalance])])
 
 					const allocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
 					expect(allocatedBalanceAfter).to.equal(0)
@@ -1209,10 +1197,10 @@ export function shouldBehaveLikeAccountHub(): void {
 					const balance = await context.viewFacet.balanceOf(subAccountAddress)
 					expect(balance).to.equal(0)
 
-		
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "OpenPositionsExist")
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"OpenPositionsExist",
+					)
 				})
 			})
 
@@ -1331,9 +1319,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const attackerCollector = context.signers.user.address
 					const beforeCollector = await context.viewFacet.getFeeCollector(victimAffiliate)
 
-					const callData: BytesLike[] = [
-						context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victimAffiliate, attackerCollector]),
-					]
+					const callData: BytesLike[] = [context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victimAffiliate, attackerCollector])]
 
 					// Symmio core's onlyRole modifier blocks proxied calls (when signer is set)
 					await expect(context.alCoreFacet.connect(context.signers.user)._call(legacyAccount, callData)).to.be.revertedWith(
@@ -1349,9 +1335,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const attackerCollector = context.signers.user.address
 					const beforeCollector = await context.viewFacet.getFeeCollector(victimAffiliate)
 
-					const callData: BytesLike[] = [
-						context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victimAffiliate, attackerCollector]),
-					]
+					const callData: BytesLike[] = [context.controlFacet.interface.encodeFunctionData("setFeeCollector", [victimAffiliate, attackerCollector])]
 
 					// Symmio core's onlyRole modifier blocks proxied calls (when signer is set)
 					await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWith(
@@ -1372,9 +1356,10 @@ export function shouldBehaveLikeAccountHub(): void {
 						context.accountFacet.interface.encodeFunctionData("internalTransferToBalance", [recipient, BALANCES.SMALL_AMOUNT]),
 					]
 
-					await expect(
-						context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData),
-					).to.be.revertedWithCustomError(context.alCoreFacet, "Unauthorized")
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"Unauthorized",
+					)
 
 					const senderBalanceAfter = await context.viewFacet.balanceOf(subAccountAddress)
 					const recipientBalanceAfter = await context.viewFacet.balanceOf(recipient)
@@ -1449,10 +1434,9 @@ export function shouldBehaveLikeAccountHub(): void {
 						const quoteRequest2 = limitQuoteRequestBuilder().symbolId(2).build()
 						const sendQuoteCallData2 = await createSendQuoteCallData(quoteRequest2)
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData2])).to.revertedWithCustomError(
-							context.alCoreFacet,
-							"SymbolNotAllowedForThisAccount",
-						)
+						await expect(
+							context.alCoreFacet.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData2]),
+						).to.revertedWithCustomError(context.alCoreFacet, "SymbolNotAllowedForThisAccount")
 					})
 
 					it("should allow multiple quotes with same symbol", async () => {
@@ -1938,10 +1922,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				expect(parentBindBefore.partyB).to.equal(context.signers.hedger.address)
 
 				// Create a VA while parent is bound
-				const quoteRequest = limitQuoteRequestBuilder()
-					.positionType(PositionType.LONG)
-					.partyBWhiteList([context.signers.hedger.address])
-					.build()
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).partyBWhiteList([context.signers.hedger.address]).build()
 				const initialVirtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
 
 				const initialVABind = await context.viewFacet.getBindState(initialVirtualAccountAddress)
@@ -1991,10 +1972,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				expect(parentBindState.partyB).to.equal(context.signers.hedger.address)
 
 				// Build a quote that targets a different PartyB
-				const quoteRequest = limitQuoteRequestBuilder()
-					.positionType(PositionType.LONG)
-					.partyBWhiteList([context.signers.hedger2.address])
-					.build()
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).partyBWhiteList([context.signers.hedger2.address]).build()
 
 				await preFundVirtualAccount(positionSubAccountAddress, quoteRequest)
 
@@ -2167,7 +2145,10 @@ export function shouldBehaveLikeAccountHub(): void {
 			it("should revert _call when paused", async () => {
 				await context.alControlFacet.connect(context.signers.admin).pause()
 				const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
-				await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWithCustomError(context.alCoreFacet, "EnforcedPause")
+				await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWithCustomError(
+					context.alCoreFacet,
+					"EnforcedPause",
+				)
 			})
 
 			it("should allow actions after unpause", async () => {
@@ -2202,7 +2183,11 @@ export function shouldBehaveLikeAccountHub(): void {
 				const affiliateAddress = await context.accountManager.getAddress()
 
 				for (const key of Object.keys(HOOK_SELECTORS)) {
-					await context.alAffiliateFacet.setHook(affiliateAddress, HOOK_SELECTORS[key as keyof typeof HOOK_SELECTORS], await hookContract.getAddress())
+					await context.alAffiliateFacet.setHook(
+						affiliateAddress,
+						HOOK_SELECTORS[key as keyof typeof HOOK_SELECTORS],
+						await hookContract.getAddress(),
+					)
 				}
 
 				hookEvents = new ethers.Contract(
@@ -2549,10 +2534,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					// Try to call executeForAccount directly (not from a hook)
 					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 
-					await expect(context.alCoreFacet.executeForAccount(bindCallData)).to.be.revertedWithCustomError(
-						context.alCoreFacet,
-						"NoActiveHookContext",
-					)
+					await expect(context.alCoreFacet.executeForAccount(bindCallData)).to.be.revertedWithCustomError(context.alCoreFacet, "NoActiveHookContext")
 				})
 
 				it("should emit HookActionExecuted event on successful callback", async () => {
@@ -2583,8 +2565,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onAccountCreation, bindCallData, true)
 
 					const subAccountData = [createSubAccountData("MULTI_SELECTOR_ACCOUNT", 0)]
-					await expect(context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, subAccountData)).to.not.be
-						.reverted
+					await expect(context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, subAccountData)).to.not.be.reverted
 				})
 
 				it("should allow admin to revoke whitelisted selectors", async () => {
@@ -2624,10 +2605,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onVirtualAccountCreation, allocateCallData, true)
 
 					// Send quote which will create a virtual account - should fail because selector not whitelisted
-					await expect(sendQuoteAndGetVirtualAccount(parentAccount)).to.be.revertedWithCustomError(
-						context.alCoreFacet,
-						"HookFailed",
-					)
+					await expect(sendQuoteAndGetVirtualAccount(parentAccount)).to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
 				})
 			})
 
@@ -2680,11 +2658,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const affiliateAddress = await context.accountManager.getAddress()
 
 					// Register the malicious hook for onVirtualAccountCreation
-					await context.alAffiliateFacet.setHook(
-						affiliateAddress,
-						HOOK_SELECTORS.onVirtualAccountCreation,
-						await maliciousHook.getAddress(),
-					)
+					await context.alAffiliateFacet.setHook(affiliateAddress, HOOK_SELECTORS.onVirtualAccountCreation, await maliciousHook.getAddress())
 
 					// Create a sub-account and deposit
 					const parentAccount = await createSubAccountAndDeposit(
@@ -2715,11 +2689,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const affiliateAddress = await context.accountManager.getAddress()
 
 					// Register the malicious hook for onVirtualAccountDeletion
-					await context.alAffiliateFacet.setHook(
-						affiliateAddress,
-						HOOK_SELECTORS.onVirtualAccountDeletion,
-						await maliciousHook.getAddress(),
-					)
+					await context.alAffiliateFacet.setHook(affiliateAddress, HOOK_SELECTORS.onVirtualAccountDeletion, await maliciousHook.getAddress())
 
 					// Create a sub-account and deposit
 					const parentAccount = await createSubAccountAndDeposit(
@@ -3475,7 +3445,9 @@ export function shouldBehaveLikeAccountHub(): void {
 				const wrongIsolationType = 0 // VirtualAccountIsolationType.POSITION
 
 				await expect(
-					context.alMarginFacet.connect(context.signers.user).addMarginToNextVA(subAccount, wrongIsolationType, quoteRequest.symbolId, BALANCES.TRANSFER_AMOUNT),
+					context.alMarginFacet
+						.connect(context.signers.user)
+						.addMarginToNextVA(subAccount, wrongIsolationType, quoteRequest.symbolId, BALANCES.TRANSFER_AMOUNT),
 				).to.be.revertedWithCustomError(context.alMarginFacet, "InvalidIsolationType")
 			})
 		})
@@ -3535,12 +3507,9 @@ export function shouldBehaveLikeAccountHub(): void {
 			})
 
 			it("reverts when target account already exists", async () => {
-				await context.alCoreFacet.connect(context.signers.user).createCustomVirtualAccount(
-					subAccount,
-					ethers.keccak256(toUtf8Bytes("EMERGENCY_VA_1")),
-					0,
-					1,
-				)
+				await context.alCoreFacet
+					.connect(context.signers.user)
+					.createCustomVirtualAccount(subAccount, ethers.keccak256(toUtf8Bytes("EMERGENCY_VA_1")), 0, 1)
 
 				await expect(context.alMarginFacet.connect(context.signers.user).emergencyRecoverMargin(subAccount, 1)).to.be.revertedWithCustomError(
 					context.alMarginFacet,
@@ -3680,7 +3649,9 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(virtualAccountAllocatedBalance).to.equal(BALANCES.TRANSFER_AMOUNT)
 
 					// Step 2: Transfer from virtual account to subaccount
-					await context.alMarginFacet.connect(context.signers.user).removeMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT, await getDummySingleUpnlSig())
+					await context.alMarginFacet
+						.connect(context.signers.user)
+						.removeMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT, await getDummySingleUpnlSig())
 
 					virtualAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
 					const subAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
@@ -3706,10 +3677,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				// Create multiple legacy accounts for the user
 				legacyAccounts = []
 				for (let i = 0; i < 3; i++) {
-					const tx = await legacyMultiAccount.createMockAccountWithName(
-						context.signers.user.address,
-						`Legacy Account ${i + 1}`,
-					)
+					const tx = await legacyMultiAccount.createMockAccountWithName(context.signers.user.address, `Legacy Account ${i + 1}`)
 					const receipt = await tx.wait()
 					for (const log of receipt!.logs) {
 						try {
@@ -3746,10 +3714,7 @@ export function shouldBehaveLikeAccountHub(): void {
 				})
 
 				it("should return empty array for user with no legacy accounts", async () => {
-					const [accounts, hasMore] = await context.alViewFacet.getLegacyAccountsOfUser(
-						context.signers.others[1].address,
-						100,
-					)
+					const [accounts, hasMore] = await context.alViewFacet.getLegacyAccountsOfUser(context.signers.others[1].address, 100)
 
 					expect(accounts.length).to.equal(0)
 					expect(hasMore).to.be.false
@@ -3757,12 +3722,14 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should mark imported accounts correctly", async () => {
 					// Import first account
-					await context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
-						await legacyMultiAccount.getAddress(),
-						await context.accountManager.getAddress(),
-						[context.diamond],
-						[{ account: legacyAccounts[0], name: "Imported Account 1", coreIndex: 0 }],
-					)
+					await context.alCoreFacet
+						.connect(context.signers.user)
+						.importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							[{ account: legacyAccounts[0], name: "Imported Account 1", coreIndex: 0 }],
+						)
 
 					const [accounts] = await context.alViewFacet.getLegacyAccountsOfUser(context.signers.user.address, 100)
 
@@ -3780,12 +3747,14 @@ export function shouldBehaveLikeAccountHub(): void {
 					]
 
 					await expect(
-						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
-							await legacyMultiAccount.getAddress(),
-							await context.accountManager.getAddress(),
-							[context.diamond],
-							accountsData,
-						),
+						context.alCoreFacet
+							.connect(context.signers.user)
+							.importLegacyAccounts(
+								await legacyMultiAccount.getAddress(),
+								await context.accountManager.getAddress(),
+								[context.diamond],
+								accountsData,
+							),
 					).to.emit(context.alCoreFacet, "LegacyAccountImported")
 
 					// Verify imported accounts
@@ -3803,12 +3772,14 @@ export function shouldBehaveLikeAccountHub(): void {
 				it("should add imported accounts to user's sub-accounts list", async () => {
 					const countBefore = await context.alViewFacet.getSubAccountsCountOfUser(context.signers.user.address)
 
-					await context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
-						await legacyMultiAccount.getAddress(),
-						await context.accountManager.getAddress(),
-						[context.diamond],
-						[{ account: legacyAccounts[0], name: "Imported", coreIndex: 0 }],
-					)
+					await context.alCoreFacet
+						.connect(context.signers.user)
+						.importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							[{ account: legacyAccounts[0], name: "Imported", coreIndex: 0 }],
+						)
 
 					const countAfter = await context.alViewFacet.getSubAccountsCountOfUser(context.signers.user.address)
 					expect(countAfter).to.equal(countBefore + 1n)
@@ -3816,32 +3787,38 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should reject import of account not owned by caller", async () => {
 					await expect(
-						context.alCoreFacet.connect(context.signers.others[0]).importLegacyAccounts(
-							await legacyMultiAccount.getAddress(),
-							await context.accountManager.getAddress(),
-							[context.diamond],
-							[{ account: legacyAccounts[0], name: "Stolen Account", coreIndex: 0 }],
-						),
+						context.alCoreFacet
+							.connect(context.signers.others[0])
+							.importLegacyAccounts(
+								await legacyMultiAccount.getAddress(),
+								await context.accountManager.getAddress(),
+								[context.diamond],
+								[{ account: legacyAccounts[0], name: "Stolen Account", coreIndex: 0 }],
+							),
 					).to.be.revertedWithCustomError(context.alCoreFacet, "LegacyAccountNotOwned")
 				})
 
 				it("should reject double import", async () => {
 					// First import
-					await context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
-						await legacyMultiAccount.getAddress(),
-						await context.accountManager.getAddress(),
-						[context.diamond],
-						[{ account: legacyAccounts[0], name: "First Import", coreIndex: 0 }],
-					)
-
-					// Second import attempt
-					await expect(
-						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
+					await context.alCoreFacet
+						.connect(context.signers.user)
+						.importLegacyAccounts(
 							await legacyMultiAccount.getAddress(),
 							await context.accountManager.getAddress(),
 							[context.diamond],
-							[{ account: legacyAccounts[0], name: "Second Import", coreIndex: 0 }],
-						),
+							[{ account: legacyAccounts[0], name: "First Import", coreIndex: 0 }],
+						)
+
+					// Second import attempt
+					await expect(
+						context.alCoreFacet
+							.connect(context.signers.user)
+							.importLegacyAccounts(
+								await legacyMultiAccount.getAddress(),
+								await context.accountManager.getAddress(),
+								[context.diamond],
+								[{ account: legacyAccounts[0], name: "Second Import", coreIndex: 0 }],
+							),
 					).to.be.revertedWithCustomError(context.alCoreFacet, "AccountAlreadyExists")
 				})
 
@@ -3880,12 +3857,9 @@ export function shouldBehaveLikeAccountHub(): void {
 
 				it("should reject import with empty accounts array", async () => {
 					await expect(
-						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
-							await legacyMultiAccount.getAddress(),
-							await context.accountManager.getAddress(),
-							[context.diamond],
-							[],
-						),
+						context.alCoreFacet
+							.connect(context.signers.user)
+							.importLegacyAccounts(await legacyMultiAccount.getAddress(), await context.accountManager.getAddress(), [context.diamond], []),
 					).to.be.revertedWithCustomError(context.alCoreFacet, "EmptyArray")
 				})
 
@@ -3894,23 +3868,27 @@ export function shouldBehaveLikeAccountHub(): void {
 					const tooLongName = "A".repeat(Number(maxNameLength) + 1)
 
 					await expect(
-						context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
-							await legacyMultiAccount.getAddress(),
-							await context.accountManager.getAddress(),
-							[context.diamond],
-							[{ account: legacyAccounts[0], name: tooLongName, coreIndex: 0 }],
-						),
+						context.alCoreFacet
+							.connect(context.signers.user)
+							.importLegacyAccounts(
+								await legacyMultiAccount.getAddress(),
+								await context.accountManager.getAddress(),
+								[context.diamond],
+								[{ account: legacyAccounts[0], name: tooLongName, coreIndex: 0 }],
+							),
 					).to.be.revertedWithCustomError(context.alCoreFacet, "InvalidNameLength")
 				})
 
 				it("should allow _call on imported accounts", async () => {
 					// Import account
-					await context.alCoreFacet.connect(context.signers.user).importLegacyAccounts(
-						await legacyMultiAccount.getAddress(),
-						await context.accountManager.getAddress(),
-						[context.diamond],
-						[{ account: legacyAccounts[0], name: "Imported", coreIndex: 0 }],
-					)
+					await context.alCoreFacet
+						.connect(context.signers.user)
+						.importLegacyAccounts(
+							await legacyMultiAccount.getAddress(),
+							await context.accountManager.getAddress(),
+							[context.diamond],
+							[{ account: legacyAccounts[0], name: "Imported", coreIndex: 0 }],
+						)
 
 					// Deposit
 					const depositAmount = decimal(1000n)
@@ -3922,8 +3900,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const allocateAmount = decimal(500n)
 					const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [allocateAmount])]
 
-					await expect(context.alCoreFacet.connect(context.signers.user)._call(legacyAccounts[0], callData)).to.not.be
-						.reverted
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(legacyAccounts[0], callData)).to.not.be.reverted
 
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(legacyAccounts[0])
 					expect(allocatedBalance).to.equal(allocateAmount)

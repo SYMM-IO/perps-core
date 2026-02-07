@@ -4,6 +4,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { readData, writeData } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
 import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { logger } from "./logger.js"
 
 export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAccount")
 	.addOption({
@@ -17,17 +18,17 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 	.setAction(async () => ({
 		default: async ({ symmioAddress, admin, logData }, hre) => {
 			const { ethers, upgrades } = await getConnection(hre)
-			console.log("Running deploy:multiAccount")
+			logger.section("MultiAccount Deployment")
 
 			const [deployer] = await ethers.getSigners()
 
-			console.log("Deploying contracts with the account:", deployer.address)
+			logger.debug("Deploying contracts with the account:", deployer.address)
 
 			const SymmioPartyA = await ethers.getContractFactory("SymmioPartyA")
 
 			// Deploy MultiAccount as upgradeable
 			const Factory = await ethers.getContractFactory("MultiAccount")
-			console.log(admin, symmioAddress)
+			logger.debug("Admin:", admin, "Symmio:", symmioAddress)
 			const contract = await deployProxyWithFallback(hre, Factory, [admin, symmioAddress, SymmioPartyA.bytecode], { initializer: "initialize" })
 			await contract.waitForDeployment()
 
@@ -35,7 +36,13 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 				proxy: await contract.getAddress(),
 				...(await getUpgradeAddresses(upgrades, contract)),
 			}
-			console.log("MultiAccount deployed to", addresses)
+			logger.deployed("MultiAccount (Proxy)", addresses.proxy)
+			if (addresses.implementation) {
+				logger.deployed("MultiAccount (Implementation)", addresses.implementation)
+			}
+			if (addresses.admin) {
+				logger.deployed("MultiAccount (Admin)", addresses.admin)
+			}
 
 			if (logData) {
 				// Read existing data
@@ -43,7 +50,7 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 				try {
 					deployedData = readData(DEPLOYMENT_LOG_FILE)
 				} catch (err) {
-					console.error(`Could not read existing JSON file: ${err}`)
+					logger.debug(`Could not read existing JSON file: ${err}`)
 				}
 
 				// Append new data
@@ -67,7 +74,7 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 
 				// Write updated data back to JSON file
 				writeData(DEPLOYMENT_LOG_FILE, deployedData)
-				console.log("Deployed addresses written to JSON file")
+				logger.debug("Deployed addresses written to JSON file")
 			}
 
 			return contract

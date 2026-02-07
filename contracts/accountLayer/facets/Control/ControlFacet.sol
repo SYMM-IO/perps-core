@@ -7,7 +7,6 @@ pragma solidity >=0.8.18;
 import { IControlFacet } from "./IControlFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
-import { AccountLayerStorage } from "../../storages/AccountLayerStorage.sol";
 import { AccountHubStorage } from "../../storages/AccountHubStorage.sol";
 import { AffiliateHubStorage } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
@@ -32,14 +31,6 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		emit RoleAdminSet(role, user, status, msg.sender);
 	}
 
-	function hasRole(address user, bytes32 role) external view returns (bool) {
-		return LibAccountLayerAccessibility.hasRole(user, role);
-	}
-
-	function isRoleAdmin(address user, bytes32 role) external view returns (bool) {
-		return LibAccountLayerAccessibility.isRoleAdmin(user, role);
-	}
-
 	// ==================== Pause Control ====================
 
 	function pause() external onlyRole(LibAccountLayerAccessibility.PAUSER_ROLE) {
@@ -48,10 +39,6 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 
 	function unpause() external onlyRole(LibAccountLayerAccessibility.UNPAUSER_ROLE) {
 		_unpause();
-	}
-
-	function paused() external view returns (bool) {
-		return AccountLayerStorage.layout().globalPaused;
 	}
 
 	// ==================== AccountHub Configuration ====================

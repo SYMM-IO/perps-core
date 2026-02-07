@@ -15,7 +15,7 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LiquidationSig, MuonStorage } from "../../storages/MuonStorage.sol";
 import { LiquidationType, LiquidationDetail, LiquidationSettlementState, Price, AccountStorage } from "../../storages/AccountStorage.sol";
-import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
+import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
@@ -27,6 +27,8 @@ library PartyALiquidationFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
+		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
+		require(QuoteStorage.layout().partyAPositionsCount[partyA] > 0, "LiquidationFacet: PartyA has no open positions");
 		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA);
 		require(block.timestamp <= liquidationSig.timestamp + MuonStorage.layout().upnlValidTime, "LiquidationFacet: Expired signature");
 		int256 availableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
@@ -36,6 +38,7 @@ library PartyALiquidationFacetImpl {
 		);
 		require(availableBalance < 0, "LiquidationFacet: PartyA is solvent");
 		maLayout.liquidationStatus[partyA] = true;
+		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		accountLayout.liquidationDetails[partyA] = LiquidationDetail({
 			liquidationId: liquidationSig.liquidationId,
 			liquidationType: LiquidationType.NONE,
@@ -56,12 +59,14 @@ library PartyALiquidationFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
+		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA);
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 		require(
 			keccak256(accountLayout.liquidationDetails[partyA].liquidationId) == keccak256(liquidationSig.liquidationId),
 			"LiquidationFacet: Invalid liquidationId"
 		);
+		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		for (uint256 index = 0; index < liquidationSig.symbolIds.length; index++) {
 			accountLayout.symbolsPrices[partyA][liquidationSig.symbolIds[index]] = Price(
 				liquidationSig.prices[index],
@@ -100,8 +105,11 @@ library PartyALiquidationFacetImpl {
 	function liquidatePendingPositionsPartyA(address partyA) internal returns (uint256[] memory liquidatedAmounts, bytes memory liquidationId) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
 
-		require(MAStorage.layout().liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
+		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
+		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
+		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		liquidatedAmounts = new uint256[](quoteLayout.partyAPendingQuotes[partyA].length);
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
 		for (uint256 index = 0; index < quoteLayout.partyAPendingQuotes[partyA].length; index++) {
@@ -150,7 +158,9 @@ library PartyALiquidationFacetImpl {
 		averageClosedPrices = new uint256[](quoteIds.length);
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
 
+		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
+		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 
 		// Track unique partyBs for connection cleanup
 		address[] memory partyBsToCheck = new address[](quoteIds.length);
@@ -165,7 +175,7 @@ library PartyALiquidationFacetImpl {
 				"LiquidationFacet: Invalid state"
 			);
 			require(!maLayout.partyBLiquidationStatus[quote.partyB][partyA], "LiquidationFacet: PartyB is in liquidation process");
-			require(!CrossPartyBStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "LiquidationFacet: PartyB is in cross liquidation process");
+			require(!ClearingHouseStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "LiquidationFacet: PartyB is in cross liquidation process");
 			require(quote.partyA == partyA, "LiquidationFacet: Invalid party");
 			require(
 				accountLayout.symbolsPrices[partyA][quote.symbolId].timestamp == accountLayout.liquidationDetails[partyA].timestamp,
@@ -299,7 +309,10 @@ library PartyALiquidationFacetImpl {
 		bool disputed
 	) internal returns (bytes memory) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
 
+		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
+		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		accountLayout.liquidationDetails[partyA].disputed = disputed;
 		require(partyBs.length == amounts.length, "LiquidationFacet: Invalid length");
 		for (uint256 i = 0; i < partyBs.length; i++) {
@@ -314,16 +327,23 @@ library PartyALiquidationFacetImpl {
 	) internal returns (int256[] memory settleAmounts, bytes memory liquidationId) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		require(
 			quoteLayout.partyAPositionsCount[partyA] == 0 && quoteLayout.partyAPendingQuotes[partyA].length == 0,
 			"LiquidationFacet: PartyA has still open positions"
 		);
-		require(MAStorage.layout().liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
+		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 		require(!accountLayout.liquidationDetails[partyA].disputed, "LiquidationFacet: PartyA liquidation process get disputed");
+		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
 		settleAmounts = new int256[](partyBs.length);
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			address partyB = partyBs[i];
+			require(
+				!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress,
+				"LiquidationFacet: PartyB is in cross liquidation"
+			);
 			require(accountLayout.settlementStates[partyA][partyB].pending, "LiquidationFacet: PartyB is not in settlement");
 			accountLayout.settlementStates[partyA][partyB].pending = false;
 			accountLayout.liquidationDetails[partyA].involvedPartyBCounts -= 1;
@@ -360,8 +380,12 @@ library PartyALiquidationFacetImpl {
 		}
 		if (accountLayout.liquidationDetails[partyA].involvedPartyBCounts == 0) {
 			emit SharedEvents.BalanceChangePartyA(partyA, accountLayout.allocatedBalances[partyA], SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			accountLayout.allocatedBalances[partyA] = accountLayout.partyAReimbursement[partyA];
+			uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
+			accountLayout.allocatedBalances[partyA] = reimbursement;
 			accountLayout.partyAReimbursement[partyA] = 0;
+			if (reimbursement > 0) {
+				emit SharedEvents.BalanceChangePartyA(partyA, reimbursement, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			}
 			accountLayout.lockedBalances[partyA].makeZero();
 
 			uint256 lf = accountLayout.liquidationDetails[partyA].liquidationFee;
@@ -373,7 +397,8 @@ library PartyALiquidationFacetImpl {
 			}
 			delete accountLayout.liquidators[partyA];
 			delete accountLayout.liquidationDetails[partyA].liquidationType;
-			MAStorage.layout().liquidationStatus[partyA] = false;
+			maLayout.liquidationStatus[partyA] = false;
+			maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;
 			accountLayout.partyANonces[partyA] += 1;
 		}
 	}

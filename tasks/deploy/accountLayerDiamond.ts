@@ -4,8 +4,16 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { ContractTransactionReceipt } from "ethers"
 
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
+import { writeData } from "../utils/fs.js"
+import { ACCOUNTLAYER_DEPLOYMENT_FILE } from "./constants.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
+import {
+	DeploymentCheckpoint,
+	AccountLayerCheckpoint,
+	createDeployedContract,
+	saveCheckpoint,
+} from "./checkpoint.js"
 
 const AccountLayerFacetNames = [
 	"CoreFacet",
@@ -14,6 +22,7 @@ const AccountLayerFacetNames = [
 	"ControlFacet",
 	"ViewFacet",
 	"AffiliateFacet",
+	"DiamondLoupeFacet",
 ]
 
 // Library dependencies for AccountLayer facets
@@ -25,11 +34,12 @@ type DeployAccountLayerDiamondArgs = {
 	admin: HardhatEthersSigner
 	symmioFeeReceiver: HardhatEthersSigner
 	logData?: boolean
+	checkpoint?: DeploymentCheckpoint
 }
 
 export async function deployAccountLayerDiamond(
 	hre: any,
-	{ admin, symmioFeeReceiver, logData = false }: DeployAccountLayerDiamondArgs
+	{ admin, symmioFeeReceiver, logData = false, checkpoint }: DeployAccountLayerDiamondArgs
 ) {
 	const { ethers } = await getConnection(hre)
 	let totalGasUsed = BigInt(0)
@@ -37,44 +47,109 @@ export async function deployAccountLayerDiamond(
 
 	logger.section("AccountLayer Diamond Deployment")
 
+	// Initialize or restore checkpoint data
+	const alCheckpoint: AccountLayerCheckpoint = checkpoint?.contracts.accountLayerDiamond || {}
+	const libraryAddresses: Record<string, string> = {}
+
+	// Restore library addresses from checkpoint
+	if (alCheckpoint.libraries) {
+		for (const [name, data] of Object.entries(alCheckpoint.libraries)) {
+			libraryAddresses[name] = data.address
+		}
+	}
+
 	// Deploy DiamondCutFacet
 	logger.subsection("Core Contracts")
-	const DiamondCutFacetFactory = await ethers.getContractFactory("DiamondCutFacet")
-	const diamondCutFacet = await DiamondCutFacetFactory.deploy()
-	await diamondCutFacet.waitForDeployment()
-	receipt = (await diamondCutFacet.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	logger.deployed("DiamondCutFacet", await diamondCutFacet.getAddress())
+	let diamondCutFacetAddress: string
+	if (alCheckpoint.diamondCutFacet) {
+		diamondCutFacetAddress = alCheckpoint.diamondCutFacet.address
+		logger.info(`  ⏭ DiamondCutFacet already deployed at ${diamondCutFacetAddress}`)
+	} else {
+		const DiamondCutFacetFactory = await ethers.getContractFactory("DiamondCutFacet")
+		const diamondCutFacet = await DiamondCutFacetFactory.deploy()
+		await diamondCutFacet.waitForDeployment()
+		receipt = (await diamondCutFacet.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		diamondCutFacetAddress = await diamondCutFacet.getAddress()
+		logger.deployed("DiamondCutFacet", diamondCutFacetAddress)
+
+		// Save checkpoint
+		if (checkpoint) {
+			alCheckpoint.diamondCutFacet = createDeployedContract(diamondCutFacetAddress)
+			checkpoint.contracts.accountLayerDiamond = alCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Deploy Diamond
-	const DiamondFactory = await ethers.getContractFactory("Diamond")
-	const diamond = await DiamondFactory.deploy(admin.address, await diamondCutFacet.getAddress())
-	await diamond.waitForDeployment()
-	receipt = (await diamond.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	const diamondAddress = await diamond.getAddress()
-	logger.deployed("AccountLayerDiamond", diamondAddress)
+	let diamondAddress: string
+	if (alCheckpoint.diamond) {
+		diamondAddress = alCheckpoint.diamond.address
+		logger.info(`  ⏭ AccountLayerDiamond already deployed at ${diamondAddress}`)
+	} else {
+		const DiamondFactory = await ethers.getContractFactory("Diamond")
+		const diamond = await DiamondFactory.deploy(admin.address, diamondCutFacetAddress)
+		await diamond.waitForDeployment()
+		receipt = (await diamond.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		diamondAddress = await diamond.getAddress()
+		logger.deployed("AccountLayerDiamond", diamondAddress)
+
+		// Save checkpoint
+		if (checkpoint) {
+			alCheckpoint.diamond = createDeployedContract(diamondAddress, [admin.address, diamondCutFacetAddress])
+			checkpoint.contracts.accountLayerDiamond = alCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Deploy Init
-	const InitFactory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
-	const init = await InitFactory.deploy()
-	await init.waitForDeployment()
-	receipt = (await init.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	logger.deployed("Init", await init.getAddress())
+	let initAddress: string
+	if (alCheckpoint.init) {
+		initAddress = alCheckpoint.init.address
+		logger.info(`  ⏭ Init already deployed at ${initAddress}`)
+	} else {
+		const InitFactory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
+		const init = await InitFactory.deploy()
+		await init.waitForDeployment()
+		receipt = (await init.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		initAddress = await init.getAddress()
+		logger.deployed("Init", initAddress)
+
+		// Save checkpoint
+		if (checkpoint) {
+			alCheckpoint.init = createDeployedContract(initAddress)
+			checkpoint.contracts.accountLayerDiamond = alCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Deploy external libraries
 	logger.subsection("Libraries")
-	const libraryAddresses: Record<string, string> = {}
+	if (!alCheckpoint.libraries) {
+		alCheckpoint.libraries = {}
+	}
 
 	// Deploy LibQuoteParams
-	const LibQuoteParamsFactory = await ethers.getContractFactory("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
-	const libQuoteParams = await LibQuoteParamsFactory.deploy()
-	await libQuoteParams.waitForDeployment()
-	receipt = (await libQuoteParams.deploymentTransaction()!.wait())!
-	totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-	libraryAddresses["LibQuoteParams"] = await libQuoteParams.getAddress()
-	logger.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
+	if (libraryAddresses["LibQuoteParams"]) {
+		logger.info(`  ⏭ LibQuoteParams already deployed at ${libraryAddresses["LibQuoteParams"]}`)
+	} else {
+		const LibQuoteParamsFactory = await ethers.getContractFactory("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
+		const libQuoteParams = await LibQuoteParamsFactory.deploy()
+		await libQuoteParams.waitForDeployment()
+		receipt = (await libQuoteParams.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		libraryAddresses["LibQuoteParams"] = await libQuoteParams.getAddress()
+		logger.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
+
+		// Save checkpoint
+		if (checkpoint) {
+			alCheckpoint.libraries!["LibQuoteParams"] = createDeployedContract(libraryAddresses["LibQuoteParams"])
+			checkpoint.contracts.accountLayerDiamond = alCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
 
 	// Get AccountManager bytecode
 	const AccountManagerFactory = await ethers.getContractFactory("contracts/accountLayer/AccountManager.sol:AccountManager")
@@ -92,38 +167,72 @@ export async function deployAccountLayerDiamond(
 		address: string
 	}> = []
 
+	if (!alCheckpoint.facets) {
+		alCheckpoint.facets = {}
+	}
+
 	logger.subsection(`Facets (${AccountLayerFacetNames.length} total)`)
 	for (let i = 0; i < AccountLayerFacetNames.length; i++) {
 		const facetName = AccountLayerFacetNames[i]
-		const requiredLibraries = AccountLayerFacetLibraryDependencies[facetName]
-		let FacetFactory
 
-		if (requiredLibraries && requiredLibraries.length > 0) {
-			const libraries: Record<string, string> = {}
-			for (const lib of requiredLibraries) {
-				libraries[`project/contracts/accountLayer/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
-			}
-			FacetFactory = await ethers.getContractFactory(`contracts/accountLayer/facets/${facetName.replace("Facet", "")}/${facetName}.sol:${facetName}`, { libraries })
+		let facetAddress: string
+
+		// Check if already deployed
+		if (alCheckpoint.facets[facetName]) {
+			facetAddress = alCheckpoint.facets[facetName].address
+			logger.info(`  ⏭ [${i + 1}/${AccountLayerFacetNames.length}] ${facetName} already deployed at ${facetAddress}`)
 		} else {
-			// Map facet names to their paths
-			const facetPathMap: Record<string, string> = {
-				CoreFacet: "Core",
-				MarginFacet: "Margin",
-				SymmioHookFacet: "SymmioHook",
-				ControlFacet: "Control",
-				ViewFacet: "View",
-				AffiliateFacet: "Affiliate",
+			const requiredLibraries = AccountLayerFacetLibraryDependencies[facetName]
+			let FacetFactory
+
+			if (requiredLibraries && requiredLibraries.length > 0) {
+				const libraries: Record<string, string> = {}
+				for (const lib of requiredLibraries) {
+					libraries[`project/contracts/accountLayer/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
+				}
+				FacetFactory = await ethers.getContractFactory(`contracts/accountLayer/facets/${facetName.replace("Facet", "")}/${facetName}.sol:${facetName}`, { libraries })
+			} else {
+				// Map facet names to their paths
+				const facetPathMap: Record<string, string> = {
+					CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
+					MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
+					SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
+					ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+					ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
+					AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
+					DiamondLoupeFacet: "DiamondLoupeFacet",
+				}
+				const contractName = facetPathMap[facetName]
+				FacetFactory = await ethers.getContractFactory(contractName)
 			}
-			const path = facetPathMap[facetName]
-			FacetFactory = await ethers.getContractFactory(`contracts/accountLayer/facets/${path}/${facetName}.sol:${facetName}`)
+
+			const facet = await FacetFactory.deploy()
+			await facet.waitForDeployment()
+			receipt = (await facet.deploymentTransaction()!.wait())!
+			totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+			facetAddress = await facet.getAddress()
+			logger.deployed(`[${i + 1}/${AccountLayerFacetNames.length}] ${facetName}`, facetAddress)
+
+			// Save checkpoint
+			if (checkpoint) {
+				alCheckpoint.facets![facetName] = createDeployedContract(facetAddress)
+				checkpoint.contracts.accountLayerDiamond = alCheckpoint
+				saveCheckpoint(checkpoint)
+			}
 		}
 
-		const facet = await FacetFactory.deploy()
-		await facet.waitForDeployment()
-		receipt = (await facet.deploymentTransaction()!.wait())!
-		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-		const facetAddress = await facet.getAddress()
-		logger.progress(i + 1, AccountLayerFacetNames.length, facetName)
+		// Get facet contract for selectors
+		const facetContractMap: Record<string, string> = {
+			CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
+			MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
+			SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
+			ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+			ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
+			AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
+			DiamondLoupeFacet: "DiamondLoupeFacet",
+		}
+		const contractName = facetContractMap[facetName]
+		const facet = await ethers.getContractAt(contractName, facetAddress)
 		cut.push({
 			facetAddress,
 			action: FacetCutAction.Add,
@@ -136,45 +245,122 @@ export async function deployAccountLayerDiamond(
 		})
 	}
 
-	// Upgrade Diamond with Facets
-	logger.subsection("Diamond Cut")
-	const diamondCut = await ethers.getContractAt("IDiamondCut", diamondAddress)
-
-	// Call Initializer with params
-	const call = init.interface.encodeFunctionData("init", [
-		admin.address,
-		symmioFeeReceiver.address,
-		accountManagerBytecode,
-	])
-
-	const chunkSize = 3
-	const totalChunks = Math.ceil(cut.length / chunkSize)
-	for (let i = 0; i < cut.length; i += chunkSize) {
-		const chunk = cut.slice(i, i + chunkSize)
-		const chunkNum = Math.floor(i / chunkSize) + 1
-		const isFirst = i === 0
-		const initTarget = isFirst ? await init.getAddress() : ethers.ZeroAddress
-		const initCalldata = isFirst ? call : "0x"
-		const tx = await diamondCut.diamondCut(chunk, initTarget, initCalldata)
-		receipt = (await tx.wait())!
-		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
-
-		if (!receipt.status) {
-			throw Error(`Diamond upgrade failed: ${tx.hash}`)
+	// Upgrade Diamond with Facets (only if not already done)
+	// First check on-chain if diamond cut was already done (handles case where tx succeeded but checkpoint wasn't saved)
+	let diamondCutAlreadyDone = alCheckpoint.diamondCutComplete
+	if (!diamondCutAlreadyDone) {
+		try {
+			// Try calling admin() from ControlFacet - only exists after diamond cut
+			const controlFacet = await ethers.getContractAt(
+				"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+				diamondAddress,
+			)
+			await controlFacet.admin()
+			// If we get here without error, the diamond cut was done
+			logger.info("  ⏭ Diamond cut already complete (verified on-chain)")
+			diamondCutAlreadyDone = true
+			// Update checkpoint to reflect on-chain state
+			if (checkpoint) {
+				alCheckpoint.diamondCutComplete = true
+				checkpoint.contracts.accountLayerDiamond = alCheckpoint
+				saveCheckpoint(checkpoint)
+			}
+		} catch {
+			// admin() doesn't exist yet, diamond cut not done
 		}
-		logger.progress(chunkNum, totalChunks, `Chunk ${chunkNum} (${chunk.length} facets)`)
+	}
+
+	if (!diamondCutAlreadyDone) {
+		logger.subsection("Diamond Cut")
+		const diamondCut = await ethers.getContractAt("IDiamondCut", diamondAddress)
+		const init = await ethers.getContractAt("contracts/accountLayer/Init.sol:Init", initAddress)
+
+		// Call Initializer with params
+		const call = init.interface.encodeFunctionData("init", [
+			admin.address,
+			symmioFeeReceiver.address,
+			accountManagerBytecode,
+		])
+
+		const chunkSize = 3
+		const totalChunks = Math.ceil(cut.length / chunkSize)
+		for (let i = 0; i < cut.length; i += chunkSize) {
+			const chunk = cut.slice(i, i + chunkSize)
+			const chunkNum = Math.floor(i / chunkSize) + 1
+			const isFirst = i === 0
+			const initTarget = isFirst ? initAddress : ethers.ZeroAddress
+			const initCalldata = isFirst ? call : "0x"
+			const tx = await diamondCut.diamondCut(chunk, initTarget, initCalldata)
+			receipt = (await tx.wait())!
+			totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+
+			if (!receipt.status) {
+				throw Error(`Diamond upgrade failed: ${tx.hash}`)
+			}
+			logger.progress(chunkNum, totalChunks, `Chunk ${chunkNum} (${chunk.length} facets)`)
+		}
+
+		// Mark diamond cut as complete
+		if (checkpoint) {
+			alCheckpoint.diamondCutComplete = true
+			checkpoint.contracts.accountLayerDiamond = alCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	} else {
+		logger.info("  ⏭ Diamond cut already complete")
 	}
 
 	logger.complete("AccountLayer Diamond Deployment", [
 		{ name: "AccountLayerDiamond", address: diamondAddress },
-		{ name: "DiamondCutFacet", address: await diamondCutFacet.getAddress() },
-		{ name: "Init", address: await init.getAddress() },
+		{ name: "DiamondCutFacet", address: diamondCutFacetAddress },
+		{ name: "Init", address: initAddress },
 	])
+
+	// Write deployment log for verification
+	if (logData) {
+		// Map facet names to their full contract paths for verification
+		const facetVerificationMap: Record<string, string> = {
+			CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
+			MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
+			SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
+			ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
+			ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
+			AffiliateFacet: "contracts/accountLayer/facets/Affiliate/AffiliateFacet.sol:AffiliateFacet",
+			DiamondLoupeFacet: "contracts/diamond/facets/DiamondLoup/DiamondLoupeFacet.sol:DiamondLoupeFacet",
+		}
+		writeData(ACCOUNTLAYER_DEPLOYMENT_FILE, [
+			{
+				name: "DiamondCutFacet",
+				address: diamondCutFacetAddress,
+				constructorArguments: [],
+			},
+			{
+				name: "Diamond",
+				address: diamondAddress,
+				constructorArguments: [admin.address, diamondCutFacetAddress],
+			},
+			{
+				name: "contracts/accountLayer/Init.sol:Init",
+				address: initAddress,
+				constructorArguments: [],
+			},
+			...Object.entries(libraryAddresses).map(([name, address]) => ({
+				name: `contracts/accountLayer/libraries/${name}.sol:${name}`,
+				address,
+				constructorArguments: [],
+			})),
+			...deployedFacets.map(facet => ({
+				name: facetVerificationMap[facet.name] || `contracts/accountLayer/facets/${facet.name.replace("Facet", "")}/${facet.name}.sol:${facet.name}`,
+				address: facet.address,
+				constructorArguments: [],
+			})),
+		])
+	}
 
 	return {
 		diamond: diamondAddress,
-		diamondCutFacet: await diamondCutFacet.getAddress(),
-		init: await init.getAddress(),
+		diamondCutFacet: diamondCutFacetAddress,
+		init: initAddress,
 		libraryAddresses,
 		deployedFacets,
 	}

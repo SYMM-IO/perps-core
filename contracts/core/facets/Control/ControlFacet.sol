@@ -14,7 +14,6 @@ import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
-import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
 import { ExternalTransferStorage } from "../../storages/ExternalTransferStorage.sol";
 import { IControlFacet } from "./IControlFacet.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
@@ -424,9 +423,9 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Enables or disables cross partyB functionality (feature flag for cross partyB mode).
 	/// @param activated True to activate cross partyB functionality, false to deactivate.
 	function setCrossPartyBModeActivated(bool activated) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		CrossPartyBStorage.Layout storage crossLayout = CrossPartyBStorage.layout();
-		emit SetCrossPartyBModeActivated(crossLayout.crossPartyBModeActivated, activated);
-		crossLayout.crossPartyBModeActivated = activated;
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetCrossPartyBModeActivated(appLayout.crossPartyBModeActivated, activated);
+		appLayout.crossPartyBModeActivated = activated;
 	}
 
 	/// @notice Enables or disables the legacy deallocate function. When deprecated, users must use safeDeallocate.
@@ -630,9 +629,9 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param partyB The address of the Party B to configure.
 	/// @param enabled True to enable cross partyB mode, false to disable.
 	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		require(CrossPartyBStorage.layout().crossPartyBModeActivated, "ControlFacet: Cross feature disabled");
+		require(GlobalAppStorage.layout().crossPartyBModeActivated, "ControlFacet: Cross feature disabled");
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
-		CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB] = enabled;
+		MAStorage.layout().crossModeEnabledForPartyB[partyB] = enabled;
 		emit SetCrossPartyB(partyB, enabled);
 	}
 }

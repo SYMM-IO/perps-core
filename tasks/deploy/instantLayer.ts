@@ -2,9 +2,14 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
 import { readData, writeData } from "../utils/fs.js"
-import { ACCOUNTHUB_DEPLOYMENT_LOG_FILE } from "./constants.js"
+import { INSTANTLAYER_DEPLOYMENT_FILE } from "./constants.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
+import {
+	DeploymentCheckpoint,
+	createDeployedContract,
+	saveCheckpoint,
+} from "./checkpoint.js"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -20,9 +25,10 @@ type DeployInstantLayerArgs = {
 	symmioaddress: string
 	admin: string
 	logData?: boolean
+	checkpoint?: DeploymentCheckpoint
 }
 
-export async function deployInstantLayer(hre: any, { symmioaddress, admin, logData = true }: DeployInstantLayerArgs) {
+export async function deployInstantLayer(hre: any, { symmioaddress, admin, logData = true, checkpoint }: DeployInstantLayerArgs) {
 	const { ethers } = await getConnection(hre)
 
 	logger.section("InstantLayer Deployment")
@@ -30,11 +36,26 @@ export async function deployInstantLayer(hre: any, { symmioaddress, admin, logDa
 	const [deployer] = await ethers.getSigners()
 	logger.debug("Deployer:", deployer.address)
 
+	// Check if already deployed from checkpoint
+	if (checkpoint?.contracts.instantLayer) {
+		const address = checkpoint.contracts.instantLayer.address
+		logger.info(`  ⏭ InstantLayer already deployed at ${address}`)
+		const instantLayer = await ethers.getContractAt("InstantLayer", address)
+		return instantLayer
+	}
+
 	// Deploy InstantLayer
 	logger.subsection("Contract")
 	const instantLayer = await deployInstantLayerContract(symmioaddress, admin, ethers, deployer)
 
 	const address = await instantLayer.getAddress()
+	logger.deployed("InstantLayer", address)
+
+	// Save checkpoint
+	if (checkpoint) {
+		checkpoint.contracts.instantLayer = createDeployedContract(address, [symmioaddress, admin])
+		saveCheckpoint(checkpoint)
+	}
 
 	logger.complete("InstantLayer Deployment", [{ name: "InstantLayer", address }])
 
@@ -76,25 +97,11 @@ async function deployInstantLayerContract(symmioAddress: string, admin: string, 
  */
 async function logDeploymentData(address: string, symmioAddress: string, admin: string): Promise<void> {
 	try {
-		const deployedData = readExistingDeployments()
 		const newEntry = createDeploymentEntry(address, symmioAddress, admin)
-		const updatedData = [...deployedData, newEntry]
-
-		writeData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE, updatedData)
+		writeData(INSTANTLAYER_DEPLOYMENT_FILE, [newEntry])
 	} catch (err) {
 		logger.error(`Failed to log deployment data: ${err}`)
 		throw err
-	}
-}
-
-/**
- * Reads existing deployment data from file
- */
-function readExistingDeployments(): any[] {
-	try {
-		return readData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE)
-	} catch (err) {
-		return []
 	}
 }
 
@@ -103,7 +110,7 @@ function readExistingDeployments(): any[] {
  */
 function createDeploymentEntry(address: string, symmioAddress: string, admin: string): any {
 	return {
-		name: `${CONTRACT_CONFIG.NAME}${ENTRY_TYPES.CONTRACT}`,
+		name: "InstantLayer",
 		address: address,
 		constructorArguments: [symmioAddress, admin],
 	}

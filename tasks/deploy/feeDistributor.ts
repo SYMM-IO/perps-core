@@ -2,6 +2,7 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
 import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { logger } from "./logger.js"
 
 export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
 	.addOption({
@@ -21,11 +22,11 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 	.setAction(async () => ({
 		default: async ({ symmioAddress, admin, symmioShareReceiver, symmioShare }, hre) => {
 			const { ethers, upgrades } = await getConnection(hre)
-			console.log("Running deploy:feeDistributor")
+			logger.section("SymmioFeeDistributor Deployment")
 
 			const [deployer] = await ethers.getSigners()
 
-			console.log("Deploying contracts with the account:", deployer.address)
+			logger.debug("Deploying contracts with the account:", deployer.address)
 
 			// Deploy SymmioFeeDistributor as upgradeable
 			const factory = await ethers.getContractFactory("SymmioFeeDistributor")
@@ -39,7 +40,13 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 				proxy: await contract.getAddress(),
 				...(await getUpgradeAddresses(upgrades, contract)),
 			}
-			console.log("SymmioFeeDistributor deployed to", addresses)
+			logger.deployed("SymmioFeeDistributor (Proxy)", addresses.proxy)
+			if (addresses.implementation) {
+				logger.deployed("SymmioFeeDistributor (Implementation)", addresses.implementation)
+			}
+			if (addresses.admin) {
+				logger.deployed("SymmioFeeDistributor (Admin)", addresses.admin)
+			}
 
 			return contract
 		},

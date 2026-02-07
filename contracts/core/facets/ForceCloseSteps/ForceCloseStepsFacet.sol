@@ -12,7 +12,7 @@ import { ForceCloseStepsImpl } from "./ForceCloseStepsImpl.sol";
 import { SettlementFacetEvents } from "../../facets/Settlement/SettlementFacetEvents.sol";
 import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { CrossPartyBStorage } from "../../storages/CrossPartyBStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForceCloseStepsFacet, SettlementFacetEvents {
@@ -80,7 +80,7 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 	 */
 	function _settleUpnlForForceClose(uint256 quoteId, UnifiedSettlementSig memory settlementSig, uint256[] memory updatedPrices) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[settlementSig.partyB];
+		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[settlementSig.partyB];
 
 		uint256[] memory newPartyAsAllocatedBalances = ForceCloseStepsImpl.settleUpnlUnified(quoteId, settlementSig, updatedPrices);
 
@@ -104,7 +104,7 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		Quote memory quote = quoteLayout.quotes[quoteId];
 		address partyB = quote.partyB;
 
-		bool isCrossPartyB = CrossPartyBStorage.layout().crossModeEnabledForPartyB[partyB];
+		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[partyB];
 		int256 snapshotUpnlPartyB = accountLayout.forceCloseDetails[quoteId].upnlPartyB;
 		uint256 snapshotCurrentPrice = accountLayout.forceCloseDetails[quoteId].currentPrice;
 		(bool isPartyBSolvent, int256 upnlPartyB) = ForceCloseStepsImpl.finalizeForceClose(quoteId);

@@ -2,7 +2,7 @@ import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers"
 import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers"
 import hardhatVerify from "@nomicfoundation/hardhat-verify"
 import { config as dotenvConfig } from "dotenv"
-import { defineConfig } from "hardhat/config"
+import { configVariable, defineConfig } from "hardhat/config"
 import { resolve } from "node:path"
 
 import { deployTasks } from "./tasks/deploy/index.js"
@@ -11,13 +11,13 @@ const dotenvConfigPath = process.env.DOTENV_CONFIG_PATH || "./.env"
 dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
 
 const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
-const privateKey = process.env.PRIVATE_KEY || DUMMY_PRIVATE_KEY
-const etherscanApiKey = process.env.ETHERSCAN_API_KEY || ""
+const privateKey = (configVariable("TEAM_DEPLOYER") as any) || DUMMY_PRIVATE_KEY
+const etherscanApiKey = (configVariable("ETHERSCAN_APIKEY") as any) || ""
 
-const createNetworkConfig = (url: string) =>
+const createNetworkConfig = (network: string, defaultUrl: string) =>
 	({
 		type: "http",
-		url,
+		url: (configVariable(`RPC_${network.toUpperCase()}`) as any) || defaultUrl,
 		accounts: [privateKey],
 	}) as {
 		type: "http"
@@ -128,15 +128,15 @@ export default defineConfig({
 			type: "http",
 			url: process.env.HARDHAT_DOCKER_URL || "http://localhost:8545",
 		},
-		bsc: createNetworkConfig("https://binance.llamarpc.com"),
-		base: createNetworkConfig("https://mainnet.base.org"),
-		polygon: createNetworkConfig("https://polygon-rpc.com"),
-		iota: createNetworkConfig("https://json-rpc.evm.iotaledger.net"),
-		blast: createNetworkConfig("https://rpc.blast.io"),
-		mode: createNetworkConfig("https://mainnet.mode.network"),
-		mantle: createNetworkConfig("https://mantle.drpc.org"),
-		mantle2: createNetworkConfig("https://mantle.drpc.org"),
-		arbitrum: createNetworkConfig("https://arbitrum.llamarpc.com"),
+		bsc: createNetworkConfig("bsc", "https://binance.llamarpc.com"),
+		base: createNetworkConfig("base", "https://mainnet.base.org"),
+		polygon: createNetworkConfig("polygon", "https://polygon-rpc.com"),
+		iota: createNetworkConfig("iota", "https://json-rpc.evm.iotaledger.net"),
+		blast: createNetworkConfig("blast", "https://rpc.blast.io"),
+		mode: createNetworkConfig("mode", "https://mainnet.mode.network"),
+		mantle: createNetworkConfig("mantle", "https://mantle.drpc.org"),
+		mantle2: createNetworkConfig("mantle2", "https://mantle.drpc.org"),
+		arbitrum: createNetworkConfig("arbitrum", "https://arbitrum.llamarpc.com"),
 	},
 	verify: {
 		etherscan: {

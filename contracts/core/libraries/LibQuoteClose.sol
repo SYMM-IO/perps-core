@@ -14,7 +14,7 @@ import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { FundingStorage } from "../storages/FundingStorage.sol";
-import { CrossPartyBStorage } from "../storages/CrossPartyBStorage.sol";
+import { ClearingHouseStorage } from "../storages/ClearingHouseStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
@@ -200,7 +200,7 @@ library LibQuoteClose {
 		);
 		require(!MAStorage.layout().liquidationStatus[quote.partyA], "LibQuote: PartyA isn't solvent");
 		require(!MAStorage.layout().partyBLiquidationStatus[quote.partyB][quote.partyA], "LibQuote: PartyB isn't solvent");
-		require(!CrossPartyBStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "LibQuote: PartyB is in cross liquidation process");
+		require(!ClearingHouseStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "LibQuote: PartyB is in cross liquidation process");
 
 		if (quote.quoteStatus == QuoteStatus.PENDING || quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
 			quote.statusModifyTimestamp = block.timestamp;

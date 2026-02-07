@@ -15,8 +15,10 @@ import {
 	VirtualAccountIsolationType,
 	LegacyAccountInfo
 } from "../../storages/AccountHubStorage.sol";
+import { AccountLayerStorage } from "../../storages/AccountLayerStorage.sol";
 import { AffiliateHubStorage, AffiliateState, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
 contract ViewFacet is IViewFacet {
@@ -374,6 +376,22 @@ contract ViewFacet is IViewFacet {
 		}
 
 		return (holders, shares);
+	}
+
+	// ==================== Role Management ====================
+
+	function hasRole(address user, bytes32 role) external view returns (bool) {
+		return LibAccountLayerAccessibility.hasRole(user, role);
+	}
+
+	function isRoleAdmin(address user, bytes32 role) external view returns (bool) {
+		return LibAccountLayerAccessibility.isRoleAdmin(user, role);
+	}
+
+	// ==================== Pause Control ====================
+
+	function paused() external view returns (bool) {
+		return AccountLayerStorage.layout().globalPaused;
 	}
 
 	// ==================== Constants ====================
