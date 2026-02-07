@@ -34,14 +34,14 @@ async function accountManagerFixture() {
 export function shouldBehaveLikeAccountManager(): void {
 	describe("AccountManager", function () {
 		describe("constructor", function () {
-			it("stores the account hub reference", async function () {
+			it("stores the account layer reference", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				expect(await context.accountManager.getAccountHub()).to.equal(context.accountLayerDiamond)
 			})
 		})
 
 		describe("addAccount", function () {
-			it("creates a sub-account through AccountHub and emits events", async function () {
+			it("creates a sub-account through AccountLayer and emits events", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				const prediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Trading account")
 				await expect(context.accountManager.connect(context.signers.user).addAccount("Trading account"))
@@ -102,7 +102,7 @@ export function shouldBehaveLikeAccountManager(): void {
 				expect(details[0].symmioCore).to.equal(await coreA.getAddress())
 			})
 
-			it("reverts if affiliate hub has no configured cores", async function () {
+			it("reverts if affiliate has no configured cores", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				const affiliateData = {
 					name: "test affiliate no cores",
@@ -140,7 +140,7 @@ export function shouldBehaveLikeAccountManager(): void {
 		})
 
 			describe("depositForAccount", function () {
-				it("forwards the deposit call via AccountHub with signer wrapper", async function () {
+				it("forwards the deposit call via AccountLayer with signer wrapper", async function () {
 					const context = await loadFixture(accountManagerFixture)
 					const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Deposit account")
 					await context.accountManager.connect(context.signers.user).addAccount("Deposit account")
@@ -173,7 +173,7 @@ export function shouldBehaveLikeAccountManager(): void {
 					expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 				})
 
-				it("resets signer when AccountHub call reverts", async function () {
+				it("resets signer when AccountLayer call reverts", async function () {
 					const context = await loadFixture(accountManagerFixture)
 					const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Deposit account")
 					await context.accountManager.connect(context.signers.user).addAccount("Deposit account")
@@ -188,7 +188,7 @@ export function shouldBehaveLikeAccountManager(): void {
 			})
 
 			describe("depositAndAllocateForAccount", function () {
-				it("forwards the deposit+allocate call via AccountHub with signer wrapper", async function () {
+				it("forwards the deposit+allocate call via AccountLayer with signer wrapper", async function () {
 					const context = await loadFixture(accountManagerFixture)
 					const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Deposit and allocate account")
 					await context.accountManager.connect(context.signers.user).addAccount("Deposit and allocate account")
@@ -224,7 +224,7 @@ export function shouldBehaveLikeAccountManager(): void {
 					expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 				})
 
-				it("resets signer when AccountHub call reverts", async function () {
+				it("resets signer when AccountLayer call reverts", async function () {
 					const context = await loadFixture(accountManagerFixture)
 					const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Deposit and allocate account")
 					await context.accountManager.connect(context.signers.user).addAccount("Deposit and allocate account")
@@ -239,7 +239,7 @@ export function shouldBehaveLikeAccountManager(): void {
 			})
 
 		describe("depositForAccountWithExpressRate", function () {
-			it("forwards express deposit call via AccountHub", async function () {
+			it("forwards express deposit call via AccountLayer", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit account")
 				await context.accountManager.connect(context.signers.user).addAccount("Express deposit account")
@@ -272,7 +272,7 @@ export function shouldBehaveLikeAccountManager(): void {
 				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 
-			it("resets signer when AccountHub call reverts", async function () {
+			it("resets signer when AccountLayer call reverts", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit account")
 				await context.accountManager.connect(context.signers.user).addAccount("Express deposit account")
@@ -287,7 +287,7 @@ export function shouldBehaveLikeAccountManager(): void {
 		})
 
 		describe("depositAndAllocateForAccountWithExpressRate", function () {
-			it("forwards express deposit+allocate call via AccountHub", async function () {
+			it("forwards express deposit+allocate call via AccountLayer", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit and allocate account")
 				await context.accountManager.connect(context.signers.user).addAccount("Express deposit and allocate account")
@@ -325,7 +325,7 @@ export function shouldBehaveLikeAccountManager(): void {
 				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 
-			it("resets signer when AccountHub call reverts", async function () {
+			it("resets signer when AccountLayer call reverts", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Express deposit and allocate account")
 				await context.accountManager.connect(context.signers.user).addAccount("Express deposit and allocate account")
@@ -379,7 +379,7 @@ export function shouldBehaveLikeAccountManager(): void {
 				expect(await context.alViewFacet.connect(context.signers.deployer).getSigner()).to.equal(context.signers.deployer.address)
 			})
 
-			it("resets signer even when AccountHub._call reverts", async function () {
+			it("resets signer even when AccountLayer._call reverts", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Withdraw account")
 				await context.accountManager.connect(context.signers.user).addAccount("Withdraw account")
@@ -391,7 +391,7 @@ export function shouldBehaveLikeAccountManager(): void {
 		})
 
 		describe("_call passthrough", function () {
-			it("forwards arbitrary calls via AccountHub with signer context", async function () {
+			it("forwards arbitrary calls via AccountLayer with signer context", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				const accountPrediction = await context.accountManager.connect(context.signers.user).addAccount.staticCall("Call account")
 				await context.accountManager.connect(context.signers.user).addAccount("Call account")
@@ -417,7 +417,7 @@ export function shouldBehaveLikeAccountManager(): void {
 		})
 
 		describe("view helpers", function () {
-			it("exposes account hub address", async function () {
+			it("exposes account layer address", async function () {
 				const context = await loadFixture(accountManagerFixture)
 				expect(await context.accountManager.getAccountHub()).to.equal(context.accountLayerDiamond)
 			})

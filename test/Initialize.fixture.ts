@@ -32,7 +32,7 @@ export async function initializeFixture(): Promise<RunContext> {
 
 	const context = await createRunContext(await diamond.getAddress(), await collateral.getAddress(), true)
 
-	// Deploy AccountLayer Diamond (replaces AccountHub + AffiliateHub)
+	// Deploy AccountLayer Diamond
 	const accountLayerResult = await deployAccountLayerDiamond(hre, {
 		admin: context.signers.admin,
 		symmioFeeReceiver: context.signers.symmioFeeReceiver,
@@ -118,11 +118,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliateAddress)
 	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate2Address)
 
-	// Set up account managers (via ViewFacet)
-	const accManagerAddress = await context.alViewFacet.getAffiliateAccountManager(affiliateAddress)
-	const accManager2Address = await context.alViewFacet.getAffiliateAccountManager(affiliate2Address)
-	context.accountManager = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", accManagerAddress)
-	context.accountManager2 = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", accManager2Address)
+	// Set up account managers (affiliate and accountManager are the same address)
+	context.accountManager = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", affiliateAddress)
+	context.accountManager2 = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", affiliate2Address)
 	context.symmioPartyB = symmioPartyB
 	context.instantLayer = instantLayer
 

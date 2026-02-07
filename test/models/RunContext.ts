@@ -29,9 +29,6 @@ import type {
 	InstantLayer,
 	SymmioPartyB,
 	AccountManager,
-	AffiliateHub,
-	AccountHub,
-	AccountHubLens,
 	FakeStablecoin,
 	SymmioPartyA,
 	WithdrawFacet,
@@ -109,10 +106,6 @@ export class RunContext {
 	accountManager!: AccountManager
 	accountManager2!: AccountManager
 	instantLayer!: InstantLayer
-	// Legacy - kept for backward compatibility during migration
-	accountHub!: AccountHub
-	accountHubLens!: AccountHubLens
-	affiliateHub!: AffiliateHub
 	symmioPartyB!: SymmioPartyB
 	collateral!: FakeStablecoin
 	manager!: TestManager

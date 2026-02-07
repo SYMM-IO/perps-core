@@ -68,8 +68,6 @@ interface IViewFacet {
 
 	function getAffiliateFeeDistributor(address affiliate) external view returns (address);
 
-	function getAffiliateAccountManager(address affiliate) external view returns (address);
-
 	function getAffiliateSymmioCores(address affiliate) external view returns (address[] memory);
 
 	function getAffiliateStakeholders(address affiliate) external view returns (Stakeholder[] memory);
@@ -82,10 +80,7 @@ interface IViewFacet {
 
 	function getLegacyMultiAccounts() external view returns (address[] memory);
 
-	function getLegacyAccountsOfUser(
-		address owner,
-		uint256 maxResults
-	) external view returns (LegacyAccountInfo[] memory accounts, bool hasMore);
+	function getLegacyAccountsOfUser(address owner, uint256 maxResults) external view returns (LegacyAccountInfo[] memory accounts, bool hasMore);
 
 	function getHook(address affiliate, bytes4 selector) external view returns (address);
 
