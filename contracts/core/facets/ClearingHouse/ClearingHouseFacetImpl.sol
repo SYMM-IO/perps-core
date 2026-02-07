@@ -321,8 +321,6 @@ library ClearingHouseFacetImpl {
 				);
 			}
 
-			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			liquidatedAmounts[i] = openAmount;
 			closeIds[i] = quoteLayout.closeIds[quote.id];
 			quote.quoteStatus = QuoteStatus.LIQUIDATED;
 			quote.statusModifyTimestamp = block.timestamp;
@@ -331,14 +329,8 @@ library ClearingHouseFacetImpl {
 			LibAccount.subFromPartyBLockedBalances(quote);
 
 			uint256 liquidationPrice = prices[i];
-			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) / (quote.closedAmount + openAmount);
-			LibQuote.subFromPartiesAggregatedPositions(quote, openAmount);
-			quote.closedAmount = quote.quantity;
-
-			LibQuote.removeFromOpenPositions(quote.id);
-			quoteLayout.partyAPositionsCount[partyA] -= 1;
-			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
-			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1;
+			uint256 closedAmount = LibQuote.closePositionFully(quote.id, liquidationPrice);
+			liquidatedAmounts[i] = closedAmount;
 
 			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
 			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
