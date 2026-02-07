@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { Quote, LockedValues } from "../storages/QuoteStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
@@ -312,5 +313,13 @@ library LibAccount {
 		uint256 fee = LibQuote.getOpenTradingFee(quoteId);
 		AccountStorage.layout().allocatedBalances[partyA] += fee;
 		emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+	}
+
+	function to18Decimals(uint256 amount) internal view returns (uint256) {
+		return (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
+	}
+
+	function toCollateralDecimals(uint256 amount) internal view returns (uint256) {
+		return (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18;
 	}
 }

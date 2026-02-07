@@ -12,6 +12,7 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
 
 
 library BridgeFacetImpl {
@@ -24,7 +25,7 @@ library BridgeFacetImpl {
 		require(bridgeLayout.bridges[bridge], "BridgeFacet: Invalid bridge");
 		require(bridge != user, "BridgeFacet: Bridge and user can't be the same");
 
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(collateral).decimals());
+		uint256 amountWith18Decimals = LibAccount.to18Decimals(amount);
 		require(accountLayout.balances[user] >= amountWith18Decimals, "BridgeFacet: Insufficient balance");
 
 		currentId = ++bridgeLayout.lastId;
