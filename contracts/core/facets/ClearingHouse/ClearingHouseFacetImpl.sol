@@ -420,7 +420,7 @@ library ClearingHouseFacetImpl {
 		accountLayout.lockedBalances[partyA].makeZero();
 
 		// Increment nonce
-		accountLayout.partyANonces[partyA] += 1;
+		LibAccount.increasePartyANonce(partyA);
 
 		// Clear liquidation status
 		maLayout.liquidationStatus[partyA] = false;

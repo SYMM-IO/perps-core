@@ -98,7 +98,7 @@ library LibLiquidation {
 		accountLayout.partyBLockedBalances[partyB][partyA].makeZero();
 		accountLayout.partyBPendingLockedBalances[partyB][partyA].makeZero();
 
-		accountLayout.partyANonces[partyA] += 1;
+		LibAccount.increasePartyANonce(partyA);
 
 		// Transfer liquidator share to the liquidator
 		if (liquidatorShare > 0) {

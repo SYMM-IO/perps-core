@@ -256,6 +256,24 @@ library LibAccount {
 	}
 
 	/**
+	 * @notice Increments Party A nonce.
+	 * @param partyA PartyA address
+	 */
+	function increasePartyANonce(address partyA) internal {
+		AccountStorage.layout().partyANonces[partyA] += 1;
+	}
+
+	/**
+	 * @notice Increments both Party A and Party B nonces in a single call.
+	 * @param partyB PartyB address
+	 * @param partyA PartyA address
+	 */
+	function increaseBothNonces(address partyB, address partyA) internal {
+		AccountStorage.layout().partyANonces[partyA] += 1;
+		increasePartyBNonce(partyB, partyA);
+	}
+
+	/**
 	 * @notice returns Party B nonce for standard account mode or cross partyB mode.
 	 * @param partyB The Party B address.
 	 * @param partyA The Party A address.

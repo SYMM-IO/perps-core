@@ -44,8 +44,7 @@ library PartyBPositionActionsFacetImpl {
 			"PartyBFacet: Symbol not allowed due to connection restrictions"
 		);
 
-		accountLayout.partyANonces[quote.partyA] += 1;
-		LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
+		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 
 		currentId = LibPartyBPositionsActions.openPosition(quoteId, filledAmount, openedPrice);
 
@@ -102,8 +101,7 @@ library PartyBPositionActionsFacetImpl {
 				quote.partyA
 			);
 		}
-		LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
-		AccountStorage.layout().partyANonces[quote.partyA] += 1;
+		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 		LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmount, closedPrice);
 	}
 
@@ -215,8 +213,7 @@ library PartyBPositionActionsFacetImpl {
 			require(partyBAvailableBalance >= 0, "PartyBFacet: PartyB will be insolvent");
 		}
 
-		LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
-		AccountStorage.layout().partyANonces[quote.partyA] += 1;
+		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 		LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmount, closedPrice);
 
 		return filledAmount;

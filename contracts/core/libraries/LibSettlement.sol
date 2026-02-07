@@ -38,7 +38,7 @@ library LibSettlement {
 			isForceClose || quoteLayout.partyBOpenPositions[signer][partyA].length > 0,
 			"LibSettlement: Sender should have a position with partyA"
 		);
-		accountLayout.partyANonces[partyA] += 1;
+		LibAccount.increasePartyANonce(partyA);
 
 		int256[] memory settleAmounts = new int256[](settleSig.upnlPartyBs.length);
 		address[] memory partyBs = new address[](settleSig.upnlPartyBs.length);
@@ -265,11 +265,8 @@ library LibSettlement {
 				maLayout.lastUpnlSettlementTimestamp[signer][partyB][partyA] = block.timestamp;
 			}
 
-			// Update partyA nonce
-			accountLayout.partyANonces[partyA] += 1;
-
-			// Update partyB nonce
-			LibAccount.increasePartyBNonce(partyB, partyA);
+			// Update nonces
+			LibAccount.increaseBothNonces(partyB, partyA);
 
 			// Get allocation key based on mode
 			address allocKey = isCrossPartyB ? address(0) : partyA;

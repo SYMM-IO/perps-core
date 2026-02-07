@@ -390,7 +390,7 @@ library PartyALiquidationFacetImpl {
 			delete accountLayout.liquidationDetails[partyA].liquidationType;
 			maLayout.liquidationStatus[partyA] = false;
 			maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;
-			accountLayout.partyANonces[partyA] += 1;
+			LibAccount.increasePartyANonce(partyA);
 		}
 	}
 }
