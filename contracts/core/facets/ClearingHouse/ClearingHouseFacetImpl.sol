@@ -398,8 +398,13 @@ library ClearingHouseFacetImpl {
 			delete accountLayout.settlementStates[partyA][settledPartyBs[i]];
 		}
 
-		// Clear reimbursement
-		accountLayout.partyAReimbursement[partyA] = 0;
+		// release reimbursement
+		uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
+		if (reimbursement > 0) {
+			accountLayout.partyAReimbursement[partyA] = 0;
+			accountLayout.allocatedBalances[partyA] += reimbursement;
+			emit SharedEvents.BalanceChangePartyA(partyA, reimbursement, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+		}
 
 		// Clear locked balances
 		accountLayout.lockedBalances[partyA].makeZero();

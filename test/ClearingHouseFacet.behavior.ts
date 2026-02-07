@@ -1231,6 +1231,81 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				expect(statusAfter).to.equal(false)
 			})
 
+			it("should not burn partyA reimbursement escrow on settlement", async () => {
+				let partyBIsolated = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				if (partyBIsolated == 0n) {
+					await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(1n, context.signers.user.address)
+					partyBIsolated = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				}
+
+				expect(partyBIsolated).to.be.greaterThan(0n)
+
+				await context.clearingHouseFacet.connect(context.signers.liquidator).deallocateForClearingHouse(
+					context.signers.user.address,
+					[context.signers.hedger.address],
+					[context.signers.user.address],
+					[1n],
+				)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.distributeForClearingHouse(context.signers.user.address, [context.signers.user.address], [ZeroAddress], [1n])
+
+				const validator = new SettlePartyATakeoverValidator()
+				const beforeOut = await validator.before(context, { user })
+				expect(beforeOut.reimbursement).to.be.greaterThan(0n)
+
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+
+				await validator.after(context, { user, settledPartyBs: [], beforeOutput: beforeOut })
+			})
+
+			it("should not change partyA allocated balance when reimbursement was already distributed away", async () => {
+				let reimbursementToDrain = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+				if (reimbursementToDrain == 0n) {
+					let partyBIsolated = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+					if (partyBIsolated == 0n) {
+						await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(1n, context.signers.user.address)
+						partyBIsolated = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+					}
+					expect(partyBIsolated).to.be.greaterThan(0n)
+
+					await context.clearingHouseFacet.connect(context.signers.liquidator).deallocateForClearingHouse(
+						context.signers.user.address,
+						[context.signers.hedger.address],
+						[context.signers.user.address],
+						[1n],
+					)
+					await context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForClearingHouse(context.signers.user.address, [context.signers.user.address], [ZeroAddress], [1n])
+
+					reimbursementToDrain = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+				}
+
+				expect(reimbursementToDrain).to.be.greaterThan(0n)
+
+				const REIMBURSEMENT_KEY = "0x0000000000000000000000000000000000000001"
+				await context.clearingHouseFacet.connect(context.signers.liquidator).deallocateForClearingHouse(
+					context.signers.user.address,
+					[context.signers.user.address],
+					[REIMBURSEMENT_KEY],
+					[reimbursementToDrain],
+				)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.distributeForClearingHouse(context.signers.user.address, [context.signers.admin.address], [ZeroAddress], [reimbursementToDrain])
+
+				const reimbursementBefore = await context.viewFacet.partyAReimbursement(context.signers.user.address)
+				expect(reimbursementBefore).to.equal(0n)
+
+				const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+				const allocatedAfter = (await user.getBalanceInfo()).allocatedBalances
+
+				expect(allocatedAfter).to.equal(allocatedBefore)
+			})
+
 			it("should increment partyA nonce", async () => {
 				const nonceBefore = await context.viewFacet.nonceOfPartyA(context.signers.user.address)
 
