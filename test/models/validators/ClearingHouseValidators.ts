@@ -51,7 +51,7 @@ export class LiquidateCrossPartyBValidator implements TransactionValidator {
 		const details = await context.viewFacet.getCrossLiquidationDetails(hedgerAddress)
 		expect(details.inProgress).to.equal(true)
 		expect(details.upnl).to.equal(arg.upnl)
-		expect(details.deallocateForLiquidation).to.equal(0)
+		expect(details.deallocatedPool).to.equal(0)
 		expect(Number(details.timestamp)).to.be.greaterThan(0)
 
 		// PartyB liquidation timestamp should be set for cross bucket
@@ -168,7 +168,7 @@ export class DeallocateForCHValidator implements TransactionValidator {
 		// Get current pool
 		let poolBefore = 0n
 		if (isCrossPartyB) {
-			poolBefore = crossDetails.deallocateForLiquidation
+			poolBefore = crossDetails.deallocatedPool
 		} else {
 			const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(arg.subject)
 			if (takeoverDetails.inProgress) {
@@ -206,7 +206,7 @@ export class DeallocateForCHValidator implements TransactionValidator {
 		let poolAfter = 0n
 		if (isCrossPartyB) {
 			const crossDetails = await context.viewFacet.getCrossLiquidationDetails(arg.subject)
-			poolAfter = crossDetails.deallocateForLiquidation
+			poolAfter = crossDetails.deallocatedPool
 		} else {
 			const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(arg.subject)
 			if (takeoverDetails.inProgress) {
@@ -260,7 +260,7 @@ export class DistributeForCHValidator implements TransactionValidator {
 		let poolBefore = 0n
 		const crossDetails = await context.viewFacet.getCrossLiquidationDetails(arg.subject)
 		if (crossDetails.inProgress) {
-			poolBefore = crossDetails.deallocateForLiquidation
+			poolBefore = crossDetails.deallocatedPool
 		} else {
 			const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(arg.subject)
 			if (takeoverDetails.inProgress) {
@@ -296,7 +296,7 @@ export class DistributeForCHValidator implements TransactionValidator {
 		let poolAfter = 0n
 		const crossDetails = await context.viewFacet.getCrossLiquidationDetails(arg.subject)
 		if (crossDetails.inProgress) {
-			poolAfter = crossDetails.deallocateForLiquidation
+			poolAfter = crossDetails.deallocatedPool
 		} else {
 			const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(arg.subject)
 			if (takeoverDetails.inProgress) {

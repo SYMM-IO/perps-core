@@ -12,7 +12,7 @@ struct CrossLiquidationDetail {
 	bytes liquidationId;
 	int256 upnl;
 	uint256 timestamp;
-	uint256 deallocateForLiquidation;
+	uint256 deallocatedPool;
 	bool inProgress;
 }
 

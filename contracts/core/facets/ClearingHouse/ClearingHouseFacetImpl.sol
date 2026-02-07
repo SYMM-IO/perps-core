@@ -60,7 +60,7 @@ library ClearingHouseFacetImpl {
 			liquidationId: liquidationSig.liquidationId,
 			upnl: liquidationSig.upnl,
 			timestamp: liquidationSig.timestamp,
-			deallocateForLiquidation: 0,
+			deallocatedPool: 0,
 			inProgress: true
 		});
 	}
@@ -84,11 +84,7 @@ library ClearingHouseFacetImpl {
 		delete accountLayout.liquidators[partyA];
 
 		// Set takeover state
-		chLayout.partyATakeoverDetails[partyA] = PartyATakeoverDetail({
-			liquidationId: liquidationId,
-			deallocatedPool: 0,
-			inProgress: true
-		});
+		chLayout.partyATakeoverDetails[partyA] = PartyATakeoverDetail({ liquidationId: liquidationId, deallocatedPool: 0, inProgress: true });
 	}
 
 	/// @notice Deallocates funds from parties for clearing house liquidation
@@ -129,16 +125,12 @@ library ClearingHouseFacetImpl {
 					// Pull from partyAReimbursement (special key)
 					require(accountLayout.partyAReimbursement[party] >= amount, "ClearingHouseFacet: Insufficient reimbursement");
 					accountLayout.partyAReimbursement[party] -= amount;
-					emit SharedEvents.BalanceChangePartyA(party, amount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 				} else {
 					revert("ClearingHouseFacet: Invalid allocation key for partyA");
 				}
 			} else {
 				// Pulling from partyB's allocated balances
-				require(
-					accountLayout.partyBAllocatedBalances[party][allocationKey] >= amount,
-					"ClearingHouseFacet: Insufficient allocated balance"
-				);
+				require(accountLayout.partyBAllocatedBalances[party][allocationKey] >= amount, "ClearingHouseFacet: Insufficient allocated balance");
 				accountLayout.partyBAllocatedBalances[party][allocationKey] -= amount;
 				emit SharedEvents.BalanceChangePartyB(party, allocationKey, amount, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}
@@ -148,7 +140,7 @@ library ClearingHouseFacetImpl {
 
 		// Add to the appropriate pool
 		if (liqType == LiquidationType.CROSS_PARTY_B) {
-			ClearingHouseStorage.layout().crossLiquidationDetails[subject].deallocateForLiquidation += totalDeallocated;
+			ClearingHouseStorage.layout().crossLiquidationDetails[subject].deallocatedPool += totalDeallocated;
 		} else {
 			ClearingHouseStorage.layout().partyATakeoverDetails[subject].deallocatedPool += totalDeallocated;
 		}
@@ -180,8 +172,8 @@ library ClearingHouseFacetImpl {
 			// Deduct from the appropriate pool
 			if (liqType == LiquidationType.CROSS_PARTY_B) {
 				CrossLiquidationDetail storage detail = ClearingHouseStorage.layout().crossLiquidationDetails[subject];
-				require(detail.deallocateForLiquidation >= amount, "ClearingHouseFacet: Insufficient deallocated balance");
-				detail.deallocateForLiquidation -= amount;
+				require(detail.deallocatedPool >= amount, "ClearingHouseFacet: Insufficient deallocated balance");
+				detail.deallocatedPool -= amount;
 			} else {
 				PartyATakeoverDetail storage detail = ClearingHouseStorage.layout().partyATakeoverDetails[subject];
 				require(detail.deallocatedPool >= amount, "ClearingHouseFacet: Insufficient deallocated balance");
@@ -215,9 +207,7 @@ library ClearingHouseFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		if (quoteLayout.partyBPendingQuotes[partyB][partyA].length > 0) {
 			delete quoteLayout.partyBPendingQuotes[partyB][partyA];
-			accountLayout.partyBPendingLockedBalances[partyB][address(0)].sub(
-				accountLayout.partyBPendingLockedBalances[partyB][partyA]
-			);
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].sub(accountLayout.partyBPendingLockedBalances[partyB][partyA]);
 			accountLayout.partyBPendingLockedBalances[partyB][partyA].makeZero();
 		}
 	}
@@ -270,7 +260,6 @@ library ClearingHouseFacetImpl {
 				}
 				uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 				accountLayout.partyAReimbursement[partyA] += fee;
-				emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 				_callCancelQuoteHooksAndUpdateStatus(quote, partyA, quote.partyB);
 				liquidatedAmounts[index] = quote.quantity;
 			}
@@ -327,7 +316,8 @@ library ClearingHouseFacetImpl {
 				);
 			}
 
-			liquidatedAmounts[i] = quote.quantity - quote.closedAmount;
+			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+			liquidatedAmounts[i] = openAmount;
 			closeIds[i] = quoteLayout.closeIds[quote.id];
 			quote.quoteStatus = QuoteStatus.LIQUIDATED;
 			quote.statusModifyTimestamp = block.timestamp;
@@ -336,7 +326,6 @@ library ClearingHouseFacetImpl {
 			LibAccount.subFromPartyBLockedBalances(quote);
 
 			uint256 liquidationPrice = prices[i];
-			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) / (quote.closedAmount + openAmount);
 			LibQuote.subFromPartiesAggregatedPositions(quote, openAmount);
 			quote.closedAmount = quote.quantity;
@@ -359,9 +348,7 @@ library ClearingHouseFacetImpl {
 				quote.id
 			);
 
-			if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
-				LibAccount.increasePartyBNonce(partyB, partyA);
-			}
+			LibAccount.increasePartyBNonce(partyB, partyA);
 
 			// Emit TradeVolumeRecorded for both liquidation types
 			emit SharedEvents.TradeVolumeRecorded(
@@ -407,10 +394,7 @@ library ClearingHouseFacetImpl {
 	/// @param partyA The partyA being settled
 	/// @param settledPartyBs PartyBs whose settlement states should be cleaned up
 	///        (includes partyBs processed by normal flow before takeover whose connections were already removed)
-	function settlePartyATakeover(
-		address partyA,
-		address[] memory settledPartyBs
-	) internal returns (bytes memory liquidationId) {
+	function settlePartyATakeover(address partyA, address[] memory settledPartyBs) internal returns (bytes memory liquidationId) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -421,10 +405,7 @@ library ClearingHouseFacetImpl {
 			quoteLayout.partyAPositionsCount[partyA] == 0 && quoteLayout.partyAPendingQuotes[partyA].length == 0,
 			"ClearingHouseFacet: PartyA has still open positions"
 		);
-		require(
-			chLayout.partyATakeoverDetails[partyA].deallocatedPool == 0,
-			"ClearingHouseFacet: Undistributed funds in deallocated pool"
-		);
+		require(chLayout.partyATakeoverDetails[partyA].deallocatedPool == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
 
 		liquidationId = chLayout.partyATakeoverDetails[partyA].liquidationId;
 
@@ -464,7 +445,7 @@ library ClearingHouseFacetImpl {
 
 		require(detail.inProgress, "ClearingHouseFacet: Cross liquidation not in progress");
 		require(quoteLayout.partyBPositionsCount[partyB][address(0)] == 0, "ClearingHouseFacet: PartyB has still open positions");
-		require(detail.deallocateForLiquidation == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
+		require(detail.deallocatedPool == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
 
 		detail.inProgress = false;
 		detail.timestamp = 0;
@@ -479,7 +460,10 @@ library ClearingHouseFacetImpl {
 			require(globalLayout.softLiquidationPenaltyCollector != address(0), "ClearingHouse: No Penalty Collector");
 
 			if (penaltyFromAllocated != 0) {
-				require(penaltyFromAllocated <= accountLayout.partyBAllocatedBalances[partyB][partyA], "ClearingHouse: Insufficient Allocated Balance");
+				require(
+					penaltyFromAllocated <= accountLayout.partyBAllocatedBalances[partyB][partyA],
+					"ClearingHouse: Insufficient Allocated Balance"
+				);
 				accountLayout.partyBAllocatedBalances[partyB][partyA] -= penaltyFromAllocated;
 				emit SharedEvents.BalanceChangePartyB(partyB, partyA, penaltyFromAllocated, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 			}

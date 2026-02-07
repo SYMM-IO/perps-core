@@ -196,7 +196,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				expect(details.liquidationId).to.equal("0x")
 				expect(details.upnl).to.equal(upnl)
-				expect(details.deallocateForLiquidation).to.equal(0)
+				expect(details.deallocatedPool).to.equal(0)
 			})
 
 			it("Should fail to cross liquidate a partyB twice", async function () {
@@ -293,7 +293,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const newAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 				const d = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 				expect(newAllocated).to.equal(0)
-				expect(d.deallocateForLiquidation).to.equal(OldAllocated)
+				expect(d.deallocatedPool).to.equal(OldAllocated)
 			})
 
 			it("should deallocate for multiple partyAs in batch", async () => {
@@ -317,7 +317,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const d = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 
 				expect(newAllocatedCross).to.equal(OldAllocatedCross - deallocateAmount1 - deallocateAmount2)
-				expect(d.deallocateForLiquidation).to.equal(deallocateAmount1 + deallocateAmount2)
+				expect(d.deallocatedPool).to.equal(deallocateAmount1 + deallocateAmount2)
 			})
 		})
 
@@ -374,7 +374,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const details = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 				const newAllocation = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user)
 
-				expect(details.deallocateForLiquidation).to.equal(0)
+				expect(details.deallocatedPool).to.equal(0)
 				expect(newAllocation).to.equal(oldAllocation + transferAmount)
 			})
 
@@ -387,7 +387,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.distributeForClearingHouse(context.signers.hedger, [context.signers.user], [ZeroAddress], [partialAmount])
 
 				const detailsAfter = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
-				expect(detailsAfter.deallocateForLiquidation).to.equal(detailsBefore.deallocateForLiquidation - partialAmount)
+				expect(detailsAfter.deallocatedPool).to.equal(detailsBefore.deallocatedPool - partialAmount)
 			})
 
 			it("should fail when partyB is not liquidated", async () => {
