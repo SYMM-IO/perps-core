@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { Quote, LockedValues } from "../storages/QuoteStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { SharedEvents } from "./SharedEvents.sol";
@@ -288,6 +289,18 @@ library LibAccount {
 			return useCrossNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
 		}
 		return accountLayout.partyBNonces[partyB][partyA];
+	}
+
+	/**
+	 * @notice Resolves the fee collector address for an affiliate.
+	 * @param affiliate The affiliate address.
+	 * @return The fee collector address (affiliate-specific or default).
+	 */
+	function getFeeCollector(address affiliate) internal view returns (address) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		return appLayout.affiliateFeeCollector[affiliate] == address(0)
+			? appLayout.defaultFeeCollector
+			: appLayout.affiliateFeeCollector[affiliate];
 	}
 
 	/**

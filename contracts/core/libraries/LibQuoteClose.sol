@@ -35,7 +35,6 @@ library LibQuoteClose {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 
@@ -112,9 +111,7 @@ library LibQuoteClose {
 			SharedEvents.TradingFeeType.CLOSE
 		);
 
-		address feeCollector = appLayout.affiliateFeeCollector[quote.affiliate] == address(0)
-			? appLayout.defaultFeeCollector
-			: appLayout.affiliateFeeCollector[quote.affiliate];
+		address feeCollector = LibAccount.getFeeCollector(quote.affiliate);
 		accountLayout.balances[feeCollector] += fee;
 		quote.closedAmount += filledAmount;
 		LibQuote.subFromPartiesAggregatedPositions(quote, filledAmount);

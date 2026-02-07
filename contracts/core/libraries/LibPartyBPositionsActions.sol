@@ -44,16 +44,13 @@ library LibPartyBPositionsActions {
 	function openPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice) internal returns (uint256 currentId) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBFacet: Symbol is not valid");
 		require(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 
-		address feeCollector = appLayout.affiliateFeeCollector[quote.affiliate] == address(0)
-			? appLayout.defaultFeeCollector
-			: appLayout.affiliateFeeCollector[quote.affiliate];
+		address feeCollector = LibAccount.getFeeCollector(quote.affiliate);
 		if (quote.orderType == OrderType.LIMIT) {
 			require(quote.quantity >= filledAmount && filledAmount > 0, "PartyBFacet: Invalid filledAmount");
 			accountLayout.balances[feeCollector] += (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36;
