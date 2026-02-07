@@ -21,7 +21,7 @@ library AccountFacetImpl {
 	function deposit(address user, uint256 amount) internal {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		LibSafeERC20.safeTransferFrom(appLayout.collateral, LibSigner.getSigner(), address(this), amount);
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		uint256 amountWith18Decimals = LibAccount.to18Decimals(amount);
 		AccountStorage.layout().balances[user] += amountWith18Decimals;
 	}
 
@@ -54,15 +54,14 @@ library AccountFacetImpl {
 			IERC20Metadata(appLayout.collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= amount,
 			"AccountFacet: Insufficient contract collateral"
 		);
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		uint256 amountWith18Decimals = LibAccount.to18Decimals(amount);
 		accountLayout.balances[signer] -= amountWith18Decimals;
 		LibSafeERC20.safeTransfer(appLayout.collateral, user, amount);
 	}
 
 	function withdrawSuspendedUser(address user, address recipient, uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		uint256 amountWith18Decimals = LibAccount.to18Decimals(amount);
 		accountLayout.balances[user] -= amountWith18Decimals;
 		accountLayout.balances[recipient] += amountWith18Decimals;
 	}
@@ -101,9 +100,7 @@ library AccountFacetImpl {
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: partyA will be liquidatable");
 
-		accountLayout.allocatedBalances[signer] -= amount;
-		accountLayout.balances[signer] += amount;
-		accountLayout.withdrawCooldown[signer] = block.timestamp;
+		_executeDeallocate(signer, amount);
 	}
 
 	function safeDeallocate(uint256 amount, SingleUpnlWithPendingBalanceSig memory upnlSig) internal {
@@ -119,9 +116,7 @@ library AccountFacetImpl {
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= upnlSig.pendingBalance + amount, "AccountFacet: Insufficient balance considering pending allocations");
 
-		accountLayout.allocatedBalances[signer] -= amount;
-		accountLayout.balances[signer] += amount;
-		accountLayout.withdrawCooldown[signer] = block.timestamp;
+		_executeDeallocate(signer, amount);
 	}
 
 	function zeroUpnlDeallocate(uint256 amount, address partyA) internal {
@@ -135,9 +130,7 @@ library AccountFacetImpl {
 			"AccountFacet: PartyA has Open/Pending position"
 		);
 
-		accountLayout.allocatedBalances[signer] -= amount;
-		accountLayout.balances[signer] += amount;
-		accountLayout.withdrawCooldown[signer] = block.timestamp;
+		_executeDeallocate(signer, amount);
 	}
 
 	function internalTransfer(address user, uint256 amount) internal {
@@ -161,5 +154,12 @@ library AccountFacetImpl {
 		accountLayout.balances[signer] -= amount;
 		accountLayout.balances[user] += amount;
 		accountLayout.withdrawCooldown[user] = block.timestamp;
+	}
+
+	function _executeDeallocate(address signer, uint256 amount) private {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		accountLayout.allocatedBalances[signer] -= amount;
+		accountLayout.balances[signer] += amount;
+		accountLayout.withdrawCooldown[signer] = block.timestamp;
 	}
 }

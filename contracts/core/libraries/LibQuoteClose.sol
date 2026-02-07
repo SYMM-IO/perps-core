@@ -35,7 +35,6 @@ library LibQuoteClose {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 
@@ -112,9 +111,7 @@ library LibQuoteClose {
 			SharedEvents.TradingFeeType.CLOSE
 		);
 
-		address feeCollector = appLayout.affiliateFeeCollector[quote.affiliate] == address(0)
-			? appLayout.defaultFeeCollector
-			: appLayout.affiliateFeeCollector[quote.affiliate];
+		address feeCollector = LibAccount.getFeeCollector(quote.affiliate);
 		accountLayout.balances[feeCollector] += fee;
 		quote.closedAmount += filledAmount;
 		LibQuote.subFromPartiesAggregatedPositions(quote, filledAmount);
@@ -204,9 +201,7 @@ library LibQuoteClose {
 			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
 
 			// send trading Fee back to partyA
-			uint256 fee = LibQuote.getOpenTradingFee(quote.id);
-			accountLayout.allocatedBalances[quote.partyA] += fee;
-			emit SharedEvents.BalanceChangePartyA(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+			LibAccount.refundOpenTradingFee(quote.id, quote.partyA);
 
 			LibQuote.removeFromPartyAPendingQuotes(quote);
 			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
@@ -217,11 +212,7 @@ library LibQuoteClose {
 			quote.quoteStatus = QuoteStatus.EXPIRED;
 			result = QuoteStatus.EXPIRED;
 
-			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
-			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
-
-			LibHook.safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
-			LibHook.safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
+			LibHook.callCancelQuoteHooks(quoteId, quote.partyA, quote.partyB, quote.affiliate);
 		} else if (quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING) {
 			quote.statusModifyTimestamp = block.timestamp;
 			quote.requestedClosePrice = 0;

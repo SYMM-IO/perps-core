@@ -19,6 +19,7 @@ import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
+import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 
 library PartyALiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -79,27 +80,7 @@ library PartyALiquidationFacetImpl {
 			accountLayout.allocatedBalances[partyA],
 			partyA
 		);
-		if (accountLayout.liquidationDetails[partyA].liquidationType == LiquidationType.NONE) {
-			if (uint256(-availableBalance) < accountLayout.lockedBalances[partyA].lf) {
-				uint256 remainingLf = accountLayout.lockedBalances[partyA].lf - uint256(-availableBalance);
-				uint256 maxLf = maLayout.maxLiquidationProfitPerPosition * QuoteStorage.layout().partyAPositionsCount[partyA];
-				if (remainingLf > maxLf) {
-					accountLayout.balances[maLayout.liquidationInsuranceVault] += remainingLf - maxLf;
-					remainingLf = maxLf;
-				}
-				accountLayout.liquidationDetails[partyA].liquidationType = LiquidationType.NORMAL;
-				accountLayout.liquidationDetails[partyA].liquidationFee = remainingLf;
-			} else if (uint256(-availableBalance) <= accountLayout.lockedBalances[partyA].lf + accountLayout.lockedBalances[partyA].cva) {
-				uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf;
-				accountLayout.liquidationDetails[partyA].liquidationType = LiquidationType.LATE;
-				accountLayout.liquidationDetails[partyA].deficit = deficit;
-			} else {
-				uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf - accountLayout.lockedBalances[partyA].cva;
-				accountLayout.liquidationDetails[partyA].liquidationType = LiquidationType.OVERDUE;
-				accountLayout.liquidationDetails[partyA].deficit = deficit;
-			}
-			accountLayout.liquidators[partyA].push(msg.sender);
-		}
+		LibLiquidation.determineLiquidationType(partyA, availableBalance);
 	}
 
 	function liquidatePendingPositionsPartyA(address partyA) internal returns (uint256[] memory liquidatedAmounts, bytes memory liquidationId) {
@@ -244,18 +225,7 @@ library PartyALiquidationFacetImpl {
 				}
 			}
 
-			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
-			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
-			LibHook.safeCall(
-				affiliateHook,
-				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)),
-				quote.id
-			);
-			LibHook.safeCall(
-				systemHook,
-				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)),
-				quote.id
-			);
+			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB, quote.affiliate);
 			averageClosedPrices[index] = quote.avgClosedPrice;
 
 			// Track unique partyBs
@@ -390,7 +360,7 @@ library PartyALiquidationFacetImpl {
 			delete accountLayout.liquidationDetails[partyA].liquidationType;
 			maLayout.liquidationStatus[partyA] = false;
 			maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;
-			accountLayout.partyANonces[partyA] += 1;
+			LibAccount.increasePartyANonce(partyA);
 		}
 	}
 }

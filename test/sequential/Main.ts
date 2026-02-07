@@ -1,9 +1,9 @@
 import { shouldBehaveLikePartyBEmergencyActionsFacet } from "../PartyBEmergencyActionsFacet.behavior.js"
 import { shouldBehaveLikeAccessControlRoleAdmins } from "../AccessControlRoleAdmins.behavior.js"
 import { shouldBehaveLikeAccountFacet } from "../AccountFacet.behavior.js"
-import { shouldBehaveLikeAccountHub } from "../AccountHub.behavior.js"
+import { shouldBehaveLikeAccountLayer } from "../AccountLayer.behavior.js"
 import { shouldBehaveLikeAccountManager } from "../AccountManager.behavior.js"
-import { shouldBehaveLikeAffiliateHub } from "../AffiliateHub.behavior.js"
+import { shouldBehaveLikeAccountLayerAffiliate } from "../AccountLayerAffiliate.behavior.js"
 import { shouldBehaveLikeAggregateViews } from "../AggregateViews.behavior.js"
 import { shouldBehaveLikeBridgeFacet } from "../BridgeFacet.behavior.js"
 import { shouldBehaveLikeCancelQuote } from "../CancelQuote.behavior.js"
@@ -146,12 +146,12 @@ describe("UnitTests", function () {
 			shouldBehaveLikeWithdrawFacet()
 		})
 
-		describe("AccountHub", async function () {
-			shouldBehaveLikeAccountHub()
+		describe("AccountLayer", async function () {
+			shouldBehaveLikeAccountLayer()
 		})
 
-		describe("AffiliateHub", async function () {
-			shouldBehaveLikeAffiliateHub()
+		describe("AccountLayerAffiliate", async function () {
+			shouldBehaveLikeAccountLayerAffiliate()
 		})
 
 		describe("AccountManager", async function () {

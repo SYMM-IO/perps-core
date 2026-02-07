@@ -25,7 +25,7 @@ library LibUtils {
 	 */
 	function removeFromArray(uint256[] storage array_, uint256 item) internal {
 		uint256 index = getIndexOfItem(array_, item);
-		require(index != type(uint256).max, "LibQuote: Item not Found");
+		require(index != type(uint256).max, "LibUtils: Item not Found");
 		array_[index] = array_[array_.length - 1];
 		array_.pop();
 	}

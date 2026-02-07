@@ -8,6 +8,7 @@ import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus
 import { AggregatedDataStorage, PartiesAggregatedPositions } from "../storages/AggregatedDataStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibAggregateFunding } from "./LibAggregateFunding.sol";
+import { LibUtils } from "./LibUtils.sol";
 
 library LibQuote {
 	using LockedValuesOps for LockedValues;
@@ -22,36 +23,11 @@ library LibQuote {
 	}
 
 	/**
-	 * @notice Gets the index of an item in an array.
-	 * @param array_ The array in which to search for the item.
-	 * @param item The item to find the index of.
-	 * @return The index of the item in the array, or type(uint256).max if the item is not found.
-	 */
-	function getIndexOfItem(uint256[] storage array_, uint256 item) internal view returns (uint256) {
-		for (uint256 index = 0; index < array_.length; index++) {
-			if (array_[index] == item) return index;
-		}
-		return type(uint256).max;
-	}
-
-	/**
-	 * @notice Removes an item from an array.
-	 * @param array_ The array from which to remove the item.
-	 * @param item The item to remove from the array.
-	 */
-	function removeFromArray(uint256[] storage array_, uint256 item) internal {
-		uint256 index = getIndexOfItem(array_, item);
-		require(index != type(uint256).max, "LibQuote: Item not Found");
-		array_[index] = array_[array_.length - 1];
-		array_.pop();
-	}
-
-	/**
 	 * @notice Removes a quote from the pending quotes of Party A.
 	 * @param quote The quote to remove from the pending quotes.
 	 */
 	function removeFromPartyAPendingQuotes(Quote storage quote) internal {
-		removeFromArray(QuoteStorage.layout().partyAPendingQuotes[quote.partyA], quote.id);
+		LibUtils.removeFromArray(QuoteStorage.layout().partyAPendingQuotes[quote.partyA], quote.id);
 	}
 
 	/**
@@ -59,7 +35,7 @@ library LibQuote {
 	 * @param quote The quote to remove from the pending quotes.
 	 */
 	function removeFromPartyBPendingQuotes(Quote storage quote) internal {
-		removeFromArray(QuoteStorage.layout().partyBPendingQuotes[quote.partyB][quote.partyA], quote.id);
+		LibUtils.removeFromArray(QuoteStorage.layout().partyBPendingQuotes[quote.partyB][quote.partyA], quote.id);
 	}
 
 	/**

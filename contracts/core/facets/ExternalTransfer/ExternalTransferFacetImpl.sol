@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { ExternalTransferStorage, VirtualExternalTransferRequest, VirtualExternalTransferStatus } from "../../storages/ExternalTransferStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
@@ -15,6 +14,7 @@ import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibSafeCall } from "../../libraries/LibSafeCall.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
 
 library ExternalTransferFacetImpl {
 	function externalTransfer(address sender, address receiver, uint256 amount, address target) internal {
@@ -28,7 +28,7 @@ library ExternalTransferFacetImpl {
 		address relayer = extLayout.externalTransferTargetsRelayers[target];
 		require(relayer != address(0), "AccountFacet: Target not whitelisted");
 
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		uint256 amountWith18Decimals = LibAccount.to18Decimals(amount);
 		accountLayout.balances[sender] -= amountWith18Decimals;
 		require(
 			IERC20(appLayout.collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= amount,
@@ -51,7 +51,6 @@ library ExternalTransferFacetImpl {
 	) internal returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ExternalTransferStorage.Layout storage extLayout = ExternalTransferStorage.layout();
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 
 		// Input Checks
@@ -60,7 +59,7 @@ library ExternalTransferFacetImpl {
 		require(withdrawLayout.virtualProviders[virtualProvider], "AccountFacet: Invalid virtual provider");
 
 		// Balance Adjustment
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		uint256 amountWith18Decimals = LibAccount.to18Decimals(amount);
 		require(amountWith18Decimals <= accountLayout.balances[sender], "AccountFacet: Insufficient balance");
 		accountLayout.balances[sender] -= amountWith18Decimals;
 
@@ -100,14 +99,13 @@ library ExternalTransferFacetImpl {
 	function cancelVirtualExternalTransfer(uint256 id) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ExternalTransferStorage.Layout storage extLayout = ExternalTransferStorage.layout();
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 
 		VirtualExternalTransferRequest storage externalTransferReq = extLayout.externalTransfers[id];
 
 		require(externalTransferReq.sender == LibSigner.getSigner(), "AccountFacet: Invalid Sender");
 		require(externalTransferReq.status == VirtualExternalTransferStatus.PENDING, "AccountFacet: External transfer already processed");
 
-		uint256 amountWith18Decimals = (externalTransferReq.amount * 1e18) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		uint256 amountWith18Decimals = LibAccount.to18Decimals(externalTransferReq.amount);
 		accountLayout.balances[externalTransferReq.sender] += amountWith18Decimals;
 
 		externalTransferReq.status = VirtualExternalTransferStatus.CANCELED;

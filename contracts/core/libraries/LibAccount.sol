@@ -6,8 +6,12 @@ pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { Quote, LockedValues } from "../storages/QuoteStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
+import { SharedEvents } from "./SharedEvents.sol";
+import { LibQuote } from "./LibQuote.sol";
 
 library LibAccount {
 	using LockedValuesOps for LockedValues;
@@ -256,6 +260,24 @@ library LibAccount {
 	}
 
 	/**
+	 * @notice Increments Party A nonce.
+	 * @param partyA PartyA address
+	 */
+	function increasePartyANonce(address partyA) internal {
+		AccountStorage.layout().partyANonces[partyA] += 1;
+	}
+
+	/**
+	 * @notice Increments both Party A and Party B nonces in a single call.
+	 * @param partyB PartyB address
+	 * @param partyA PartyA address
+	 */
+	function increaseBothNonces(address partyB, address partyA) internal {
+		AccountStorage.layout().partyANonces[partyA] += 1;
+		increasePartyBNonce(partyB, partyA);
+	}
+
+	/**
 	 * @notice returns Party B nonce for standard account mode or cross partyB mode.
 	 * @param partyB The Party B address.
 	 * @param partyA The Party A address.
@@ -268,5 +290,36 @@ library LibAccount {
 			return useCrossNonce ? accountLayout.partyBNonces[partyB][address(0)] : 0;
 		}
 		return accountLayout.partyBNonces[partyB][partyA];
+	}
+
+	/**
+	 * @notice Resolves the fee collector address for an affiliate.
+	 * @param affiliate The affiliate address.
+	 * @return The fee collector address (affiliate-specific or default).
+	 */
+	function getFeeCollector(address affiliate) internal view returns (address) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		return appLayout.affiliateFeeCollector[affiliate] == address(0)
+			? appLayout.defaultFeeCollector
+			: appLayout.affiliateFeeCollector[affiliate];
+	}
+
+	/**
+	 * @notice Refunds the open trading fee for a quote back to Party A's allocated balance.
+	 * @param quoteId The ID of the quote whose fee is being refunded.
+	 * @param partyA The address of Party A receiving the refund.
+	 */
+	function refundOpenTradingFee(uint256 quoteId, address partyA) internal {
+		uint256 fee = LibQuote.getOpenTradingFee(quoteId);
+		AccountStorage.layout().allocatedBalances[partyA] += fee;
+		emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+	}
+
+	function to18Decimals(uint256 amount) internal view returns (uint256) {
+		return (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
+	}
+
+	function toCollateralDecimals(uint256 amount) internal view returns (uint256) {
+		return (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18;
 	}
 }

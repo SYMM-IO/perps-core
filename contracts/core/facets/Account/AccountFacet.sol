@@ -12,9 +12,10 @@ import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
 
 contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows either PartyA or PartyB to deposit collateral.
@@ -41,7 +42,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
 	function _virtualDepositFor(address user, uint256 amount) internal {
 		AccountFacetImpl.virtualDepositFor(user, amount);
-		uint256 amountWithCollateralDecimal = (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18;
+		uint256 amountWithCollateralDecimal = LibAccount.toCollateralDecimals(amount);
 		emit Deposit(msg.sender, user, amountWithCollateralDecimal); // For backward compatibility, will be removed in future
 		emit Deposit(msg.sender, user, amountWithCollateralDecimal, true);
 	}
@@ -131,7 +132,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address signer = LibSigner.getSigner();
 
 		AccountFacetImpl.deposit(signer, amount);
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
+		uint256 amountWith18Decimals = LibAccount.to18Decimals(amount);
 		AccountFacetImpl.allocate(signer, amountWith18Decimals);
 		emit Deposit(signer, signer, amount);
 		emit Deposit(signer, signer, amount, false);
@@ -142,7 +143,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	function depositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(user) notSuspended(user) {
 		address signer = LibSigner.getSigner();
 		AccountFacetImpl.deposit(user, amount);
-		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
+		uint256 amountWith18Decimals = LibAccount.to18Decimals(amount);
 		AccountFacetImpl.allocate(user, amountWith18Decimals);
 		emit Deposit(signer, user, amount);
 		emit Deposit(signer, user, amount, false);
@@ -197,7 +198,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 		AccountFacetImpl.internalTransfer(user, amount);
 		emit InternalTransfer(signer, user, AccountStorage.layout().allocatedBalances[user], amount);
-		emit Withdraw(signer, user, ((amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / (10 ** 18)));
+		emit Withdraw(signer, user, LibAccount.toCollateralDecimals(amount));
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
 		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
@@ -215,7 +216,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 		AccountFacetImpl.internalTransferToBalance(user, amount);
 		emit InternalTransferToBalance(signer, user, AccountStorage.layout().balances[user], amount);
-		uint256 amountInCollateralDecimals = (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / (10 ** 18);
+		uint256 amountInCollateralDecimals = LibAccount.toCollateralDecimals(amount);
 		emit Withdraw(signer, signer, amountInCollateralDecimals);
 		emit Deposit(signer, user, amountInCollateralDecimals);
 		emit Deposit(signer, user, amountInCollateralDecimals, false);

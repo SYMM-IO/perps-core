@@ -29,7 +29,7 @@ type SubAccountCreationDataStruct = {
 
 const roleHash = (name: string) => ethers.keccak256(toUtf8Bytes(name))
 
-export function shouldBehaveLikeAccountHub(): void {
+export function shouldBehaveLikeAccountLayer(): void {
 	let context: RunContext, user: User, hedger: Hedger
 
 	const createSendQuoteCallData = async (quoteRequest = limitQuoteRequestBuilder().build()) => {
@@ -208,7 +208,7 @@ export function shouldBehaveLikeAccountHub(): void {
 		TRANSFER_AMOUNT: decimal(500n),
 	}
 
-	describe("AccountHub", async function () {
+	describe("AccountLayer", async function () {
 		beforeEach(async function () {
 			context = await loadFixture(initializeFixture)
 			user = new User(context, context.signers.user)
@@ -2944,7 +2944,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					expect(maxLength).to.be.equal(100)
 				})
 
-				it("should return affiliateHub address", async function () {
+				it("should return accountLayer address", async function () {
 					const hubAddress = await context.accountLayerDiamond
 					expect(hubAddress).to.equal(context.accountLayerDiamond)
 				})
@@ -2969,7 +2969,7 @@ export function shouldBehaveLikeAccountHub(): void {
 					const accounts = await context.accountManager.getAccounts(context.signers.user.address, 0, 100)
 					expect(accounts.length).to.equal(3)
 
-					// Verify these are the same as what AccountHub returns
+					// Verify these are the same as what AccountLayer returns
 					const hubAccounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
 					expect(accounts.map(a => a.accountAddress)).to.deep.equal(hubAccounts)
 				})

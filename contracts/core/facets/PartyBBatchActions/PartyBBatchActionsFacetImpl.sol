@@ -79,8 +79,7 @@ library PartyBBatchActionsFacetImpl {
 		// Verify the upnl and prices
 		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
 
-		accountLayout.partyANonces[firstQuote.partyA] += 1;
-		LibAccount.increasePartyBNonce(firstQuote.partyB, firstQuote.partyA);
+		LibAccount.increaseBothNonces(firstQuote.partyB, firstQuote.partyA);
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			uint256 quoteId = quoteIds[i];
@@ -142,7 +141,6 @@ library PartyBBatchActionsFacetImpl {
 		PairUpnlAndPricesSig memory upnlSig,
 		bool isAdl
 	) internal returns (QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
@@ -177,8 +175,7 @@ library PartyBBatchActionsFacetImpl {
 		require(!maLayout.partyBLiquidationStatus[firstQuotePartyB][firstQuotePartyA], "PartyBFacet: PartyB isn't solvent");
 		require(!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuotePartyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 
-		LibAccount.increasePartyBNonce(firstQuotePartyB, firstQuotePartyA);
-		accountLayout.partyANonces[firstQuotePartyA] += 1;
+		LibAccount.increaseBothNonces(firstQuotePartyB, firstQuotePartyA);
 
 		quoteStatuses = new QuoteStatus[](quoteIds.length);
 		closeIds = new uint256[](quoteIds.length);

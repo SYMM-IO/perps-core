@@ -41,8 +41,7 @@ library PartyBEmergencyActionsFacetImpl {
 			"PartyBFacet: PartyB should be solvent"
 		);
 
-		LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
-		accountLayout.partyANonces[quote.partyA] += 1;
+		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 		LibQuoteClose.closeQuote(quote.id, filledAmount, upnlSig.price);
 	}
 
@@ -54,7 +53,6 @@ library PartyBEmergencyActionsFacetImpl {
 	 * @param price Execution price used for the ADL close.
 	 */
 	function adlClose(uint256 quoteId, uint256 amount, uint256 price) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
@@ -124,8 +122,7 @@ library PartyBEmergencyActionsFacetImpl {
 		);
 
 		//Update nonce
-		LibAccount.increasePartyBNonce(quote.partyB, quote.partyA);
-		accountLayout.partyANonces[quote.partyA] += 1;
+		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 
 		LibQuoteClose.closeQuote(quote.id, amount, price);
 		emit LibPartiesEvents.FillCloseRequest(quote.id, quote.partyA, quote.partyB, amount, price, quote.quoteStatus, adlCloseId);

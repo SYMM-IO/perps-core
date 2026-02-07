@@ -268,10 +268,6 @@ contract ViewFacet is IViewFacet {
 		return AffiliateHubStorage.layout().affiliates[affiliate].feeDetails.feeDistributor;
 	}
 
-	function getAffiliateAccountManager(address affiliate) external view returns (address) {
-		return AffiliateHubStorage.layout().affiliates[affiliate].accountManager;
-	}
-
 	function getAffiliateSymmioCores(address affiliate) external view returns (address[] memory) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		EnumerableSet.AddressSet storage set = afLayout.affiliates[affiliate].symmioCores;
@@ -304,10 +300,7 @@ contract ViewFacet is IViewFacet {
 		return AffiliateHubStorage.layout().legacyMultiAccounts.values();
 	}
 
-	function getLegacyAccountsOfUser(
-		address owner,
-		uint256 maxResults
-	) external view returns (LegacyAccountInfo[] memory accounts, bool hasMore) {
+	function getLegacyAccountsOfUser(address owner, uint256 maxResults) external view returns (LegacyAccountInfo[] memory accounts, bool hasMore) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 

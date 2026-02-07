@@ -447,16 +447,16 @@ export function shouldBehaveLikeInstantLayer(): void {
 	})
 
 	// ════════════════════════════════════════════════════════════════════════════
-	// ACCOUNT HUB CONFIGURATION
+	// ACCOUNT LAYER CONFIGURATION
 	// ════════════════════════════════════════════════════════════════════════════
 
-	describe("AccountHub Configuration", function () {
+	describe("AccountLayer Configuration", function () {
 		describe("setAccountHub", function () {
 			it("reverts when caller lacks SETTER_ROLE", async function () {
 				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).setAccountHub(ctx.partyB1.address)).to.be.reverted
 			})
 
-			it("updates accountHub address", async function () {
+			it("updates accountLayer address", async function () {
 				const hubAddress = ctx.context.accountLayerDiamond
 				await expect(ctx.context.instantLayer.setAccountHub(hubAddress)).not.to.be.reverted
 				expect(await ctx.context.instantLayer.accountHub()).to.equal(hubAddress)
@@ -476,13 +476,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 				await expect(ctx.context.instantLayer.setAccountHub(newHub)).to.emit(ctx.context.instantLayer, "AccountHubUpdated").withArgs(oldHub, newHub)
 			})
 
-			it("auto-whitelists new accountHub as target", async function () {
+			it("auto-whitelists new accountLayer as target", async function () {
 				const newHub = ethers.Wallet.createRandom().address
 				await ctx.context.instantLayer.setAccountHub(newHub)
 				expect(await ctx.context.instantLayer.whitelistedTargets(newHub)).to.be.true
 			})
 
-			it("removes whitelist from old accountHub", async function () {
+			it("removes whitelist from old accountLayer", async function () {
 				const hub1 = ctx.context.accountLayerDiamond
 				const hub2 = ethers.Wallet.createRandom().address
 
@@ -1761,7 +1761,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		describe("PartyB delegation with isPartyB=false bypass attempt", function () {
 			// This test verifies that attempting to grant delegation to a PartyB address
 			// while passing isPartyB=false to bypass the InvalidDelegation check will fail
-			// because the onlyOwner modifier queries AccountHub.ownerOf() which returns
+			// because the onlyOwner modifier queries AccountLayer.ownerOf() which returns
 			// address(0) for PartyB addresses (they are not registered as sub-accounts)
 
 			it("reverts when trying to grant delegation with PartyB address but isPartyB=false", async function () {
@@ -1774,7 +1774,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const selector = ctx.lockQuoteCallData.slice(0, 10) as `0x${string}`
 
 				// Attempt to grant delegation with PartyB address but isPartyB=false
-				// This should fail because AccountHub.ownerOf(partyBAddress) returns address(0)
+				// This should fail because AccountLayer.ownerOf(partyBAddress) returns address(0)
 				// and the onlyOwner modifier checks if msg.sender == owner
 				await expect(
 					ctx.context.instantLayer.connect(ctx.partyB1.signer).grantDelegation({
@@ -1789,8 +1789,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			it("even if delegation somehow existed, PartyB operations cannot use PartyA path", async function () {
 				// This test demonstrates that even if a delegation were somehow stored for a PartyB address,
 				// executing PartyB operations with isPartyB=false would fail because:
-				// 1. The operation would be routed through AccountHub (PartyA path)
-				// 2. AccountHub doesn't know about PartyB contracts
+				// 1. The operation would be routed through AccountLayer (PartyA path)
+				// 2. AccountLayer doesn't know about PartyB contracts
 
 				// Setup
 				await ctx.context.instantLayer.registerPartyBs([ctx.context.symmioPartyB])
@@ -1822,7 +1822,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig])
 
 				// Now try to execute PartyB operation (lockQuote) with isPartyB=false
-				// This would attempt to route through AccountHub which won't work for PartyB
+				// This would attempt to route through AccountLayer which won't work for PartyB
 				const partyBAddress = await ctx.context.symmioPartyB.getAddress()
 				const lockOp = createSignedOperation(
 					partyBAddress,
@@ -1835,7 +1835,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const lockSig = await signOperation(ctx.partyB1.signer, ctx.domain, ctx.types, lockOp)
 
 				// This should fail because:
-				// 1. AccountHub.ownerOf(partyBAddress) returns address(0)
+				// 1. AccountLayer.ownerOf(partyBAddress) returns address(0)
 				// 2. Since signer != owner (neither is the actual owner), it checks delegation
 				// 3. No delegation exists for partyBAddress as delegator
 				await expect(ctx.context.instantLayer.executeBatch([lockOp], [lockSig])).to.be.revertedWithCustomError(

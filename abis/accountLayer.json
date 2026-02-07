@@ -1089,25 +1089,6 @@
                 "type": "address"
             }
         ],
-        "name": "getAffiliateAccountManager",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
         "name": "getAffiliateAdmin",
         "outputs": [
             {
