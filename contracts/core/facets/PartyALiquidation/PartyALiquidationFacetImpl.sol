@@ -19,6 +19,7 @@ import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
+import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 
 library PartyALiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -79,27 +80,7 @@ library PartyALiquidationFacetImpl {
 			accountLayout.allocatedBalances[partyA],
 			partyA
 		);
-		if (accountLayout.liquidationDetails[partyA].liquidationType == LiquidationType.NONE) {
-			if (uint256(-availableBalance) < accountLayout.lockedBalances[partyA].lf) {
-				uint256 remainingLf = accountLayout.lockedBalances[partyA].lf - uint256(-availableBalance);
-				uint256 maxLf = maLayout.maxLiquidationProfitPerPosition * QuoteStorage.layout().partyAPositionsCount[partyA];
-				if (remainingLf > maxLf) {
-					accountLayout.balances[maLayout.liquidationInsuranceVault] += remainingLf - maxLf;
-					remainingLf = maxLf;
-				}
-				accountLayout.liquidationDetails[partyA].liquidationType = LiquidationType.NORMAL;
-				accountLayout.liquidationDetails[partyA].liquidationFee = remainingLf;
-			} else if (uint256(-availableBalance) <= accountLayout.lockedBalances[partyA].lf + accountLayout.lockedBalances[partyA].cva) {
-				uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf;
-				accountLayout.liquidationDetails[partyA].liquidationType = LiquidationType.LATE;
-				accountLayout.liquidationDetails[partyA].deficit = deficit;
-			} else {
-				uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf - accountLayout.lockedBalances[partyA].cva;
-				accountLayout.liquidationDetails[partyA].liquidationType = LiquidationType.OVERDUE;
-				accountLayout.liquidationDetails[partyA].deficit = deficit;
-			}
-			accountLayout.liquidators[partyA].push(msg.sender);
-		}
+		LibLiquidation.determineLiquidationType(partyA, availableBalance);
 	}
 
 	function liquidatePendingPositionsPartyA(address partyA) internal returns (uint256[] memory liquidatedAmounts, bytes memory liquidationId) {

@@ -12,6 +12,7 @@ import { LockedValues, QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LiquidationType, LiquidationDetail, Price, AccountStorage } from "../../storages/AccountStorage.sol";
 import { DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
+import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 
 library DeferredLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -80,26 +81,6 @@ library DeferredLiquidationFacetImpl {
 			partyA
 		);
 
-		if (detail.liquidationType == LiquidationType.NONE) {
-			if (uint256(-availableBalance) < accountLayout.lockedBalances[partyA].lf) {
-				uint256 remainingLf = accountLayout.lockedBalances[partyA].lf - uint256(-availableBalance);
-				uint256 maxLf = maLayout.maxLiquidationProfitPerPosition * QuoteStorage.layout().partyAPositionsCount[partyA];
-				if (remainingLf > maxLf) {
-					accountLayout.balances[maLayout.liquidationInsuranceVault] += remainingLf - maxLf;
-					remainingLf = maxLf;
-				}
-				detail.liquidationType = LiquidationType.NORMAL;
-				detail.liquidationFee = remainingLf;
-			} else if (uint256(-availableBalance) <= accountLayout.lockedBalances[partyA].lf + accountLayout.lockedBalances[partyA].cva) {
-				uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf;
-				detail.liquidationType = LiquidationType.LATE;
-				detail.deficit = deficit;
-			} else {
-				uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf - accountLayout.lockedBalances[partyA].cva;
-				detail.liquidationType = LiquidationType.OVERDUE;
-				detail.deficit = deficit;
-			}
-			accountLayout.liquidators[partyA].push(msg.sender);
-		}
+		LibLiquidation.determineLiquidationType(partyA, availableBalance);
 	}
 }

@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
-import { AccountStorage } from "../storages/AccountStorage.sol";
+import { LiquidationType, LiquidationDetail, AccountStorage } from "../storages/AccountStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { SharedEvents } from "../libraries/SharedEvents.sol";
 import { LibAccount } from "./LibAccount.sol";
@@ -103,5 +103,33 @@ library LibLiquidation {
 			accountLayout.allocatedBalances[LibSigner.getSigner()] += liquidatorShare;
 			emit SharedEvents.BalanceChangePartyA(LibSigner.getSigner(), liquidatorShare, SharedEvents.BalanceChangeType.LF_IN);
 		}
+	}
+
+	function determineLiquidationType(address partyA, int256 availableBalance) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		LiquidationDetail storage detail = accountLayout.liquidationDetails[partyA];
+
+		if (detail.liquidationType != LiquidationType.NONE) return;
+
+		if (uint256(-availableBalance) < accountLayout.lockedBalances[partyA].lf) {
+			uint256 remainingLf = accountLayout.lockedBalances[partyA].lf - uint256(-availableBalance);
+			uint256 maxLf = maLayout.maxLiquidationProfitPerPosition * QuoteStorage.layout().partyAPositionsCount[partyA];
+			if (remainingLf > maxLf) {
+				accountLayout.balances[maLayout.liquidationInsuranceVault] += remainingLf - maxLf;
+				remainingLf = maxLf;
+			}
+			detail.liquidationType = LiquidationType.NORMAL;
+			detail.liquidationFee = remainingLf;
+		} else if (uint256(-availableBalance) <= accountLayout.lockedBalances[partyA].lf + accountLayout.lockedBalances[partyA].cva) {
+			uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf;
+			detail.liquidationType = LiquidationType.LATE;
+			detail.deficit = deficit;
+		} else {
+			uint256 deficit = uint256(-availableBalance) - accountLayout.lockedBalances[partyA].lf - accountLayout.lockedBalances[partyA].cva;
+			detail.liquidationType = LiquidationType.OVERDUE;
+			detail.deficit = deficit;
+		}
+		accountLayout.liquidators[partyA].push(msg.sender);
 	}
 }
