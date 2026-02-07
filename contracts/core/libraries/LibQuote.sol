@@ -478,6 +478,25 @@ library LibQuote {
 
 		quoteLayout.partyAPositionsIndex[quote.id] = 0;
 		quoteLayout.partyBPositionsIndex[quote.id] = 0;
+
+		quoteLayout.partyAPositionsCount[quote.partyA] -= 1;
+		quoteLayout.partyBPositionsCount[quote.partyB][quote.partyA] -= 1;
+		quoteLayout.partyBPositionsCount[quote.partyB][address(0)] -= 1;
+	}
+
+	/**
+	 * @notice Fully closes an open position: updates avgClosedPrice, subtracts aggregated positions, and removes from open positions.
+	 * @param quoteId The ID of the quote to close.
+	 * @param closedPrice The price at which the position is closed.
+	 * @return closedAmount The remaining open amount that was closed.
+	 */
+	function closePositionFully(uint256 quoteId, uint256 closedPrice) internal returns (uint256 closedAmount) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		closedAmount = quoteOpenAmount(quote);
+		quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + closedAmount * closedPrice) / (quote.closedAmount + closedAmount);
+		subFromPartiesAggregatedPositions(quote, closedAmount);
+		quote.closedAmount = quote.quantity;
+		removeFromOpenPositions(quote.id);
 	}
 
 	/**

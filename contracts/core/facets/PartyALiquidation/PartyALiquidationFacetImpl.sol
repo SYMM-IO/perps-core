@@ -227,16 +227,7 @@ library PartyALiquidationFacetImpl {
 			}
 			LibAccount.subFromPartyBLockedBalances(quote);
 			uint256 liquidationPrice = accountLayout.symbolsPrices[partyA][quote.symbolId].price;
-			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) / (quote.closedAmount + openAmount);
-
-			LibQuote.subFromPartiesAggregatedPositions(quote, openAmount);
-			quote.closedAmount = quote.quantity;
-
-			LibQuote.removeFromOpenPositions(quote.id);
-			quoteLayout.partyAPositionsCount[partyA] -= 1;
-			quoteLayout.partyBPositionsCount[quote.partyB][partyA] -= 1;
-			quoteLayout.partyBPositionsCount[quote.partyB][address(0)] -= 1;
+			LibQuote.closePositionFully(quote.id, liquidationPrice);
 
 			if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
 				int256 settleAmount = accountLayout.settlementStates[partyA][quote.partyB].expectedAmount;

@@ -125,9 +125,6 @@ library LibQuoteClose {
 			quote.quoteStatus = QuoteStatus.CLOSED;
 			quote.requestedClosePrice = 0;
 			LibQuote.removeFromOpenPositions(quote.id);
-			quoteLayout.partyAPositionsCount[quote.partyA] -= 1;
-			quoteLayout.partyBPositionsCount[quote.partyB][quote.partyA] -= 1;
-			quoteLayout.partyBPositionsCount[quote.partyB][address(0)] -= 1;
 			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 		} else if (quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING || quote.quantityToClose == 0) {
 			quote.quoteStatus = QuoteStatus.OPENED;

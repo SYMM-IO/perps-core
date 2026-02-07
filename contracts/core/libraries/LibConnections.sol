@@ -32,7 +32,7 @@ library LibConnections {
 	function removeConnectionIfNoPositions(address partyA, address partyB) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		if (QuoteStorage.layout().partyBPositionsCount[partyB][partyA] == 0) {
+		if (QuoteStorage.layout().partyBOpenPositions[partyB][partyA].length == 0) {
 			if (accountLayout.isConnectedPartyB[partyA][partyB]) {
 				address[] storage connections = accountLayout.connectedPartyBs[partyA];
 				for (uint256 i = 0; i < connections.length; i++) {

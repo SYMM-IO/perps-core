@@ -68,15 +68,7 @@ library PartyBLiquidationFacetImpl {
 			accountLayout.lockedBalances[partyA].subQuote(quote);
 
 			uint256 liquidationPrice = priceSig.prices[i];
-			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + openAmount * liquidationPrice) / (quote.closedAmount + openAmount);
-			LibQuote.subFromPartiesAggregatedPositions(quote, openAmount);
-			quote.closedAmount = quote.quantity;
-
-			LibQuote.removeFromOpenPositions(quote.id);
-			quoteLayout.partyAPositionsCount[partyA] -= 1;
-			quoteLayout.partyBPositionsCount[partyB][partyA] -= 1;
-			quoteLayout.partyBPositionsCount[partyB][address(0)] -= 1;
+			LibQuote.closePositionFully(quote.id, liquidationPrice);
 			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 
 			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
