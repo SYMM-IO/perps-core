@@ -62,24 +62,8 @@ library LibSettlement {
 			);
 			partyBs[data.partyBUpnlIndex] = quote.partyB;
 
-			if (quote.openedPrice > data.currentPrice) {
-				require(
-					updatedPrices[i] < quote.openedPrice && updatedPrices[i] >= data.currentPrice,
-					"LibSettlement: Updated price is out of range"
-				);
-			} else {
-				require(
-					updatedPrices[i] > quote.openedPrice && updatedPrices[i] <= data.currentPrice,
-					"LibSettlement: Updated price is out of range"
-				);
-			}
-			if (quote.positionType == PositionType.LONG) {
-				settleAmounts[data.partyBUpnlIndex] +=
-					((int256(updatedPrices[i]) - int256(quote.openedPrice)) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
-			} else {
-				settleAmounts[data.partyBUpnlIndex] +=
-					((int256(quote.openedPrice) - int256(updatedPrices[i])) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
-			}
+			_validatePriceInRange(quote.openedPrice, data.currentPrice, updatedPrices[i]);
+			settleAmounts[data.partyBUpnlIndex] += _calculateSettlementAmount(quote, updatedPrices[i]);
 			quote.openedPrice = updatedPrices[i];
 			LibQuote.updatePartiesAggregatedPositionsNotional(quote, oldOpenedPrice);
 		}
@@ -223,26 +207,10 @@ library LibSettlement {
 			);
 
 			// Validate price range
-			if (quote.openedPrice > data.currentPrice) {
-				require(
-					updatedPrices[i] < quote.openedPrice && updatedPrices[i] >= data.currentPrice,
-					"LibSettlement: Updated price is out of range"
-				);
-			} else {
-				require(
-					updatedPrices[i] > quote.openedPrice && updatedPrices[i] <= data.currentPrice,
-					"LibSettlement: Updated price is out of range"
-				);
-			}
+			_validatePriceInRange(quote.openedPrice, data.currentPrice, updatedPrices[i]);
 
 			// Calculate settlement amount
-			int256 amount;
-			if (quote.positionType == PositionType.LONG) {
-				amount = ((int256(updatedPrices[i]) - int256(quote.openedPrice)) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
-			} else {
-				amount = ((int256(quote.openedPrice) - int256(updatedPrices[i])) * int256(LibQuote.quoteOpenAmount(quote))) / 1e18;
-			}
-			settleAmountsPerPartyA[data.partyAIndex] += amount;
+			settleAmountsPerPartyA[data.partyAIndex] += _calculateSettlementAmount(quote, updatedPrices[i]);
 
 			// Update quote
 			quote.openedPrice = updatedPrices[i];
@@ -291,6 +259,29 @@ library LibSettlement {
 			}
 
 			newPartyAsAllocatedBalances[i] = accountLayout.allocatedBalances[partyA];
+		}
+	}
+
+	function _validatePriceInRange(uint256 openedPrice, uint256 currentPrice, uint256 updatedPrice) private pure {
+		if (openedPrice > currentPrice) {
+			require(
+				updatedPrice < openedPrice && updatedPrice >= currentPrice,
+				"LibSettlement: Updated price is out of range"
+			);
+		} else {
+			require(
+				updatedPrice > openedPrice && updatedPrice <= currentPrice,
+				"LibSettlement: Updated price is out of range"
+			);
+		}
+	}
+
+	function _calculateSettlementAmount(Quote storage quote, uint256 updatedPrice) private view returns (int256) {
+		int256 openAmount = int256(LibQuote.quoteOpenAmount(quote));
+		if (quote.positionType == PositionType.LONG) {
+			return ((int256(updatedPrice) - int256(quote.openedPrice)) * openAmount) / 1e18;
+		} else {
+			return ((int256(quote.openedPrice) - int256(updatedPrice)) * openAmount) / 1e18;
 		}
 	}
 }
