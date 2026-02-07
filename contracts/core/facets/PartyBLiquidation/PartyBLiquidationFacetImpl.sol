@@ -69,19 +69,7 @@ library PartyBLiquidationFacetImpl {
 			uint256 liquidationPrice = priceSig.prices[i];
 			LibQuote.closePositionFully(quote.id, liquidationPrice);
 
-			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
-			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
-
-			LibHook.safeCall(
-				affiliateHook,
-				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)),
-				quote.id
-			);
-			LibHook.safeCall(
-				systemHook,
-				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB)),
-				quote.id
-			);
+			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB, quote.affiliate);
 			averageClosedPrices[i] = quote.avgClosedPrice;
 		}
 		if (maLayout.partyBPositionLiquidatorsShare[partyB][partyA] > 0) {

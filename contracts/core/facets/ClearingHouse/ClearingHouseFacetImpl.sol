@@ -190,10 +190,7 @@ library ClearingHouseFacetImpl {
 	}
 
 	function _callCancelQuoteHooksAndUpdateStatus(Quote storage quote, address partyA, address partyB) private {
-		address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
-		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
-		LibHook.safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quote.id, partyA, partyB)), quote.id);
-		LibHook.safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quote.id, partyA, partyB)), quote.id);
+		LibHook.callCancelQuoteHooks(quote.id, partyA, partyB, quote.affiliate);
 		quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 		quote.statusModifyTimestamp = block.timestamp;
 	}
@@ -330,18 +327,7 @@ library ClearingHouseFacetImpl {
 			uint256 closedAmount = LibQuote.closePositionFully(quote.id, liquidationPrice);
 			liquidatedAmounts[i] = closedAmount;
 
-			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
-			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
-			LibHook.safeCall(
-				affiliateHook,
-				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[i], liquidationPrice, partyA, partyB)),
-				quote.id
-			);
-			LibHook.safeCall(
-				systemHook,
-				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[i], liquidationPrice, partyA, partyB)),
-				quote.id
-			);
+			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, partyB, quote.affiliate);
 
 			LibAccount.increasePartyBNonce(partyB, partyA);
 

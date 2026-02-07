@@ -75,10 +75,6 @@ library PartyBQuoteActionsFacetImpl {
 
 		LibQuote.removeFromPendingQuotes(quote);
 
-		address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
-		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
-
-		LibHook.safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
-		LibHook.safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, quote.partyA, quote.partyB)), quoteId);
+		LibHook.callCancelQuoteHooks(quoteId, quote.partyA, quote.partyB, quote.affiliate);
 	}
 }

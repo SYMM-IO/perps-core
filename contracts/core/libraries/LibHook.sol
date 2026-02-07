@@ -5,7 +5,9 @@
 pragma solidity >=0.8.18;
 
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { SharedEvents } from "./SharedEvents.sol";
+import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 
 /**
  * @title LibHook
@@ -39,5 +41,42 @@ library LibHook {
 
 		// Restore signer after hook call
 		GlobalAppStorage.layout().signer = previousSigner;
+	}
+
+	/**
+	 * @notice Calls onCancelQuote on both affiliate and system hooks.
+	 * @param quoteId The ID of the cancelled quote.
+	 * @param partyA The address of Party A.
+	 * @param partyB The address of Party B.
+	 * @param affiliate The affiliate address for hook resolution.
+	 */
+	function callCancelQuoteHooks(uint256 quoteId, address partyA, address partyB, address affiliate) internal {
+		address affiliateHook = AffiliateStorage.layout().affiliateHooks[affiliate];
+		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
+		safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, partyA, partyB)), quoteId);
+		safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, partyA, partyB)), quoteId);
+	}
+
+	/**
+	 * @notice Calls onClosePosition on both affiliate and system hooks.
+	 * @param quoteId The ID of the closed quote.
+	 * @param closedAmount The amount that was closed.
+	 * @param closedPrice The price at which the position was closed.
+	 * @param partyA The address of Party A.
+	 * @param partyB The address of Party B.
+	 * @param affiliate The affiliate address for hook resolution.
+	 */
+	function callClosePositionHooks(
+		uint256 quoteId,
+		uint256 closedAmount,
+		uint256 closedPrice,
+		address partyA,
+		address partyB,
+		address affiliate
+	) internal {
+		address affiliateHook = AffiliateStorage.layout().affiliateHooks[affiliate];
+		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
+		safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onClosePosition, (quoteId, closedAmount, closedPrice, partyA, partyB)), quoteId);
+		safeCall(systemHook, abi.encodeCall(ISymmioHook.onClosePosition, (quoteId, closedAmount, closedPrice, partyA, partyB)), quoteId);
 	}
 }

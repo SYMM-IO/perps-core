@@ -244,18 +244,7 @@ library PartyALiquidationFacetImpl {
 				}
 			}
 
-			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
-			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
-			LibHook.safeCall(
-				affiliateHook,
-				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)),
-				quote.id
-			);
-			LibHook.safeCall(
-				systemHook,
-				abi.encodeCall(ISymmioHook.onClosePosition, (quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB)),
-				quote.id
-			);
+			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB, quote.affiliate);
 			averageClosedPrices[index] = quote.avgClosedPrice;
 
 			// Track unique partyBs
