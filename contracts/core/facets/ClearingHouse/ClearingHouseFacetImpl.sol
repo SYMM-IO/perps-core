@@ -270,15 +270,6 @@ library ClearingHouseFacetImpl {
 			accountLayout.pendingLockedBalances[partyA].makeZero();
 			delete quoteLayout.partyAPendingQuotes[partyA];
 		}
-
-		// NOTE: we are using partyBPendingLockedBalances to check for pendings. it can be zero even with pending quotes!
-		if (
-			quoteLayout.partyBPositionsCount[partyB][address(0)] == 0 &&
-			accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0
-		) {
-			crossLiquidationDetail.inProgress = false;
-			crossLiquidationDetail.timestamp = 0;
-		}
 	}
 
 	/// @notice Liquidates open positions during clearing house liquidation
@@ -455,12 +446,18 @@ library ClearingHouseFacetImpl {
 	/// @notice Settles the clearing house liquidation for a cross partyB
 	/// @param partyB The cross partyB being settled
 	function settleCrossPartyBLiquidation(address partyB) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 		CrossLiquidationDetail storage detail = chLayout.crossLiquidationDetails[partyB];
 
 		require(detail.inProgress, "ClearingHouseFacet: Cross liquidation not in progress");
 		require(quoteLayout.partyBPositionsCount[partyB][address(0)] == 0, "ClearingHouseFacet: PartyB has still open positions");
+		// NOTE: Using partyBPendingLockedBalances as a proxy for pending quotes; it can be zero even with pending quotes in edge cases.
+		require(
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0,
+			"ClearingHouseFacet: PartyB has pending quotes"
+		);
 		require(detail.deallocatedPool == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
 
 		detail.inProgress = false;
