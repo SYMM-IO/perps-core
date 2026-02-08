@@ -346,7 +346,7 @@ function printResults(totalDuration) {
 	console.log()
 	if (results.failed === 0) {
 		console.log(style("brightGreen", "  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"))
-		console.log(style("brightGreen", "  ┃") + bold("brightGreen", "        ✨ ALL TESTS PASSED! GREAT JOB! ✨               ") + style("brightGreen", "┃"))
+		console.log(style("brightGreen", "  ┃") + bold("brightGreen", "        ✨ ALL TESTS PASSED! GREAT JOB! ✨                 ") + style("brightGreen", "┃"))
 		console.log(style("brightGreen", "  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"))
 	} else {
 		console.log(style("brightRed", "  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"))

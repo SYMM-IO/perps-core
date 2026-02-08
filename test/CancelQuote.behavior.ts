@@ -192,8 +192,12 @@ export function shouldBehaveLikeCancelQuote(): void {
 				await expect(user.forceCancelQuote(1)).to.be.revertedWith("PartyAFacet: Invalid state")
 				await user.requestToCancelQuote(1)
 				await expect(user.forceCancelQuote(1)).to.be.revertedWith("PartyAFacet: Cooldown not reached")
+				const pendingBefore = (await user.getBalanceInfo()).totalPendingLockedPartyA
+				expect(pendingBefore).to.be.greaterThan(0)
 				await time.increase(300)
 				await user.forceCancelQuote(1)
+				const pendingAfter = (await user.getBalanceInfo()).totalPendingLockedPartyA
+				expect(pendingAfter).to.equal(0n)
 				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.eq(QuoteStatus.CANCELED)
 			})
 		})

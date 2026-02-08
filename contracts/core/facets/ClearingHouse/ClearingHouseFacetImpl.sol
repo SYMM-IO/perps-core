@@ -16,6 +16,7 @@ import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { CrossLiquidationSig } from "../../storages/MuonStorage.sol";
@@ -397,8 +398,13 @@ library ClearingHouseFacetImpl {
 			delete accountLayout.settlementStates[partyA][settledPartyBs[i]];
 		}
 
-		// Clear reimbursement
-		accountLayout.partyAReimbursement[partyA] = 0;
+		// release reimbursement
+		uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
+		if (reimbursement > 0) {
+			accountLayout.partyAReimbursement[partyA] = 0;
+			accountLayout.allocatedBalances[partyA] += reimbursement;
+			emit SharedEvents.BalanceChangePartyA(partyA, reimbursement, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+		}
 
 		// Clear locked balances
 		accountLayout.lockedBalances[partyA].makeZero();
@@ -420,12 +426,18 @@ library ClearingHouseFacetImpl {
 	/// @notice Settles the clearing house liquidation for a cross partyB
 	/// @param partyB The cross partyB being settled
 	function settleCrossPartyBLiquidation(address partyB) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 		CrossLiquidationDetail storage detail = chLayout.crossLiquidationDetails[partyB];
 
 		require(detail.inProgress, "ClearingHouseFacet: Cross liquidation not in progress");
 		require(quoteLayout.partyBPositionsCount[partyB][address(0)] == 0, "ClearingHouseFacet: PartyB has still open positions");
+		// NOTE: Using partyBPendingLockedBalances as a proxy for pending quotes; it can be zero even with pending quotes in edge cases.
+		require(
+			accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0,
+			"ClearingHouseFacet: PartyB has pending quotes"
+		);
 		require(detail.deallocatedPool == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
 
 		detail.inProgress = false;

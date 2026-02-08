@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -68,6 +69,7 @@ library PartyBLiquidationFacetImpl {
 
 			uint256 liquidationPrice = priceSig.prices[i];
 			LibQuote.closePositionFully(quote.id, liquidationPrice);
+			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 
 			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[i], liquidationPrice, quote.partyA, quote.partyB, quote.affiliate);
 			averageClosedPrices[i] = quote.avgClosedPrice;

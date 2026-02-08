@@ -15,7 +15,7 @@ import {
 	getTradingFeeForQuotes,
 	unDecimal,
 } from "./utils/Common.js";
-import { getDummyLiquidationSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { getDummyLiquidationSig, getDummyPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 
 /**
@@ -201,6 +201,9 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			// This triggers liquidation and pending quotes get liquidated
 			await user.liquidateAndSetSymbolPrices([1n], [decimal(8n)] , [1n])
 			await user.liquidatePendingPositions()
+
+			const pendingAfter = (await user.getBalanceInfo()).totalPendingLockedPartyA
+			expect(pendingAfter).to.equal(0n)
 
 			// Pending quotes (2 and 3) should be marked as LIQUIDATED_PENDING
 			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
@@ -880,6 +883,28 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			// Quote 5 (pending) should be liquidated
 			expect((await context.viewFacetQuote.getQuote(5)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
+		})
+
+		it("Should clear connection after PartyB liquidation closes the last open position", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const hedgerAddress = await context.signers.hedger.getAddress()
+			const user2Address = await context.signers.user2.getAddress()
+
+			await expectConnected(userAddress, hedgerAddress, true)
+			await expectConnected(user2Address, hedgerAddress, true)
+
+			await context.partyBLiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePartyB(hedgerAddress, userAddress, await getDummySingleUpnlSig(decimal(-336n)))
+
+			const priceSig = await getDummyPriceSig([1n], [decimal(1n)])
+			priceSig.timestamp = await context.viewFacet.partyBLiquidationTimestamp(hedgerAddress, userAddress)
+			await context.partyBLiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyB(hedgerAddress, userAddress, priceSig)
+
+			await expectConnected(userAddress, hedgerAddress, false)
+			await expectConnected(user2Address, hedgerAddress, true)
 		})
 
 		it("Should fail to liquidate a partyB twice", async function () {

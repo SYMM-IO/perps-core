@@ -550,6 +550,9 @@ export class SettlePartyATakeoverValidator implements TransactionValidator {
 		const newBalanceInfo = await arg.user.getBalanceInfo()
 		expect(newBalanceInfo.totalLockedPartyA).to.equal(0n)
 
+		// settlement should not zero reimbursement
+		expect(newBalanceInfo.allocatedBalances).to.equal(arg.beforeOutput.balanceInfoPartyA.allocatedBalances + arg.beforeOutput.reimbursement)
+
 		// Takeover details should be deleted (inProgress = false)
 		const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(userAddress)
 		expect(takeoverDetails.inProgress).to.equal(false)
