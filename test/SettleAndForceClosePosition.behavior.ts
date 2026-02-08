@@ -162,6 +162,128 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const settledUpnl = unDecimal((updatePrice - quote2ShortOpened.openedPrice) * quote2ShortOpened.quantity)
 			expect(balanceInfoBAfter.allocatedBalances - balanceInfoBBefore.allocatedBalances).to.be.equal(settledUpnl)
 		})
+
+		describe("Settlement partyB restrictions (3-step flow)", function () {
+			let quoteUser2WithHedger: QuoteStructOutput
+			let quoteUserWithHedger2: QuoteStructOutput
+
+			beforeEach(async function () {
+				// Set up user2 with a quote against hedger
+				user2 = new User(context, context.signers.user2)
+				await user2.setup()
+				await user2.setBalances(decimal(2000n), decimal(1000n), decimal(500n))
+
+				// Give hedger and hedger2 additional funds for the new quotes
+				await hedger.setBalances(decimal(500n), decimal(500n))
+				await hedger2.setBalances(decimal(500n), decimal(500n))
+
+				quoteUser2WithHedger = await context.viewFacetQuote.getQuote(
+					await user2.sendQuote(
+						limitQuoteRequestBuilder()
+							.deadline((await getBlockTimestamp()) + 1000n)
+							.build(),
+					),
+				)
+				await hedger.lockQuote(quoteUser2WithHedger.id)
+				await hedger.openPosition(
+					quoteUser2WithHedger.id,
+					limitOpenRequestBuilder().filledAmount(quoteUser2WithHedger.quantity).openPrice(quoteUser2WithHedger.requestedOpenPrice).build(),
+				)
+
+				// Set up a quote for user against hedger2
+				quoteUserWithHedger2 = await context.viewFacetQuote.getQuote(
+					await user.sendQuote(
+						limitQuoteRequestBuilder()
+							.deadline((await getBlockTimestamp()) + 1000n)
+							.build(),
+					),
+				)
+				await hedger2.lockQuote(quoteUserWithHedger2.id)
+				await hedger2.openPosition(
+					quoteUserWithHedger2.id,
+					limitOpenRequestBuilder().filledAmount(quoteUserWithHedger2.quantity).openPrice(quoteUserWithHedger2.requestedOpenPrice).build(),
+				)
+
+				// Initialize force close on quote1 (user <-> hedger)
+				const sigTimes = await prepareSigTimes(100n)
+				const highLowSig = await getDummyHighLowPriceSig(
+					sigTimes[0],
+					sigTimes[1],
+					0n,
+					decimal(8n),
+					decimal(6n),
+					decimal(5n),
+					quote1LongOpened.symbolId,
+					decimal(150n),
+					0n,
+				)
+				await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+			})
+
+			it("Should revert when settling same non-cross partyB with multiple partyAs", async function () {
+				// sig.partyB == hedger (same as force close quote), hedger is non-cross
+				// sig.partyAs has 2 entries → reverts because non-cross requires exactly 1 partyA
+				const sig = await getDummyUnifiedSettlementSig(
+					await hedger.getAddress(),
+					0n,
+					[0n, 0n],
+					[await user.getAddress(), await user2.getAddress()],
+					[0n, 0n],
+					[{ quoteId: quoteUser2WithHedger.id, currentPrice: decimal(7n), partyAIndex: 1 } as any],
+				)
+				await expect(
+					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)]),
+				).to.be.revertedWith("ForceActionsFacet: Non-cross partyB can only settle with forceClose partyA")
+			})
+
+			it("Should revert when settling same non-cross partyB with wrong single partyA", async function () {
+				// sig.partyB == hedger (same as force close quote), hedger is non-cross
+				// sig.partyAs[0] == user2 (not the force close quote's partyA) → reverts
+				const sig = await getDummyUnifiedSettlementSig(
+					await hedger.getAddress(),
+					0n,
+					[0n],
+					[await user2.getAddress()],
+					[0n],
+					[{ quoteId: quoteUser2WithHedger.id, currentPrice: decimal(7n), partyAIndex: 0 } as any],
+				)
+				await expect(
+					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)]),
+				).to.be.revertedWith("ForceActionsFacet: Invalid partyA for non-cross settlement")
+			})
+
+			it("Should allow settling same non-cross partyB with correct partyA", async function () {
+				// sig.partyB == hedger (same as force close quote), hedger is non-cross
+				// sig.partyAs[0] == user (matches force close quote's partyA) → allowed
+				const sig = await getDummyUnifiedSettlementSig(
+					await hedger.getAddress(),
+					0n,
+					[0n],
+					[await user.getAddress()],
+					[0n],
+					[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n), partyAIndex: 0 } as any],
+				)
+				await expect(
+					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)]),
+				).not.to.be.reverted
+			})
+
+			it("Should allow settling a different partyB to fund partyA", async function () {
+				// sig.partyB == hedger2 (different from force close quote's partyB = hedger)
+				// isSamePartyB is false → no restriction, partyA is free to settle with other partyBs
+				const sig = await getDummyUnifiedSettlementSig(
+					await hedger2.getAddress(),
+					0n,
+					[0n],
+					[await user.getAddress()],
+					[0n],
+					[{ quoteId: quoteUserWithHedger2.id, currentPrice: decimal(12n, 17), partyAIndex: 0 } as any],
+				)
+				await expect(
+					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(11n, 17)]),
+				).not.to.be.reverted
+			})
+		})
 	})
 
 	describe("Cross PartyB", async function () {
@@ -246,46 +368,6 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 						"LibSettlement: PartyB is in cross liquidation process",
 					)
 				})
-
-				it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
-					const sigEmpty = await getDummyUnifiedSettlementSig(await hedger.getAddress(), 0n, [], [await user.getAddress()], [0n], [])
-					await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sigEmpty, [])).to.be.revertedWith(
-						"LibSettlement: Empty quotes array",
-					)
-
-					const sigOne = await getDummyUnifiedSettlementSig(
-						await hedger.getAddress(),
-						0n,
-						[],
-						[await user.getAddress()],
-						[0n],
-						[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n), partyAIndex: 0 } as any],
-					)
-					await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sigOne, [updatePrice, updatePrice])).to.be.revertedWith(
-						"LibSettlement: Invalid prices length",
-					)
-				})
-
-				it("Should revert when signature partyB does not match quote.partyB", async function () {
-					await migratePartyBToCross(context, hedger2, [])
-
-					// Wrong partyB inside sig (use any other address)
-					const wrongPartyB = await hedger2.getAddress()
-
-					const sig = await getDummyUnifiedSettlementSig(
-						wrongPartyB, // <-- wrong
-						0n,
-						[],
-						[await user.getAddress()],
-						[0n],
-						[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n), partyAIndex: 0 } as any],
-					)
-
-					await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [updatePrice])).to.be.revertedWith(
-						"LibSettlement: Invalid partyB for quote",
-					)
-				})
-
 
 			it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
 				const sigEmpty = await getDummyUnifiedSettlementSig(await hedger.getAddress(), 0n, [], [await user.getAddress()], [0n], [])

@@ -147,6 +147,12 @@ library ForceCloseStepsImpl {
 
 		// Verify signature using unified settlement verification
 		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[sig.partyB];
+
+		// Non-cross partyB: only allow settling positions with the forceClose partyA
+		if (!isCrossPartyB && isSamePartyB) {
+			require(sig.partyAs.length == 1, "ForceActionsFacet: Non-cross partyB can only settle with forceClose partyA");
+			require(sig.partyAs[0] == forceCloseQuote.partyA, "ForceActionsFacet: Invalid partyA for non-cross settlement");
+		}
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB);
 
 		// Use the unified settlement function with isForceClose=true

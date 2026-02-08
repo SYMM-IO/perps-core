@@ -169,7 +169,15 @@ Validates force-close conditions (quote in `CLOSE_PENDING`, cooldowns met, order
 
 **Step 2 — `settleUpnlForForceClose(quoteId, UnifiedSettlementSig, updatedPrices[])` (optional, repeatable)**
 
-Calls `settleUpnlUnified` with `isForceClose = true`, which relaxes the "caller must have a position" check. After settlement, the stored `upnlPartyB` snapshot is adjusted by the settlement delta so that the finalize step uses consistent numbers:
+Calls `settleUpnlUnified` with `isForceClose = true`, which relaxes the "caller must have a position" check. The settlement can target any PartyB — not just the one on the force-close quote. Which positions can be settled depends on the scenario:
+
+- **PartyA lacks funds**: Settle PartyA's profitable positions with **any other PartyB** (`sig.partyB != forceCloseQuote.partyB`). This funds PartyA's `allocatedBalances` so the close can proceed. No restriction on which PartyBs or PartyAs are involved.
+
+- **PartyB (non-cross) lacks funds**: Settle the **same PartyB's** profitable positions (`sig.partyB == forceCloseQuote.partyB`), but only with the **force-close quote's PartyA**. In isolated mode each per-PartyA bucket is separate, so settling with a different PartyA would fund the wrong bucket. The contract enforces this: `require(sig.partyAs.length == 1 && sig.partyAs[0] == forceCloseQuote.partyA)`.
+
+- **PartyB (cross) lacks funds**: Settle the **same PartyB's** positions with **any PartyA**. Since everything goes to the `address(0)` pool, settling with any PartyA funds the same shared bucket.
+
+After settlement, the stored `upnlPartyB` snapshot is adjusted by the settlement delta (only when `sig.partyB == forceCloseQuote.partyB`) so that the finalize step uses consistent numbers:
 - **Cross mode**: `upnlPartyB += sum(settleAmountsPerPartyA)` — all settlement amounts affect the single pool.
 - **Normal mode**: `upnlPartyB += settleAmountsPerPartyA[forceClosePartyAIndex]` — only the settlement with the force-close quote's PartyA is relevant.
 
@@ -194,20 +202,6 @@ First refreshes the uPnL/currentPrice snapshot with a fresh Muon signature (ensu
 In normal (isolated) mode, the reserve vault (`reserveVault[partyB]`) serves as a last-resort fallback during force close. If PartyB is insolvent after the close but the reserve vault covers the deficit, the deficit is transferred from the reserve vault into PartyB's allocated balance, and the close proceeds.
 
 In cross mode, the reserve vault is **not used** during force close. The cross-mode path uses the "ignore uPnL" fallback instead.
-
----
-
-## Soft Liquidation
-
-Soft liquidation is a warning mechanism that penalizes PartyBs before they reach actual insolvency. The ClearingHouse operator (with `SOFT_LIQUIDATOR_ROLE`) calls `softPartyBLiquidation(partyB, partyA, penaltyFromAllocated, penaltyFromBalance)`.
-
-The function can pull penalties from two sources:
-- `penaltyFromAllocated` — deducted from `partyBAllocatedBalances[partyB][partyA]`. For cross-mode PartyBs, the caller passes `address(0)` as `partyA` to access the cross bucket.
-- `penaltyFromBalance` — deducted from `balances[partyB]` (unallocated balance)
-
-Both are deposited to `balances[softLiquidationPenaltyCollector]`, a configurable protocol address.
-
-The penalties may be zero (a free warning) or non-zero. The purpose is to incentivize solvers to maintain adequate capitalization and respond to margin warnings before reaching the ClearingHouse liquidation threshold.
 
 ---
 
