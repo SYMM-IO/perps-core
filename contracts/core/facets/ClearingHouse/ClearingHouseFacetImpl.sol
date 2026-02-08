@@ -13,13 +13,11 @@ import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/Q
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
-import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
-import { CrossLiquidationSig } from "../../storages/MuonStorage.sol";
 
 library ClearingHouseFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -45,22 +43,21 @@ library ClearingHouseFacetImpl {
 	}
 
 	/// @notice Initiates clearing house liquidation for a cross-margin PartyB
-	function liquidateCrossPartyB(address partyB, CrossLiquidationSig memory liquidationSig) internal {
+	function liquidateCrossPartyB(address partyB, bytes memory liquidationId, int256 upnl, uint256 timestamp) internal {
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		require(maLayout.crossModeEnabledForPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
-		LibMuonLiquidation.verifyCrossLiquidation(liquidationSig, partyB);
 
 		require(
-			LibAccount.partyBAvailableBalanceForLiquidation(liquidationSig.upnl, partyB, address(0)) < 0,
+			LibAccount.partyBAvailableBalanceForLiquidation(upnl, partyB, address(0)) < 0,
 			"ClearingHouseFacet: partyB is solvent"
 		);
-		maLayout.partyBLiquidationTimestamp[partyB][address(0)] = liquidationSig.timestamp;
+		maLayout.partyBLiquidationTimestamp[partyB][address(0)] = timestamp;
 		chLayout.crossLiquidationDetails[partyB] = CrossLiquidationDetail({
-			liquidationId: liquidationSig.liquidationId,
-			upnl: liquidationSig.upnl,
-			timestamp: liquidationSig.timestamp,
+			liquidationId: liquidationId,
+			upnl: upnl,
+			timestamp: timestamp,
 			deallocatedPool: 0,
 			inProgress: true
 		});

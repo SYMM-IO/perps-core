@@ -14,9 +14,11 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { PairUpnlSig } from "../../storages/MuonStorage.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";
+import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 
 /**
  * @title FundingRateFacetImpl
@@ -41,6 +43,8 @@ library FundingRateFacetImpl {
 
 		// Verify the signature contains valid unrealized PnL data
 		address signer = LibSigner.getSigner();
+		require(!MAStorage.layout().partyBLiquidationStatus[signer][partyA], "PartyBFacet: PartyB is in liquidation process");
+		require(!ClearingHouseStorage.layout().crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
 		require(quoteIds.length == rates.length && quoteIds.length > 0, "ChargeFundingFacet: Length not match");
 
 		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, signer, partyA);

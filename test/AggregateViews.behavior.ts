@@ -4,7 +4,7 @@ import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
-import { getDummyPairUpnlSig, getDummyLiquidationSig, getDummySettlementSig, getDummyCrossLiquidationSig, getDummyPriceSig, getDummyHighLowPriceSig } from "./utils/SignatureUtils.js"
+import { getDummyPairUpnlSig, getDummyLiquidationSig, getDummySettlementSig, getDummyPriceSig, getDummyHighLowPriceSig } from "./utils/SignatureUtils.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { ethers, ZeroAddress } from "ethers"
 import { QuoteStatus } from "./models/Enums.js"
@@ -2588,7 +2588,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 					.connect(clearingContext.signers.liquidator)
 					.liquidateCrossPartyB(
 						await clearingHedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999"))
+						"0x",
+						BigInt("-999999999999999999999999999999"),
+						await getBlockTimestamp()
 					)
 
 				// Liquidate positions
@@ -2646,7 +2648,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 					.connect(clearingContext.signers.liquidator)
 					.liquidateCrossPartyB(
 						await clearingHedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999"))
+						"0x",
+						BigInt("-999999999999999999999999999999"),
+						await getBlockTimestamp()
 					)
 
 				const prices = openedQuoteIds.map(() => decimal(1n))

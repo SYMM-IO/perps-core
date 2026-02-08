@@ -28,13 +28,13 @@ This flow handles the insolvency of a cross-mode partyB. Because funds are poole
 
 ### When It Triggers
 
-The ClearingHouse operator detects that a cross-mode partyB's available balance has gone negative. This is checked via `partyBAvailableBalanceForLiquidation(upnl, partyB, address(0)) < 0`, using a Muon oracle signature for the UPNL value.
+The ClearingHouse operator detects that a cross-mode partyB's available balance has gone negative. The on-chain contract verifies `partyBAvailableBalanceForLiquidation(upnl, partyB, address(0)) < 0` using the UPNL value provided directly by the ClearingHouse (no Muon signature required — the ClearingHouse is trusted).
 
 ### Lifecycle
 
 ```mermaid
 flowchart TD
-    A["liquidateCrossPartyB(partyB, sig)"] --> B["deallocateForClearingHouse(partyB, ...)"]
+    A["liquidateCrossPartyB(partyB, liquidationId, upnl, timestamp)"] --> B["deallocateForClearingHouse(partyB, ...)"]
     B --> C["liquidatePendingPositionsForClearingHouse(partyB, partyAs[])"]
     C --> D["liquidatePositionsForClearingHouse(partyB, quoteIds[], prices[])"]
     D --> E["distributeForClearingHouse(partyB, receivers[], ...)"]
@@ -48,9 +48,9 @@ Steps 2–5 are repeatable and can be called in any order and multiple times. Th
 
 ### Step-by-Step
 
-**Step 1 — `liquidateCrossPartyB(partyB, liquidationSig)`**
+**Step 1 — `liquidateCrossPartyB(partyB, liquidationId, upnl, timestamp)`**
 
-Initiates the liquidation. Verifies the Muon signature, confirms the partyB is insolvent, and creates a `CrossLiquidationDetail` record with `inProgress = true`. This flag gates all subsequent operations and prevents the partyB from operating normally until settlement.
+Initiates the liquidation. The ClearingHouse provides the UPNL, liquidation ID, and timestamp directly (no Muon signature — the ClearingHouse is trusted). The contract confirms the partyB is insolvent using the provided UPNL and creates a `CrossLiquidationDetail` record with `inProgress = true`. This flag gates all subsequent operations and prevents the partyB from operating normally until settlement.
 
 **Step 2 — `deallocateForClearingHouse(partyB, parties[], allocationKeys[], amounts[])`**
 
@@ -272,7 +272,7 @@ sequenceDiagram
     L->>PA: setSymbolsPrice(partyA, sig)
     Note over PA: partyA now in liquidation
 
-    CH->>PB: liquidateCrossPartyB(partyB, sig)
+    CH->>PB: liquidateCrossPartyB(partyB, liquidationId, upnl, timestamp)
     Note over PB: cross partyB now in liquidation
 
     CH->>PB: deallocateForClearingHouse(partyB, ...)

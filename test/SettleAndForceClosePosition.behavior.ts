@@ -19,7 +19,6 @@ import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
 import {
-	getDummyCrossLiquidationSig,
 	getDummyHighLowPriceSig,
 	getDummyPairUpnlAndPriceSig,
 	getDummySettlementSig,
@@ -241,7 +240,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidateCrossPartyB(await hedger.getAddress(), await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")))
+					.liquidateCrossPartyB(await hedger.getAddress(), "0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp())
 
 					await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
 						"LibSettlement: PartyB is in cross liquidation process",

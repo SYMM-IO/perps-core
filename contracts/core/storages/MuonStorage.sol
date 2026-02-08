@@ -154,18 +154,6 @@ struct UnifiedSettlementSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
-struct CrossLiquidationSig {
-	bytes reqId; // Unique identifier for the liquidation request
-	bytes liquidationId; // Unique identifier for the liquidation event
-	uint256 timestamp; // Timestamp when the liquidation signature was created
-	uint256 liquidationBlockNumber; // Block number at which the user became insolvent
-	uint256 liquidationTimestamp; // Timestamp when the user became insolvent
-	uint256 totalAllocatedBalance; // User's allocated balance at the time of insolvency
-	int256 upnl; // User's unrealized profit and loss at the time of insolvency
-	bytes gatewaySignature; // Signature from the gateway for verification
-	IMuonSignatureVerifier.SchnorrSign sigs; // Schnorr signature for additional verification
-}
-
 /// @title MuonStorage
 /// @notice Configuration for Muon oracle signature verification
 /// @dev Muon is the oracle network that provides UPNL, price, and liquidation signatures.

@@ -21,9 +21,9 @@ import {
 	SettleCrossPartyBValidator,
 	SoftPartyBLiquidationValidator,
 } from "./models/validators/ClearingHouseValidators.js"
-import { decimal, getPriceFetcher } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, getPriceFetcher } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
-import { getDummyCrossLiquidationSig, getDummyLiquidationSig } from "./utils/SignatureUtils.js"
+import { getDummyLiquidationSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeClearingHouseFacet(): void {
 	let context: RunContext, user: User, user2: User, liquidator: User, hedger: Hedger, hedger2: Hedger
@@ -99,7 +99,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.user)
-						.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
+						.liquidateCrossPartyB(context.signers.hedger.address, "0x", 0n, await getBlockTimestamp()),
 				).to.be.revertedWith("Accessibility: Must have role")
 			})
 
@@ -116,7 +116,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						.connect(context.signers.user2)
 						.liquidateCrossPartyB(
 							context.signers.hedger.address,
-							await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+							"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 						),
 				).to.not.be.reverted
 			})
@@ -127,7 +127,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
+						.liquidateCrossPartyB(context.signers.hedger.address, "0x", 0n, await getBlockTimestamp()),
 				).to.be.revertedWith("Pausable: Liquidation paused")
 			})
 
@@ -137,7 +137,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.liquidateCrossPartyB(context.signers.hedger.address, await getDummyCrossLiquidationSig()),
+						.liquidateCrossPartyB(context.signers.hedger.address, "0x", 0n, await getBlockTimestamp()),
 				).to.be.revertedWith("Pausable: Global paused")
 			})
 		})
@@ -148,7 +148,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			await expect(
 				context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidateCrossPartyB(context.signers.hedger.getAddress(), await getDummyCrossLiquidationSig()),
+					.liquidateCrossPartyB(context.signers.hedger.getAddress(), "0x", 0n, await getBlockTimestamp()),
 			).to.be.revertedWith("ClearingHouseFacet: partyB is not using cross mode")
 		})
 
@@ -175,7 +175,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.liquidateCrossPartyB(await context.signers.hedger.getAddress(), await getDummyCrossLiquidationSig(undefined, decimal(1000n))),
+						.liquidateCrossPartyB(await context.signers.hedger.getAddress(), "0x", decimal(1000n), await getBlockTimestamp()),
 				).to.be.revertedWith("ClearingHouseFacet: partyB is solvent")
 			})
 
@@ -183,10 +183,8 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const validator = new LiquidateCrossPartyBValidator()
 				const upnl = BigInt("-999999999999999999999999999999")
 				const beforeOut = await validator.before(context, { hedger })
-				const liquidationSig = await getDummyCrossLiquidationSig(undefined, upnl)
-
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).liquidateCrossPartyB(context.signers.hedger.getAddress(), liquidationSig),
+					context.clearingHouseFacet.connect(context.signers.liquidator).liquidateCrossPartyB(context.signers.hedger.getAddress(), "0x", upnl, await getBlockTimestamp()),
 				).to.not.reverted
 
 				await validator.after(context, { hedger, upnl, beforeOutput: beforeOut })
@@ -204,7 +202,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 
 				await expect(
@@ -212,7 +210,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						.connect(context.signers.liquidator)
 						.liquidateCrossPartyB(
 							context.signers.hedger.getAddress(),
-							await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+							"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 						),
 				).to.revertedWith("Accessibility: PartyB isn't solvent")
 			})
@@ -229,7 +227,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				.connect(context.signers.liquidator)
 				.liquidateCrossPartyB(
 					context.signers.hedger.getAddress(),
-					await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+					"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 				)
 		})
 
@@ -303,7 +301,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 			})
 
@@ -378,7 +376,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 
 				await context.clearingHouseFacet
@@ -456,7 +454,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 			})
 
@@ -555,7 +553,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 			})
 
@@ -704,7 +702,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
-					.liquidateCrossPartyB(await hedger2.getAddress(), await getDummyCrossLiquidationSig(undefined, -decimal(1_000_000n)))
+					.liquidateCrossPartyB(await hedger2.getAddress(), "0x", -decimal(1_000_000n), await getBlockTimestamp())
 
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
@@ -1158,7 +1156,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.address,
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 
 				// Now try to liquidate positions - should fail since partyB is in cross liquidation
@@ -1419,7 +1417,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 			})
 
@@ -1469,7 +1467,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 			})
 
@@ -1502,7 +1500,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 
 				// Liquidate pending positions (triggers auto-takeover)
@@ -1547,7 +1545,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 
 				// Normal liquidatePositionsPartyA should fail for cross-liquidated partyB
@@ -1571,7 +1569,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 
 				// Deallocate some funds from cross partyB
@@ -1611,7 +1609,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(
 						context.signers.hedger.getAddress(),
-						await getDummyCrossLiquidationSig(undefined, BigInt("-999999999999999999999999999999")),
+						"0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp(),
 					)
 
 				// Step 3: Deallocate from cross partyB

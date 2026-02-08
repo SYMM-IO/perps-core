@@ -4,10 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { MuonStorage, SingleUpnlSig, LiquidationSig, DeferredLiquidationSig, QuotePriceSig, CrossLiquidationSig } from "../../storages/MuonStorage.sol";
+import { MuonStorage, SingleUpnlSig, LiquidationSig, DeferredLiquidationSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
-import { LibAccount } from "../LibAccount.sol";
 
 library LibMuonLiquidation {
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
@@ -80,25 +79,4 @@ library LibMuonLiquidation {
 		LibMuon.verifyTSSAndGateway(hash, priceSig.sigs, priceSig.gatewaySignature);
 	}
 
-	function verifyCrossLiquidation(CrossLiquidationSig memory liquidationSig, address partyB) internal view {
-		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
-		bytes32 hash = keccak256(
-			abi.encodePacked(
-				muonLayout.muonAppId,
-				liquidationSig.reqId,
-				liquidationSig.liquidationId,
-				address(this),
-				"verifyCrossLiquidation",
-				partyB,
-				LibAccount.getPartyBSignatureNonce(partyB, address(0), true), // this is for clearing house which we are always in cross partyB mode
-				liquidationSig.upnl,
-				liquidationSig.timestamp,
-				liquidationSig.liquidationBlockNumber,
-				liquidationSig.liquidationTimestamp,
-				liquidationSig.totalAllocatedBalance,
-				LibMuon.getChainId()
-			)
-		);
-		LibMuon.verifyTSSAndGateway(hash, liquidationSig.sigs, liquidationSig.gatewaySignature);
-	}
 }

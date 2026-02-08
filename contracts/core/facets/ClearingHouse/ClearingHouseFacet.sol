@@ -9,20 +9,23 @@ import { Accessibility } from "../../utils/Accessibility.sol";
 import { IClearingHouseFacet } from "./IClearingHouseFacet.sol";
 import { ClearingHouseFacetImpl } from "./ClearingHouseFacetImpl.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
-import { CrossLiquidationSig } from "../../storages/MuonStorage.sol";
 
 contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 	/**
 	 * @notice Initiates clearing house liquidation for a cross-margin PartyB.
 	 * @param partyB The address of Party B.
-	 * @param liquidationSig The signature confirming PartyB insolvency.
+	 * @param liquidationId Unique identifier for the liquidation event.
+	 * @param upnl PartyB's unrealized profit and loss.
+	 * @param timestamp Timestamp of the liquidation.
 	 */
 	function liquidateCrossPartyB(
 		address partyB,
-		CrossLiquidationSig memory liquidationSig
+		bytes memory liquidationId,
+		int256 upnl,
+		uint256 timestamp
 	) external whenNotLiquidationPaused notCrossLiquidatedPartyB(partyB) onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
-		ClearingHouseFacetImpl.liquidateCrossPartyB(partyB, liquidationSig);
-		emit LiquidateCrossPartyB(msg.sender, partyB, liquidationSig.liquidationId, liquidationSig.upnl, liquidationSig.timestamp);
+		ClearingHouseFacetImpl.liquidateCrossPartyB(partyB, liquidationId, upnl, timestamp);
+		emit LiquidateCrossPartyB(msg.sender, partyB, liquidationId, upnl, timestamp);
 	}
 
 	/**

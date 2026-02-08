@@ -9,8 +9,8 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal } from "./utils/Common.js"
-import { getDummyCrossLiquidationSig, getDummyLiquidationSig, getDummyPairUpnlAndPricesSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { decimal, getBlockTimestamp } from "./utils/Common.js"
+import { getDummyLiquidationSig, getDummyPairUpnlAndPricesSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 	let context: RunContext, user: User, hedger: Hedger
@@ -187,8 +187,7 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(ethers.toUtf8Bytes("CLEARING_HOUSE_ROLE")))
 
 				// Trigger cross liquidation with a large negative upnl
-				const crossLiqSig = await getDummyCrossLiquidationSig("0x01", decimal(-500000n), decimal(400000n))
-				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidateCrossPartyB(await hedger.getAddress(), crossLiqSig)
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidateCrossPartyB(await hedger.getAddress(), "0x01", decimal(-500000n), await getBlockTimestamp())
 
 				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
 					"PartyBFacet: PartyB is in cross liquidation process",

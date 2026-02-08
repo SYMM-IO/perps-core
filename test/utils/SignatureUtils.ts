@@ -1,4 +1,3 @@
-import type { CrossLiquidationSigStruct } from "../../src/types/facets/ClearingHouse/ClearingHouseFacet.js"
 import type { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet.js"
 import type { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet.js"
 import type { SingleUpnlAndPriceSigStruct } from "../../src/types/facets/PartyA/PartyAFacet.js"
@@ -182,28 +181,6 @@ export async function getDummyPriceSig(quoteIds: bigint[] = [], prices: bigint[]
 		timestamp: await getBlockTimestamp(),
 		quoteIds: quoteIds,
 		prices: prices,
-		gatewaySignature: ethers.ZeroAddress,
-		sigs: {
-			signature: "0",
-			owner: ethers.ZeroAddress,
-			nonce: ethers.ZeroAddress,
-		},
-	}
-}
-
-export async function getDummyCrossLiquidationSig(
-	liquidationId: string = "0x",
-	upnl: bigint = 0n,
-	allocatedBalance: bigint = 0n,
-): Promise<CrossLiquidationSigStruct> {
-	return {
-		reqId: "0x",
-		liquidationId: liquidationId,
-		timestamp: await getBlockTimestamp(),
-		liquidationBlockNumber: 1,
-		liquidationTimestamp: await getBlockTimestamp(),
-		totalAllocatedBalance: allocatedBalance,
-		upnl: upnl,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {
 			signature: "0",
