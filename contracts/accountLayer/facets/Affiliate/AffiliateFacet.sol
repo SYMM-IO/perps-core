@@ -327,8 +327,23 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 		if (!auth && !LibAccountLayerAccessibility.hasRole(caller, LibAccountLayerAccessibility.DISTRIBUTOR_ROLE)) revert Unauthorized();
 
+		if (amount == 0) {
+			emit FeesClaimed(affiliate, symmio, 0);
+			return;
+		}
+
 		ISymmio(symmio).setSigner(afLayout.affiliates[affiliate].feeDetails.feeDistributor);
-		ISymmio(symmio).withdrawTo(address(this), amount);
+		ISymmio.WithdrawReceiverPart[] memory parts = new ISymmio.WithdrawReceiverPart[](1);
+		parts[0] = ISymmio.WithdrawReceiverPart({
+			id: 0,
+			amount: amount,
+			chainId: int256(block.chainid),
+			receiver: abi.encodePacked(address(this)),
+			virtualProvider: address(0),
+			expressProvider: address(0)
+		});
+		uint256 requestId = ISymmio(symmio).initiateWithdraw(parts, false, "0x");
+		ISymmio(symmio).finalizeWithdrawRequest(afLayout.affiliates[affiliate].feeDetails.feeDistributor, requestId);
 		ISymmio(symmio).setSigner(address(0));
 
 		for (uint256 i = 0; i < stakeholders.length; i++) {

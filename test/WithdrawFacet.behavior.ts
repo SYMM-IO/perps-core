@@ -539,6 +539,9 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100");
 			const parts = [await buildPart("50")];
 
+			await context.accountFacet.connect(context.signers.user).allocate(ethers.parseEther("1"));
+			await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(ethers.parseEther("1"));
+
 			await context.withdrawFacet
 				.connect(context.signers.user)
 				.initiateWithdraw(parts, false, "0x");
@@ -676,6 +679,9 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should force cancel classic withdraw", async function() {
 			await userDeposit("100");
 			const parts = await buildParts(["50", "20"]);
+
+			await context.accountFacet.connect(context.signers.user).allocate(ethers.parseEther("1"));
+			await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(ethers.parseEther("1"));
 
 			await context.withdrawFacet
 				.connect(context.signers.user)

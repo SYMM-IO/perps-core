@@ -75,20 +75,12 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 			return { affiliate, registration }
 		}
 
-		const deployMockCore = async () => {
-			const mockFactory = await ethers.getContractFactory("MockAffiliateHub")
-			const mock = await mockFactory.deploy()
-			await mock.setCollateral(await context.collateral.getAddress())
-			await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(await mock.getAddress(), true)
-			return mock
-		}
-
 		const depositFeesForAffiliate = async (affiliate: string, amount: bigint, coreAddress: string) => {
 			const feeDistributor = await context.alViewFacet.getAffiliateFeeDistributor(affiliate)
 			await context.collateral.connect(context.signers.admin).mint(context.signers.admin.address, amount)
 			await context.collateral.connect(context.signers.admin).approve(coreAddress, amount)
-			const mock = await ethers.getContractAt("MockAffiliateHub", coreAddress)
-			await mock.connect(context.signers.admin).depositFor(feeDistributor, amount)
+			const accountFacet = await ethers.getContractAt("AccountFacet", coreAddress)
+			await accountFacet.connect(context.signers.admin).depositFor(feeDistributor, amount)
 		}
 
 		const pauseAccountLayer = async () => {
@@ -526,9 +518,11 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 			let coreAddress: string
 
 			beforeEach(async function () {
-				// deploy a mock core and link affiliate to it
-				const mockCore = await deployMockCore()
-				coreAddress = await mockCore.getAddress()
+				coreAddress = context.diamond
+				await context.controlFacet.connect(context.signers.admin).setMaxWithdrawParts(50)
+				await context.controlFacet.connect(context.signers.admin).setWithdrawCooldownPeriod(12)
+				// force AccountLayer to use the new withdraw mechanism (legacy withdraw is deprecated)
+				await context.pauseControlFacet.connect(context.signers.admin).deprecateLegacyWithdrawal()
 				affiliate = (await activateAffiliate({ symmioCores: [coreAddress] })).affiliate
 			})
 

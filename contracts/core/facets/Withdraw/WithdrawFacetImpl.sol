@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { WithdrawStorage, WithdrawReceiverPart, WithdrawRequest, WithdrawStatus } from "../../storages/WithdrawStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
@@ -64,12 +65,22 @@ library WithdrawFacetImpl {
 		// Final provider selection
 		(address provider, bool isPureVirtual) = _selectProvider(locals, speedUp);
 
+		// for regular withdrawals (no express/virtual): once deallocateCooldown has passed since the last deallocate
+		// for provider based withdrawals: keep the request cooldown but still respect deallocateCooldown if it is longer
+		uint256 deallocateEndTime = accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateCooldown;
+		uint256 cooldownEndTime = block.timestamp + withdrawLayout.withdrawCooldownPeriod;
+		if (!locals.hasExpress && !locals.hasVirtual) {
+			cooldownEndTime = deallocateEndTime > block.timestamp ? deallocateEndTime : block.timestamp;
+		} else if (deallocateEndTime > cooldownEndTime) {
+			cooldownEndTime = deallocateEndTime;
+		}
+
 		WithdrawRequest memory withdrawRequest = WithdrawRequest({
 			id: currentId,
 			user: signer,
 			parts: parts,
 			timestamp: block.timestamp,
-			cooldownEndTime: block.timestamp + withdrawLayout.withdrawCooldownPeriod,
+			cooldownEndTime: cooldownEndTime,
 			status: WithdrawStatus.PENDING,
 			speedUp: speedUp,
 			isCooldownModified: false,
@@ -157,7 +168,10 @@ library WithdrawFacetImpl {
 
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
-		require(block.timestamp >= withdrawRequest.cooldownEndTime, "WithdrawFacet : Withdraw cooldown not over");
+		uint256 requiredEndTime = withdrawRequest.cooldownEndTime;
+		uint256 deallocateEndTime = AccountStorage.layout().withdrawCooldown[user] + MAStorage.layout().deallocateCooldown;
+		if (deallocateEndTime > requiredEndTime) requiredEndTime = deallocateEndTime;
+		require(block.timestamp >= requiredEndTime, "WithdrawFacet : Withdraw cooldown not over");
 
 		if (withdrawRequest.provider == address(0)) {
 			require(withdrawRequest.status == WithdrawStatus.PENDING, "WithdrawFacet : Invalid withdraw request status");
