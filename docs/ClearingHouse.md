@@ -169,7 +169,7 @@ Same routing logic as the cross partyB flow.
 Finalizes the takeover. The `settledPartyBs` parameter is important: if the normal liquidation flow had already processed some partyBs before the takeover (creating settlement states), those states need to be cleaned up explicitly since the connections may already be removed.
 
 Settlement:
-- Clears `partyAReimbursement` to zero.
+- Releases `partyAReimbursement` back to `allocatedBalances[partyA]` (these are escrowed fees and credits that accumulated during liquidation — see the escrow routing in `distributeForClearingHouse` and fee refunds in `liquidatePendingPositionsForClearingHouse`).
 - Zeros out locked balances.
 - Increments partyA nonce.
 - Sets `liquidationStatus[partyA] = false`.
