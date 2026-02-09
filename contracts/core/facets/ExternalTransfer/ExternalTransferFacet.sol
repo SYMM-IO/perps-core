@@ -12,9 +12,11 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 
 contract ExternalTransferFacet is Accessibility, Pausable, IExternalTransferFacet {
 	/**
-	 * @notice Transfers collateral from sender's available balance to whitelisted target without any cooldown
-	 * @dev sender must not be suspended/liquidated for the operation to succeed
-	 * @param receiver The address of the recipient user in the target contract
+	 * @notice Transfers collateral from sender's available balance to a whitelisted target via a relayer, without any cooldown
+	 * @dev The target can be another Symmio diamond or any trusted external contract. Symmio only requires that
+	 *      the target has an authorized relayer registered via addRelayerForExternalTransferTarget.
+	 *      Sender must not be suspended/liquidated for the operation to succeed.
+	 * @param receiver The address of the recipient in the target contract
 	 * @param amount The amount to transfer, specified in collateral decimals
 	 * @param target The address of the target contract that will receive the collateral
 	 */
@@ -29,12 +31,15 @@ contract ExternalTransferFacet is Accessibility, Pausable, IExternalTransferFace
 	}
 
 	/**
-	 * @notice Transfers virtual collateral fund from sender's available balance in this Symmio Diamond to another Symmio Diamond
-	 * @dev sender must not be suspended/liquidated for the operation to succeed
-	 * @param receiver The address of the recipient user in the target contract
+	 * @notice Transfers virtual collateral from sender's available balance to a target contract via a virtual provider
+	 * @dev Used when actual token transfer isn't possible (e.g., virtual balances). The virtual provider acts as
+	 *      intermediary -- it receives a callback and is expected to credit the receiver on the target contract.
+	 *      The target can be another Symmio diamond or any trusted external contract.
+	 *      Sender must not be suspended/liquidated for the operation to succeed.
+	 * @param receiver The address of the recipient in the target contract
 	 * @param amount The amount to transfer, specified in collateral decimals
-	 * @param target The target Symmio contract
-	 * @param virtualProvider The provider who can virtualDeposit fund to target Symmio contract
+	 * @param target The target contract
+	 * @param virtualProvider The provider who handles the virtual deposit on the target contract
 	 */
 	function virtualExternalTransfer(
 		address receiver,

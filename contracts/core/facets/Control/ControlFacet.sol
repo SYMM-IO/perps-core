@@ -472,8 +472,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit SetSignatureVerifierAddress(signatureVerifier);
 	}
 
-	/// @notice Authorizes a relayer to facilitate external transfers to a specific target address (e.g., another protocol contract).
-	/// @param target The external transfer destination address that the relayer can transfer funds to.
+	/// @notice Authorizes a relayer to facilitate external transfers to a specific target (another Symmio diamond or any trusted contract).
+	/// @param target The external transfer destination address. Symmio trusts this target and its relayer to handle funds correctly.
 	/// @param relayer The address authorized to relay transfers to the target.
 	function addRelayerForExternalTransferTarget(address target, address relayer) external onlyRole(LibAccessibility.INTEGRATION_ADMIN_ROLE) {
 		checkZeroAddress(target);

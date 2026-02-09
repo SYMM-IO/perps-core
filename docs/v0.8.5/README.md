@@ -20,7 +20,11 @@ Enables cross-chain deposits and withdrawals without bridging. A trusted virtual
 
 ### [External Transfer](external-transfer.md)
 
-Lets users move funds between different Symmio diamonds on the same chain (e.g., a perps diamond and a future options diamond) through a relayer contract. Also supports virtual external transfers for balance-only movements where no actual token transfer is needed.
+Lets users move funds to any trusted target contract through an authorized relayer -- not just other Symmio diamonds, but any whitelisted external contract. Symmio trusts the relayer to handle funds at the target, with admin roles to revoke access or confiscate funds if fraud is detected. Also supports virtual external transfers for balance-only movements where no actual token transfer is needed.
+
+### [Express Deposit & Withdrawal](express-deposit.md)
+
+Lets affiliates route a configurable percentage of user deposits into an express provider contract, building a liquidity pool that funds faster withdrawals. Users get up to three options: instant (~20 seconds) when liquidity is available, earliest-available (somewhere between now and 12 hours) based on projected liquidity inflows, or the standard 12-hour cooldown as a guaranteed fallback. The system coordinates an Express Contract (per-chain liquidity management with bucket-based scheduling), a Virtual Contract (per-frontend deposit-funded pool), and an off-chain bot for risk assessment and processing.
 
 ### [Safe Deallocate](safe-deallocate.md)
 
