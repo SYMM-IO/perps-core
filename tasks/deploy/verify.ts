@@ -1,15 +1,10 @@
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import fs from "fs"
 import { task } from "hardhat/config"
-// ============================================================================
-// Verify All Contracts from Checkpoint
-// ============================================================================
-
 import { ArgumentType } from "hardhat/types/arguments"
 import path from "path"
 
 import { readData } from "../utils/fs.js"
-import { loadCheckpoint } from "./checkpoint.js"
 import {
 	ACCOUNTHUB_DEPLOYMENT_LOG_FILE,
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
@@ -120,149 +115,14 @@ export const verifyDeploymentTask = task("verify:deployment", "Verifies the depl
 	.setAction(async () => ({ default: verifyDeploymentAction }))
 	.build()
 
+// ============================================================================
+// Verify All Contracts from Deployment Logs
+// ============================================================================
+
 interface ContractToVerify {
 	name: string
 	address: string
 	constructorArguments: any[]
-	libraries?: Record<string, string>
-}
-
-function collectContractsFromCheckpoint(checkpoint: any): ContractToVerify[] {
-	const contracts: ContractToVerify[] = []
-
-	// Collateral (if it was deployed, not an existing one)
-	if (checkpoint.contracts?.collateral?.constructorArgs) {
-		contracts.push({
-			name: "FakeStablecoin",
-			address: checkpoint.contracts.collateral.address,
-			constructorArguments: checkpoint.contracts.collateral.constructorArgs || [],
-		})
-	}
-
-	// Core Diamond
-	const diamond = checkpoint.contracts?.diamond
-	if (diamond) {
-		if (diamond.diamondCutFacet) {
-			contracts.push({
-				name: "DiamondCutFacet",
-				address: diamond.diamondCutFacet.address,
-				constructorArguments: [],
-			})
-		}
-		if (diamond.diamond) {
-			contracts.push({
-				name: "Diamond",
-				address: diamond.diamond.address,
-				constructorArguments: diamond.diamond.constructorArgs || [],
-			})
-		}
-		if (diamond.init) {
-			contracts.push({
-				name: "contracts/core/Init.sol:Init",
-				address: diamond.init.address,
-				constructorArguments: [],
-			})
-		}
-
-		// Libraries
-		if (diamond.libraries) {
-			for (const [libName, libData] of Object.entries(diamond.libraries) as [string, any][]) {
-				contracts.push({
-					name: libName,
-					address: libData.address,
-					constructorArguments: [],
-				})
-			}
-		}
-
-		// Facets
-		if (diamond.facets) {
-			for (const [facetName, facetData] of Object.entries(diamond.facets) as [string, any][]) {
-				contracts.push({
-					name: facetName,
-					address: facetData.address,
-					constructorArguments: [],
-				})
-			}
-		}
-	}
-
-	// AccountLayer Diamond
-	const alDiamond = checkpoint.contracts?.accountLayerDiamond
-	if (alDiamond) {
-		if (alDiamond.diamondCutFacet) {
-			contracts.push({
-				name: "DiamondCutFacet",
-				address: alDiamond.diamondCutFacet.address,
-				constructorArguments: [],
-			})
-		}
-		if (alDiamond.diamond) {
-			contracts.push({
-				name: "Diamond",
-				address: alDiamond.diamond.address,
-				constructorArguments: alDiamond.diamond.constructorArgs || [],
-			})
-		}
-		if (alDiamond.init) {
-			contracts.push({
-				name: "contracts/accountLayer/Init.sol:Init",
-				address: alDiamond.init.address,
-				constructorArguments: [],
-			})
-		}
-
-		// Libraries
-		if (alDiamond.libraries) {
-			for (const [libName, libData] of Object.entries(alDiamond.libraries) as [string, any][]) {
-				contracts.push({
-					name: `contracts/accountLayer/libraries/${libName}.sol:${libName}`,
-					address: libData.address,
-					constructorArguments: [],
-				})
-			}
-		}
-
-		// Facets
-		if (alDiamond.facets) {
-			const facetPathMap: Record<string, string> = {
-				CoreFacet: "Core",
-				MarginFacet: "Margin",
-				SymmioHookFacet: "SymmioHook",
-				ControlFacet: "Control",
-				ViewFacet: "View",
-				AffiliateFacet: "Affiliate",
-			}
-			for (const [facetName, facetData] of Object.entries(alDiamond.facets) as [string, any][]) {
-				const facetPath = facetPathMap[facetName] || facetName.replace("Facet", "")
-				contracts.push({
-					name: `contracts/accountLayer/facets/${facetPath}/${facetName}.sol:${facetName}`,
-					address: facetData.address,
-					constructorArguments: [],
-				})
-			}
-		}
-	}
-
-	// InstantLayer
-	if (checkpoint.contracts?.instantLayer) {
-		contracts.push({
-			name: "InstantLayer",
-			address: checkpoint.contracts.instantLayer.address,
-			constructorArguments: checkpoint.contracts.instantLayer.constructorArgs || [],
-		})
-	}
-
-	// SymmioPartyB
-	if (checkpoint.contracts?.symmioPartyB) {
-		contracts.push({
-			name: "SymmioPartyB",
-			address: checkpoint.contracts.symmioPartyB.address,
-			constructorArguments: checkpoint.contracts.symmioPartyB.constructorArgs || [],
-		})
-	}
-
-	return contracts
 }
 
 export const verifyAllTask = task("verify:all", "Verifies all deployed contracts from deployment logs on block explorer")
@@ -405,7 +265,6 @@ interface VerificationResult {
 }
 
 const EXPECTED_CORE_FACETS = 29
-const EXPECTED_AL_FACETS = 8
 
 async function verifySystemParameters(ethers: any, diamondAddress: string, results: VerificationResult[]) {
 	const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamondAddress)
@@ -540,7 +399,6 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 
 			// Load from deployment report if requested
 			if (args.fromReport) {
-				const fs = await import("fs")
 				const reportPath = "./tasks/data/deployment-report.json"
 
 				if (fs.existsSync(reportPath)) {
@@ -554,8 +412,6 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 
 			// Load from checkpoint if requested
 			if (args.fromCheckpoint) {
-				const fs = await import("fs")
-				const path = await import("path")
 				const checkpointPath = path.join("./tasks/data/checkpoints", `checkpoint-${chainId}.json`)
 
 				if (!fs.existsSync(checkpointPath)) {
