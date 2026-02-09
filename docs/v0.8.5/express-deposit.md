@@ -2,7 +2,7 @@
 
 ## The Problem
 
-SYMMIO enforces a 12-hour withdrawal cooldown to protect against attack vectors. While essential for security, this creates real friction -- users who need timely access to funds have no option but to wait. Frontends can't differentiate on withdrawal speed, and failed withdrawals due to insufficient contract balance lead to poor UX.
+SYMMIO enforces a withdrawal cooldown (typically 12 hours from the user's last deallocation) to protect against attack vectors. While essential for security, this creates real friction -- users who need timely access to funds have no option but to wait. Frontends can't differentiate on withdrawal speed, and failed withdrawals due to insufficient contract balance lead to poor UX.
 
 ## What We Introduced in SYMMIO Core
 

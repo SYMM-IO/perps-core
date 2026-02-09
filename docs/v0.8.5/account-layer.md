@@ -433,7 +433,7 @@ function claimFees(address affiliate, address symmio, uint256 amount) external;
 
 1. Verify affiliate is active and Symmio core is enabled
 2. Use affiliate's fee distributor address
-3. Call Symmio with `setSigner(feeDistributor)` to withdraw fees
+3. Call Symmio with `setSigner(feeDistributor)` to initiate and finalize a withdrawal via `initiateWithdraw` + `finalizeWithdrawRequest`
 4. Split and transfer to stakeholders + Symmio fee receiver
 
 ### Fee Updates

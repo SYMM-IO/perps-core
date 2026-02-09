@@ -2,14 +2,14 @@
 
 ## Overview
 
-The new withdrawal system allows users to withdraw funds through a flexible multi-provider architecture. Users can withdraw funds across multiple chains with different timing options—from standard 12-hour cooldowns to instant express withdrawals.
+The new withdrawal system allows users to withdraw funds through a flexible multi-provider architecture. Users can withdraw funds across multiple chains with different timing options--from deallocation-based cooldowns to instant express withdrawals. The withdrawal cooldown is tied to the user's last deallocation time, not the withdrawal initiation--if funds have been idle for the full cooldown period (typically 12 hours), withdrawals can be finalized immediately.
 
 ### Legacy System Limitations
 
 1. **Fragmented Withdrawal Paths:** Withdrawals were split between the Bridge facet (instant withdrawals with no cooldown) and the standard withdrawal function (12-hour cooldown)
 2. **Cooldown Reset Behavior:** Each deallocation reset the 12-hour cooldown timer, creating friction for PartyBs and automated trading systems
-3. **Single Queue Limitation:** Only one withdrawal could be queued at a time
-4. **Incompatibility with New Features:** Virtual funds and cross-chain withdrawals required a fundamental redesign
+4. **Single Queue Limitation:** Only one withdrawal could be queued at a time
+5. **Incompatibility with New Features:** Virtual funds and cross-chain withdrawals required a fundamental redesign
 
 ## Architecture
 
@@ -33,6 +33,24 @@ A withdrawal request consists of one or more **receiver parts**, allowing users 
 | **Pure Virtual** | ✗ | ✓ | Standard cooldown, cross-chain delivery |
 | **Virtual Express** | ✓ | ✓ | Instant cross-chain withdrawal |
 
+## Cooldown Mechanics
+
+The withdrawal cooldown is calculated from the user's **last deallocation time** (`deallocateTimestamp`), not from the withdrawal initiation. When `initiateWithdraw` is called, the system computes:
+
+```
+cooldownEndTime = max(deallocateTimestamp + withdrawCooldownPeriod, block.timestamp)
+```
+
+This means:
+
+- If the user deallocated recently, they wait the remaining cooldown from that deallocation
+- If the cooldown period has already elapsed since the last deallocation, the withdrawal can be finalized immediately after initiation
+- The cooldown period is stored in `MAStorage.withdrawCooldownPeriod` (typically 12 hours)
+
+The `cooldownEndTime` is stored in the `WithdrawRequest` struct and returned by `initiateWithdraw`. Subsequent deallocations do **not** affect the cooldown of already-initiated withdrawals.
+
+The `getWithdrawableTime(address user)` view function returns the earliest time a withdrawal initiated now could be finalized.
+
 ## Withdrawal Flows
 
 ### Normal (Classic) Withdraw
@@ -46,7 +64,7 @@ sequenceDiagram
 
     User->>Symmio: initiateWithdraw()
     Note over Symmio: Status: PENDING
-    Note over Symmio: Wait 12h cooldown
+    Note over Symmio: Wait for cooldown<br/>(from last deallocation)
     User->>Symmio: finalizeWithdrawRequest()
     Symmio->>User: Transfer funds
     Note over Symmio: Status: COMPLETED
@@ -69,7 +87,7 @@ sequenceDiagram
     Symmio->>Virtual: onWithdrawRequest()
     Virtual->>Symmio: acceptWithdrawRequest()
     Note over Symmio: Status: PROVIDER_ACCEPTED
-    Note over Symmio: Wait 12h cooldown
+    Note over Symmio: Wait for cooldown<br/>(from last deallocation)
     User->>Symmio: finalizeWithdrawRequest()
     Symmio->>Virtual: onWithdrawComplete()
     Virtual->>User: Transfer funds (cross-chain)
@@ -98,7 +116,7 @@ sequenceDiagram
     Express->>Symmio: acceptWithdrawRequest()
     Note over Symmio: Status: PROVIDER_ACCEPTED
     Express->>User: Instant payment
-    Note over Symmio: Wait 12h cooldown
+    Note over Symmio: Wait for cooldown<br/>(from last deallocation)
     User->>Symmio: finalizeWithdrawRequest()
     Symmio->>Express: onWithdrawComplete()
     Symmio->>Express: Reimburse funds
@@ -124,7 +142,7 @@ sequenceDiagram
     Express->>Symmio: acceptWithdrawRequest()
     Note over Symmio: Status: PROVIDER_ACCEPTED
     Express->>User: Instant payment (cross-chain)
-    Note over Symmio: Wait 12h cooldown
+    Note over Symmio: Wait for cooldown<br/>(from last deallocation)
     User->>Symmio: finalizeWithdrawRequest()
     Symmio->>Express: onWithdrawComplete()
     Virtual->>Express: Reimburse funds
@@ -221,6 +239,7 @@ struct WithdrawRequest {
 
 ```solidity
 function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory);
+function getWithdrawableTime(address user) external view returns (uint256);
 function isExpressProviderRegistered(address provider) external view returns (bool);
 function isVirtualProviderRegistered(address provider) external view returns (bool);
 function isSpeedUpEligible(address user) external view returns (bool);
@@ -231,11 +250,12 @@ function getModifiedCooldownEndTime(address user, uint256 requestId) external vi
 
 ```solidity
 // Initiate a withdrawal request
+// Returns the request ID and the cooldown end timestamp
 function initiateWithdraw(
     WithdrawReceiverPart[] calldata parts,
     bool speedUp,
     bytes calldata providerData
-) external;
+) external returns (uint256 requestId, uint256 cooldownEndTime);
 
 // Finalize after cooldown expires
 function finalizeWithdrawRequest(address user, uint256 requestId) external;
