@@ -5,15 +5,10 @@ import { ArgumentType } from "hardhat/types/arguments"
 
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 import { writeData } from "../utils/fs.js"
+import { DeploymentCheckpoint, DiamondCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { DEPLOYMENT_LOG_FILE, FacetNames } from "./constants.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
-import {
-	DeploymentCheckpoint,
-	DiamondCheckpoint,
-	createDeployedContract,
-	saveCheckpoint,
-} from "./checkpoint.js"
 
 // Define which facets need which external libraries (based on compiled artifacts)
 const FacetLibraryDependencies: Record<string, string[]> = {

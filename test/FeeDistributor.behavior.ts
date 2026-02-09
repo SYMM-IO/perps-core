@@ -1,8 +1,9 @@
-import {expect} from "chai"
-import {ethers, hre} from "./helpers/hardhat-connection.js"
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { expect } from "chai"
+
 import type { MockSymmio, MockToken, SymmioFeeDistributor } from "../src/types/index.js"
-import {deployProxy} from "../utils/upgrades-shim.js"
+import { deployProxy } from "../utils/upgrades-shim.js"
+import { ethers, hre } from "./helpers/hardhat-connection.js"
 
 export function shouldBehaveLikeFeeDistributor() {
 	describe("FeeDistributor", function () {
@@ -23,7 +24,7 @@ export function shouldBehaveLikeFeeDistributor() {
 		const symmioShare = ethers.parseEther("0.5") // 50%
 
 		beforeEach(async function () {
-			[owner, admin, collector, setter, manager, pauser, unpauser, symmioReceiver, stakeholder1, stakeholder2] = await ethers.getSigners()
+			;[owner, admin, collector, setter, manager, pauser, unpauser, symmioReceiver, stakeholder1, stakeholder2] = await ethers.getSigners()
 
 			// Deploy mock Symmio contract
 			const MockSymmio = await ethers.getContractFactory("MockSymmio")
@@ -42,7 +43,7 @@ export function shouldBehaveLikeFeeDistributor() {
 				admin.address,
 				await mockSymmio.getAddress(),
 				symmioReceiver.address,
-				symmioShare
+				symmioShare,
 			])) as any
 
 			// Grant roles
@@ -69,13 +70,11 @@ export function shouldBehaveLikeFeeDistributor() {
 			})
 
 			it("Should revert if called by non-setter", async function () {
-				await expect(feeDistributor.connect(owner).setSymmioAddress(ethers.ZeroAddress))
-					.to.be.reverted
+				await expect(feeDistributor.connect(owner).setSymmioAddress(ethers.ZeroAddress)).to.be.reverted
 			})
 
 			it("Should revert if new address is zero", async function () {
-				await expect(feeDistributor.connect(setter).setSymmioAddress(ethers.ZeroAddress))
-					.to.be.revertedWithCustomError(feeDistributor, "ZeroAddress")
+				await expect(feeDistributor.connect(setter).setSymmioAddress(ethers.ZeroAddress)).to.be.revertedWithCustomError(feeDistributor, "ZeroAddress")
 			})
 		})
 
@@ -89,18 +88,20 @@ export function shouldBehaveLikeFeeDistributor() {
 			})
 
 			it("Should revert if called by non-setter", async function () {
-				await expect(feeDistributor.connect(owner).setSymmioStakeholder(ethers.ZeroAddress, 0))
-					.to.be.reverted
+				await expect(feeDistributor.connect(owner).setSymmioStakeholder(ethers.ZeroAddress, 0)).to.be.reverted
 			})
 
 			it("Should revert if new receiver is zero address", async function () {
-				await expect(feeDistributor.connect(setter).setSymmioStakeholder(ethers.ZeroAddress, symmioShare))
-					.to.be.revertedWithCustomError(feeDistributor, "ZeroAddress")
+				await expect(feeDistributor.connect(setter).setSymmioStakeholder(ethers.ZeroAddress, symmioShare)).to.be.revertedWithCustomError(
+					feeDistributor,
+					"ZeroAddress",
+				)
 			})
 
 			it("Should revert if new share is greater than 100%", async function () {
-				await expect(feeDistributor.connect(setter).setSymmioStakeholder(symmioReceiver.address, ethers.parseEther("1.1")))
-					.to.be.revertedWithCustomError(feeDistributor, "InvalidShare")
+				await expect(
+					feeDistributor.connect(setter).setSymmioStakeholder(symmioReceiver.address, ethers.parseEther("1.1")),
+				).to.be.revertedWithCustomError(feeDistributor, "InvalidShare")
 			})
 
 			it("Should update stakeholders array", async function () {
@@ -124,9 +125,9 @@ export function shouldBehaveLikeFeeDistributor() {
 		describe("setStakeholders", function () {
 			it("Should allow manager to set stakeholders", async function () {
 				let newStakeholders = [
-					{receiver: stakeholder1.address, share: ethers.parseEther("0.3")},
-					{receiver: stakeholder2.address, share: ethers.parseEther("0.1")},
-					{receiver: stakeholder2.address, share: ethers.parseEther("0.1")}
+					{ receiver: stakeholder1.address, share: ethers.parseEther("0.3") },
+					{ receiver: stakeholder2.address, share: ethers.parseEther("0.1") },
+					{ receiver: stakeholder2.address, share: ethers.parseEther("0.1") },
 				]
 				await feeDistributor.connect(manager).setStakeholders(newStakeholders)
 
@@ -138,8 +139,8 @@ export function shouldBehaveLikeFeeDistributor() {
 				expect((await feeDistributor.stakeholders(3)).share).to.equal(ethers.parseEther("0.1"))
 
 				newStakeholders = [
-					{receiver: stakeholder1.address, share: ethers.parseEther("0.1")},
-					{receiver: stakeholder2.address, share: ethers.parseEther("0.4")}
+					{ receiver: stakeholder1.address, share: ethers.parseEther("0.1") },
+					{ receiver: stakeholder2.address, share: ethers.parseEther("0.4") },
 				]
 				await feeDistributor.connect(manager).setStakeholders(newStakeholders)
 				expect((await feeDistributor.stakeholders(1)).receiver).to.equal(stakeholder1.address)
@@ -150,16 +151,15 @@ export function shouldBehaveLikeFeeDistributor() {
 			})
 
 			it("Should revert if called by non-manager", async function () {
-				await expect(feeDistributor.connect(owner).setStakeholders([]))
-					.to.be.reverted
+				await expect(feeDistributor.connect(owner).setStakeholders([])).to.be.reverted
 			})
 
 			it("Should revert if total shares don't equal 100%", async function () {
-				const invalidStakeholders = [
-					{receiver: stakeholder1.address, share: ethers.parseEther("0.6")}
-				]
-				await expect(feeDistributor.connect(manager).setStakeholders(invalidStakeholders))
-					.to.be.revertedWithCustomError(feeDistributor, "TotalSharesMustEqualOne")
+				const invalidStakeholders = [{ receiver: stakeholder1.address, share: ethers.parseEther("0.6") }]
+				await expect(feeDistributor.connect(manager).setStakeholders(invalidStakeholders)).to.be.revertedWithCustomError(
+					feeDistributor,
+					"TotalSharesMustEqualOne",
+				)
 			})
 		})
 
@@ -167,8 +167,8 @@ export function shouldBehaveLikeFeeDistributor() {
 			beforeEach(async function () {
 				// Set up stakeholders
 				await feeDistributor.connect(manager).setStakeholders([
-					{receiver: stakeholder1.address, share: ethers.parseEther("0.3")},
-					{receiver: stakeholder2.address, share: ethers.parseEther("0.2")}
+					{ receiver: stakeholder1.address, share: ethers.parseEther("0.3") },
+					{ receiver: stakeholder2.address, share: ethers.parseEther("0.2") },
 				])
 
 				// Fund mock Symmio with tokens
@@ -204,14 +204,12 @@ export function shouldBehaveLikeFeeDistributor() {
 			})
 
 			it("Should revert if called by non-collector", async function () {
-				await expect(feeDistributor.connect(owner).claimFee(100))
-					.to.be.reverted
+				await expect(feeDistributor.connect(owner).claimFee(100)).to.be.reverted
 			})
 
 			it("Should revert when paused", async function () {
 				await feeDistributor.connect(pauser).pause()
-				await expect(feeDistributor.connect(collector).claimFee(100))
-					.to.be.revertedWith("Pausable: paused")
+				await expect(feeDistributor.connect(collector).claimFee(100)).to.be.revertedWith("Pausable: paused")
 			})
 		})
 
@@ -228,14 +226,12 @@ export function shouldBehaveLikeFeeDistributor() {
 			})
 
 			it("Should revert if non-pauser tries to pause", async function () {
-				await expect(feeDistributor.connect(owner).pause())
-					.to.be.reverted
+				await expect(feeDistributor.connect(owner).pause()).to.be.reverted
 			})
 
 			it("Should revert if non-unpauser tries to unpause", async function () {
 				await feeDistributor.connect(pauser).pause()
-				await expect(feeDistributor.connect(owner).unpause())
-					.to.be.reverted
+				await expect(feeDistributor.connect(owner).unpause()).to.be.reverted
 			})
 		})
 	})

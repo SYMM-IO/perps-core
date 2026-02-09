@@ -1,10 +1,10 @@
-import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 import { ethers, toUtf8Bytes } from "ethers"
 import { last } from "rxjs"
 
 import type { PairUpnlAndPriceSigStruct, QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
@@ -15,8 +15,8 @@ import { limitOpenRequestBuilder, marketOpenRequestBuilder } from "./models/requ
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { OpenPositionValidator } from "./models/validators/OpenPositionValidator.js"
 import { decimal, getQuoteQuantity, pausePartyB } from "./utils/Common.js"
-import { getDummyPairUpnlAndPriceSig, getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
+import { getDummyPairUpnlAndPriceSig, getDummyPairUpnlAndPricesSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeOpenPosition(): void {
 	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger

@@ -11,8 +11,8 @@ import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummySingleUpnlWithPendingBalanceSig } from "./utils/SignatureUtils.js"
@@ -186,14 +186,12 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const amount = decimal(1n)
 			await context.pauseControlFacet.pauseAccounting()
 
-			await expect(
-				context.pledgeFacet.connect(hedger.signer).depositPledge(await context.collateral.getAddress(), amount),
-			).to.be.revertedWith("Pausable: Accounting paused")
+			await expect(context.pledgeFacet.connect(hedger.signer).depositPledge(await context.collateral.getAddress(), amount)).to.be.revertedWith(
+				"Pausable: Accounting paused",
+			)
 
 			await expect(
-				context.pledgeFacet
-					.connect(hedger.signer)
-					.requestPledgeWithdraw(await context.collateral.getAddress(), amount, context.signers.user.address),
+				context.pledgeFacet.connect(hedger.signer).requestPledgeWithdraw(await context.collateral.getAddress(), amount, context.signers.user.address),
 			).to.be.revertedWith("Pausable: Accounting paused")
 
 			await expect(context.pledgeFacet.connect(hedger.signer).cancelPledgeWithdraw()).to.be.revertedWith("Pausable: Accounting paused")
@@ -211,23 +209,21 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const amount = decimal(1n)
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await hedger.getAddress())
 
-			await expect(
-				context.pledgeFacet.connect(hedger.signer).depositPledge(await context.collateral.getAddress(), amount),
-			).to.be.revertedWith("Accessibility: Sender is Suspended")
+			await expect(context.pledgeFacet.connect(hedger.signer).depositPledge(await context.collateral.getAddress(), amount)).to.be.revertedWith(
+				"Accessibility: Sender is Suspended",
+			)
 
 			await expect(
-				context.pledgeFacet
-					.connect(hedger.signer)
-					.requestPledgeWithdraw(await context.collateral.getAddress(), amount, context.signers.user.address),
+				context.pledgeFacet.connect(hedger.signer).requestPledgeWithdraw(await context.collateral.getAddress(), amount, context.signers.user.address),
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
 
 			await expect(context.pledgeFacet.connect(hedger.signer).cancelPledgeWithdraw()).to.be.revertedWith("Accessibility: Sender is Suspended")
 		})
 
 		it("validates depositPledge require checks", async function () {
-			await expect(
-				context.pledgeFacet.connect(hedger.signer).depositPledge(await context.collateral.getAddress(), 0n),
-			).to.be.revertedWith("AccountFacet: invalid amount")
+			await expect(context.pledgeFacet.connect(hedger.signer).depositPledge(await context.collateral.getAddress(), 0n)).to.be.revertedWith(
+				"AccountFacet: invalid amount",
+			)
 		})
 
 		it("validates requestPledgeWithdraw require checks", async function () {
@@ -254,9 +250,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("validates cancelPledgeWithdraw require checks", async function () {
-			await expect(context.pledgeFacet.connect(hedger.signer).cancelPledgeWithdraw()).to.be.revertedWith(
-				"AccountFacet: no pending Pledge withdraw",
-			)
+			await expect(context.pledgeFacet.connect(hedger.signer).cancelPledgeWithdraw()).to.be.revertedWith("AccountFacet: no pending Pledge withdraw")
 		})
 
 		it("validates acceptPledgeWithdraw require checks", async function () {
@@ -300,9 +294,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pledgeFacet.connect(hedger.signer).requestPledgeWithdraw(token, requestedWithdrawAmount, recipient)
 
 			// Try to accept with 501 (more than requested) - should fail with params mismatch
-			await expect(
-				context.pledgeFacet.acceptPledgeWithdraw(await hedger.getAddress(), requestedWithdrawAmount + 1n, token),
-			).to.be.revertedWith("AccountFacet: params mismatch")
+			await expect(context.pledgeFacet.acceptPledgeWithdraw(await hedger.getAddress(), requestedWithdrawAmount + 1n, token)).to.be.revertedWith(
+				"AccountFacet: params mismatch",
+			)
 
 			// Try to accept with 1000 (full deposit, but more than requested) - should fail with params mismatch
 			await expect(context.pledgeFacet.acceptPledgeWithdraw(await hedger.getAddress(), depositAmount, token)).to.be.revertedWith(
@@ -401,8 +395,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.withArgs(await hedger.getAddress(), await context.collateral.getAddress(), amount)
 
 			// can request again after cancel
-			await expect(context.pledgeFacet.connect(hedger.signer).requestPledgeWithdraw(await context.collateral.getAddress(), amount, recipient)).to
-				.not.be.reverted
+			await expect(context.pledgeFacet.connect(hedger.signer).requestPledgeWithdraw(await context.collateral.getAddress(), amount, recipient)).to.not
+				.be.reverted
 		})
 
 		it("approves pledge withdraw and transfers to recipient", async function () {
@@ -686,7 +680,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
 
 			const notional = (quote.quantity * quote.requestedOpenPrice) / decimal(1n)
-			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB((notional * QUOTE_NOTIONAL_MULTIPLIER) / decimal(1n), quote.partyA)
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.allocateForPartyB((notional * QUOTE_NOTIONAL_MULTIPLIER) / decimal(1n), quote.partyA)
 
 			await context.partyBQuoteActionsFacet.connect(context.signers.hedger).lockQuote(quoteId, await getDummySingleUpnlSig(UPNL_VALUES.ZERO))
 		})
@@ -900,9 +896,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should allow legacy deallocate when not disabled", async function () {
 			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(false)
-			await expect(
-				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
-			).to.not.be.reverted
+			await expect(context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig())).to.not.be
+				.reverted
 		})
 
 		it("Should block legacy deallocate when disabled", async function () {
@@ -916,7 +911,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 		it("Should allow safeDeallocate when legacy is disabled", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
 			await expect(
-				context.accountFacet.connect(context.signers.user).safeDeallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
+				context.accountFacet
+					.connect(context.signers.user)
+					.safeDeallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlWithPendingBalanceSig()),
 			).to.not.be.reverted
 		})
 
@@ -924,9 +921,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
 			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(false)
 			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(false)
-			await expect(
-				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
-			).to.not.be.reverted
+			await expect(context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig())).to.not.be
+				.reverted
 		})
 	})
 
@@ -1247,7 +1243,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await user.setup()
 			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.DEPOSIT_AMOUNT)
 
-			const MockExternalTransferRelayer = await ethers.getContractFactory("contracts/core/test/MockExternalTransferTarget.sol:ExternalTransferRelayer")
+			const MockExternalTransferRelayer = await ethers.getContractFactory(
+				"contracts/core/test/MockExternalTransferTarget.sol:ExternalTransferRelayer",
+			)
 			mockTarget = await MockExternalTransferRelayer.deploy()
 			await mockTarget.waitForDeployment()
 			targetAddress = await mockTarget.getAddress()
@@ -1261,7 +1259,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should allow authorized users to call externalTransfer", async function () {
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.not.be.reverted
 		})
 
@@ -1269,7 +1269,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Accessibility: Sender is Suspended")
 		})
 
@@ -1289,8 +1291,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const userBalance = await context.viewFacet.balanceOf(context.signers.user.address)
 			const excessiveAmount = userBalance + BALANCES.TRANSFER_AMOUNT
 
-			await expect(context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, excessiveAmount, targetAddress))
-				.to.be.reverted
+			await expect(
+				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, excessiveAmount, targetAddress),
+			).to.be.reverted
 		})
 
 		it("Should transfer collateral to relayer", async function () {
@@ -1333,19 +1336,25 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail with zero target address", async function () {
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, ZeroAddress),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, ZeroAddress),
 			).to.be.revertedWith("AccountFacet: Zero receiver or target")
 		})
 
 		it("Should handle self-transfers", async function () {
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.not.be.reverted
 		})
 
 		it("Should fail when target is not whitelisted", async function () {
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress2),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress2),
 			).to.be.revertedWith("AccountFacet: Target not whitelisted")
 		})
 
@@ -1353,7 +1362,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).removeRelayerForExternalTransferTarget(targetAddress)
 
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("AccountFacet: Target not whitelisted")
 		})
 
@@ -1362,7 +1373,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await mockTarget.setShouldRevert(true, revertMessage)
 
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Relayer error")
 		})
 
@@ -1370,7 +1383,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseExternalTransfer()
 
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Pausable: External transfer paused")
 		})
 
@@ -1378,7 +1393,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
 
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Pausable: Accounting paused")
 		})
 
@@ -1386,7 +1403,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
 			await expect(
-				context.externalTransferFacet.connect(context.signers.user).externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
+				context.externalTransferFacet
+					.connect(context.signers.user)
+					.externalTransfer(context.signers.user2.address, BALANCES.TRANSFER_AMOUNT, targetAddress),
 			).to.be.revertedWith("Pausable: Global paused")
 		})
 	})
@@ -1925,7 +1944,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 		})
 
-
 		it("Should fail when not bound", async () => {
 			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith("AccountFacet: Invalid state")
 		})
@@ -1967,7 +1985,6 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 			await expect(context.bindingFacet.connect(context.signers.user).cancelUnbindRequest()).to.be.revertedWith("Accessibility: Sender is Suspended")
 		})
-
 
 		it("Should fail when not request to unbound", async () => {
 			await expect(context.bindingFacet.connect(context.signers.user).cancelUnbindRequest()).to.be.revertedWith("AccountFacet: Invalid state")

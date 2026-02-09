@@ -1,8 +1,6 @@
 import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
-import { loadFixture, time } from "./network-helpers.js"
 import { expect } from "chai"
 import { ZeroAddress, toUtf8Bytes, TypedDataDomain } from "ethers"
-import { ethers } from "./hardhat-connection.js"
 
 import type { InstantLayer } from "../../src/types/index.js"
 import { initializeFixture } from "../Initialize.fixture.js"
@@ -14,7 +12,9 @@ import { limitOpenRequestBuilder, OpenRequest } from "../models/requestModels/Op
 import { limitQuoteRequestBuilder, QuoteRequest } from "../models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "../utils/Common.js"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils.js"
+import { ethers } from "./hardhat-connection.js"
 import { cloneTypes, DELEGATE_TYPES } from "./instantLayerEIP712Types.js"
+import { loadFixture, time } from "./network-helpers.js"
 
 // ════════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -912,8 +912,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				// PartyB calls InstantLayer.executeBatch via _multicastCall (msg.sender = PartyB contract)
 				// This should succeed because PartyB is executing their own operation, so signature is skipped
-				await expect(ctx.context.symmioPartyB.connect(ctx.context.signers.hedger)._multicastCall([instantLayerAddress], [executeBatchCallData])).not.to
-					.be.reverted
+				await expect(ctx.context.symmioPartyB.connect(ctx.context.signers.hedger)._multicastCall([instantLayerAddress], [executeBatchCallData])).not
+					.to.be.reverted
 
 				// Verify the quote was locked
 				const quoteAfter = await ctx.context.viewFacetQuote.getQuote(1)
@@ -989,10 +989,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				// Admin calls executeBatch with empty signature for partyA1's operation - should fail
 				// Because msg.sender (admin) != signer (partyA1), signature verification is required
-				await expect(ctx.context.instantLayer.executeBatch([op], ["0x"])).to.be.revertedWithCustomError(
-					ctx.context.instantLayer,
-					"InvalidSignature",
-				)
+				await expect(ctx.context.instantLayer.executeBatch([op], ["0x"])).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidSignature")
 			})
 		})
 
@@ -1377,7 +1374,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 					0n,
 					execCtx.deadline,
 				)
-				const allocateCallDataRaw = execCtx.context.partyBAccountFacet.interface.encodeFunctionData("allocateForPartyB", [allocateAmount, ZeroAddress])
+				const allocateCallDataRaw = execCtx.context.partyBAccountFacet.interface.encodeFunctionData("allocateForPartyB", [
+					allocateAmount,
+					ZeroAddress,
+				])
 				const allocateCallData = allocateCallDataRaw + "00"
 				const allocateOp = createSignedOperation(
 					partyBAddress,
@@ -2183,7 +2183,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(quoteIds.length).to.equal(2)
 		})
 
-			it("decodes sendQuoteWithAffiliateAndData params correctly via _handleSubAccountSendQuote", async function () {
+		it("decodes sendQuoteWithAffiliateAndData params correctly via _handleSubAccountSendQuote", async function () {
 			// This test verifies LibQuoteParams.decodeQuoteParams correctly decodes sendQuoteWithAffiliateAndData
 			// by going through the SubAccount flow: _call -> selector match -> decodeQuoteParams -> _handleSubAccountSendQuote
 
@@ -2799,9 +2799,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeFirstOp)
 			const sig3 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeSecondOp)
 
-			await expect(
-				ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeFirstOp, storeSecondOp], [sig1, sig2, sig3]),
-			).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeFirstOp, storeSecondOp], [sig1, sig2, sig3])).not.to.be
+				.reverted
 
 			// Last store was second value (222)
 			expect(await mockTarget.lastValue()).to.equal(222n)
@@ -2874,9 +2873,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp1)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp2)
 
-			await expect(
-				ctx.context.instantLayer.executeTemplate(templateId, [storeOp1, storeOp2], [sig1, sig2]),
-			).to.be.revertedWithCustomError(ctx.context.instantLayer, "BadSourceResultLength")
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [storeOp1, storeOp2], [sig1, sig2])).to.be.revertedWithCustomError(
+				ctx.context.instantLayer,
+				"BadSourceResultLength",
+			)
 		})
 	})
 

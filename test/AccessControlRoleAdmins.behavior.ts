@@ -1,10 +1,11 @@
-import { loadFixture } from "./helpers/network-helpers.js"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { expect } from "chai"
 import sha3 from "js-sha3"
+
 import { initializeFixture } from "./Initialize.fixture.js"
-import { RunContext } from "./models/RunContext.js"
-import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { ethers } from "./helpers/hardhat-connection.js"
+import { loadFixture } from "./helpers/network-helpers.js"
+import { RunContext } from "./models/RunContext.js"
 
 const { keccak256 } = sha3
 
@@ -67,9 +68,9 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 
 				it("Should revert when admin address is zero", async function () {
 					// prevent zero admin
-					await expect(
-						context.controlFacet.connect(admin).addRoleAdmin(PROTOCOL_CONFIG_ROLE, ethers.ZeroAddress),
-					).to.be.revertedWith("ControlFacet: Zero address")
+					await expect(context.controlFacet.connect(admin).addRoleAdmin(PROTOCOL_CONFIG_ROLE, ethers.ZeroAddress)).to.be.revertedWith(
+						"ControlFacet: Zero address",
+					)
 				})
 			})
 
@@ -126,9 +127,9 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 
 				it("Should revert grant when caller is not an admin for that role", async function () {
 					// outsider blocked
-					await expect(
-						context.controlFacet.connect(outsider).grantRole(await operator.getAddress(), LIQUIDATOR_ROLE),
-					).to.be.revertedWith("Accessibility: Must be role admin")
+					await expect(context.controlFacet.connect(outsider).grantRole(await operator.getAddress(), LIQUIDATOR_ROLE)).to.be.revertedWith(
+						"Accessibility: Must be role admin",
+					)
 				})
 
 				it("Should allow delegated admin to revoke role and prevent actions after removal", async function () {
@@ -138,9 +139,9 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 					expect(await context.viewFacet.hasRole(await operator.getAddress(), LIQUIDATOR_ROLE)).to.equal(false)
 					// remove admin then ensure blocked
 					await context.controlFacet.connect(admin).removeRoleAdmin(LIQUIDATOR_ROLE, await secondaryAdmin.getAddress())
-					await expect(
-						context.controlFacet.connect(secondaryAdmin).grantRole(await operator.getAddress(), LIQUIDATOR_ROLE),
-					).to.be.revertedWith("Accessibility: Must be role admin")
+					await expect(context.controlFacet.connect(secondaryAdmin).grantRole(await operator.getAddress(), LIQUIDATOR_ROLE)).to.be.revertedWith(
+						"Accessibility: Must be role admin",
+					)
 				})
 
 				it("Should always allow default admin to manage the role", async function () {
@@ -169,9 +170,9 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 
 				// remove secondaryAdmin and block further grants from them
 				await context.controlFacet.connect(admin).removeRoleAdmin(PROTOCOL_CONFIG_ROLE, await secondaryAdmin.getAddress())
-				await expect(
-					context.controlFacet.connect(secondaryAdmin).grantRole(await admin.getAddress(), PROTOCOL_CONFIG_ROLE),
-				).to.be.revertedWith("Accessibility: Must be role admin")
+				await expect(context.controlFacet.connect(secondaryAdmin).grantRole(await admin.getAddress(), PROTOCOL_CONFIG_ROLE)).to.be.revertedWith(
+					"Accessibility: Must be role admin",
+				)
 
 				// remaining admin revokes the operator and cleans up
 				await context.controlFacet.connect(operator).revokeRole(await outsider.getAddress(), PROTOCOL_CONFIG_ROLE)
@@ -184,9 +185,9 @@ export function shouldBehaveLikeAccessControlRoleAdmins(): void {
 
 				// strip delegated liquidator admin and ensure actions stop
 				await context.controlFacet.connect(admin).removeRoleAdmin(LIQUIDATOR_ROLE, await secondaryAdmin.getAddress())
-				await expect(
-					context.controlFacet.connect(secondaryAdmin).revokeRole(await outsider.getAddress(), LIQUIDATOR_ROLE),
-				).to.be.revertedWith("Accessibility: Must be role admin")
+				await expect(context.controlFacet.connect(secondaryAdmin).revokeRole(await outsider.getAddress(), LIQUIDATOR_ROLE)).to.be.revertedWith(
+					"Accessibility: Must be role admin",
+				)
 
 				// default admin can still clean up roles after delegated admin removal
 				await context.controlFacet.connect(admin).revokeRole(await outsider.getAddress(), LIQUIDATOR_ROLE)

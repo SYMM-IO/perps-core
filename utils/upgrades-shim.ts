@@ -1,8 +1,8 @@
-import { ethers } from "ethers"
-import type { ContractFactory } from "ethers"
-import TransparentUpgradeableProxyArtifact from "@openzeppelin/contracts/build/contracts/TransparentUpgradeableProxy.json" assert { type: "json" }
 import ERC1967ProxyArtifact from "@openzeppelin/contracts/build/contracts/ERC1967Proxy.json" with { type: "json" }
 import ProxyAdminArtifact from "@openzeppelin/contracts/build/contracts/ProxyAdmin.json" with { type: "json" }
+import TransparentUpgradeableProxyArtifact from "@openzeppelin/contracts/build/contracts/TransparentUpgradeableProxy.json" with { type: "json" }
+import { ethers } from "ethers"
+import type { ContractFactory } from "ethers"
 import type { HardhatRuntimeEnvironment } from "hardhat/types"
 
 type DeployProxyOptions = {
@@ -24,12 +24,7 @@ export const erc1967 = (hre: HardhatRuntimeEnvironment) => ({
 	getImplementationAddress: (address: string) => readAddressSlot(hre, address, IMPLEMENTATION_SLOT),
 })
 
-export async function deployProxy(
-	hre: HardhatRuntimeEnvironment,
-	factory: ContractFactory,
-	args: unknown[] = [],
-	options: DeployProxyOptions = {},
-) {
+export async function deployProxy(hre: HardhatRuntimeEnvironment, factory: ContractFactory, args: unknown[] = [], options: DeployProxyOptions = {}) {
 	const initializer = options.initializer === undefined ? "initialize" : options.initializer
 	const kind = options.kind ?? "transparent"
 	const [defaultSigner] = await hre.ethers.getSigners()

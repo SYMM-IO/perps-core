@@ -1,17 +1,17 @@
-import {loadFixture, time} from "./helpers/network-helpers.js"
-import {expect} from "chai"
+import { expect } from "chai"
 
-import {initializeFixture} from "./Initialize.fixture.js"
-import {PositionType, QuoteStatus} from "./models/Enums.js"
-import {Hedger} from "./models/Hedger.js"
-import {RunContext} from "./models/RunContext.js"
-import {User} from "./models/User.js"
-import {limitOpenRequestBuilder} from "./models/requestModels/OpenRequest.js"
-import {AcceptCancelRequestValidator} from "./models/validators/AcceptCancelRequestValidator.js"
-import {CancelQuoteValidator} from "./models/validators/CancelQuoteValidator.js"
-import {OpenPositionValidator} from "./models/validators/OpenPositionValidator.js"
-import {decimal, getQuoteQuantity, pausePartyA, pausePartyB} from "./utils/Common.js"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest.js"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { AcceptCancelRequestValidator } from "./models/validators/AcceptCancelRequestValidator.js"
+import { CancelQuoteValidator } from "./models/validators/CancelQuoteValidator.js"
+import { OpenPositionValidator } from "./models/validators/OpenPositionValidator.js"
+import { decimal, getQuoteQuantity, pausePartyA, pausePartyB } from "./utils/Common.js"
 
 export function shouldBehaveLikeCancelQuote(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
@@ -53,7 +53,7 @@ export function shouldBehaveLikeCancelQuote(): void {
 		await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
 		await hedger.lockQuote(2)
 		await hedger.openPosition(2)
-		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)],[2n])
+		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)], [2n])
 		await expect(user.requestToCancelQuote(1)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 	})
 

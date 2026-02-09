@@ -1,9 +1,9 @@
-import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 import { ethers, toUtf8Bytes } from "ethers"
 
 import type { QuoteStruct } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
@@ -12,8 +12,8 @@ import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js
 import { LockQuoteValidator } from "./models/validators/LockQuoteValidator.js"
 import { UnlockQuoteValidator } from "./models/validators/UnlockQuoteValidator.js"
 import { decimal, pausePartyB } from "./utils/Common.js"
-import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
+import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeLockQuote(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger, user2: User
@@ -73,7 +73,7 @@ export function shouldBehaveLikeLockQuote(): void {
 		it("Should fail on liquidated partyA", async function () {
 			await hedger.lockQuote(2)
 			await hedger.openPosition(2)
-			await user.liquidateAndSetSymbolPrices([1n], [decimal(200n)],[2n])
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(200n)], [2n])
 			await expect(hedger.lockQuote(1)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 		})
 

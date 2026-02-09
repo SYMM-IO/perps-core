@@ -1,45 +1,38 @@
-import {Builder} from "builder-pattern"
+import { Builder } from "builder-pattern"
 // @ts-ignore
 import * as randomExt from "random-ext"
-import {concatMap, filter, from} from "rxjs"
+import { concatMap, filter, from } from "rxjs"
 
-import {
-	checkStatus,
-	getQuoteMinLeftQuantityForFill,
-	getQuoteQuantity,
-	getTotalLockedValuesForQuoteIds
-} from "../utils/Common.js"
-import {logger} from "../utils/LoggerUtils.js"
-import {getPrice} from "../utils/PriceUtils.js"
-import {pick, randomBigNumber} from "../utils/RandomUtils.js"
-import {safeDiv} from "../utils/SafeMath.js"
-import {Action, actionNamesMap, ActionWrapper, expandActions, hedgerActionsMap} from "./Actions.js"
-import {OrderType, QuoteStatus} from "./Enums.js"
-import {Hedger} from "./Hedger.js"
-import {RunContext} from "./RunContext.js"
-import {TestManager} from "./TestManager.js"
-import {FillCloseRequest} from "./requestModels/FillCloseRequest.js"
-import {OpenRequest} from "./requestModels/OpenRequest.js"
-import {
-	AcceptCancelCloseRequestValidator,
-	AcceptCancelCloseRequestValidatorBeforeOutput
-} from "./validators/AcceptCancelCloseRequestValidator.js"
-import {
-	AcceptCancelRequestValidator,
-	AcceptCancelRequestValidatorBeforeOutput
-} from "./validators/AcceptCancelRequestValidator.js"
-import {FillCloseRequestValidator, FillCloseRequestValidatorBeforeOutput} from "./validators/FillCloseRequestValidator.js"
-import {LockQuoteValidator, LockQuoteValidatorBeforeOutput} from "./validators/LockQuoteValidator.js"
-import {OpenPositionValidator, OpenPositionValidatorBeforeOutput} from "./validators/OpenPositionValidator.js"
-import {UnlockQuoteValidator, UnlockQuoteValidatorBeforeOutput} from "./validators/UnlockQuoteValidator.js"
-import {QuoteCheckpoint} from "./quoteCheckpoint.js"
-import {ethers} from "../helpers/hardhat-connection.js"
-import type {QuoteStructOutput, SymbolStructOutput} from "../../src/types/interfaces/ISymmio.js"
+import type { QuoteStructOutput, SymbolStructOutput } from "../../src/types/interfaces/ISymmio.js"
+import { ethers } from "../helpers/hardhat-connection.js"
+import { checkStatus, getQuoteMinLeftQuantityForFill, getQuoteQuantity, getTotalLockedValuesForQuoteIds } from "../utils/Common.js"
+import { logger } from "../utils/LoggerUtils.js"
+import { getPrice } from "../utils/PriceUtils.js"
+import { pick, randomBigNumber } from "../utils/RandomUtils.js"
+import { safeDiv } from "../utils/SafeMath.js"
+import { Action, actionNamesMap, ActionWrapper, expandActions, hedgerActionsMap } from "./Actions.js"
+import { OrderType, QuoteStatus } from "./Enums.js"
+import { Hedger } from "./Hedger.js"
+import { RunContext } from "./RunContext.js"
+import { TestManager } from "./TestManager.js"
+import { QuoteCheckpoint } from "./quoteCheckpoint.js"
+import { FillCloseRequest } from "./requestModels/FillCloseRequest.js"
+import { OpenRequest } from "./requestModels/OpenRequest.js"
+import { AcceptCancelCloseRequestValidator, AcceptCancelCloseRequestValidatorBeforeOutput } from "./validators/AcceptCancelCloseRequestValidator.js"
+import { AcceptCancelRequestValidator, AcceptCancelRequestValidatorBeforeOutput } from "./validators/AcceptCancelRequestValidator.js"
+import { FillCloseRequestValidator, FillCloseRequestValidatorBeforeOutput } from "./validators/FillCloseRequestValidator.js"
+import { LockQuoteValidator, LockQuoteValidatorBeforeOutput } from "./validators/LockQuoteValidator.js"
+import { OpenPositionValidator, OpenPositionValidatorBeforeOutput } from "./validators/OpenPositionValidator.js"
+import { UnlockQuoteValidator, UnlockQuoteValidatorBeforeOutput } from "./validators/UnlockQuoteValidator.js"
 
 export class HedgerController {
 	private readonly context: RunContext
 
-	constructor(private manager: TestManager, private hedger: Hedger, private checkpoint: QuoteCheckpoint) {
+	constructor(
+		private manager: TestManager,
+		private hedger: Hedger,
+		private checkpoint: QuoteCheckpoint,
+	) {
 		this.context = manager.context
 	}
 

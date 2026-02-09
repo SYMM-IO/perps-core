@@ -87,12 +87,7 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			await expect(
 				hedger.fillCloseRequest(
 					quoteId,
-					limitFillCloseRequestBuilder()
-						.filledAmount(quantity)
-						.closedPrice(closePrice)
-						.upnlPartyA(exactUpnl)
-						.price(marketPrice)
-						.build(),
+					limitFillCloseRequestBuilder().filledAmount(quantity).closedPrice(closePrice).upnlPartyA(exactUpnl).price(marketPrice).build(),
 				),
 			).to.not.be.reverted
 		})
@@ -271,10 +266,7 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			// Request to close SHORT position
 			const quantity = await getQuoteQuantity(context, quoteShortId)
 			// For SHORT, requestedClosePrice is the maximum price PartyA accepts
-			await user.requestToClosePosition(
-				quoteShortId,
-				limitCloseRequestBuilder().quantityToClose(quantity).closePrice(decimal(1n)).build(),
-			)
+			await user.requestToClosePosition(quoteShortId, limitCloseRequestBuilder().quantityToClose(quantity).closePrice(decimal(1n)).build())
 
 			const quote = await context.viewFacetQuote.getQuote(quoteShortId)
 			const quantityToClose = quote.quantityToClose

@@ -1,6 +1,6 @@
-import { ethers } from "../test/helpers/hardhat-connection.js"
 import { FacetNames } from "../tasks/deploy/constants.js"
 import { FacetCutAction, getSelectors } from "../tasks/utils/diamondCut.js"
+import { ethers } from "../test/helpers/hardhat-connection.js"
 
 const diamondAddress = ""
 const facetAddresses = new Map<string, string>()
@@ -20,14 +20,10 @@ facetAddresses.set("PartyBQuoteActionsFacet", "")
 
 const [deployer] = await ethers.getSigners()
 
-const diamondCutFacet = await ethers.getContractAt(
-	"DiamondCutFacet",
-	diamondAddress,
-	deployer
-)
+const diamondCutFacet = await ethers.getContractAt("DiamondCutFacet", diamondAddress, deployer)
 
 const newFacets: {
-	[facetName: string]: { address: string; selectors: string[] };
+	[facetName: string]: { address: string; selectors: string[] }
 } = {}
 for (const facetName of FacetNames) {
 	const facetFactory = await ethers.getContractFactory(facetName)
@@ -39,11 +35,7 @@ for (const facetName of FacetNames) {
 }
 
 // Get current facets and their selectors from the diamond
-const diamondLoupeFacet = await ethers.getContractAt(
-	"DiamondLoupeFacet",
-	diamondAddress,
-	deployer
-)
+const diamondLoupeFacet = await ethers.getContractAt("DiamondLoupeFacet", diamondAddress, deployer)
 
 const facets = await diamondLoupeFacet.facets()
 
@@ -68,7 +60,7 @@ for (const [facetName, facetInfo] of Object.entries(newFacets)) {
 
 // Determine actions for each selector
 const actions: {
-	[selector: string]: { action: FacetCutAction; facetAddress: string };
+	[selector: string]: { action: FacetCutAction; facetAddress: string }
 } = {}
 
 // Process selectors to determine add, replace, or remove
@@ -100,7 +92,7 @@ for (const selector in newSelectorsMapping) {
 
 // Group selectors by facetAddress and action
 const facetCutsMap: {
-	[key: string]: { facetAddress: string; action: FacetCutAction; selectors: string[] };
+	[key: string]: { facetAddress: string; action: FacetCutAction; selectors: string[] }
 } = {}
 
 for (const [selector, info] of Object.entries(actions)) {

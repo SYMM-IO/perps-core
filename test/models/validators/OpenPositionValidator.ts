@@ -1,20 +1,20 @@
-import {BigNumber as BN} from "bignumber.js"
-import {expect} from "chai"
+import { BigNumber as BN } from "bignumber.js"
+import { expect } from "chai"
 
-import type { QuoteStructOutput} from "../../../src/types/interfaces/ISymmio.js"
+import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
 import {
 	getTotalPartyALockedValuesForQuotes,
 	getTotalPartyBLockedValuesForQuotes,
 	getTradingFeeForQuotes,
-	getTradingFeeForQuoteWithFilledAmount
+	getTradingFeeForQuoteWithFilledAmount,
 } from "../../utils/Common.js"
-import {logger} from "../../utils/LoggerUtils.js"
-import {expectToBeApproximately} from "../../utils/SafeMath.js"
-import {QuoteStatus} from "../Enums.js"
-import {Hedger} from "../Hedger.js"
-import {RunContext} from "../RunContext.js"
-import {BalanceInfo, User} from "../User.js"
-import {TransactionValidator} from "./TransactionValidator.js"
+import { logger } from "../../utils/LoggerUtils.js"
+import { expectToBeApproximately } from "../../utils/SafeMath.js"
+import { QuoteStatus } from "../Enums.js"
+import { Hedger } from "../Hedger.js"
+import { RunContext } from "../RunContext.js"
+import { BalanceInfo, User } from "../User.js"
+import { TransactionValidator } from "./TransactionValidator.js"
 
 export type OpenPositionValidatorBeforeArg = {
 	user: User
@@ -87,7 +87,9 @@ export class OpenPositionValidator implements TransactionValidator {
 		expect(newQuote.quantity).to.be.equal(arg.fillAmount)
 
 		const newCollectorBalance = await context.viewFacet.balanceOf(await context.viewFacet.getFeeCollector(newQuote.affiliate))
-		expect(newCollectorBalance).to.be.equal(arg.beforeOutput.feeCollectorBalance + await getTradingFeeForQuoteWithFilledAmount(context, newQuote.id!, arg.fillAmount))
+		expect(newCollectorBalance).to.be.equal(
+			arg.beforeOutput.feeCollectorBalance + (await getTradingFeeForQuoteWithFilledAmount(context, newQuote.id!, arg.fillAmount)),
+		)
 
 		const oldLockedValuesPartyA = await getTotalPartyALockedValuesForQuotes([oldQuote])
 		const newLockedValuesPartyA = await getTotalPartyALockedValuesForQuotes([newQuote])

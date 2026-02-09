@@ -86,11 +86,7 @@ export interface MigrationReport {
 // Main Migration Function
 // =============================================================================
 
-export async function migrate(
-	migrationFacet: MigrationFacet,
-	input: MigrationInput,
-	config: MigrationConfig = {},
-): Promise<MigrationReport> {
+export async function migrate(migrationFacet: MigrationFacet, input: MigrationInput, config: MigrationConfig = {}): Promise<MigrationReport> {
 	const cfg = { ...DEFAULT_CONFIG, ...config }
 	const startTime = Date.now()
 	const startedAt = new Date().toISOString()

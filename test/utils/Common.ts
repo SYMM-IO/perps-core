@@ -1,15 +1,15 @@
-import {time} from "../helpers/network-helpers.js"
-import {JsonSerializer} from "typescript-json-serializer"
+import { JsonSerializer } from "typescript-json-serializer"
 
-import {OrderType, QuoteStatus} from "../models/Enums.js"
-import {RunContext} from "../models/RunContext.js"
-import {safeDiv} from "./SafeMath.js"
-import {network} from "../helpers/hardhat-connection.js"
-import type { QuoteStructOutput, SymbolStructOutput} from "../../src/types/interfaces/ISymmio.js"
+import type { QuoteStructOutput, SymbolStructOutput } from "../../src/types/interfaces/ISymmio.js"
+import { network } from "../helpers/hardhat-connection.js"
+import { time } from "../helpers/network-helpers.js"
+import { OrderType, QuoteStatus } from "../models/Enums.js"
+import { RunContext } from "../models/RunContext.js"
+import { safeDiv } from "./SafeMath.js"
 
 const defaultSerializer = new JsonSerializer()
 
-export type PromiseOrValue<T> = T | Promise<T>;
+export type PromiseOrValue<T> = T | Promise<T>
 
 export function decimal(value: bigint, decimal: number = 18): bigint {
 	return value * 10n ** BigInt(decimal)

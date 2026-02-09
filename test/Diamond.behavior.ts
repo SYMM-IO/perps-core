@@ -1,10 +1,10 @@
-import {loadFixture} from "./helpers/network-helpers.js"
-import {assert, expect} from "chai"
-import {ethers} from "./helpers/hardhat-connection.js"
+import { assert, expect } from "chai"
 
-import {FacetCutAction, getSelectors} from "../tasks/utils/diamondCut.js"
-import {initializeFixture} from "./Initialize.fixture.js"
-import {RunContext} from "./models/RunContext.js"
+import { FacetCutAction, getSelectors } from "../tasks/utils/diamondCut.js"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { ethers } from "./helpers/hardhat-connection.js"
+import { loadFixture } from "./helpers/network-helpers.js"
+import { RunContext } from "./models/RunContext.js"
 
 function haveSameMembers(array1: any[], array2: any[]) {
 	if (array1.length !== array2.length) {
@@ -69,7 +69,7 @@ export function shouldBehaveLikeDiamond(): void {
 			],
 			ethers.ZeroAddress,
 			"0x",
-			{gasLimit: 800000},
+			{ gasLimit: 800000 },
 		)
 		const receipt = await tx.wait()
 
@@ -99,7 +99,7 @@ export function shouldBehaveLikeDiamond(): void {
 			],
 			ethers.ZeroAddress,
 			"0x",
-			{gasLimit: 800000},
+			{ gasLimit: 800000 },
 		)
 		const receipt = await tx.wait()
 

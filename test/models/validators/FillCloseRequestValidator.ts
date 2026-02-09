@@ -1,6 +1,12 @@
 import { expect } from "chai"
+
 import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
-import { getCloseTradingFeeForQuotes, getTotalPartyALockedValuesForQuotes, getTotalPartyBLockedValuesForQuotes, unDecimal } from "../../utils/Common.js"
+import {
+	getCloseTradingFeeForQuotes,
+	getTotalPartyALockedValuesForQuotes,
+	getTotalPartyBLockedValuesForQuotes,
+	unDecimal,
+} from "../../utils/Common.js"
 import { logger } from "../../utils/LoggerUtils.js"
 import { expectToBeApproximately } from "../../utils/SafeMath.js"
 import { PositionType, QuoteStatus } from "../Enums.js"
@@ -108,7 +114,10 @@ export class FillCloseRequestValidator implements TransactionValidator {
 		const oldBalanceInfoPartyB = arg.beforeOutput.balanceInfoPartyB
 
 		expect(newBalanceInfoPartyB.totalPendingLockedPartyB.toString()).to.equal(oldBalanceInfoPartyB.totalPendingLockedPartyB.toString())
-		expectToBeApproximately(BigInt(newBalanceInfoPartyB.totalLockedPartyB), BigInt(oldBalanceInfoPartyB.totalLockedPartyB) - returnedLockedValuesPartyB)
+		expectToBeApproximately(
+			BigInt(newBalanceInfoPartyB.totalLockedPartyB),
+			BigInt(oldBalanceInfoPartyB.totalLockedPartyB) - returnedLockedValuesPartyB,
+		)
 		expectToBeApproximately(BigInt(newBalanceInfoPartyB.allocatedBalances), BigInt(oldBalanceInfoPartyB.allocatedBalances) - profit)
 
 		// ---- Enhanced State Checks ----

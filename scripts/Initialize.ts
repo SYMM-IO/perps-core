@@ -1,16 +1,15 @@
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { keccak256, toUtf8Bytes } from "ethers"
 import { tasks } from "hardhat"
 
-import { createRunContext, RunContext } from "../test/models/RunContext.js"
-import { decimal } from "../test/utils/Common.js"
-import { runTx } from "../test/utils/TxUtils.js"
 import { ControlFacet } from "../src/types/index.js"
-import { symbolsMock } from "../test/models/SymbolManager.js"
-import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
-import { keccak256, toUtf8Bytes } from "ethers"
-import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
-
 // Import to initialize the hardhat connection
 import "../test/helpers/hardhat-connection.js"
+import { createRunContext, RunContext } from "../test/models/RunContext.js"
+import { symbolsMock } from "../test/models/SymbolManager.js"
+import { decimal } from "../test/utils/Common.js"
+import { runTx } from "../test/utils/TxUtils.js"
+import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
 
 export async function initialize(): Promise<RunContext> {
 	const runTask = (taskName: string, params: Record<string, unknown> = {}) => tasks.getTask(taskName).run(params)
@@ -22,7 +21,7 @@ export async function initialize(): Promise<RunContext> {
 	})
 	let multicall = process.env.DEPLOY_MULTICALL == "true" ? await runTask("deploy:multicall") : undefined
 
-	const multiAccount = await runTask("deploy:multiAccount", { symmioAddress: diamond.address, admin: process.env.ADMIN_PUBLIC_KEY });
+	const multiAccount = await runTask("deploy:multiAccount", { symmioAddress: diamond.address, admin: process.env.ADMIN_PUBLIC_KEY })
 
 	let context = await createRunContext(diamond.address, collateral.address, multiAccount.address)
 
@@ -41,7 +40,9 @@ export async function initialize(): Promise<RunContext> {
 		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("PARTY_B_MANAGER_ROLE"))),
 	)
 	await runTx(
-		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE"))),
+		context.controlFacet
+			.connect(context.signers.admin)
+			.grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE"))),
 	)
 	await runTx(
 		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("LIQUIDATOR_ROLE"))),
@@ -61,8 +62,7 @@ export async function initialize(): Promise<RunContext> {
 		)
 	}
 
-	for (const sym of symbolsMock.symbols)
-		await addSymbolAsync(context.controlFacet, context.signers.admin, sym);
+	for (const sym of symbolsMock.symbols) await addSymbolAsync(context.controlFacet, context.signers.admin, sym)
 
 	await runTx(context.controlFacet.connect(context.signers.admin).setPendingQuotesValidLength(100))
 	await runTx(context.controlFacet.connect(context.signers.admin).setLiquidatorShare(decimal(1n, 17)))

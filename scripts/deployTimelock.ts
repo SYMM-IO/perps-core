@@ -1,5 +1,6 @@
-import hre from "hardhat"
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
+import hre from "hardhat"
+
 import { ethers } from "../test/helpers/hardhat-connection.js"
 
 function sleep(ms: number) {

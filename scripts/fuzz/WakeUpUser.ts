@@ -1,11 +1,11 @@
 import * as fsPromise from "fs/promises"
-import { ethers } from "./helpers/hardhat-connection"
 
 import { ManagedError } from "../../test/models/ManagedError"
 import { createRunContext } from "../../test/models/RunContext"
 import { User } from "../../test/models/User"
 import { UserController } from "../../test/models/UserController"
 import { decimal } from "../../test/utils/Common"
+import { ethers } from "./helpers/hardhat-connection"
 
 function sleep(ms: number) {
 	return new Promise(resolve => setTimeout(resolve, ms))

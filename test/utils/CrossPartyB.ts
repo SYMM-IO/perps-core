@@ -1,7 +1,7 @@
 import { BigNumberish, ZeroAddress } from "ethers"
 
-import { RunContext } from "../models/RunContext.js"
 import { Hedger } from "../models/Hedger.js"
+import { RunContext } from "../models/RunContext.js"
 
 /**
  * Enable cross partyB mode for a partyB in tests.
@@ -13,11 +13,7 @@ import { Hedger } from "../models/Hedger.js"
  * For allocated balances, partyB must manually allocate to address(0) after cross mode is enabled.
  * This is intentional - in production, partyBs on v8.5 should allocate directly to address(0).
  */
-export async function migratePartyBToCross(
-	context: RunContext,
-	hedger: Hedger,
-	quoteIds: BigNumberish[],
-) {
+export async function migratePartyBToCross(context: RunContext, hedger: Hedger, quoteIds: BigNumberish[]) {
 	const partyB = await hedger.getAddress()
 
 	// Enable cross partyB feature globally

@@ -1,7 +1,7 @@
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { BytesLike } from "ethers"
-import { ethers } from "../helpers/hardhat-connection.js"
 
+import { ethers } from "../helpers/hardhat-connection.js"
 import { RunContext } from "./RunContext.js"
 
 export class PartyEntity {

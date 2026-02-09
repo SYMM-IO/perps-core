@@ -9,8 +9,8 @@
  *   PRIVATE_KEY      - Migration executor private key (must have MIGRATION_ROLE)
  *   DIAMOND_ADDRESS  - SYMMIO diamond contract address
  */
-
 import { ethers } from "ethers"
+
 import { MigrationFacet__factory } from "../src/types/index.js"
 import { migrate, MigrationInput, MigrationConfig } from "./migrate.js"
 

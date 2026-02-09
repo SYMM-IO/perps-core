@@ -1,4 +1,4 @@
-import {QuoteStatus} from "./Enums.js"
+import { QuoteStatus } from "./Enums.js"
 
 export enum Action {
 	CANCEL_REQUEST,
@@ -15,8 +15,11 @@ export enum Action {
 }
 
 export class ActionWrapper {
-	constructor(public action: Action, public probability: number = 1, public rethink: boolean = false) {
-	}
+	constructor(
+		public action: Action,
+		public probability: number = 1,
+		public rethink: boolean = false,
+	) {}
 }
 
 export const actionNamesMap: Map<Action, string> = new Map([

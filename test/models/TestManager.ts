@@ -1,25 +1,25 @@
-import {BehaviorSubject, concatMap, from, Subject} from "rxjs"
+import { BehaviorSubject, concatMap, from, Subject } from "rxjs"
 
-import {logger} from "../utils/LoggerUtils.js"
-import {pause} from "../utils/Pauser.js"
-import {Action} from "./Actions.js"
-import {QuoteStatus} from "./Enums.js"
-import {EventListener} from "./EventListener.js"
-import {Hedger} from "./Hedger.js"
-import {RunContext} from "./RunContext.js"
-import {SymbolManager} from "./SymbolManager.js"
-import {User} from "./User.js"
-import {AcceptCancelCloseRequestValidator} from "./validators/AcceptCancelCloseRequestValidator.js"
-import {AcceptCancelRequestValidator} from "./validators/AcceptCancelRequestValidator.js"
-import {CancelCloseRequestValidator} from "./validators/CancelCloseRequestValidator.js"
-import {CancelQuoteValidator} from "./validators/CancelQuoteValidator.js"
-import {CloseRequestValidator} from "./validators/CloseRequestValidator.js"
-import {FillCloseRequestValidator} from "./validators/FillCloseRequestValidator.js"
-import {LockQuoteValidator} from "./validators/LockQuoteValidator.js"
-import {OpenPositionValidator} from "./validators/OpenPositionValidator.js"
-import {TransactionValidator} from "./validators/TransactionValidator.js"
-import {UnlockQuoteValidator} from "./validators/UnlockQuoteValidator.js"
-import {ForceClosePositionValidator} from "./validators/ForceClosePositionValidator.js"
+import { logger } from "../utils/LoggerUtils.js"
+import { pause } from "../utils/Pauser.js"
+import { Action } from "./Actions.js"
+import { QuoteStatus } from "./Enums.js"
+import { EventListener } from "./EventListener.js"
+import { Hedger } from "./Hedger.js"
+import { RunContext } from "./RunContext.js"
+import { SymbolManager } from "./SymbolManager.js"
+import { User } from "./User.js"
+import { AcceptCancelCloseRequestValidator } from "./validators/AcceptCancelCloseRequestValidator.js"
+import { AcceptCancelRequestValidator } from "./validators/AcceptCancelRequestValidator.js"
+import { CancelCloseRequestValidator } from "./validators/CancelCloseRequestValidator.js"
+import { CancelQuoteValidator } from "./validators/CancelQuoteValidator.js"
+import { CloseRequestValidator } from "./validators/CloseRequestValidator.js"
+import { FillCloseRequestValidator } from "./validators/FillCloseRequestValidator.js"
+import { ForceClosePositionValidator } from "./validators/ForceClosePositionValidator.js"
+import { LockQuoteValidator } from "./validators/LockQuoteValidator.js"
+import { OpenPositionValidator } from "./validators/OpenPositionValidator.js"
+import { TransactionValidator } from "./validators/TransactionValidator.js"
+import { UnlockQuoteValidator } from "./validators/UnlockQuoteValidator.js"
 
 type LoopAction = {
 	title: string
@@ -46,7 +46,10 @@ export class TestManager {
 	private pause = new BehaviorSubject<boolean>(false)
 	private eventListener?: EventListener
 
-	constructor(public context: RunContext, onlyInitialize: boolean) {
+	constructor(
+		public context: RunContext,
+		onlyInitialize: boolean,
+	) {
 		this.symbolManager = new SymbolManager()
 		if (!onlyInitialize) this.eventListener = new EventListener(context)
 		this.actionsLoop

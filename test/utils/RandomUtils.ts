@@ -1,5 +1,6 @@
-import {decimal, unDecimal} from "./Common.js"
-import {ethers} from "ethers"
+import { ethers } from "ethers"
+
+import { decimal, unDecimal } from "./Common.js"
 
 export function pick(array: any[]): any {
 	return array[Math.floor(Math.random() * array.length)]
@@ -16,4 +17,3 @@ export function randomBigNumberRatio(value: bigint, max: number, min?: number): 
 		value * randomBigNumber(decimal(BigInt(Math.floor(max * 10000)), 14), min != null ? decimal(BigInt(Math.floor(min * 10000)), 14) : undefined),
 	)
 }
-

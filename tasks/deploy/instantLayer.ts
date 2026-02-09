@@ -2,14 +2,10 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
 import { readData, writeData } from "../utils/fs.js"
+import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { INSTANTLAYER_DEPLOYMENT_FILE } from "./constants.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
-import {
-	DeploymentCheckpoint,
-	createDeployedContract,
-	saveCheckpoint,
-} from "./checkpoint.js"
 
 // Contract configuration
 const CONTRACT_CONFIG = {

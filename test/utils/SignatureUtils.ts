@@ -1,18 +1,14 @@
 import type { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet.js"
 import type { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet.js"
 import type { SingleUpnlAndPriceSigStruct } from "../../src/types/facets/PartyA/PartyAFacet.js"
+import type { QuotePriceSigStruct } from "../../src/types/facets/PartyBLiquidation/PartyBLiquidationFacet.js"
 import type {
 	QuoteSettlementDataStructOutput,
 	SettlementSigStructOutput,
 	UnifiedQuoteSettlementDataStruct,
 	UnifiedSettlementSigStruct,
 } from "../../src/types/facets/Settlement/ISettlementFacet.js"
-import type { QuotePriceSigStruct } from "../../src/types/facets/PartyBLiquidation/PartyBLiquidationFacet.js"
-import type {
-	DeferredLiquidationSigStruct,
-	PairUpnlAndPriceSigStruct,
-	SingleUpnlSigStruct,
-} from "../../src/types/interfaces/ISymmio.js"
+import type { DeferredLiquidationSigStruct, PairUpnlAndPriceSigStruct, SingleUpnlSigStruct } from "../../src/types/interfaces/ISymmio.js"
 import { ethers } from "../helpers/hardhat-connection.js"
 import { getBlockTimestamp } from "./Common.js"
 

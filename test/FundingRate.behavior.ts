@@ -1,16 +1,16 @@
-import { loadFixture, time } from "./helpers/network-helpers.js"
+import { expect } from "chai"
+import { ethers, toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
 import { getDummyPairUpnlSig } from "./utils/SignatureUtils.js"
-import { expect } from "chai"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { PositionType } from "./models/Enums.js"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
-import { ethers, toUtf8Bytes } from "ethers";
 
 export function shouldBehaveLikeFundingRate(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
@@ -549,7 +549,7 @@ export function shouldBehaveLikeFundingRate(): void {
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
 					1,
-					PositionType.LONG
+					PositionType.LONG,
 				)
 				// After charging, accumulatedPaidFunding should match the aggregate tracking
 				expect(aggregateFunding1).to.not.equal(0)
@@ -558,7 +558,7 @@ export function shouldBehaveLikeFundingRate(): void {
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
 					1,
-					PositionType.LONG
+					PositionType.LONG,
 				)
 				expect(aggregateDebt1).to.be.gte(perQuoteFee1[0])
 
@@ -599,14 +599,14 @@ export function shouldBehaveLikeFundingRate(): void {
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
 					1,
-					PositionType.LONG
+					PositionType.LONG,
 				)
 				expect(aggregateFunding2).to.not.equal(0)
 				const aggregateDebt2 = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
 					1,
-					PositionType.LONG
+					PositionType.LONG,
 				)
 				expect(aggregateDebt2).to.be.gte(perQuoteFee2[0])
 
@@ -648,14 +648,14 @@ export function shouldBehaveLikeFundingRate(): void {
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
 					1,
-					PositionType.LONG
+					PositionType.LONG,
 				)
 				expect(aggregateFunding3).to.not.equal(0)
 				const aggregateDebt3 = await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
 					1,
-					PositionType.LONG
+					PositionType.LONG,
 				)
 				expect(aggregateDebt3).to.be.gte(perQuoteFee3[0])
 
@@ -663,7 +663,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				const { longPosition: partyALong } = await context.viewFacetAggregate.getPartyAAggregatedPositionBySymbolPerPartyB(
 					await context.signers.user.getAddress(),
 					await context.signers.hedger.getAddress(),
-					1
+					1,
 				)
 				expect(partyALong.aggregatedOpenAmount).to.be.gt(0)
 				expect(partyALong.avgOpenPrice).to.be.gt(0)
@@ -672,7 +672,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				const { longPosition: partyBLong } = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(
 					await context.signers.hedger.getAddress(),
 					await context.signers.user.getAddress(),
-					1
+					1,
 				)
 				expect(partyBLong.aggregatedOpenAmount).to.equal(partyALong.aggregatedOpenAmount)
 				expect(partyBLong.avgOpenPrice).to.equal(partyALong.avgOpenPrice)

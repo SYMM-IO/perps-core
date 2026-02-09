@@ -1,7 +1,12 @@
 import { expect } from "chai"
 
 import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
-import { getCloseTradingFeeForQuotes, getTotalPartyALockedValuesForQuotes, getTotalPartyBLockedValuesForQuotes, unDecimal } from "../../utils/Common.js"
+import {
+	getCloseTradingFeeForQuotes,
+	getTotalPartyALockedValuesForQuotes,
+	getTotalPartyBLockedValuesForQuotes,
+	unDecimal,
+} from "../../utils/Common.js"
 import { logger } from "../../utils/LoggerUtils.js"
 import { expectToBeApproximately } from "../../utils/SafeMath.js"
 import { PositionType, QuoteStatus } from "../Enums.js"

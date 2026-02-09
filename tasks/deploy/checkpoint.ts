@@ -1,6 +1,7 @@
 // Deployment checkpoint system for resumable deployments
 import fs from "fs"
 import path from "path"
+
 import { logger } from "./logger.js"
 
 const CHECKPOINT_DIR = "./tasks/data/checkpoints"

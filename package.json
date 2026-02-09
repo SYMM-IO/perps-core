@@ -70,7 +70,9 @@
 		"typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
 		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol",
 		"prettier:contracts": "prettier --write \"contracts/**/*.sol\"",
-		"prettier:contracts:check": "prettier --check \"contracts/**/*.sol\""
+		"prettier:contracts:check": "prettier --check \"contracts/**/*.sol\"",
+		"prettier:ts": "prettier --write \"**/*.ts\"",
+		"prettier:ts:check": "prettier --check \"**/*.ts\""
 	},
 	"dependencies": {
 		"bignumber.js": "^9.3.1",

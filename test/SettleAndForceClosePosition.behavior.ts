@@ -1,15 +1,15 @@
 import { expect } from "chai"
 import { ethers, toUtf8Bytes } from "ethers"
-import {loadFixture, time} from "./helpers/network-helpers.js"
 
+import type { UnifiedSettlementSigStruct } from "../src/types/facets/Settlement/ISettlementFacet.js"
 import type {
 	HighLowPriceSigStruct,
 	QuoteSettlementDataStructOutput,
 	QuoteStructOutput,
 	SettlementSigStruct,
 } from "../src/types/interfaces/ISymmio.js"
-import type { UnifiedSettlementSigStruct } from "../src/types/facets/Settlement/ISettlementFacet.js"
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
@@ -18,13 +18,8 @@ import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
-import {
-	getDummyHighLowPriceSig,
-	getDummyPairUpnlAndPriceSig,
-	getDummySettlementSig,
-	getDummyUnifiedSettlementSig
-} from "./utils/SignatureUtils.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
+import { getDummyHighLowPriceSig, getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger, user2: User
@@ -231,9 +226,9 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					[0n, 0n],
 					[{ quoteId: quoteUser2WithHedger.id, currentPrice: decimal(7n), partyAIndex: 1 } as any],
 				)
-				await expect(
-					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)]),
-				).to.be.revertedWith("ForceActionsFacet: Non-cross partyB can only settle with forceClose partyA")
+				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)])).to.be.revertedWith(
+					"ForceActionsFacet: Non-cross partyB can only settle with forceClose partyA",
+				)
 			})
 
 			it("Should revert when settling same non-cross partyB with wrong single partyA", async function () {
@@ -247,9 +242,9 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					[0n],
 					[{ quoteId: quoteUser2WithHedger.id, currentPrice: decimal(7n), partyAIndex: 0 } as any],
 				)
-				await expect(
-					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)]),
-				).to.be.revertedWith("ForceActionsFacet: Invalid partyA for non-cross settlement")
+				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)])).to.be.revertedWith(
+					"ForceActionsFacet: Invalid partyA for non-cross settlement",
+				)
 			})
 
 			it("Should allow settling same non-cross partyB with correct partyA", async function () {
@@ -263,9 +258,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					[0n],
 					[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n), partyAIndex: 0 } as any],
 				)
-				await expect(
-					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)]),
-				).not.to.be.reverted
+				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)])).not.to.be.reverted
 			})
 
 			it("Should allow settling a different partyB to fund partyA", async function () {
@@ -279,9 +272,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					[0n],
 					[{ quoteId: quoteUserWithHedger2.id, currentPrice: decimal(12n, 17), partyAIndex: 0 } as any],
 				)
-				await expect(
-					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(11n, 17)]),
-				).not.to.be.reverted
+				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(11n, 17)])).not.to.be.reverted
 			})
 		})
 	})
@@ -364,10 +355,10 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					.connect(context.signers.liquidator)
 					.liquidateCrossPartyB(await hedger.getAddress(), "0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp())
 
-					await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
-						"LibSettlement: PartyB is in cross liquidation process",
-					)
-				})
+				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
+					"LibSettlement: PartyB is in cross liquidation process",
+				)
+			})
 
 			it("Should revert when quotesSettlementsData is empty or length mismatched", async function () {
 				const sigEmpty = await getDummyUnifiedSettlementSig(await hedger.getAddress(), 0n, [], [await user.getAddress()], [0n], [])
@@ -383,9 +374,9 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					[0n],
 					[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n), partyAIndex: 0 } as any],
 				)
-				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sigOne, [updatePrice, updatePrice])).to.be.revertedWith(
-					"LibSettlement: Invalid prices length",
-				)
+				await expect(
+					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sigOne, [updatePrice, updatePrice]),
+				).to.be.revertedWith("LibSettlement: Invalid prices length")
 			})
 
 			it("Should revert when signature partyB does not match quote.partyB", async function () {
@@ -433,9 +424,9 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				)
 
 				// invalid: updatedPrice >= openedPrice
-				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [quote2ShortOpened.openedPrice])).to.be.revertedWith(
-					"LibSettlement: Updated price is out of range",
-				)
+				await expect(
+					context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [quote2ShortOpened.openedPrice]),
+				).to.be.revertedWith("LibSettlement: Updated price is out of range")
 			})
 		})
 
@@ -569,7 +560,9 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(updatePrice)
 
 			// force close
-			await expect(context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(decimal(5n), 0n, decimal(150n)))).not.to.be.reverted
+			await expect(
+				context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(decimal(5n), 0n, decimal(150n))),
+			).not.to.be.reverted
 			expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
 		})
 	})

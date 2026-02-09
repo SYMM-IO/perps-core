@@ -1,5 +1,6 @@
 import { expect } from "chai"
 
+import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
 import { decimal, getBlockTimestamp, getCloseTradingFeeForQuotes, unDecimal } from "../../utils/Common.js"
 import { logger } from "../../utils/LoggerUtils.js"
 import { expectToBeApproximately } from "../../utils/SafeMath.js"
@@ -8,7 +9,6 @@ import { Hedger } from "../Hedger.js"
 import { RunContext } from "../RunContext.js"
 import { BalanceInfo, User } from "../User.js"
 import { TransactionValidator } from "./TransactionValidator.js"
-import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
 
 export type ForceClosePositionValidatorBeforeArg = {
 	user: User
@@ -103,7 +103,6 @@ export class ForceClosePositionValidator implements TransactionValidator {
 		const newBalanceInfoPartyA = await arg.user.getBalanceInfo()
 		const oldBalanceInfoPartyA = arg.beforeOutput.balanceInfoPartyA
 
-		
 		expect(newBalanceInfoPartyA.totalPendingLockedPartyA.toString()).to.equal(oldBalanceInfoPartyA.totalPendingLockedPartyA.toString())
 
 		expect(BigInt(newBalanceInfoPartyA.allocatedBalances)).to.be.approximately(

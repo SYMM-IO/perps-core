@@ -1,22 +1,15 @@
-import { loadFixture, time } from "./helpers/network-helpers.js";
 import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { LiquidationType, OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import type { BalanceInfo } from "./models/User.js"
-import {
-	decimal,
-	getBlockTimestamp,
-	getPriceFetcher,
-	getTotalLockedValuesForQuoteIds,
-	getTradingFeeForQuotes,
-	unDecimal,
-} from "./utils/Common.js";
-import { getDummyLiquidationSig, getDummyPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { decimal, getBlockTimestamp, getPriceFetcher, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common.js"
+import { getDummyLiquidationSig, getDummyPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 /**
  * ========================================
@@ -73,9 +66,9 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		user = new User(context, context.signers.user)
 		await user.setup()
 		await user.setBalances(
-			decimal(2000n),  // Mint 2000 collateral tokens to wallet
-			decimal(1000n),  // Deposit 1000 into protocol (non-allocated balance)
-			decimal(500n)    // Allocate 500 for trading (can be used as margin)
+			decimal(2000n), // Mint 2000 collateral tokens to wallet
+			decimal(1000n), // Deposit 1000 into protocol (non-allocated balance)
+			decimal(500n), // Allocate 500 for trading (can be used as margin)
 		)
 
 		user2 = new User(context, context.signers.user2)
@@ -109,12 +102,12 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		await time.setNextBlockTimestamp(Number(aligned))
 
 		await context.pauseControlFacet.activateAccumulatedFunding()
-		await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [epochDuration])  // symbolId 1, epoch 500s
+		await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [epochDuration]) // symbolId 1, epoch 500s
 		await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee(
-			[1],              // symbolId
+			[1], // symbolId
 			[decimal(2n, 16)], // accumulatedLongRate: 0.02 (2%)
 			[decimal(1n, 16)], // accumulatedShortRate: 0.01 (1%)
-			[decimal(1n)]      // currentRate
+			[decimal(1n)], // currentRate
 		)
 
 		// ========================================
@@ -152,8 +145,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		// time.increase() for deterministic behavior.
 		const currentTime = BigInt(await time.latest())
 		await time.setNextBlockTimestamp(Number(currentTime + BigInt(epochDuration)))
-		await context.controlFacet.setMuonConfig(1000n , 1000n)
-
+		await context.controlFacet.setMuonConfig(1000n, 1000n)
 	})
 
 	/** Helper to check if PartyA and PartyB are connected (have open positions together) */
@@ -199,7 +191,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			// Price 8.0 on a SHORT position opened at 1.0:
 			// UPNL = (1 - 8) * 100 = -700 (massive loss)
 			// This triggers liquidation and pending quotes get liquidated
-			await user.liquidateAndSetSymbolPrices([1n], [decimal(8n)] , [1n])
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])
 			await user.liquidatePendingPositions()
 
 			const pendingAfter = (await user.getBalanceInfo()).totalPendingLockedPartyA
@@ -221,11 +213,11 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			// PartyB (hedger) balance after liquidation
 			let balanceInfoOfPartyB: BalanceInfo = await hedger.getBalanceInfo(await user.getAddress())
-			expect(balanceInfoOfPartyB.allocatedBalances).to.be.equal(decimal(360n).toString())  // 1000 - 640 used for positions
-			expect(balanceInfoOfPartyB.lockedCva).to.be.equal(decimal(22n).toString())   // CVA from quote 1
-			expect(balanceInfoOfPartyB.lockedMmPartyB).to.be.equal(decimal(40n).toString())  // MM from quote 1
-			expect(balanceInfoOfPartyB.lockedLf).to.be.equal(decimal(3n).toString())    // LF from quote 1
-			expect(balanceInfoOfPartyB.totalLockedPartyB).to.be.equal(decimal(65n).toString())  // 22 + 40 + 3 = 65
+			expect(balanceInfoOfPartyB.allocatedBalances).to.be.equal(decimal(360n).toString()) // 1000 - 640 used for positions
+			expect(balanceInfoOfPartyB.lockedCva).to.be.equal(decimal(22n).toString()) // CVA from quote 1
+			expect(balanceInfoOfPartyB.lockedMmPartyB).to.be.equal(decimal(40n).toString()) // MM from quote 1
+			expect(balanceInfoOfPartyB.lockedLf).to.be.equal(decimal(3n).toString()) // LF from quote 1
+			expect(balanceInfoOfPartyB.totalLockedPartyB).to.be.equal(decimal(65n).toString()) // 22 + 40 + 3 = 65
 			expect(balanceInfoOfPartyB.pendingLockedCva).to.be.equal("0")
 			expect(balanceInfoOfPartyB.pendingLockedMmPartyB).to.be.equal("0")
 			expect(balanceInfoOfPartyB.pendingLockedLf).to.be.equal("0")
@@ -234,7 +226,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 		it("Should deferred liquidate pending quotes", async function () {
 			// Same as above but using deferred liquidation
-			await user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)],[1n])
+			await user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])
 			await user.liquidatePendingPositions()
 
 			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
@@ -261,13 +253,13 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		})
 
 		it("Should fail to liquidate a user twice", async function () {
-			await user.liquidateAndSetSymbolPrices([1n], [decimal(8n)],[1n])
-			await expect(user.liquidateAndSetSymbolPrices([1n], [decimal(8n)],[1n])).to.be.revertedWith("Accessibility: PartyA isn't solvent")
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])
+			await expect(user.liquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 		})
 
 		it("Should fail to deferred liquidate a user twice", async function () {
-			await user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)],[1n])
-			await expect(user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)],[1n])).to.be.revertedWith("Accessibility: PartyA isn't solvent")
+			await user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])
+			await expect(user.deferredLiquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 		})
 
 		/**
@@ -288,22 +280,22 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		it("Should change the insurance vault correctly", async function () {
 			// Set insurance vault address and max profit per position (1 token)
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(
-				context.signers.others[0].address,  // Insurance vault address
-				decimal(1n)                          // maxProfitPerPosition: 1e18
+				context.signers.others[0].address, // Insurance vault address
+				decimal(1n), // maxProfitPerPosition: 1e18
 			)
 
 			// Price 5.72 causes loss but stays in NORMAL liquidation range
-			const price = decimal(572n, 16)  // 5.72e18
+			const price = decimal(572n, 16) // 5.72e18
 
 			// Get values needed to calculate expected insurance vault balance
 			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
 			const quote = await context.viewFacetQuote.getQuote(1)
-			const lf = quote.lockedValues.lf    // 3e18 (Liquidation Fee)
-			const cva = quote.lockedValues.cva  // 22e18 (CVA)
+			const lf = quote.lockedValues.lf // 3e18 (Liquidation Fee)
+			const cva = quote.lockedValues.cva // 22e18 (CVA)
 			const fundingFee = await getFundingFee()
 
 			// UPNL for SHORT: (openPrice - currentPrice) * quantity = (1 - 5.72) * 100 = -472
-			const upnl = await user.getUpnl(getPriceFetcher([1n], [price])) - fundingFee
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingFee
 
 			// Calculate expected vault balance using contract logic:
 			// availableBalance = allocated - lf - cva + upnl
@@ -315,13 +307,12 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			const maxProfitPerPos = (await context.viewFacet.getLiquidationInsuranceVaultParams())[1]
 			const expectedVaultBalance = remainingLf > maxProfitPerPos ? remainingLf - maxProfitPerPos : 0n
 
-			await user.liquidateAndSetSymbolPrices([1n], [price],[1n])
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
 
 			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(expectedVaultBalance)
 			await expectConnected(user.address, hedger.address, true)
 			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
-
 		})
 
 		/**
@@ -342,7 +333,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		it("Should change the insurance vault correctly in Normal Liquidation", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(
 				context.signers.others[0].address,
-				decimal(1n)  // maxProfitPerPosition: 1e18
+				decimal(1n), // maxProfitPerPosition: 1e18
 			)
 
 			// Deallocate to leave user2 with only 100 tokens allocated
@@ -354,13 +345,13 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			// Price 0.25: LONG loses (1-0.25)*100 = 75
 			// availableBalance = 100 - 22 - 3 - 75 = 0 (just solvent)
-			let price = decimal(25n, 16)  // 0.25e18
+			let price = decimal(25n, 16) // 0.25e18
 
 			let upnlTS = await user2.getUpnl(getPriceFetcher([1n], [price]))
 			let totalUnrealizedLoss = await user2.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
 			let sign = await getDummyLiquidationSig("0x10", upnlTS, [1n], [price], totalUnrealizedLoss, allocatedBalance)
-			let lf = quote.lockedValues.lf    // 3e18
-			let cva = quote.lockedValues.cva  // 22e18
+			let lf = quote.lockedValues.lf // 3e18
+			let cva = quote.lockedValues.cva // 22e18
 
 			// Calculate: at price 0.25, availableBalance ≈ 0, user is just solvent
 			let remaingLF = 0n
@@ -375,7 +366,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			// Price 0.24: LONG loses (1-0.24)*100 = 76
 			// availableBalance = 100 - 22 - 3 - 76 = -1 (insolvent, NORMAL)
-			price = decimal(24n, 16)  // 0.24e18
+			price = decimal(24n, 16) // 0.24e18
 
 			upnlTS = await user2.getUpnl(getPriceFetcher([1n], [price]))
 			totalUnrealizedLoss = await user2.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
@@ -420,10 +411,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		 *   -availableBalance = 23, which is > LF(3) but < LF+CVA(25), so LATE
 		 */
 		it("Should Not change the insurance vault correctly in Late Liquidation", async function () {
-			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(
-				context.signers.others[0].address,
-				decimal(1n)
-			)
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			// Leave user2 with 100 allocated
 			await context.accountFacet.connect(user2.signer).deallocate(decimal(399n), await getDummySingleUpnlSig())
@@ -452,7 +440,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			// availableBalance = ~100 - 25 - 98 = -23
 			// -availableBalance = 23, LF(3) < 23 < LF+CVA(25), so LATE
 			// deficit = 23 - 3 = 20
-			price = decimal(2n, 16)  // 0.02e18
+			price = decimal(2n, 16) // 0.02e18
 
 			upnlTS = await user2.getUpnl(getPriceFetcher([1n], [price]))
 			totalUnrealizedLoss = await user2.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))
@@ -503,16 +491,13 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await hedger.lockQuote(lastID)
 			await hedger.openPosition(lastID)
 
-			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(
-				context.signers.others[0].address,
-				decimal(1n)
-			)
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 
 			// Deallocate to leave minimal balance
 			await context.accountFacet.connect(user3.signer).deallocate(decimal(312n), await getDummySingleUpnlSig())
 
 			// Price 0.05: Massive loss that exceeds LF + CVA
-			const price = decimal(5n, 16)  // 0.05e18
+			const price = decimal(5n, 16) // 0.05e18
 			const quote = await context.viewFacetQuote.getQuote(lastID)
 
 			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(user3.address)
@@ -547,9 +532,9 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		it("Should change the insurance vault correctly in deferred liquidation", async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(
 				context.signers.others[0].address,
-				decimal(1n)  // maxProfitPerPosition
+				decimal(1n), // maxProfitPerPosition
 			)
-			const price = decimal(572n, 16)  // 5.72 - triggers NORMAL liquidation
+			const price = decimal(572n, 16) // 5.72 - triggers NORMAL liquidation
 
 			// Calculate expected vault balance
 			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
@@ -557,7 +542,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			const lf = quote.lockedValues.lf
 			const cva = quote.lockedValues.cva
 			const fundingFee = await getFundingFee()
-			const upnl = await user.getUpnl(getPriceFetcher([1n], [price])) - fundingFee
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingFee
 
 			const availableBalance = allocatedBalance - lf - cva + upnl
 			let remainingLf = 0n
@@ -568,17 +553,13 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await user.deferredLiquidateAndSetSymbolPrices([1n], [price], [1n])
 			expect(await context.viewFacet.balanceOf(context.signers.others[0].address)).to.be.equal(expectedVaultBalance)
 			await expectConnected(user.address, hedger.address, true)
-
 		})
 
 		/**
 		 * DEFERRED LIQUIDATION - USER2 NORMAL
 		 */
 		it("Should change the insurance vault correctly in deferred liquidation", async function () {
-			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(
-				context.signers.others[0].address,
-				decimal(1n)
-			)
+			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(context.signers.others[0].address, decimal(1n))
 			// Leave user2 with ~100 allocated
 			await context.accountFacet.connect(user2.signer).deallocate(decimal(399n), await getDummySingleUpnlSig())
 
@@ -615,13 +596,13 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		 * This puts user just barely in NORMAL liquidation territory
 		 */
 		describe("Test normal branch", async function () {
-			const price = decimal(57198n, 14)  // 5.7198e18 - triggers NORMAL liquidation
+			const price = decimal(57198n, 14) // 5.7198e18 - triggers NORMAL liquidation
 
 			beforeEach(async function () {
 				// Set high maxProfit (100) so all LF goes to liquidator, not vault
 				await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(
 					context.signers.others[0].address,
-					decimal(100n)  // maxProfitPerPosition: 100 tokens
+					decimal(100n), // maxProfitPerPosition: 100 tokens
 				)
 				this.signature1 = await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 				const liquidationState = await user.getLiquidatedStateOfPartyA()
@@ -669,7 +650,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 					// UPNL for SHORT: (openPrice - currentPrice) * quantity
 					const upnl = unDecimal((decimal(1n) - price) * decimal(100n)) - fundingFee
 					const available = userBalance.allocatedBalances - userBalance.lockedCva - userBalance.lockedLf + upnl
-					const diff = userBalance.lockedLf - (-available)  // Remaining LF for liquidator
+					const diff = userBalance.lockedLf - -available // Remaining LF for liquidator
 					const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
 
 					await user.settleLiquidation()
@@ -693,15 +674,15 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			 * For LATE: LF(3) <= deficit <= LF+CVA(25)
 			 */
 			it("Late liquidation", async function () {
-				const price = decimal(594n, 16)  // 5.94e18 - triggers LATE liquidation
-				await user.liquidateAndSetSymbolPrices([1n], [price],[1n])
+				const price = decimal(594n, 16) // 5.94e18 - triggers LATE liquidation
+				await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 				const liquidationState = await user.getLiquidatedStateOfPartyA()
 				expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.LATE)
 
 				const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
 				const userBalance = await user.getBalanceInfo()
 				const available = userBalance.allocatedBalances - userBalance.lockedCva
-				const pnl = unDecimal(price - decimal(1n)) * decimal(100n)  // PartyB's profit
+				const pnl = unDecimal(price - decimal(1n)) * decimal(100n) // PartyB's profit
 				const diff = available - pnl
 				const partyBAfter = hedgerBalance.allocatedBalances + pnl + userBalance.lockedCva + diff
 
@@ -721,8 +702,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			 * deficit > LF + CVA (25)
 			 */
 			it("Overdue liquidation", async function () {
-				const price = decimal(599n, 16)  // 5.99e18 - triggers OVERDUE
-				await user.liquidateAndSetSymbolPrices([1n], [price],[1n])
+				const price = decimal(599n, 16) // 5.99e18 - triggers OVERDUE
+				await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 				const liquidationState = await user.getLiquidatedStateOfPartyA()
 				expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.OVERDUE)
 				await user.liquidatePendingPositions()
@@ -742,14 +723,14 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	 * Same as regular NORMAL but using deferred execution
 	 */
 	describe("Test normal branch deferred", async function () {
-		const price = decimal(572n, 16)  // 5.72e18 - triggers NORMAL liquidation
+		const price = decimal(572n, 16) // 5.72e18 - triggers NORMAL liquidation
 
 		beforeEach(async function () {
 			await context.controlFacet.connect(context.signers.admin).setLiquidationInsuranceVaultParams(
 				context.signers.others[0].address,
-				decimal(100n)  // High maxProfit so liquidator gets full LF
+				decimal(100n), // High maxProfit so liquidator gets full LF
 			)
-			this.signature1 = await user.deferredLiquidateAndSetSymbolPrices([1n], [price],[1n])
+			this.signature1 = await user.deferredLiquidateAndSetSymbolPrices([1n], [price], [1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
 			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
 		})
@@ -786,17 +767,17 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				let userAddress = context.signers.user.getAddress()
 				let hedgerAddress = context.signers.hedger.getAddress()
 
-					const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
-					const userBalance = await user.getBalanceInfo()
-					const fundingFee = this.fundingFee as bigint
-					const upnl = unDecimal((decimal(1n) - price) * decimal(100n)) - fundingFee
-					const available = userBalance.allocatedBalances - userBalance.lockedCva - userBalance.lockedLf + upnl
-					const diff = userBalance.lockedLf - (-available)
-					const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
+				const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
+				const userBalance = await user.getBalanceInfo()
+				const fundingFee = this.fundingFee as bigint
+				const upnl = unDecimal((decimal(1n) - price) * decimal(100n)) - fundingFee
+				const available = userBalance.allocatedBalances - userBalance.lockedCva - userBalance.lockedLf + upnl
+				const diff = userBalance.lockedLf - -available
+				const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
 
-					await user.settleLiquidation()
-					expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.be.equal(partyBAfter)
-					let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
+				await user.settleLiquidation()
+				expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.be.equal(partyBAfter)
+				let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 				expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(diff)
 			})
 		})
@@ -807,8 +788,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	 */
 	describe("Test late branches", async function () {
 		it("Late liquidation", async function () {
-			const price = decimal(595n, 16)  // 5.95e18 - triggers LATE liquidation
-			await user.deferredLiquidateAndSetSymbolPrices([1n], [price],[1n])
+			const price = decimal(595n, 16) // 5.95e18 - triggers LATE liquidation
+			await user.deferredLiquidateAndSetSymbolPrices([1n], [price], [1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
 			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.LATE)
 
@@ -828,8 +809,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		})
 
 		it("Overdue liquidation", async function () {
-			const price = decimal(599n, 16)  // 5.99e18 - triggers OVERDUE
-			await user.liquidateAndSetSymbolPrices([1n], [price],[1n])
+			const price = decimal(599n, 16) // 5.99e18 - triggers OVERDUE
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
 			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.OVERDUE)
 			await user.liquidatePendingPositions()
@@ -899,9 +880,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			const priceSig = await getDummyPriceSig([1n], [decimal(1n)])
 			priceSig.timestamp = await context.viewFacet.partyBLiquidationTimestamp(hedgerAddress, userAddress)
-			await context.partyBLiquidationFacet
-				.connect(context.signers.liquidator)
-				.liquidatePositionsPartyB(hedgerAddress, userAddress, priceSig)
+			await context.partyBLiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyB(hedgerAddress, userAddress, priceSig)
 
 			await expectConnected(userAddress, hedgerAddress, false)
 			await expectConnected(user2Address, hedgerAddress, true)

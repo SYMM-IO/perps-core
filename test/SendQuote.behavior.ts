@@ -1,7 +1,9 @@
-import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
+import { ethers } from "ethers"
+import { toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { QuoteStatus } from "./models/Enums.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
@@ -9,8 +11,6 @@ import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/re
 import { SendQuoteValidator } from "./models/validators/SendQuoteValidator.js"
 import { decimal, getBlockTimestamp, pausePartyA } from "./utils/Common.js"
 import { getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils.js"
-import { ethers } from "ethers"
-import { toUtf8Bytes } from "ethers";
 
 export function shouldBehaveLikeSendQuote(): void {
 	let user: User, context: RunContext
@@ -172,13 +172,7 @@ export function shouldBehaveLikeSendQuote(): void {
 	it("should send quote with correct custom affiliate fee", async function () {
 		await context.controlFacet.registerAffiliate(context.signers.hedger)
 		await context.controlFacet.setAffiliateFee(context.signers.hedger.address, [1], [18], [18])
-		await context.controlFacet.setAffiliateFeeForUser(
-			context.signers.hedger.address,
-			[context.signers.user.address],
-			[1],
-			[17],
-			[17],
-		)
+		await context.controlFacet.setAffiliateFeeForUser(context.signers.hedger.address, [context.signers.user.address], [1], [17], [17])
 		let validator = new SendQuoteValidator()
 		const before = await validator.before(context, { user: user })
 		let qId = await user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.hedger.address).build())
@@ -289,7 +283,7 @@ export function shouldBehaveLikeSendQuote(): void {
 		const paramsData = decodedEvent.paramsData
 		const decodedParams = ethers.AbiCoder.defaultAbiCoder().decode(
 			["uint256", "uint8", "uint8", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256", "uint256"],
-			paramsData
+			paramsData,
 		)
 
 		// Verify decoded params match the quote from storage
@@ -318,34 +312,34 @@ export function shouldBehaveLikeSendQuote(): void {
 	it("Should decode new SendQuote event paramsData correctly using manual byte slicing", async function () {
 		// Helper function to decode paramsData manually without ethers AbiCoder
 		function decodeSendQuoteParamsDataManual(paramsData: string): {
-			symbolId: bigint;
-			positionType: number;
-			orderType: number;
-			price: bigint;
-			marketPrice: bigint;
-			quantity: bigint;
-			cva: bigint;
-			lf: bigint;
-			partyAmm: bigint;
-			partyBmm: bigint;
-			tradingFee: bigint;
-			deadline: bigint;
+			symbolId: bigint
+			positionType: number
+			orderType: number
+			price: bigint
+			marketPrice: bigint
+			quantity: bigint
+			cva: bigint
+			lf: bigint
+			partyAmm: bigint
+			partyBmm: bigint
+			tradingFee: bigint
+			deadline: bigint
 		} {
 			// Remove 0x prefix if present
-			const hex = paramsData.startsWith("0x") ? paramsData.slice(2) : paramsData;
+			const hex = paramsData.startsWith("0x") ? paramsData.slice(2) : paramsData
 
 			// With abi.encode, each value is padded to 32 bytes (64 hex chars)
-			let offset = 0;
+			let offset = 0
 			const sliceUint256 = (): bigint => {
-				const value = BigInt("0x" + hex.slice(offset, offset + 64));
-				offset += 64;
-				return value;
-			};
+				const value = BigInt("0x" + hex.slice(offset, offset + 64))
+				offset += 64
+				return value
+			}
 
 			return {
 				symbolId: sliceUint256(),
 				positionType: Number(sliceUint256()), // uint8 padded to 32 bytes
-				orderType: Number(sliceUint256()),    // uint8 padded to 32 bytes
+				orderType: Number(sliceUint256()), // uint8 padded to 32 bytes
 				price: sliceUint256(),
 				marketPrice: sliceUint256(),
 				quantity: sliceUint256(),
@@ -355,7 +349,7 @@ export function shouldBehaveLikeSendQuote(): void {
 				partyBmm: sliceUint256(),
 				tradingFee: sliceUint256(),
 				deadline: sliceUint256(),
-			};
+			}
 		}
 
 		// Send a quote with data using the existing helper

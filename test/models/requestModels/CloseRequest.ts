@@ -1,15 +1,15 @@
-import {Builder} from "builder-pattern"
+import { Builder } from "builder-pattern"
 
-import {decimal, getBlockTimestamp} from "../../utils/Common.js"
-import {OrderType} from "../Enums.js"
+import { decimal, getBlockTimestamp } from "../../utils/Common.js"
+import { OrderType } from "../Enums.js"
 
 export interface CloseRequest {
-	quantityToClose: bigint;
-	closePrice: bigint;
-	price: bigint;
-	upnl: bigint;
-	orderType: OrderType;
-	deadline: Promise<bigint> | bigint;
+	quantityToClose: bigint
+	closePrice: bigint
+	price: bigint
+	upnl: bigint
+	orderType: OrderType
+	deadline: Promise<bigint> | bigint
 }
 
 const buildLimitDefaultCloseRequest = (): CloseRequest => ({

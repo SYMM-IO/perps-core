@@ -1,13 +1,13 @@
-import {expect} from "chai"
+import { expect } from "chai"
 
-import type { QuoteStructOutput} from "../../../src/types/interfaces/ISymmio.js"
-import {getTotalPartyALockedValuesForQuotes, getTradingFeeForQuotes} from "../../utils/Common.js"
-import {logger} from "../../utils/LoggerUtils.js"
-import {expectToBeApproximately} from "../../utils/SafeMath.js"
-import {QuoteStatus} from "../Enums.js"
-import {RunContext} from "../RunContext.js"
-import {BalanceInfo, User} from "../User.js"
-import {TransactionValidator} from "./TransactionValidator.js"
+import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
+import { getTotalPartyALockedValuesForQuotes, getTradingFeeForQuotes } from "../../utils/Common.js"
+import { logger } from "../../utils/LoggerUtils.js"
+import { expectToBeApproximately } from "../../utils/SafeMath.js"
+import { QuoteStatus } from "../Enums.js"
+import { RunContext } from "../RunContext.js"
+import { BalanceInfo, User } from "../User.js"
+import { TransactionValidator } from "./TransactionValidator.js"
 
 export type CancelQuoteValidatorBeforeArg = {
 	user: User
@@ -66,7 +66,9 @@ export class CancelQuoteValidator implements TransactionValidator {
 
 		const lockedValues = await getTotalPartyALockedValuesForQuotes([oldQuote])
 
-		expect(newBalanceInfoPartyA.totalPendingLockedPartyA.toString()).to.equal((oldBalanceInfoPartyA.totalPendingLockedPartyA - lockedValues).toString())
+		expect(newBalanceInfoPartyA.totalPendingLockedPartyA.toString()).to.equal(
+			(oldBalanceInfoPartyA.totalPendingLockedPartyA - lockedValues).toString(),
+		)
 		expect(newBalanceInfoPartyA.totalLockedPartyA.toString()).to.equal(oldBalanceInfoPartyA.totalLockedPartyA.toString())
 		const tradingFee = await getTradingFeeForQuotes(context, [arg.quoteId])
 		expectToBeApproximately(BigInt(newBalanceInfoPartyA.allocatedBalances), BigInt(oldBalanceInfoPartyA.allocatedBalances) + BigInt(tradingFee))

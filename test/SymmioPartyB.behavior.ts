@@ -91,30 +91,30 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 				const q1 = await context.viewFacetQuote.getQuote(quoteId1)
 				const q2 = await context.viewFacetQuote.getQuote(quoteId2)
 
-					const tx = await context.symmioPartyB
-						.connect(context.signers.admin)
-						.adlClose([quoteId1, quoteId2], [0n, decimal(10n)], [q1.openedPrice, q2.openedPrice], { gasLimit: 30_000_000 })
+				const tx = await context.symmioPartyB
+					.connect(context.signers.admin)
+					.adlClose([quoteId1, quoteId2], [0n, decimal(10n)], [q1.openedPrice, q2.openedPrice], { gasLimit: 30_000_000 })
 
 				const receipt = await tx.wait()
-					const events = receipt.logs
-						.map((log: any) => {
-							try {
-								return context.symmioPartyB.interface.parseLog(log)
-							} catch {
-								return null
-							}
-						})
-						.filter((e: any) => e)
+				const events = receipt.logs
+					.map((log: any) => {
+						try {
+							return context.symmioPartyB.interface.parseLog(log)
+						} catch {
+							return null
+						}
+					})
+					.filter((e: any) => e)
 
-					const skip1 = events.find((e: any) => e.name === "ADLSkip" && e.args.quoteId === quoteId1)
-					expect(skip1).to.not.equal(undefined)
-					expect(skip1!.args.revertData).to.not.equal("0x")
+				const skip1 = events.find((e: any) => e.name === "ADLSkip" && e.args.quoteId === quoteId1)
+				expect(skip1).to.not.equal(undefined)
+				expect(skip1!.args.revertData).to.not.equal("0x")
 
-					const skip2 = events.find((e: any) => e.name === "ADLSkip" && e.args.quoteId === quoteId2)
-					if (skip2) throw new Error(`quote2 skipped: ${skip2.args.revertData}`)
+				const skip2 = events.find((e: any) => e.name === "ADLSkip" && e.args.quoteId === quoteId2)
+				if (skip2) throw new Error(`quote2 skipped: ${skip2.args.revertData}`)
 
-					const quoteAfter2 = await context.viewFacetQuote.getQuote(quoteId2)
-					expect(quoteAfter2.closedAmount).to.equal(decimal(10n))
+				const quoteAfter2 = await context.viewFacetQuote.getQuote(quoteId2)
+				expect(quoteAfter2.closedAmount).to.equal(decimal(10n))
 
 				const quoteAfter1 = await context.viewFacetQuote.getQuote(quoteId1)
 				expect(quoteAfter1.closedAmount).to.equal(0n)

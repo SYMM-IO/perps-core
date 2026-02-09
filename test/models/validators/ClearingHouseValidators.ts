@@ -384,7 +384,7 @@ export class LiquidatePendingCHValidator implements TransactionValidator {
 				// Targeted quotes should have LIQUIDATED_PENDING status
 				for (const qId of oldPending) {
 					const q = await context.viewFacetQuote.getQuote(qId)
-					if (q.partyB === arg.subject && (q.quoteStatus === BigInt(QuoteStatus.LIQUIDATED_PENDING))) {
+					if (q.partyB === arg.subject && q.quoteStatus === BigInt(QuoteStatus.LIQUIDATED_PENDING)) {
 						// Good - quote was liquidated
 					}
 				}

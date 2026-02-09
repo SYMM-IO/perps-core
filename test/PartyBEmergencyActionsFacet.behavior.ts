@@ -187,7 +187,9 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.keccak256(ethers.toUtf8Bytes("CLEARING_HOUSE_ROLE")))
 
 				// Trigger cross liquidation with a large negative upnl
-				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidateCrossPartyB(await hedger.getAddress(), "0x01", decimal(-500000n), await getBlockTimestamp())
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(await hedger.getAddress(), "0x01", decimal(-500000n), await getBlockTimestamp())
 
 				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
 					"PartyBFacet: PartyB is in cross liquidation process",
@@ -257,7 +259,6 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				expect(fillEvent!.args.filledAmount).to.equal(adlAmount)
 				expect(fillEvent!.args.closedPrice).to.equal(quoteBefore.openedPrice)
 			})
-
 		})
 
 		describe("nonce and closeId updates", function () {

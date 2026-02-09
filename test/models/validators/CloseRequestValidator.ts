@@ -1,11 +1,12 @@
-import {expect} from "chai"
-import type { QuoteStructOutput} from "../../../src/types/interfaces/ISymmio.js"
-import {logger} from "../../utils/LoggerUtils.js"
-import {QuoteStatus} from "../Enums.js"
-import {Hedger} from "../Hedger.js"
-import {RunContext} from "../RunContext.js"
-import {BalanceInfo, User} from "../User.js"
-import {TransactionValidator} from "./TransactionValidator.js"
+import { expect } from "chai"
+
+import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
+import { logger } from "../../utils/LoggerUtils.js"
+import { QuoteStatus } from "../Enums.js"
+import { Hedger } from "../Hedger.js"
+import { RunContext } from "../RunContext.js"
+import { BalanceInfo, User } from "../User.js"
+import { TransactionValidator } from "./TransactionValidator.js"
 
 export type CloseRequestValidatorBeforeArg = {
 	user: User

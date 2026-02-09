@@ -1,8 +1,8 @@
 import { tasks } from "hardhat"
-import { Addresses, loadAddresses } from "./utils/file.js"
 
 // Import to initialize the hardhat connection
 import "../test/helpers/hardhat-connection.js"
+import { Addresses, loadAddresses } from "./utils/file.js"
 
 const deployedAddresses: Addresses = loadAddresses()
 const symmioAddress = deployedAddresses.symmioAddress
@@ -15,5 +15,5 @@ const contract = await tasks.getTask("deploy:feeDistributor").run({
 	symmioAddress,
 	admin,
 	symmioShare,
-	symmioShareReceiver
+	symmioShareReceiver,
 })

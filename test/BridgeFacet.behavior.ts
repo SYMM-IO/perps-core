@@ -1,14 +1,14 @@
-import { loadFixture, time } from "./helpers/network-helpers.js"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { BridgeTransactionStatus } from "./models/Enums.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { BridgeTransactionStatus } from "./models/Enums.js"
 import { TransferToBridgeValidator } from "./models/validators/TransferToBridgeValidator.js"
 import { WithdrawLockedTransactionValidator } from "./models/validators/WithdrawLockedTransactionValidator.js"
 import { decimal, pauseAccounting, suspendAddress } from "./utils/Common.js"
-import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
 export function shouldBehaveLikeBridgeFacet(): void {
 	let context: RunContext, user: User, user2: User
@@ -320,5 +320,4 @@ export function shouldBehaveLikeBridgeFacet(): void {
 			await context.bridgeFacet.connect(context.signers.user).transferToBridge(decimal(150n), await bridge.getAddress())
 		})
 	})
-
 }

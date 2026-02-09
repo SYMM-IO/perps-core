@@ -15,6 +15,7 @@ import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRe
 import { limitOpenRequestBuilder, OpenRequest } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import {
 	getDummyHighLowPriceSig,
 	getDummyLiquidationSig,
@@ -23,7 +24,6 @@ import {
 	getDummySingleUpnlAndPriceSig,
 	getDummyUnifiedSettlementSig,
 } from "./utils/SignatureUtils.js"
-import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 
 export function shouldBehaveLikeSpecificScenario(): void {
 	let uSigner: HardhatEthersSigner
@@ -34,14 +34,24 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 	const expectPartyBTotals = async (context: RunContext, longAmount: bigint, longAvgPrice: bigint, shortAmount: bigint, shortAvgPrice: bigint) => {
 		// Aggregate positions from both user and user2 (since we removed global storage)
-		const pos1 = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user.address, 1)
-		const pos2 = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(context.signers.hedger.address, context.signers.user2.address, 1)
+		const pos1 = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(
+			context.signers.hedger.address,
+			context.signers.user.address,
+			1,
+		)
+		const pos2 = await context.viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(
+			context.signers.hedger.address,
+			context.signers.user2.address,
+			1,
+		)
 
 		const totalLongAmount = pos1.longPosition.aggregatedOpenAmount + pos2.longPosition.aggregatedOpenAmount
-		const totalLongNotional = pos1.longPosition.aggregatedOpenAmount * pos1.longPosition.avgOpenPrice +
+		const totalLongNotional =
+			pos1.longPosition.aggregatedOpenAmount * pos1.longPosition.avgOpenPrice +
 			pos2.longPosition.aggregatedOpenAmount * pos2.longPosition.avgOpenPrice
 		const totalShortAmount = pos1.shortPosition.aggregatedOpenAmount + pos2.shortPosition.aggregatedOpenAmount
-		const totalShortNotional = pos1.shortPosition.aggregatedOpenAmount * pos1.shortPosition.avgOpenPrice +
+		const totalShortNotional =
+			pos1.shortPosition.aggregatedOpenAmount * pos1.shortPosition.avgOpenPrice +
 			pos2.shortPosition.aggregatedOpenAmount * pos2.shortPosition.avgOpenPrice
 
 		const avgLong = totalLongAmount === 0n ? 0n : totalLongNotional / totalLongAmount
@@ -87,7 +97,12 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		assertPosition(longPosition, longAmount, longAvgPrice)
 		assertPosition(shortPosition, shortAmount, shortAvgPrice)
 
-		const aggregates = await context.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(context.signers.hedger.address, partyA, 0, 1000)
+		const aggregates = await context.viewFacetAggregate.getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(
+			context.signers.hedger.address,
+			partyA,
+			0,
+			1000,
+		)
 		const findAggregate = (posType: PositionType) =>
 			aggregates.find((entry: any) => BigInt(entry.symbolId) === 1n && BigInt(entry.positionType) === BigInt(posType))
 		const assertAggregate = (entry: any, amount: bigint, avg: bigint) => {
@@ -391,22 +406,12 @@ export function shouldBehaveLikeSpecificScenario(): void {
 
 		const quote1 = await context.viewFacetQuote.getQuote(
 			await user.sendQuote(
-				limitQuoteRequestBuilder()
-					.positionType(PositionType.LONG)
-					.price(price1)
-					.quantity(amount1)
-					.deadline(getBlockTimestamp(10000n))
-					.build(),
+				limitQuoteRequestBuilder().positionType(PositionType.LONG).price(price1).quantity(amount1).deadline(getBlockTimestamp(10000n)).build(),
 			),
 		)
 		const quote2 = await context.viewFacetQuote.getQuote(
 			await user2.sendQuote(
-				limitQuoteRequestBuilder()
-					.positionType(PositionType.LONG)
-					.price(price2)
-					.quantity(amount2)
-					.deadline(getBlockTimestamp(10000n))
-					.build(),
+				limitQuoteRequestBuilder().positionType(PositionType.LONG).price(price2).quantity(amount2).deadline(getBlockTimestamp(10000n)).build(),
 			),
 		)
 
@@ -435,17 +440,7 @@ export function shouldBehaveLikeSpecificScenario(): void {
 		const sigEnd = firstCooldown + now + 10n
 		await time.increase(firstCooldown + 10n + secondCooldown + 1n)
 
-		const highLowSig = await getDummyHighLowPriceSig(
-			sigStart,
-			sigEnd,
-			decimal(9n),
-			decimal(15n),
-			decimal(13n),
-			decimal(12n),
-			quote1.symbolId,
-			0n,
-			0n,
-		)
+		const highLowSig = await getDummyHighLowPriceSig(sigStart, sigEnd, decimal(9n), decimal(15n), decimal(13n), decimal(12n), quote1.symbolId, 0n, 0n)
 		await context.forceCloseStepsFacet.initializeForceClose(quote1.id, highLowSig)
 
 		const currentPrice = decimal(14n)

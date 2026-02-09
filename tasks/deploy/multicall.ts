@@ -1,10 +1,10 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
 import { readData, writeData } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
 import { getConnection } from "./helpers.js"
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { logger } from "./logger.js"
 
 export const multicallTask = task("deploy:multicall", "Deploys the Multicall")

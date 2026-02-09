@@ -1,7 +1,7 @@
-import {Builder} from "builder-pattern"
-import {BigNumberish} from "ethers"
+import { Builder } from "builder-pattern"
+import { BigNumberish } from "ethers"
 
-import {decimal} from "../../utils/Common.js"
+import { decimal } from "../../utils/Common.js"
 
 export interface OpenRequest {
 	filledAmount: BigNumberish

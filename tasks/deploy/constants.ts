@@ -26,11 +26,11 @@ export const FacetNames = [
 	"ClearingHouseFacet",
 	"PartyBBatchActionsFacet",
 	"PartyBEmergencyActionsFacet",
-	"WithdrawFacet"
+	"WithdrawFacet",
 ]
 
 // Deployment log files for verification
-export const DEPLOYMENT_LOG_FILE = "deployed.json"           // Core Diamond contracts
+export const DEPLOYMENT_LOG_FILE = "deployed.json" // Core Diamond contracts
 export const ACCOUNTLAYER_DEPLOYMENT_FILE = "accountlayer.json"
 export const INSTANTLAYER_DEPLOYMENT_FILE = "instantlayer.json"
 export const PARTYB_DEPLOYMENT_FILE = "partyb.json"

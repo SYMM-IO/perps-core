@@ -1,5 +1,8 @@
-import { ethers } from "../helpers/hardhat-connection.js"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
+// Import core diamond's ControlFacet and ViewFacet from specific paths
+import type { ControlFacet } from "../../src/types/facets/Control/ControlFacet.js"
+import type { ViewFacet } from "../../src/types/facets/ViewFacet/ViewFacet.js"
 import type {
 	AccountFacet,
 	PartyBAccountFacet,
@@ -41,11 +44,8 @@ import type {
 	ViewFacet as ALViewFacet,
 	AffiliateFacet as ALAffiliateFacet,
 } from "../../src/types/index.js"
-// Import core diamond's ControlFacet and ViewFacet from specific paths
-import type { ControlFacet } from "../../src/types/facets/Control/ControlFacet.js"
-import type { ViewFacet } from "../../src/types/facets/ViewFacet/ViewFacet.js";
+import { ethers } from "../helpers/hardhat-connection.js"
 import { TestManager } from "./TestManager.js"
-import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
 export class RunContext {
 	// Core Diamond facets

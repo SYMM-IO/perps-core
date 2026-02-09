@@ -23,3 +23,13 @@ if git diff --cached --name-only | grep -q '\.sol$'; then
 
     echo "ABIs updated and staged."
 fi
+
+# Run prettier checks
+echo "Formatting Solidity files..."
+yarn prettier:contracts
+
+echo "Formatting TypeScript files..."
+yarn prettier:ts
+
+# Stage any formatting changes
+git add -u

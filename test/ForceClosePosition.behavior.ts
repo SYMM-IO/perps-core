@@ -1,6 +1,8 @@
+import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
 import { expect } from "chai"
 import { toUtf8Bytes } from "ethers"
 
+import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
@@ -13,15 +15,13 @@ import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/re
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { ForceClosePositionValidator } from "./models/validators/ForceClosePositionValidator.js"
 import { decimal, getBlockTimestamp, getQuoteQuantity, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import {
 	calculateExpectedAvgPriceForForceClose,
 	calculateExpectedClosePriceForForceClose,
 	calculateExpectedClosePriceForForceCloseWithAvg,
 } from "./utils/PriceUtils.js"
 import { getDummyHighLowPriceSig, getDummyPairUpnlAndPriceSig, getDummyPriceSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
-import { migratePartyBToCross } from "./utils/CrossPartyB.js"
-import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
-import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs"
 
 export function shouldBehaveLikeForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -484,7 +484,6 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					// No cross partyB activation here on purpose - forceClosePosition should work for normal partyBs
 					// This test just validates the setup is correct
 				})
-
 			})
 		})
 
@@ -582,9 +581,9 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					})
 
 					it("reverts finalizeForceClose if it has not been initialized", async function () {
-						await expect(context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig())).to.be.revertedWith(
-							"ForceActionsFacet: Invalid state",
-						)
+						await expect(
+							context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig()),
+						).to.be.revertedWith("ForceActionsFacet: Invalid state")
 					})
 
 					it("reverts settleUpnlForForceClose if it has not been initialized", async function () {
@@ -652,37 +651,37 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 						it("should revert initializeForceClose when partyA would be insolvent", async function () {
 							highLowSig.upnlPartyA = -decimal(10_000n)
-							await expect(context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)).to.be.revertedWith('PartyAFacet: PartyA will be insolvent')
-
+							await expect(context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)).to.be.revertedWith(
+								"PartyAFacet: PartyA will be insolvent",
+							)
 						})
 					})
 
-						describe("ForceCloseDetail flags settlement", function () {
-							it("sets timestamp on settleUpnlForForceClose", async function () {
-								// init force close
-								await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
-								const detailBefore = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+					describe("ForceCloseDetail flags settlement", function () {
+						it("sets timestamp on settleUpnlForForceClose", async function () {
+							// init force close
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+							const detailBefore = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 
-								await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSig, [updatePrice])
+							await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSig, [updatePrice])
 
-								const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 
-								expect(detailAfter.timestamp > detailBefore.timestamp).to.equal(true)
-							})
-
-							it("does not change force-close snapshot currentPrice on settleUpnlForForceClose", async function () {
-								await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
-								const before = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
-
-								await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSig, [updatePrice])
-
-								const after = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
-								expect(after.currentPrice).to.equal(before.currentPrice)
-							})
-
+							expect(detailAfter.timestamp > detailBefore.timestamp).to.equal(true)
 						})
 
-						describe("ForceCloseDetail flags finalize (solvent case)", function () {
+						it("does not change force-close snapshot currentPrice on settleUpnlForForceClose", async function () {
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+							const before = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+
+							await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSig, [updatePrice])
+
+							const after = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							expect(after.currentPrice).to.equal(before.currentPrice)
+						})
+					})
+
+					describe("ForceCloseDetail flags finalize (solvent case)", function () {
 						it("marks partyBState as SOLVENT and clears inProgress when cross partyB is solvent", async function () {
 							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
 
@@ -690,7 +689,10 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							expect(detailBefore.inProgress).to.equal(true)
 
 							await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSig, [updatePrice])
-							await context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, BigInt(highLowSig.upnlPartyB)))
+							await context.forceCloseStepsFacet.finalizeForceClose(
+								quote1LongOpened.id,
+								await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, BigInt(highLowSig.upnlPartyB)),
+							)
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()
@@ -698,52 +700,41 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 							expect(detailAfter.inProgress).to.equal(false)
 							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.CLOSED_SOLVENT)
-								expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
-							})
-
-							it("finalizeForceClose(quoteId, sig) refreshes snapshot and uses it for cross-partyB solvency", async function () {
-								const targetAllocated = decimal(20000n)
-								const crossBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
-								if (crossBalanceBefore.allocatedBalances < targetAllocated) {
-									const topUp = targetAllocated - crossBalanceBefore.allocatedBalances
-									await hedger.setBalances(topUp, topUp)
-									await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
-								}
-
-								const badInitSig = { ...highLowSig, upnlPartyB: -decimal(1_000_000n) }
-								await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, badInitSig)
-
-								const refreshedSig = await getDummyPairUpnlAndPriceSig(
-									BigInt(highLowSig.currentPrice), // price
-									0n, // upnlPartyA
-									0n, // upnlPartyB
-								)
-
-								const tx = await (context.forceCloseStepsFacet as any)[
-									"finalizeForceClose(uint256,(bytes,uint256,int256,int256,uint256,bytes,(uint256,address,address)))"
-								](quote1LongOpened.id, refreshedSig)
-								await expect(tx)
-									.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
-									.withArgs(
-										quote1LongOpened.id,
-										quote1LongOpened.partyA,
-										quote1LongOpened.partyB,
-										anyValue,
-										anyValue,
-										anyValue,
-										anyValue,
-									)
-							})
+							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
 						})
+
+						it("finalizeForceClose(quoteId, sig) refreshes snapshot and uses it for cross-partyB solvency", async function () {
+							const targetAllocated = decimal(20000n)
+							const crossBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
+							if (crossBalanceBefore.allocatedBalances < targetAllocated) {
+								const topUp = targetAllocated - crossBalanceBefore.allocatedBalances
+								await hedger.setBalances(topUp, topUp)
+								await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+							}
+
+							const badInitSig = { ...highLowSig, upnlPartyB: -decimal(1_000_000n) }
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, badInitSig)
+
+							const refreshedSig = await getDummyPairUpnlAndPriceSig(
+								BigInt(highLowSig.currentPrice), // price
+								0n, // upnlPartyA
+								0n, // upnlPartyB
+							)
+
+							const tx = await (context.forceCloseStepsFacet as any)[
+								"finalizeForceClose(uint256,(bytes,uint256,int256,int256,uint256,bytes,(uint256,address,address)))"
+							](quote1LongOpened.id, refreshedSig)
+							await expect(tx)
+								.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
+								.withArgs(quote1LongOpened.id, quote1LongOpened.partyA, quote1LongOpened.partyB, anyValue, anyValue, anyValue, anyValue)
+						})
+					})
 
 					describe("forceCloseAndSettlePositionsUnified", function () {
 						it("runs initialize, settle, and finalize in a single call", async function () {
-							const tx = await context.forceCloseStepsFacet.forceCloseAndSettlePositionsUnified(
-								quote1LongOpened.id,
-								highLowSig,
-								settlementSig,
-								[updatePrice],
-							)
+							const tx = await context.forceCloseStepsFacet.forceCloseAndSettlePositionsUnified(quote1LongOpened.id, highLowSig, settlementSig, [
+								updatePrice,
+							])
 
 							await expect(tx)
 								.to.emit(context.forceCloseStepsFacet, "ForceCloseInitialized")
@@ -751,15 +742,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							await expect(tx).to.emit(context.forceCloseStepsFacet, "SettleUpnlUnified")
 							await expect(tx)
 								.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
-								.withArgs(
-									quote1LongOpened.id,
-									quote1LongOpened.partyA,
-									quote1LongOpened.partyB,
-									anyValue,
-									anyValue,
-									anyValue,
-									anyValue,
-								)
+								.withArgs(quote1LongOpened.id, quote1LongOpened.partyA, quote1LongOpened.partyB, anyValue, anyValue, anyValue, anyValue)
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()
@@ -778,12 +761,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 								await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
 							}
 
-							const tx = await context.forceCloseStepsFacet.forceCloseAndSettlePositionsUnified(
-								quote1LongOpened.id,
-								highLowSig,
-								settlementSig,
-								[],
-							)
+							const tx = await context.forceCloseStepsFacet.forceCloseAndSettlePositionsUnified(quote1LongOpened.id, highLowSig, settlementSig, [])
 
 							await expect(tx).to.emit(context.forceCloseStepsFacet, "ForceCloseInitialized")
 							await expect(tx).to.not.emit(context.forceCloseStepsFacet, "SettleUpnlUnified")
@@ -806,24 +784,13 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							highLowSig.upnlPartyB = -decimal(1_000_000n)
 							highLowSig.currentPrice = decimal(1n)
 
-							const tx = await context.forceCloseStepsFacet.forceCloseAndSettlePositionsUnified(
-								quote1LongOpened.id,
-								highLowSig,
-								settlementSig,
-								[updatePrice],
-							)
+							const tx = await context.forceCloseStepsFacet.forceCloseAndSettlePositionsUnified(quote1LongOpened.id, highLowSig, settlementSig, [
+								updatePrice,
+							])
 
 							await expect(tx)
 								.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
-								.withArgs(
-									quote1LongOpened.id,
-									quote1LongOpened.partyA,
-									quote1LongOpened.partyB,
-									anyValue,
-									anyValue,
-									anyValue,
-									anyValue,
-								)
+								.withArgs(quote1LongOpened.id, quote1LongOpened.partyA, quote1LongOpened.partyB, anyValue, anyValue, anyValue, anyValue)
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()
@@ -840,9 +807,12 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							await expect(await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)).not.to.reverted
 
 							// not enough balance in cross partyB but solvent
-							await expect(context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice)))).to.be.revertedWith(
-								"ForceActionsFacet: Insufficient balance",
-							)
+							await expect(
+								context.forceCloseStepsFacet.finalizeForceClose(
+									quote1LongOpened.id,
+									await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice)),
+								),
+							).to.be.revertedWith("ForceActionsFacet: Insufficient balance")
 							expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSE_PENDING)
 						})
 
@@ -865,7 +835,10 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							highLowSig.currentPrice = expectedClosePrice
 
 							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
-							await context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, BigInt(highLowSig.upnlPartyB)))
+							await context.forceCloseStepsFacet.finalizeForceClose(
+								quote1LongOpened.id,
+								await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, BigInt(highLowSig.upnlPartyB)),
+							)
 
 							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()
@@ -892,15 +865,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							)
 							await expect(tx)
 								.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
-								.withArgs(
-									quote1LongOpened.id,
-									quote1LongOpened.partyA,
-									quote1LongOpened.partyB,
-									anyValue,
-									anyValue,
-									anyValue,
-									anyValue,
-								)
+								.withArgs(quote1LongOpened.id, quote1LongOpened.partyA, quote1LongOpened.partyB, anyValue, anyValue, anyValue, anyValue)
 							await expect(tx)
 								.to.emit(context.forceCloseStepsFacet, "ForceClosePartyBInsolvent")
 								.withArgs(

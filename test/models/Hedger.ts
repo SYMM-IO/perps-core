@@ -1,10 +1,10 @@
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { BigNumberish, ethers } from "ethers"
-import { setBalance } from "../helpers/network-helpers.js"
 
 import type { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet.js"
 import type { SettlementSigStructOutput, UnifiedSettlementSigStruct } from "../../src/types/facets/Settlement/SettlementFacet.js"
 import type { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/interfaces/ISymmio.js"
+import { setBalance } from "../helpers/network-helpers.js"
 import { decimal, serializeToJson, unDecimal } from "../utils/Common.js"
 import { logger } from "../utils/LoggerUtils.js"
 import { getPrice } from "../utils/PriceUtils.js"
@@ -48,9 +48,7 @@ export class Hedger extends PartyEntity {
 			const quote = await this.context.viewFacetQuote.getQuote(id)
 			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
 			await runTx(
-				this.context.partyBAccountFacet
-					.connect(this.signer)
-					.allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA),
+				this.context.partyBAccountFacet.connect(this.signer).allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA),
 			)
 		}
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).lockQuote(id, await getDummySingleUpnlSig(upnl)))

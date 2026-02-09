@@ -1,7 +1,15 @@
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
+import fs from "fs"
 import { task } from "hardhat/config"
+// ============================================================================
+// Verify All Contracts from Checkpoint
+// ============================================================================
+
+import { ArgumentType } from "hardhat/types/arguments"
+import path from "path"
 
 import { readData } from "../utils/fs.js"
+import { loadCheckpoint } from "./checkpoint.js"
 import {
 	ACCOUNTHUB_DEPLOYMENT_LOG_FILE,
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
@@ -11,6 +19,7 @@ import {
 	PARTYB_DEPLOYMENT_FILE,
 	STABLECOIN_DEPLOYMENT_FILE,
 } from "./constants.js"
+import { getConnection } from "./helpers.js"
 
 const verifyDeploymentAction = async (_: unknown, hre: any) => {
 	const deployedAddresses = readData(DEPLOYMENT_LOG_FILE)
@@ -110,16 +119,6 @@ const verifyAccountLayerAction = async (_: unknown, hre: any) => {
 export const verifyDeploymentTask = task("verify:deployment", "Verifies the deployed contracts")
 	.setAction(async () => ({ default: verifyDeploymentAction }))
 	.build()
-
-// ============================================================================
-// Verify All Contracts from Checkpoint
-// ============================================================================
-
-import { ArgumentType } from "hardhat/types/arguments"
-import { getConnection } from "./helpers.js"
-import { loadCheckpoint } from "./checkpoint.js"
-import path from "path"
-import fs from "fs"
 
 interface ContractToVerify {
 	name: string
@@ -304,11 +303,13 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					try {
 						const data = JSON.parse(fs.readFileSync(filePath, "utf8"))
 						if (Array.isArray(data)) {
-							contracts.push(...data.map((c: any) => ({
-								name: c.name,
-								address: c.address,
-								constructorArguments: c.constructorArguments || [],
-							})))
+							contracts.push(
+								...data.map((c: any) => ({
+									name: c.name,
+									address: c.address,
+									constructorArguments: c.constructorArguments || [],
+								})),
+							)
 							console.log(`Loaded ${data.length} contracts from ${name}`)
 						}
 					} catch (e) {
@@ -393,9 +394,6 @@ export const verifyAccountLayerTask = task("verify:accountLayer", "Verifies the 
 // ============================================================================
 // Deployment Health Check Task
 // ============================================================================
-
-import { ArgumentType } from "hardhat/types/arguments"
-import { getConnection } from "./helpers.js"
 
 interface VerificationResult {
 	category: string
@@ -666,10 +664,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 
 				// Check owner (admin)
 				try {
-					const view = await ethers.getContractAt(
-						"contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet",
-						addresses.diamond,
-					)
+					const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", addresses.diamond)
 					const owner = await view.owner()
 
 					if (addresses.admin) {
@@ -831,10 +826,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 
 					// Check Symmio Core whitelisted
 					try {
-						const alView = await ethers.getContractAt(
-							"contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
-							addresses.accountLayer,
-						)
+						const alView = await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", addresses.accountLayer)
 						const isWhitelisted = await alView.isWhitelistedSymmioCore(addresses.diamond)
 						if (isWhitelisted) {
 							results.push({

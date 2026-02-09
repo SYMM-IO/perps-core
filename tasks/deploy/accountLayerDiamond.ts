@@ -1,29 +1,16 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { ContractTransactionReceipt } from "ethers"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
-import { ContractTransactionReceipt } from "ethers"
 
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 import { writeData } from "../utils/fs.js"
+import { DeploymentCheckpoint, AccountLayerCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { ACCOUNTLAYER_DEPLOYMENT_FILE } from "./constants.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
-import {
-	DeploymentCheckpoint,
-	AccountLayerCheckpoint,
-	createDeployedContract,
-	saveCheckpoint,
-} from "./checkpoint.js"
 
-const AccountLayerFacetNames = [
-	"CoreFacet",
-	"MarginFacet",
-	"SymmioHookFacet",
-	"ControlFacet",
-	"ViewFacet",
-	"AffiliateFacet",
-	"DiamondLoupeFacet",
-]
+const AccountLayerFacetNames = ["CoreFacet", "MarginFacet", "SymmioHookFacet", "ControlFacet", "ViewFacet", "AffiliateFacet", "DiamondLoupeFacet"]
 
 // Library dependencies for AccountLayer facets
 const AccountLayerFacetLibraryDependencies: Record<string, string[]> = {
@@ -37,10 +24,7 @@ type DeployAccountLayerDiamondArgs = {
 	checkpoint?: DeploymentCheckpoint
 }
 
-export async function deployAccountLayerDiamond(
-	hre: any,
-	{ admin, symmioFeeReceiver, logData = false, checkpoint }: DeployAccountLayerDiamondArgs
-) {
+export async function deployAccountLayerDiamond(hre: any, { admin, symmioFeeReceiver, logData = false, checkpoint }: DeployAccountLayerDiamondArgs) {
 	const { ethers } = await getConnection(hre)
 	let totalGasUsed = BigInt(0)
 	let receipt: ContractTransactionReceipt
@@ -190,7 +174,10 @@ export async function deployAccountLayerDiamond(
 				for (const lib of requiredLibraries) {
 					libraries[`project/contracts/accountLayer/libraries/${lib}.sol:${lib}`] = libraryAddresses[lib]
 				}
-				FacetFactory = await ethers.getContractFactory(`contracts/accountLayer/facets/${facetName.replace("Facet", "")}/${facetName}.sol:${facetName}`, { libraries })
+				FacetFactory = await ethers.getContractFactory(
+					`contracts/accountLayer/facets/${facetName.replace("Facet", "")}/${facetName}.sol:${facetName}`,
+					{ libraries },
+				)
 			} else {
 				// Map facet names to their paths
 				const facetPathMap: Record<string, string> = {
@@ -251,10 +238,7 @@ export async function deployAccountLayerDiamond(
 	if (!diamondCutAlreadyDone) {
 		try {
 			// Try calling admin() from ControlFacet - only exists after diamond cut
-			const controlFacet = await ethers.getContractAt(
-				"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
-				diamondAddress,
-			)
+			const controlFacet = await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress)
 			await controlFacet.admin()
 			// If we get here without error, the diamond cut was done
 			logger.info("  ⏭ Diamond cut already complete (verified on-chain)")
@@ -276,11 +260,7 @@ export async function deployAccountLayerDiamond(
 		const init = await ethers.getContractAt("contracts/accountLayer/Init.sol:Init", initAddress)
 
 		// Call Initializer with params
-		const call = init.interface.encodeFunctionData("init", [
-			admin.address,
-			symmioFeeReceiver.address,
-			accountManagerBytecode,
-		])
+		const call = init.interface.encodeFunctionData("init", [admin.address, symmioFeeReceiver.address, accountManagerBytecode])
 
 		const chunkSize = 3
 		const totalChunks = Math.ceil(cut.length / chunkSize)

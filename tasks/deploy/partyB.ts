@@ -2,14 +2,10 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
 import { writeData } from "../utils/fs.js"
+import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { PARTYB_DEPLOYMENT_FILE } from "./constants.js"
 import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
 import { logger } from "./logger.js"
-import {
-	DeploymentCheckpoint,
-	createDeployedContract,
-	saveCheckpoint,
-} from "./checkpoint.js"
 
 type DeploySymmioPartyBArgs = {
 	symmioAddress: string

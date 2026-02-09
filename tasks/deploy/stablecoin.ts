@@ -1,16 +1,12 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
 import { writeData } from "../utils/fs.js"
+import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { STABLECOIN_DEPLOYMENT_FILE } from "./constants.js"
 import { getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
-import {
-	DeploymentCheckpoint,
-	createDeployedContract,
-	saveCheckpoint,
-} from "./checkpoint.js"
 
 type DeployStablecoinArgs = {
 	logData?: boolean

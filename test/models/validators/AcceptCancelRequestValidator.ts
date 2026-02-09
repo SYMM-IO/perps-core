@@ -1,13 +1,13 @@
-import {expect} from "chai"
+import { expect } from "chai"
 
-import type { QuoteStructOutput} from "../../../src/types/interfaces/ISymmio.js"
-import {getTotalPartyALockedValuesForQuotes, getTradingFeeForQuotes} from "../../utils/Common.js"
-import {logger} from "../../utils/LoggerUtils.js"
-import {expectToBeApproximately} from "../../utils/SafeMath.js"
-import {QuoteStatus} from "../Enums.js"
-import {RunContext} from "../RunContext.js"
-import {BalanceInfo, User} from "../User.js"
-import {TransactionValidator} from "./TransactionValidator.js"
+import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
+import { getTotalPartyALockedValuesForQuotes, getTradingFeeForQuotes } from "../../utils/Common.js"
+import { logger } from "../../utils/LoggerUtils.js"
+import { expectToBeApproximately } from "../../utils/SafeMath.js"
+import { QuoteStatus } from "../Enums.js"
+import { RunContext } from "../RunContext.js"
+import { BalanceInfo, User } from "../User.js"
+import { TransactionValidator } from "./TransactionValidator.js"
 
 export type AcceptCancelRequestValidatorBeforeArg = {
 	user: User
@@ -48,20 +48,13 @@ export class AcceptCancelRequestValidator implements TransactionValidator {
 		const lockedValues = await getTotalPartyALockedValuesForQuotes([oldQuote])
 
 		// Assert changes in totalPendingLockedPartyA
-		expect(newBalanceInfoPartyA.totalPendingLockedPartyA).to.equal(
-			oldBalanceInfoPartyA.totalPendingLockedPartyA - lockedValues
-		)
+		expect(newBalanceInfoPartyA.totalPendingLockedPartyA).to.equal(oldBalanceInfoPartyA.totalPendingLockedPartyA - lockedValues)
 
 		// Assert no changes in totalLockedPartyA
-		expect(newBalanceInfoPartyA.totalLockedPartyA).to.equal(
-			oldBalanceInfoPartyA.totalLockedPartyA
-		)
+		expect(newBalanceInfoPartyA.totalLockedPartyA).to.equal(oldBalanceInfoPartyA.totalLockedPartyA)
 
 		// Calculate and assert changes in allocatedBalances
 		const tradingFee = await getTradingFeeForQuotes(context, [arg.quoteId])
-		expectToBeApproximately(
-			newBalanceInfoPartyA.allocatedBalances,
-			oldBalanceInfoPartyA.allocatedBalances + tradingFee
-		)
+		expectToBeApproximately(newBalanceInfoPartyA.allocatedBalances, oldBalanceInfoPartyA.allocatedBalances + tradingFee)
 	}
 }

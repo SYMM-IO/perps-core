@@ -1,5 +1,5 @@
-import hre from "hardhat"
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
+import hre from "hardhat"
 
 // Import to initialize the hardhat connection
 import "../test/helpers/hardhat-connection.js"

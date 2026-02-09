@@ -1,8 +1,8 @@
 import { tasks } from "hardhat"
-import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
 
 // Import to initialize the hardhat connection
 import "../test/helpers/hardhat-connection.js"
+import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
 
 const deployedAddresses: Addresses = loadAddresses()
 const symmioAddress = deployedAddresses.symmioAddress

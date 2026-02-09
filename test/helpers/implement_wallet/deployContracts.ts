@@ -2,10 +2,12 @@
 import fs from "fs"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
+
 import { initializeFixture } from "../../../test/Initialize.fixture.js"
-import { ethers, network } from "../hardhat-connection.js"
 import { User } from "../../models/User.js"
 import { decimal } from "../../utils/Common.js"
+import { ethers, network } from "../hardhat-connection.js"
+
 // ^ you already use this in tests; it deploys everything and returns the context
 
 async function main() {

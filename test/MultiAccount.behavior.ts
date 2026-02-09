@@ -1,10 +1,12 @@
-import { loadFixture, time } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 import { AbiCoder, BigNumberish } from "ethers"
-import { ethers, hre } from "./helpers/hardhat-connection.js"
-import { deployProxy } from "../utils/upgrades-shim.js"
+
+import type { SymmioPartyB } from "../src/types/index.js"
 import type { PairUpnlAndPriceSigStruct } from "../src/types/interfaces/ISymmio.js"
+import { deployProxy } from "../utils/upgrades-shim.js"
 import { initializeFixture } from "./Initialize.fixture.js"
+import { ethers, hre } from "./helpers/hardhat-connection.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
@@ -15,7 +17,6 @@ import { marketOpenRequestBuilder, OpenRequest } from "./models/requestModels/Op
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
 import { decimal, PromiseOrValue } from "./utils/Common.js"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
-import type { SymmioPartyB } from "../src/types/index.js"
 
 async function getListFormatOfQuoteRequest(request: QuoteRequest): Promise<any> {
 	return [

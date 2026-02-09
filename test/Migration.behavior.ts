@@ -1,19 +1,19 @@
-import { loadFixture } from "./helpers/network-helpers.js"
 import { expect } from "chai"
 import { ZeroAddress, toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
-import { RunContext } from "./models/RunContext.js"
+import { ethers } from "./helpers/hardhat-connection.js"
+import { loadFixture } from "./helpers/network-helpers.js"
+import { QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
-import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal } from "./utils/Common.js"
-import { ethers } from "./helpers/hardhat-connection.js"
 import { getDummyLiquidationSig, getDummyPairUpnlAndPricesSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
-import { QuoteStatus } from "./models/Enums.js"
 
 export function shouldBehaveLikeMigration(): void {
 	let context: RunContext
@@ -44,27 +44,23 @@ export function shouldBehaveLikeMigration(): void {
 	describe("migrateQuotes", function () {
 		it("Should allow only MIGRATION_ROLE to call migrateQuotes", async function () {
 			// Grant MIGRATION_ROLE to admin (already done in initializeFixture)
-			await expect(
-				context.migrationFacet.connect(context.signers.user).migrateQuotes([1])
-			).to.be.revertedWith("Accessibility: Must have role")
+			await expect(context.migrationFacet.connect(context.signers.user).migrateQuotes([1])).to.be.revertedWith("Accessibility: Must have role")
 
 			// Admin should be able to call it
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).migrateQuotes([])
-			).to.not.be.reverted
+			await expect(context.migrationFacet.connect(context.signers.admin).migrateQuotes([])).to.not.be.reverted
 		})
 
 		it("Should emit QuotesMigrated event", async function () {
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).migrateQuotes([])
-			).to.emit(context.migrationFacet, "QuotesMigrated").withArgs(0, 0)
+			await expect(context.migrationFacet.connect(context.signers.admin).migrateQuotes([]))
+				.to.emit(context.migrationFacet, "QuotesMigrated")
+				.withArgs(0, 0)
 		})
 
 		it("Should skip non-existent quote IDs", async function () {
 			// Try to migrate non-existent quote IDs
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).migrateQuotes([999, 1000, 1001])
-			).to.emit(context.migrationFacet, "QuotesMigrated").withArgs(3, 0)
+			await expect(context.migrationFacet.connect(context.signers.admin).migrateQuotes([999, 1000, 1001]))
+				.to.emit(context.migrationFacet, "QuotesMigrated")
+				.withArgs(3, 0)
 		})
 
 		it("Should return false for non-migrated quotes", async function () {
@@ -77,22 +73,20 @@ export function shouldBehaveLikeMigration(): void {
 		it("Should allow only MIGRATION_ROLE to call migrateCrossLockedValues", async function () {
 			const partyB = await hedger.getAddress()
 
-			await expect(
-				context.migrationFacet.connect(context.signers.user).migrateCrossLockedValues(partyB, [])
-			).to.be.revertedWith("Accessibility: Must have role")
+			await expect(context.migrationFacet.connect(context.signers.user).migrateCrossLockedValues(partyB, [])).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
 
 			// Admin should be able to call it
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [])
-			).to.not.be.reverted
+			await expect(context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [])).to.not.be.reverted
 		})
 
 		it("Should emit CrossLockedValuesMigrated event", async function () {
 			const partyB = await hedger.getAddress()
 
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [])
-			).to.emit(context.migrationFacet, "CrossLockedValuesMigrated").withArgs(partyB, 0)
+			await expect(context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, []))
+				.to.emit(context.migrationFacet, "CrossLockedValuesMigrated")
+				.withArgs(partyB, 0)
 		})
 
 		it("Should prevent double migration of partyB locked values", async function () {
@@ -102,9 +96,9 @@ export function shouldBehaveLikeMigration(): void {
 			await context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [])
 
 			// Second migration should fail
-			await expect(
-				context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [])
-			).to.be.revertedWith("MigrationFacet: Already migrated")
+			await expect(context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [])).to.be.revertedWith(
+				"MigrationFacet: Already migrated",
+			)
 		})
 
 		it("Should aggregate partyA balances to cross bucket", async function () {
@@ -150,14 +144,12 @@ export function shouldBehaveLikeMigration(): void {
 		it("Should allow only MIGRATION_ROLE to call setCrossPartyB", async function () {
 			const partyB = await hedger.getAddress()
 
-			await expect(
-				context.controlFacet.connect(context.signers.user).setCrossPartyB(partyB, true)
-			).to.be.revertedWith("Accessibility: Must have role")
+			await expect(context.controlFacet.connect(context.signers.user).setCrossPartyB(partyB, true)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
 
 			// Admin should be able to call it (has MIGRATION_ROLE)
-			await expect(
-				context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)
-			).to.not.be.reverted
+			await expect(context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)).to.not.be.reverted
 		})
 
 		it("Should require cross partyB feature to be enabled", async function () {
@@ -166,23 +158,23 @@ export function shouldBehaveLikeMigration(): void {
 			// Disable cross partyB feature
 			await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(false)
 
-			await expect(
-				context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)
-			).to.be.revertedWith("ControlFacet: Cross feature disabled")
+			await expect(context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)).to.be.revertedWith(
+				"ControlFacet: Cross feature disabled",
+			)
 		})
 
 		it("Should require partyB to be registered", async function () {
-			await expect(
-				context.controlFacet.connect(context.signers.admin).setCrossPartyB(context.signers.user.address, true)
-			).to.be.revertedWith("ControlFacet: Address is not PartyB")
+			await expect(context.controlFacet.connect(context.signers.admin).setCrossPartyB(context.signers.user.address, true)).to.be.revertedWith(
+				"ControlFacet: Address is not PartyB",
+			)
 		})
 
 		it("Should emit SetCrossPartyB event", async function () {
 			const partyB = await hedger.getAddress()
 
-			await expect(
-				context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)
-			).to.emit(context.controlFacet, "SetCrossPartyB").withArgs(partyB, true)
+			await expect(context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true))
+				.to.emit(context.controlFacet, "SetCrossPartyB")
+				.withArgs(partyB, true)
 		})
 
 		it("Should only allow allocations to cross bucket after cross mode is enabled", async function () {
@@ -194,13 +186,11 @@ export function shouldBehaveLikeMigration(): void {
 
 			// Allocating to a specific partyA should fail
 			await expect(
-				context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateAmount, context.signers.user.address)
+				context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateAmount, context.signers.user.address),
 			).to.be.revertedWith("PartyBFacet: Cross partyB mode is active")
 
 			// Allocating to cross bucket (address(0)) should succeed
-			await expect(
-				context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateAmount, ZeroAddress)
-			).to.not.be.reverted
+			await expect(context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateAmount, ZeroAddress)).to.not.be.reverted
 		})
 	})
 
@@ -233,14 +223,12 @@ export function shouldBehaveLikeMigration(): void {
 			expect(await context.viewFacet.isCrossPartyB(partyB)).to.equal(true)
 
 			// Per-partyA allocations should now fail (cross mode active)
-			await expect(
-				context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(100n), partyA1)
-			).to.be.revertedWith("PartyBFacet: Cross partyB mode is active")
+			await expect(context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(100n), partyA1)).to.be.revertedWith(
+				"PartyBFacet: Cross partyB mode is active",
+			)
 
 			// Cross bucket allocations should work
-			await expect(
-				context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(100n), ZeroAddress)
-			).to.not.be.reverted
+			await expect(context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(100n), ZeroAddress)).to.not.be.reverted
 		})
 	})
 
@@ -267,11 +255,7 @@ export function shouldBehaveLikeMigration(): void {
 				expect(crossBalanceBefore.totalLockedPartyB).to.equal(0n)
 
 				// Send quote and lock
-				await user.sendQuote(
-					limitQuoteRequestBuilder()
-						.partyBWhiteList([partyB])
-						.build()
-				)
+				await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([partyB]).build())
 				const quoteId = await context.viewFacetQuote.getNextQuoteId()
 				await hedger.lockQuote(quoteId)
 
@@ -442,9 +426,7 @@ export function shouldBehaveLikeMigration(): void {
 				const crossBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
 
 				// Cross bucket should equal sum of both
-				expect(crossBalanceBefore.totalLockedPartyB).to.equal(
-					perPartyA1Before.totalLockedPartyB + perPartyA2Before.totalLockedPartyB
-				)
+				expect(crossBalanceBefore.totalLockedPartyB).to.equal(perPartyA1Before.totalLockedPartyB + perPartyA2Before.totalLockedPartyB)
 
 				// Liquidate partyB for partyA1 only
 				await context.partyBLiquidationFacet
@@ -476,7 +458,9 @@ export function shouldBehaveLikeMigration(): void {
 				await hedger.lockQuote(openedQuoteId)
 				const openedQuote = await context.viewFacetQuote.getQuote(openedQuoteId)
 				const upnlSig = await getDummyPairUpnlAndPricesSig([openedQuote.requestedOpenPrice], [1n])
-				await context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([openedQuoteId], [decimal(100n)], [openedQuote.requestedOpenPrice], upnlSig)
+				await context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.openPositions([openedQuoteId], [decimal(100n)], [openedQuote.requestedOpenPrice], upnlSig)
 
 				// Send another quote and lock (creates pending locked values)
 				await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([partyB]).build())

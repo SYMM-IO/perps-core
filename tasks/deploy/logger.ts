@@ -86,7 +86,9 @@ export const logger = {
 	// Contract deployed message - always show in minimal and verbose modes
 	deployed: (contractName: string, address: string) => {
 		if (currentLevel !== "silent") {
-			console.log(`  ${COLORS.green}${SYMBOLS.check}${COLORS.reset} ${formatContract(contractName)} ${COLORS.dim}at${COLORS.reset} ${formatAddress(address)}`)
+			console.log(
+				`  ${COLORS.green}${SYMBOLS.check}${COLORS.reset} ${formatContract(contractName)} ${COLORS.dim}at${COLORS.reset} ${formatAddress(address)}`,
+			)
 		}
 	},
 

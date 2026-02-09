@@ -1,42 +1,35 @@
-import {Builder} from "builder-pattern"
-import {concatMap, filter, from} from "rxjs"
+import { Builder } from "builder-pattern"
+import { concatMap, filter, from } from "rxjs"
 
-import {
-	checkStatus,
-	decimal,
-	getBlockTimestamp,
-	getQuoteMinLeftQuantityForClose,
-	getSymbols,
-	min,
-	unDecimal
-} from "../utils/Common.js"
-import {logger} from "../utils/LoggerUtils.js"
-import {getPrice} from "../utils/PriceUtils.js"
-import {pick, randomBigNumber, randomBigNumberRatio} from "../utils/RandomUtils.js"
-import {roundToPrecision, safeDiv} from "../utils/SafeMath.js"
-import {getDummySingleUpnlAndPriceSig} from "../utils/SignatureUtils.js"
-import type {SymbolStructOutput} from "../../src/types/facets/Control/ControlFacet.js"
-import {Action, actionNamesMap, ActionWrapper, expandActions, userActionsMap} from "./Actions.js"
-import {OrderType, PositionType, QuoteStatus} from "./Enums.js"
-import {ManagedError} from "./ManagedError.js"
-import {RunContext} from "./RunContext.js"
-import {TestManager} from "./TestManager.js"
-import {User} from "./User.js"
-import {CloseRequest} from "./requestModels/CloseRequest.js"
-import {QuoteRequest} from "./requestModels/QuoteRequest.js"
-import {
-	CancelCloseRequestValidator,
-	CancelCloseRequestValidatorBeforeOutput
-} from "./validators/CancelCloseRequestValidator.js"
-import {CancelQuoteValidator, CancelQuoteValidatorBeforeOutput} from "./validators/CancelQuoteValidator.js"
-import {CloseRequestValidator, CloseRequestValidatorBeforeOutput} from "./validators/CloseRequestValidator.js"
-import {QuoteCheckpoint} from "./quoteCheckpoint.js"
-import type {QuoteStructOutput} from "../../src/types/interfaces/ISymmio.js"
+import type { SymbolStructOutput } from "../../src/types/facets/Control/ControlFacet.js"
+import type { QuoteStructOutput } from "../../src/types/interfaces/ISymmio.js"
+import { checkStatus, decimal, getBlockTimestamp, getQuoteMinLeftQuantityForClose, getSymbols, min, unDecimal } from "../utils/Common.js"
+import { logger } from "../utils/LoggerUtils.js"
+import { getPrice } from "../utils/PriceUtils.js"
+import { pick, randomBigNumber, randomBigNumberRatio } from "../utils/RandomUtils.js"
+import { roundToPrecision, safeDiv } from "../utils/SafeMath.js"
+import { getDummySingleUpnlAndPriceSig } from "../utils/SignatureUtils.js"
+import { Action, actionNamesMap, ActionWrapper, expandActions, userActionsMap } from "./Actions.js"
+import { OrderType, PositionType, QuoteStatus } from "./Enums.js"
+import { ManagedError } from "./ManagedError.js"
+import { RunContext } from "./RunContext.js"
+import { TestManager } from "./TestManager.js"
+import { User } from "./User.js"
+import { QuoteCheckpoint } from "./quoteCheckpoint.js"
+import { CloseRequest } from "./requestModels/CloseRequest.js"
+import { QuoteRequest } from "./requestModels/QuoteRequest.js"
+import { CancelCloseRequestValidator, CancelCloseRequestValidatorBeforeOutput } from "./validators/CancelCloseRequestValidator.js"
+import { CancelQuoteValidator, CancelQuoteValidatorBeforeOutput } from "./validators/CancelQuoteValidator.js"
+import { CloseRequestValidator, CloseRequestValidatorBeforeOutput } from "./validators/CloseRequestValidator.js"
 
 export class UserController {
 	private readonly context: RunContext
 
-	constructor(private manager: TestManager, private user: User, private checkpoint: QuoteCheckpoint) {
+	constructor(
+		private manager: TestManager,
+		private user: User,
+		private checkpoint: QuoteCheckpoint,
+	) {
 		this.context = manager.context
 	}
 
@@ -123,8 +116,7 @@ export class UserController {
 
 		if (availableForQuote - tradingFee < symbol.minAcceptableQuoteValue) throw new ManagedError("Insufficient funds available for tradingFee")
 
-		if (availableForQuote - tradingFee < lockedAmount)
-			throw new ManagedError("Random data lead to invalid quote... This request will be rejected")
+		if (availableForQuote - tradingFee < lockedAmount) throw new ManagedError("Random data lead to invalid quote... This request will be rejected")
 
 		const id = await this.user.sendQuote(
 			Builder<QuoteRequest>()
