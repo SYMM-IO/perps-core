@@ -16,14 +16,18 @@ The deposit fee percentage is each affiliate's own decision and their own capita
 sequenceDiagram
     participant User
     participant Frontend
+    participant AccountLayer
     participant SYMMIO Core
     participant Virtual Provider
 
     User->>Frontend: Deposit 1000 USDC
-    Frontend->>SYMMIO Core: deposit(1000 USDC)
-    Note over SYMMIO Core: Affiliate configured 3% express split
-    SYMMIO Core->>SYMMIO Core: Credit user 1000 USDC balance
-    SYMMIO Core->>Virtual Provider: onExpressDeposit(user, 30 USDC)
+    Frontend->>AccountLayer: depositWithExpressRate(1000 USDC)
+    Note over AccountLayer: Affiliate configured 3% express split
+    AccountLayer->>SYMMIO Core: depositFor(user, 970 USDC)
+    Note over SYMMIO Core: Credit user 970 USDC balance
+    AccountLayer->>Virtual Provider: transfer 30 USDC + onExpressDeposit(user, 30 USDC)
+    Virtual Provider->>SYMMIO Core: virtualDepositFor(user, 30 USDC)
+    Note over SYMMIO Core: Credit user additional 30 USDC (virtual)
     Note over Virtual Provider: 30 USDC routed to provider,<br/>970 USDC stays in SYMMIO
     Note over Virtual Provider: Liquidity pool grows<br/>with every deposit
 ```
