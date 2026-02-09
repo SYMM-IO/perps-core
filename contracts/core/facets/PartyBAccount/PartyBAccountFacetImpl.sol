@@ -41,7 +41,7 @@ library PartyBAccountFacetImpl {
 
 		accountLayout.partyBAllocatedBalances[signer][partyA] -= amount;
 		accountLayout.balances[signer] += amount;
-		accountLayout.withdrawCooldown[signer] = block.timestamp;
+		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}
 
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) internal {
@@ -85,7 +85,7 @@ library PartyBAccountFacetImpl {
 		require(amount > 0 && amount <= accountLayout.reserveVault[signer], "AccountFacet: Insufficient balance");
 		accountLayout.reserveVault[signer] -= amount;
 		accountLayout.balances[signer] += amount;
-		accountLayout.withdrawCooldown[signer] = block.timestamp;
+		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}
 
 	function activateCrossPartyB() internal {

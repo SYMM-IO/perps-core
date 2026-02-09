@@ -24,8 +24,8 @@ library MAStorage {
 	struct Layout {
 		/// @notice How long users must wait after deallocating before they can withdraw
 		/// @dev This cooldown exists for off-chain monitoring to detect suspicious activity.
-		///      Typically 12 hours.
-		uint256 deallocateCooldown;
+		///      Typically 12 hours. Previously named deallocateCooldown.
+		uint256 withdrawCooldownPeriod;
 		/// @notice How long PartyA must wait before force-canceling a pending quote
 		/// @dev Gives PartyB time to respond to a quote cancel request before PartyA can unilaterally cancel.
 		uint256 forceCancelCooldown;

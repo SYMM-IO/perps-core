@@ -8,7 +8,7 @@ import { IWithdrawEvents } from "./IWithdrawEvents.sol";
 import { WithdrawReceiverPart } from "../../storages/WithdrawStorage.sol";
 
 interface IWithdrawFacet is IWithdrawEvents {
-	function initiateWithdraw(WithdrawReceiverPart[] memory parts,bool speedUp, bytes memory data) external;
+	function initiateWithdraw(WithdrawReceiverPart[] memory parts,bool speedUp, bytes memory data) external returns (uint256 requestId, uint256 cooldownEndTime);
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
 	function finalizeWithdrawRequest(address user, uint256 requestId) external;
 	function requestCancelWithdraw(uint256 requestId) external;

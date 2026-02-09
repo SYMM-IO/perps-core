@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { WithdrawStorage, WithdrawReceiverPart, WithdrawRequest, WithdrawStatus } from "../../storages/WithdrawStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { IVirtualProvider } from "../../interfaces/IVirtualProvider.sol";
@@ -26,7 +27,7 @@ library WithdrawFacetImpl {
 		uint256 totalVirtualAmount;
 	}
 
-	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bool speedUp, bytes memory data) internal returns (uint256) {
+	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bool speedUp, bytes memory data) internal returns (uint256, uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
@@ -52,7 +53,8 @@ library WithdrawFacetImpl {
 		require(accountLayout.balances[signer] >= totalAmountWith18, "WithdrawFacet : Insufficient balance");
 
 		require(
-			IERC20Metadata(collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= (locals.totalAmount - locals.totalVirtualAmount),
+			IERC20Metadata(collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >=
+				(locals.totalAmount - locals.totalVirtualAmount),
 			"WithdrawFacet : Insufficient contract collateral"
 		);
 
@@ -64,12 +66,18 @@ library WithdrawFacetImpl {
 		// Final provider selection
 		(address provider, bool isPureVirtual) = _selectProvider(locals, speedUp);
 
+		// Cooldown: funds are non-withdrawable for withdrawCooldownPeriod after the last deallocate
+		uint256 cooldownEndTime = accountLayout.deallocateTimestamp[signer] + MAStorage.layout().withdrawCooldownPeriod;
+		if (cooldownEndTime < block.timestamp) {
+			cooldownEndTime = block.timestamp;
+		}
+
 		WithdrawRequest memory withdrawRequest = WithdrawRequest({
 			id: currentId,
 			user: signer,
 			parts: parts,
 			timestamp: block.timestamp,
-			cooldownEndTime: block.timestamp + withdrawLayout.withdrawCooldownPeriod,
+			cooldownEndTime: cooldownEndTime,
 			status: WithdrawStatus.PENDING,
 			speedUp: speedUp,
 			isCooldownModified: false,
@@ -89,7 +97,7 @@ library WithdrawFacetImpl {
 			LibSafeCall.safeExternalCall(locals.virtualProvider, abi.encodeCall(IVirtualProvider.onWithdrawRequest, (withdrawRequest)));
 		}
 
-		return currentId;
+		return (currentId, cooldownEndTime);
 	}
 
 	function _processWithdrawParts(

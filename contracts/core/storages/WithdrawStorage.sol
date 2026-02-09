@@ -4,40 +4,40 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-	struct WithdrawReceiverPart {
-		uint256 id;
-		uint256 amount;
-		int256 chainId;
-		bytes receiver;
-		address virtualProvider;
-		address expressProvider;
-	}
+struct WithdrawReceiverPart {
+	uint256 id;
+	uint256 amount;
+	int256 chainId;
+	bytes receiver;
+	address virtualProvider;
+	address expressProvider;
+}
 
-	struct WithdrawRequest {
-		uint256 id;
-		address user;
-		WithdrawReceiverPart[] parts;
-		uint256 timestamp;
-		uint256 cooldownEndTime;
-		WithdrawStatus status;
-		bool speedUp;
-		bool isCooldownModified;
-		address provider;
-		bool isPureVirtual;
-		bytes providerData;
-		uint256 totalAmount;
-		uint256 totalVirtualAmount;
-	}
+struct WithdrawRequest {
+	uint256 id;
+	address user;
+	WithdrawReceiverPart[] parts;
+	uint256 timestamp;
+	uint256 cooldownEndTime;
+	WithdrawStatus status;
+	bool speedUp;
+	bool isCooldownModified;
+	address provider;
+	bool isPureVirtual;
+	bytes providerData;
+	uint256 totalAmount;
+	uint256 totalVirtualAmount;
+}
 
-	enum WithdrawStatus {
-		PENDING,
-		PROVIDER_ACCEPTED,
-		PROVIDER_REJECTED,
-		COMPLETED,
-		CANCEL_REQUESTED,
-		CANCELLED,
-		SUSPENDED
-	}
+enum WithdrawStatus {
+	PENDING,
+	PROVIDER_ACCEPTED,
+	PROVIDER_REJECTED,
+	COMPLETED,
+	CANCEL_REQUESTED,
+	CANCELLED,
+	SUSPENDED
+}
 
 /// @title WithdrawStorage
 /// @notice Configuration and state for the new multi-part withdrawal system
@@ -50,10 +50,6 @@ library WithdrawStorage {
 		/// @dev Limits complexity and gas costs. Users needing more destinations
 		///      must submit multiple requests.
 		uint256 maxWithdrawParts;
-		/// @notice Standard cooldown period for withdrawals (seconds)
-		/// @dev The default waiting period before funds can be claimed. Typically 12 hours.
-		///      Express providers can bypass this by fronting funds.
-		uint256 withdrawCooldownPeriod;
 		/// @notice Minimum cooldown even with speed-up approval (seconds)
 		/// @dev Even privileged users (solvers) can't reduce cooldown below this.
 		///      Ensures some minimum time for monitoring.

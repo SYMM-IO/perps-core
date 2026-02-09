@@ -337,6 +337,31 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("setWithdrawCooldownPeriod", () => {
+		it("Should setWithdrawCooldownPeriod successfully", async function () {
+			await expect(context.controlFacet.connect(owner).setWithdrawCooldownPeriod(BigInt("300"))).to.not.be.reverted
+			expect((await context.viewFacet.coolDownsOfMA())[0]).to.equal(BigInt("300"))
+		})
+	})
+
+	describe("setDeallocateCooldown and setWithdrawCooldownPeriod equivalence", () => {
+		it("Should both set the same underlying value", async function () {
+			await context.controlFacet.connect(owner).setDeallocateCooldown(BigInt("500"))
+			expect((await context.viewFacet.coolDownsOfMA())[0]).to.equal(BigInt("500"))
+			expect(await context.viewFacet.deallocateCooldown()).to.equal(BigInt("500"))
+
+			await context.controlFacet.connect(owner).setWithdrawCooldownPeriod(BigInt("700"))
+			expect((await context.viewFacet.coolDownsOfMA())[0]).to.equal(BigInt("700"))
+			expect(await context.viewFacet.deallocateCooldown()).to.equal(BigInt("700"))
+		})
+
+		it("Should emit both SetWithdrawCooldownPeriod and SetDeallocateCooldown events", async function () {
+			await expect(context.controlFacet.connect(owner).setDeallocateCooldown(BigInt("400")))
+				.to.emit(context.controlFacet, "SetWithdrawCooldownPeriod")
+				.and.to.emit(context.controlFacet, "SetDeallocateCooldown")
+		})
+	})
+
 	describe("setForceCloseCooldowns", () => {
 		it("Should setForceCloseCooldowns successfully", async function () {
 			await expect(context.controlFacet.connect(owner).setForceCloseCooldowns(BigInt("1708784117"), BigInt("1708794117"))).to.not.be.reverted

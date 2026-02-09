@@ -7612,6 +7612,25 @@
                 "internalType": "address",
                 "name": "user",
                 "type": "address"
+            }
+        ],
+        "name": "getWithdrawableTime",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
             },
             {
                 "internalType": "bytes32",
@@ -15499,6 +15518,12 @@
                 "internalType": "bytes",
                 "name": "providerData",
                 "type": "bytes"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "cooldownEndTime",
+                "type": "uint256"
             }
         ],
         "name": "WithdrawInitiated",
@@ -15713,7 +15738,18 @@
             }
         ],
         "name": "initiateWithdraw",
-        "outputs": [],
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "cooldownEndTime",
+                "type": "uint256"
+            }
+        ],
         "stateMutability": "nonpayable",
         "type": "function"
     },

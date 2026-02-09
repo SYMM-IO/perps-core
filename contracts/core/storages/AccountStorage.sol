@@ -145,9 +145,9 @@ library AccountStorage {
 		/// @dev Same as lockedBalances but for the PartyB side.
 		mapping(address => mapping(address => LockedValues)) partyBLockedBalances;
 		/// @notice Timestamp of last deallocate action per user
-		/// @dev Despite the name, this tracks deallocate time, not withdraw time. Checked
-		///      against deallocateCooldown before allowing withdrawals.
-		mapping(address => uint256) withdrawCooldown;
+		/// @dev Records when a user last deallocated funds. Used with MAStorage.withdrawCooldownPeriod
+		///      to enforce a cooldown before withdrawals are allowed.
+		mapping(address => uint256) deallocateTimestamp;
 		/// @notice Replay protection counter for PartyA signatures
 		/// @dev Incremented with each action that changes the UPNL of partyA.
 		///      Muon signatures include this nonce to prevent replay attacks.

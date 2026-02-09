@@ -10,7 +10,6 @@ import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
-import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { LibMuonAccount } from "../../libraries/muon/LibMuonAccount.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
@@ -47,7 +46,7 @@ library AccountFacetImpl {
 		address signer = LibSigner.getSigner();
 		require(WithdrawStorage.layout().legacyWithdrawalDeprecated == false, "This Withdrawal has been deprecated use new one;");
 		require(
-			block.timestamp >= accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateCooldown,
+			block.timestamp >= accountLayout.deallocateTimestamp[signer] + MAStorage.layout().withdrawCooldownPeriod,
 			"AccountFacet: Cooldown hasn't reached"
 		);
 		require(
@@ -91,7 +90,7 @@ library AccountFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(
-			block.timestamp >= accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateDebounceTime,
+			block.timestamp >= accountLayout.deallocateTimestamp[signer] + MAStorage.layout().deallocateDebounceTime,
 			"AccountFacet: Too many deallocate in a short window"
 		);
 		require(accountLayout.allocatedBalances[signer] >= amount, "AccountFacet: Insufficient allocated Balance");
@@ -107,7 +106,7 @@ library AccountFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(
-			block.timestamp >= accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateDebounceTime,
+			block.timestamp >= accountLayout.deallocateTimestamp[signer] + MAStorage.layout().deallocateDebounceTime,
 			"AccountFacet: Too many deallocate in a short window"
 		);
 		require(accountLayout.allocatedBalances[signer] >= amount, "AccountFacet: Insufficient allocated Balance");
@@ -153,13 +152,13 @@ library AccountFacetImpl {
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
 		accountLayout.balances[signer] -= amount;
 		accountLayout.balances[user] += amount;
-		accountLayout.withdrawCooldown[user] = block.timestamp;
+		accountLayout.deallocateTimestamp[user] = block.timestamp;
 	}
 
 	function _executeDeallocate(address signer, uint256 amount) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		accountLayout.allocatedBalances[signer] -= amount;
 		accountLayout.balances[signer] += amount;
-		accountLayout.withdrawCooldown[signer] = block.timestamp;
+		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}
 }
