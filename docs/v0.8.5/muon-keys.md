@@ -18,11 +18,11 @@ The `MuonSignatureVerifier` contract solves all three by externalizing key manag
 
 ```mermaid
 flowchart TD
-    CF[ControlFacet\nsetSignatureVerifierAddress]
-    LM[LibMuon\nverifyTSSAndGateway]
-    GAS[GlobalAppStorage\n.signatureVerifier]
-    MSV[MuonSignatureVerifier\nexternal contract\n---\nverify hash, sign, gwSig\naddPublicKey / removePublicKey\naddGatewaySigner / removeGatewaySigner]
-    SCH[LibMuonV04ClientBase\nSchnorr verify]
+    CF["ControlFacet<br/>setSignatureVerifierAddress"]
+    LM["LibMuon<br/>verifyTSSAndGateway"]
+    GAS["GlobalAppStorage<br/>.signatureVerifier"]
+    MSV["MuonSignatureVerifier<br/>external contract<br/>---<br/>verify hash, sign, gwSig<br/>addPublicKey / removePublicKey<br/>addGatewaySigner / removeGatewaySigner"]
+    SCH["LibMuonV04ClientBase<br/>Schnorr verify"]
 
     CF -->|sets address| GAS
     LM --> GAS -->|delegates call| MSV
