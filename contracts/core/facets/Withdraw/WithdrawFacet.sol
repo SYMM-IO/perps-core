@@ -38,10 +38,9 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param speedUp Whether to request a speed-up for this withdrawal.
 	 * @param data Additional provider-specific metadata.
 	 */
-	function initiateWithdraw(WithdrawReceiverPart[] memory parts,bool speedUp, bytes memory data) external notSuspended(LibSigner.getSigner()) nonReentrant returns (uint256 requestId) {
-		requestId = WithdrawFacetImpl.initiateWithdraw(parts,speedUp, data);
-		emit WithdrawInitiated(requestId, LibSigner.getSigner(), parts, speedUp, data);
-		return requestId;
+	function initiateWithdraw(WithdrawReceiverPart[] memory parts,bool speedUp, bytes memory data) external notSuspended(LibSigner.getSigner()) nonReentrant returns (uint256 requestId, uint256 cooldownEndTime) {
+		(requestId, cooldownEndTime) = WithdrawFacetImpl.initiateWithdraw(parts,speedUp, data);
+		emit WithdrawInitiated(requestId, LibSigner.getSigner(), parts, speedUp, data, cooldownEndTime);
 	}
 
 	/**

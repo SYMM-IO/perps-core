@@ -528,12 +528,10 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	function _updateWithdrawAndDeallocateCooldown(uint256 newValue) internal {
-		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
-		emit SetWithdrawCooldownPeriod(withdrawLayout.withdrawCooldownPeriod, newValue);
-		emit SetDeallocateCooldown(maLayout.deallocateCooldown, newValue);
-		withdrawLayout.withdrawCooldownPeriod = newValue;
-		maLayout.deallocateCooldown = newValue;
+		emit SetWithdrawCooldownPeriod(maLayout.withdrawCooldownPeriod, newValue);
+		emit SetDeallocateCooldown(maLayout.withdrawCooldownPeriod, newValue);
+		maLayout.withdrawCooldownPeriod = newValue;
 	}
 
 	/// @notice Registers a virtual provider that can facilitate virtual deposits/withdrawals without actual token transfers.

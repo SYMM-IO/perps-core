@@ -61,7 +61,7 @@ library BridgeFacetImpl {
 		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];
 
 		require(bridgeTransaction.status == BridgeTransactionStatus.RECEIVED, "BridgeFacet: Already withdrawn");
-		require(block.timestamp >= MAStorage.layout().deallocateCooldown + bridgeTransaction.timestamp, "BridgeFacet: Cooldown hasn't reached");
+		require(block.timestamp >= MAStorage.layout().withdrawCooldownPeriod + bridgeTransaction.timestamp, "BridgeFacet: Cooldown hasn't reached");
 		if (bridgeLayout.bridges[bridgeTransaction.bridge]) {
 			require(msg.sender == bridgeTransaction.bridge, "BridgeFacet: Sender is not the transaction's bridge");
 			LibSafeERC20.safeTransfer(appLayout.collateral, bridgeTransaction.bridge, bridgeTransaction.amount);
@@ -84,7 +84,7 @@ library BridgeFacetImpl {
 			require(transactionIds[i - 1] <= bridgeLayout.lastId, "BridgeFacet: Invalid transactionId");
 			BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionIds[i - 1]];
 			require(bridgeTransaction.status == BridgeTransactionStatus.RECEIVED, "BridgeFacet: Already withdrawn");
-			require(block.timestamp >= MAStorage.layout().deallocateCooldown + bridgeTransaction.timestamp, "BridgeFacet: Cooldown hasn't reached");
+			require(block.timestamp >= MAStorage.layout().withdrawCooldownPeriod + bridgeTransaction.timestamp, "BridgeFacet: Cooldown hasn't reached");
 
 			if (bridgeLayout.bridges[bridgeTransaction.bridge]) {
 				require(bridgeTransaction.bridge == msg.sender, "BridgeFacet: Sender is not the transaction's bridge");

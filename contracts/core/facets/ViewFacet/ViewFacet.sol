@@ -242,7 +242,15 @@ contract ViewFacet is IViewFacet {
 	 * @return The withdrawal cooldown of the user.
 	 */
 	function withdrawCooldownOf(address user) external view returns (uint256) {
-		return AccountStorage.layout().withdrawCooldown[user];
+		return AccountStorage.layout().deallocateTimestamp[user];
+	}
+
+	/// @notice Returns the earliest time a user can finalize a non-provider withdrawal initiated now.
+	/// @param user The address of the user.
+	/// @return The timestamp when finalization becomes possible. Returns block.timestamp if withdrawable now.
+	function getWithdrawableTime(address user) external view returns (uint256) {
+		uint256 cooldownEnd = AccountStorage.layout().deallocateTimestamp[user] + MAStorage.layout().withdrawCooldownPeriod;
+		return cooldownEnd > block.timestamp ? cooldownEnd : block.timestamp;
 	}
 
 	/**
@@ -499,7 +507,7 @@ contract ViewFacet is IViewFacet {
 	 */
 	function coolDownsOfMA() external view returns (uint256, uint256, uint256, uint256) {
 		return (
-			MAStorage.layout().deallocateCooldown,
+			MAStorage.layout().withdrawCooldownPeriod,
 			MAStorage.layout().forceCancelCooldown,
 			MAStorage.layout().forceCancelCloseCooldown,
 			MAStorage.layout().forceCloseFirstCooldown
@@ -520,7 +528,7 @@ contract ViewFacet is IViewFacet {
 	 * @return deallocateCooldown The deallocate cooldown.
 	 */
 	function deallocateCooldown() external view returns (uint256) {
-		return MAStorage.layout().deallocateCooldown;
+		return MAStorage.layout().withdrawCooldownPeriod;
 	}
 
 	/**

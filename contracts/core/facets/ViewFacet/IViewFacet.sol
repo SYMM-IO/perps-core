@@ -50,6 +50,8 @@ interface IViewFacet {
 
 	function withdrawCooldownOf(address user) external view returns (uint256);
 
+	function getWithdrawableTime(address user) external view returns (uint256);
+
 	function nonceOfPartyA(address partyA) external view returns (uint256);
 
 	function nonceOfPartyB(address partyB, address partyA) external view returns (uint256);

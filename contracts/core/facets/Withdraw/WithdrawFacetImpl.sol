@@ -27,7 +27,7 @@ library WithdrawFacetImpl {
 		uint256 totalVirtualAmount;
 	}
 
-	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bool speedUp, bytes memory data) internal returns (uint256) {
+	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bool speedUp, bytes memory data) internal returns (uint256, uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
@@ -53,7 +53,8 @@ library WithdrawFacetImpl {
 		require(accountLayout.balances[signer] >= totalAmountWith18, "WithdrawFacet : Insufficient balance");
 
 		require(
-			IERC20Metadata(collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= (locals.totalAmount - locals.totalVirtualAmount),
+			IERC20Metadata(collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >=
+				(locals.totalAmount - locals.totalVirtualAmount),
 			"WithdrawFacet : Insufficient contract collateral"
 		);
 
@@ -65,14 +66,10 @@ library WithdrawFacetImpl {
 		// Final provider selection
 		(address provider, bool isPureVirtual) = _selectProvider(locals, speedUp);
 
-		// for regular withdrawals (no express/virtual): once deallocateCooldown has passed since the last deallocate
-		// for provider based withdrawals: keep the request cooldown but still respect deallocateCooldown if it is longer
-		uint256 deallocateEndTime = accountLayout.withdrawCooldown[signer] + MAStorage.layout().deallocateCooldown;
-		uint256 cooldownEndTime = block.timestamp + withdrawLayout.withdrawCooldownPeriod;
-		if (!locals.hasExpress && !locals.hasVirtual) {
-			cooldownEndTime = deallocateEndTime > block.timestamp ? deallocateEndTime : block.timestamp;
-		} else if (deallocateEndTime > cooldownEndTime) {
-			cooldownEndTime = deallocateEndTime;
+		// Cooldown: funds are non-withdrawable for withdrawCooldownPeriod after the last deallocate
+		uint256 cooldownEndTime = accountLayout.deallocateTimestamp[signer] + MAStorage.layout().withdrawCooldownPeriod;
+		if (cooldownEndTime < block.timestamp) {
+			cooldownEndTime = block.timestamp;
 		}
 
 		WithdrawRequest memory withdrawRequest = WithdrawRequest({
@@ -100,7 +97,7 @@ library WithdrawFacetImpl {
 			LibSafeCall.safeExternalCall(locals.virtualProvider, abi.encodeCall(IVirtualProvider.onWithdrawRequest, (withdrawRequest)));
 		}
 
-		return currentId;
+		return (currentId, cooldownEndTime);
 	}
 
 	function _processWithdrawParts(
@@ -168,10 +165,7 @@ library WithdrawFacetImpl {
 
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
-		uint256 requiredEndTime = withdrawRequest.cooldownEndTime;
-		uint256 deallocateEndTime = AccountStorage.layout().withdrawCooldown[user] + MAStorage.layout().deallocateCooldown;
-		if (deallocateEndTime > requiredEndTime) requiredEndTime = deallocateEndTime;
-		require(block.timestamp >= requiredEndTime, "WithdrawFacet : Withdraw cooldown not over");
+		require(block.timestamp >= withdrawRequest.cooldownEndTime, "WithdrawFacet : Withdraw cooldown not over");
 
 		if (withdrawRequest.provider == address(0)) {
 			require(withdrawRequest.status == WithdrawStatus.PENDING, "WithdrawFacet : Invalid withdraw request status");

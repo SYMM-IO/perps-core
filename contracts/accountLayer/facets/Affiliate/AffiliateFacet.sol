@@ -342,7 +342,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 			virtualProvider: address(0),
 			expressProvider: address(0)
 		});
-		uint256 requestId = ISymmio(symmio).initiateWithdraw(parts, false, "0x");
+		(uint256 requestId, ) = ISymmio(symmio).initiateWithdraw(parts, false, "0x");
 		ISymmio(symmio).finalizeWithdrawRequest(afLayout.affiliates[affiliate].feeDetails.feeDistributor, requestId);
 		ISymmio(symmio).setSigner(address(0));
 
