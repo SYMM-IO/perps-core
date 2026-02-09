@@ -20,7 +20,12 @@ interface IClearingHouseFacet is IClearingHouseFacetEvents {
 		uint256[] memory amounts
 	) external;
 
-	function distributeForClearingHouse(address subject, address[] memory receivers, address[] memory allocationKeys, uint256[] memory amounts) external;
+	function distributeForClearingHouse(
+		address subject,
+		address[] memory receivers,
+		address[] memory allocationKeys,
+		uint256[] memory amounts
+	) external;
 
 	function liquidatePendingPositionsForClearingHouse(address subject, address[] memory counterparties) external;
 

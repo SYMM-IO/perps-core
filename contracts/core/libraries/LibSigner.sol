@@ -7,7 +7,7 @@ pragma solidity >=0.8.18;
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 
 library LibSigner {
-	function getSigner() internal view  returns (address) {
+	function getSigner() internal view returns (address) {
 		return GlobalAppStorage.layout().signer == address(0) ? msg.sender : GlobalAppStorage.layout().signer;
 	}
 }

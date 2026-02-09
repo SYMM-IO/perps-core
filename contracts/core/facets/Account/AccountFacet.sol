@@ -16,7 +16,6 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 
-
 contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows either PartyA or PartyB to deposit collateral.
 	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.

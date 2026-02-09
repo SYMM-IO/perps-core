@@ -46,8 +46,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		} else if (subIsolation == SubAccountIsolationType.MARKET) {
 			validIsolation = isolationType == VirtualAccountIsolationType.MARKET;
 		} else if (subIsolation == SubAccountIsolationType.MARKET_DIRECTION) {
-			validIsolation =
-				isolationType == VirtualAccountIsolationType.MARKET_LONG || isolationType == VirtualAccountIsolationType.MARKET_SHORT;
+			validIsolation = isolationType == VirtualAccountIsolationType.MARKET_LONG || isolationType == VirtualAccountIsolationType.MARKET_SHORT;
 		}
 
 		if (!validIsolation) revert InvalidIsolationType();
@@ -99,11 +98,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 
 		uint256 totalBalance = ISymmio(core).balanceOf(lostAccount);
 		if (totalBalance > 0) {
-			_executeWithSymmioSigner(
-				core,
-				lostAccount,
-				abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, subAccount, totalBalance)
-			);
+			_executeWithSymmioSigner(core, lostAccount, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, subAccount, totalBalance));
 		}
 
 		emit EmergencyMarginRecovered(lostAccount, subAccount, totalBalance);

@@ -39,12 +39,7 @@ library LibMuon {
 	}
 
 	// Used in Account (deallocate/clearing house) to enforce cross partyB nonce usage
-	function verifyPartyBUpnl(
-		SingleUpnlSig memory upnlSig,
-		address partyB,
-		address partyA,
-		bool useCrossNonce
-	) internal view {
+	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, bool useCrossNonce) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");

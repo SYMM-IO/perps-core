@@ -59,10 +59,7 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 	 * @notice Initiates the process to deactivate instant action mode
 	 * @dev Only callable by PartyA accounts, starts a time-delayed process
 	 */
-	function proposeToDeactivateInstantActionMode()
-		external
-		whenNotPartyAActionsPaused
-	{
+	function proposeToDeactivateInstantActionMode() external whenNotPartyAActionsPaused {
 		BindingFacetImpl.proposeToDeactivateInstantActionMode();
 		emit ProposeToDeactivateInstantActionMode(LibSigner.getSigner(), block.timestamp);
 	}

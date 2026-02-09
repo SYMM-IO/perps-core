@@ -10,7 +10,7 @@ import { LibMuon } from "./LibMuon.sol";
 
 library LibMuonLiquidation {
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // This call is from normal liquidation where we always use standard account mode nonce. 
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // This call is from normal liquidation where we always use standard account mode nonce.
 	}
 
 	function verifyLiquidationSig(LiquidationSig memory liquidationSig, address partyA) internal view {
@@ -78,5 +78,4 @@ library LibMuonLiquidation {
 		);
 		LibMuon.verifyTSSAndGateway(hash, priceSig.sigs, priceSig.gatewaySignature);
 	}
-
 }

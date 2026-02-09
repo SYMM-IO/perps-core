@@ -354,8 +354,7 @@ contract ViewFacetQuote is IViewFacetQuote {
 	 */
 	function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256) {
 		int256 sum;
-		for (uint256 i = 0; i < quoteIds.length; i++)
-			sum += LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);
+		for (uint256 i = 0; i < quoteIds.length; i++) sum += LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);
 		return sum;
 	}
 }

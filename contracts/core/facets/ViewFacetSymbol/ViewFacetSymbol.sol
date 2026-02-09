@@ -257,10 +257,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 
 		for (uint256 i = 0; i < connectedPartyBs.length; ) {
 			address partyB = connectedPartyBs[i];
-			result[i] = PartyBSymbolCount({
-				partyB: partyB,
-				symbolCount: aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB].length
-			});
+			result[i] = PartyBSymbolCount({ partyB: partyB, symbolCount: aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB].length });
 			unchecked {
 				++i;
 			}

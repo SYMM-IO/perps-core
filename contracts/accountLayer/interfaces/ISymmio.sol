@@ -124,7 +124,11 @@ interface ISymmio {
 	function withdrawTo(address user, uint256 amount) external;
 	function allocate(uint256 amount) external;
 	function deallocate(uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
-	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bool speedUp, bytes memory data) external returns (uint256 requestId, uint256 cooldownEndTime);
+	function initiateWithdraw(
+		WithdrawReceiverPart[] memory parts,
+		bool speedUp,
+		bytes memory data
+	) external returns (uint256 requestId, uint256 cooldownEndTime);
 	function finalizeWithdrawRequest(address user, uint256 requestId) external;
 	function getCollateral() external view returns (address);
 	function balanceOf(address user) external view returns (uint256);

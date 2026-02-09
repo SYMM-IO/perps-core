@@ -14,9 +14,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 
-
 library BridgeFacetImpl {
-
 	function _createBridgeTransaction(address user, uint256 amount, address bridge) private returns (uint256 currentId) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
@@ -42,7 +40,10 @@ library BridgeFacetImpl {
 
 		// check enough balance in the contract
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
-		require(IERC20Metadata(collateral).balanceOf(address (this)) - withdrawLayout.withdrawLockedBalance >= amount, "Insufficient contract collateral");
+		require(
+			IERC20Metadata(collateral).balanceOf(address(this)) - withdrawLayout.withdrawLockedBalance >= amount,
+			"Insufficient contract collateral"
+		);
 		withdrawLayout.withdrawLockedBalance += amount;
 
 		bridgeLayout.bridgeTransactions[currentId] = bridgeTransaction;
@@ -84,7 +85,10 @@ library BridgeFacetImpl {
 			require(transactionIds[i - 1] <= bridgeLayout.lastId, "BridgeFacet: Invalid transactionId");
 			BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionIds[i - 1]];
 			require(bridgeTransaction.status == BridgeTransactionStatus.RECEIVED, "BridgeFacet: Already withdrawn");
-			require(block.timestamp >= MAStorage.layout().withdrawCooldownPeriod + bridgeTransaction.timestamp, "BridgeFacet: Cooldown hasn't reached");
+			require(
+				block.timestamp >= MAStorage.layout().withdrawCooldownPeriod + bridgeTransaction.timestamp,
+				"BridgeFacet: Cooldown hasn't reached"
+			);
 
 			if (bridgeLayout.bridges[bridgeTransaction.bridge]) {
 				require(bridgeTransaction.bridge == msg.sender, "BridgeFacet: Sender is not the transaction's bridge");

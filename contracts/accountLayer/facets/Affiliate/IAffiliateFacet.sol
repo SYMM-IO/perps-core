@@ -86,5 +86,4 @@ interface IAffiliateFacet is IAffiliateFacetEvents, IAccountLayerErrors {
 	// ==================== Delegated Calls ====================
 
 	function callAsAffiliate(address affiliate, address symmio, bytes calldata callData) external returns (bytes memory result);
-
 }

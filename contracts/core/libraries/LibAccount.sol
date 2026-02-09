@@ -299,9 +299,7 @@ library LibAccount {
 	 */
 	function getFeeCollector(address affiliate) internal view returns (address) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		return appLayout.affiliateFeeCollector[affiliate] == address(0)
-			? appLayout.defaultFeeCollector
-			: appLayout.affiliateFeeCollector[affiliate];
+		return appLayout.affiliateFeeCollector[affiliate] == address(0) ? appLayout.defaultFeeCollector : appLayout.affiliateFeeCollector[affiliate];
 	}
 
 	/**

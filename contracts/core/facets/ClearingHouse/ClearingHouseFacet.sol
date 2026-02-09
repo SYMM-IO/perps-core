@@ -35,9 +35,7 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 	 *      Prevents normal liquidation functions from running.
 	 * @param partyA The address of Party A.
 	 */
-	function takeoverPartyALiquidation(
-		address partyA
-	) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
+	function takeoverPartyALiquidation(address partyA) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
 		bytes memory liquidationId = ClearingHouseFacetImpl.takeoverPartyALiquidation(partyA);
 		emit TakeoverPartyALiquidation(partyA, liquidationId, block.timestamp);
 	}
@@ -144,9 +142,7 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 	 *      Requires all positions closed and all funds distributed.
 	 * @param partyB The address of Party B.
 	 */
-	function settleCrossPartyBLiquidation(
-		address partyB
-	) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
+	function settleCrossPartyBLiquidation(address partyB) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
 		ClearingHouseFacetImpl.settleCrossPartyBLiquidation(partyB);
 		emit SettleCrossPartyBLiquidation(partyB);
 	}

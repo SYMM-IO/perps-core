@@ -29,7 +29,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
-		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId];
+		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = aggregatedLayout.partyBAggregatedPositions[partyB][
+			symbolId
+		];
 		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
 		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
 		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
@@ -77,7 +79,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256 symbolId
 	) external view returns (AggregatedPositionAmount memory longPosition, AggregatedPositionAmount memory shortPosition) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
-		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId];
+		mapping(PositionType => PartiesAggregatedPositions) storage aggregatedPositions = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][
+			partyB
+		][symbolId];
 		uint256 longAmount = aggregatedPositions[PositionType.LONG].aggregatedAmount;
 		uint256 shortAmount = aggregatedPositions[PositionType.SHORT].aggregatedAmount;
 		uint256 longNotional = aggregatedPositions[PositionType.LONG].aggregatedNotional;
@@ -217,7 +221,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256[] memory result = new uint256[](size);
 		for (uint256 i = 0; i < size; ) {
 			result[i] = activeSymbols[start + i];
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 		return result;
 	}
@@ -261,7 +267,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256[] memory result = new uint256[](size);
 		for (uint256 i = 0; i < size; ) {
 			result[i] = activeSymbols[start + i];
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 		return result;
 	}
@@ -283,7 +291,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		uint256[] memory result = new uint256[](size);
 		for (uint256 i = 0; i < size; ) {
 			result[i] = activeSymbols[start + i];
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 		return result;
 	}
@@ -336,10 +346,14 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 
-		assembly { mstore(results, count) }
+		assembly {
+			mstore(results, count)
+		}
 	}
 
 	/**
@@ -370,7 +384,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		for (uint256 i = start; i < end; ) {
 			uint256 symbolId = activeSymbols[i];
 
-			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][
+				PositionType.LONG
+			];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -380,7 +396,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][
+				PositionType.SHORT
+			];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -390,10 +408,14 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 
-		assembly { mstore(results, count) }
+		assembly {
+			mstore(results, count)
+		}
 	}
 
 	/**
@@ -424,7 +446,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		for (uint256 i = start; i < end; ) {
 			uint256 symbolId = activeSymbols[i];
 
-			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][
+				PositionType.LONG
+			];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -434,7 +458,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][
+				PositionType.SHORT
+			];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = AggregatedPositionBySymbol({
 					symbolId: symbolId,
@@ -444,10 +470,14 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 
-		assembly { mstore(results, count) }
+		assembly {
+			mstore(results, count)
+		}
 	}
 
 	/**
@@ -494,10 +524,14 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 
-		assembly { mstore(results, count) }
+		assembly {
+			mstore(results, count)
+		}
 	}
 
 	/**
@@ -544,10 +578,14 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 
-		assembly { mstore(results, count) }
+		assembly {
+			mstore(results, count)
+		}
 	}
 
 	/**
@@ -593,10 +631,14 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 
-		assembly { mstore(results, count) }
+		assembly {
+			mstore(results, count)
+		}
 	}
 
 	// ============ UPNL Data View Functions ============
@@ -612,12 +654,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	 * @param size The maximum number of symbols to process
 	 * @return results Array of UPNL data for each symbol/position type
 	 */
-	function getPartyAUpnlData(
-		address partyA,
-		address partyB,
-		uint256 start,
-		uint256 size
-	) external view returns (UpnlData[] memory results) {
+	function getPartyAUpnlData(address partyA, address partyB, uint256 start, uint256 size) external view returns (UpnlData[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
 		uint256 totalLength = activeSymbols.length;
@@ -633,7 +670,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
-			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][
+				PositionType.LONG
+			];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,
@@ -645,7 +684,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 
 			// SHORT position data
-			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][
+				PositionType.SHORT
+			];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,
@@ -656,10 +697,14 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 
-		assembly { mstore(results, count) }
+		assembly {
+			mstore(results, count)
+		}
 	}
 
 	/**
@@ -673,12 +718,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	 * @param size The maximum number of symbols to process
 	 * @return results Array of UPNL data for each symbol/position type
 	 */
-	function getPartyBUpnlData(
-		address partyB,
-		address partyA,
-		uint256 start,
-		uint256 size
-	) external view returns (UpnlData[] memory results) {
+	function getPartyBUpnlData(address partyB, address partyA, uint256 start, uint256 size) external view returns (UpnlData[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
 		uint256 totalLength = activeSymbols.length;
@@ -694,7 +734,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
-			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][
+				PositionType.LONG
+			];
 			if (longPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,
@@ -706,7 +748,9 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 
 			// SHORT position data
-			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.SHORT];
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][
+				PositionType.SHORT
+			];
 			if (shortPos.aggregatedAmount > 0) {
 				results[count++] = UpnlData({
 					symbolId: symbolId,
@@ -717,10 +761,14 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 
-		assembly { mstore(results, count) }
+		assembly {
+			mstore(results, count)
+		}
 	}
 
 	/**
@@ -733,11 +781,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	 * @param size The maximum number of symbols to process
 	 * @return results Array of UPNL data for each symbol/position type
 	 */
-	function getPartyBGlobalUpnlData(
-		address partyB,
-		uint256 start,
-		uint256 size
-	) external view returns (UpnlData[] memory results) {
+	function getPartyBGlobalUpnlData(address partyB, uint256 start, uint256 size) external view returns (UpnlData[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbols[partyB];
 		uint256 totalLength = activeSymbols.length;
@@ -776,9 +820,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 				});
 			}
 
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 
-		assembly { mstore(results, count) }
+		assembly {
+			mstore(results, count)
+		}
 	}
 }

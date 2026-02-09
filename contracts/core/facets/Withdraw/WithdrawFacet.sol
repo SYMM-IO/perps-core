@@ -38,8 +38,12 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param speedUp Whether to request a speed-up for this withdrawal.
 	 * @param data Additional provider-specific metadata.
 	 */
-	function initiateWithdraw(WithdrawReceiverPart[] memory parts,bool speedUp, bytes memory data) external notSuspended(LibSigner.getSigner()) nonReentrant returns (uint256 requestId, uint256 cooldownEndTime) {
-		(requestId, cooldownEndTime) = WithdrawFacetImpl.initiateWithdraw(parts,speedUp, data);
+	function initiateWithdraw(
+		WithdrawReceiverPart[] memory parts,
+		bool speedUp,
+		bytes memory data
+	) external notSuspended(LibSigner.getSigner()) nonReentrant returns (uint256 requestId, uint256 cooldownEndTime) {
+		(requestId, cooldownEndTime) = WithdrawFacetImpl.initiateWithdraw(parts, speedUp, data);
 		emit WithdrawInitiated(requestId, LibSigner.getSigner(), parts, speedUp, data, cooldownEndTime);
 	}
 
@@ -97,7 +101,7 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param requestId ID of the withdrawal request.
 	 */
 	function finalizeWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
-		WithdrawFacetImpl.finalizeWithdrawRequest(user,requestId);
+		WithdrawFacetImpl.finalizeWithdrawRequest(user, requestId);
 		emit WithdrawFinalized(requestId, LibSigner.getSigner());
 	}
 
@@ -133,7 +137,10 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param user The owner of the withdrawal request.
 	 * @param requestId ID of the withdrawal request.
 	 */
-	function forceCancelWithdraw(address user, uint256 requestId) external onlyRole(LibAccessibility.WITHDRAW_FORCE_CANCEL_ROLE) notSuspended(user) nonReentrant {
+	function forceCancelWithdraw(
+		address user,
+		uint256 requestId
+	) external onlyRole(LibAccessibility.WITHDRAW_FORCE_CANCEL_ROLE) notSuspended(user) nonReentrant {
 		WithdrawFacetImpl.forceCancelWithdraw(user, requestId);
 		emit WithdrawCancelled(requestId, user);
 	}
@@ -186,7 +193,11 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	 * @param requestId ID of the withdrawal request.
 	 * @param newCooldown The new cooldown time in seconds.
 	 */
-	function acceptSpeedUpRequest(address user, uint256 requestId, uint256 newCooldown) external notSuspended(user) onlyRole(LibAccessibility.WITHDRAW_SPEED_UP_ROLE) nonReentrant {
+	function acceptSpeedUpRequest(
+		address user,
+		uint256 requestId,
+		uint256 newCooldown
+	) external notSuspended(user) onlyRole(LibAccessibility.WITHDRAW_SPEED_UP_ROLE) nonReentrant {
 		WithdrawFacetImpl.acceptSpeedUpRequest(user, requestId, newCooldown);
 		emit WithdrawSpeedUpAccepted(requestId, user, newCooldown);
 	}

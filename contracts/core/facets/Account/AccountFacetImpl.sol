@@ -30,10 +30,7 @@ library AccountFacetImpl {
 	}
 
 	function depositVirtualFunds(uint256 amount) internal {
-		require(
-			WithdrawStorage.layout().virtualProviders[msg.sender],
-			"AccountFacet: signer not registered as virtual provider"
-		);
+		require(WithdrawStorage.layout().virtualProviders[msg.sender], "AccountFacet: signer not registered as virtual provider");
 		// Transfer funds from virtual provider to Symmio
 		address collateral = GlobalAppStorage.layout().collateral;
 		LibSafeERC20.safeTransferFrom(collateral, msg.sender, address(this), amount);
@@ -83,7 +80,6 @@ library AccountFacetImpl {
 		accountLayout.balances[user] -= amount;
 		accountLayout.allocatedBalances[user] += amount;
 	}
-
 
 	function deallocate(uint256 amount, SingleUpnlSig memory upnlSig) internal {
 		require(!GlobalAppStorage.layout().legacyDeallocateDeprecated, "AccountFacet: Legacy deallocate is disabled");

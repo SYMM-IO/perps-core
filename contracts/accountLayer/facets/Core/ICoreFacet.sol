@@ -42,25 +42,13 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 
 	// ==================== Deposit Functions ====================
 
-	function depositForAccount(
-		address account,
-		uint256 amount
-	) external;
+	function depositForAccount(address account, uint256 amount) external;
 
-	function depositAndAllocateForAccount(
-		address account,
-		uint256 amount
-	) external;
+	function depositAndAllocateForAccount(address account, uint256 amount) external;
 
-	function depositForAccountWithExpressRate(
-		address account,
-		uint256 amount
-	) external;
+	function depositForAccountWithExpressRate(address account, uint256 amount) external;
 
-	function depositAndAllocateForAccountWithExpressRate(
-		address account,
-		uint256 amount
-	) external;
+	function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external;
 
 	// ==================== Call Execution ====================
 

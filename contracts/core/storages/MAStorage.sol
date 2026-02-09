@@ -105,10 +105,10 @@ library MAStorage {
 		/// @dev Affiliates can set custom fees and receive fee revenue. Must be registered
 		///      here before their affiliate address can be used in quotes.
 		mapping(address => bool) affiliateStatus;
-	   /// @notice Minimum time between UPNL settlements by the same third-party signer
-       /// @dev Only enforced when: (1) not a force close operation, AND (2) signer != partyB.
-       ///      PartyB settling their own positions and force close operations bypass this.
-       ///      Prevents third parties from spamming settlements on the same partyB-partyA pair.
+		/// @notice Minimum time between UPNL settlements by the same third-party signer
+		/// @dev Only enforced when: (1) not a force close operation, AND (2) signer != partyB.
+		///      PartyB settling their own positions and force close operations bypass this.
+		///      Prevents third parties from spamming settlements on the same partyB-partyA pair.
 		uint256 settlementCooldown;
 		/// @notice Timestamp of last UPNL settlement by each third-party signer
 		/// @dev Maps signer => partyB => partyA => timestamp. Only updated/checked when

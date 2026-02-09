@@ -10,7 +10,14 @@ import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
 import { AccountHubStorage } from "../../storages/AccountHubStorage.sol";
-import { AffiliateHubStorage, AffiliateData, AffiliateRegistration, AffiliateState, Stakeholder, PendingFeeUpdate } from "../../storages/AffiliateHubStorage.sol";
+import {
+	AffiliateHubStorage,
+	AffiliateData,
+	AffiliateRegistration,
+	AffiliateState,
+	Stakeholder,
+	PendingFeeUpdate
+} from "../../storages/AffiliateHubStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
@@ -100,7 +107,10 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Affiliate Admin Management ====================
 
-	function proposeAdminTransfer(address affiliate, address newAdmin) external whenNotPaused onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
+	function proposeAdminTransfer(
+		address affiliate,
+		address newAdmin
+	) external whenNotPaused onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
 		if (newAdmin == address(0)) revert ZeroAddress();
 
 		AffiliateHubStorage.layout().affiliates[affiliate].pendingAdmin = newAdmin;
@@ -139,7 +149,10 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	function pauseAffiliate(address affiliate) external whenNotPaused onlyIfAffiliateIsActive(affiliate) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		if (!LibAccountLayerAccessibility.hasRole(msg.sender, LibAccountLayerAccessibility.PAUSER_ROLE) && afLayout.affiliates[affiliate].admin != msg.sender) {
+		if (
+			!LibAccountLayerAccessibility.hasRole(msg.sender, LibAccountLayerAccessibility.PAUSER_ROLE) &&
+			afLayout.affiliates[affiliate].admin != msg.sender
+		) {
 			revert Unauthorized();
 		}
 
@@ -204,7 +217,11 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Hook Management ====================
 
-	function setHook(address affiliate, bytes4 selector, address hook) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+	function setHook(
+		address affiliate,
+		bytes4 selector,
+		address hook
+	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		AffiliateHubStorage.layout().affiliates[affiliate].hooks[selector] = hook;
 		emit HookSet(affiliate, selector, hook);
 	}
@@ -229,13 +246,19 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Express Withdraw Configuration ====================
 
-	function setExpressRate(address affiliate, uint256 expressRate) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+	function setExpressRate(
+		address affiliate,
+		uint256 expressRate
+	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		if (expressRate > SHARE_PRECISION) revert InvalidShare();
 		AffiliateHubStorage.layout().affiliates[affiliate].expressRate = expressRate;
 		emit ExpressRateSet(affiliate, expressRate);
 	}
 
-	function setVirtualProvider(address affiliate, address virtualProvider) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
+	function setVirtualProvider(
+		address affiliate,
+		address virtualProvider
+	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		AffiliateHubStorage.layout().affiliates[affiliate].virtualProvider = virtualProvider;
 		emit VirtualProviderSet(affiliate, virtualProvider);
 	}
@@ -373,7 +396,11 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 			);
 	}
 
-	function _generateAccountManagerAddress(address registrant, string memory name, AccountHubStorage.Layout storage ahLayout) private view returns (address) {
+	function _generateAccountManagerAddress(
+		address registrant,
+		string memory name,
+		AccountHubStorage.Layout storage ahLayout
+	) private view returns (address) {
 		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, registrant, name));
 		bytes memory bytecode = abi.encodePacked(ahLayout.accountManagerImplementation, abi.encode(address(this)));
 		bytes32 initCodeHash = keccak256(bytecode);

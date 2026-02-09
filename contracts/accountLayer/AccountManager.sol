@@ -51,17 +51,11 @@ contract AccountManager is IAccountManager, IAccountLayerErrors {
 		ICoreFacet(accountHub).depositAndAllocateForAccount(account, amount);
 	}
 
-	function depositForAccountWithExpressRate(
-		address account,
-		uint256 amount
-	) external withSigner {
+	function depositForAccountWithExpressRate(address account, uint256 amount) external withSigner {
 		ICoreFacet(accountHub).depositForAccountWithExpressRate(account, amount);
 	}
 
-	function depositAndAllocateForAccountWithExpressRate(
-		address account,
-		uint256 amount
-	) external withSigner {
+	function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external withSigner {
 		ICoreFacet(accountHub).depositAndAllocateForAccountWithExpressRate(account, amount);
 	}
 

@@ -56,7 +56,10 @@ library LibConnections {
 		PartyBControlStorage.Layout storage partyBLayout = PartyBControlStorage.layout();
 		address[] storage connections = accountLayout.connectedPartyBs[partyA];
 
-		if ((tradingLayout.bindState[partyA].status == BindStatus.BOUND && tradingLayout.isPartyBBindable[tradingLayout.bindState[partyA].partyB]) || connections.length == 0) {
+		if (
+			(tradingLayout.bindState[partyA].status == BindStatus.BOUND && tradingLayout.isPartyBBindable[tradingLayout.bindState[partyA].partyB]) ||
+			connections.length == 0
+		) {
 			return true;
 		}
 

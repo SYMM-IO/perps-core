@@ -19,7 +19,6 @@ library LibMuonSettlement {
 		bytes memory encodedData;
 		uint256[] memory nonces = new uint256[](settleSig.quotesSettlementsData.length);
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
-			
 			// Get Party B nonce for Standard Account Mode only as it is called for settlement in non cross partyB mode
 			nonces[i] = LibAccount.getPartyBSignatureNonce(
 				QuoteStorage.layout().quotes[settleSig.quotesSettlementsData[i].quoteId].partyB,

@@ -67,5 +67,4 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 			);
 		}
 	}
-
 }

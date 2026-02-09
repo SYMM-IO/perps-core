@@ -198,7 +198,9 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 			uint256 id = symbolIds[i];
 			require(!partyBControlLayout.partyBBlacklistedSymbols[partyB][id], "SymbolControlFacet: Blacklist conflict");
 			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 		emit WhitelistSymbols(partyB, symbolIds);
 	}
@@ -220,7 +222,9 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 		emit RemoveSymbolsFromWhitelist(partyB, symbolIds);
 	}
@@ -235,7 +239,9 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 			uint256 id = symbolIds[i];
 			require(!partyBControlLayout.partyBWhitelistedSymbols[partyB][id], "SymbolControlFacet: Whitelist conflict");
 			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 		emit BlacklistSymbols(partyB, symbolIds);
 	}
@@ -248,7 +254,9 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
 		for (uint256 i; i < symbolIds.length; ) {
 			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
-			unchecked { ++i; }
+			unchecked {
+				++i;
+			}
 		}
 		emit RemoveSymbolsFromBlacklist(partyB, symbolIds);
 	}

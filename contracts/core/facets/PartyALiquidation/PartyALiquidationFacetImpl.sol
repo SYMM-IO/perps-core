@@ -156,7 +156,10 @@ library PartyALiquidationFacetImpl {
 				"LiquidationFacet: Invalid state"
 			);
 			require(!maLayout.partyBLiquidationStatus[quote.partyB][partyA], "LiquidationFacet: PartyB is in liquidation process");
-			require(!ClearingHouseStorage.layout().crossLiquidationDetails[quote.partyB].inProgress, "LiquidationFacet: PartyB is in cross liquidation process");
+			require(
+				!ClearingHouseStorage.layout().crossLiquidationDetails[quote.partyB].inProgress,
+				"LiquidationFacet: PartyB is in cross liquidation process"
+			);
 			require(quote.partyA == partyA, "LiquidationFacet: Invalid party");
 			require(
 				accountLayout.symbolsPrices[partyA][quote.symbolId].timestamp == accountLayout.liquidationDetails[partyA].timestamp,
@@ -301,10 +304,7 @@ library PartyALiquidationFacetImpl {
 		settleAmounts = new int256[](partyBs.length);
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			address partyB = partyBs[i];
-			require(
-				!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress,
-				"LiquidationFacet: PartyB is in cross liquidation"
-			);
+			require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "LiquidationFacet: PartyB is in cross liquidation");
 			require(accountLayout.settlementStates[partyA][partyB].pending, "LiquidationFacet: PartyB is not in settlement");
 			accountLayout.settlementStates[partyA][partyB].pending = false;
 			accountLayout.liquidationDetails[partyA].involvedPartyBCounts -= 1;

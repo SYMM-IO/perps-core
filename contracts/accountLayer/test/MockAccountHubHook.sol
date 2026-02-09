@@ -186,7 +186,12 @@ contract MockAccountHubHook {
 
 		if (recordCalls) {
 			hookCalls.push(
-				HookCall({ selector: selector, data: abi.encode(subAccount, owner), timestamp: block.timestamp, callCount: selectorCallCount[selector] })
+				HookCall({
+					selector: selector,
+					data: abi.encode(subAccount, owner),
+					timestamp: block.timestamp,
+					callCount: selectorCallCount[selector]
+				})
 			);
 		}
 	}

@@ -46,7 +46,7 @@ library LibPartyBQuoteActions {
 		quote.statusModifyTimestamp = block.timestamp;
 		quote.quoteStatus = QuoteStatus.LOCKED;
 		quote.partyB = signer;
-		
+
 		// lock funds for partyB
 		LibAccount.addToPartyBPendingLockedBalances(signer, quote.partyA, quote);
 		quoteLayout.partyBPendingQuotes[signer][quote.partyA].push(quote.id);

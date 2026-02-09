@@ -62,7 +62,9 @@ library LibQuote {
 		bool hadPositionPerPartyA = partyBHasPositionInSymbolPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
 
 		// Update global partyB aggregated positions (for cross partyB mode UPNL)
-		PartiesAggregatedPositions storage partyBGlobalInfo = aggregatedLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyBGlobalInfo = aggregatedLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][
+			quote.positionType
+		];
 		partyBGlobalInfo.aggregatedAmount += amount;
 		partyBGlobalInfo.aggregatedNotional += notional;
 
@@ -97,7 +99,9 @@ library LibQuote {
 		uint256 notional = amount * quote.openedPrice;
 
 		// Update per-partyB aggregated positions (for solvency calculations with per-hedger funding rates)
-		PartiesAggregatedPositions storage partyAPerBInfo = aggregatedLayout.partyAAggregatedPositionsPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyAPerBInfo = aggregatedLayout.partyAAggregatedPositionsPerPartyB[quote.partyA][quote.partyB][
+			quote.symbolId
+		][quote.positionType];
 		partyAPerBInfo.aggregatedAmount += amount;
 		partyAPerBInfo.aggregatedNotional += notional;
 
@@ -117,7 +121,9 @@ library LibQuote {
 		uint256 notional = amount * quote.openedPrice;
 
 		// Update global partyB aggregated positions
-		PartiesAggregatedPositions storage partyBGlobalInfo = aggregatedLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyBGlobalInfo = aggregatedLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][
+			quote.positionType
+		];
 		partyBGlobalInfo.aggregatedAmount -= amount;
 		partyBGlobalInfo.aggregatedNotional -= notional;
 
@@ -148,7 +154,9 @@ library LibQuote {
 		uint256 notional = amount * quote.openedPrice;
 
 		// Update per-partyB aggregated positions
-		PartiesAggregatedPositions storage partyAPerBInfo = aggregatedLayout.partyAAggregatedPositionsPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyAPerBInfo = aggregatedLayout.partyAAggregatedPositionsPerPartyB[quote.partyA][quote.partyB][
+			quote.symbolId
+		][quote.positionType];
 		partyAPerBInfo.aggregatedAmount -= amount;
 		partyAPerBInfo.aggregatedNotional -= notional;
 
@@ -221,7 +229,9 @@ library LibQuote {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		if (aggregatedLayout.partyAActiveSymbolsIndexPerPartyB[partyA][partyB][symbolId] == 0) {
 			aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB].push(symbolId);
-			aggregatedLayout.partyAActiveSymbolsIndexPerPartyB[partyA][partyB][symbolId] = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB].length;
+			aggregatedLayout.partyAActiveSymbolsIndexPerPartyB[partyA][partyB][symbolId] = aggregatedLayout
+				.partyAActiveSymbolsPerPartyB[partyA][partyB]
+				.length;
 		}
 	}
 
@@ -259,7 +269,9 @@ library LibQuote {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		if (aggregatedLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId] == 0) {
 			aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA].push(symbolId);
-			aggregatedLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId] = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA].length;
+			aggregatedLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId] = aggregatedLayout
+				.partyBActiveSymbolsPerPartyA[partyB][partyA]
+				.length;
 		}
 	}
 
@@ -351,7 +363,9 @@ library LibQuote {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 
 		// Update global partyB aggregated positions
-		PartiesAggregatedPositions storage partyBGlobalInfo = aggregatedLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyBGlobalInfo = aggregatedLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][
+			quote.positionType
+		];
 		// Update per-partyA aggregated positions
 		PartiesAggregatedPositions storage partyBPerPartyAInfo = aggregatedLayout.partyBAggregatedPositionsPerPartyA[quote.partyB][quote.partyA][
 			quote.symbolId
@@ -385,7 +399,9 @@ library LibQuote {
 
 		uint256 openAmount = quoteOpenAmount(quote);
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
-		PartiesAggregatedPositions storage partyAPerBInfo = aggregatedLayout.partyAAggregatedPositionsPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType];
+		PartiesAggregatedPositions storage partyAPerBInfo = aggregatedLayout.partyAAggregatedPositionsPerPartyB[quote.partyA][quote.partyB][
+			quote.symbolId
+		][quote.positionType];
 		if (quote.openedPrice > oldOpenedPrice) {
 			uint256 delta = openAmount * (quote.openedPrice - oldOpenedPrice);
 			partyAPerBInfo.aggregatedNotional += delta;

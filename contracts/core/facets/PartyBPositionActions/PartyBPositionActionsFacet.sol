@@ -81,7 +81,16 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		PartyBPositionActionsFacetImpl.fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig);
 		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
-		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId], quote.lockedValues);
+		emit FillCloseRequest(
+			quoteId,
+			quote.partyA,
+			quote.partyB,
+			filledAmount,
+			closedPrice,
+			quote.quoteStatus,
+			quoteLayout.closeIds[quoteId],
+			quote.lockedValues
+		);
 	}
 
 	/**
@@ -112,6 +121,15 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		filledAmount = PartyBPositionActionsFacetImpl.fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig);
 		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
-		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId], quote.lockedValues);
+		emit FillCloseRequest(
+			quoteId,
+			quote.partyA,
+			quote.partyB,
+			filledAmount,
+			closedPrice,
+			quote.quoteStatus,
+			quoteLayout.closeIds[quoteId],
+			quote.lockedValues
+		);
 	}
 }

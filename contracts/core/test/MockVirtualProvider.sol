@@ -71,18 +71,18 @@ contract VirtualProvider is IVirtualProvider {
 		}
 	}
 
-	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external override pure {
+	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external pure override {
 		// status is checked off-chain in mocks, keep require always true to avoid warnings
 		require(true, "");
 		withdrawRequest; // silence unused warning
 	}
 
-	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external override pure {
+	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external pure override {
 		require(true, "");
 		withdrawRequest;
 	}
 
-	function onSpeedUpWithdrawRequest(WithdrawRequest memory withdrawRequest, uint256 _newCooldown) external override pure {
+	function onSpeedUpWithdrawRequest(WithdrawRequest memory withdrawRequest, uint256 _newCooldown) external pure override {
 		require(true, "");
 		withdrawRequest;
 		_newCooldown;
@@ -97,7 +97,7 @@ contract VirtualProvider is IVirtualProvider {
 		externalTransferData = externalTransfer;
 	}
 
-	function onCancelExternalTransfer(uint256 id) external pure override{
+	function onCancelExternalTransfer(uint256 id) external pure override {
 		require(true, "");
 		id;
 	}
@@ -113,7 +113,12 @@ contract VirtualProvider is IVirtualProvider {
 
 // Configurable mock for testing failure scenarios
 contract ConfigurableMockVirtualProvider is IVirtualProvider {
-	enum FailureMode { NONE, REVERT, WRONG_AMOUNT, WRONG_USER }
+	enum FailureMode {
+		NONE,
+		REVERT,
+		WRONG_AMOUNT,
+		WRONG_USER
+	}
 
 	FailureMode public failureMode;
 	address public wrongUser;

@@ -29,7 +29,6 @@ abstract contract Accessibility {
 		_;
 	}
 
-
 	/// @notice Restricts function access to accounts that are admins for a specific role.
 	/// @dev Includes proxy protection by default. When a proxy sets a signer before forwarding calls,
 	///      `msg.sender` becomes the proxy address. Without the proxy check, functions would authorize
@@ -119,7 +118,10 @@ abstract contract Accessibility {
 	}
 
 	modifier whenInstantModeIsNotActive(address sender) {
-		require(!TradingModeStorage.layout().instantActionsMode[sender] || GlobalAppStorage.layout().callFromInstantLayer, "Accessibility: Instant Mode Active");
+		require(
+			!TradingModeStorage.layout().instantActionsMode[sender] || GlobalAppStorage.layout().callFromInstantLayer,
+			"Accessibility: Instant Mode Active"
+		);
 		_;
 	}
 }

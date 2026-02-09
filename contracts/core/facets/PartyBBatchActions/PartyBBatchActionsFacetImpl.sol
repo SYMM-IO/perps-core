@@ -74,7 +74,10 @@ library PartyBBatchActionsFacetImpl {
 		// Solvency checks
 		require(!maLayout.liquidationStatus[firstQuote.partyA], "PartyBFacet: PartyA isn't solvent");
 		require(!maLayout.partyBLiquidationStatus[firstQuote.partyB][firstQuote.partyA], "PartyBFacet: PartyB isn't solvent");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuote.partyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+		require(
+			!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuote.partyB].inProgress,
+			"PartyBFacet: PartyB is in cross liquidation process"
+		);
 
 		// Verify the upnl and prices
 		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
@@ -154,7 +157,10 @@ library PartyBBatchActionsFacetImpl {
 		address firstQuotePartyA = firstQuote.partyA;
 		address firstQuotePartyB = firstQuote.partyB;
 
-		if (TradingModeStorage.layout().bindState[firstQuote.partyA].partyB != LibSigner.getSigner() || !TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]) {
+		if (
+			TradingModeStorage.layout().bindState[firstQuote.partyA].partyB != LibSigner.getSigner() ||
+			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
+		) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
 		}
@@ -173,7 +179,10 @@ library PartyBBatchActionsFacetImpl {
 		// Solvency checks
 		require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
 		require(!maLayout.partyBLiquidationStatus[firstQuotePartyB][firstQuotePartyA], "PartyBFacet: PartyB isn't solvent");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuotePartyB].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+		require(
+			!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuotePartyB].inProgress,
+			"PartyBFacet: PartyB is in cross liquidation process"
+		);
 
 		LibAccount.increaseBothNonces(firstQuotePartyB, firstQuotePartyA);
 
@@ -212,5 +221,4 @@ library PartyBBatchActionsFacetImpl {
 			}
 		}
 	}
-
 }

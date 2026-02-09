@@ -68,7 +68,9 @@
 		"lint:sol": "solhint --config ./.solhint.json --solcoverjs ./.solcover.js --max-warnings 0 \"contracts/**/*.sol\"",
 		"test": "./utils/runTestsInParallel.sh",
 		"typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
-		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol"
+		"solhint": "./node_modules/.bin/solhint -f table contracts/**/*.sol",
+		"prettier:contracts": "prettier --write \"contracts/**/*.sol\"",
+		"prettier:contracts:check": "prettier --check \"contracts/**/*.sol\""
 	},
 	"dependencies": {
 		"bignumber.js": "^9.3.1",

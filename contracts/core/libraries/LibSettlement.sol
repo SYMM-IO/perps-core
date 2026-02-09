@@ -76,7 +76,10 @@ library LibSettlement {
 				"LibSettlement: PartyB should be solvent"
 			);
 			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
-			require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
+			require(
+				!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress,
+				"LibSettlement: PartyB is in cross liquidation process"
+			);
 
 			if (!isForceClose && signer != partyB) {
 				require(
@@ -163,10 +166,7 @@ library LibSettlement {
 
 		// 5. Validate partyB solvency based on mode
 		if (isCrossPartyB) {
-			require(
-				LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyB, partyB, address(0)) >= 0,
-				"LibSettlement: PartyB is insolvent"
-			);
+			require(LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyB, partyB, address(0)) >= 0, "LibSettlement: PartyB is insolvent");
 		} else {
 			for (uint256 i = 0; i < sig.partyAs.length; i++) {
 				require(
@@ -264,15 +264,9 @@ library LibSettlement {
 
 	function _validatePriceInRange(uint256 openedPrice, uint256 currentPrice, uint256 updatedPrice) private pure {
 		if (openedPrice > currentPrice) {
-			require(
-				updatedPrice < openedPrice && updatedPrice >= currentPrice,
-				"LibSettlement: Updated price is out of range"
-			);
+			require(updatedPrice < openedPrice && updatedPrice >= currentPrice, "LibSettlement: Updated price is out of range");
 		} else {
-			require(
-				updatedPrice > openedPrice && updatedPrice <= currentPrice,
-				"LibSettlement: Updated price is out of range"
-			);
+			require(updatedPrice > openedPrice && updatedPrice <= currentPrice, "LibSettlement: Updated price is out of range");
 		}
 	}
 

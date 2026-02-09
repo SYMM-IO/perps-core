@@ -25,11 +25,7 @@ interface IForceCloseStepsFacet is ForceActionsFacetEvents {
 	 * @param settlementSig Unified settlement data (uPNLs + pricing).
 	 * @param updatedPrices Prices applied during settlement.
 	 */
-	function settleUpnlForForceClose(
-		uint256 quoteId,
-		UnifiedSettlementSig memory settlementSig,
-		uint256[] memory updatedPrices
-	) external;
+	function settleUpnlForForceClose(uint256 quoteId, UnifiedSettlementSig memory settlementSig, uint256[] memory updatedPrices) external;
 
 	/**
 	 * @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.

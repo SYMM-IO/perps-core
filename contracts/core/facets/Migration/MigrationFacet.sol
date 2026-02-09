@@ -28,10 +28,7 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 	 * @param partyB The partyB to migrate
 	 * @param partyAs All partyA addresses that have positions with this partyB
 	 */
-	function migrateCrossLockedValues(
-		address partyB,
-		address[] calldata partyAs
-	) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
 		uint256 partyAsProcessed = MigrationFacetImpl.migrateCrossLockedValues(partyB, partyAs);
 		emit CrossLockedValuesMigrated(partyB, partyAsProcessed);
 	}

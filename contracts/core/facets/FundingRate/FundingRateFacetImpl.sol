@@ -100,7 +100,6 @@ library FundingRateFacetImpl {
 				paidTimestamp = nextEpochTimestamp;
 			}
 
-
 			// Apply funding rate to position
 			if (rates[i] >= 0) {
 				// Positive funding: Longs pay shorts

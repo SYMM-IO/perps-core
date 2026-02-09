@@ -84,9 +84,7 @@ contract MockMultiAccount is IMultiAccount {
 	 * @return account The created account address
 	 */
 	function createMockAccountWithName(address owner, string memory name) external returns (address account) {
-		account = address(
-			uint160(uint256(keccak256(abi.encodePacked("MockAccount", owner, accountCounter++, block.timestamp))))
-		);
+		account = address(uint160(uint256(keccak256(abi.encodePacked("MockAccount", owner, accountCounter++, block.timestamp)))));
 
 		_indexOfAccount[account] = _accounts[owner].length;
 		_accounts[owner].push(Account(account, name));
@@ -103,9 +101,7 @@ contract MockMultiAccount is IMultiAccount {
 	function createMockAccount(address owner) external returns (address account) {
 		string memory defaultName = string(abi.encodePacked("Account_", _toString(accountCounter)));
 
-		account = address(
-			uint160(uint256(keccak256(abi.encodePacked("MockAccount", owner, accountCounter++, block.timestamp))))
-		);
+		account = address(uint160(uint256(keccak256(abi.encodePacked("MockAccount", owner, accountCounter++, block.timestamp)))));
 
 		_indexOfAccount[account] = _accounts[owner].length;
 		_accounts[owner].push(Account(account, defaultName));
@@ -125,9 +121,7 @@ contract MockMultiAccount is IMultiAccount {
 		for (uint256 i = 0; i < count; i++) {
 			string memory name = string(abi.encodePacked("Account_", _toString(accountCounter)));
 
-			accounts[i] = address(
-				uint160(uint256(keccak256(abi.encodePacked("MockAccount", owner, accountCounter++, block.timestamp, i))))
-			);
+			accounts[i] = address(uint160(uint256(keccak256(abi.encodePacked("MockAccount", owner, accountCounter++, block.timestamp, i)))));
 
 			_indexOfAccount[accounts[i]] = _accounts[owner].length;
 			_accounts[owner].push(Account(accounts[i], name));

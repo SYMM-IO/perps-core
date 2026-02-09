@@ -79,10 +79,7 @@ library ExternalTransferFacetImpl {
 		extLayout.externalTransfers[currentId] = externalTransferReq;
 
 		// Callback to Virtual Provider
-		LibSafeCall.safeExternalCall(
-			virtualProvider,
-			abi.encodeCall(IVirtualProvider.onExternalTransfer, (externalTransferReq))
-		);
+		LibSafeCall.safeExternalCall(virtualProvider, abi.encodeCall(IVirtualProvider.onExternalTransfer, (externalTransferReq)));
 		return currentId;
 	}
 
@@ -110,9 +107,6 @@ library ExternalTransferFacetImpl {
 
 		externalTransferReq.status = VirtualExternalTransferStatus.CANCELED;
 
-		LibSafeCall.safeExternalCall(
-			externalTransferReq.provider,
-			abi.encodeCall(IVirtualProvider.onCancelExternalTransfer, (id))
-		);
+		LibSafeCall.safeExternalCall(externalTransferReq.provider, abi.encodeCall(IVirtualProvider.onCancelExternalTransfer, (id)));
 	}
 }

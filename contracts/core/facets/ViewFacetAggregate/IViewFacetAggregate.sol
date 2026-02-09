@@ -158,23 +158,9 @@ interface IViewFacetAggregate {
 
 	// ============ UPNL Data View Functions ============
 
-	function getPartyAUpnlData(
-		address partyA,
-		address partyB,
-		uint256 start,
-		uint256 size
-	) external view returns (UpnlData[] memory);
+	function getPartyAUpnlData(address partyA, address partyB, uint256 start, uint256 size) external view returns (UpnlData[] memory);
 
-	function getPartyBUpnlData(
-		address partyB,
-		address partyA,
-		uint256 start,
-		uint256 size
-	) external view returns (UpnlData[] memory);
+	function getPartyBUpnlData(address partyB, address partyA, uint256 start, uint256 size) external view returns (UpnlData[] memory);
 
-	function getPartyBGlobalUpnlData(
-		address partyB,
-		uint256 start,
-		uint256 size
-	) external view returns (UpnlData[] memory);
+	function getPartyBGlobalUpnlData(address partyB, uint256 start, uint256 size) external view returns (UpnlData[] memory);
 }

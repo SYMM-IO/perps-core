@@ -15,7 +15,6 @@ import { LibAccountLayerAccessibility } from "./libraries/LibAccountLayerAccessi
 import { IAccountLayerErrors } from "./interfaces/IAccountLayerErrors.sol";
 
 contract Init is IAccountLayerErrors {
-
 	function init(address admin, address symmioFeeReceiver, bytes calldata accountManagerImplementation) external {
 		if (admin == address(0)) revert ZeroAddress();
 		if (symmioFeeReceiver == address(0)) revert ZeroAddress();

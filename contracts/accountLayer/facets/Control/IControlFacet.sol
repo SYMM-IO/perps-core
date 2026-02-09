@@ -49,5 +49,4 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	function setHookAllowedSelectors(address affiliate, bytes4[] calldata selectors, bool allowed) external;
 
 	function setCallAllowedSelectors(address affiliate, bytes4[] calldata selectors, bool allowed) external;
-
 }

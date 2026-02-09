@@ -98,12 +98,7 @@ interface IControlFacet is IControlEvents {
 		uint256[] calldata closeFees
 	) external;
 
-	function setAffiliateFee(
-		address affiliate,
-		uint256[] calldata symbolIds,
-		uint256[] calldata openFees,
-		uint256[] calldata closeFees
-	) external;
+	function setAffiliateFee(address affiliate, uint256[] calldata symbolIds, uint256[] calldata openFees, uint256[] calldata closeFees) external;
 
 	function setMinAffiliateFee(uint256 minAffiliateFee) external;
 

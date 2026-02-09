@@ -22,5 +22,4 @@ interface IMarginFacet is IMarginFacetEvents, IAccountLayerErrors {
 	function removeMargin(address virtualAccount, uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
 
 	function emergencyRecoverMargin(address subAccount, uint256 nonce) external;
-
 }

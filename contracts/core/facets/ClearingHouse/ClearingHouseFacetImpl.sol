@@ -49,10 +49,7 @@ library ClearingHouseFacetImpl {
 
 		require(maLayout.crossModeEnabledForPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
 
-		require(
-			LibAccount.partyBAvailableBalanceForLiquidation(upnl, partyB, address(0)) < 0,
-			"ClearingHouseFacet: partyB is solvent"
-		);
+		require(LibAccount.partyBAvailableBalanceForLiquidation(upnl, partyB, address(0)) < 0, "ClearingHouseFacet: partyB is solvent");
 		maLayout.partyBLiquidationTimestamp[partyB][address(0)] = timestamp;
 		chLayout.crossLiquidationDetails[partyB] = CrossLiquidationDetail({
 			liquidationId: liquidationId,
@@ -431,10 +428,7 @@ library ClearingHouseFacetImpl {
 		require(detail.inProgress, "ClearingHouseFacet: Cross liquidation not in progress");
 		require(quoteLayout.partyBPositionsCount[partyB][address(0)] == 0, "ClearingHouseFacet: PartyB has still open positions");
 		// NOTE: Using partyBPendingLockedBalances as a proxy for pending quotes; it can be zero even with pending quotes in edge cases.
-		require(
-			accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0,
-			"ClearingHouseFacet: PartyB has pending quotes"
-		);
+		require(accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0, "ClearingHouseFacet: PartyB has pending quotes");
 		require(detail.deallocatedPool == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
 
 		detail.inProgress = false;

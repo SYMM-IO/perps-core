@@ -42,10 +42,7 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 	 * @param sig The unified settlement signature containing quote data and UPNLs
 	 * @param updatedPrices Array of new prices to set as openedPrice for each quote
 	 */
-	function settleUpnlUnified(
-		UnifiedSettlementSig memory sig,
-		uint256[] memory updatedPrices
-	) external whenNotPartyBActionsPaused onlyPartyB {
+	function settleUpnlUnified(UnifiedSettlementSig memory sig, uint256[] memory updatedPrices) external whenNotPartyBActionsPaused onlyPartyB {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		uint256[] memory newPartyAsAllocatedBalances = SettlementFacetImpl.settleUpnlUnified(sig, updatedPrices);
 
