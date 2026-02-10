@@ -94,11 +94,19 @@ export function shouldBehaveLikeSendQuote(): void {
 	})
 
 	it("Should expire", async function () {
+		const userAddress = await user.getAddress()
+		const pendingBefore = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
+		const balanceBefore = await user.getBalanceInfo()
 		let qId = await user.sendQuote(limitQuoteRequestBuilder().deadline(getBlockTimestamp(100n)).build())
 		await expect(context.partyAFacet.expireQuote([qId])).to.be.revertedWith("LibQuote: Quote isn't expired")
 		await time.increase(1000)
-		await context.partyAFacet.expireQuote([1])
-		expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.EXPIRED)
+		await context.partyAFacet.expireQuote([qId])
+		const quote = await context.viewFacetQuote.getQuote(qId)
+		expect(quote.quoteStatus).to.be.equal(QuoteStatus.EXPIRED)
+		// Verify quote removed from pending quotes
+		const pendingAfter = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
+		expect(pendingAfter.length).to.equal(pendingBefore.length)
+		expect(pendingAfter.map(q => q.toString())).to.not.include(qId.toString())
 	})
 
 	it("Should run successfully for limit", async function () {
@@ -256,6 +264,34 @@ export function shouldBehaveLikeSendQuote(): void {
 		// Verify the affiliate's default fee was used
 		expect(quote.tradingFee).to.equal(affiliateDefaultFee)
 		expect(quote.closeFee).to.equal(affiliateDefaultFee)
+	})
+
+	it("Should fail on low deadline", async function () {
+		await time.increase(1000)
+		await expect(user.sendQuote(limitQuoteRequestBuilder().deadline(getBlockTimestamp(-500n)).build())).to.be.revertedWith(
+			"PartyAFacet: Low deadline",
+		)
+	})
+
+	it("Should fail on invalid affiliate", async function () {
+		// Use a non-zero address that is not registered as an affiliate
+		await expect(user.sendQuote(limitQuoteRequestBuilder().affiliate(context.signers.user2.address).build())).to.be.revertedWith(
+			"PartyAFacet: Invalid affiliate",
+		)
+	})
+
+	it("Should fail when liquidator tries to send quote", async function () {
+		const liquidator = context.signers.liquidator
+		await context.collateral.connect(liquidator).approve(context.diamond, ethers.MaxUint256)
+		await context.collateral.connect(liquidator).mint(liquidator.address, decimal(2000n))
+		await context.accountFacet.connect(liquidator).deposit(decimal(1500n))
+		await context.accountFacet.connect(liquidator).allocate(decimal(1200n))
+		const sig = await getDummySingleUpnlAndPriceSig()
+		await expect(
+			context.partyAFacet
+				.connect(liquidator)
+				.sendQuote([], 1, 0, 0, decimal(1n), decimal(100n), decimal(3n), decimal(22n), decimal(75n), decimal(50n), 1, getBlockTimestamp(1000n), sig),
+		).to.be.revertedWith("PartyAFacet: Liquidator can't be partyA")
 	})
 
 	it("Should decode new SendQuote event paramsData correctly using abi.decode", async function () {

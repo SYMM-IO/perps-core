@@ -30,6 +30,8 @@ export type FillCloseRequestValidatorBeforeOutput = {
 	partyAOpenPositionCount: bigint
 	partyBOpenPositionCount: bigint
 	connectedPartyBs: string[]
+	partyANonce: bigint
+	partyBNonce: bigint
 }
 
 export type FillCloseRequestValidatorAfterArg = {
@@ -57,6 +59,8 @@ export class FillCloseRequestValidator implements TransactionValidator {
 			partyAOpenPositionCount: BigInt(partyAOpenPositions.length),
 			partyBOpenPositionCount: BigInt(partyBOpenPositions.length),
 			connectedPartyBs: [...(await context.viewFacetSymbol.getConnectedPartyBs(userAddress))].map(a => a.toLowerCase()),
+			partyANonce: await context.viewFacet.nonceOfPartyA(userAddress),
+			partyBNonce: await context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress),
 		}
 	}
 
@@ -121,6 +125,12 @@ export class FillCloseRequestValidator implements TransactionValidator {
 		expectToBeApproximately(BigInt(newBalanceInfoPartyB.allocatedBalances), BigInt(oldBalanceInfoPartyB.allocatedBalances) - profit)
 
 		// ---- Enhanced State Checks ----
+
+		// Verify nonces incremented (fillCloseRequest calls increaseBothNonces)
+		const newPartyANonce = await context.viewFacet.nonceOfPartyA(userAddress)
+		expect(newPartyANonce).to.equal(arg.beforeOutput.partyANonce + 1n)
+		const newPartyBNonce = await context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress)
+		expect(newPartyBNonce).to.equal(arg.beforeOutput.partyBNonce + 1n)
 
 		if (isFullyClosed) {
 			// Position count should decrease by 1

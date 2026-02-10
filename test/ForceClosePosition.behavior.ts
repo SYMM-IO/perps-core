@@ -252,8 +252,13 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				)
 				await user.forceClosePosition(quote2ShortOpened.id, dummySig)
 
+				// PartyB should be marked as liquidated with zero allocation
 				let balanceInfo: BalanceInfo = await hedger.getBalanceInfo(userAddress)
-				expect(balanceInfo.allocatedBalances.toString()).to.be.equal("0")
+				expect(balanceInfo.allocatedBalances).to.be.equal(0n)
+				expect(await context.viewFacet.isPartyBLiquidated(hedgerAddress, userAddress)).to.equal(true)
+
+				// The force-closed quote should still be CLOSE_PENDING since partyB was liquidated (not closed normally)
+				expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.be.equal(QuoteStatus.CLOSE_PENDING)
 
 				let sig = await getDummyPriceSig([4n, 2n, 1n], [0n, 0n, 0n])
 
@@ -438,6 +443,14 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				await user.forceClosePosition(quote1LongOpened.id, liquidatingSig)
 
 				expect(await context.viewFacet.isPartyBLiquidated(hedgerAddress, partyAAddress)).to.equal(true)
+
+				// PartyB's allocated balance should be zeroed out on liquidation
+				const balanceInfo = await hedger.getBalanceInfo(partyAAddress)
+				expect(balanceInfo.allocatedBalances).to.equal(0n)
+
+				// The force-closed quote should still be CLOSE_PENDING (not CLOSED) since partyB was liquidated
+				const quoteAfter = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
 			})
 
 			it("uses reserve vault to keep partyB solvent during force close", async function () {
@@ -456,6 +469,8 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					}
 				}
 
+				const quoteBefore = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+
 				const solventSig = await getDummyHighLowPriceSig(
 					sigTimes[0],
 					sigTimes[1],
@@ -473,6 +488,10 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				const quoteAfter = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
 				expect(await context.viewFacet.isPartyBLiquidated(hedgerAddress, partyAAddress)).to.equal(false)
 				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSED)
+				// Verify quote was fully closed
+				expect(quoteAfter.closedAmount).to.equal(quoteBefore.quantity)
+				// Verify avgClosedPrice is set (non-zero)
+				expect(quoteAfter.avgClosedPrice).to.be.gt(0n)
 			})
 		})
 	})
@@ -646,7 +665,9 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 							expect(detail.inProgress).to.equal(true)
 							expect(detail.closePrice).to.equal(expectedClosePrice)
-							expect(detail.timestamp > 0n).to.equal(true)
+							expect(detail.timestamp).to.be.gt(0n)
+							expect(detail.quoteId).to.equal(quote1LongOpened.id)
+							expect(detail.partyBState).to.equal(PartyBForceCloseState.NONE)
 						})
 
 						it("should revert initializeForceClose when partyA would be insolvent", async function () {
@@ -804,7 +825,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					describe("ForceCloseDetail flags finalize (insolvent case)", function () {
 						it("reverts when cross allocated balance is insufficient to pay pnl", async function () {
 							highLowSig.currentPrice = decimal(0n)
-							await expect(await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)).not.to.reverted
+							await expect(context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)).not.to.be.reverted
 
 							// not enough balance in cross partyB but solvent
 							await expect(

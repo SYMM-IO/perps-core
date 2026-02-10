@@ -179,10 +179,14 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		await user.requestToClosePosition(quote1LongOpened.id, limitCloseRequestBuilder().build())
 		await expect(hedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().build())).to.not.be.reverted
+
+		const closedQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+		expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
+		expect(closedQuote.closedAmount).to.equal(closedQuote.quantity)
 	})
 
 	it("Should fail on invalid quoteId", async function () {
-		await expect(user.requestToClosePosition(50)).to.be.reverted
+		await expect(user.requestToClosePosition(50)).to.be.revertedWith("Accessibility: Should be partyA of quote")
 	})
 
 	it("Should fail on invalid quote state", async function () {
@@ -303,6 +307,8 @@ export function shouldBehaveLikeClosePosition(): void {
 		await context.partyAFacet.expireQuote([1])
 		let q = await context.viewFacetQuote.getQuote(1)
 		expect(q.quoteStatus).to.be.equal(QuoteStatus.OPENED)
+		expect(q.requestedClosePrice).to.equal(0n)
+		expect(q.quantityToClose).to.equal(0n)
 	})
 
 	describe("Fill Close Request", async function () {
@@ -595,16 +601,17 @@ export function shouldBehaveLikeClosePosition(): void {
 			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
 			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
 			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+			const filledAmount = await getQuoteQuantity(context, 1n)
 			await expect(
 				hedger.fillCloseRequest(
 					1,
-					limitFillCloseRequestBuilder()
-						.filledAmount(await getQuoteQuantity(context, 1n))
-						.closedPrice(closePrice)
-						.upnlPartyB(decimal(-1000n))
-						.build(),
+					limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(closePrice).upnlPartyB(decimal(-1000n)).build(),
 				),
 			).not.reverted
+
+			const closedQuote = await context.viewFacetQuote.getQuote(1)
+			expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			expect(closedQuote.closedAmount).to.equal(filledAmount)
 		})
 	})
 
@@ -619,7 +626,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		})
 
 		it("Should fail on invalid quoteId", async function () {
-			await expect(user.requestToCancelCloseRequest(3)).to.be.reverted
+			await expect(user.requestToCancelCloseRequest(3)).to.be.revertedWith("PartyAFacet: Invalid state")
 		})
 
 		it("Should fail on invalid partyA", async function () {
@@ -656,7 +663,10 @@ export function shouldBehaveLikeClosePosition(): void {
 		it("Should expire request", async function () {
 			await time.increase(1000)
 			await user.requestToCancelCloseRequest(1)
-			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.OPENED)
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.quoteStatus).to.be.equal(QuoteStatus.OPENED)
+			expect(quote.requestedClosePrice).to.equal(0n)
+			expect(quote.quantityToClose).to.equal(0n)
 		})
 
 		describe("Accepting cancel request", async function () {
@@ -665,7 +675,7 @@ export function shouldBehaveLikeClosePosition(): void {
 			})
 
 			it("Should fail on invalid quoteId", async function () {
-				await expect(hedger.acceptCancelCloseRequest(3)).to.be.reverted
+				await expect(hedger.acceptCancelCloseRequest(3)).to.be.revertedWith("Accessibility: Should be partyB of quote")
 			})
 
 			it("Should fail on invalid partyB", async function () {
@@ -702,7 +712,10 @@ export function shouldBehaveLikeClosePosition(): void {
 				await expect(user.forceCancelCloseRequest(1)).to.be.revertedWith("PartyAFacet: Cooldown not reached")
 				await time.increase(300)
 				await user.forceCancelCloseRequest(1)
-				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.eq(QuoteStatus.OPENED)
+				const quote = await context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.be.eq(QuoteStatus.OPENED)
+				expect(quote.quantityToClose).to.equal(0n)
+				expect(quote.requestedClosePrice).to.equal(0n)
 			})
 		})
 	})

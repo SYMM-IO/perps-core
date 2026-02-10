@@ -228,7 +228,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 		describe("initialize", async () => {
 			it("should initialize successfully", async () => {
-				expect(await context.accountLayerDiamond).to.equal(context.accountLayerDiamond)
+				expect(context.accountLayerDiamond).to.not.equal(ZeroAddress)
 				const defaultAdminRole = roleHash("DEFAULT_ADMIN_ROLE")
 				expect(await context.alViewFacet.hasRole(context.signers.admin.address, defaultAdminRole)).to.be.true
 			})
@@ -1005,7 +1005,9 @@ export function shouldBehaveLikeAccountLayer(): void {
 					expect(balanceAfter).to.equal(0)
 
 					// Now delete should succeed
-					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)).to.not.be.reverted
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress))
+						.to.emit(context.alCoreFacet, "SubAccountDeleted")
+						.withArgs(subAccountAddress, context.signers.user.address, await context.accountManager.getAddress())
 
 					// Verify deletion
 					const account = await context.alViewFacet.getSubAccount(subAccountAddress)
@@ -1387,11 +1389,18 @@ export function shouldBehaveLikeAccountLayer(): void {
 						// Pre-fund the VA before sending quote
 						await preFundVirtualAccount(positionSubAccount)
 
+						const lastId = await context.viewFacetQuote.getNextQuoteId()
 						const sendQuoteCallData = await createSendQuoteCallData()
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(positionSubAccount, [sendQuoteCallData])).to.not.be.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccount, [sendQuoteCallData])
 
 						const virtualAccountsAfter = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(positionSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
+
+						// Verify the quote was created on a virtual account, not the sub-account
+						const virtualAccounts = await context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(positionSubAccount, 0, 10)
+						const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccounts[0], 0, 10)
+						expect(quoteIds.length).to.equal(1)
+						expect(quoteIds[0]).to.equal(lastId + 1n)
 					})
 
 					it("should revert when trying to send another quote on existing virtual account", async () => {
@@ -1420,11 +1429,18 @@ export function shouldBehaveLikeAccountLayer(): void {
 						// Pre-fund the VA before sending quote
 						await preFundVirtualAccount(marketSubAccount)
 
+						const lastId = await context.viewFacetQuote.getNextQuoteId()
 						const sendQuoteCallData = await createSendQuoteCallData()
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [sendQuoteCallData])).to.not.be.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [sendQuoteCallData])
 
 						const virtualAccountsAfter = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(marketSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
+
+						// Verify quote was created on a virtual account
+						const virtualAccounts = await context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(marketSubAccount, 0, 10)
+						const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccounts[0], 0, 10)
+						expect(quoteIds.length).to.equal(1)
+						expect(quoteIds[0]).to.equal(lastId + 1n)
 					})
 
 					it("should revert when trying to send quote with different symbol", async () => {
@@ -1447,10 +1463,14 @@ export function shouldBehaveLikeAccountLayer(): void {
 						await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(virtualAccounts[0], decimal(200n))
 
 						const sendQuoteCallData = await createSendQuoteCallData()
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])
 
 						const virtualAccountsAfter = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(marketSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
+
+						// Verify the VA now has 2 quotes
+						const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccounts[0], 0, 10)
+						expect(quoteIds.length).to.equal(2)
 					})
 				})
 
@@ -1471,12 +1491,19 @@ export function shouldBehaveLikeAccountLayer(): void {
 						// Pre-fund the VA before sending quote
 						await preFundVirtualAccount(marketDirectionSubAccount, quoteRequest)
 
+						const lastId = await context.viewFacetQuote.getNextQuoteId()
 						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(marketDirectionSubAccount, [sendQuoteCallData])).to.not.be.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(marketDirectionSubAccount, [sendQuoteCallData])
 
 						const virtualAccountsAfter = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(marketDirectionSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
+
+						// Verify the quote was created on a virtual account
+						const virtualAccounts = await context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(marketDirectionSubAccount, 0, 10)
+						const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccounts[0], 0, 10)
+						expect(quoteIds.length).to.equal(1)
+						expect(quoteIds[0]).to.equal(lastId + 1n)
 					})
 
 					it("should revert when symbol or position type differs", async () => {
@@ -1510,11 +1537,15 @@ export function shouldBehaveLikeAccountLayer(): void {
 						await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(virtualAccounts[0], BALANCES.DEPOSIT_AMOUNT)
 
 						for (let i = 0; i < 4; i++) {
-							await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])).to.not.be.reverted
+							await context.alCoreFacet.connect(context.signers.user)._call(virtualAccounts[0], [sendQuoteCallData])
 						}
 
 						const virtualAccountsAfter = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(marketDirectionSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
+
+						// Verify all 5 quotes (1 initial + 4 more) are tracked on the same VA
+						const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccounts[0], 0, 10)
+						expect(quoteIds.length).to.equal(5)
 					})
 				})
 
@@ -1538,7 +1569,10 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(customSubAccount, [sendQuoteCallData])).to.not.reverted
+						const pendingQuotesBefore = await context.viewFacetQuote.getPartyAPendingQuotes(customSubAccount)
+						await context.alCoreFacet.connect(context.signers.user)._call(customSubAccount, [sendQuoteCallData])
+						const pendingQuotesAfter = await context.viewFacetQuote.getPartyAPendingQuotes(customSubAccount)
+						expect(pendingQuotesAfter.length).to.equal(pendingQuotesBefore.length + 1)
 
 						// Verify no virtual accounts were created
 						const virtualAccountsAfter = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(customSubAccount)
@@ -1549,27 +1583,37 @@ export function shouldBehaveLikeAccountLayer(): void {
 						const quoteRequest = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
 						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(customSubAccount, [sendQuoteCallData])).to.not.reverted
+						const lastIdBefore = await context.viewFacetQuote.getNextQuoteId()
+						await context.alCoreFacet.connect(context.signers.user)._call(customSubAccount, [sendQuoteCallData])
 
-						// Verify quote was tracked in sub-account
-						const quote = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						// Verify quote was created on the sub-account (not a virtual account)
+						const createdQuoteId = lastIdBefore + 1n
+						const quote = await context.viewFacetQuote.getQuote(createdQuoteId)
 						expect(quote.partyA).to.equal(customSubAccount)
+
+						// Verify no virtual accounts were created
+						const virtualAccounts = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(customSubAccount)
+						expect(virtualAccounts).to.equal(0)
 					})
 
 					it("should allow multiple quotes with different symbols", async () => {
 						// Send quote with symbol 1
+						const lastId1 = await context.viewFacetQuote.getNextQuoteId()
 						const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
 						await sendQuoteAndGetVirtualAccount(customSubAccount, quote1)
 
-						const q1 = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						const q1 = await context.viewFacetQuote.getQuote(lastId1 + 1n)
 						expect(q1.partyA).to.equal(customSubAccount)
+						expect(q1.symbolId).to.equal(1)
 
 						// Send quote with symbol 2
+						const lastId2 = await context.viewFacetQuote.getNextQuoteId()
 						const quote2 = limitQuoteRequestBuilder().symbolId(2).positionType(PositionType.SHORT).build()
 						await sendQuoteAndGetVirtualAccount(customSubAccount, quote2)
 
-						const q2 = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						const q2 = await context.viewFacetQuote.getQuote(lastId2 + 1n)
 						expect(q2.partyA).to.equal(customSubAccount)
+						expect(q2.symbolId).to.equal(2)
 
 						// Verify no virtual accounts created
 						const virtualAccounts = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(customSubAccount)
@@ -1578,19 +1622,26 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 					it("should allow both LONG and SHORT positions on same symbol", async () => {
 						// Send LONG quote
+						const lastId1 = await context.viewFacetQuote.getNextQuoteId()
 						const longQuote = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
 						await sendQuoteAndGetVirtualAccount(customSubAccount, longQuote)
 
-						const q1 = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						const q1 = await context.viewFacetQuote.getQuote(lastId1 + 1n)
 						expect(q1.partyA).to.equal(customSubAccount)
+						expect(q1.positionType).to.equal(PositionType.LONG)
 
 						// Send SHORT quote on same symbol
+						const lastId2 = await context.viewFacetQuote.getNextQuoteId()
 						const shortQuote = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
 						await sendQuoteAndGetVirtualAccount(customSubAccount, shortQuote)
 
 						// Verify both quotes were tracked
-						const q2 = await context.viewFacetQuote.getQuote(await context.viewFacetQuote.getNextQuoteId())
+						const q2 = await context.viewFacetQuote.getQuote(lastId2 + 1n)
 						expect(q2.partyA).to.equal(customSubAccount)
+						expect(q2.positionType).to.equal(PositionType.SHORT)
+
+						// Both quotes should be for the same symbol
+						expect(q1.symbolId).to.equal(q2.symbolId)
 					})
 
 					it("should not transfer funds internally for CUSTOM isolation", async () => {
@@ -1621,17 +1672,22 @@ export function shouldBehaveLikeAccountLayer(): void {
 						expect(virtualAccountsBefore).to.equal(0)
 
 						// Manually create a POSITION isolated virtual account
-						await expect(
-							context.alCoreFacet.connect(context.signers.user).createCustomVirtualAccount(
-								customSubAccount,
-								ethers.keccak256(toUtf8Bytes("VIRTUAL_1")),
-								1, // VirtualAccountIsolationType.POSITION
-								1, // symbolId
-							),
-						).to.not.reverted
+						await context.alCoreFacet.connect(context.signers.user).createCustomVirtualAccount(
+							customSubAccount,
+							ethers.keccak256(toUtf8Bytes("VIRTUAL_1")),
+							1, // VirtualAccountIsolationType.MARKET
+							1, // symbolId
+						)
 
 						const virtualAccountsAfter = await context.alViewFacet.getVirtualAccountsCountOfSubAccount(customSubAccount)
 						expect(virtualAccountsAfter).to.equal(1)
+
+						// Verify the virtual account details
+						const virtualAccounts = await context.alViewFacet.getVirtualAccountsOfSubAccount(customSubAccount, 0, 10)
+						expect(virtualAccounts[0].parentAccount).to.equal(customSubAccount)
+						expect(virtualAccounts[0].isExists).to.be.true
+						expect(virtualAccounts[0].isolationType).to.equal(1) // MARKET
+						expect(virtualAccounts[0].symbolId).to.equal(1)
 					})
 
 					it("should create multiple virtual accounts with different isolation types", async () => {
@@ -1685,22 +1741,28 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 						// Transfer funds from sub-account to virtual account (cva + lf + partyAmm + fees)
 						const transferAmount = decimal(500n)
+						const subAccountBalanceBefore = await context.viewFacet.balanceOf(customSubAccount)
 						const transferCallData = context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccount, transferAmount])
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(customSubAccount, [transferCallData])).to.not.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(customSubAccount, [transferCallData])
+
+						const subAccountBalanceAfter = await context.viewFacet.balanceOf(customSubAccount)
+						expect(subAccountBalanceAfter).to.equal(subAccountBalanceBefore - transferAmount)
 
 						const virtualAccountBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
 						expect(virtualAccountBalance).to.equal(transferAmount)
 
 						// Send quote from virtual account
 						const quoteRequest = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+						const lastId = await context.viewFacetQuote.getNextQuoteId()
 
 						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccount, [sendQuoteCallData])).to.not.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(virtualAccount, [sendQuoteCallData])
 
 						const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccount, 0, 10)
 						expect(quoteIds.length).to.equal(1)
+						expect(quoteIds[0]).to.equal(lastId + 1n)
 					})
 
 					it("should enforce MARKET_LONG isolation on manually created virtual account", async () => {
@@ -1733,7 +1795,11 @@ export function shouldBehaveLikeAccountLayer(): void {
 						const longQuote = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
 						const longCallData = await createSendQuoteCallData(longQuote)
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccount, [longCallData])).to.not.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(virtualAccount, [longCallData])
+
+						// Verify the quote was tracked
+						const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccount, 0, 10)
+						expect(quoteIds.length).to.equal(1)
 					})
 
 					it("should enforce MARKET isolation - only allow quotes for specified symbol", async () => {
@@ -1765,7 +1831,11 @@ export function shouldBehaveLikeAccountLayer(): void {
 						const correctSymbolQuote = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
 						const correctSymbolCallData = await createSendQuoteCallData(correctSymbolQuote)
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccount, [correctSymbolCallData])).to.not.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(virtualAccount, [correctSymbolCallData])
+
+						// Verify quote was tracked
+						const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccount, 0, 10)
+						expect(quoteIds.length).to.equal(1)
 					})
 
 					it("should fail to create virtual account from non-CUSTOM sub-account", async () => {
@@ -1826,14 +1896,14 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 						const btcCallData = await createSendQuoteCallData(btcLongQuote)
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(btcLongVirtual, [btcCallData])).to.not.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(btcLongVirtual, [btcCallData])
 
 						// Send ETH SHORT quote
 						const ethShortQuote = limitQuoteRequestBuilder().symbolId(2).positionType(PositionType.SHORT).build()
 
 						const ethCallData = await createSendQuoteCallData(ethShortQuote)
 
-						await expect(context.alCoreFacet.connect(context.signers.user)._call(ethShortVirtual, [ethCallData])).to.not.reverted
+						await context.alCoreFacet.connect(context.signers.user)._call(ethShortVirtual, [ethCallData])
 
 						// Verify quotes tracked separately
 						const btcQuotes = await context.alViewFacet.getVirtualAccountQuoteIds(btcLongVirtual, 0, 10)
@@ -2036,7 +2106,9 @@ export function shouldBehaveLikeAccountLayer(): void {
 				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [transferCallData])
 
 				const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
-				await expect(context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [sendQuoteCallData])).to.be.reverted
+				await expect(
+					context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [sendQuoteCallData]),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
 			})
 
 			it("should revert if virtual account is deleted mid-batch", async () => {
@@ -2155,7 +2227,10 @@ export function shouldBehaveLikeAccountLayer(): void {
 				await context.alControlFacet.connect(context.signers.admin).pause()
 				await context.alControlFacet.connect(context.signers.admin).unpause()
 				const callData: BytesLike[] = [context.accountFacet.interface.encodeFunctionData("allocate", [BALANCES.SMALL_AMOUNT])]
-				await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.not.be.reverted
+				await context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)
+
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(subAccountAddress)
+				expect(allocatedBalance).to.equal(BALANCES.SMALL_AMOUNT)
 			})
 		})
 
@@ -2444,16 +2519,12 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
 
-					const errorSelector = "0x08c379a0"
-					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
-					const innerReason = errorSelector + encodedString.slice(2)
-					const expectedReason = new ethers.Interface(["error HookFailed(bytes)"]).encodeErrorResult("HookFailed", [innerReason])
-
-					// NOTE: Hook reverts now revert the whole tx
-					// await expect(context.accountManager.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]))
-					// 	.to.emit(hookEvents, "HookFailed")
-					// 	.withArgs(context.accountLayerDiamond, SYMMIO_HOOK_SELECTORS.onCancelQuote, quoteId, expectedReason)
+					// Hook reverts now revert the whole tx - the VA should remain intact
 					await expect(context.accountManager.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote])).to.be.reverted
+
+					// Verify the virtual account still exists (tx was reverted)
+					const virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+					expect(virtualAccountData.isExists).to.be.true
 				})
 
 				it("should return the hook failure reason for virtual account deletion", async () => {
@@ -2466,17 +2537,16 @@ export function shouldBehaveLikeAccountLayer(): void {
 					await hookContract.setRevertForSelector(HOOK_SELECTORS.onVirtualAccountDeletion, true, revertMessage)
 
 					const encodedCancelQuote = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
-					// The revert reason includes the Error(string) selector (0x08c379a0) followed by the ABI-encoded string
-					const errorSelector = "0x08c379a0"
-					const encodedString = ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage])
-					const innerReason = errorSelector + encodedString.slice(2)
-					const expectedReason = new ethers.Interface(["error HookFailed(bytes)"]).encodeErrorResult("HookFailed", [innerReason])
 
-					// NOTE: Hook reverts now revert the whole tx
-					// await expect(context.accountManager.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote]))
-					// 	.to.emit(hookEvents, "HookFailed")
-					// 	.withArgs(context.accountLayerDiamond, SYMMIO_HOOK_SELECTORS.onCancelQuote, quoteId, expectedReason)
+					// Hook reverts now revert the whole tx
 					await expect(context.accountManager.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote])).to.be.reverted
+
+					// Verify the virtual account still exists and quote is still tracked
+					const virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+					expect(virtualAccountData.isExists).to.be.true
+					const quotesAfter = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+					expect(quotesAfter.length).to.equal(1)
+					expect(quotesAfter[0]).to.equal(quoteId)
 				})
 			})
 
@@ -2945,8 +3015,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				})
 
 				it("should return accountLayer address", async function () {
-					const hubAddress = await context.accountLayerDiamond
-					expect(hubAddress).to.equal(context.accountLayerDiamond)
+					expect(context.accountLayerDiamond).to.not.equal(ZeroAddress)
 				})
 
 				it("should return globalNonce > 0 after account creation", async function () {

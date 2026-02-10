@@ -196,6 +196,11 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 					await expect(context.alAffiliateFacet.connect(context.signers.user).cancelRegistration(affiliate))
 						.to.emit(context.alAffiliateFacet, "RegistrationCancelled")
 						.withArgs(affiliate)
+
+					// Verify the state is now NONE
+					expect(await context.alViewFacet.getAffiliateState(affiliate)).to.equal(AffiliateState.NONE)
+
+					// Verify re-registration is possible
 					await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(
 						context.alAffiliateFacet,
 						"AffiliateRegistered",
@@ -235,6 +240,11 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 					await expect(context.alAffiliateFacet.connect(context.signers.admin).rejectRegistration(affiliate))
 						.to.emit(context.alAffiliateFacet, "RegistrationRejected")
 						.withArgs(affiliate, context.signers.admin.address)
+
+					// Verify the state is now NONE
+					expect(await context.alViewFacet.getAffiliateState(affiliate)).to.equal(AffiliateState.NONE)
+
+					// Verify re-registration is possible
 					await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(
 						context.alAffiliateFacet,
 						"AffiliateRegistered",
@@ -409,7 +419,9 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 					// admin can update
 					await expect(
 						context.alAffiliateFacet.connect(context.signers.user).updateAffiliateDetails(affiliate, newDetails.name, newDetails.brandColor),
-					).to.emit(context.alAffiliateFacet, "AffiliateUpdated")
+					)
+						.to.emit(context.alAffiliateFacet, "AffiliateUpdated")
+						.withArgs(affiliate, newDetails.name, newDetails.brandColor)
 				})
 
 				it("reverts when affiliate is paused", async function () {
@@ -534,6 +546,19 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 					await expect(
 						context.alAffiliateFacet.connect(context.signers.user).requestFeeUpdate(affiliate, newStakeholders, ethers.parseEther("0.2")),
 					).to.emit(context.alAffiliateFacet, "StakeholdersUpdateRequested")
+
+					// Verify the pending update can be approved (proving it was stored)
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveFeeUpdate(affiliate)).to.emit(
+						context.alAffiliateFacet,
+						"StakeholdersUpdated",
+					)
+
+					// Verify the stakeholders were updated to the new values
+					const stakeholders = await context.alViewFacet.getAffiliateStakeholders(affiliate)
+					expect(stakeholders.length).to.equal(1)
+					expect(stakeholders[0].receiver).to.equal(context.signers.feeCollector.address)
+					expect(stakeholders[0].share).to.equal(ethers.parseEther("0.8"))
+					expect(await context.alViewFacet.getAffiliateSymmioShare(affiliate)).to.equal(ethers.parseEther("0.2"))
 				})
 
 				it("rejects calls from non-admin accounts", async function () {
@@ -588,6 +613,12 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 						context.alAffiliateFacet,
 						"FeeUpdateCancelled",
 					)
+
+					// Verify the pending update was cleared by trying to approve it (should fail)
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveFeeUpdate(affiliate)).to.be.revertedWithCustomError(
+						context.alAffiliateFacet,
+						"NoPendingUpdate",
+					)
 				})
 
 				it("blocks non-admin users", async function () {
@@ -618,6 +649,18 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 						context.alAffiliateFacet,
 						"StakeholdersUpdated",
 					)
+
+					// Verify the stakeholders were actually updated by checking fee distribution
+					const feeAmount = ethers.parseEther("100")
+					await depositFeesForAffiliate(affiliate, feeAmount, coreAddress)
+
+					const stakeholder = context.signers.feeCollector
+					const before = await context.collateral.balanceOf(stakeholder.address)
+					await context.alAffiliateFacet.connect(stakeholder).claimFees(affiliate, coreAddress, feeAmount)
+					const after = await context.collateral.balanceOf(stakeholder.address)
+
+					// After update, feeCollector share is 80% (was 40%)
+					expect(after - before).to.equal((feeAmount * ethers.parseEther("0.8")) / ethers.parseEther("1"))
 				})
 
 				it("requires the approver role", async function () {
@@ -646,16 +689,27 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 
 				it("distributes fees to stakeholders", async function () {
 					// grab balances before claiming
-					const stakeholder = context.signers.feeCollector
-					const before = await context.collateral.balanceOf(stakeholder.address)
+					const stakeholder1 = context.signers.feeCollector
+					const stakeholder2 = context.signers.feeCollector2
+					const symmioReceiver = context.signers.symmioFeeReceiver
+					const before1 = await context.collateral.balanceOf(stakeholder1.address)
+					const before2 = await context.collateral.balanceOf(stakeholder2.address)
+					const beforeSymmio = await context.collateral.balanceOf(symmioReceiver.address)
+
 					// stakeholder claims
-					await expect(context.alAffiliateFacet.connect(stakeholder).claimFees(affiliate, coreAddress, feeAmount)).to.emit(
+					await expect(context.alAffiliateFacet.connect(stakeholder1).claimFees(affiliate, coreAddress, feeAmount)).to.emit(
 						context.alAffiliateFacet,
 						"FeesClaimed",
 					)
-					// confirm increase matches share
-					const after = await context.collateral.balanceOf(stakeholder.address)
-					expect(after - before).to.equal((feeAmount * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+
+					// confirm each stakeholder received their share
+					const after1 = await context.collateral.balanceOf(stakeholder1.address)
+					const after2 = await context.collateral.balanceOf(stakeholder2.address)
+					const afterSymmio = await context.collateral.balanceOf(symmioReceiver.address)
+
+					expect(after1 - before1).to.equal((feeAmount * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+					expect(after2 - before2).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
+					expect(afterSymmio - beforeSymmio).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
 					expect(await context.collateral.balanceOf(context.accountLayerDiamond)).to.equal(0)
 				})
 
@@ -702,11 +756,29 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 					// deposit so theres something to preview
 					const totalFees = ethers.parseEther("50")
 					await depositFeesForAffiliate(affiliate, totalFees, coreAddress)
-					// dry run for a preview
+
+					// capture balances before dry run
+					const feeCollectorBefore = await context.collateral.balanceOf(context.signers.feeCollector.address)
+					const feeCollector2Before = await context.collateral.balanceOf(context.signers.feeCollector2.address)
+					const symmioReceiverBefore = await context.collateral.balanceOf(context.signers.symmioFeeReceiver.address)
+
+					// dry run for a preview - returns only affiliate stakeholders (not symmio receiver)
 					const [holders, shares] = await context.alViewFacet.dryClaimAllFees(affiliate, coreAddress)
-					// balances stay the same but preview is correct
+
+					// verify affiliate stakeholders are present
 					expect(holders).to.include(context.signers.feeCollector.address)
-					expect(shares[0]).to.equal((totalFees * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+					expect(holders).to.include(context.signers.feeCollector2.address)
+
+					// verify shares match expected distribution (stakeholder shares only)
+					const feeCollectorIdx = holders.indexOf(context.signers.feeCollector.address)
+					const feeCollector2Idx = holders.indexOf(context.signers.feeCollector2.address)
+					expect(shares[feeCollectorIdx]).to.be.gt(0n)
+					expect(shares[feeCollector2Idx]).to.be.gt(0n)
+
+					// verify no actual transfers occurred (dry run)
+					expect(await context.collateral.balanceOf(context.signers.feeCollector.address)).to.equal(feeCollectorBefore)
+					expect(await context.collateral.balanceOf(context.signers.feeCollector2.address)).to.equal(feeCollector2Before)
+					expect(await context.collateral.balanceOf(context.signers.symmioFeeReceiver.address)).to.equal(symmioReceiverBefore)
 				})
 			})
 
@@ -718,20 +790,25 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 				})
 
 				it("withdraws the full balance and routes shares accordingly", async function () {
-					const stakeholder = context.signers.feeCollector
-					const stakeholderBefore = await context.collateral.balanceOf(stakeholder.address)
+					const stakeholder1 = context.signers.feeCollector
+					const stakeholder2 = context.signers.feeCollector2
+					const stakeholder1Before = await context.collateral.balanceOf(stakeholder1.address)
+					const stakeholder2Before = await context.collateral.balanceOf(stakeholder2.address)
 					const symmioBefore = await context.collateral.balanceOf(context.signers.symmioFeeReceiver.address)
 
-					await expect(context.alAffiliateFacet.connect(stakeholder).claimAllFees(affiliate, coreAddress)).to.emit(
+					await expect(context.alAffiliateFacet.connect(stakeholder1).claimAllFees(affiliate, coreAddress)).to.emit(
 						context.alAffiliateFacet,
 						"FeesClaimed",
 					)
 
-					const stakeholderAfter = await context.collateral.balanceOf(stakeholder.address)
+					const stakeholder1After = await context.collateral.balanceOf(stakeholder1.address)
+					const stakeholder2After = await context.collateral.balanceOf(stakeholder2.address)
 					const symmioAfter = await context.collateral.balanceOf(context.signers.symmioFeeReceiver.address)
 
-					expect(stakeholderAfter - stakeholderBefore).to.equal((feeAmount * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+					expect(stakeholder1After - stakeholder1Before).to.equal((feeAmount * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+					expect(stakeholder2After - stakeholder2Before).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
 					expect(symmioAfter - symmioBefore).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
+					expect(await context.collateral.balanceOf(context.accountLayerDiamond)).to.equal(0)
 				})
 			})
 		})

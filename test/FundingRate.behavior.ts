@@ -207,15 +207,20 @@ export function shouldBehaveLikeFundingRate(): void {
 		let currentEpoch = (BigInt(await time.latest()) / duration) * duration
 		let targetTime = duration * 2n + window - 1n + currentEpoch
 
+		let oldQuote = await context.viewFacetQuote.getQuote(1)
+
 		await time.setNextBlockTimestamp(targetTime)
-		await expect(
-			hedger.chargeFundingRate(
-				await context.signers.user.getAddress(),
-				[1],
-				[decimal(1n, 15)],
-				await getDummyPairUpnlSig(BigInt(0), decimal(4970n) * -1n),
-			),
-		).not.reverted
+		// When bound, solvency check is skipped so even a large negative upnlPartyB is accepted
+		await hedger.chargeFundingRate(
+			await context.signers.user.getAddress(),
+			[1],
+			[decimal(1n, 15)],
+			await getDummyPairUpnlSig(BigInt(0), decimal(4970n) * -1n),
+		)
+
+		// Verify the funding rate was applied to the quote's opened price
+		let newQuote = await context.viewFacetQuote.getQuote(1)
+		expect(newQuote.openedPrice).to.be.equal(unDecimal(oldQuote.openedPrice * (decimal(1n) + decimal(1n, 15))))
 	})
 
 	describe("Accumulative Funding Rate Methods", function () {
@@ -812,12 +817,16 @@ export function shouldBehaveLikeFundingRate(): void {
 			let currentEpoch = (BigInt(await time.latest()) / duration) * duration
 			let targetTime = duration * 2n + window - 1n + currentEpoch
 
+			const quoteBefore = await context.viewFacetQuote.getQuote(4)
+
 			await time.setNextBlockTimestamp(targetTime)
-			await expect(
-				context.fundingRateFacet
-					.connect(context.signers.hedger)
-					.chargeFundingRate(await context.signers.user.getAddress(), [4], [decimal(1n, 16)], await getDummyPairUpnlSig()),
-			).to.not.reverted
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.chargeFundingRate(await context.signers.user.getAddress(), [4], [decimal(1n, 16)], await getDummyPairUpnlSig())
+
+			// Verify normal charge applied the funding rate to the opened price (LONG: price increases)
+			const quoteAfterNormal = await context.viewFacetQuote.getQuote(4)
+			expect(quoteAfterNormal.openedPrice).to.be.equal(unDecimal(quoteBefore.openedPrice * (decimal(1n) + decimal(1n, 16))))
 
 			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
 
@@ -827,16 +836,19 @@ export function shouldBehaveLikeFundingRate(): void {
 					.chargeFundingRate(await context.signers.user.getAddress(), [4], [decimal(1n, 16)], await getDummyPairUpnlSig()),
 			).to.revertedWith("ChargeFundingFacet: Use accumulated funding fee")
 
-			await expect(
-				context.fundingRateFacet
-					.connect(context.signers.hedger)
-					.chargeAccumulatedFundingFee(
-						await context.signers.user.getAddress(),
-						await context.signers.hedger.getAddress(),
-						[4],
-						await getDummyPairUpnlSig(),
-					),
-			).to.not.reverted
+			const quoteBeforeAccum = await context.viewFacetQuote.getQuote(4)
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.chargeAccumulatedFundingFee(
+					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
+					[4],
+					await getDummyPairUpnlSig(),
+				)
+
+			// Verify the accumulated charge updated the quote's lastFundingPaymentTimestamp
+			const quoteAfterAccum = await context.viewFacetQuote.getQuote(4)
+			expect(quoteAfterAccum.lastFundingPaymentTimestamp).to.be.gte(quoteBeforeAccum.lastFundingPaymentTimestamp)
 		})
 	})
 }

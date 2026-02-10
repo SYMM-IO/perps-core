@@ -75,7 +75,9 @@ export function shouldBehaveLikeBridgeFacet(): void {
 				bridge: await bridge.getAddress(),
 			})
 
-			await expect(context.bridgeFacet.connect(context.signers.user).transferToBridge(decimal(100n), await bridge.getAddress())).to.not.reverted
+			await expect(context.bridgeFacet.connect(context.signers.user).transferToBridge(decimal(100n), await bridge.getAddress()))
+				.to.emit(context.bridgeFacet, "TransferToBridge")
+				.withArgs(user.address, decimal(100n), await bridge.getAddress(), id + 1n)
 
 			await validator.after(context, {
 				user: user,
@@ -127,10 +129,18 @@ export function shouldBehaveLikeBridgeFacet(): void {
 		})
 
 		it("Should suspend transaction successfully", async function () {
-			await expect(context.bridgeFacet.connect(context.signers.admin).suspendBridgeTransaction(1)).to.not.reverted
+			const userBalanceBefore = await context.viewFacet.balanceOf(user.address)
+
+			await expect(context.bridgeFacet.connect(context.signers.admin).suspendBridgeTransaction(1))
+				.to.emit(context.bridgeFacet, "SuspendBridgeTransaction")
+				.withArgs(1)
 
 			const transaction = await context.viewFacet.getBridgeTransaction(1)
 			expect(transaction.status).to.equal(BridgeTransactionStatus.SUSPENDED)
+
+			// User balance should not change during suspend
+			const userBalanceAfter = await context.viewFacet.balanceOf(user.address)
+			expect(userBalanceAfter).to.equal(userBalanceBefore)
 		})
 	})
 
@@ -172,12 +182,21 @@ export function shouldBehaveLikeBridgeFacet(): void {
 		it("Should restore transaction successfully", async function () {
 			const originalTransaction = await context.viewFacet.getBridgeTransaction(1)
 			const validAmount = originalTransaction.amount / 2n
+			const invalidAmount = originalTransaction.amount - validAmount
+
+			// invalidBridgedAmountsPool is set to feeCollector in the fixture
+			const poolBalanceBefore = await context.viewFacet.balanceOf(context.signers.feeCollector.address)
 
 			await expect(context.bridgeFacet.connect(context.signers.admin).restoreBridgeTransaction(1, validAmount)).to.not.reverted
 
 			const restoredTransaction = await context.viewFacet.getBridgeTransaction(1)
 			expect(restoredTransaction.status).to.equal(BridgeTransactionStatus.RECEIVED)
 			expect(restoredTransaction.amount).to.equal(validAmount)
+
+			// Verify the invalid portion was credited to the pool
+			// BridgeTransaction.amount is in collateral decimals (18 for FakeStablecoin), same as balanceOf
+			const poolBalanceAfter = await context.viewFacet.balanceOf(context.signers.feeCollector.address)
+			expect(poolBalanceAfter - poolBalanceBefore).to.equal(invalidAmount)
 		})
 	})
 
@@ -244,7 +263,9 @@ export function shouldBehaveLikeBridgeFacet(): void {
 				bridge: await bridge.getAddress(),
 			})
 
-			await expect(context.bridgeFacet.connect(context.signers.bridge).withdrawReceivedBridgeValue(1)).to.not.reverted
+			await expect(context.bridgeFacet.connect(context.signers.bridge).withdrawReceivedBridgeValue(1))
+				.to.emit(context.bridgeFacet, "WithdrawReceivedBridgeValue")
+				.withArgs(1)
 
 			await validator.after(context, {
 				transactionId: 1n,
@@ -303,21 +324,66 @@ export function shouldBehaveLikeBridgeFacet(): void {
 			await time.increase(43250) // 12h cooldown
 			const transactionIds = [1, 3]
 
+			const bridgeAddress = await bridge.getAddress()
+			const collateralBefore = await context.collateral.balanceOf(bridgeAddress)
+
 			await expect(context.bridgeFacet.connect(context.signers.bridge).withdrawReceivedBridgeValues(transactionIds)).to.not.reverted
 
 			for (const id of transactionIds) {
 				const transaction = await context.viewFacet.getBridgeTransaction(id)
 				expect(transaction.status).to.equal(BridgeTransactionStatus.WITHDRAWN)
 			}
+
+			// Verify collateral was transferred (tx1=100 + tx3=150 = 250)
+			const collateralAfter = await context.collateral.balanceOf(bridgeAddress)
+			expect(collateralAfter - collateralBefore).to.equal(decimal(250n))
 		})
 	})
 
-	describe("Bridge Transaction Cancellation", async function () {
+	describe("restoreBridgeTransaction edge cases", async function () {
 		beforeEach(async function () {
-			// Create multiple bridge transactions for testing
 			await context.bridgeFacet.connect(context.signers.user).transferToBridge(decimal(100n), await bridge.getAddress())
-			await context.bridgeFacet.connect(context.signers.user).transferToBridge(decimal(200n), await bridge2.getAddress())
-			await context.bridgeFacet.connect(context.signers.user).transferToBridge(decimal(150n), await bridge.getAddress())
+			await context.bridgeFacet.connect(context.signers.admin).suspendBridgeTransaction(1)
+		})
+
+		it("Should restore with full valid amount (no invalid portion)", async function () {
+			const originalTransaction = await context.viewFacet.getBridgeTransaction(1)
+
+			await expect(context.bridgeFacet.connect(context.signers.admin).restoreBridgeTransaction(1, originalTransaction.amount)).to.not.reverted
+
+			const restoredTransaction = await context.viewFacet.getBridgeTransaction(1)
+			expect(restoredTransaction.status).to.equal(BridgeTransactionStatus.RECEIVED)
+			expect(restoredTransaction.amount).to.equal(originalTransaction.amount)
+		})
+
+		it("Should allow bridge to withdraw after restore", async function () {
+			const originalTransaction = await context.viewFacet.getBridgeTransaction(1)
+
+			await context.bridgeFacet.connect(context.signers.admin).restoreBridgeTransaction(1, originalTransaction.amount)
+
+			await time.increase(43250) // 12h cooldown
+
+			const bridgeAddress = await bridge.getAddress()
+			const collateralBefore = await context.collateral.balanceOf(bridgeAddress)
+
+			await expect(context.bridgeFacet.connect(context.signers.bridge).withdrawReceivedBridgeValue(1)).to.not.reverted
+
+			const collateralAfter = await context.collateral.balanceOf(bridgeAddress)
+			expect(collateralAfter - collateralBefore).to.equal(originalTransaction.amount)
+
+			const transaction = await context.viewFacet.getBridgeTransaction(1)
+			expect(transaction.status).to.equal(BridgeTransactionStatus.WITHDRAWN)
+		})
+
+		it("Should fail to restore a non-suspended transaction", async function () {
+			// Restore first to make it RECEIVED again
+			const originalTransaction = await context.viewFacet.getBridgeTransaction(1)
+			await context.bridgeFacet.connect(context.signers.admin).restoreBridgeTransaction(1, originalTransaction.amount)
+
+			// Try restoring again - should fail since it's now RECEIVED
+			await expect(context.bridgeFacet.connect(context.signers.admin).restoreBridgeTransaction(1, originalTransaction.amount)).to.be.revertedWith(
+				"BridgeFacet: Invalid status",
+			)
 		})
 	})
 }

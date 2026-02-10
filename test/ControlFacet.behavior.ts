@@ -503,7 +503,9 @@ export function shouldBehaveLikeControlFacet(): void {
 				context.controlFacet
 					.connect(context.signers.admin)
 					.addRelayerForExternalTransferTarget(context.signers.others[0].address, context.signers.others[1].address),
-			).to.not.reverted
+			)
+				.to.emit(context.controlFacet, "AddRelayerForExternalTransferTarget")
+				.withArgs(context.signers.others[0].address, context.signers.others[1].address)
 		})
 
 		it("Should allow admin to remove external transfer targets", async function () {
@@ -511,8 +513,9 @@ export function shouldBehaveLikeControlFacet(): void {
 				.connect(context.signers.admin)
 				.addRelayerForExternalTransferTarget(context.signers.others[0].address, context.signers.others[1].address)
 
-			await expect(context.controlFacet.connect(context.signers.admin).removeRelayerForExternalTransferTarget(context.signers.others[0].address)).to
-				.not.reverted
+			await expect(context.controlFacet.connect(context.signers.admin).removeRelayerForExternalTransferTarget(context.signers.others[0].address))
+				.to.emit(context.controlFacet, "RemoveRelayerForExternalTransferTarget")
+				.withArgs(context.signers.others[0].address)
 		})
 
 		it("Should fail when non-admin tries to add external transfer target", async function () {

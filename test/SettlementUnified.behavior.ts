@@ -241,6 +241,11 @@ export function shouldBehaveLikeSettlementUnified(): void {
 			const quote1 = await context.viewFacetQuote.getQuote(shortHedger1)
 			const quote2 = await context.viewFacetQuote.getQuote(longHedger1User2)
 
+			const partyA1BalanceBefore = await user.getBalanceInfo()
+			const partyA2BalanceBefore = await user2.getBalanceInfo()
+			const partyBBalanceA1Before = await hedger.getBalanceInfo(partyA1)
+			const partyBBalanceA2Before = await hedger.getBalanceInfo(partyA2)
+
 			const sig = await getDummyUnifiedSettlementSig(
 				partyB,
 				0n,
@@ -264,6 +269,24 @@ export function shouldBehaveLikeSettlementUnified(): void {
 			// Verify prices updated
 			expect((await context.viewFacetQuote.getQuote(shortHedger1)).openedPrice).to.be.eq(decimal(5n, 17).toString())
 			expect((await context.viewFacetQuote.getQuote(longHedger1User2)).openedPrice).to.be.eq(decimal(6n, 17).toString())
+
+			// Verify balance changes for partyA1 (short quote settles from 1e18 to 0.5e18 -> partyA gains)
+			// SHORT settlement: (openedPrice - updatedPrice) * openAmount / 1e18 = (1e18 - 0.5e18) * 100e18 / 1e18 = 50e18
+			const expectedSettleA1 = unDecimal((quote1.openedPrice - decimal(5n, 17)) * quote1.quantity)
+			const partyA1BalanceAfter = await user.getBalanceInfo()
+			expect(partyA1BalanceAfter.allocatedBalances - partyA1BalanceBefore.allocatedBalances).to.be.eq(expectedSettleA1)
+
+			// Verify balance changes for partyA2 (long quote settles from 1e18 to 0.6e18 -> partyA2 loses)
+			// LONG settlement: (updatedPrice - openedPrice) * openAmount / 1e18 = (0.6e18 - 1e18) * 100e18 / 1e18 = -40e18
+			const expectedSettleA2 = unDecimal((decimal(6n, 17) - quote2.openedPrice) * quote2.quantity)
+			const partyA2BalanceAfter = await user2.getBalanceInfo()
+			expect(partyA2BalanceAfter.allocatedBalances - partyA2BalanceBefore.allocatedBalances).to.be.eq(expectedSettleA2)
+
+			// Verify partyB balance changes per partyA
+			const partyBBalanceA1After = await hedger.getBalanceInfo(partyA1)
+			expect(partyBBalanceA1Before.allocatedBalances - partyBBalanceA1After.allocatedBalances).to.be.eq(expectedSettleA1)
+			const partyBBalanceA2After = await hedger.getBalanceInfo(partyA2)
+			expect(partyBBalanceA2Before.allocatedBalances - partyBBalanceA2After.allocatedBalances).to.be.eq(expectedSettleA2)
 		})
 
 		it("Allows a different partyB caller to settle for another partyB (partyA funding without legacy settleUpnl)", async function () {
@@ -343,6 +366,11 @@ export function shouldBehaveLikeSettlementUnified(): void {
 			const beforeNoncePartyB_A1 = await context.viewFacet.nonceOfPartyB(partyB, partyA1)
 			const beforeNoncePartyB_A2 = await context.viewFacet.nonceOfPartyB(partyB, partyA2)
 
+			const quote1 = await context.viewFacetQuote.getQuote(shortHedger1)
+			const quote2 = await context.viewFacetQuote.getQuote(longHedger1User2)
+
+			const partyA1BalanceBefore = await user.getBalanceInfo()
+			const partyA2BalanceBefore = await user2.getBalanceInfo()
 			const partyBBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
 
 			const sig = await getDummyUnifiedSettlementSig(
@@ -368,10 +396,22 @@ export function shouldBehaveLikeSettlementUnified(): void {
 			expect((await context.viewFacetQuote.getQuote(shortHedger1)).openedPrice).to.be.eq(decimal(5n, 17).toString())
 			expect((await context.viewFacetQuote.getQuote(longHedger1User2)).openedPrice).to.be.eq(decimal(6n, 17).toString())
 
-			// Verify cross partyB balance updated
+			// Verify partyA balance changes
+			// SHORT quote1: (openedPrice - updatedPrice) * openAmount / 1e18 -> partyA1 gains
+			const expectedSettleA1 = unDecimal((quote1.openedPrice - decimal(5n, 17)) * quote1.quantity)
+			const partyA1BalanceAfter = await user.getBalanceInfo()
+			expect(partyA1BalanceAfter.allocatedBalances - partyA1BalanceBefore.allocatedBalances).to.be.eq(expectedSettleA1)
+
+			// LONG quote2: (updatedPrice - openedPrice) * openAmount / 1e18 -> partyA2 loses
+			const expectedSettleA2 = unDecimal((decimal(6n, 17) - quote2.openedPrice) * quote2.quantity)
+			const partyA2BalanceAfter = await user2.getBalanceInfo()
+			expect(partyA2BalanceAfter.allocatedBalances - partyA2BalanceBefore.allocatedBalances).to.be.eq(expectedSettleA2)
+
+			// Verify cross partyB balance: all settlements go to/from address(0) bucket
+			// Net partyB change = -expectedSettleA1 - expectedSettleA2 (partyB loses what partyAs gain, gains what they lose)
 			const partyBBalanceAfter = await hedger.getBalanceInfoCrossPartyB()
-			// Balance should have changed (all settlements go to/from address(0) bucket)
-			expect(partyBBalanceAfter.allocatedBalances).to.not.eq(partyBBalanceBefore.allocatedBalances)
+			const expectedPartyBChange = -expectedSettleA1 - expectedSettleA2
+			expect(partyBBalanceAfter.allocatedBalances - partyBBalanceBefore.allocatedBalances).to.be.eq(expectedPartyBChange)
 		})
 
 		it("Should fail when partyB is insolvent in cross partyB mode", async function () {

@@ -250,6 +250,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			it("Should allow settling same non-cross partyB with correct partyA", async function () {
 				// sig.partyB == hedger (same as force close quote), hedger is non-cross
 				// sig.partyAs[0] == user (matches force close quote's partyA) → allowed
+				const quoteBefore = await context.viewFacetQuote.getQuote(quote2ShortOpened.id)
 				const sig = await getDummyUnifiedSettlementSig(
 					await hedger.getAddress(),
 					0n,
@@ -258,7 +259,11 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					[0n],
 					[{ quoteId: quote2ShortOpened.id, currentPrice: decimal(7n), partyAIndex: 0 } as any],
 				)
-				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)])).not.to.be.reverted
+				await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(5n)])
+
+				// Verify settlement updated the opened price
+				const quoteAfter = await context.viewFacetQuote.getQuote(quote2ShortOpened.id)
+				expect(quoteAfter.openedPrice).to.equal(decimal(5n))
 			})
 
 			it("Should allow settling a different partyB to fund partyA", async function () {
@@ -272,7 +277,15 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					[0n],
 					[{ quoteId: quoteUserWithHedger2.id, currentPrice: decimal(12n, 17), partyAIndex: 0 } as any],
 				)
-				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(11n, 17)])).not.to.be.reverted
+				await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(11n, 17)])
+
+				// Verify settlement updated the opened price for the settled quote
+				const quoteAfter = await context.viewFacetQuote.getQuote(quoteUserWithHedger2.id)
+				expect(quoteAfter.openedPrice).to.equal(decimal(11n, 17))
+
+				// Force close should still be in progress
+				const detail = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+				expect(detail.inProgress).to.equal(true)
 			})
 		})
 	})
@@ -344,7 +357,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 			// It can make a dead lock, where Party A want money to close position for B and B wants money to close position for A
 			await user.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
-			await expect(await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)).not.to.reverted
+			await expect(context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)).not.to.be.reverted
 		})
 
 		describe("Settlement guards", function () {
@@ -503,9 +516,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const partyABalanceBefore = await user.getBalanceInfo()
 			const partyABalanceBefore2 = await user2.getBalanceInfo()
 
-			await expect(
-				context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigMulti, [updatePrice1, updatePrice2, updatePrice3]),
-			).not.to.be.reverted
+			await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigMulti, [updatePrice1, updatePrice2, updatePrice3])
 
 			const crossBalanceAfter = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const partyABalanceAfter = await user.getBalanceInfo()
@@ -533,7 +544,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
 			const beforeNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
 
-			await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigCross, [updatePrice])).not.to.be.reverted
+			await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigCross, [updatePrice])
 
 			const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
 			const afterNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
@@ -548,7 +559,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			const balanceInfoCrossB = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const balanceInfoUserBefore = await user.getBalanceInfo()
 
-			await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigCross, [updatePrice])).not.to.be.reverted
+			await context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigCross, [updatePrice])
 
 			const balanceInfoSettlementCrossSettledB = await hedger.getBalanceInfo(ethers.ZeroAddress)
 			const balanceInfoUserAfter = await user.getBalanceInfo()
@@ -559,11 +570,20 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 			expect(balanceInfoUserBefore.allocatedBalances - balanceInfoUserAfter.allocatedBalances).to.be.equal(settledAmount)
 			expect((await context.viewFacetQuote.getQuote(quote2ShortOpened.id)).openedPrice).to.be.eq(updatePrice)
 
+			// Verify force close is still in progress before finalize
+			const detailBefore = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+			expect(detailBefore.inProgress).to.equal(true)
+
 			// force close
-			await expect(
-				context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(decimal(5n), 0n, decimal(150n))),
-			).not.to.be.reverted
-			expect((await context.viewFacetQuote.getQuote(quote1LongOpened.id)).quoteStatus).to.be.eq(QuoteStatus.CLOSED)
+			await context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig(decimal(5n), 0n, decimal(150n)))
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+			expect(quoteAfter.quoteStatus).to.be.eq(QuoteStatus.CLOSED)
+			expect(quoteAfter.closedAmount).to.equal(quote1LongOpened.quantity)
+
+			// Verify force close completed
+			const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+			expect(detailAfter.inProgress).to.equal(false)
 		})
 	})
 }

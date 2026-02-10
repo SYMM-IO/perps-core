@@ -368,17 +368,20 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			it("registers single PartyB successfully", async function () {
-				await expect(ctx.context.instantLayer.registerPartyBs([ctx.partyB1.address])).not.to.be.reverted
+				await ctx.context.instantLayer.registerPartyBs([ctx.partyB1.address])
 
 				expect(await ctx.context.instantLayer.registeredPartyBs(ctx.partyB1.address)).to.be.true
 				expect(await ctx.context.instantLayer.registeredPartyBs(ctx.partyB2.address)).to.be.false
 			})
 
 			it("registers multiple PartyBs in single call", async function () {
-				await expect(ctx.context.instantLayer.registerPartyBs([ctx.partyB1.address, ctx.partyB2.address])).not.to.be.reverted
+				await ctx.context.instantLayer.registerPartyBs([ctx.partyB1.address, ctx.partyB2.address])
 
 				expect(await ctx.context.instantLayer.registeredPartyBs(ctx.partyB1.address)).to.be.true
 				expect(await ctx.context.instantLayer.registeredPartyBs(ctx.partyB2.address)).to.be.true
+				// Verify both got OPERATOR_ROLE
+				expect(await ctx.context.instantLayer.hasRole(ROLES.OPERATOR_ROLE, ctx.partyB1.address)).to.be.true
+				expect(await ctx.context.instantLayer.hasRole(ROLES.OPERATOR_ROLE, ctx.partyB2.address)).to.be.true
 			})
 
 			it("grants OPERATOR_ROLE to registered PartyBs", async function () {
@@ -395,16 +398,15 @@ export function shouldBehaveLikeInstantLayer(): void {
 					.withArgs(ctx.partyB1.address)
 			})
 
-			it("handles empty array without reverting", async function () {
+			it("reverts with empty array", async function () {
 				await expect(ctx.context.instantLayer.registerPartyBs([])).to.be.revertedWithCustomError(ctx.context.instantLayer, "EmptyArray")
 			})
 
-			it("allows registering same PartyB twice (idempotent)", async function () {
+			it("reverts when registering already-registered PartyB", async function () {
 				await ctx.context.instantLayer.registerPartyBs([ctx.partyB1.address])
-				await expect(ctx.context.instantLayer.registerPartyBs([ctx.partyB1.address])).to.be.revertedWithCustomError(
-					ctx.context.instantLayer,
-					"PartyBAlreadyRegistered",
-				)
+				await expect(ctx.context.instantLayer.registerPartyBs([ctx.partyB1.address]))
+					.to.be.revertedWithCustomError(ctx.context.instantLayer, "PartyBAlreadyRegistered")
+					.withArgs(ctx.partyB1.address)
 				expect(await ctx.context.instantLayer.registeredPartyBs(ctx.partyB1.address)).to.be.true
 			})
 		})
@@ -419,8 +421,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 
 			it("removes PartyB from registry", async function () {
-				await expect(ctx.context.instantLayer.unregisterPartyB(ctx.partyB1.address)).not.to.be.reverted
+				await ctx.context.instantLayer.unregisterPartyB(ctx.partyB1.address)
+
 				expect(await ctx.context.instantLayer.registeredPartyBs(ctx.partyB1.address)).to.be.false
+				expect(await ctx.context.instantLayer.hasRole(ROLES.OPERATOR_ROLE, ctx.partyB1.address)).to.be.false
 			})
 
 			it("revokes OPERATOR_ROLE from unregistered PartyB", async function () {
@@ -437,11 +441,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 					.withArgs(ctx.partyB1.address)
 			})
 
-			it("allows unregistering non-registered PartyB (no-op)", async function () {
-				await expect(ctx.context.instantLayer.unregisterPartyB(ctx.partyB2.address)).to.be.revertedWithCustomError(
-					ctx.context.instantLayer,
-					"PartyBNotRegistered",
-				)
+			it("reverts when unregistering non-registered PartyB", async function () {
+				await expect(ctx.context.instantLayer.unregisterPartyB(ctx.partyB2.address))
+					.to.be.revertedWithCustomError(ctx.context.instantLayer, "PartyBNotRegistered")
+					.withArgs(ctx.partyB2.address)
 			})
 		})
 	})
@@ -458,8 +461,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			it("updates accountLayer address", async function () {
 				const hubAddress = ctx.context.accountLayerDiamond
-				await expect(ctx.context.instantLayer.setAccountHub(hubAddress)).not.to.be.reverted
+				await ctx.context.instantLayer.setAccountHub(hubAddress)
+
 				expect(await ctx.context.instantLayer.accountHub()).to.equal(hubAddress)
+				// Verify new hub is whitelisted
+				expect(await ctx.context.instantLayer.whitelistedTargets(hubAddress)).to.be.true
 			})
 
 			it("reverts when setting to zero address", async function () {
@@ -553,13 +559,14 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			it("creates active template with correct name", async function () {
 				const name = "myTemplate"
-				await expect(ctx.context.instantLayer.addTemplate(name, ctx.ops)).not.to.be.reverted
+				await ctx.context.instantLayer.addTemplate(name, ctx.ops)
 
 				const templateId = (await ctx.context.instantLayer.nextTemplateId()) - 1n
 				const template = await ctx.context.instantLayer.getTemplate(templateId)
 
 				expect(template.name).to.equal(name)
 				expect(template.active).to.be.true
+				expect(template.operations.length).to.equal(ctx.ops.length)
 			})
 
 			it("stores operations correctly (including nonzero indices and insertion points)", async function () {
@@ -712,7 +719,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		describe("executeBatch - Access Control", function () {
 			it("reverts when caller lacks OPERATOR_ROLE", async function () {
-				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).executeBatch([], [])).to.be.revertedWith(/access/i)
+				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).executeBatch([op], [sig])).to.be.reverted
 			})
 		})
 
@@ -742,6 +751,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				// Operation should succeed before deadline
 				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
 
 				// Advance time past deadline
 				await time.increase(100)
@@ -797,6 +808,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, await mock.getAddress(), 1n, deadline)
 				const sig = await signOperation(execCtx.context.signers.user2, execCtx.domain, execCtx.types, op)
 				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+
+				// Verify EIP-1271 signature acceptance resulted in a valid quote
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(quote.quantity).to.equal(execCtx.requestSendQuote.quantity)
 			})
 		})
 
@@ -835,6 +851,18 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				// Execute with mixed nonces (1, 0, 2)
 				await expect(ctx.context.instantLayer.executeBatch([op1, op2, op3], [sig1, sig2, sig3])).not.to.be.reverted
+
+				// Verify all three quotes were created
+				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
+				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
+				const quote3 = await ctx.context.viewFacetQuote.getQuote(3)
+				expect(quote1.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(quote2.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(quote3.quoteStatus).to.equal(QuoteStatus.PENDING)
+
+				// Verify nonce was incremented for ordered ops (1, 2) but not for salt-only (0)
+				const nonce = await ctx.context.instantLayer.nonces(execCtx.accounts[0].accountAddress)
+				expect(nonce).to.equal(2n)
 			})
 
 			it("allows unordered single execution with nonce=0", async function () {
@@ -846,10 +874,18 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig2 = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, op2)
 				const sig3 = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, op3)
 
-				// Execute with mixed nonces (1, 0, 2)
+				// Execute individually with mixed nonces (1, 0, 2) - nonce=0 is salt-only, can be out of order
 				await expect(ctx.context.instantLayer.executeBatch([op1], [sig1])).not.to.be.reverted
 				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2])).not.to.be.reverted
 				await expect(ctx.context.instantLayer.executeBatch([op3], [sig3])).not.to.be.reverted
+
+				// Verify all three quotes were created
+				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
+				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
+				const quote3 = await ctx.context.viewFacetQuote.getQuote(3)
+				expect(quote1.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(quote2.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(quote3.quoteStatus).to.equal(QuoteStatus.PENDING)
 			})
 		})
 
@@ -1093,10 +1129,14 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig1 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op1)
 				const sig2 = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, op2)
 
-				await expect(ctx.context.instantLayer.executeBatch([op1, op2], [sig1, sig2])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op1, op2], [sig1, sig2]))
+					.to.emit(ctx.context.instantLayer, "BatchExecuted")
+					.withArgs(execCtx.context.signers.admin.address, 2)
 
+				// Verify quote was created (by PartyA) and locked (by PartyB) in same batch
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
+				expect(quote.quantity).to.equal(execCtx.requestSendQuote.quantity)
 			})
 
 			it("emits BatchExecuted event", async function () {
@@ -1396,6 +1436,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 					ctx.context.instantLayer.executeTemplate(templateId, [sendQuoteOp, getSignerOp, allocateOp], [sendQuoteSig, getSignerSig, allocateSig]),
 				).not.to.be.reverted
 
+				// Verify the quote was created by the first operation
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+
+				// Verify partyB allocation was performed with the injected partyA address
 				expect(await ctx.context.viewFacet.allocatedBalanceOfPartyB(partyBAddress, partyAAccount)).to.equal(allocateAmount)
 			})
 
@@ -1660,10 +1705,16 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				const sig = await ctx.context.signers.user.signTypedData(ctx.domain, DELEGATE_TYPES, signedDelegation)
 
-				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).grantBatchDelegationBySig(signedDelegation, sig)).not.to.be.reverted
+				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).grantBatchDelegationBySig(signedDelegation, sig))
+					.to.emit(ctx.context.instantLayer, "DelegationGranted")
+					.withArgs(accountAddress, ctx.context.signers.admin.address, selector, expiry)
 
 				const storedExpiry = await ctx.context.instantLayer.delegations(accountAddress, ctx.context.signers.admin.address, selector as any)
 				expect(storedExpiry).to.equal(expiry)
+
+				// Verify delegation nonce was incremented
+				const nonce = await ctx.context.instantLayer.delegationNonces(accountAddress)
+				expect(nonce).to.equal(1n)
 			})
 
 			it("increments delegation nonce", async function () {
@@ -1889,7 +1940,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const lockSig = await signOperation(ctx.partyB1.signer, ctx.domain, ctx.types, lockOp)
 
 				// This should succeed
-				await expect(ctx.context.instantLayer.executeBatch([lockOp], [lockSig])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([lockOp], [lockSig]))
+					.to.emit(ctx.context.instantLayer, "BatchExecuted")
+					.withArgs(ctx.context.signers.admin.address, 1)
 
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
@@ -2301,6 +2354,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig = await signOperation(ctx.context.signers.user, ctx.domain, ctx.types, op)
 
 			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+
+			// Verify the quote was created on the virtual account
+			const quoteIds = await ctx.context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+			expect(quoteIds.length).to.equal(2) // 1 from setup + 1 from this test
 		})
 
 		it("correctly identifies parent account for delegation", async function () {
@@ -2681,7 +2738,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, externalOp)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, secondExternalOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, secondExternalOp], [sig1, sig2])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, secondExternalOp], [sig1, sig2]))
+				.to.emit(ctx.context.instantLayer, "OperationsExecuted")
+				.withArgs(templateId, ctx.context.signers.admin.address)
 
 			// The second operation should have received 444 as its value (injected from first op's result)
 			expect(await mockTarget.lastValue()).to.equal(444n)

@@ -3,14 +3,15 @@ import { expect } from "chai"
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { loadFixture } from "./helpers/network-helpers.js"
-import { PositionType } from "./models/Enums.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { emergencyCloseRequestBuilder } from "./models/requestModels/EmergencyCloseRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { EmergencyCloseRequestValidator } from "./models/validators/EmergencyCloseRequestValidator.js"
-import { decimal, pausePartyB } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, getQuoteQuantity, pausePartyB } from "./utils/Common.js"
 
 export function shouldBehaveLikeEmergencyClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -105,6 +106,57 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 					user: user,
 					hedger: hedger,
 					quoteId: BigInt(1),
+					price: decimal(1n),
+					beforeOutput: beforeOut,
+				})
+			})
+
+			it("Should emergency close a SHORT position successfully", async function () {
+				const quoteId = quote2ShortOpened.id
+				const validator = new EmergencyCloseRequestValidator()
+				const beforeOut = await validator.before(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(quoteId),
+				})
+				await hedger.emergencyClosePosition(quoteId, emergencyCloseRequestBuilder().build())
+				await validator.after(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(quoteId),
+					price: decimal(1n),
+					beforeOutput: beforeOut,
+				})
+			})
+
+			it("Should emergency close a quote that is already CLOSE_PENDING", async function () {
+				// First request a normal close on quote1
+				const quantity = await getQuoteQuantity(context, quote1LongOpened.id)
+				await user.requestToClosePosition(
+					quote1LongOpened.id,
+					limitCloseRequestBuilder()
+						.quantityToClose(quantity)
+						.closePrice(decimal(1n))
+						.deadline((await getBlockTimestamp()) + 1000n)
+						.build(),
+				)
+
+				// Verify it's in CLOSE_PENDING
+				const quoteBefore = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+				expect(quoteBefore.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+
+				// Emergency close should still work on CLOSE_PENDING quotes
+				const validator = new EmergencyCloseRequestValidator()
+				const beforeOut = await validator.before(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(quote1LongOpened.id),
+				})
+				await hedger.emergencyClosePosition(quote1LongOpened.id, emergencyCloseRequestBuilder().build())
+				await validator.after(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(quote1LongOpened.id),
 					price: decimal(1n),
 					beforeOutput: beforeOut,
 				})

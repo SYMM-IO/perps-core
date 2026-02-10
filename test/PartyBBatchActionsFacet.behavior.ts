@@ -194,6 +194,9 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		})
 
 		it("Should successfully open multiple positions", async function () {
+			const partyANonceBefore = await context.viewFacet.nonceOfPartyA(context.signers.user.address)
+			const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+
 			const quoteIds = [1n, 2n]
 			const filledAmounts = [decimal(100n), decimal(100n)]
 			const openedPrices = [decimal(1n), decimal(1n)]
@@ -201,6 +204,18 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 			await expect(context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig)).to
 				.not.reverted
+
+			const quote1 = await context.viewFacetQuote.getQuote(1n)
+			const quote2 = await context.viewFacetQuote.getQuote(2n)
+			expect(quote1.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+			expect(quote2.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+			expect(quote1.openedPrice).to.equal(decimal(1n))
+			expect(quote2.openedPrice).to.equal(decimal(1n))
+
+			const partyANonceAfter = await context.viewFacet.nonceOfPartyA(context.signers.user.address)
+			const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+			expect(partyANonceAfter).to.equal(partyANonceBefore + 1n)
+			expect(partyBNonceAfter).to.equal(partyBNonceBefore + 1n)
 		})
 	})
 
@@ -276,6 +291,14 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 			await expect(context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig))
 				.to.not.reverted
+
+			const quote1 = await context.viewFacetQuote.getQuote(1n)
+			const quote2 = await context.viewFacetQuote.getQuote(2n)
+			expect(quote1.closedAmount).to.equal(decimal(50n))
+			expect(quote2.closedAmount).to.equal(decimal(50n))
+			// Partial close leaves quotes in CLOSE_PENDING since original close request is still active
+			expect(quote1.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
+			expect(quote2.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
 		})
 
 		it("Should update nonces correctly", async function () {

@@ -84,12 +84,14 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
 
 			// Should pass with exact upnl (balance = 0 is acceptable)
-			await expect(
-				hedger.fillCloseRequest(
-					quoteId,
-					limitFillCloseRequestBuilder().filledAmount(quantity).closedPrice(closePrice).upnlPartyA(exactUpnl).price(marketPrice).build(),
-				),
-			).to.not.be.reverted
+			await hedger.fillCloseRequest(
+				quoteId,
+				limitFillCloseRequestBuilder().filledAmount(quantity).closedPrice(closePrice).upnlPartyA(exactUpnl).price(marketPrice).build(),
+			)
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			expect(quoteAfter.closedAmount).to.equal(quoteShort.quantity)
 		})
 	})
 
@@ -106,6 +108,8 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			const closePrice = decimal(11n, 17)
 			const marketPrice = closePrice
 
+			const userBalanceBefore = await user.getBalanceInfo()
+
 			const filledAmount = await hedger.fillCloseRequestToLiquidation(
 				1,
 				limitFillCloseRequestBuilder().closedPrice(closePrice).upnlPartyA(0n).price(marketPrice).build(),
@@ -115,6 +119,8 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 
 			const quoteAfter = await context.viewFacetQuote.getQuote(1n)
 			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			expect(quoteAfter.closedAmount).to.equal(quote.quantity)
+			expect(quoteAfter.avgClosedPrice).to.be.gt(0n)
 		})
 
 		it("Should only work with LIMIT orders", async function () {
@@ -209,8 +215,10 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			expect(filledAmount).to.be.greaterThan(0n)
 
 			const quoteAfter = await context.viewFacetQuote.getQuote(1n)
-			// Should be partially closed
+			// Should be partially closed - quote remains open with close pending since only partially filled
 			expect(quoteAfter.closedAmount).to.equal(quote.closedAmount + filledAmount)
+			// avgClosedPrice should be set
+			expect(quoteAfter.avgClosedPrice).to.be.gt(0n)
 		})
 
 		it("Should return 0 when PartyA is already insolvent and closing is harmful", async function () {
@@ -301,6 +309,10 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			// Should be a partial fill due to harmful closing (fees + loss > unlock)
 			expect(filledAmount).to.be.lessThan(quantityToClose)
 			expect(filledAmount).to.be.greaterThan(0n)
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteShortId)
+			expect(quoteAfter.closedAmount).to.equal(quote.closedAmount + filledAmount)
+			expect(quoteAfter.avgClosedPrice).to.be.gt(0n)
 		})
 	})
 }

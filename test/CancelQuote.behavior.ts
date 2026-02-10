@@ -37,7 +37,7 @@ export function shouldBehaveLikeCancelQuote(): void {
 	})
 
 	it("Should fail due to invalid quoteId", async function () {
-		await expect(user.requestToCancelQuote(3)).to.be.reverted
+		await expect(user.requestToCancelQuote(3)).to.be.revertedWith("Accessibility: Should be partyA of quote")
 	})
 
 	it("Should fail on invalid partyA", async function () {
@@ -101,7 +101,7 @@ export function shouldBehaveLikeCancelQuote(): void {
 		})
 
 		it("Should fail to accept cancel request on invalid quoteId", async function () {
-			await expect(hedger.acceptCancelRequest(2)).to.be.reverted
+			await expect(hedger.acceptCancelRequest(2)).to.be.revertedWith("Accessibility: Should be partyB of quote")
 		})
 
 		it("Should fail to accept cancel request on invalid partyB", async function () {
@@ -188,16 +188,28 @@ export function shouldBehaveLikeCancelQuote(): void {
 				})
 			})
 
+			it("Should fail to accept cancel request on invalid state (not CANCEL_PENDING)", async function () {
+				// Quote is LOCKED, not CANCEL_PENDING
+				await expect(hedger.acceptCancelRequest(1)).to.be.revertedWith("PartyBFacet: Invalid state")
+			})
+
 			it("Should force cancel quote", async function () {
 				await expect(user.forceCancelQuote(1)).to.be.revertedWith("PartyAFacet: Invalid state")
 				await user.requestToCancelQuote(1)
+				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.equal(QuoteStatus.CANCEL_PENDING)
 				await expect(user.forceCancelQuote(1)).to.be.revertedWith("PartyAFacet: Cooldown not reached")
-				const pendingBefore = (await user.getBalanceInfo()).totalPendingLockedPartyA
-				expect(pendingBefore).to.be.greaterThan(0)
+				const balanceBefore = await user.getBalanceInfo()
+				const hedgerBalanceBefore = await hedger.getBalanceInfo(await user.getAddress())
+				expect(balanceBefore.totalPendingLockedPartyA).to.be.greaterThan(0n)
+				expect(hedgerBalanceBefore.totalPendingLockedPartyB).to.be.greaterThan(0n)
 				await time.increase(300)
 				await user.forceCancelQuote(1)
-				const pendingAfter = (await user.getBalanceInfo()).totalPendingLockedPartyA
-				expect(pendingAfter).to.equal(0n)
+				const balanceAfter = await user.getBalanceInfo()
+				const hedgerBalanceAfter = await hedger.getBalanceInfo(await user.getAddress())
+				expect(balanceAfter.totalPendingLockedPartyA).to.equal(0n)
+				expect(hedgerBalanceAfter.totalPendingLockedPartyB).to.equal(0n)
+				// Trading fee should be refunded
+				expect(balanceAfter.allocatedBalances).to.be.greaterThan(balanceBefore.allocatedBalances)
 				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.eq(QuoteStatus.CANCELED)
 			})
 		})

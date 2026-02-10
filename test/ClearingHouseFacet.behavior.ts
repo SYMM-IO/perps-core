@@ -111,11 +111,18 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				// Activate cross mode for hedger
 				await migratePartyBToCross(context, hedger, [1, 2, 4, 5])
 
+				const upnl = BigInt("-999999999999999999999999999999")
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.user2)
-						.liquidateCrossPartyB(context.signers.hedger.address, "0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp()),
+						.liquidateCrossPartyB(context.signers.hedger.address, "0x", upnl, await getBlockTimestamp()),
 				).to.not.be.reverted
+
+				// Verify cross liquidation was actually initiated
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
+				const details = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
+				expect(details.inProgress).to.equal(true)
+				expect(details.upnl).to.equal(upnl)
 			})
 
 			it("Should fail when liquidation is paused", async function () {
@@ -179,12 +186,15 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			it("Should cross liquidate partyB successfully", async function () {
 				const validator = new LiquidateCrossPartyBValidator()
 				const upnl = BigInt("-999999999999999999999999999999")
+				const timestamp = await getBlockTimestamp()
 				const beforeOut = await validator.before(context, { hedger })
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
-						.liquidateCrossPartyB(context.signers.hedger.getAddress(), "0x", upnl, await getBlockTimestamp()),
-				).to.not.reverted
+						.liquidateCrossPartyB(context.signers.hedger.getAddress(), "0x", upnl, timestamp),
+				)
+					.to.emit(context.clearingHouseFacet, "LiquidateCrossPartyB")
+					.withArgs(context.signers.liquidator.address, context.signers.hedger.address, "0x", upnl, timestamp)
 
 				await validator.after(context, { hedger, upnl, beforeOutput: beforeOut })
 
@@ -194,6 +204,8 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				expect(details.liquidationId).to.equal("0x")
 				expect(details.upnl).to.equal(upnl)
 				expect(details.deallocatedPool).to.equal(0)
+				expect(details.inProgress).to.equal(true)
+				expect(Number(details.timestamp)).to.be.greaterThan(0)
 			})
 
 			it("Should fail to cross liquidate a partyB twice", async function () {
@@ -241,12 +253,16 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			expect((await context.viewFacetQuote.getPartyBPendingQuotes(context.signers.hedger, context.signers.user)).length).to.equal(0)
 			expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
 
-			await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger)).to.not
-				.reverted
+			await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger))
+				.to.emit(context.clearingHouseFacet, "SettleCrossPartyBLiquidation")
+				.withArgs(context.signers.hedger.address)
 			expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(false)
+			const detailsAfterSettle = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
+			expect(detailsAfterSettle.inProgress).to.equal(false)
+			expect(detailsAfterSettle.timestamp).to.equal(0)
 
 			// PartyB should be able to resume normal operations
-			await expect(hedger.lockQuote(2, decimal(1_000_000n))).to.not.reverted
+			await hedger.lockQuote(2, decimal(1_000_000n))
 
 			// Once cleared a pending cleanup should be rejected
 			await expect(
@@ -315,7 +331,9 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.deallocateForClearingHouse(context.signers.hedger, [context.signers.hedger], [ZeroAddress], [OldAllocated]),
-				).to.not.reverted
+				)
+					.to.emit(context.clearingHouseFacet, "DeallocateForClearingHouse")
+					.withArgs(context.signers.hedger.address, [context.signers.hedger.address], [ZeroAddress], [OldAllocated])
 
 				await validator.after(context, {
 					subject: hedgerAddress,
@@ -346,7 +364,14 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 							[ZeroAddress, ZeroAddress],
 							[deallocateAmount1, deallocateAmount2],
 						),
-				).to.not.reverted
+				)
+					.to.emit(context.clearingHouseFacet, "DeallocateForClearingHouse")
+					.withArgs(
+						context.signers.hedger.address,
+						[context.signers.hedger.address, context.signers.hedger.address],
+						[ZeroAddress, ZeroAddress],
+						[deallocateAmount1, deallocateAmount2],
+					)
 
 				const newAllocatedCross = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 				const d = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
@@ -393,7 +418,9 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.distributeForClearingHouse(context.signers.hedger, [context.signers.user], [ZeroAddress], [transferAmount]),
-				).to.not.reverted
+				)
+					.to.emit(context.clearingHouseFacet, "DistributeForClearingHouse")
+					.withArgs(context.signers.hedger.address, [context.signers.user.address], [ZeroAddress], [transferAmount])
 
 				await validator.after(context, {
 					subject: hedgerAddress,
@@ -413,6 +440,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			it("should handle partial distributions correctly", async () => {
 				const partialAmount = 500n
 				const detailsBefore = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
+				const receiverBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user)
 
 				await context.clearingHouseFacet
 					.connect(context.signers.liquidator)
@@ -420,6 +448,9 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				const detailsAfter = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
 				expect(detailsAfter.deallocatedPool).to.equal(detailsBefore.deallocatedPool - partialAmount)
+
+				const receiverBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user)
+				expect(receiverBalanceAfter).to.equal(receiverBalanceBefore + partialAmount)
 			})
 
 			it("should fail when partyB is not liquidated", async () => {
@@ -476,7 +507,9 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.liquidatePendingPositionsForClearingHouse(context.signers.hedger, [context.signers.user]),
-				).to.not.reverted
+				)
+					.to.emit(context.clearingHouseFacet, "LiquidatePendingPositionsForClearingHouse")
+					.withArgs(context.signers.hedger.address, [context.signers.user.address], [])
 
 				await validator.after(context, {
 					subject: hedgerAddress,
@@ -505,17 +538,48 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const oldUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
 				const oldUser2PendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user2)
 
-				await expect(
-					context.clearingHouseFacet
-						.connect(context.signers.liquidator)
-						.liquidatePendingPositionsForClearingHouse(context.signers.hedger, [context.signers.user, context.signers.user2]),
-				).to.not.reverted
+				// Count how many pending quotes belong to hedger for each partyA
+				let hedgerPendingForUser = 0
+				for (const qId of oldUserPendingQuotes) {
+					const q = await context.viewFacetQuote.getQuote(qId)
+					if (
+						q.partyB == context.signers.hedger.address &&
+						(q.quoteStatus == BigInt(QuoteStatus.LOCKED) || q.quoteStatus == BigInt(QuoteStatus.CANCEL_PENDING))
+					) {
+						hedgerPendingForUser++
+					}
+				}
+				let hedgerPendingForUser2 = 0
+				for (const qId of oldUser2PendingQuotes) {
+					const q = await context.viewFacetQuote.getQuote(qId)
+					if (
+						q.partyB == context.signers.hedger.address &&
+						(q.quoteStatus == BigInt(QuoteStatus.LOCKED) || q.quoteStatus == BigInt(QuoteStatus.CANCEL_PENDING))
+					) {
+						hedgerPendingForUser2++
+					}
+				}
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger, [context.signers.user, context.signers.user2])
 
 				const newUserPendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user)
 				const newUser2PendingQuotes = await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user2)
 
-				expect(newUserPendingQuotes.length).to.be.lessThanOrEqual(oldUserPendingQuotes.length)
-				expect(newUser2PendingQuotes.length).to.be.lessThanOrEqual(oldUser2PendingQuotes.length)
+				// Exact count: old pending minus hedger's pending quotes should equal new pending
+				expect(newUserPendingQuotes.length).to.equal(oldUserPendingQuotes.length - hedgerPendingForUser)
+				expect(newUser2PendingQuotes.length).to.equal(oldUser2PendingQuotes.length - hedgerPendingForUser2)
+
+				// Verify none of the remaining pending quotes belong to hedger
+				for (const qId of newUserPendingQuotes) {
+					const q = await context.viewFacetQuote.getQuote(qId)
+					expect(q.partyB).to.not.equal(context.signers.hedger.address)
+				}
+				for (const qId of newUser2PendingQuotes) {
+					const q = await context.viewFacetQuote.getQuote(qId)
+					expect(q.partyB).to.not.equal(context.signers.hedger.address)
+				}
 			})
 
 			it("should fail when partyB is not liquidated", async () => {
@@ -546,7 +610,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.liquidatePositionsForClearingHouse(context.signers.hedger, [1n], [decimal(1n)]),
-				).to.not.reverted
+				).to.emit(context.clearingHouseFacet, "LiquidatePositionsForClearingHouse")
 
 				await validator.after(context, {
 					subject: hedgerAddress,
@@ -558,6 +622,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const quote1: QuoteStructOutput = await context.viewFacetQuote.getQuote(1)
 
 				expect(quote1.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
+				expect(quote1.closedAmount).to.equal(quote1.quantity)
 			})
 
 			it("should fail when partyB is not liquidated", async () => {
@@ -618,9 +683,50 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const balancesAfter = await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger)
 				const pendingAfter = balancesAfter[5] + balancesAfter[6] + balancesAfter[7] + balancesAfter[8]
 				expect(pendingAfter).to.equal(0)
-				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger)).to.not
-					.reverted
+				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger))
+					.to.emit(context.clearingHouseFacet, "SettleCrossPartyBLiquidation")
+					.withArgs(context.signers.hedger.address)
 				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(false)
+			})
+
+			it("should fail to settle when open positions remain", async () => {
+				// Liquidate pending but not positions
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger, [context.signers.user])
+
+				// Verify positions still exist
+				expect(await context.viewFacetQuote.partyBPositionsCount(context.signers.hedger, ZeroAddress)).to.be.greaterThan(0)
+
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger),
+				).to.be.revertedWith("ClearingHouseFacet: PartyB has still open positions")
+			})
+
+			it("should fail to settle when deallocated pool has undistributed funds", async () => {
+				// Deallocate some funds
+				const crossAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
+				expect(crossAllocated).to.be.greaterThan(0)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.deallocateForClearingHouse(context.signers.hedger, [context.signers.hedger], [ZeroAddress], [crossAllocated])
+
+				// Liquidate all positions and pending
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger, [1n, 4n], [decimal(1n), decimal(1n)])
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger, [context.signers.user])
+
+				// Verify pool has undistributed funds
+				const details = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
+				expect(details.deallocatedPool).to.be.greaterThan(0)
+
+				// Settlement should fail
+				await expect(
+					context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger),
+				).to.be.revertedWith("ClearingHouseFacet: Undistributed funds in deallocated pool")
 			})
 
 			it("should clear the Party A to B connection after the final position is cross-liquidated", async () => {
@@ -915,6 +1021,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			it("should pull from multiple sources in batch", async () => {
 				const partyABalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user.address)
 				const partyBIsolatedBefore = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				const poolBefore = (await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)).deallocatedPool
 
 				const amountFromPartyA = 50n
 				const amountFromPartyB = 100n
@@ -933,6 +1040,10 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				expect(partyABalanceAfter).to.equal(partyABalanceBefore - amountFromPartyA)
 				expect(partyBIsolatedAfter).to.equal(partyBIsolatedBefore - amountFromPartyB)
+
+				// Verify deallocated pool increased by total amount
+				const poolAfter = (await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)).deallocatedPool
+				expect(poolAfter).to.equal(poolBefore + amountFromPartyA + amountFromPartyB)
 			})
 		})
 
@@ -953,14 +1064,22 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 			it("should distribute to receivers successfully", async () => {
 				const receiverBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user2.address)
+				const poolBefore = (await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)).deallocatedPool
 				const distributeAmount = 500n
 
-				await context.clearingHouseFacet
-					.connect(context.signers.liquidator)
-					.distributeForClearingHouse(context.signers.user.address, [context.signers.user2.address], [ZeroAddress], [distributeAmount])
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.distributeForClearingHouse(context.signers.user.address, [context.signers.user2.address], [ZeroAddress], [distributeAmount]),
+				)
+					.to.emit(context.clearingHouseFacet, "DistributeForClearingHouse")
+					.withArgs(context.signers.user.address, [context.signers.user2.address], [ZeroAddress], [distributeAmount])
 
 				const receiverBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user2.address)
 				expect(receiverBalanceAfter).to.equal(receiverBalanceBefore + distributeAmount)
+
+				const poolAfter = (await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)).deallocatedPool
+				expect(poolAfter).to.equal(poolBefore - distributeAmount)
 			})
 
 			it("should fail when distributing more than deallocated pool", async () => {
@@ -1180,12 +1299,19 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const validator = new SettlePartyATakeoverValidator()
 				const beforeOut = await validator.before(context, { user })
 
-				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, [])
+				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, []))
+					.to.emit(context.clearingHouseFacet, "SettlePartyATakeover")
+					.withArgs(context.signers.user.address, "0x10")
 
 				await validator.after(context, { user, settledPartyBs: [], beforeOutput: beforeOut })
 
 				const statusAfter = await context.viewFacet.isPartyALiquidated(context.signers.user.address)
 				expect(statusAfter).to.equal(false)
+
+				// Verify takeover details cleared
+				const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
+				expect(takeoverDetails.inProgress).to.equal(false)
+				expect(takeoverDetails.deallocatedPool).to.equal(0)
 			})
 
 			it("should not burn partyA reimbursement escrow on settlement", async () => {
@@ -1643,11 +1769,24 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			})
 
 			it("should soft liquidate without penalty", async () => {
+				const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+				const hedgerBalanceBefore = await context.viewFacet.balanceOf(context.signers.hedger.address)
+				const collectorBalanceBefore = await context.viewFacet.balanceOf(context.signers.liquidator.address)
+
 				await expect(
 					context.clearingHouseFacet
 						.connect(context.signers.liquidator)
 						.softPartyBLiquidation(context.signers.hedger.address, context.signers.user.address, 0, 0),
-				).not.to.be.reverted
+				)
+					.to.emit(context.clearingHouseFacet, "SoftPartyBLiquidation")
+					.withArgs(context.signers.hedger.address, context.signers.user.address, 0, 0)
+
+				// Verify no balances changed when penalty is zero
+				expect(await context.viewFacet.allocatedBalanceOfPartyB(context.signers.hedger.address, context.signers.user.address)).to.equal(
+					allocatedBefore,
+				)
+				expect(await context.viewFacet.balanceOf(context.signers.hedger.address)).to.equal(hedgerBalanceBefore)
+				expect(await context.viewFacet.balanceOf(context.signers.liquidator.address)).to.equal(collectorBalanceBefore)
 			})
 
 			it("should deduct from partyB allocated balance for specific partyA", async () => {

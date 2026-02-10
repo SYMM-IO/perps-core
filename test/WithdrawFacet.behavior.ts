@@ -295,7 +295,15 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				parts.push(await buildPart("1"))
 			}
 
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
 			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")).not.reverted
+
+			const balanceAfter = await context.viewFacet.balanceOf(user.address)
+			expect(balanceBefore - balanceAfter).to.equal(ethers.parseUnits("50", 18))
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.PENDING)
+			expect(withdrawRequest.parts.length).to.equal(50)
 		})
 
 		it("Should fail to initiate withdraw with amounts more than balance", async function () {
@@ -400,6 +408,9 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			const balanceAfter = await context.collateral.balanceOf(user.address)
 			expect(balanceAfter - balanceBefore).be.equal(ethers.parseUnits("70", 18))
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.COMPLETED)
 		})
 
 		it("Should fail to request to cancel withdraw with wrong id", async function () {
@@ -462,10 +473,18 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100")
 			const parts = [await buildPart("50")]
 
+			const balanceBefore = await context.collateral.balanceOf(user.address)
+
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
 
 			// No time.increase -- should succeed immediately since deallocateTimestamp is 0
 			await expect(context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(user.address, 1)).not.to.reverted
+
+			const balanceAfter = await context.collateral.balanceOf(user.address)
+			expect(balanceAfter - balanceBefore).to.equal(ethers.parseUnits("50", 18))
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.COMPLETED)
 		})
 	})
 
@@ -538,7 +557,15 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				)
 			}
 
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
 			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")).not.reverted
+
+			const balanceAfter = await context.viewFacet.balanceOf(user.address)
+			expect(balanceBefore - balanceAfter).to.equal(ethers.parseUnits("50", 18))
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.PENDING)
+			expect(withdrawRequest.parts.length).to.equal(50)
 		})
 
 		it("Should fail to initiate withdraw with amounts more than balance", async function () {
@@ -741,6 +768,9 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await expect(context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(user.address, 1)).not.to.reverted
 
 			expect(await virtualProvider.withdrawnAmount()).to.equal(ethers.parseUnits("70", 18))
+
+			const finalRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(finalRequest.status).to.equal(WithdrawStatus.COMPLETED)
 		})
 
 		it("Should reject withdraw if provider wants", async function () {
@@ -942,6 +972,8 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				virtualProvider: vpAddress,
 			})
 
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
+
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
 			await virtualProvider.acceptWithdrawRequest(user.address, 1)
 
@@ -950,6 +982,12 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			// Should succeed - not in blackout yet
 			await expect(context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)).not.reverted
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
+
+			const balanceAfter = await context.viewFacet.balanceOf(user.address)
+			expect(balanceAfter).to.equal(balanceBefore)
 		})
 
 		it("Should emit SetPureVirtualCancelBlackout event", async function () {
@@ -1001,7 +1039,15 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				)
 			}
 
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
 			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")).not.reverted
+
+			const balanceAfter = await context.viewFacet.balanceOf(user.address)
+			expect(balanceBefore - balanceAfter).to.equal(ethers.parseUnits("50", 18))
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.PENDING)
+			expect(withdrawRequest.parts.length).to.equal(50)
 		})
 
 		it("Should fail to initiate withdraw with amounts more than balance", async function () {
@@ -1112,6 +1158,9 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			const expressBalanceAfter = await context.collateral.balanceOf(epAddress)
 			expect(expressBalanceAfter - expressBalanceBefore).to.equal(ethers.parseUnits("70", 18))
+
+			const finalRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(finalRequest.status).to.equal(WithdrawStatus.COMPLETED)
 		})
 
 		it("Should reject withdraw if provider wants", async function () {
@@ -1219,6 +1268,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				await buildPart("20"),
 			]
 
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
 
 			await expressProvider.acceptWithdrawRequest(user.address, 1)
@@ -1227,6 +1277,10 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
 			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
+
+			// Balance should be fully restored
+			const balanceAfter = await context.viewFacet.balanceOf(user.address)
+			expect(balanceAfter).to.equal(balanceBefore)
 		})
 
 		it("Should force cancel express withdraw on CANCEL_REQUESTED status", async function () {
@@ -1241,6 +1295,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 				await buildPart("20"),
 			]
 
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
 
 			await expressProvider.acceptWithdrawRequest(user.address, 1)
@@ -1256,6 +1311,10 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
 			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
+
+			// Balance should be fully restored
+			const balanceAfter = await context.viewFacet.balanceOf(user.address)
+			expect(balanceAfter).to.equal(balanceBefore)
 		})
 	})
 
@@ -1338,7 +1397,11 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await expect(expressProvider.finalizeWithdrawRequest(user.address, 1)).not.to.reverted
 
 			const expressBalanceAfter = await context.collateral.balanceOf(epAddress)
+			// Virtual+express: no collateral goes to express provider (all virtual)
 			expect(expressBalanceAfter - expressBalanceBefore).to.equal(0)
+
+			const finalRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(finalRequest.status).to.equal(WithdrawStatus.COMPLETED)
 		})
 
 		it("Should call express onWithdrawComplete for mixed parts", async function () {
@@ -1435,31 +1498,6 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
 			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
 		})
-
-		it("Should request to cancel withdraw", async function () {
-			await userDeposit("100")
-			const epAddress = await expressProvider.getAddress()
-			const vrAddress = await virtualProvider.getAddress()
-
-			const parts = await buildParts(["50", "20"], {
-				expressProvider: epAddress,
-				virtualProvider: vrAddress,
-			})
-
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-
-			await expressProvider.acceptWithdrawRequest(user.address, 1)
-
-			await expect(context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)).not.reverted
-
-			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(withdrawRequest.status).to.equal(WithdrawStatus.CANCEL_REQUESTED)
-
-			await expect(expressProvider.acceptWithdrawCancelRequest(user.address, 1)).not.to.reverted
-
-			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
-		})
 	})
 
 	describe("Withdraw Speed Up", function () {
@@ -1503,6 +1541,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address, 1, 10)).not.reverted
 			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
 			expect(withdrawRequest.cooldownEndTime - withdrawRequest.timestamp).to.equal(10)
+			expect(withdrawRequest.isCooldownModified).to.equal(true)
 		})
 
 		it("Should speed up withdraw for virtual withdrawals", async function () {
@@ -1517,6 +1556,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptSpeedUpRequest(user.address, 1, 10)).not.reverted
 			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
 			expect(withdrawRequest.cooldownEndTime - withdrawRequest.timestamp).to.equal(10)
+			expect(withdrawRequest.isCooldownModified).to.equal(true)
 		})
 
 		it("Should set speed up user", async function () {
@@ -1591,7 +1631,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			)
 		})
 
-		it("Should fail to speed-up when user is not whitelisted", async function () {
+		it("Should fail to speed-up when request is already cancelled", async function () {
 			await context.controlFacet.connect(context.signers.admin).setSpeedUpUser(user.address, true)
 			await userDeposit("100")
 			const parts = [await buildPart("50")]

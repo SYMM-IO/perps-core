@@ -48,7 +48,9 @@ export function shouldBehaveLikeLockQuote(): void {
 
 	describe("Unlock Quote", async function () {
 		it("Should fail on invalid quoteId", async function () {
-			await expect(hedger.lockQuote(6, 0n, null)).to.be.reverted
+			// For a non-existent quoteId, the storage defaults to zero values.
+			// Quote deadline=0 causes "Quote is expired" before the quoteId range check.
+			await expect(hedger.lockQuote(6, 0n, null)).to.be.revertedWith("PartyBFacet: Quote is expired")
 		})
 
 		it("Should fail on low balance", async function () {
@@ -92,12 +94,13 @@ export function shouldBehaveLikeLockQuote(): void {
 		})
 
 		it("Should fail when symbol type is not whitelisted", async function () {
-			await expect(hedger.lockQuote(1)).not.to.be.reverted
+			await hedger.lockQuote(1)
 			const q1 = await context.viewFacetQuote.getQuote(1n)
+			expect(q1.quoteStatus).to.equal(QuoteStatus.LOCKED)
 			const upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
-			await expect(
-				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig),
-			).to.not.be.reverted
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig)
+			const q1After = await context.viewFacetQuote.getQuote(1n)
+			expect(q1After.quoteStatus).to.equal(QuoteStatus.OPENED)
 			await context.symbolControlFacet.removeSymbolTypeFromWhitelist(context.signers.hedger.address, 1)
 			await context.symbolControlFacet.removeSymbolsFromWhitelist(context.signers.hedger.address, [1])
 			await expect(hedger2.lockQuote(2)).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
@@ -107,6 +110,8 @@ export function shouldBehaveLikeLockQuote(): void {
 			const validator = new LockQuoteValidator()
 			const beforeOut = await validator.before(context, {
 				user: user,
+				hedger: hedger,
+				quoteId: BigInt(1),
 			})
 			await hedger.lockQuote(1)
 			await validator.after(context, {
@@ -140,6 +145,19 @@ export function shouldBehaveLikeLockQuote(): void {
 					.build(),
 			)
 			await expect(hedger2.lockQuote(1, decimal(-1000n))).to.be.revertedWith("PartyBFacet: Available balance is lower than zero")
+		})
+
+		it("Should lock with correct partyB pending balances", async function () {
+			const userAddress = await user.getAddress()
+			const hedgerAddress = await hedger.getAddress()
+			const partyBPendingBefore = await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress)
+			await hedger.lockQuote(1)
+			const partyBPendingAfter = await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress)
+			expect(partyBPendingAfter.length).to.equal(partyBPendingBefore.length + 1)
+			expect(partyBPendingAfter.map(q => q.toString())).to.include("1")
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.partyB).to.equal(hedgerAddress)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
 		})
 	})
 
@@ -191,8 +209,13 @@ export function shouldBehaveLikeLockQuote(): void {
 			await hedger.lockQuote(1)
 		})
 
-		it("Should liquidate on partyB being not the one", async function () {
+		it("Should fail on wrong partyB", async function () {
 			await expect(hedger2.unlockQuote(1)).to.be.revertedWith("Accessibility: Should be partyB of quote")
+		})
+
+		it("Should fail on invalid state (already opened)", async function () {
+			await hedger.openPosition(1)
+			await expect(hedger.unlockQuote(1)).to.be.revertedWith("PartyBFacet: Invalid state")
 		})
 
 		it("Should fail on paused partyB", async function () {
@@ -201,10 +224,16 @@ export function shouldBehaveLikeLockQuote(): void {
 		})
 
 		it("Should expire quote during unlock", async function () {
+			const userAddress = await user.getAddress()
+			const pendingBefore = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
 			await time.increase(1000)
 			await hedger.unlockQuote(1)
 			let q: QuoteStruct = await context.viewFacetQuote.getQuote(1)
 			expect(q.quoteStatus).to.be.equal(QuoteStatus.EXPIRED)
+			// Verify quote removed from pending quotes after expiry
+			const pendingAfter = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
+			expect(pendingAfter.length).to.equal(pendingBefore.length - 1)
+			expect(pendingAfter.map(q => q.toString())).to.not.include("1")
 		})
 
 		it("Should run successfully", async function () {

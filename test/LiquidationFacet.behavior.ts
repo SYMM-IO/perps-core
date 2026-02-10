@@ -627,10 +627,14 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			})
 
 			it("Should liquidate positions", async function () {
+				const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(hedger.getAddress(), user.getAddress())
 				await user.liquidatePendingPositions()
 				await user.liquidatePositions([1])
 				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
 				await expectConnected(user.address, hedger.address, false)
+				// PartyB nonce should increment when positions are liquidated
+				const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(hedger.getAddress(), user.getAddress())
+				expect(partyBNonceAfter).to.be.equal(partyBNonceBefore + 1n)
 			})
 
 			describe("Settle liquidation", async function () {
@@ -645,6 +649,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 					let hedgerAddress = await context.signers.hedger.getAddress()
 					const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
 					const userBalance = await user.getBalanceInfo()
+					const partyANonceBefore = await context.viewFacet.nonceOfPartyA(userAddress)
 
 					const fundingFee = this.fundingFee as bigint
 					// UPNL for SHORT: (openPrice - currentPrice) * quantity
@@ -653,11 +658,30 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 					const diff = userBalance.lockedLf - -available // Remaining LF for liquidator
 					const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
 
+					// Get reimbursement before settlement (trading fees refunded for liquidated pending quotes)
+					const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
+
 					await user.settleLiquidation()
 					expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.be.equal(partyBAfter)
 					let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 					expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(diff)
 					await expectConnected(userAddress, hedgerAddress, false)
+
+					// After full settlement, partyA allocated balance should equal the reimbursement
+					const userBalanceAfter = await user.getBalanceInfo()
+					expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
+
+					// Liquidation status should be cleared after full settlement
+					expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
+
+					// PartyA nonce should increment after full settlement
+					const partyANonceAfter = await context.viewFacet.nonceOfPartyA(userAddress)
+					expect(partyANonceAfter).to.be.equal(partyANonceBefore + 1n)
+
+					// PartyA locked values should be zeroed
+					expect(userBalanceAfter.lockedCva).to.be.equal(0n)
+					expect(userBalanceAfter.lockedLf).to.be.equal(0n)
+					expect(userBalanceAfter.lockedMmPartyA).to.be.equal(0n)
 				})
 			})
 		})
@@ -679,8 +703,11 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				const liquidationState = await user.getLiquidatedStateOfPartyA()
 				expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.LATE)
 
-				const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
+				// Verify deficit is correctly stored: deficit = -availableBalance - LF
 				const userBalance = await user.getBalanceInfo()
+				expect(liquidationState["deficit"]).to.be.greaterThan(0n)
+
+				const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
 				const available = userBalance.allocatedBalances - userBalance.lockedCva
 				const pnl = unDecimal(price - decimal(1n)) * decimal(100n) // PartyB's profit
 				const diff = available - pnl
@@ -688,12 +715,23 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 				await user.liquidatePendingPositions()
 				await user.liquidatePositions([1])
+
+				const userAddress = await context.signers.user.getAddress()
+				const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
+
 				await user.settleLiquidation()
 				const fundingFee = await getFundingFee()
 				expect((await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances).to.be.equal(partyBAfter - fundingFee)
 				// In LATE liquidation, liquidator gets nothing (LF exhausted)
 				let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 				expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(decimal(0n))
+
+				// Liquidation status should be cleared after full settlement
+				expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
+
+				// PartyA allocated balance should be set to reimbursement
+				const userBalanceAfter = await user.getBalanceInfo()
+				expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
 			})
 
 			/**
@@ -706,14 +744,35 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 				const liquidationState = await user.getLiquidatedStateOfPartyA()
 				expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.OVERDUE)
+
+				// Verify deficit is correctly stored: deficit = -availableBalance - LF - CVA
+				expect(liquidationState["deficit"]).to.be.greaterThan(0n)
+
+				const hedgerBalanceBefore = await hedger.getBalanceInfo(await user.getAddress())
+				const userBalance = await user.getBalanceInfo()
+
 				await user.liquidatePendingPositions()
 				await user.liquidatePositions([1n])
+
+				const userAddress = await context.signers.user.getAddress()
+				const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
+
 				await user.settleLiquidation()
 
-				// PartyB gets reduced payout due to deficit
-				expect(await context.viewFacet.allocatedBalanceOfPartyB(hedger.getAddress(), user.getAddress())).to.be.equal(decimal(856n))
+				// PartyB gets reduced payout due to deficit - verify it's reduced from their original balance
+				const hedgerBalanceAfter = await hedger.getBalanceInfo(await user.getAddress())
+				expect(hedgerBalanceAfter.allocatedBalances).to.be.equal(decimal(856n))
+
+				// In OVERDUE liquidation, liquidator gets nothing
 				let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 				expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(decimal(0n))
+
+				// Liquidation status should be cleared after full settlement
+				expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
+
+				// PartyA allocated balance should be set to reimbursement
+				const userBalanceAfter = await user.getBalanceInfo()
+				expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
 			})
 		})
 	})
@@ -751,9 +810,14 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		})
 
 		it("Should liquidate positions deferred", async function () {
+			const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(hedger.getAddress(), user.getAddress())
 			await user.liquidatePendingPositions()
 			await user.liquidatePositions([1])
 			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
+			await expectConnected(user.address, hedger.address, false)
+			// PartyB nonce should increment
+			const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(hedger.getAddress(), user.getAddress())
+			expect(partyBNonceAfter).to.be.equal(partyBNonceBefore + 1n)
 		})
 
 		describe("Settle liquidation deferred", async function () {
@@ -764,8 +828,9 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			})
 
 			it("Should settle liquidation deferred", async function () {
-				let userAddress = context.signers.user.getAddress()
-				let hedgerAddress = context.signers.hedger.getAddress()
+				let userAddress = await context.signers.user.getAddress()
+				let hedgerAddress = await context.signers.hedger.getAddress()
+				const partyANonceBefore = await context.viewFacet.nonceOfPartyA(userAddress)
 
 				const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
 				const userBalance = await user.getBalanceInfo()
@@ -775,10 +840,28 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				const diff = userBalance.lockedLf - -available
 				const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
 
+				const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
+
 				await user.settleLiquidation()
 				expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)).to.be.equal(partyBAfter)
 				let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 				expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(diff)
+
+				// After full settlement, partyA allocated balance should equal the reimbursement
+				const userBalanceAfter = await user.getBalanceInfo()
+				expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
+
+				// Liquidation status should be cleared
+				expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
+
+				// PartyA nonce should increment
+				const partyANonceAfter = await context.viewFacet.nonceOfPartyA(userAddress)
+				expect(partyANonceAfter).to.be.equal(partyANonceBefore + 1n)
+
+				// PartyA locked values should be zeroed
+				expect(userBalanceAfter.lockedCva).to.be.equal(0n)
+				expect(userBalanceAfter.lockedLf).to.be.equal(0n)
+				expect(userBalanceAfter.lockedMmPartyA).to.be.equal(0n)
 			})
 		})
 	})
@@ -786,12 +869,15 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	/**
 	 * DEFERRED LATE BRANCH TESTS
 	 */
-	describe("Test late branches", async function () {
-		it("Late liquidation", async function () {
+	describe("Test late branches deferred", async function () {
+		it("Late liquidation deferred", async function () {
 			const price = decimal(595n, 16) // 5.95e18 - triggers LATE liquidation
 			await user.deferredLiquidateAndSetSymbolPrices([1n], [price], [1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
 			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.LATE)
+
+			// Verify deficit is correctly stored
+			expect(liquidationState["deficit"]).to.be.greaterThan(0n)
 
 			const hedgerBalance = await hedger.getBalanceInfo(await user.getAddress())
 			const userBalance = await user.getBalanceInfo()
@@ -802,25 +888,51 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			await user.liquidatePendingPositions()
 			await user.liquidatePositions([1])
+
+			const userAddress = await context.signers.user.getAddress()
+			const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
+
 			await user.settleLiquidation()
 			expect((await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances).to.be.equal(partyBAfter)
 			let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 			expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(decimal(0n))
+
+			// Liquidation status should be cleared
+			expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
+
+			// PartyA allocated balance should be set to reimbursement
+			const userBalanceAfter = await user.getBalanceInfo()
+			expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
 		})
 
-		it("Overdue liquidation", async function () {
+		it("Overdue liquidation deferred", async function () {
 			const price = decimal(599n, 16) // 5.99e18 - triggers OVERDUE
 			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
 			const liquidationState = await user.getLiquidatedStateOfPartyA()
 			expect(liquidationState["liquidationType"]).to.be.equal(LiquidationType.OVERDUE)
+
+			// Verify deficit is stored
+			expect(liquidationState["deficit"]).to.be.greaterThan(0n)
+
 			await user.liquidatePendingPositions()
 			await user.liquidatePositions([1])
+
+			const userAddress = await context.signers.user.getAddress()
+			const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
+
 			await user.settleLiquidation()
 
 			// 856 = hedger's remaining balance after OVERDUE haircut
 			expect(await context.viewFacet.allocatedBalanceOfPartyB(hedger.getAddress(), user.getAddress())).to.be.equal(decimal(856n))
 			let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 			expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(decimal(0n))
+
+			// Liquidation status should be cleared
+			expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
+
+			// PartyA allocated balance should be set to reimbursement
+			const userBalanceAfter = await user.getBalanceInfo()
+			expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
 		})
 	})
 
@@ -844,6 +956,11 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			let userAddress = await context.signers.user.getAddress()
 			let hedgerAddress = await context.signers.hedger.getAddress()
 
+			// Record partyA balance and nonce before liquidation
+			const partyABalanceBefore = (await user.getBalanceInfo()).allocatedBalances
+			const partyANonceBefore = await context.viewFacet.nonceOfPartyA(userAddress)
+			const partyBAllocatedBefore = (await hedger.getBalanceInfo(userAddress)).allocatedBalances
+
 			// UPNL of -336 makes PartyB insolvent
 			// This means PartyB owes 336 tokens more than they have
 			await context.partyBLiquidationFacet
@@ -864,6 +981,15 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			// Quote 5 (pending) should be liquidated
 			expect((await context.viewFacetQuote.getQuote(5)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED_PENDING)
+
+			// PartyA should receive partyB's allocated balance minus remainingLf
+			// (partyB's balance is transferred to partyA during liquidation)
+			const partyABalanceAfter = (await user.getBalanceInfo()).allocatedBalances
+			expect(partyABalanceAfter).to.be.greaterThan(partyABalanceBefore)
+
+			// PartyA nonce should increment after partyB liquidation
+			const partyANonceAfter = await context.viewFacet.nonceOfPartyA(userAddress)
+			expect(partyANonceAfter).to.be.equal(partyANonceBefore + 1n)
 		})
 
 		it("Should clear connection after PartyB liquidation closes the last open position", async function () {
@@ -873,6 +999,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			await expectConnected(userAddress, hedgerAddress, true)
 			await expectConnected(user2Address, hedgerAddress, true)
+
+			const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress)
 
 			await context.partyBLiquidationFacet
 				.connect(context.signers.liquidator)
@@ -884,6 +1012,14 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 			await expectConnected(userAddress, hedgerAddress, false)
 			await expectConnected(user2Address, hedgerAddress, true)
+
+			// After all positions liquidated, partyB liquidation status should be cleared
+			// and partyB nonce should increment
+			const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(hedgerAddress, userAddress)
+			expect(partyBNonceAfter).to.be.equal(partyBNonceBefore + 1n)
+
+			// Quote 1 (open position) should be marked as LIQUIDATED
+			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.equal(QuoteStatus.LIQUIDATED)
 		})
 
 		it("Should fail to liquidate a partyB twice", async function () {

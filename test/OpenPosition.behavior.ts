@@ -302,6 +302,10 @@ export function shouldBehaveLikeOpenPosition(): void {
 						.build(),
 				),
 			).to.not.reverted
+
+			const openedQuote = await context.viewFacetQuote.getQuote(5)
+			expect(openedQuote.quoteStatus).to.equal(QuoteStatus.OPENED)
+			expect(openedQuote.openedPrice).to.equal(decimal(1n))
 		})
 
 		describe("Connections: Is Symbol Allowed For PartyA)", function () {
@@ -326,10 +330,11 @@ export function shouldBehaveLikeOpenPosition(): void {
 
 				await hedger2.lockQuote(lastID)
 
-				const q1 = await context.viewFacetQuote.getQuote(lastID)
-
 				// Should succeed even if B2 hasn't whitelisted the symbol yet
 				await expect(hedger2.openPosition(lastID)).to.not.be.reverted
+
+				const openedQuote = await context.viewFacetQuote.getQuote(lastID)
+				expect(openedQuote.quoteStatus).to.equal(QuoteStatus.OPENED)
 			})
 
 			it("After connecting A↔B1 on Symbol1, opening Symbol2 with B2 reverts if B1 has NOT whitelisted Symbol2", async function () {
@@ -385,6 +390,9 @@ export function shouldBehaveLikeOpenPosition(): void {
 
 				await expect(hedger2.lockQuote(lastID)).to.not.be.reverted
 				await expect(hedger2.openPosition(lastID)).to.not.be.reverted
+
+				const openedQuote = await context.viewFacetQuote.getQuote(lastID)
+				expect(openedQuote.quoteStatus).to.equal(QuoteStatus.OPENED)
 			})
 
 			it("Consensus via symbol TYPE: succeeds if B1 lacks Symbol1 but HAS Symbol1's type whitelisted", async function () {
@@ -412,7 +420,10 @@ export function shouldBehaveLikeOpenPosition(): void {
 				const lastID = await context.viewFacetQuote.getNextQuoteId()
 
 				await expect(hedger2.lockQuote(lastID)).to.not.be.reverted
-				await expect(hedger2.openPosition(symbol2)).to.not.be.reverted
+				await expect(hedger2.openPosition(lastID)).to.not.be.reverted
+
+				const openedQuote = await context.viewFacetQuote.getQuote(lastID)
+				expect(openedQuote.quoteStatus).to.equal(QuoteStatus.OPENED)
 			})
 
 			it("If any connected B blacklists Symbol1, opening with ANY B must revert", async function () {
