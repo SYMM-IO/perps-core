@@ -114,6 +114,10 @@ Moves from a single hardcoded Muon public key and gateway signer to an external 
 
 Every position open, close, cancel, and funding charge now fires an on-chain hook notification. Affiliates register hook contracts implementing `ISymmioHook` to execute custom logic — reward tracking, volume analytics, cashback programs — all with fresh on-chain data. The signer context is cleared before hook invocation to prevent privilege escalation.
 
+### [Role Admin System](role-admin-system.md)
+
+Adds delegated role management on top of the existing RBAC. Previously, only a single admin could grant and revoke roles. Now the owner appoints default admins, who can delegate management of specific roles to dedicated addresses via `addRoleAdmin` / `removeRoleAdmin`. Per-role admins can grant and revoke their assigned role without needing owner or default admin transactions. Delegation is one level deep -- per-role admins cannot sub-delegate.
+
 ### [Two-Step Ownership Transfer](two-step-ownership.md)
 
 The new owner must explicitly call `acceptOwnership` after the current owner calls `transferOwnership`. Prevents accidental ownership loss from address typos.
