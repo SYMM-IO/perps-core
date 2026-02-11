@@ -168,13 +168,20 @@ Express deposits let affiliates split user deposits to maintain instant-withdraw
 
 The AccountLayer authenticates users through a `globalSigner` variable instead of relying on `msg.sender` directly. This is the most security-critical mechanism in the system:
 
-```
-User (EOA)  ──calls──►  AccountManager.withSigner()
-                            sets globalSigner = msg.sender
-                            ──delegates──►  AccountLayer
-                                              getSigner() returns globalSigner (the user)
-                                              executes operation
-                            clears globalSigner = address(0)
+```mermaid
+sequenceDiagram
+    participant U as User (EOA)
+    participant AM as AccountManager
+    participant AL as AccountLayer
+
+    U->>AM: call withSigner()
+    AM->>AM: globalSigner = msg.sender
+    AM->>AL: delegate call
+    AL->>AL: getSigner() returns globalSigner (the user)
+    AL->>AL: execute operation
+    AL-->>AM: return
+    AM->>AM: globalSigner = address(0)
+    AM-->>U: return
 ```
 
 ```solidity
@@ -221,15 +228,6 @@ Role admins are managed via `setRoleAdmin(user, role, status)`. A `DEFAULT_ADMIN
 
 A custom reentrancy guard uses a dedicated storage slot (`keccak256("diamond.standard.storage.accountlayer.reentrancy")`). The `nonReentrant` modifier covers primary entry points: `_call`, `createSubAccounts`, `deleteSubAccount`, `createCustomVirtualAccount`, deposits, and MarginFacet functions. Administrative functions rely on access control instead. `SymmioHookFacet.onClosePosition` uses `nonReentrant`; `onCancelQuote` does not.
 
-### Key Invariants
-
-1. **Express deposit balance** -- After an express deposit: `(balance increase) + (allocated increase) == (amount * 1e18) / (10 ** collateralDecimals)`.
-2. **Fee shares** -- `sum(stakeholder.share) + symmioShare == 1e18`.
-3. **VA cleanup completeness** -- On deletion, `deallocateAndTransferBalance` sweeps all allocated and free balance back to the parent. No funds can be stranded.
-4. **VA isolation enforcement** -- POSITION VAs revert if they already have a quoteId. MARKET_LONG rejects SHORT quotes. MARKET/MARKET_LONG/MARKET_SHORT revert on symbolId mismatch.
-5. **Signer always cleared** -- After every `withSigner`, `executeWithSigner`, `safeExternalCall`, and `callHook`, `globalSigner` is reset to `address(0)`.
-6. **`internalTransferToBalance` blocked from `_call`** -- Reserved for internal VA cleanup; user calls revert with `Unauthorized`.
-
 ---
 
 ## Legacy Migration
@@ -260,57 +258,6 @@ Frontends on the old MultiAccount system can import existing accounts into the A
 | `AccountLayerStorage` | `keccak256("diamond.standard.storage.accountlayer")` | RBAC (hasRole, roleAdmins), globalPaused |
 | Reentrancy Guard | `keccak256("diamond.standard.storage.accountlayer.reentrancy")` | Reentrancy status flag |
 
-### Key Data Structures
-
-```solidity
-enum SubAccountIsolationType { POSITION, MARKET, MARKET_DIRECTION, CUSTOM }
-enum VirtualAccountIsolationType { POSITION, MARKET, MARKET_LONG, MARKET_SHORT }
-
-struct SubAccountData {
-    string name;
-    address owner;
-    bool isExists;
-    bool singleVAMode;
-    bytes metadata;
-    address affiliate;
-    address symmioCore;
-    SubAccountIsolationType isolationType;
-}
-
-struct VirtualAccountData {
-    bool isExists;
-    bytes metadata;
-    address parentAccount;      // Always set, even after deletion (detects deleted VAs)
-    uint256 symbolId;
-    VirtualAccountIsolationType isolationType;
-    EnumerableSet.UintSet quoteIds;
-}
-
-struct AffiliateData {
-    string name;
-    string brandColor;
-    address admin;
-    address pendingAdmin;
-    AffiliateState state;       // NONE, PENDING, ACTIVE, PAUSED
-    FeeDetails feeDetails;      // symmioShare, stakeholders[], feeDistributor address
-    bytes metadata;
-    address[] legacyMultiAccounts;
-    EnumerableSet.AddressSet symmioCores;
-    mapping(bytes4 => address) hooks;
-    address accountManager;
-    address registrant;
-    uint256 expressRate;        // 0 to 1e18 (0% to 100%)
-    address virtualProvider;
-}
-
-struct HookContext {
-    address account;
-    address affiliate;
-    address symmioCore;
-    bool isActive;              // True only during hook execution
-}
-```
-
 ### Deterministic Address Generation
 
 SubAccounts, VAs, and fee distributors are virtual addresses (no deployed contracts). AccountManagers are real CREATE2 deployments. All follow the CREATE2 formula: `keccak256(0xff, deployer, salt, initCodeHash)`.
@@ -335,112 +282,6 @@ bytes32 initCodeHash = keccak256(abi.encodePacked(implementation, abi.encode(dia
 address(uint160(uint256(keccak256(abi.encodePacked(
     bytes1(0xff), affiliate, keccak256(abi.encodePacked(nonce)), keccak256("VFD_V1")
 )))))
-```
-
-### Critical Code Paths
-
-#### `_call()` Routing
-
-`_call(account, callDatas[])` is the primary entry point for all user operations. For each calldata:
-
-1. Block `internalTransferToBalance` -- always reverts with `Unauthorized`
-2. Deleted VA check -- if `account` is a deleted VA (`isExists=false` but `parentAccount` is set), revert
-3. Legacy account -- if not a SubAccount or VA, fall through to legacy handling
-4. `sendQuote` interception -- create/reuse VA based on isolation type, route quote, track quoteId
-5. All other calls -- execute directly via `executeWithSigner`
-
-#### VA Automatic Deletion
-
-```
-onClosePosition(quoteId, partyA)
-  → vData.quoteIds.remove(quoteId)
-  → if quoteIds is empty:
-      → deallocateAndTransferBalance(va, parent, core)
-      → vData.isExists = false
-      → clear activeVAByKey if applicable
-      → push to deletedVirtualAccountsPool
-      → remove from parent's VA set
-      → fire onVirtualAccountDeletion hook
-```
-
-#### Fee Claiming
-
-```
-claimAllFees(affiliate, symmio)
-  → setSigner(feeDistributor) on Symmio core
-  → initiateWithdraw + finalizeWithdrawRequest (tokens arrive at AccountLayer)
-  → setSigner(address(0))
-  → distribute tokens proportionally to stakeholders and symmioFeeReceiver
-```
-
-### Function Signatures
-
-#### CoreFacet
-
-```solidity
-function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
-function editAccountName(address account, string memory name) external;
-function setSingleVAMode(address subAccount, bool enabled) external;
-function deleteSubAccount(address subAccount) external;
-function createCustomVirtualAccount(address parentAccount, bytes memory metadata, VirtualAccountIsolationType isolationType, uint256 symbolId) external returns (address);
-function depositForAccount(address account, uint256 amount) external;
-function depositAndAllocateForAccount(address account, uint256 amount) external;
-function depositForAccountWithExpressRate(address account, uint256 amount) external;
-function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external;
-function _call(address account, bytes[] calldata callDatas) external returns (bytes[] memory);
-function executeForAccount(bytes calldata callData) external;
-function importLegacyAccounts(address legacyContract, address affiliate, address[] calldata symmioCores, LegacyAccountImportData[] calldata accountsData) external returns (address[] memory);
-```
-
-#### MarginFacet
-
-```solidity
-function addMargin(address virtualAccount, uint256 amount) external;
-function addMarginToNextVA(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId, uint256 amount) external;
-function removeMargin(address virtualAccount, uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
-function emergencyRecoverMargin(address subAccount, uint256 nonce) external;
-```
-
-#### AffiliateFacet
-
-```solidity
-// Registration
-function requestToRegisterAffiliate(AffiliateRegistration memory reg) external returns (address affiliateAddress);
-function cancelRegistration(address affiliate) external;
-function rejectRegistration(address affiliate) external;
-function approveAffiliate(address affiliate) external;
-
-// Admin
-function proposeAdminTransfer(address affiliate, address newAdmin) external;
-function acceptAdminTransfer(address affiliate) external;
-function updateAffiliateDetails(address affiliate, string memory name, string memory brandColor) external;
-function pauseAffiliate(address affiliate) external;
-function unpauseAffiliate(address affiliate) external;
-
-// Fees
-function requestFeeUpdate(address affiliate, Stakeholder[] memory newStakeholders, uint256 newSymmioShare) external;
-function approveFeeUpdate(address affiliate) external;
-function claimAllFees(address affiliate, address symmio) external;
-function claimFees(address affiliate, address symmio, uint256 amount) external;
-
-// Hooks & Operators
-function setHook(address affiliate, bytes4 selector, address hook) external;
-function removeHook(address affiliate, bytes4 selector) external;
-function setOperator(address affiliate, bytes4 selector, address operator, bool status) external;
-
-// Express & Delegated
-function setExpressRate(address affiliate, uint256 expressRate) external;
-function setVirtualProvider(address affiliate, address virtualProvider) external;
-function callAsAffiliate(address affiliate, address symmio, bytes calldata callData) external returns (bytes memory);
-```
-
-#### SymmioHookFacet (called by Symmio core, not users)
-
-```solidity
-function onOpenPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, address partyA, address partyB) external;
-function onClosePosition(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, address partyA, address partyB) external;
-function onCancelQuote(uint256 quoteId, address partyA, address partyB) external;
-function onFeeCharged(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, uint8 feeType) external;
 ```
 
 ### Cross-Contract Permissions
