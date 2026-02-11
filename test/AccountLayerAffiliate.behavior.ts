@@ -22,7 +22,6 @@ const AffiliateState = {
 	PENDING: 1n,
 	ACTIVE: 2n,
 	PAUSED: 3n,
-	DEACTIVATED: 4n,
 } as const
 
 const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))

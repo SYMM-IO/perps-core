@@ -10,8 +10,7 @@ enum AffiliateState {
 	NONE,
 	PENDING,
 	ACTIVE,
-	PAUSED,
-	DEACTIVATED
+	PAUSED
 }
 
 struct Stakeholder {
