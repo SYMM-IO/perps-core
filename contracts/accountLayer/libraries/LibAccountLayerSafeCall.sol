@@ -7,18 +7,14 @@ pragma solidity >=0.8.18;
 import { AccountHubStorage } from "../storages/AccountHubStorage.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
 
-/**
- * @title LibAccountLayerSafeCall
- * @notice Library for safely calling external contracts with signer protection
- * @dev Clears the globalSigner before calling external contracts to prevent impersonation attacks
- */
+/// @title LibAccountLayerSafeCall
+/// @notice Library for safely calling external contracts with signer protection
+/// @dev Clears the globalSigner before calling external contracts to prevent impersonation attacks
 library LibAccountLayerSafeCall {
-	/**
-	 * @notice Safely calls an external contract with signer cleared, reverts on failure
-	 * @dev Prevents external contracts from calling back and impersonating the user via getSigner()
-	 * @param target The target contract address
-	 * @param data The encoded function call data
-	 */
+	/// @notice Safely calls an external contract with signer cleared, reverts on failure
+	/// @dev Prevents external contracts from calling back and impersonating the user via getSigner()
+	/// @param target The target contract address
+	/// @param data The encoded function call data
 	function safeExternalCall(address target, bytes memory data) internal {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		if (target == address(0)) revert IAccountLayerErrors.ZeroAddress();

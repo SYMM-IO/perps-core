@@ -25,12 +25,10 @@ import { LibHook } from "./LibHook.sol";
 library LibQuoteClose {
 	using LockedValuesOps for LockedValues;
 
-	/**
-	 * @notice Closes a quote.
-	 * @param quoteId The ID of the quote to close.
-	 * @param filledAmount The filled amount of the quote.
-	 * @param closedPrice The price at which the quote is closed.
-	 */
+	/// @notice Closes a quote.
+	/// @param quoteId The ID of the quote to close.
+	/// @param filledAmount The filled amount of the quote.
+	/// @param closedPrice The price at which the quote is closed.
 	function closeQuote(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) public {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -173,11 +171,9 @@ library LibQuoteClose {
 		);
 	}
 
-	/**
-	 * @notice Expires a quote.
-	 * @param quoteId The ID of the quote to expire.
-	 * @return result The resulting status of the quote after expiration.
-	 */
+	/// @notice Expires a quote.
+	/// @param quoteId The ID of the quote to expire.
+	/// @return result The resulting status of the quote after expiration.
 	function expireQuote(uint256 quoteId) public returns (QuoteStatus result) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();

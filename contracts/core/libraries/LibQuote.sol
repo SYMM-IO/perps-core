@@ -13,45 +13,35 @@ import { LibUtils } from "./LibUtils.sol";
 library LibQuote {
 	using LockedValuesOps for LockedValues;
 
-	/**
-	 * @notice Calculates the remaining open amount of a quote.
-	 * @param quote The quote for which to calculate the remaining open amount.
-	 * @return The remaining open amount of the quote.
-	 */
+	/// @notice Calculates the remaining open amount of a quote.
+	/// @param quote The quote for which to calculate the remaining open amount.
+	/// @return The remaining open amount of the quote.
 	function quoteOpenAmount(Quote storage quote) internal view returns (uint256) {
 		return quote.quantity - quote.closedAmount;
 	}
 
-	/**
-	 * @notice Removes a quote from the pending quotes of Party A.
-	 * @param quote The quote to remove from the pending quotes.
-	 */
+	/// @notice Removes a quote from the pending quotes of Party A.
+	/// @param quote The quote to remove from the pending quotes.
 	function removeFromPartyAPendingQuotes(Quote storage quote) internal {
 		LibUtils.removeFromArray(QuoteStorage.layout().partyAPendingQuotes[quote.partyA], quote.id);
 	}
 
-	/**
-	 * @notice Removes a quote from the pending quotes of Party B.
-	 * @param quote The quote to remove from the pending quotes.
-	 */
+	/// @notice Removes a quote from the pending quotes of Party B.
+	/// @param quote The quote to remove from the pending quotes.
 	function removeFromPartyBPendingQuotes(Quote storage quote) internal {
 		LibUtils.removeFromArray(QuoteStorage.layout().partyBPendingQuotes[quote.partyB][quote.partyA], quote.id);
 	}
 
-	/**
-	 * @notice Removes a quote from both Party A's and Party B's pending quotes.
-	 * @param quote The quote to remove from the pending quotes.
-	 */
+	/// @notice Removes a quote from both Party A's and Party B's pending quotes.
+	/// @param quote The quote to remove from the pending quotes.
 	function removeFromPendingQuotes(Quote storage quote) internal {
 		removeFromPartyAPendingQuotes(quote);
 		removeFromPartyBPendingQuotes(quote);
 	}
 
-	/**
-	 * @notice Adds to Party B aggregated positions when a position opens.
-	 * @param quote The quote being updated.
-	 * @param amount The amount to add.
-	 */
+	/// @notice Adds to Party B aggregated positions when a position opens.
+	/// @param quote The quote being updated.
+	/// @param amount The amount to add.
 	function addToPartyBAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256 notional = amount * quote.openedPrice;
@@ -85,11 +75,9 @@ library LibQuote {
 		}
 	}
 
-	/**
-	 * @notice Adds to Party A aggregated positions when a position opens.
-	 * @param quote The quote being updated.
-	 * @param amount The amount to add.
-	 */
+	/// @notice Adds to Party A aggregated positions when a position opens.
+	/// @param quote The quote being updated.
+	/// @param amount The amount to add.
 	function addToPartyAAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 
@@ -111,11 +99,9 @@ library LibQuote {
 		}
 	}
 
-	/**
-	 * @notice Subtracts from Party B aggregated positions when a position closes.
-	 * @param quote The quote being updated.
-	 * @param amount The amount to subtract.
-	 */
+	/// @notice Subtracts from Party B aggregated positions when a position closes.
+	/// @param quote The quote being updated.
+	/// @param amount The amount to subtract.
 	function subFromPartyBAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256 notional = amount * quote.openedPrice;
@@ -144,11 +130,9 @@ library LibQuote {
 		}
 	}
 
-	/**
-	 * @notice Subtracts from Party A aggregated positions when a position closes.
-	 * @param quote The quote being updated.
-	 * @param amount The amount to subtract.
-	 */
+	/// @notice Subtracts from Party A aggregated positions when a position closes.
+	/// @param quote The quote being updated.
+	/// @param amount The amount to subtract.
 	function subFromPartyAAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256 notional = amount * quote.openedPrice;
@@ -168,11 +152,9 @@ library LibQuote {
 
 	// ===================== Global Active Symbols Tracking (PartyB) =====================
 
-	/**
-	 * @notice Adds a symbol to Party B's global active symbols list if not already tracked.
-	 * @param partyB The address of Party B.
-	 * @param symbolId The symbol ID to add.
-	 */
+	/// @notice Adds a symbol to Party B's global active symbols list if not already tracked.
+	/// @param partyB The address of Party B.
+	/// @param symbolId The symbol ID to add.
 	function addToPartyBActiveSymbols(address partyB, uint256 symbolId) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		if (aggregatedLayout.partyBActiveSymbolsIndex[partyB][symbolId] == 0) {
@@ -181,11 +163,9 @@ library LibQuote {
 		}
 	}
 
-	/**
-	 * @notice Removes a symbol from Party B's global active symbols list using swap-and-pop.
-	 * @param partyB The address of Party B.
-	 * @param symbolId The symbol ID to remove.
-	 */
+	/// @notice Removes a symbol from Party B's global active symbols list using swap-and-pop.
+	/// @param partyB The address of Party B.
+	/// @param symbolId The symbol ID to remove.
 	function removeFromPartyBActiveSymbols(address partyB, uint256 symbolId) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256 indexPlusOne = aggregatedLayout.partyBActiveSymbolsIndex[partyB][symbolId];
@@ -204,12 +184,10 @@ library LibQuote {
 		aggregatedLayout.partyBActiveSymbolsIndex[partyB][symbolId] = 0;
 	}
 
-	/**
-	 * @notice Checks if Party B has any position in a symbol globally (either LONG or SHORT).
-	 * @param partyB The address of Party B.
-	 * @param symbolId The symbol ID to check.
-	 * @return True if Party B has any position in the symbol.
-	 */
+	/// @notice Checks if Party B has any position in a symbol globally (either LONG or SHORT).
+	/// @param partyB The address of Party B.
+	/// @param symbolId The symbol ID to check.
+	/// @return True if Party B has any position in the symbol.
 	function partyBHasPositionInSymbol(address partyB, uint256 symbolId) internal view returns (bool) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		return
@@ -219,12 +197,10 @@ library LibQuote {
 
 	// ===================== Active Symbols Tracking (Per-Counterparty) =====================
 
-	/**
-	 * @notice Adds a symbol to Party A's active symbols list per Party B if not already tracked.
-	 * @param partyA The address of Party A.
-	 * @param partyB The address of Party B.
-	 * @param symbolId The symbol ID to add.
-	 */
+	/// @notice Adds a symbol to Party A's active symbols list per Party B if not already tracked.
+	/// @param partyA The address of Party A.
+	/// @param partyB The address of Party B.
+	/// @param symbolId The symbol ID to add.
 	function addToPartyAActiveSymbolsPerPartyB(address partyA, address partyB, uint256 symbolId) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		if (aggregatedLayout.partyAActiveSymbolsIndexPerPartyB[partyA][partyB][symbolId] == 0) {
@@ -235,12 +211,10 @@ library LibQuote {
 		}
 	}
 
-	/**
-	 * @notice Removes a symbol from Party A's active symbols list per Party B using swap-and-pop.
-	 * @param partyA The address of Party A.
-	 * @param partyB The address of Party B.
-	 * @param symbolId The symbol ID to remove.
-	 */
+	/// @notice Removes a symbol from Party A's active symbols list per Party B using swap-and-pop.
+	/// @param partyA The address of Party A.
+	/// @param partyB The address of Party B.
+	/// @param symbolId The symbol ID to remove.
 	function removeFromPartyAActiveSymbolsPerPartyB(address partyA, address partyB, uint256 symbolId) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256 indexPlusOne = aggregatedLayout.partyAActiveSymbolsIndexPerPartyB[partyA][partyB][symbolId];
@@ -259,12 +233,10 @@ library LibQuote {
 		aggregatedLayout.partyAActiveSymbolsIndexPerPartyB[partyA][partyB][symbolId] = 0;
 	}
 
-	/**
-	 * @notice Adds a symbol to Party B's active symbols list per Party A if not already tracked.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @param symbolId The symbol ID to add.
-	 */
+	/// @notice Adds a symbol to Party B's active symbols list per Party A if not already tracked.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @param symbolId The symbol ID to add.
 	function addToPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 symbolId) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		if (aggregatedLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId] == 0) {
@@ -275,12 +247,10 @@ library LibQuote {
 		}
 	}
 
-	/**
-	 * @notice Removes a symbol from Party B's active symbols list per Party A using swap-and-pop.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @param symbolId The symbol ID to remove.
-	 */
+	/// @notice Removes a symbol from Party B's active symbols list per Party A using swap-and-pop.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @param symbolId The symbol ID to remove.
 	function removeFromPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 symbolId) internal {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256 indexPlusOne = aggregatedLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId];
@@ -299,13 +269,11 @@ library LibQuote {
 		aggregatedLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolId] = 0;
 	}
 
-	/**
-	 * @notice Checks if Party A has any position in a symbol per specific Party B (either LONG or SHORT).
-	 * @param partyA The address of Party A.
-	 * @param partyB The address of Party B.
-	 * @param symbolId The symbol ID to check.
-	 * @return True if Party A has any position in the symbol with Party B.
-	 */
+	/// @notice Checks if Party A has any position in a symbol per specific Party B (either LONG or SHORT).
+	/// @param partyA The address of Party A.
+	/// @param partyB The address of Party B.
+	/// @param symbolId The symbol ID to check.
+	/// @return True if Party A has any position in the symbol with Party B.
 	function partyAHasPositionInSymbolPerPartyB(address partyA, address partyB, uint256 symbolId) internal view returns (bool) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		return
@@ -313,13 +281,11 @@ library LibQuote {
 			aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.SHORT].aggregatedAmount > 0;
 	}
 
-	/**
-	 * @notice Checks if Party B has any position in a symbol per specific Party A (either LONG or SHORT).
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @param symbolId The symbol ID to check.
-	 * @return True if Party B has any position in the symbol with Party A.
-	 */
+	/// @notice Checks if Party B has any position in a symbol per specific Party A (either LONG or SHORT).
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @param symbolId The symbol ID to check.
+	/// @return True if Party B has any position in the symbol with Party A.
 	function partyBHasPositionInSymbolPerPartyA(address partyB, address partyA, uint256 symbolId) internal view returns (bool) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		return
@@ -329,11 +295,9 @@ library LibQuote {
 
 	// ===================== End Active Symbols Tracking =====================
 
-	/**
-	 * @notice Subtracts from both Party A and Party B aggregated positions when a position closes.
-	 * @param quote The quote being updated.
-	 * @param amount The amount to subtract.
-	 */
+	/// @notice Subtracts from both Party A and Party B aggregated positions when a position closes.
+	/// @param quote The quote being updated.
+	/// @param amount The amount to subtract.
 	function subFromPartiesAggregatedPositions(Quote storage quote, uint256 amount) internal {
 		subFromPartyBAggregatedPositions(quote, amount);
 		subFromPartyAAggregatedPositions(quote, amount);
@@ -344,11 +308,9 @@ library LibQuote {
 		LibAggregateFunding.subFromPartiesAggregateFunding(quote, amount);
 	}
 
-	/**
-	 * @notice Updates Party B aggregated positions notional when the opened price changes.
-	 * @param quote The quote being updated.
-	 * @param oldOpenedPrice The previous opened price before the change.
-	 */
+	/// @notice Updates Party B aggregated positions notional when the opened price changes.
+	/// @param quote The quote being updated.
+	/// @param oldOpenedPrice The previous opened price before the change.
 	function updatePartyBAggregatedPositionsNotional(Quote storage quote, uint256 oldOpenedPrice) internal {
 		if (oldOpenedPrice == quote.openedPrice) return;
 		if (
@@ -382,11 +344,9 @@ library LibQuote {
 		}
 	}
 
-	/**
-	 * @notice Updates Party A aggregated positions notional when the opened price changes.
-	 * @param quote The quote being updated.
-	 * @param oldOpenedPrice The previous opened price before the change.
-	 */
+	/// @notice Updates Party A aggregated positions notional when the opened price changes.
+	/// @param quote The quote being updated.
+	/// @param oldOpenedPrice The previous opened price before the change.
 	function updatePartyAAggregatedPositionsNotional(Quote storage quote, uint256 oldOpenedPrice) internal {
 		if (oldOpenedPrice == quote.openedPrice) return;
 		if (
@@ -411,20 +371,16 @@ library LibQuote {
 		}
 	}
 
-	/**
-	 * @notice Updates both Party A and Party B aggregated positions notional when the opened price changes.
-	 * @param quote The quote being updated.
-	 * @param oldOpenedPrice The previous opened price before the change.
-	 */
+	/// @notice Updates both Party A and Party B aggregated positions notional when the opened price changes.
+	/// @param quote The quote being updated.
+	/// @param oldOpenedPrice The previous opened price before the change.
 	function updatePartiesAggregatedPositionsNotional(Quote storage quote, uint256 oldOpenedPrice) internal {
 		updatePartyBAggregatedPositionsNotional(quote, oldOpenedPrice);
 		updatePartyAAggregatedPositionsNotional(quote, oldOpenedPrice);
 	}
 
-	/**
-	 * @notice Adds a quote to the open positions.
-	 * @param quoteId The ID of the quote to add to the open positions.
-	 */
+	/// @notice Adds a quote to the open positions.
+	/// @param quoteId The ID of the quote to add to the open positions.
 	function addToOpenPositions(uint256 quoteId) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
@@ -447,10 +403,8 @@ library LibQuote {
 		LibAggregateFunding.addToPartiesAggregateFunding(quote, openAmount);
 	}
 
-	/**
-	 * @notice Removes a quote from the open positions.
-	 * @param quoteId The ID of the quote to remove from the open positions.
-	 */
+	/// @notice Removes a quote from the open positions.
+	/// @param quoteId The ID of the quote to remove from the open positions.
 	function removeFromOpenPositions(uint256 quoteId) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
@@ -476,12 +430,10 @@ library LibQuote {
 		quoteLayout.partyBPositionsCount[quote.partyB][address(0)] -= 1;
 	}
 
-	/**
-	 * @notice Fully closes an open position: updates avgClosedPrice, subtracts aggregated positions, and removes from open positions.
-	 * @param quoteId The ID of the quote to close.
-	 * @param closedPrice The price at which the position is closed.
-	 * @return closedAmount The remaining open amount that was closed.
-	 */
+	/// @notice Fully closes an open position: updates avgClosedPrice, subtracts aggregated positions, and removes from open positions.
+	/// @param quoteId The ID of the quote to close.
+	/// @param closedPrice The price at which the position is closed.
+	/// @return closedAmount The remaining open amount that was closed.
 	function closePositionFully(uint256 quoteId, uint256 closedPrice) internal returns (uint256 closedAmount) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		closedAmount = quoteOpenAmount(quote);
@@ -491,14 +443,12 @@ library LibQuote {
 		removeFromOpenPositions(quote.id);
 	}
 
-	/**
-	 * @notice Calculates the value of a quote for Party A based on the current price and filled amount.
-	 * @param currentPrice The current price of the quote.
-	 * @param filledAmount The filled amount of the quote.
-	 * @param quote The quote for which to calculate the value.
-	 * @return hasMadeProfit A boolean indicating whether Party A has made a profit.
-	 * @return pnl The profit or loss value for Party A.
-	 */
+	/// @notice Calculates the value of a quote for Party A based on the current price and filled amount.
+	/// @param currentPrice The current price of the quote.
+	/// @param filledAmount The filled amount of the quote.
+	/// @param quote The quote for which to calculate the value.
+	/// @return hasMadeProfit A boolean indicating whether Party A has made a profit.
+	/// @return pnl The profit or loss value for Party A.
 	function getValueOfQuoteForPartyA(
 		uint256 currentPrice,
 		uint256 filledAmount,
@@ -521,11 +471,9 @@ library LibQuote {
 		}
 	}
 
-	/**
-	 * @notice Gets the trading fee for a quote.
-	 * @param quoteId The ID of the quote for which to get the trading fee.
-	 * @return fee The trading fee for the quote.
-	 */
+	/// @notice Gets the trading fee for a quote.
+	/// @param quoteId The ID of the quote for which to get the trading fee.
+	/// @return fee The trading fee for the quote.
 	function getOpenTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];

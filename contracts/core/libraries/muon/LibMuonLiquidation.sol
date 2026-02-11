@@ -9,10 +9,12 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 
 library LibMuonLiquidation {
+	/// @notice Verifies Party B UPNL signature for liquidation using standard account mode nonce.
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
 		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // This call is from normal liquidation where we always use standard account mode nonce.
 	}
 
+	/// @notice Verifies a liquidation signature containing symbol prices and UPNL for Party A.
 	function verifyLiquidationSig(LiquidationSig memory liquidationSig, address partyA) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
@@ -36,6 +38,7 @@ library LibMuonLiquidation {
 		LibMuon.verifyTSSAndGateway(hash, liquidationSig.sigs, liquidationSig.gatewaySignature);
 	}
 
+	/// @notice Verifies a deferred liquidation signature that includes block number and timestamp data.
 	function verifyDeferredLiquidationSig(DeferredLiquidationSig memory liquidationSig, address partyA) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
@@ -62,6 +65,7 @@ library LibMuonLiquidation {
 		LibMuon.verifyTSSAndGateway(hash, liquidationSig.sigs, liquidationSig.gatewaySignature);
 	}
 
+	/// @notice Verifies a quote prices signature for liquidation position settlement.
 	function verifyQuotePrices(QuotePriceSig memory priceSig) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		require(priceSig.prices.length == priceSig.quoteIds.length, "LibMuon: Invalid length");

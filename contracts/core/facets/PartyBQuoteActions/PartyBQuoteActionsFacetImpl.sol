@@ -23,6 +23,7 @@ import { LibHook } from "../../libraries/LibHook.sol";
 library PartyBQuoteActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Verifies Party B's solvency and locks a pending quote for position opening
 	function lockQuote(uint256 quoteId, SingleUpnlSig memory upnlSig) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
@@ -42,6 +43,7 @@ library PartyBQuoteActionsFacetImpl {
 		LibPartyBQuoteActions.lockQuote(quoteId);
 	}
 
+	/// @notice Unlocks a locked quote, returning it to PENDING status or expiring it if past deadline
 	function unlockQuote(uint256 quoteId) internal returns (QuoteStatus) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
@@ -60,6 +62,7 @@ library PartyBQuoteActionsFacetImpl {
 		}
 	}
 
+	/// @notice Accepts a cancel request, refunding trading fees and releasing locked balances
 	function acceptCancelRequest(uint256 quoteId) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 

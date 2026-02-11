@@ -15,6 +15,7 @@ import { LockedValuesOps } from "./LibLockedValues.sol";
 library LibPartyBQuoteActions {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Locks a pending quote for Party B, validating whitelist, symbol restrictions, and solvency.
 	function lockQuote(uint256 quoteId) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		address signer = LibSigner.getSigner();

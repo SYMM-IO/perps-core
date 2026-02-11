@@ -25,6 +25,7 @@ interface ISymmioCore {
 contract SymmioFeeDistributor is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 
+	/// @notice Represents a stakeholder with a receiver address and fee share
 	struct Stakeholder {
 		address receiver; // The address of the stakeholder
 		uint256 share; // The share of fees allocated to the stakeholder (in 18 decimal format)
@@ -53,16 +54,22 @@ contract SymmioFeeDistributor is Initializable, PausableUpgradeable, AccessContr
 	/// @notice Total share allocated to stakeholders excluding Symmio (in 18 decimal format)
 	uint256 private totalStakeholderShare;
 
-	// Events
+	/// @notice Emitted when the Symmio contract address is updated
 	event SymmioAddressUpdated(address indexed oldAddress, address indexed newAddress);
+	/// @notice Emitted when the Symmio stakeholder details are updated
 	event SymmioStakeholderUpdated(address indexed oldReceiver, address indexed newReceiver, uint256 oldShare, uint256 newShare);
+	/// @notice Emitted when the stakeholder list is updated
 	event StakeholdersUpdated(Stakeholder[] newStakeholders);
+	/// @notice Emitted when fees are distributed to a stakeholder
 	event FeeDistributed(address indexed receiver, uint256 amount);
+	/// @notice Emitted when fees are claimed and distributed
 	event FeesClaimed(uint256 totalAmount);
 
-	// Errors
+	/// @notice Thrown when a zero address is provided
 	error ZeroAddress();
+	/// @notice Thrown when a share value exceeds 1e18
 	error InvalidShare();
+	/// @notice Thrown when total stakeholder shares do not equal 1e18
 	error TotalSharesMustEqualOne();
 
 	/// @custom:oz-upgrades-unsafe-allow constructor

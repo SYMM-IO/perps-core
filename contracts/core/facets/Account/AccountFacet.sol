@@ -139,6 +139,9 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit SharedEvents.BalanceChangePartyA(signer, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
+	/// @notice Deposits collateral on behalf of another user and immediately allocates it for trading.
+	/// @param user The recipient address for the deposit and allocation.
+	/// @param amount The amount of collateral to deposit and allocate, specified in collateral decimals.
 	function depositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(user) notSuspended(user) {
 		address signer = LibSigner.getSigner();
 		AccountFacetImpl.deposit(user, amount);
@@ -176,6 +179,8 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
+	/// @notice Deallocates collateral without requiring a Muon UPNL signature, only when the user has no open or pending positions.
+	/// @param amount The amount of collateral to deallocate, specified in 18 decimals.
 	function zeroUpnlDeallocate(uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(LibSigner.getSigner()) {
 		address signer = LibSigner.getSigner();
 

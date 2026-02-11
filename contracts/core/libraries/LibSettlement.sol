@@ -15,6 +15,7 @@ import { SharedEvents } from "./SharedEvents.sol";
 import { LibSigner } from "./LibSigner.sol";
 
 library LibSettlement {
+	/// @notice Settles unrealized PnL by adjusting opened prices for quotes between Party A and multiple Party Bs.
 	function settleUpnl(
 		SettlementSig memory settleSig,
 		uint256[] memory updatedPrices,
@@ -114,14 +115,12 @@ library LibSettlement {
 		}
 	}
 
-	/**
-	 * @notice Unified settlement function that works for both crossPartyB and normal partyB modes
-	 * @dev Settles quotes for a single partyB across one or more partyAs
-	 * @param sig The unified settlement signature containing quote data and UPNLs
-	 * @param updatedPrices Array of new prices to set as openedPrice for each quote
-	 * @param isForceClose Whether this is called in a force close context
-	 * @return newPartyAsAllocatedBalances Array of new allocated balances for each partyA
-	 */
+	/// @notice Unified settlement function that works for both crossPartyB and normal partyB modes
+	/// @dev Settles quotes for a single partyB across one or more partyAs
+	/// @param sig The unified settlement signature containing quote data and UPNLs
+	/// @param updatedPrices Array of new prices to set as openedPrice for each quote
+	/// @param isForceClose Whether this is called in a force close context
+	/// @return newPartyAsAllocatedBalances Array of new allocated balances for each partyA
 	function settleUpnlUnified(
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices,
@@ -262,6 +261,7 @@ library LibSettlement {
 		}
 	}
 
+	/// @notice Validates that the updated price falls between the opened price and current price.
 	function _validatePriceInRange(uint256 openedPrice, uint256 currentPrice, uint256 updatedPrice) private pure {
 		if (openedPrice > currentPrice) {
 			require(updatedPrice < openedPrice && updatedPrice >= currentPrice, "LibSettlement: Updated price is out of range");
@@ -270,6 +270,7 @@ library LibSettlement {
 		}
 	}
 
+	/// @notice Calculates the settlement amount based on the price difference and position type.
 	function _calculateSettlementAmount(Quote storage quote, uint256 updatedPrice) private view returns (int256) {
 		int256 openAmount = int256(LibQuote.quoteOpenAmount(quote));
 		if (quote.positionType == PositionType.LONG) {

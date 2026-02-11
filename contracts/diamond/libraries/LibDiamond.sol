@@ -13,11 +13,13 @@ import { IERC165 } from "../interfaces/IERC165.sol";
 library LibDiamond {
 	bytes32 public constant DIAMOND_STORAGE_POSITION = keccak256("diamond.standard.diamond.storage");
 
+	/// @notice Maps a facet address to its selector position in the selectors array
 	struct FacetAddressAndSelectorPosition {
 		address facetAddress;
 		uint16 selectorPosition;
 	}
 
+	/// @notice Central storage layout for the diamond proxy
 	struct DiamondStorage {
 		// function selector => facet address and selector position in selectors array
 		mapping(bytes4 => FacetAddressAndSelectorPosition) facetAddressAndSelectorPosition;
@@ -29,6 +31,7 @@ library LibDiamond {
 		address pendingOwner;
 	}
 
+	/// @notice Returns the diamond storage pointer at the predetermined slot
 	function diamondStorage() internal pure returns (DiamondStorage storage ds) {
 		bytes32 position = DIAMOND_STORAGE_POSITION;
 		assembly {
@@ -36,10 +39,14 @@ library LibDiamond {
 		}
 	}
 
+	/// @notice Emitted when ownership is transferred to a new owner
 	event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+	/// @notice Emitted when a two-step ownership transfer is initiated
 	event OwnershipTransferStarted(address indexed currentOwner, address indexed pendingOwner);
+	/// @notice Emitted when a pending ownership transfer is canceled
 	event OwnershipTransferCanceled(address indexed pendingOwner);
 
+	/// @notice Sets the contract owner directly, bypassing the two-step process
 	function setContractOwner(address _newOwner) internal {
 		DiamondStorage storage ds = diamondStorage();
 		address previousOwner = ds.contractOwner;
@@ -47,12 +54,14 @@ library LibDiamond {
 		emit OwnershipTransferred(previousOwner, _newOwner);
 	}
 
+	/// @notice Initiates a two-step ownership transfer by setting a pending owner
 	function transferOwnership(address _newOwner) internal {
 		DiamondStorage storage ds = diamondStorage();
 		ds.pendingOwner = _newOwner;
 		emit OwnershipTransferStarted(ds.contractOwner, _newOwner);
 	}
 
+	/// @notice Cancels a pending ownership transfer
 	function cancelOwnershipTransfer() internal {
 		DiamondStorage storage ds = diamondStorage();
 		require(ds.pendingOwner != address(0), "LibDiamond: Pending owner is zero");
@@ -60,6 +69,7 @@ library LibDiamond {
 		ds.pendingOwner = address(0);
 	}
 
+	/// @notice Completes the two-step ownership transfer when called by the pending owner
 	function acceptOwnership() internal {
 		DiamondStorage storage ds = diamondStorage();
 		require(msg.sender == ds.pendingOwner, "LibDiamond: Sender should be the pendingOwner");
@@ -68,21 +78,25 @@ library LibDiamond {
 		ds.pendingOwner = address(0);
 	}
 
+	/// @notice Returns the current contract owner address
 	function contractOwner() internal view returns (address contractOwner_) {
 		contractOwner_ = diamondStorage().contractOwner;
 	}
 
+	/// @notice Reverts if the caller is not the contract owner or the diamond itself
 	function enforceIsOwnerOrContract() internal view {
 		require(msg.sender == diamondStorage().contractOwner || msg.sender == address(this), "LibDiamond: Must be contract or owner");
 	}
 
+	/// @notice Reverts if the caller is not the contract owner
 	function enforceIsContractOwner() internal view {
 		require(msg.sender == diamondStorage().contractOwner, "LibDiamond: Must be contract owner");
 	}
 
+	/// @notice Emitted when a diamond cut is performed
 	event DiamondCut(IDiamondCut.FacetCut[] _diamondCut, address _init, bytes _calldata);
 
-	// Internal function version of diamondCut
+	/// @notice Executes a diamond cut to add, replace, or remove facet functions
 	function diamondCut(IDiamondCut.FacetCut[] memory _diamondCut, address _init, bytes memory _calldata) internal {
 		for (uint256 facetIndex; facetIndex < _diamondCut.length; facetIndex++) {
 			IDiamondCut.FacetCutAction action = _diamondCut[facetIndex].action;
@@ -100,6 +114,7 @@ library LibDiamond {
 		initializeDiamondCut(_init, _calldata);
 	}
 
+	/// @notice Registers new function selectors and maps them to a facet address
 	function addFunctions(address _facetAddress, bytes4[] memory _functionSelectors) internal {
 		require(_functionSelectors.length > 0, "LibDiamondCut: No selectors in facet to cut");
 		DiamondStorage storage ds = diamondStorage();
@@ -116,6 +131,7 @@ library LibDiamond {
 		}
 	}
 
+	/// @notice Replaces the facet address for existing function selectors
 	function replaceFunctions(address _facetAddress, bytes4[] memory _functionSelectors) internal {
 		require(_functionSelectors.length > 0, "LibDiamondCut: No selectors in facet to cut");
 		DiamondStorage storage ds = diamondStorage();
@@ -133,6 +149,7 @@ library LibDiamond {
 		}
 	}
 
+	/// @notice Removes function selectors from the diamond
 	function removeFunctions(address _facetAddress, bytes4[] memory _functionSelectors) internal {
 		require(_functionSelectors.length > 0, "LibDiamondCut: No selectors in facet to cut");
 		DiamondStorage storage ds = diamondStorage();
@@ -157,6 +174,7 @@ library LibDiamond {
 		}
 	}
 
+	/// @notice Executes an initialization function via delegatecall after a diamond cut
 	function initializeDiamondCut(address _init, bytes memory _calldata) internal {
 		if (_init == address(0)) {
 			require(_calldata.length == 0, "LibDiamondCut: _init is address(0) but_calldata is not empty");
@@ -177,6 +195,7 @@ library LibDiamond {
 		}
 	}
 
+	/// @notice Reverts if the given address has no deployed contract code
 	function enforceHasContractCode(address _contract, string memory _errorMessage) internal view {
 		uint256 contractSize;
 		assembly {

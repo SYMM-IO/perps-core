@@ -17,17 +17,15 @@ import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 library MigrationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
-	/**
-	 * @notice Backfills v0.8.5 quote-derived state for existing active positions
-	 * @dev This function is idempotent - calling it multiple times with the same quote IDs will not cause issues.
-	 *      For each migrated quote, it backfills:
-	 *      - aggregated positions/funding + active symbols (used by new UPNL/funding flows)
-	 *      - quote.accumulatedPaidFunding baseline (when accumulated funding is configured)
-	 *      - partyBPositionsCount[partyB][address(0)] total positions counter
-	 *      - connectedPartyBs / isConnectedPartyB via LibConnections.addConnection (bounded by maxPartyAConnectionLimit)
-	 * @param quoteIds Array of quote IDs to migrate
-	 * @return quotesMigrated Number of quotes actually migrated (excluding already migrated or invalid quotes)
-	 */
+	/// @notice Backfills v0.8.5 quote-derived state for existing active positions
+	/// @dev This function is idempotent - calling it multiple times with the same quote IDs will not cause issues.
+	///      For each migrated quote, it backfills:
+	///      - aggregated positions/funding + active symbols (used by new UPNL/funding flows)
+	///      - quote.accumulatedPaidFunding baseline (when accumulated funding is configured)
+	///      - partyBPositionsCount[partyB][address(0)] total positions counter
+	///      - connectedPartyBs / isConnectedPartyB via LibConnections.addConnection (bounded by maxPartyAConnectionLimit)
+	/// @param quoteIds Array of quote IDs to migrate
+	/// @return quotesMigrated Number of quotes actually migrated (excluding already migrated or invalid quotes)
 	function migrateQuotes(uint256[] calldata quoteIds) internal returns (uint256 quotesMigrated) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
@@ -72,12 +70,10 @@ library MigrationFacetImpl {
 		}
 	}
 
-	/**
-	 * @notice Initializes the accumulatedPaidFunding for a quote if funding is enabled
-	 * @dev Sets the initial accumulatedPaidFunding based on current funding rates
-	 *      This ensures that when funding is later charged, the quote starts from the correct baseline
-	 * @param quote The quote to initialize funding for
-	 */
+	/// @notice Initializes the accumulatedPaidFunding for a quote if funding is enabled
+	/// @dev Sets the initial accumulatedPaidFunding based on current funding rates
+	///      This ensures that when funding is later charged, the quote starts from the correct baseline
+	/// @param quote The quote to initialize funding for
 	function _initializeQuoteFunding(Quote storage quote) internal {
 		FundingStorage.Layout storage fundingLayout = FundingStorage.layout();
 		FundingFee storage fundingFee = fundingLayout.fundingFees[quote.symbolId][quote.partyB];
@@ -100,15 +96,13 @@ library MigrationFacetImpl {
 		quote.accumulatedPaidFunding = rate * int256(epochsSinceStart);
 	}
 
-	/**
-	 * @notice Migrates partyB locked values to the cross bucket (address(0))
-	 * @dev This aggregates all per-partyA balances into the cross bucket for cross partyB mode.
-	 *      Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
-	 *      This function is idempotent per partyB - calling it twice will revert.
-	 * @param partyB The partyB to migrate
-	 * @param partyAs Array of partyA addresses that have balances with this partyB
-	 * @return partyAsProcessed Number of partyAs actually processed
-	 */
+	/// @notice Migrates partyB locked values to the cross bucket (address(0))
+	/// @dev This aggregates all per-partyA balances into the cross bucket for cross partyB mode.
+	///      Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
+	///      This function is idempotent per partyB - calling it twice will revert.
+	/// @param partyB The partyB to migrate
+	/// @param partyAs Array of partyA addresses that have balances with this partyB
+	/// @return partyAsProcessed Number of partyAs actually processed
 	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) internal returns (uint256 partyAsProcessed) {
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();

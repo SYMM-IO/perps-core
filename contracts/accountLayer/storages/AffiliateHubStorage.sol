@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
+/// @notice Lifecycle state of an affiliate registration
 enum AffiliateState {
 	NONE,
 	PENDING,
@@ -13,17 +14,20 @@ enum AffiliateState {
 	PAUSED
 }
 
+/// @notice A fee recipient with their share of the affiliate's fee split
 struct Stakeholder {
 	address receiver;
 	uint256 share;
 }
 
+/// @notice Fee distribution configuration for an affiliate
 struct FeeDetails {
 	uint256 symmioShare;
 	Stakeholder[] stakeholders;
 	address feeDistributor;
 }
 
+/// @notice Full configuration and state for a registered affiliate
 struct AffiliateData {
 	string name;
 	string brandColor;
@@ -41,6 +45,7 @@ struct AffiliateData {
 	address virtualProvider;
 }
 
+/// @notice Input parameters for registering a new affiliate
 struct AffiliateRegistration {
 	string name;
 	string brandColor;
@@ -52,6 +57,7 @@ struct AffiliateRegistration {
 	address[] symmioCores;
 }
 
+/// @notice A pending fee configuration change awaiting approval
 struct PendingFeeUpdate {
 	bool exists;
 	uint256 timestamp;
@@ -59,6 +65,7 @@ struct PendingFeeUpdate {
 	Stakeholder[] stakeholders;
 }
 
+/// @notice Contextual information available to hooks during execution
 struct HookContext {
 	address account;
 	address affiliate;

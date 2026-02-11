@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
 
+/// @notice Reentrancy protection for the AccountLayer diamond using a dedicated storage slot
 abstract contract AccountLayerReentrancyGuard is IAccountLayerErrors {
 	uint256 private constant _NOT_ENTERED = 1;
 	uint256 private constant _ENTERED = 2;
@@ -27,6 +28,7 @@ abstract contract AccountLayerReentrancyGuard is IAccountLayerErrors {
 		}
 	}
 
+	/// @notice Prevents reentrant calls to protected functions
 	modifier nonReentrant() {
 		if (_getReentrancyStatus() == _ENTERED) revert ReentrancyGuardReentrantCall();
 		_setReentrancyStatus(_ENTERED);

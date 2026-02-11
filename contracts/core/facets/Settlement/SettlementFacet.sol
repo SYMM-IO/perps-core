@@ -13,14 +13,12 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 
 contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
-	/**
-	 * @notice Allows Party B to settle the upnl of party A position for the specified quotes.
-	 * @param settlementSig The data struct contains quoteIds and upnl of parties and market prices
-	 * @param updatedPrices New prices to be set as openedPrice for the specified quotes.
-	 * @param partyA Address of party A
-	 * @dev DEPRECATED: This function is kept for backward compatibility. Use settleUpnlUnified instead,
-	 *      which supports both crossPartyB and normal partyB modes with a unified signature format.
-	 */
+	/// @notice Allows Party B to settle the upnl of party A position for the specified quotes.
+	/// @param settlementSig The data struct contains quoteIds and upnl of parties and market prices
+	/// @param updatedPrices New prices to be set as openedPrice for the specified quotes.
+	/// @param partyA Address of party A
+	/// @dev DEPRECATED: This function is kept for backward compatibility. Use settleUpnlUnified instead,
+	///      which supports both crossPartyB and normal partyB modes with a unified signature format.
 	function settleUpnl(
 		SettlementSig memory settlementSig,
 		uint256[] memory updatedPrices,
@@ -36,12 +34,10 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 		);
 	}
 
-	/**
-	 * @notice Unified settlement function that works for both crossPartyB and normal partyB modes
-	 * @dev Settles quotes for a single partyB across one or more partyAs
-	 * @param sig The unified settlement signature containing quote data and UPNLs
-	 * @param updatedPrices Array of new prices to set as openedPrice for each quote
-	 */
+	/// @notice Unified settlement function that works for both crossPartyB and normal partyB modes
+	/// @dev Settles quotes for a single partyB across one or more partyAs
+	/// @param sig The unified settlement signature containing quote data and UPNLs
+	/// @param updatedPrices Array of new prices to set as openedPrice for each quote
 	function settleUpnlUnified(UnifiedSettlementSig memory sig, uint256[] memory updatedPrices) external whenNotPartyBActionsPaused onlyPartyB {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		uint256[] memory newPartyAsAllocatedBalances = SettlementFacetImpl.settleUpnlUnified(sig, updatedPrices);

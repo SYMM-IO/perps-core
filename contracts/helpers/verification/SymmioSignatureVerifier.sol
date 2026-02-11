@@ -10,25 +10,35 @@ import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessCo
 import { LibMuonV04ClientBase } from "./LibMuonV04ClientBase.sol";
 import { IMuonSignatureVerifier } from "../../core/interfaces/IMuonSignatureVerifier.sol";
 
+/// @notice Verifies Muon TSS signatures and gateway signatures for oracle data
 contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerable {
 	using ECDSA for bytes32;
 
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 
+	/// @notice Emitted when a new TSS public key is added
 	event PublicKeyAdded(uint256 x, uint8 parity);
+	/// @notice Emitted when a TSS public key is removed
 	event PublicKeyRemoved(uint256 x, uint8 parity);
+	/// @notice Emitted when a new gateway signer is added
 	event GatewaySignerAdded(address signer);
+	/// @notice Emitted when a gateway signer is removed
 	event GatewaySignerRemoved(address signer);
 
 	PublicKey[] public publicKeys;
 	address[] public gatewaySigners;
 
+	/// @notice Initializes the verifier with an admin address
+	/// @param _admin The address that receives DEFAULT_ADMIN_ROLE and SETTER_ROLE
 	constructor(address _admin) {
 		_setupRole(DEFAULT_ADMIN_ROLE, _admin);
 		_setupRole(SETTER_ROLE, _admin);
 	}
 
-	// === Signature Verification ===
+	/// @notice Verifies both the TSS Schnorr signature and the gateway ECDSA signature
+	/// @param hash The hash of the signed data
+	/// @param sign The Schnorr signature to verify against registered public keys
+	/// @param gatewaySignature The ECDSA gateway signature to verify
 	function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature) external view {
 		// Verify TSS via Muon
 		bool verifiedTSS = false;
@@ -52,12 +62,15 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 		require(gatewayVerified, "MuonSignatureVerifier: Gateway is not valid");
 	}
 
-	// === Public Key Management ===
+	/// @notice Adds a new TSS public key for signature verification
+	/// @param pubKey The public key to add
 	function addPublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE) {
 		publicKeys.push(pubKey);
 		emit PublicKeyAdded(pubKey.x, pubKey.parity);
 	}
 
+	/// @notice Removes a TSS public key from the registered keys
+	/// @param pubKey The public key to remove
 	function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE) {
 		for (uint256 i = 0; i < publicKeys.length; i++) {
 			if (publicKeys[i].x == pubKey.x && publicKeys[i].parity == pubKey.parity) {
@@ -69,16 +82,21 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 		emit PublicKeyRemoved(pubKey.x, pubKey.parity);
 	}
 
+	/// @notice Returns all registered TSS public keys
+	/// @return Array of all public keys
 	function getAllPublicKeys() external view returns (PublicKey[] memory) {
 		return publicKeys;
 	}
 
-	// === Gateway Signer Management ===
+	/// @notice Adds a new gateway signer address
+	/// @param signer The address of the gateway signer to add
 	function addGatewaySigner(address signer) external onlyRole(SETTER_ROLE) {
 		gatewaySigners.push(signer);
 		emit GatewaySignerAdded(signer);
 	}
 
+	/// @notice Removes a gateway signer address
+	/// @param signer The address of the gateway signer to remove
 	function removeGatewaySigner(address signer) external onlyRole(SETTER_ROLE) {
 		for (uint256 i = 0; i < gatewaySigners.length; i++) {
 			if (gatewaySigners[i] == signer) {
@@ -90,6 +108,8 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 		emit GatewaySignerRemoved(signer);
 	}
 
+	/// @notice Returns all registered gateway signer addresses
+	/// @return Array of all gateway signer addresses
 	function getAllGatewaySigners() external view returns (address[] memory) {
 		return gatewaySigners;
 	}

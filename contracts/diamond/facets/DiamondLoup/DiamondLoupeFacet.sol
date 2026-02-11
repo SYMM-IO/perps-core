@@ -131,7 +131,9 @@ contract DiamondLoupeFacet is IDiamondLoupe, IERC165 {
 		facetAddress_ = ds.facetAddressAndSelectorPosition[_functionSelector].facetAddress;
 	}
 
-	// This implements ERC-165.
+	/// @notice Checks whether the diamond supports a given interface (ERC-165)
+	/// @param _interfaceId The interface identifier to check
+	/// @return True if the interface is supported
 	function supportsInterface(bytes4 _interfaceId) external view override returns (bool) {
 		LibDiamond.DiamondStorage storage ds = LibDiamond.diamondStorage();
 		return ds.supportedInterfaces[_interfaceId];

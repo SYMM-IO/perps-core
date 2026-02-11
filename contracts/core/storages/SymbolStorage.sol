@@ -4,6 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+/// @notice Configuration for a tradeable symbol (fees, leverage, funding)
 struct Symbol {
 	uint256 symbolId;
 	string name;
@@ -16,6 +17,7 @@ struct Symbol {
 	uint256 fundingRateWindowTime;
 }
 
+/// @notice Extended symbol configuration that includes the market category type
 struct SymbolWithType {
 	uint256 symbolId;
 	string name;

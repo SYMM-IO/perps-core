@@ -19,6 +19,7 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
 library PartyBEmergencyActionsFacetImpl {
+	/// @notice Closes a position fully during emergency mode, symbol delisting, or partyB emergency status
 	function emergencyClosePosition(uint256 quoteId, PairUpnlAndPriceSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
@@ -45,13 +46,11 @@ library PartyBEmergencyActionsFacetImpl {
 		LibQuoteClose.closeQuote(quote.id, filledAmount, upnlSig.price);
 	}
 
-	/**
-	 * @notice Auto-deleverages a quote proportionally, checking solvency buffers and preserving pending close intents.
-	 * @dev Keeps quote closeId/status consistent with existing CLOSE_PENDING/CANCEL_CLOSE_PENDING flows and emits ADL events.
-	 * @param quoteId Quote to ADL close (same partyA/partyB/symbol).
-	 * @param amount Amount to close (token decimals).
-	 * @param price Execution price used for the ADL close.
-	 */
+	/// @notice Auto-deleverages a quote proportionally, checking solvency buffers and preserving pending close intents
+	/// @dev Keeps quote closeId/status consistent with existing CLOSE_PENDING/CANCEL_CLOSE_PENDING flows and emits ADL events
+	/// @param quoteId Quote to ADL close (same partyA/partyB/symbol).
+	/// @param amount Quantity to close.
+	/// @param price Execution price used for the ADL close.
 	function adlClose(uint256 quoteId, uint256 amount, uint256 price) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();

@@ -9,9 +9,14 @@ pragma solidity >=0.8.18;
 import { LibDiamond } from "./libraries/LibDiamond.sol";
 import { IDiamondCut } from "./facets/DiamondCut/IDiamondCut.sol";
 
+/// @notice EIP-2535 Diamond proxy contract that delegates calls to facets
 contract Diamond {
+	/// @notice Allows the contract to receive native currency
 	receive() external payable {}
 
+	/// @notice Initializes the diamond with an owner and the DiamondCutFacet
+	/// @param _contractOwner The address that will own the diamond
+	/// @param _diamondCutFacet The address of the deployed DiamondCutFacet
 	constructor(address _contractOwner, address _diamondCutFacet) payable {
 		LibDiamond.setContractOwner(_contractOwner);
 
@@ -27,8 +32,7 @@ contract Diamond {
 		LibDiamond.diamondCut(cut, address(0), "");
 	}
 
-	// Find facet for function that is called and execute the
-	// function if a facet is found and return any value.
+	/// @notice Finds the facet for the called function selector and delegates execution to it
 	fallback() external payable {
 		LibDiamond.DiamondStorage storage ds;
 		bytes32 position = LibDiamond.DIAMOND_STORAGE_POSITION;

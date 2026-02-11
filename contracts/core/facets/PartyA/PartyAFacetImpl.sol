@@ -26,6 +26,7 @@ import { LibHook } from "../../libraries/LibHook.sol";
 library PartyAFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Validates inputs, locks collateral, and creates a new pending quote for Party A
 	function sendQuote(
 		address[] memory partyBsWhiteList,
 		uint256 symbolId,
@@ -151,6 +152,7 @@ library PartyAFacetImpl {
 		emit SharedEvents.BalanceChangePartyA(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 	}
 
+	/// @notice Cancels a pending quote immediately or requests cancellation for a locked quote
 	function requestToCancelQuote(uint256 quoteId) internal returns (QuoteStatus result) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
@@ -175,6 +177,7 @@ library PartyAFacetImpl {
 		quote.statusModifyTimestamp = block.timestamp;
 	}
 
+	/// @notice Validates and sets a close request on an open position
 	function requestToClosePosition(uint256 quoteId, uint256 closePrice, uint256 quantityToClose, OrderType orderType, uint256 deadline) internal {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -201,6 +204,7 @@ library PartyAFacetImpl {
 		quote.deadline = deadline;
 	}
 
+	/// @notice Cancels a pending close request or expires it if past the deadline
 	function requestToCancelCloseRequest(uint256 quoteId) internal returns (QuoteStatus) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 

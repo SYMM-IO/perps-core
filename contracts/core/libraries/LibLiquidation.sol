@@ -16,13 +16,11 @@ import { LockedValuesOps } from "./LibLockedValues.sol";
 library LibLiquidation {
 	using LockedValuesOps for LockedValues;
 
-	/**
-	 * @notice Liquidates Party B.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @param upnlPartyB The unrealized profit and loss of Party B.
-	 * @param timestamp The timestamp of the liquidation.
-	 */
+	/// @notice Liquidates Party B.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @param upnlPartyB The unrealized profit and loss of Party B.
+	/// @param timestamp The timestamp of the liquidation.
 	function liquidatePartyB(address partyB, address partyA, int256 upnlPartyB, uint256 timestamp) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -104,6 +102,7 @@ library LibLiquidation {
 		}
 	}
 
+	/// @notice Determines the liquidation type (NORMAL, LATE, or OVERDUE) based on Party A's deficit.
 	function determineLiquidationType(address partyA, int256 availableBalance) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();

@@ -4,16 +4,19 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+/// @notice Direction of a trading position
 enum PositionType {
 	LONG,
 	SHORT
 }
 
+/// @notice Type of order execution
 enum OrderType {
 	LIMIT,
 	MARKET
 }
 
+/// @notice Lifecycle status of a quote from creation through settlement
 enum QuoteStatus {
 	PENDING, //0
 	LOCKED, //1
@@ -28,6 +31,7 @@ enum QuoteStatus {
 	LIQUIDATED_PENDING //10
 }
 
+/// @notice Margin components locked for a position (CVA, liquidation fee, maintenance margins)
 struct LockedValues {
 	uint256 cva;
 	uint256 lf;
@@ -35,6 +39,7 @@ struct LockedValues {
 	uint256 partyBmm;
 }
 
+/// @notice Full state of a trading quote or open position
 struct Quote {
 	uint256 id;
 	address[] partyBsWhiteList;
@@ -68,6 +73,7 @@ struct Quote {
 	bytes data;
 }
 
+/// @notice Custom fee overrides for a specific PartyB-symbol pair
 struct Fee {
 	uint256 openFee;
 	uint256 closeFee;

@@ -11,6 +11,7 @@ import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
 
 library LibMuonSettlement {
+	/// @notice Verifies a settlement signature for non-cross partyB mode UPNL settlement.
 	function verifySettlement(SettlementSig memory settleSig, address partyA) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==

@@ -23,6 +23,7 @@ import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
+/// @notice Facet for affiliate registration, admin management, fee distribution, hooks, and operators
 contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -31,6 +32,10 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Affiliate Registration ====================
 
+	/// @notice Submits a registration request for a new affiliate (frontend/broker)
+	/// @dev Creates a PENDING affiliate. The affiliate address is deterministic based on registrant and name.
+	/// @param reg The registration data including name, admin, fee stakeholders, and Symmio cores
+	/// @return affiliateAddress The deterministic affiliate address
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
@@ -62,6 +67,8 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit AffiliateRegistered(affiliateAddress, reg.name);
 	}
 
+	/// @notice Cancels a pending affiliate registration (affiliate admin only)
+	/// @param affiliate The affiliate address whose registration to cancel
 	function cancelRegistration(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
@@ -70,6 +77,8 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit RegistrationCancelled(affiliate);
 	}
 
+	/// @notice Rejects a pending affiliate registration (APPROVER_ROLE only)
+	/// @param affiliate The affiliate address whose registration to reject
 	function rejectRegistration(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
@@ -78,6 +87,8 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit RegistrationRejected(affiliate, msg.sender);
 	}
 
+	/// @notice Approves a pending affiliate, deploying its AccountManager and registering it on Symmio cores
+	/// @param affiliate The affiliate address to approve
 	function approveAffiliate(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
@@ -107,6 +118,9 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Affiliate Admin Management ====================
 
+	/// @notice Proposes transferring the affiliate admin role to a new address (two-step)
+	/// @param affiliate The affiliate address
+	/// @param newAdmin The proposed new admin address
 	function proposeAdminTransfer(
 		address affiliate,
 		address newAdmin
@@ -117,6 +131,8 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit AdminTransferProposed(affiliate, newAdmin);
 	}
 
+	/// @notice Accepts a pending admin transfer (must be called by the proposed new admin)
+	/// @param affiliate The affiliate address
 	function acceptAdminTransfer(address affiliate) external whenNotPaused {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].pendingAdmin != msg.sender) revert Unauthorized();
@@ -128,11 +144,17 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit AdminTransferCompleted(affiliate, oldAdmin, msg.sender);
 	}
 
+	/// @notice Cancels a pending admin transfer proposal
+	/// @param affiliate The affiliate address
 	function cancelAdminTransfer(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		AffiliateHubStorage.layout().affiliates[affiliate].pendingAdmin = address(0);
 		emit AdminTransferCancelled(affiliate);
 	}
 
+	/// @notice Updates the display name and brand color of an affiliate
+	/// @param affiliate The affiliate address
+	/// @param name The new name (must be 1-100 characters)
+	/// @param brandColor The new brand color string
 	function updateAffiliateDetails(
 		address affiliate,
 		string memory name,
@@ -147,6 +169,9 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit AffiliateUpdated(affiliate, name, brandColor);
 	}
 
+	/// @notice Pauses an affiliate, preventing new account creation under it
+	/// @dev Can be called by the affiliate admin or a PAUSER_ROLE holder
+	/// @param affiliate The affiliate address to pause
 	function pauseAffiliate(address affiliate) external whenNotPaused onlyIfAffiliateIsActive(affiliate) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (
@@ -160,6 +185,8 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit AffiliatePaused(affiliate);
 	}
 
+	/// @notice Unpauses a previously paused affiliate (UNPAUSER_ROLE only)
+	/// @param affiliate The affiliate address to unpause
 	function unpauseAffiliate(address affiliate) external onlyRole(LibAccountLayerAccessibility.UNPAUSER_ROLE) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PAUSED) revert InvalidState();
@@ -170,6 +197,10 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Fee Management ====================
 
+	/// @notice Requests a fee configuration update (two-step: request then approve)
+	/// @param affiliate The affiliate address
+	/// @param newStakeholders The proposed new stakeholder list with shares
+	/// @param newSymmioShare The proposed new Symmio protocol share (must sum to 1e18 with stakeholders)
 	function requestFeeUpdate(
 		address affiliate,
 		Stakeholder[] memory newStakeholders,
@@ -187,6 +218,8 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit StakeholdersUpdateRequested(affiliate);
 	}
 
+	/// @notice Cancels a pending fee configuration update
+	/// @param affiliate The affiliate address
 	function cancelFeeUpdate(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (!afLayout.pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
@@ -195,6 +228,8 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit FeeUpdateCancelled(affiliate);
 	}
 
+	/// @notice Approves a pending fee configuration update (APPROVER_ROLE only)
+	/// @param affiliate The affiliate address whose fee update to approve
 	function approveFeeUpdate(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (!afLayout.pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
@@ -207,16 +242,27 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit StakeholdersUpdated(affiliate);
 	}
 
+	/// @notice Claims all accrued fees for an affiliate and distributes to stakeholders
+	/// @param affiliate The affiliate address
+	/// @param symmio The Symmio core to claim fees from
 	function claimAllFees(address affiliate, address symmio) external whenNotPaused nonReentrant {
 		_claimFees(affiliate, symmio, LibAccountLayerUtils.getClaimableFee(affiliate, symmio), msg.sender);
 	}
 
+	/// @notice Claims a specific amount of fees for an affiliate and distributes to stakeholders
+	/// @param affiliate The affiliate address
+	/// @param symmio The Symmio core to claim fees from
+	/// @param amount The amount of fees to claim
 	function claimFees(address affiliate, address symmio, uint256 amount) external whenNotPaused nonReentrant {
 		_claimFees(affiliate, symmio, amount, msg.sender);
 	}
 
 	// ==================== Hook Management ====================
 
+	/// @notice Sets a hook contract for a specific function selector on an affiliate
+	/// @param affiliate The affiliate address
+	/// @param selector The function selector that triggers the hook
+	/// @param hook The hook contract address
 	function setHook(
 		address affiliate,
 		bytes4 selector,
@@ -226,6 +272,9 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit HookSet(affiliate, selector, hook);
 	}
 
+	/// @notice Removes a hook contract for a specific function selector on an affiliate
+	/// @param affiliate The affiliate address
+	/// @param selector The function selector to remove the hook for
 	function removeHook(address affiliate, bytes4 selector) external whenNotPaused onlyAffiliateAdmin(affiliate) {
 		delete AffiliateHubStorage.layout().affiliates[affiliate].hooks[selector];
 		emit HookRemoved(affiliate, selector);
@@ -233,6 +282,11 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Operator Management ====================
 
+	/// @notice Grants or revokes operator permissions for an affiliate on a specific function selector
+	/// @param affiliate The affiliate address
+	/// @param selector The function selector the operator can call via callAsAffiliate
+	/// @param operator The operator address to authorize or deauthorize
+	/// @param status Whether the operator should be authorized
 	function setOperator(
 		address affiliate,
 		bytes4 selector,
@@ -246,6 +300,9 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Express Withdraw Configuration ====================
 
+	/// @notice Sets the express deposit rate for an affiliate (fraction sent to virtual provider)
+	/// @param affiliate The affiliate address
+	/// @param expressRate The rate as a fraction of 1e18 (e.g., 0.1e18 = 10%)
 	function setExpressRate(
 		address affiliate,
 		uint256 expressRate
@@ -255,6 +312,9 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit ExpressRateSet(affiliate, expressRate);
 	}
 
+	/// @notice Sets the virtual provider contract for an affiliate's express deposits
+	/// @param affiliate The affiliate address
+	/// @param virtualProvider The virtual provider contract address
 	function setVirtualProvider(
 		address affiliate,
 		address virtualProvider
@@ -265,6 +325,12 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	// ==================== Delegated Calls ====================
 
+	/// @notice Executes a whitelisted call on a Symmio core as the affiliate (setSigner(affiliate))
+	/// @dev Caller must be the affiliate admin or an authorized operator for the selector
+	/// @param affiliate The affiliate address to act as
+	/// @param symmio The Symmio core to call
+	/// @param callData The encoded function call to execute
+	/// @return result The return data from the call
 	function callAsAffiliate(
 		address affiliate,
 		address symmio,

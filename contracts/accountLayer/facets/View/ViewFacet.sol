@@ -21,6 +21,7 @@ import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
+/// @notice Read-only facet providing view functions for accounts, affiliates, roles, and system state
 contract ViewFacet is IViewFacet {
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
@@ -31,6 +32,9 @@ contract ViewFacet is IViewFacet {
 
 	// ==================== Sub-Account View Functions ====================
 
+	/// @notice Returns the full details of a sub-account
+	/// @param account The sub-account address
+	/// @return The sub-account detail struct
 	function getSubAccount(address account) external view returns (SubAccountDetail memory) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		SubAccountData storage s = ahLayout.subAccounts[account];
@@ -48,6 +52,11 @@ contract ViewFacet is IViewFacet {
 			});
 	}
 
+	/// @notice Returns paginated sub-account addresses owned by a user
+	/// @param owner The user address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	/// @return The sub-account addresses
 	function getUserSubAccountsAddresses(address owner, uint256 offset, uint256 limit) external view returns (address[] memory) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		uint256 total = ahLayout.userToSubAccounts[owner].length();
@@ -63,6 +72,11 @@ contract ViewFacet is IViewFacet {
 		return paginatedAddresses;
 	}
 
+	/// @notice Returns paginated sub-account details owned by a user
+	/// @param owner The user address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	/// @return details The sub-account detail structs
 	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory details) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		uint256 total = ahLayout.userToSubAccounts[owner].length();
@@ -93,12 +107,18 @@ contract ViewFacet is IViewFacet {
 		}
 	}
 
+	/// @notice Returns the total number of sub-accounts owned by a user
+	/// @param owner The user address
+	/// @return The count of sub-accounts
 	function getSubAccountsCountOfUser(address owner) external view returns (uint256) {
 		return AccountHubStorage.layout().userToSubAccounts[owner].length();
 	}
 
 	// ==================== Virtual Account View Functions ====================
 
+	/// @notice Returns the full details of a virtual account
+	/// @param account The virtual account address
+	/// @return The virtual account detail struct
 	function getVirtualAccount(address account) external view returns (VirtualAccountDetail memory) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		VirtualAccountData storage v = ahLayout.virtualAccounts[account];
@@ -113,6 +133,11 @@ contract ViewFacet is IViewFacet {
 			});
 	}
 
+	/// @notice Returns paginated virtual account addresses belonging to a sub-account
+	/// @param subAccount The parent sub-account address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	/// @return The virtual account addresses
 	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		uint256 total = ahLayout.subAccountToVirtualAccounts[subAccount].length();
@@ -131,6 +156,11 @@ contract ViewFacet is IViewFacet {
 		return paginatedAccounts;
 	}
 
+	/// @notice Returns paginated virtual account details belonging to a sub-account
+	/// @param subAccount The parent sub-account address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	/// @return details The virtual account detail structs
 	function getVirtualAccountsOfSubAccount(
 		address subAccount,
 		uint256 offset,
@@ -162,6 +192,11 @@ contract ViewFacet is IViewFacet {
 		}
 	}
 
+	/// @notice Returns paginated quote IDs tracked by a virtual account
+	/// @param account The virtual account address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	/// @return The quote IDs
 	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		uint256 total = ahLayout.virtualAccounts[account].quoteIds.length();
@@ -180,22 +215,39 @@ contract ViewFacet is IViewFacet {
 		return paginatedQuoteIds;
 	}
 
+	/// @notice Returns the number of active virtual accounts under a sub-account
+	/// @param subAccount The parent sub-account address
+	/// @return The count of virtual accounts
 	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256) {
 		return AccountHubStorage.layout().subAccountToVirtualAccounts[subAccount].length();
 	}
 
 	// ==================== Single VA Mode ====================
 
+	/// @notice Returns the currently active virtual account for a given isolation key (singleVAMode)
+	/// @param subAccount The parent sub-account address
+	/// @param isolationType The isolation type
+	/// @param symbolId The symbol identifier
+	/// @return The active virtual account address (address(0) if none)
 	function getActiveVAByKey(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId) external view returns (address) {
 		return AccountHubStorage.layout().activeVAByKey[subAccount][isolationType][symbolId];
 	}
 
 	// ==================== Nonce and Prediction ====================
 
+	/// @notice Returns the current virtual account nonce for a sub-account
+	/// @param subAccount The sub-account address
+	/// @return The current nonce (next VA will use nonce + 1)
 	function getSubAccountVirtualNonce(address subAccount) external view returns (uint256) {
 		return AccountHubStorage.layout().subAccountVirtualNonces[subAccount];
 	}
 
+	/// @notice Predicts the address of the next virtual account for a given isolation key
+	/// @dev Checks the reuse pool first, then singleVAMode, then generates from next nonce
+	/// @param subAccount The parent sub-account address
+	/// @param isolationType The isolation type
+	/// @param symbolId The symbol identifier
+	/// @return The predicted virtual account address
 	function predictNextVirtualAccountAddress(
 		address subAccount,
 		VirtualAccountIsolationType isolationType,
@@ -224,6 +276,10 @@ contract ViewFacet is IViewFacet {
 
 	// ==================== AccountManager ====================
 
+	/// @notice Computes the deterministic address for an AccountManager given registrant and name
+	/// @param registrant The registrant address
+	/// @param name The affiliate name
+	/// @return The deterministic AccountManager address
 	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, registrant, name));
@@ -234,40 +290,64 @@ contract ViewFacet is IViewFacet {
 
 	// ==================== Signer and Core ====================
 
+	/// @notice Returns the current effective signer (globalSigner if set, otherwise msg.sender)
+	/// @return The signer address
 	function getSigner() public view returns (address) {
 		return LibAccountLayerUtils.getSigner();
 	}
 
+	/// @notice Returns the Symmio core address associated with an account
+	/// @param account The sub-account, virtual account, or legacy account address
+	/// @return The Symmio core diamond address
 	function getRelatedCore(address account) public view returns (address) {
 		return LibAccountLayerUtils.getRelatedCore(account);
 	}
 
+	/// @notice Resolves the owner of an account (sub-account, virtual account, or legacy)
+	/// @param account The account address
+	/// @return The owner address (address(0) if not found)
 	function ownerOf(address account) external view returns (address) {
 		return LibAccountLayerUtils.resolveAccountOwner(account);
 	}
 
+	/// @notice Returns the global nonce used for sub-account address generation
+	/// @return The current global nonce
 	function globalNonce() external view returns (uint256) {
 		return AccountHubStorage.layout().globalNonce;
 	}
 
+	/// @notice Returns the current AccountManager proxy bytecode
+	/// @return The implementation bytecode
 	function accountManagerImplementation() external view returns (bytes memory) {
 		return AccountHubStorage.layout().accountManagerImplementation;
 	}
 
 	// ==================== Affiliate View Functions ====================
 
+	/// @notice Returns the registration state of an affiliate
+	/// @param affiliate The affiliate address
+	/// @return The affiliate state (NONE, PENDING, ACTIVE, or PAUSED)
 	function getAffiliateState(address affiliate) external view returns (AffiliateState) {
 		return AffiliateHubStorage.layout().affiliates[affiliate].state;
 	}
 
+	/// @notice Returns the admin address of an affiliate
+	/// @param affiliate The affiliate address
+	/// @return The admin address
 	function getAffiliateAdmin(address affiliate) external view returns (address) {
 		return AffiliateHubStorage.layout().affiliates[affiliate].admin;
 	}
 
+	/// @notice Returns the deterministic fee distributor address of an affiliate
+	/// @param affiliate The affiliate address
+	/// @return The fee distributor address
 	function getAffiliateFeeDistributor(address affiliate) external view returns (address) {
 		return AffiliateHubStorage.layout().affiliates[affiliate].feeDetails.feeDistributor;
 	}
 
+	/// @notice Returns the Symmio core addresses registered for an affiliate
+	/// @param affiliate The affiliate address
+	/// @return The array of Symmio core addresses
 	function getAffiliateSymmioCores(address affiliate) external view returns (address[] memory) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		EnumerableSet.AddressSet storage set = afLayout.affiliates[affiliate].symmioCores;
@@ -280,26 +360,45 @@ contract ViewFacet is IViewFacet {
 		return cores;
 	}
 
+	/// @notice Returns the fee stakeholders for an affiliate
+	/// @param affiliate The affiliate address
+	/// @return The array of stakeholders with their receiver addresses and shares
 	function getAffiliateStakeholders(address affiliate) external view returns (Stakeholder[] memory) {
 		return AffiliateHubStorage.layout().affiliates[affiliate].feeDetails.stakeholders;
 	}
 
+	/// @notice Returns the Symmio protocol's share of fees for an affiliate (fraction of 1e18)
+	/// @param affiliate The affiliate address
+	/// @return The Symmio share
 	function getAffiliateSymmioShare(address affiliate) external view returns (uint256) {
 		return AffiliateHubStorage.layout().affiliates[affiliate].feeDetails.symmioShare;
 	}
 
+	/// @notice Checks whether a Symmio core address is whitelisted
+	/// @param core The Symmio core address
+	/// @return Whether the core is whitelisted
 	function isWhitelistedSymmioCore(address core) external view returns (bool) {
 		return AffiliateHubStorage.layout().whitelistedSymmioCores[core];
 	}
 
+	/// @notice Checks whether an address is a registered legacy MultiAccount contract
+	/// @param account The address to check
+	/// @return Whether it is a legacy MultiAccount
 	function isLegacyMultiAccount(address account) external view returns (bool) {
 		return AffiliateHubStorage.layout().legacyMultiAccounts.contains(account);
 	}
 
+	/// @notice Returns all registered legacy MultiAccount contract addresses
+	/// @return The array of legacy MultiAccount addresses
 	function getLegacyMultiAccounts() external view returns (address[] memory) {
 		return AffiliateHubStorage.layout().legacyMultiAccounts.values();
 	}
 
+	/// @notice Returns legacy accounts owned by a user across all registered legacy MultiAccount contracts
+	/// @param owner The user address
+	/// @param maxResults The maximum number of results to return
+	/// @return accounts The legacy account info structs
+	/// @return hasMore Whether there are more accounts beyond maxResults
 	function getLegacyAccountsOfUser(address owner, uint256 maxResults) external view returns (LegacyAccountInfo[] memory accounts, bool hasMore) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
@@ -342,18 +441,34 @@ contract ViewFacet is IViewFacet {
 		}
 	}
 
+	/// @notice Returns the hook contract address for an affiliate's function selector
+	/// @param affiliate The affiliate address
+	/// @param selector The function selector
+	/// @return The hook contract address (address(0) if not set)
 	function getHook(address affiliate, bytes4 selector) external view returns (address) {
 		return AffiliateHubStorage.layout().affiliates[affiliate].hooks[selector];
 	}
 
+	/// @notice Checks whether an address is an authorized operator for an affiliate's function selector
+	/// @param affiliate The affiliate address
+	/// @param selector The function selector
+	/// @param operator The operator address to check
+	/// @return Whether the operator is authorized
 	function isOperator(address affiliate, bytes4 selector, address operator) external view returns (bool) {
 		return AffiliateHubStorage.layout().operators[affiliate][selector][operator];
 	}
 
+	/// @notice Returns the address that receives Symmio's share of affiliate fees
+	/// @return The fee receiver address
 	function symmioFeeReceiver() external view returns (address) {
 		return AffiliateHubStorage.layout().symmioFeeReceiver;
 	}
 
+	/// @notice Simulates claiming all fees and returns the distribution per stakeholder
+	/// @param affiliate The affiliate address
+	/// @param symmio The Symmio core to check fees on
+	/// @return holders The stakeholder addresses
+	/// @return shares The fee amounts each stakeholder would receive
 	function dryClaimAllFees(address affiliate, address symmio) external view returns (address[] memory holders, uint256[] memory shares) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		uint256 totalClaimable = LibAccountLayerUtils.getClaimableFee(affiliate, symmio);
@@ -373,22 +488,34 @@ contract ViewFacet is IViewFacet {
 
 	// ==================== Role Management ====================
 
+	/// @notice Checks whether a user has a specific role
+	/// @param user The user address
+	/// @param role The role identifier
+	/// @return Whether the user has the role
 	function hasRole(address user, bytes32 role) external view returns (bool) {
 		return LibAccountLayerAccessibility.hasRole(user, role);
 	}
 
+	/// @notice Checks whether a user is a role admin for a specific role
+	/// @param user The user address
+	/// @param role The role identifier
+	/// @return Whether the user is a role admin
 	function isRoleAdmin(address user, bytes32 role) external view returns (bool) {
 		return LibAccountLayerAccessibility.isRoleAdmin(user, role);
 	}
 
 	// ==================== Pause Control ====================
 
+	/// @notice Returns whether the AccountLayer diamond is paused
+	/// @return Whether the system is paused
 	function paused() external view returns (bool) {
 		return AccountLayerStorage.layout().globalPaused;
 	}
 
 	// ==================== Constants ====================
 
+	/// @notice Returns the maximum allowed length for account and affiliate names
+	/// @return The maximum name length in bytes
 	function MAX_NAME_LENGTH() external pure returns (uint256) {
 		return LibAccountLayerUtils.MAX_NAME_LENGTH;
 	}

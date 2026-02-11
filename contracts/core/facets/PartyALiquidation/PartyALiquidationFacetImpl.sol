@@ -24,6 +24,7 @@ import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 library PartyALiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Verifies insolvency and initiates the liquidation process for Party A
 	function liquidatePartyA(address partyA, LiquidationSig memory liquidationSig) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -56,6 +57,7 @@ library PartyALiquidationFacetImpl {
 		accountLayout.liquidators[partyA].push(msg.sender);
 	}
 
+	/// @notice Sets symbol prices for a liquidation and determines the liquidation type
 	function setSymbolsPrice(address partyA, LiquidationSig memory liquidationSig) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -83,6 +85,7 @@ library PartyALiquidationFacetImpl {
 		LibLiquidation.determineLiquidationType(partyA, availableBalance);
 	}
 
+	/// @notice Liquidates all pending (not yet opened) positions of Party A
 	function liquidatePendingPositionsPartyA(address partyA) internal returns (uint256[] memory liquidatedAmounts, bytes memory liquidationId) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -117,6 +120,7 @@ library PartyALiquidationFacetImpl {
 		delete quoteLayout.partyAPendingQuotes[partyA];
 	}
 
+	/// @notice Liquidates open positions of Party A, settles PnL per Party B, and detects disputes
 	function liquidatePositionsPartyA(
 		address partyA,
 		uint256[] memory quoteIds
@@ -266,6 +270,7 @@ library PartyALiquidationFacetImpl {
 		return (false, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 	}
 
+	/// @notice Resolves a liquidation dispute by overriding settlement amounts for Party Bs
 	function resolveLiquidationDispute(
 		address partyA,
 		address[] memory partyBs,
@@ -285,6 +290,7 @@ library PartyALiquidationFacetImpl {
 		return accountLayout.liquidationDetails[partyA].liquidationId;
 	}
 
+	/// @notice Settles the liquidation by distributing funds between Party A and each Party B
 	function settlePartyALiquidation(
 		address partyA,
 		address[] memory partyBs

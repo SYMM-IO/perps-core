@@ -10,6 +10,7 @@ import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
 
 library LibMuonPartyBBatchActions {
+	/// @notice Verifies a pair UPNL and prices signature for batch Party B actions.
 	function verifyPairUpnlAndPrices(PairUpnlAndPricesSig memory upnlSig, address partyB, address partyA, uint256[] memory quoteIds) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==

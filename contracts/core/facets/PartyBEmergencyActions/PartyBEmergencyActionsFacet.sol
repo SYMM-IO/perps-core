@@ -14,11 +14,9 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 
 contract PartyBEmergencyActionsFacet is Accessibility, Pausable, IPartyBEmergencyActionsFacet {
-	/**
-	 * @notice Allows Party B to emergency close a position for the specified quote.
-	 * @param quoteId The ID of the quote for which the position is emergency closed.
-	 * @param upnlSig The Muon signature containing the unrealized profit and loss (UPNL) and the closing price.
-	 */
+	/// @notice Allows Party B to emergency close a position for the specified quote.
+	/// @param quoteId The ID of the quote for which the position is emergency closed.
+	/// @param upnlSig The Muon signature containing the unrealized profit and loss (UPNL) and the closing price.
 	function emergencyClosePosition(
 		uint256 quoteId,
 		PairUpnlAndPriceSig memory upnlSig
@@ -38,13 +36,11 @@ contract PartyBEmergencyActionsFacet is Accessibility, Pausable, IPartyBEmergenc
 		);
 	}
 
-	/**
-	 * @notice Performs ADL close for a quote on a symbol
-	 * @dev Uses PartyBEmergencyActionsFacetImpl to handle balance checks, nonce bumps, and quote status/closeId management.
-	 * @param quoteId Quote to ADL close
-	 * @param amount Amount to close (token decimals).
-	 * @param price Execution price.
-	 */
+	/// @notice Performs ADL close for a quote on a symbol
+	/// @dev Uses PartyBEmergencyActionsFacetImpl to handle balance checks, nonce bumps, and quote status/closeId management.
+	/// @param quoteId Quote to ADL close
+	/// @param amount Quantity to close.
+	/// @param price Execution price.
 	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external whenNotPartyBActionsPaused {
 		PartyBEmergencyActionsFacetImpl.adlClose(quoteId, amount, price);
 		emit LibPartiesEvents.ADLClose(quoteId, amount, price);

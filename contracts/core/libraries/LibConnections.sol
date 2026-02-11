@@ -9,9 +9,7 @@ import { SymbolStorage } from "../storages/SymbolStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 
 library LibConnections {
-	/**
-	 * @notice Adds a connection between partyA and partyB if not already connected
-	 */
+	/// @notice Adds a connection between partyA and partyB if not already connected
 	function addConnection(address partyA, address partyB) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -26,9 +24,7 @@ library LibConnections {
 		}
 	}
 
-	/**
-	 * @notice Removes a connection between partyA and partyB if no positions remain
-	 */
+	/// @notice Removes a connection between partyA and partyB if no positions remain
 	function removeConnectionIfNoPositions(address partyA, address partyB) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -47,9 +43,7 @@ library LibConnections {
 		}
 	}
 
-	/**
-	 * @notice Checks if a symbol is allowed for partyA based on their connections
-	 */
+	/// @notice Checks if a symbol is allowed for partyA based on their connections
 	function isSymbolAllowedForPartyA(address partyA, uint256 symbolId) internal view returns (bool) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
@@ -77,9 +71,7 @@ library LibConnections {
 		return true;
 	}
 
-	/**
-	 * @notice Checks if a symbol is allowed for partyA based on their connections
-	 */
+	/// @notice Checks if a symbol is allowed for partyB based on their whitelist and blacklist
 	function isSymbolAllowedForPartyB(address partyB, uint256 symbolId) internal view returns (bool) {
 		PartyBControlStorage.Layout storage partyBLayout = PartyBControlStorage.layout();
 

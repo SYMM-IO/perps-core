@@ -29,6 +29,7 @@ import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
 import { IVirtualProvider } from "../../../core/interfaces/IVirtualProvider.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
+/// @notice Core facet for sub-account and virtual account management, deposits, and call execution
 contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
@@ -37,6 +38,10 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	// ==================== Sub-Account Management ====================
 
+	/// @notice Creates one or more sub-accounts under the specified affiliate
+	/// @param affiliate The affiliate address the sub-accounts belong to
+	/// @param accountsData Configuration for each sub-account to create
+	/// @return The deterministic addresses of the created sub-accounts
 	function createSubAccounts(
 		address affiliate,
 		SubAccountCreationData[] memory accountsData
@@ -53,6 +58,9 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		return createdAccounts;
 	}
 
+	/// @notice Updates the display name of a sub-account
+	/// @param account The sub-account address to rename
+	/// @param name The new name (must be 1-100 characters)
 	function editAccountName(address account, string memory name) external whenNotPaused onlyAccountOwner(account) {
 		LibAccountLayerUtils.validateName(name);
 
@@ -63,6 +71,10 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		emit EditAccountName(account, name);
 	}
 
+	/// @notice Toggles single virtual account mode for a sub-account
+	/// @dev Only applicable to MARKET and MARKET_DIRECTION isolation types. Requires no active VAs.
+	/// @param subAccount The sub-account address
+	/// @param enabled Whether single VA mode should be enabled
 	function setSingleVAMode(address subAccount, bool enabled) external whenNotPaused onlyAccountOwner(subAccount) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		SubAccountData storage s = ahLayout.subAccounts[subAccount];
@@ -80,6 +92,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		emit SingleVAModeChanged(subAccount, enabled);
 	}
 
+	/// @notice Deletes a sub-account that has no active virtual accounts, positions, or balance
+	/// @param subAccount The sub-account address to delete
 	function deleteSubAccount(address subAccount) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		SubAccountData storage s = ahLayout.subAccounts[subAccount];
@@ -132,6 +146,12 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	// ==================== Virtual Account Management ====================
 
+	/// @notice Manually creates a virtual account under a CUSTOM isolation sub-account
+	/// @param parentAccount The parent sub-account (must have CUSTOM isolation type)
+	/// @param metadata Arbitrary metadata to attach to the virtual account
+	/// @param isolationType The isolation type for the virtual account
+	/// @param symbolId The symbol the virtual account is restricted to (for market-based isolation)
+	/// @return The address of the created or reused virtual account
 	function createCustomVirtualAccount(
 		address parentAccount,
 		bytes memory metadata,
@@ -150,10 +170,16 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	// ==================== Deposit Functions ====================
 
+	/// @notice Deposits collateral into the Symmio core for the specified account
+	/// @param account The sub-account or virtual account to deposit for
+	/// @param amount The amount of collateral to deposit
 	function depositForAccount(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
 		_depositToSymmio(account, amount, ISymmio.depositFor.selector);
 	}
 
+	/// @notice Deposits and immediately allocates collateral for the specified account
+	/// @param account The sub-account or virtual account to deposit and allocate for
+	/// @param amount The amount of collateral to deposit and allocate
 	function depositAndAllocateForAccount(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
 		_depositToSymmio(account, amount, ISymmio.depositAndAllocateFor.selector);
 	}
@@ -168,11 +194,17 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		_executeWithSymmioSigner(core, signer, abi.encodeWithSelector(depositSelector, account, amount));
 	}
 
+	/// @notice Deposits collateral with express rate split between Symmio and a virtual provider
+	/// @param account The sub-account or virtual account to deposit for
+	/// @param amount The total amount of collateral to deposit
 	function depositForAccountWithExpressRate(address account, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(account) {
 		(uint256 expressRate, address virtualProvider) = _getExpressDepositConfig(account);
 		_depositWithExpressSplit(account, amount, ISymmio.depositFor.selector, expressRate, virtualProvider);
 	}
 
+	/// @notice Deposits and allocates collateral with express rate split between Symmio and a virtual provider
+	/// @param account The sub-account or virtual account to deposit and allocate for
+	/// @param amount The total amount of collateral to deposit and allocate
 	function depositAndAllocateForAccountWithExpressRate(
 		address account,
 		uint256 amount
@@ -260,6 +292,12 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	// ==================== Call Execution ====================
 
+	/// @notice Executes an array of Symmio core calls on behalf of an account
+	/// @dev Handles sendQuote routing to virtual accounts based on sub-account isolation type.
+	///      Blocks internalTransferToBalance to prevent unauthorized fund extraction.
+	/// @param account The account to execute calls for
+	/// @param callDatas Array of encoded function calls to execute on the Symmio core
+	/// @return Array of return data from each call
 	function _call(
 		address account,
 		bytes[] calldata callDatas
@@ -321,6 +359,9 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	// ==================== Hook Callback ====================
 
+	/// @notice Executes a whitelisted Symmio call on behalf of an account during an active hook context
+	/// @dev Can only be called while a hook is active. The selector must be in hookAllowedSelectors.
+	/// @param callData The encoded function call to execute on the Symmio core
 	function executeForAccount(bytes calldata callData) external {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		HookContext memory ctx = afLayout.hookContext;
@@ -590,6 +631,13 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	// ==================== Legacy Account Migration ====================
 
+	/// @notice Imports accounts from a legacy MultiAccount contract into the AccountLayer
+	/// @dev Validates ownership via the legacy contract, prevents double-import, and creates CUSTOM isolation sub-accounts
+	/// @param legacyContract The registered legacy MultiAccount contract address
+	/// @param affiliate The affiliate to associate imported accounts with
+	/// @param symmioCores The Symmio core addresses available for the affiliate
+	/// @param accountsData Import data for each account (address, name, core index)
+	/// @return importedAccounts The addresses of the imported sub-accounts
 	function importLegacyAccounts(
 		address legacyContract,
 		address affiliate,

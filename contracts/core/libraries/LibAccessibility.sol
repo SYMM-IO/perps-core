@@ -38,24 +38,20 @@ library LibAccessibility {
 	bytes32 public constant MIGRATION_ROLE = keccak256("MIGRATION_ROLE");
 	bytes32 public constant INTERNAL_TRANSFER_TO_BALANCE_ROLE = keccak256("INTERNAL_TRANSFER_TO_BALANCE_ROLE");
 
-	/**
-	 * @notice Checks if a user has a specific role.
-	 * @param user The address of the user.
-	 * @param role The role to check.
-	 * @return Whether the user has the specified role.
-	 */
+	/// @notice Checks if a user has a specific role.
+	/// @param user The address of the user.
+	/// @param role The role to check.
+	/// @return Whether the user has the specified role.
 	function hasRole(address user, bytes32 role) internal view returns (bool) {
 		GlobalAppStorage.Layout storage layout = GlobalAppStorage.layout();
 		return layout.hasRole[user][role];
 	}
 
-	/**
-	 * @notice Checks if a user is admin for a specific role.
-	 * @dev users with DEFAULT_ADMIN_ROLE are admin for all roles.
-	 * @param user The user to check.
-	 * @param role The role to check admin rights for.
-	 * @return Whether the user can administer the role.
-	 */
+	/// @notice Checks if a user is admin for a specific role.
+	/// @dev users with DEFAULT_ADMIN_ROLE are admin for all roles.
+	/// @param user The user to check.
+	/// @param role The role to check admin rights for.
+	/// @return Whether the user can administer the role.
 	function isRoleAdmin(address user, bytes32 role) internal view returns (bool) {
 		GlobalAppStorage.Layout storage layout = GlobalAppStorage.layout();
 		return layout.roleAdmins[role][user] || layout.hasRole[user][DEFAULT_ADMIN_ROLE];

@@ -15,42 +15,34 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { HighLowPriceSig, SettlementSig } from "../../storages/MuonStorage.sol";
 
 contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceActionsFacet, SettlementFacetEvents {
-	/**
-	 * @notice Forces the cancellation of the specified quote when partyB is not responsive for a certain amount of time(ForceCancelCooldown).
-	 * @param quoteId The ID of the quote to be canceled.
-	 */
+	/// @notice Forces the cancellation of the specified quote when partyB is not responsive for a certain amount of time (ForceCancelCooldown).
+	/// @param quoteId The ID of the quote to be canceled.
 	function forceCancelQuote(uint256 quoteId) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		ForceActionsFacetImpl.forceCancelQuote(quoteId);
 		emit ForceCancelQuote(quoteId, QuoteStatus.CANCELED);
 	}
 
-	/**
-	 * @notice Forces the cancellation of the close request associated with the specified quote when partyB is not responsive for a certain amount of time(ForceCancelCloseCooldown).
-	 * @param quoteId The ID of the quote for which the close request should be canceled.
-	 */
+	/// @notice Forces the cancellation of the close request associated with the specified quote when partyB is not responsive for a certain amount of time (ForceCancelCloseCooldown).
+	/// @param quoteId The ID of the quote for which the close request should be canceled.
 	function forceCancelCloseRequest(uint256 quoteId) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		ForceActionsFacetImpl.forceCancelCloseRequest(quoteId);
 		emit ForceCancelCloseRequest(quoteId, QuoteStatus.OPENED, QuoteStorage.layout().closeIds[quoteId]);
 	}
 
-	/**
-	 * @notice Forces the closure of the position associated with the specified quote.
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature to calculate the close price.
-	 */
+	/// @notice Forces the closure of the position associated with the specified quote.
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig The Muon signature to calculate the close price.
 	function forceClosePosition(uint256 quoteId, HighLowPriceSig memory sig) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		_forceClose(quoteId, sig);
 	}
 
-	/**
-	 * @notice Settles the positions then forces the closure of the position associated with the specified quote.
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature to calculate the close price.
-	 * @param settleSig The data struct contains quoteIds and upnl of parties and market prices
-	 * @param updatedPrices New prices to be set as openedPrice for the specified quotes.
-	 * @dev DEPRECATED: This function is kept for backward compatibility. Use forceCloseAndSettlePositionsUnified instead,
-	 *      which supports UnifiedSettlementSig for better multi-partyB coordination.
-	 */
+	/// @notice Settles the positions then forces the closure of the position associated with the specified quote.
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig The Muon signature to calculate the close price.
+	/// @param settleSig The data struct contains quoteIds and upnl of parties and market prices.
+	/// @param updatedPrices New prices to be set as openedPrice for the specified quotes.
+	/// @dev DEPRECATED: Use forceCloseAndSettlePositionsUnified instead,
+	///      which supports UnifiedSettlementSig for better multi-partyB coordination.
 	function settleAndForceClosePosition(
 		uint256 quoteId,
 		HighLowPriceSig memory sig,
@@ -76,11 +68,9 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		_forceClose(quoteId, sig);
 	}
 
-	/**
-	 * @notice Forces the closure of the position associated with the specified quote.
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature.
-	 */
+	/// @notice Forces the closure of the position associated with the specified quote.
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig The Muon signature.
 	function _forceClose(uint256 quoteId, HighLowPriceSig memory sig) private {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote memory quote = quoteLayout.quotes[quoteId];

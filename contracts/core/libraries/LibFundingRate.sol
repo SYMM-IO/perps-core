@@ -7,11 +7,13 @@ pragma solidity >=0.8.18;
 import { FundingFee } from "../storages/FundingStorage.sol";
 
 library LibFundingRate {
+	/// @notice Returns the epoch number for a given timestamp and epoch duration.
 	function getEpochOfTimestamp(uint256 timestamp, uint256 epochDuration) internal pure returns (uint256) {
 		require(epochDuration > 0, "FundingRateFacet: Zero epoch duration");
 		return timestamp / epochDuration;
 	}
 
+	/// @notice Returns the number of epochs elapsed since the last funding rate update.
 	function getEpochsSinceLastUpdate(FundingFee memory fundingFee) internal view returns (uint256) {
 		uint256 currentEpoch = getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
 		uint256 epochsSinceLastUpdate = currentEpoch - fundingFee.lastUpdatedEpoch;
@@ -19,17 +21,20 @@ library LibFundingRate {
 		return epochsSinceLastUpdate;
 	}
 
+	/// @notice Returns the number of epochs elapsed since the funding fee start epoch.
 	function getEpochsSinceStart(FundingFee memory fundingFee) internal view returns (uint256) {
 		uint256 currentEpoch = getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
 		return currentEpoch - fundingFee.startEpoch;
 	}
 
+	/// @notice Returns the number of epochs elapsed since the given timestamp.
 	function getEpochsSince(FundingFee memory fundingFee, uint256 timestamp) internal view returns (uint256) {
 		uint256 currentEpoch = getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
 		uint256 lastUpdatedEpoch = getEpochOfTimestamp(timestamp, fundingFee.epochDuration);
 		return currentEpoch - lastUpdatedEpoch;
 	}
 
+	/// @notice Updates the weighted average accumulated funding rates based on elapsed epochs.
 	function updateAccumulatedRates(FundingFee storage fundingFee) internal returns (int256 accumulatedLongRate, int256 accumulatedShortRate) {
 		uint256 newEpochs = getEpochsSinceLastUpdate(fundingFee);
 		uint256 previousEpochs = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;

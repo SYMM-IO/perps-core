@@ -16,21 +16,17 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 
 contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForceCloseStepsFacet, SettlementFacetEvents {
-	/**
-	 * @notice Initializes the 3-step force close flow (works for both normal and cross partyB modes).
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature to calculate the close price.
-	 */
+	/// @notice Initializes the 3-step force close flow (works for both normal and cross partyB modes).
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig The Muon signature to calculate the close price.
 	function initializeForceClose(uint256 quoteId, HighLowPriceSig memory sig) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		_initializeForceClose(quoteId, sig);
 	}
 
-	/**
-	 * @notice Settles uPNL for the 3-step force close using unified settlement.
-	 * @param quoteId The ID of the quote for the force close workflow.
-	 * @param settlementSig Unified settlement data (uPNLs + pricing).
-	 * @param updatedPrices Prices applied during settlement.
-	 */
+	/// @notice Settles uPNL for the 3-step force close using unified settlement.
+	/// @param quoteId The ID of the quote for the force close workflow.
+	/// @param settlementSig Unified settlement data (uPNLs + pricing).
+	/// @param updatedPrices Prices applied during settlement.
 	function settleUpnlForForceClose(
 		uint256 quoteId,
 		UnifiedSettlementSig memory settlementSig,
@@ -39,23 +35,19 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		_settleUpnlForForceClose(quoteId, settlementSig, updatedPrices);
 	}
 
-	/**
-	 * @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig Fresh Muon signature (uPNLs + currentPrice).
-	 */
+	/// @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig Fresh Muon signature (uPNLs + currentPrice).
 	function finalizeForceClose(uint256 quoteId, PairUpnlAndPriceSig memory sig) external {
 		ForceCloseStepsImpl.refreshForceCloseSnapshot(quoteId, sig);
 		_finalizeForceCloseWithoutSig(quoteId);
 	}
 
-	/**
-	 * @notice Initializes, settles uPNL, and finalizes the force close in a single transaction.
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature to calculate the close price.
-	 * @param settlementSig Unified settlement data (uPNLs + pricing).
-	 * @param updatedPrices Prices applied during settlement.
-	 */
+	/// @notice Initializes, settles uPNL, and finalizes the force close in a single transaction.
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig The Muon signature to calculate the close price.
+	/// @param settlementSig Unified settlement data (uPNLs + pricing).
+	/// @param updatedPrices Prices applied during settlement.
 	function forceCloseAndSettlePositionsUnified(
 		uint256 quoteId,
 		HighLowPriceSig memory sig,
@@ -67,17 +59,13 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		_finalizeForceCloseWithoutSig(quoteId);
 	}
 
-	/**
-	 * @notice Private: Initializes the force close flow.
-	 */
+	/// @notice Initializes the force close flow.
 	function _initializeForceClose(uint256 quoteId, HighLowPriceSig memory sig) private {
 		uint256 closePrice = ForceCloseStepsImpl.forceCloseInit(quoteId, sig);
 		emit ForceCloseInitialized(msg.sender, QuoteStorage.layout().quotes[quoteId].partyB, quoteId, sig.reqId, closePrice, sig.timestamp);
 	}
 
-	/**
-	 * @notice Private: Settles uPNL for the force close using unified settlement.
-	 */
+	/// @notice Settles uPNL for the force close using unified settlement.
 	function _settleUpnlForForceClose(uint256 quoteId, UnifiedSettlementSig memory settlementSig, uint256[] memory updatedPrices) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[settlementSig.partyB];
@@ -98,6 +86,7 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		);
 	}
 
+	/// @notice Finalizes the force close using the stored snapshot data without requiring a fresh signature.
 	function _finalizeForceCloseWithoutSig(uint256 quoteId) private {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();

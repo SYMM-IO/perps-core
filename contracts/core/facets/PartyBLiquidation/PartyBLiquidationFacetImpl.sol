@@ -22,6 +22,7 @@ import { LibHook } from "../../libraries/LibHook.sol";
 library PartyBLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Verifies insolvency and initiates the liquidation process for Party B against a Party A
 	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
 		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
@@ -29,6 +30,7 @@ library PartyBLiquidationFacetImpl {
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);
 	}
 
+	/// @notice Closes all specified positions at liquidation prices and distributes liquidation fees
 	function liquidatePositionsPartyB(
 		address partyB,
 		address partyA,

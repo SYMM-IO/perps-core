@@ -17,6 +17,7 @@ import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 library DeferredLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Initiates a deferred liquidation for Party A using a historical insolvency proof
 	function deferredLiquidatePartyA(address partyA, DeferredLiquidationSig memory liquidationSig) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -59,6 +60,7 @@ library DeferredLiquidationFacetImpl {
 		accountLayout.liquidators[partyA].push(msg.sender);
 	}
 
+	/// @notice Sets symbol prices for a deferred liquidation and determines the liquidation type
 	function deferredSetSymbolsPrice(address partyA, DeferredLiquidationSig memory liquidationSig) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();

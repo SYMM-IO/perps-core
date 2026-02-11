@@ -22,6 +22,7 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 library PartyBPositionActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Opens a position for a single quote with solvency verification and connection tracking
 	function openPosition(
 		uint256 quoteId,
 		uint256 filledAmount,
@@ -75,6 +76,7 @@ library PartyBPositionActionsFacetImpl {
 		}
 	}
 
+	/// @notice Verifies solvency and fills a close request for a single quote
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, PairUpnlAndPriceSig memory upnlSig) internal {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		if (
@@ -105,6 +107,7 @@ library PartyBPositionActionsFacetImpl {
 		LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmount, closedPrice);
 	}
 
+	/// @notice Accepts a cancel close request, returning the quote to OPENED status
 	function acceptCancelCloseRequest(uint256 quoteId) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
@@ -116,6 +119,7 @@ library PartyBPositionActionsFacetImpl {
 		quote.quantityToClose = 0;
 	}
 
+	/// @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
 		uint256 closedPrice,

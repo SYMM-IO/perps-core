@@ -13,16 +13,11 @@ import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 
 contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet {
-	/**
-	 * @notice Opens a position for the specified quote. The opened position's size can't be excessively small or large.
-	 * 			If it's like 99/100, the leftover will be a minuscule quote that falls below the minimum acceptable quote value.
-	 * 			Conversely, the position might be so small that it also falls beneath the minimum value.
-	 * 			Also, the remaining open portion of the position cannot fall below the minimum acceptable quote value for that particular symbol.
-	 * @param quoteId The ID of the quote for which the position is opened.
-	 * @param filledAmount PartyB has the option to open the position with either the full amount requested by the user or a specific fraction of it
-	 * @param openedPrice The opened price for the position.
-	 * @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
-	 */
+	/// @notice Opens a position for the specified quote. The opened position's size can't be excessively small or large.
+	/// @param quoteId The ID of the quote for which the position is opened.
+	/// @param filledAmount PartyB has the option to open the position with either the full amount requested by the user or a specific fraction of it
+	/// @param openedPrice The opened price for the position.
+	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
 	function openPosition(
 		uint256 quoteId,
 		uint256 filledAmount,
@@ -63,14 +58,12 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		}
 	}
 
-	/**
-	 * @notice Fills the close request for the specified quote.
-	 * @param quoteId The ID of the quote for which the close request is filled.
-	 * @param filledAmount The filled amount for the close request. PartyB can fill the LIMIT requests in multiple steps
-	 * 						and each within a different price but the market requests should be filled all at once.
-	 * @param closedPrice The closed price for the close request.
-	 * @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
-	 */
+	/// @notice Fills the close request for the specified quote.
+	/// @param quoteId The ID of the quote for which the close request is filled.
+	/// @param filledAmount The filled amount for the close request. PartyB can fill LIMIT requests in multiple steps
+	///                     and each within a different price but market requests should be filled all at once.
+	/// @param closedPrice The closed price for the close request.
+	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
 	function fillCloseRequest(
 		uint256 quoteId,
 		uint256 filledAmount,
@@ -93,25 +86,21 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		);
 	}
 
-	/**
-	 * @notice Accepts a cancel close request for the specified quote.
-	 * @param quoteId The ID of the quote for which the cancel close request is accepted.
-	 */
+	/// @notice Accepts a cancel close request for the specified quote.
+	/// @param quoteId The ID of the quote for which the cancel close request is accepted.
 	function acceptCancelCloseRequest(uint256 quoteId) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
 		PartyBPositionActionsFacetImpl.acceptCancelCloseRequest(quoteId);
 		emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED, QuoteStorage.layout().closeIds[quoteId]);
 	}
 
-	/**
-	 * @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation.
-	 *         Use this when the standard fillCloseRequest would revert due to PartyA insolvency.
-	 *         This calculates and closes only the amount that brings PartyA to exactly 0 available balance.
-	 *         Reverts if even a full close keeps PartyA insolvent.
-	 * @param quoteId The ID of the quote for which the close request is filled.
-	 * @param closedPrice The closed price for the close request.
-	 * @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
-	 * @return filledAmount The actual amount that was filled.
-	 */
+	/// @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation.
+	///         Use this when the standard fillCloseRequest would revert due to PartyA insolvency.
+	///         This calculates and closes only the amount that brings PartyA to exactly 0 available balance.
+	///         Reverts if even a full close keeps PartyA insolvent.
+	/// @param quoteId The ID of the quote for which the close request is filled.
+	/// @param closedPrice The closed price for the close request.
+	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
+	/// @return filledAmount The actual amount that was filled.
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
 		uint256 closedPrice,

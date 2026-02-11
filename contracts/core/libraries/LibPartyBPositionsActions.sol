@@ -21,6 +21,7 @@ import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 library LibPartyBPositionsActions {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Validates and fills a close request by checking state, expiry, price, and amount constraints.
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) internal {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		require(
@@ -41,6 +42,7 @@ library LibPartyBPositionsActions {
 		LibQuoteClose.closeQuote(quote.id, filledAmount, closedPrice);
 	}
 
+	/// @notice Opens a position by filling a locked quote, handling partial fills and fee collection.
 	function openPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice) internal returns (uint256 currentId) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();

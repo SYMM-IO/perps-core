@@ -31,6 +31,7 @@ library LibSendQuoteEvents {
 	// paramsData is abi.encode(symbolId, positionType, orderType, price, marketPrice, quantity, cva, lf, partyAmm, partyBmm, tradingFee, deadline)
 	event SendQuote(address partyA, uint256 quoteId, address[] partyBsWhiteList, address affiliate, bytes paramsData, bytes data);
 
+	/// @notice Parameters for emitting SendQuote events, grouped to avoid stack too deep errors.
 	struct SendQuoteEventParams {
 		address partyA;
 		uint256 quoteId;
@@ -51,6 +52,7 @@ library LibSendQuoteEvents {
 		bytes data;
 	}
 
+	/// @notice Emits both legacy and new SendQuote events for backward compatibility.
 	function emitSendQuoteEvents(SendQuoteEventParams memory params) internal {
 		// Emit deprecated event for backward compatibility
 		emit SendQuote(

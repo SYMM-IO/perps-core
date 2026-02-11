@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { IMuonSignatureVerifier } from "../interfaces/IMuonSignatureVerifier.sol";
 
+/// @notice Muon signature attesting to a single party's unrealized PnL
 struct SingleUpnlSig {
 	bytes reqId;
 	uint256 timestamp;
@@ -14,6 +15,7 @@ struct SingleUpnlSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+/// @notice Muon signature attesting to a party's UPNL plus their pending withdrawal balance
 struct SingleUpnlWithPendingBalanceSig {
 	bytes reqId;
 	uint256 timestamp;
@@ -23,6 +25,7 @@ struct SingleUpnlWithPendingBalanceSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+/// @notice Muon signature attesting to a party's UPNL and a symbol's current price
 struct SingleUpnlAndPriceSig {
 	bytes reqId;
 	uint256 timestamp;
@@ -32,6 +35,7 @@ struct SingleUpnlAndPriceSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+/// @notice Muon signature attesting to both PartyA's and PartyB's UPNL
 struct PairUpnlSig {
 	bytes reqId;
 	uint256 timestamp;
@@ -41,6 +45,7 @@ struct PairUpnlSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+/// @notice Muon signature attesting to both parties' UPNL and a single symbol price
 struct PairUpnlAndPriceSig {
 	bytes reqId;
 	uint256 timestamp;
@@ -51,6 +56,7 @@ struct PairUpnlAndPriceSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+/// @notice Muon signature attesting to both parties' UPNL and multiple symbol prices
 struct PairUpnlAndPricesSig {
 	bytes reqId;
 	uint256 timestamp;
@@ -62,6 +68,7 @@ struct PairUpnlAndPricesSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+/// @notice Muon signature for deferred liquidation with historical insolvency data
 struct DeferredLiquidationSig {
 	bytes reqId; // Unique identifier for the liquidation request
 	uint256 timestamp; // Timestamp when the liquidation signature was created
@@ -77,6 +84,7 @@ struct DeferredLiquidationSig {
 	IMuonSignatureVerifier.SchnorrSign sigs; // Schnorr signature for additional verification
 }
 
+/// @notice Muon signature for immediate liquidation with current insolvency data
 struct LiquidationSig {
 	bytes reqId; // Unique identifier for the liquidation request
 	uint256 timestamp; // Timestamp when the liquidation signature was created
@@ -89,6 +97,7 @@ struct LiquidationSig {
 	IMuonSignatureVerifier.SchnorrSign sigs; // Schnorr signature for additional verification
 }
 
+/// @notice Muon signature attesting to current prices for a set of quotes
 struct QuotePriceSig {
 	bytes reqId;
 	uint256 timestamp;
@@ -98,6 +107,7 @@ struct QuotePriceSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+/// @notice Muon signature with highest/lowest prices over a time window and both parties' UPNL
 struct HighLowPriceSig {
 	bytes reqId;
 	uint256 timestamp;
@@ -114,12 +124,14 @@ struct HighLowPriceSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+/// @notice Per-quote data within a settlement signature
 struct QuoteSettlementData {
 	uint256 quoteId;
 	uint256 currentPrice;
 	uint8 partyBUpnlIndex;
 }
 
+/// @notice Muon signature for settling multiple quotes across multiple PartyBs
 struct SettlementSig {
 	bytes reqId;
 	uint256 timestamp;
@@ -130,12 +142,14 @@ struct SettlementSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
+/// @notice Per-quote data within a unified settlement, mapping to a PartyA by index
 struct UnifiedQuoteSettlementData {
 	uint256 quoteId;
 	uint256 currentPrice;
 	uint8 partyAIndex; // Maps quote to partyAs array index
 }
 
+/// @notice Muon signature for unified settlement supporting both normal and cross-PartyB modes
 struct UnifiedSettlementSig {
 	bytes reqId;
 	uint256 timestamp;

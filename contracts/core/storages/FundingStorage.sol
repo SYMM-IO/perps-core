@@ -4,11 +4,9 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-/**
- * @notice Tracks funding rates and their weighted averages over time
- * @dev Funding rates are stored as price-adjusted values (rate * marketPrice)
- *      to avoid repeated multiplication during fee calculations
- */
+/// @notice Tracks funding rates and their weighted averages over time
+/// @dev Funding rates are stored as price-adjusted values (rate * marketPrice)
+///      to avoid repeated multiplication during fee calculations
 struct FundingFee {
 	// Current epoch's funding rates (price-adjusted: rate * marketPrice / 1e18)
 	int256 currentLongRate; // Current rate for long positions

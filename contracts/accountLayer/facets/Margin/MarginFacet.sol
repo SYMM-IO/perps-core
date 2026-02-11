@@ -13,9 +13,13 @@ import { AccountHubStorage, VirtualAccountIsolationType, SubAccountIsolationType
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
+/// @notice Facet for transferring margin between sub-accounts and virtual accounts
 contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
 
+	/// @notice Transfers allocated margin from a parent sub-account to a virtual account
+	/// @param virtualAccount The virtual account to add margin to
+	/// @param amount The amount to transfer via internalTransfer
 	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
@@ -28,6 +32,12 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		emit AddMargin(virtualAccount, parent, amount);
 	}
 
+	/// @notice Pre-funds the next virtual account that will be created for a given isolation key
+	/// @dev Predicts the next VA address (from pool or nonce) and transfers margin to it
+	/// @param subAccount The parent sub-account
+	/// @param isolationType The isolation type matching the sub-account's strategy
+	/// @param symbolId The symbol ID for the target virtual account
+	/// @param amount The amount to transfer via internalTransfer
 	function addMarginToNextVA(
 		address subAccount,
 		VirtualAccountIsolationType isolationType,
@@ -58,6 +68,10 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		emit AddMargin(predictedVA, subAccount, amount);
 	}
 
+	/// @notice Deallocates and transfers margin from a virtual account back to its parent sub-account
+	/// @param virtualAccount The virtual account to remove margin from
+	/// @param amount The amount to deallocate and transfer
+	/// @param upnlSig The Muon signature proving the account's unrealized PnL
 	function removeMargin(
 		address virtualAccount,
 		uint256 amount,
@@ -75,6 +89,10 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		emit RemoveMargin(virtualAccount, parent, amount);
 	}
 
+	/// @notice Recovers funds from a lost virtual account address back to its parent sub-account
+	/// @dev Used when a VA address has funds but was never formally created or was orphaned
+	/// @param subAccount The parent sub-account to recover funds to
+	/// @param nonce The nonce used to derive the lost virtual account address
 	function emergencyRecoverMargin(address subAccount, uint256 nonce) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		if (!ahLayout.subAccounts[subAccount].isExists) revert AccountDoesNotExist();

@@ -9,21 +9,17 @@ import { AggregatedDataStorage, PartiesAggregatedPositions, PartiesAggregatedFun
 import { IViewFacetAggregate } from "./IViewFacetAggregate.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 
-/**
- * @title ViewFacetAggregate
- * @notice View functions for aggregate position and funding data
- * @dev Enables O(symbols) UPNL calculations instead of O(quotes) by exposing pre-aggregated state
- */
+/// @title ViewFacetAggregate
+/// @notice View functions for aggregate position and funding data
+/// @dev Enables O(symbols) UPNL calculations instead of O(quotes) by exposing pre-aggregated state
 contract ViewFacetAggregate is IViewFacetAggregate {
 	// ============ Position Aggregate View Functions ============
 
-	/**
-	 * @notice Returns Aggregated open position amounts and average open prices for a party B and symbol (global across all partyAs).
-	 * @param partyB The address of party B.
-	 * @param symbolId The symbol ID.
-	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
-	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
-	 */
+	/// @notice Returns Aggregated open position amounts and average open prices for a party B and symbol (global across all partyAs).
+	/// @param partyB The address of party B.
+	/// @param symbolId The symbol ID.
+	/// @return longPosition Aggregated open amount and avg open price for LONG positions.
+	/// @return shortPosition Aggregated open amount and avg open price for SHORT positions.
 	function getPartyBAggregatedPositionBySymbol(
 		address partyB,
 		uint256 symbolId
@@ -40,14 +36,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
 	}
 
-	/**
-	 * @notice Returns Aggregated open position amounts and average open prices for a party B, party A, and symbol, grouped by position type.
-	 * @param partyB The address of party B.
-	 * @param partyA The address of party A.
-	 * @param symbolId The symbol ID.
-	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
-	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
-	 */
+	/// @notice Returns Aggregated open position amounts and average open prices for a party B, party A, and symbol, grouped by position type.
+	/// @param partyB The address of party B.
+	/// @param partyA The address of party A.
+	/// @param symbolId The symbol ID.
+	/// @return longPosition Aggregated open amount and avg open price for LONG positions.
+	/// @return shortPosition Aggregated open amount and avg open price for SHORT positions.
 	function getPartyBAggregatedPositionBySymbolPerPartyA(
 		address partyB,
 		address partyA,
@@ -65,14 +59,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		shortPosition = AggregatedPositionAmount(PositionType.SHORT, shortAmount, shortAmount == 0 ? 0 : shortNotional / shortAmount);
 	}
 
-	/**
-	 * @notice Returns Aggregated open position amounts and average open prices for a party A, party B, and symbol, grouped by position type.
-	 * @param partyA The address of party A.
-	 * @param partyB The address of party B.
-	 * @param symbolId The symbol ID.
-	 * @return longPosition Aggregated open amount and avg open price for LONG positions.
-	 * @return shortPosition Aggregated open amount and avg open price for SHORT positions.
-	 */
+	/// @notice Returns Aggregated open position amounts and average open prices for a party A, party B, and symbol, grouped by position type.
+	/// @param partyA The address of party A.
+	/// @param partyB The address of party B.
+	/// @param symbolId The symbol ID.
+	/// @return longPosition Aggregated open amount and avg open price for LONG positions.
+	/// @return shortPosition Aggregated open amount and avg open price for SHORT positions.
 	function getPartyAAggregatedPositionBySymbolPerPartyB(
 		address partyA,
 		address partyB,
@@ -92,15 +84,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 
 	// ============ Funding Aggregate View Functions ============
 
-	/**
-	 * @notice Returns the aggregate funding state for partyA per partyB at a specific symbol and position type
-	 * @dev Uses per-partyB storage to correctly handle multi-hedger scenarios
-	 * @param partyA The partyA address
-	 * @param partyB The partyB address (different hedgers have different funding rates)
-	 * @param symbolId The symbol ID
-	 * @param positionType The position type (0 = LONG, 1 = SHORT)
-	 * @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
-	 */
+	/// @notice Returns the aggregate funding state for partyA per partyB at a specific symbol and position type
+	/// @dev Uses per-partyB storage to correctly handle multi-hedger scenarios
+	/// @param partyA The partyA address
+	/// @param partyB The partyB address (different hedgers have different funding rates)
+	/// @param symbolId The symbol ID
+	/// @param positionType The position type (0 = LONG, 1 = SHORT)
+	/// @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
 	function getPartyAAggregatedFundingPerPartyB(
 		address partyA,
 		address partyB,
@@ -110,14 +100,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		return AggregatedDataStorage.layout().partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding;
 	}
 
-	/**
-	 * @notice Returns the aggregate funding state for partyB per partyA at a specific symbol and position type
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @param symbolId The symbol ID
-	 * @param positionType The position type (0 = LONG, 1 = SHORT)
-	 * @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
-	 */
+	/// @notice Returns the aggregate funding state for partyB per partyA at a specific symbol and position type
+	/// @param partyB The partyB address
+	/// @param partyA The partyA address
+	/// @param symbolId The symbol ID
+	/// @param positionType The position type (0 = LONG, 1 = SHORT)
+	/// @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
 	function getPartyBAggregatedFundingPerPartyA(
 		address partyB,
 		address partyA,
@@ -127,14 +115,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		return AggregatedDataStorage.layout().partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding;
 	}
 
-	/**
-	 * @notice Returns the global aggregate funding state for partyB at a specific symbol and position type
-	 * @dev Used for cross partyB mode UPNL calculations across all partyAs
-	 * @param partyB The partyB address
-	 * @param symbolId The symbol ID
-	 * @param positionType The position type (0 = LONG, 1 = SHORT)
-	 * @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
-	 */
+	/// @notice Returns the global aggregate funding state for partyB at a specific symbol and position type
+	/// @dev Used for cross partyB mode UPNL calculations across all partyAs
+	/// @param partyB The partyB address
+	/// @param symbolId The symbol ID
+	/// @param positionType The position type (0 = LONG, 1 = SHORT)
+	/// @return weightedPaidFunding The weighted paid funding: Σ(openAmount × accumulatedPaidFunding / 1e18)
 	function getPartyBAggregatedFunding(
 		address partyB,
 		uint256 symbolId,
@@ -143,15 +129,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		return AggregatedDataStorage.layout().partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding;
 	}
 
-	/**
-	 * @notice Returns the calculated aggregate funding debt for partyA at a specific symbol and position type
-	 * @dev This is a conservative estimate that ignores maxFundingRate caps
-	 * @param partyA The partyA address
-	 * @param partyB The partyB address (needed for funding rate lookup)
-	 * @param symbolId The symbol ID
-	 * @param positionType The position type (0 = LONG, 1 = SHORT)
-	 * @return fundingDebt The aggregate funding debt (positive = partyA owes, negative = partyA is owed)
-	 */
+	/// @notice Returns the calculated aggregate funding debt for partyA at a specific symbol and position type
+	/// @dev This is a conservative estimate that ignores maxFundingRate caps
+	/// @param partyA The partyA address
+	/// @param partyB The partyB address (needed for funding rate lookup)
+	/// @param symbolId The symbol ID
+	/// @param positionType The position type (0 = LONG, 1 = SHORT)
+	/// @return fundingDebt The aggregate funding debt (positive = partyA owes, negative = partyA is owed)
 	function getPartyAAggregateFundingDebt(
 		address partyA,
 		address partyB,
@@ -161,14 +145,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		return LibAggregateFunding.getPartyAAggregateFundingDebt(partyA, partyB, symbolId, positionType);
 	}
 
-	/**
-	 * @notice Returns the calculated aggregate funding debt for partyB per partyA at a specific symbol and position type
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @param symbolId The symbol ID
-	 * @param positionType The position type (0 = LONG, 1 = SHORT)
-	 * @return fundingDebt The aggregate funding debt (positive = partyB owes, negative = partyB is owed)
-	 */
+	/// @notice Returns the calculated aggregate funding debt for partyB per partyA at a specific symbol and position type
+	/// @param partyB The partyB address
+	/// @param partyA The partyA address
+	/// @param symbolId The symbol ID
+	/// @param positionType The position type (0 = LONG, 1 = SHORT)
+	/// @return fundingDebt The aggregate funding debt (positive = partyB owes, negative = partyB is owed)
 	function getPartyBAggregateFundingDebt(
 		address partyB,
 		address partyA,
@@ -178,14 +160,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		return LibAggregateFunding.getPartyBAggregateFundingDebt(partyB, partyA, symbolId, positionType);
 	}
 
-	/**
-	 * @notice Returns the global calculated aggregate funding debt for partyB at a specific symbol and position type
-	 * @dev This is for cross partyB mode UPNL calculations across all partyAs
-	 * @param partyB The partyB address
-	 * @param symbolId The symbol ID
-	 * @param positionType The position type (0 = LONG, 1 = SHORT)
-	 * @return fundingDebt The global aggregate funding debt (positive = partyB owes, negative = partyB is owed)
-	 */
+	/// @notice Returns the global calculated aggregate funding debt for partyB at a specific symbol and position type
+	/// @dev This is for cross partyB mode UPNL calculations across all partyAs
+	/// @param partyB The partyB address
+	/// @param symbolId The symbol ID
+	/// @param positionType The position type (0 = LONG, 1 = SHORT)
+	/// @return fundingDebt The global aggregate funding debt (positive = partyB owes, negative = partyB is owed)
 	function getPartyBGlobalAggregateFundingDebt(
 		address partyB,
 		uint256 symbolId,
@@ -196,22 +176,18 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 
 	// ============ Active Symbols View Functions ============
 
-	/**
-	 * @notice Returns the count of active symbols for partyB (global across all partyAs)
-	 * @param partyB The partyB address
-	 * @return The number of active symbols
-	 */
+	/// @notice Returns the count of active symbols for partyB (global across all partyAs)
+	/// @param partyB The partyB address
+	/// @return The number of active symbols
 	function getPartyBActiveSymbolsCount(address partyB) external view returns (uint256) {
 		return AggregatedDataStorage.layout().partyBActiveSymbols[partyB].length;
 	}
 
-	/**
-	 * @notice Returns a paginated list of symbol IDs that partyB has active positions in (global)
-	 * @param partyB The partyB address
-	 * @param start The starting index
-	 * @param size The maximum number of symbols to return
-	 * @return An array of symbol IDs
-	 */
+	/// @notice Returns a paginated list of symbol IDs that partyB has active positions in (global)
+	/// @param partyB The partyB address
+	/// @param start The starting index
+	/// @param size The maximum number of symbols to return
+	/// @return An array of symbol IDs
 	function getPartyBActiveSymbols(address partyB, uint256 start, uint256 size) external view returns (uint256[] memory) {
 		uint256[] storage activeSymbols = AggregatedDataStorage.layout().partyBActiveSymbols[partyB];
 		uint256 totalLength = activeSymbols.length;
@@ -228,36 +204,30 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		return result;
 	}
 
-	/**
-	 * @notice Returns the count of active symbols for partyB with specific partyA
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @return The number of active symbols
-	 */
+	/// @notice Returns the count of active symbols for partyB with specific partyA
+	/// @param partyB The partyB address
+	/// @param partyA The partyA address
+	/// @return The number of active symbols
 	function getPartyBActiveSymbolsCountPerPartyA(address partyB, address partyA) external view returns (uint256) {
 		return AggregatedDataStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA].length;
 	}
 
-	/**
-	 * @notice Returns the count of active symbols for partyA with specific partyB
-	 * @dev Symbols where partyA has positions with this specific hedger
-	 * @param partyA The partyA address
-	 * @param partyB The partyB address
-	 * @return The number of active symbols with this hedger
-	 */
+	/// @notice Returns the count of active symbols for partyA with specific partyB
+	/// @dev Symbols where partyA has positions with this specific hedger
+	/// @param partyA The partyA address
+	/// @param partyB The partyB address
+	/// @return The number of active symbols with this hedger
 	function getPartyAActiveSymbolsCountPerPartyB(address partyA, address partyB) external view returns (uint256) {
 		return AggregatedDataStorage.layout().partyAActiveSymbolsPerPartyB[partyA][partyB].length;
 	}
 
-	/**
-	 * @notice Returns a paginated list of symbol IDs that partyA has active positions in with specific partyB
-	 * @dev Used for iterating through symbols where partyA has positions with a specific hedger
-	 * @param partyA The partyA address
-	 * @param partyB The partyB address
-	 * @param start The starting index
-	 * @param size The maximum number of symbols to return
-	 * @return An array of symbol IDs
-	 */
+	/// @notice Returns a paginated list of symbol IDs that partyA has active positions in with specific partyB
+	/// @dev Used for iterating through symbols where partyA has positions with a specific hedger
+	/// @param partyA The partyA address
+	/// @param partyB The partyB address
+	/// @param start The starting index
+	/// @param size The maximum number of symbols to return
+	/// @return An array of symbol IDs
 	function getPartyAActiveSymbolsPerPartyB(address partyA, address partyB, uint256 start, uint256 size) external view returns (uint256[] memory) {
 		uint256[] storage activeSymbols = AggregatedDataStorage.layout().partyAActiveSymbolsPerPartyB[partyA][partyB];
 		uint256 totalLength = activeSymbols.length;
@@ -274,14 +244,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		return result;
 	}
 
-	/**
-	 * @notice Returns a paginated list of symbol IDs that partyB has active positions in with specific partyA
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @param start The starting index
-	 * @param size The maximum number of symbols to return
-	 * @return An array of symbol IDs
-	 */
+	/// @notice Returns a paginated list of symbol IDs that partyB has active positions in with specific partyA
+	/// @param partyB The partyB address
+	/// @param partyA The partyA address
+	/// @param start The starting index
+	/// @param size The maximum number of symbols to return
+	/// @return An array of symbol IDs
 	function getPartyBActiveSymbolsPerPartyA(address partyB, address partyA, uint256 start, uint256 size) external view returns (uint256[] memory) {
 		uint256[] storage activeSymbols = AggregatedDataStorage.layout().partyBActiveSymbolsPerPartyA[partyB][partyA];
 		uint256 totalLength = activeSymbols.length;
@@ -300,13 +268,11 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 
 	// ============ Aggregates by Active Symbols View Functions ============
 
-	/**
-	 * @notice Returns paginated aggregated positions for partyB using active symbols (global)
-	 * @param partyB The partyB address
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of aggregated positions by symbol
-	 */
+	/// @notice Returns paginated aggregated positions for partyB using active symbols (global)
+	/// @param partyB The partyB address
+	/// @param start The starting index in the active symbols array
+	/// @param size The maximum number of symbols to process
+	/// @return results Array of aggregated positions by symbol
 	function getPartyBAggregatedPositionsByActiveSymbols(
 		address partyB,
 		uint256 start,
@@ -356,14 +322,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		}
 	}
 
-	/**
-	 * @notice Returns paginated aggregated positions for partyA per partyB using active symbols
-	 * @param partyA The partyA address
-	 * @param partyB The partyB address
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of aggregated positions by symbol
-	 */
+	/// @notice Returns paginated aggregated positions for partyA per partyB using active symbols
+	/// @param partyA The partyA address
+	/// @param partyB The partyB address
+	/// @param start The starting index in the active symbols array
+	/// @param size The maximum number of symbols to process
+	/// @return results Array of aggregated positions by symbol
 	function getPartyAAggregatedPositionsByActiveSymbolsPerPartyB(
 		address partyA,
 		address partyB,
@@ -418,14 +382,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		}
 	}
 
-	/**
-	 * @notice Returns paginated aggregated positions for partyB per partyA using active symbols
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of aggregated positions by symbol
-	 */
+	/// @notice Returns paginated aggregated positions for partyB per partyA using active symbols
+	/// @param partyB The partyB address
+	/// @param partyA The partyA address
+	/// @param start The starting index in the active symbols array
+	/// @param size The maximum number of symbols to process
+	/// @return results Array of aggregated positions by symbol
 	function getPartyBAggregatedPositionsByActiveSymbolsPerPartyA(
 		address partyB,
 		address partyA,
@@ -480,14 +442,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		}
 	}
 
-	/**
-	 * @notice Returns paginated aggregated funding debt for partyA across active symbols
-	 * @param partyA The partyA address
-	 * @param partyB The partyB address (needed for funding rate lookup)
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of funding debt by symbol and position type
-	 */
+	/// @notice Returns paginated aggregated funding debt for partyA across active symbols
+	/// @param partyA The partyA address
+	/// @param partyB The partyB address (needed for funding rate lookup)
+	/// @param start The starting index in the active symbols array
+	/// @param size The maximum number of symbols to process
+	/// @return results Array of funding debt by symbol and position type
 	function getPartyAAggregateFundingDebtByActiveSymbols(
 		address partyA,
 		address partyB,
@@ -534,14 +494,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		}
 	}
 
-	/**
-	 * @notice Returns paginated aggregated funding debt for partyB per partyA across active symbols
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of funding debt by symbol and position type
-	 */
+	/// @notice Returns paginated aggregated funding debt for partyB per partyA across active symbols
+	/// @param partyB The partyB address
+	/// @param partyA The partyA address
+	/// @param start The starting index in the active symbols array
+	/// @param size The maximum number of symbols to process
+	/// @return results Array of funding debt by symbol and position type
 	function getPartyBAggregateFundingDebtByActiveSymbols(
 		address partyB,
 		address partyA,
@@ -588,14 +546,12 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		}
 	}
 
-	/**
-	 * @notice Returns paginated global aggregated funding debt for partyB across active symbols
-	 * @dev Uses global partyB active symbols - for cross partyB mode UPNL calculations
-	 * @param partyB The partyB address
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of funding debt by symbol and position type
-	 */
+	/// @notice Returns paginated global aggregated funding debt for partyB across active symbols
+	/// @dev Uses global partyB active symbols - for cross partyB mode UPNL calculations
+	/// @param partyB The partyB address
+	/// @param start The starting index in the active symbols array
+	/// @param size The maximum number of symbols to process
+	/// @return results Array of funding debt by symbol and position type
 	function getPartyBGlobalAggregateFundingDebtByActiveSymbols(
 		address partyB,
 		uint256 start,
@@ -643,17 +599,15 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 
 	// ============ UPNL Data View Functions ============
 
-	/**
-	 * @notice Returns paginated UPNL data for partyA with a specific partyB
-	 * @dev Returns all data needed for off-chain UPNL calculation:
-	 *      - LONG UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt
-	 *      - SHORT UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
-	 * @param partyA The partyA address
-	 * @param partyB The partyB address
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of UPNL data for each symbol/position type
-	 */
+	/// @notice Returns paginated UPNL data for partyA with a specific partyB
+	/// @dev Returns all data needed for off-chain UPNL calculation:
+	///      - LONG UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt
+	///      - SHORT UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
+	/// @param partyA The partyA address
+	/// @param partyB The partyB address
+	/// @param start The starting index in the active symbols array
+	/// @param size The maximum number of symbols to process
+	/// @return results Array of UPNL data for each symbol/position type
 	function getPartyAUpnlData(address partyA, address partyB, uint256 start, uint256 size) external view returns (UpnlData[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
@@ -707,17 +661,15 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		}
 	}
 
-	/**
-	 * @notice Returns paginated UPNL data for partyB with a specific partyA
-	 * @dev PartyB's UPNL is opposite to partyA's:
-	 *      - LONG UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
-	 *      - SHORT UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt
-	 * @param partyB The partyB address
-	 * @param partyA The partyA address
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of UPNL data for each symbol/position type
-	 */
+	/// @notice Returns paginated UPNL data for partyB with a specific partyA
+	/// @dev PartyB's UPNL is opposite to partyA's:
+	///      - LONG UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
+	///      - SHORT UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt
+	/// @param partyB The partyB address
+	/// @param partyA The partyA address
+	/// @param start The starting index in the active symbols array
+	/// @param size The maximum number of symbols to process
+	/// @return results Array of UPNL data for each symbol/position type
 	function getPartyBUpnlData(address partyB, address partyA, uint256 start, uint256 size) external view returns (UpnlData[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
@@ -771,16 +723,14 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		}
 	}
 
-	/**
-	 * @notice Returns paginated global UPNL data for partyB (cross partyB mode)
-	 * @dev Aggregates across all partyAs. PartyB's UPNL is opposite to partyA's:
-	 *      - LONG UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
-	 *      - SHORT UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt
-	 * @param partyB The partyB address
-	 * @param start The starting index in the active symbols array
-	 * @param size The maximum number of symbols to process
-	 * @return results Array of UPNL data for each symbol/position type
-	 */
+	/// @notice Returns paginated global UPNL data for partyB (cross partyB mode)
+	/// @dev Aggregates across all partyAs. PartyB's UPNL is opposite to partyA's:
+	///      - LONG UPNL: (avgOpenPrice - price) × amount / 1e18 - fundingDebt
+	///      - SHORT UPNL: (price - avgOpenPrice) × amount / 1e18 - fundingDebt
+	/// @param partyB The partyB address
+	/// @param start The starting index in the active symbols array
+	/// @param size The maximum number of symbols to process
+	/// @return results Array of UPNL data for each symbol/position type
 	function getPartyBGlobalUpnlData(address partyB, uint256 start, uint256 size) external view returns (UpnlData[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbols[partyB];

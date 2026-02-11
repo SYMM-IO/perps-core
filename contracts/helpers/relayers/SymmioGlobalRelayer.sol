@@ -9,18 +9,12 @@ import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgr
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/**
- * @title SymmioGlobalRelayer
- * @notice A cross-protocol bridge for transferring collateral between whitelisted Symmio instances
- * @dev This contract enables secure transfers of collateral tokens between different Symmio protocol
- *      deployments while maintaining proper access controls and cooldown mechanisms. It acts as an
- *      intermediary that temporarily holds funds during cross-protocol transfers.
- */
+/// @title SymmioGlobalRelayer
+/// @notice A cross-protocol bridge for transferring collateral between whitelisted Symmio instances
+/// @dev Enables secure transfers of collateral tokens between different Symmio protocol
+///      deployments while maintaining proper access controls and cooldown mechanisms
 
-/**
- * @notice Interface for Symmio protocol core contract
- * @dev Provides access to collateral management and cooldown functionality
- */
+/// @notice Interface for Symmio protocol core contract
 interface ISymmio {
 	function getCollateral() external view returns (address);
 
@@ -33,10 +27,7 @@ interface ISymmio {
 	function withdrawCooldownOf(address user) external view returns (uint256);
 }
 
-/**
- * @notice Interface for multi-account management contract
- * @dev Enables batch operations and ownership validation for user accounts
- */
+/// @notice Interface for multi-account management contract
 interface IMultiAccount {
 	function _call(address account, bytes[] memory _callDatas) external;
 
@@ -67,30 +58,13 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 
 	/* ─────────────────────────────── Events ─────────────────────────────── */
 
-	/**
-	 * @notice Emitted when target protocol whitelist status is updated
-	 * @param targets Array of target protocol addresses
-	 * @param states Array of corresponding whitelist states (true = whitelisted)
-	 */
+	/// @notice Emitted when target protocol whitelist status is updated
 	event SetWhitelistedTargets(address[] targets, bool[] states);
 
-	/**
-	 * @notice Emitted when target protocol withdraw cooldowns are updated
-	 * @param targets Array of target protocol addresses
-	 * @param cooldowns Array of corresponding cooldown periods in seconds
-	 */
+	/// @notice Emitted when target protocol withdraw cooldowns are updated
 	event SetTargetWithdrawCooldowns(address[] targets, uint256[] cooldowns);
 
-	/**
-	 * @notice Emitted when a cross-protocol transfer is successfully executed
-	 * @param collateral Address of the collateral token transferred
-	 * @param sender Address of the user initiating the transfer
-	 * @param receiver Address of the user receiving the funds on target protocol
-	 * @param amount Amount of collateral transferred
-	 * @param source Address of the source Symmio protocol instance
-	 * @param sourceMultiAccount Address of the source multi-account contract
-	 * @param target Address of the target Symmio protocol instance
-	 */
+	/// @notice Emitted when a cross-protocol transfer is successfully executed
 	event TransferExecuted(
 		address collateral,
 		address sender,
@@ -120,12 +94,8 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 
 	/* ─────────────────────────────── Initialization ─────────────────────────────── */
 
-	/**
-	 * @notice Initializes the contract with admin role assignments
-	 * @param admin Address to receive all initial administrative roles
-	 * @dev This function can only be called once due to the initializer modifier
-	 *      Grants DEFAULT_ADMIN_ROLE, SETTER_ROLE, and UNPAUSER_ROLE to the admin
-	 */
+	/// @notice Initializes the contract with admin role assignments
+	/// @param admin Address to receive all initial administrative roles
 	function initialize(address admin) external initializer {
 		__Pausable_init();
 		__AccessControl_init();
@@ -139,15 +109,13 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 
 	/* ─────────────────────────────── Transfer Management ─────────────────────────────── */
 
-	/**
-	 * @notice Executes a cross-protocol collateral transfer between Symmio instances
-	 * @param sender Address of the user whose funds are being transferred
-	 * @param receiver Address of the user who will receive funds on the target protocol
-	 * @param amount Amount of collateral to transfer
-	 * @param source Address of the source Symmio protocol instance
-	 * @param sourceMultiAccount Address of the multi-account contract for the source
-	 * @param target Address of the target Symmio protocol instance
-	 */
+	/// @notice Executes a cross-protocol collateral transfer between Symmio instances
+	/// @param sender Address of the user whose funds are being transferred
+	/// @param receiver Address of the user who will receive funds on the target protocol
+	/// @param amount Amount of collateral to transfer
+	/// @param source Address of the source Symmio protocol instance
+	/// @param sourceMultiAccount Address of the multi-account contract for the source
+	/// @param target Address of the target Symmio protocol instance
 	function transfer(
 		address sender,
 		address receiver,
@@ -198,13 +166,9 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 
 	/* ─────────────────────────────── Admin Functions ─────────────────────────────── */
 
-	/**
-	 * @notice Updates the whitelist status for multiple target protocols
-	 * @param targets Array of target protocol addresses to update
-	 * @param states Array of whitelist states corresponding to each target
-	 * @dev Only addresses with SETTER_ROLE can call this function
-	 *      Arrays must be the same length for proper pairing
-	 */
+	/// @notice Updates the whitelist status for multiple target protocols
+	/// @param targets Array of target protocol addresses to update
+	/// @param states Array of whitelist states corresponding to each target
 	function setWhitelistedTargets(address[] calldata targets, bool[] calldata states) external onlyRole(SETTER_ROLE) {
 		for (uint256 i = 0; i < targets.length; i++) {
 			whitelistedTargets[targets[i]] = states[i];
@@ -212,13 +176,9 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 		emit SetWhitelistedTargets(targets, states);
 	}
 
-	/**
-	 * @notice Updates withdraw cooldown requirements for multiple target protocols
-	 * @param targets Array of target protocol addresses to update
-	 * @param cooldowns Array of cooldown periods in seconds corresponding to each target
-	 * @dev Only addresses with SETTER_ROLE can call this function
-	 *      Arrays must be the same length for proper pairing
-	 */
+	/// @notice Updates withdraw cooldown requirements for multiple target protocols
+	/// @param targets Array of target protocol addresses to update
+	/// @param cooldowns Array of cooldown periods in seconds corresponding to each target
 	function setTargetWithdrawCooldowns(address[] calldata targets, uint256[] calldata cooldowns) external onlyRole(SETTER_ROLE) {
 		for (uint256 i = 0; i < targets.length; i++) {
 			targetWithdrawCooldowns[targets[i]] = cooldowns[i];
@@ -226,20 +186,12 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 		emit SetTargetWithdrawCooldowns(targets, cooldowns);
 	}
 
-	/**
-	 * @notice Pauses all transfer operations in emergency situations
-	 * @dev Only addresses with PAUSER_ROLE can call this function
-	 *      When paused, the transfer function will revert
-	 */
+	/// @notice Pauses all transfer operations
 	function pause() external onlyRole(PAUSER_ROLE) {
 		_pause();
 	}
 
-	/**
-	 * @notice Unpauses transfer operations after emergency resolution
-	 * @dev Only addresses with UNPAUSER_ROLE can call this function
-	 *      Restores normal transfer functionality
-	 */
+	/// @notice Unpauses transfer operations
 	function unpause() external onlyRole(UNPAUSER_ROLE) {
 		_unpause();
 	}

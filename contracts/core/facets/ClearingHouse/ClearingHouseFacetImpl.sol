@@ -25,6 +25,7 @@ library ClearingHouseFacetImpl {
 	/// @dev Special allocation key used to pull from partyAReimbursement in deallocateForClearingHouse
 	address internal constant REIMBURSEMENT_KEY = address(1);
 
+	/// @notice Types of clearing house liquidation flows
 	enum LiquidationType {
 		NONE,
 		CROSS_PARTY_B,
@@ -184,12 +185,14 @@ library ClearingHouseFacetImpl {
 		}
 	}
 
+	/// @notice Calls cancel quote hooks and marks the quote as liquidated pending.
 	function _callCancelQuoteHooksAndUpdateStatus(Quote storage quote, address partyA, address partyB) private {
 		LibHook.callCancelQuoteHooks(quote.id, partyA, partyB, quote.affiliate);
 		quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 		quote.statusModifyTimestamp = block.timestamp;
 	}
 
+	/// @notice Clears all pending quotes between a partyB and partyA and zeroes out the associated locked balances.
 	function _clearPartyBPendingQuotes(address partyB, address partyA) private {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -437,7 +440,8 @@ library ClearingHouseFacetImpl {
 
 	event AutoTakeoverPartyALiquidation(address indexed partyA, bytes liquidationId);
 
-	/// @dev Shared takeover logic: clears disputed flag, liquidation fee, liquidators, and sets takeover state.
+	/// @notice Executes the takeover of a PartyA liquidation by clearing disputed state and creating takeover details.
+	/// @dev Clears disputed flag, liquidation fee, liquidators, and sets takeover state.
 	function _executeTakeover(address partyA) private returns (bytes memory liquidationId) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
@@ -451,8 +455,8 @@ library ClearingHouseFacetImpl {
 		chLayout.partyATakeoverDetails[partyA] = PartyATakeoverDetail({ liquidationId: liquidationId, deallocatedPool: 0, inProgress: true });
 	}
 
-	/// @dev Automatically takes over a partyA liquidation during cross partyB processing.
-	///      Safe to call multiple times; only the first call has effect.
+	/// @notice Automatically takes over a partyA liquidation during cross partyB processing.
+	/// @dev Safe to call multiple times; only the first call has effect.
 	function _autoTakeoverPartyALiquidation(address partyA) private returns (bool) {
 		if (!MAStorage.layout().liquidationStatus[partyA]) return false;
 		if (ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress) return false;
@@ -462,6 +466,7 @@ library ClearingHouseFacetImpl {
 		return true;
 	}
 
+	/// @notice Applies a soft liquidation penalty to a Party B by deducting from their allocated and/or available balances.
 	function softPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();

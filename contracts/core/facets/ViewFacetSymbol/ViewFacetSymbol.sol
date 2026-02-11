@@ -14,21 +14,17 @@ import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStor
 import { IViewFacetSymbol, PartyBSymbolCount } from "./IViewFacetSymbol.sol";
 
 contract ViewFacetSymbol is IViewFacetSymbol {
-	/**
-	 * @notice Returns the details of a symbol by its ID.
-	 * @param symbolId The ID of the symbol.
-	 * @return The details of the symbol.
-	 */
+	/// @notice Returns the details of a symbol by its ID.
+	/// @param symbolId The ID of the symbol.
+	/// @return The details of the symbol.
 	function getSymbol(uint256 symbolId) external view returns (Symbol memory) {
 		return SymbolStorage.layout().symbols[symbolId];
 	}
 
-	/**
-	 * @notice Converts a symbol to a symbol with type.
-	 * @param symbol The symbol to convert.
-	 * @param symbolType The type of the symbol.
-	 * @return The symbol with type.
-	 */
+	/// @notice Converts a symbol to a symbol with type.
+	/// @param symbol The symbol to convert.
+	/// @param symbolType The type of the symbol.
+	/// @return The symbol with type.
 	function _toSymbolWithType(Symbol memory symbol, uint256 symbolType) internal pure returns (SymbolWithType memory) {
 		return
 			SymbolWithType(
@@ -45,11 +41,9 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 			);
 	}
 
-	/**
-	 * @notice Returns the details of a symbol along with its type.
-	 * @param symbolId The ID of the symbol to retrieve.
-	 * @return A SymbolWithType struct containing the symbol details and its type.
-	 */
+	/// @notice Returns the details of a symbol along with its type.
+	/// @param symbolId The ID of the symbol to retrieve.
+	/// @return A SymbolWithType struct containing the symbol details and its type.
 	function getSymbolWithType(uint256 symbolId) external view returns (SymbolWithType memory) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		Symbol memory symbol = symbolLayout.symbols[symbolId];
@@ -57,12 +51,10 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbolId]);
 	}
 
-	/**
-	 * @notice Returns an array of symbols starting from a specific index.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of symbols.
-	 */
+	/// @notice Returns an array of symbols starting from a specific index.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of symbols.
 	function getSymbols(uint256 start, uint256 size) external view returns (Symbol[] memory) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 
@@ -81,12 +73,10 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return symbols;
 	}
 
-	/**
-	 * @notice Returns an array of symbols with their types starting from a specific index.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of symbols with their types.
-	 */
+	/// @notice Returns an array of symbols with their types starting from a specific index.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of symbols with their types.
 	function getSymbolsWithType(uint256 start, uint256 size) external view returns (SymbolWithType[] memory) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		if (symbolLayout.lastId < start + size) {
@@ -104,31 +94,26 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return symbols;
 	}
 
-	/**
-	 * @notice Returns the connected party Bs of Party A.
-	 * @param partyA The address of Party A.
-	 * @return An array of connected party Bs.
-	 */
+	/// @notice Returns the connected party Bs of Party A.
+	/// @param partyA The address of Party A.
+	/// @return An array of connected party Bs.
 	function getConnectedPartyBs(address partyA) external view returns (address[] memory) {
 		return AccountStorage.layout().connectedPartyBs[partyA];
 	}
 
-	/**
-	 * @notice Returns the connected party Bs of Party A.
-	 * @param partyA The address of Party A.
-	 * @return An array of connected party Bs.
-	 */
+	/// @notice Checks whether a specific partyB is connected to a partyA.
+	/// @param partyA The address of Party A.
+	/// @param partyB The address of Party B.
+	/// @return True if partyB is connected to partyA, false otherwise.
 	function isConnectedPartyB(address partyA, address partyB) external view returns (bool) {
 		return AccountStorage.layout().isConnectedPartyB[partyA][partyB];
 	}
 
-	/**
-	 * @notice Returns the allowed symbols of Party A.
-	 * @param partyA The address of Party A.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of allowed symbols.
-	 */
+	/// @notice Returns the allowed symbols of Party A.
+	/// @param partyA The address of Party A.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of allowed symbols.
 	function getAllowedSymbolsForPartyA(address partyA, uint256 start, uint256 size) external view returns (Symbol[] memory) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		if (symbolLayout.lastId < start + size) {
@@ -148,13 +133,11 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return symbols;
 	}
 
-	/**
-	 * @notice Returns an array of symbols with their types associated with a party A.
-	 * @param partyA The address of Party A.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of symbols with their types.
-	 */
+	/// @notice Returns an array of symbols with their types associated with a party A.
+	/// @param partyA The address of Party A.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of symbols with their types.
 	function getAllowedSymbolsWithTypeForPartyA(address partyA, uint256 start, uint256 size) external view returns (SymbolWithType[] memory) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		if (symbolLayout.lastId < start + size) {
@@ -174,11 +157,9 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return symbols;
 	}
 
-	/**
-	 * @notice Returns an array of symbols associated with an array of quote IDs.
-	 * @param quoteIds An array of quote IDs.
-	 * @return An array of symbols.
-	 */
+	/// @notice Returns an array of symbols associated with an array of quote IDs.
+	/// @param quoteIds An array of quote IDs.
+	/// @return An array of symbols.
 	function symbolsByQuoteId(uint256[] memory quoteIds) external view returns (Symbol[] memory) {
 		Symbol[] memory symbols = new Symbol[](quoteIds.length);
 		for (uint256 i = 0; i < quoteIds.length; i++) {
@@ -187,11 +168,9 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return symbols;
 	}
 
-	/**
-	 * @notice Returns an array of symbol names associated with an array of quote IDs.
-	 * @param quoteIds An array of quote IDs.
-	 * @return An array of symbol names.
-	 */
+	/// @notice Returns an array of symbol names associated with an array of quote IDs.
+	/// @param quoteIds An array of quote IDs.
+	/// @return An array of symbol names.
 	function symbolNameByQuoteId(uint256[] memory quoteIds) external view returns (string[] memory) {
 		string[] memory symbols = new string[](quoteIds.length);
 		for (uint256 i = 0; i < quoteIds.length; i++) {
@@ -200,11 +179,9 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return symbols;
 	}
 
-	/**
-	 * @notice Returns an array of symbol names associated with an array of symbol IDs.
-	 * @param symbolIds An array of symbol IDs.
-	 * @return An array of symbol names.
-	 */
+	/// @notice Returns an array of symbol names associated with an array of symbol IDs.
+	/// @param symbolIds An array of symbol IDs.
+	/// @return An array of symbol names.
 	function symbolNameById(uint256[] memory symbolIds) external view returns (string[] memory) {
 		string[] memory symbols = new string[](symbolIds.length);
 		for (uint256 i = 0; i < symbolIds.length; i++) {
@@ -213,41 +190,33 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return symbols;
 	}
 
-	/**
-	 * @notice Checks if a symbol type is whitelisted for a party B.
-	 * @param partyB The address of party B.
-	 * @param symbolType The type of the symbol.
-	 * @return A boolean indicating whether the symbol type is whitelisted for the party B.
-	 */
+	/// @notice Checks if a symbol type is whitelisted for a party B.
+	/// @param partyB The address of party B.
+	/// @param symbolType The type of the symbol.
+	/// @return A boolean indicating whether the symbol type is whitelisted for the party B.
 	function isWhitelistedSymbolType(address partyB, uint256 symbolType) external view returns (bool) {
 		return PartyBControlStorage.layout().partyBWhitelistedSymbolTypes[partyB][symbolType];
 	}
 
-	/**
-	 * @notice Returns the force close gap ratio.
-	 * @param symbolId The symbolId that this ratio is for.
-	 * @return The force close gap ratio.
-	 */
+	/// @notice Returns the force close gap ratio.
+	/// @param symbolId The symbolId that this ratio is for.
+	/// @return The force close gap ratio.
 	function forceCloseGapRatio(uint256 symbolId) external view returns (uint256) {
 		return SymbolStorage.layout().forceCloseGapRatio[symbolId];
 	}
 
-	/**
-	 * @notice Retrieves the funding rate of a party B.
-	 * @param symbolId The ID of the symbol.
-	 * @param partyB The address of the party B.
-	 * @return fundingFee The funding rate of the party B.
-	 */
+	/// @notice Retrieves the funding rate of a party B.
+	/// @param symbolId The ID of the symbol.
+	/// @param partyB The address of the party B.
+	/// @return fundingFee The funding rate of the party B.
 	function getFundingFeesOfPartyB(uint256 symbolId, address partyB) external view returns (FundingFee memory) {
 		return FundingStorage.layout().fundingFees[symbolId][partyB];
 	}
 
-	/**
-	 * @notice Returns all connected PartyBs for a PartyA with the count of unique symbols
-	 *         that have active positions for each PartyB.
-	 * @param partyA The address of Party A.
-	 * @return An array of PartyBSymbolCount structs containing partyB address and symbol count.
-	 */
+	/// @notice Returns all connected PartyBs for a PartyA with the count of unique symbols
+	///         that have active positions for each PartyB.
+	/// @param partyA The address of Party A.
+	/// @return An array of PartyBSymbolCount structs containing partyB address and symbol count.
 	function getConnectedPartyBsWithSymbolCounts(address partyA) external view returns (PartyBSymbolCount[] memory) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();

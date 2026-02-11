@@ -70,8 +70,9 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 		emit SharedEvents.BalanceChangePartyB(signer, recipient, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
-	/// @notice Allows transferring the balance of partyB to emergency reserve vault.
-	/// @param amount The precise amount of collateral to be transferred to emergency reserve vault, specified in 18 decimals.
+	/// @notice Deposits from the caller's balance into the specified partyB's emergency reserve vault.
+	/// @param amount The precise amount of collateral to deposit, specified in 18 decimals.
+	/// @param partyB The partyB whose reserve vault will receive the deposit.
 	function depositToReserveVault(
 		uint256 amount,
 		address partyB

@@ -9,22 +9,18 @@ import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { SharedEvents } from "./SharedEvents.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 
-/**
- * @title LibHook
- * @notice Library for safely calling hooks with signer protection
- * @dev Clears the signer before calling hooks to prevent hooks from impersonating users
- */
+/// @title LibHook
+/// @notice Library for safely calling hooks with signer protection
+/// @dev Clears the signer before calling hooks to prevent hooks from impersonating users
 library LibHook {
 	/// @dev Reverts when a hook fails.
 	error HookReverted(address hook, bytes4 selector, uint256 quoteId, bytes reason);
 
-	/**
-	 * @notice Safely calls a hook with signer cleared
-	 * @dev Clears signer before call to prevent impersonation attacks, restores after
-	 * @param hook The hook contract address
-	 * @param data The encoded function call data
-	 * @param quoteId The quote ID for event emission on failure
-	 */
+	/// @notice Safely calls a hook with signer cleared
+	/// @dev Clears signer before call to prevent impersonation attacks, restores after
+	/// @param hook The hook contract address
+	/// @param data The encoded function call data
+	/// @param quoteId The quote ID for event emission on failure
 	function safeCall(address hook, bytes memory data, uint256 quoteId) internal {
 		if (hook == address(0)) return;
 
@@ -43,13 +39,11 @@ library LibHook {
 		GlobalAppStorage.layout().signer = previousSigner;
 	}
 
-	/**
-	 * @notice Calls onCancelQuote on both affiliate and system hooks.
-	 * @param quoteId The ID of the cancelled quote.
-	 * @param partyA The address of Party A.
-	 * @param partyB The address of Party B.
-	 * @param affiliate The affiliate address for hook resolution.
-	 */
+	/// @notice Calls onCancelQuote on both affiliate and system hooks.
+	/// @param quoteId The ID of the cancelled quote.
+	/// @param partyA The address of Party A.
+	/// @param partyB The address of Party B.
+	/// @param affiliate The affiliate address for hook resolution.
 	function callCancelQuoteHooks(uint256 quoteId, address partyA, address partyB, address affiliate) internal {
 		address affiliateHook = AffiliateStorage.layout().affiliateHooks[affiliate];
 		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
@@ -57,15 +51,13 @@ library LibHook {
 		safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, partyA, partyB)), quoteId);
 	}
 
-	/**
-	 * @notice Calls onClosePosition on both affiliate and system hooks.
-	 * @param quoteId The ID of the closed quote.
-	 * @param closedAmount The amount that was closed.
-	 * @param closedPrice The price at which the position was closed.
-	 * @param partyA The address of Party A.
-	 * @param partyB The address of Party B.
-	 * @param affiliate The affiliate address for hook resolution.
-	 */
+	/// @notice Calls onClosePosition on both affiliate and system hooks.
+	/// @param quoteId The ID of the closed quote.
+	/// @param closedAmount The amount that was closed.
+	/// @param closedPrice The price at which the position was closed.
+	/// @param partyA The address of Party A.
+	/// @param partyB The address of Party B.
+	/// @param affiliate The affiliate address for hook resolution.
 	function callClosePositionHooks(
 		uint256 quoteId,
 		uint256 closedAmount,

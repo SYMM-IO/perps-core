@@ -41,10 +41,8 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 		emit CompleteUnbindRequest(partyA, LibSigner.getSigner());
 	}
 
-	/**
-	 * @notice Enables the instant action mode for a PartyA
-	 * @dev Only callable by PartyA accounts, not PartyB
-	 */
+	/// @notice Enables the instant action mode for a PartyA
+	/// @dev Only callable by PartyA accounts, not PartyB
 	function activateInstantActionMode()
 		external
 		userNotPartyB(LibSigner.getSigner())
@@ -55,19 +53,15 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 		emit ActivateInstantActionMode(LibSigner.getSigner(), block.timestamp);
 	}
 
-	/**
-	 * @notice Initiates the process to deactivate instant action mode
-	 * @dev Only callable by PartyA accounts, starts a time-delayed process
-	 */
+	/// @notice Initiates the process to deactivate instant action mode
+	/// @dev Only callable by PartyA accounts, starts a time-delayed process
 	function proposeToDeactivateInstantActionMode() external whenNotPartyAActionsPaused {
 		BindingFacetImpl.proposeToDeactivateInstantActionMode();
 		emit ProposeToDeactivateInstantActionMode(LibSigner.getSigner(), block.timestamp);
 	}
 
-	/**
-	 * @notice Completes the deactivation of instant action mode after proposal
-	 * @dev Only callable by PartyA accounts after the waiting period has passed
-	 */
+	/// @notice Completes the deactivation of instant action mode after proposal
+	/// @dev Only callable by PartyA accounts after the waiting period has passed
 	function deactivateInstantActionMode() external whenNotPartyAActionsPaused {
 		BindingFacetImpl.deactivateInstantActionMode();
 		emit DeactivateInstantActionMode(LibSigner.getSigner(), block.timestamp);

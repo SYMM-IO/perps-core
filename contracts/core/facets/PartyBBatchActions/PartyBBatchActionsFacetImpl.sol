@@ -36,6 +36,7 @@ library PartyBBatchActionsFacetImpl {
 	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice); // for backward compatibility
 	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
 
+	/// @notice Opens multiple positions in a single transaction with shared solvency verification
 	function openPositions(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -137,6 +138,7 @@ library PartyBBatchActionsFacetImpl {
 		);
 	}
 
+	/// @notice Closes multiple positions in a single transaction, supporting both normal close and ADL flows
 	function closePositions(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,

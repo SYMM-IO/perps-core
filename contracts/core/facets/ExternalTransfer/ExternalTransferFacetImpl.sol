@@ -17,6 +17,7 @@ import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 
 library ExternalTransferFacetImpl {
+	/// @notice Transfers collateral from the sender's balance to a whitelisted target via its authorized relayer.
 	function externalTransfer(address sender, address receiver, uint256 amount, address target) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ExternalTransferStorage.Layout storage extLayout = ExternalTransferStorage.layout();
@@ -42,6 +43,7 @@ library ExternalTransferFacetImpl {
 		);
 	}
 
+	/// @notice Initiates a virtual external transfer by deducting the sender's balance and notifying the virtual provider.
 	function virtualExternalTransfer(
 		address sender,
 		address receiver,
@@ -83,6 +85,7 @@ library ExternalTransferFacetImpl {
 		return currentId;
 	}
 
+	/// @notice Marks a pending virtual external transfer as completed, callable only by the assigned provider.
 	function acceptVirtualExternalTransfer(uint256 id) internal {
 		ExternalTransferStorage.Layout storage extLayout = ExternalTransferStorage.layout();
 		VirtualExternalTransferRequest storage externalTransferReq = extLayout.externalTransfers[id];
@@ -93,6 +96,7 @@ library ExternalTransferFacetImpl {
 		externalTransferReq.status = VirtualExternalTransferStatus.COMPLETED;
 	}
 
+	/// @notice Cancels a pending virtual external transfer and refunds the sender's balance.
 	function cancelVirtualExternalTransfer(uint256 id) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ExternalTransferStorage.Layout storage extLayout = ExternalTransferStorage.layout();

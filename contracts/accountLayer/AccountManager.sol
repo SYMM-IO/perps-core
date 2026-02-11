@@ -11,20 +11,27 @@ import { SubAccountCreationData, SubAccountDetail, SubAccountIsolationType } fro
 import { ISymmio } from "./interfaces/ISymmio.sol";
 import { IAccountLayerErrors } from "./interfaces/IAccountLayerErrors.sol";
 
+/// @notice Proxy contract deployed per affiliate that provides a backward-compatible account management interface
 contract AccountManager is IAccountManager, IAccountLayerErrors {
 	address public accountHub;
 
+	/// @notice Sets globalSigner to msg.sender before execution and clears it after
 	modifier withSigner() {
 		IAccountLayerDiamond(accountHub).setSigner(msg.sender);
 		_;
 		IAccountLayerDiamond(accountHub).setSigner(address(0));
 	}
 
+	/// @notice Initializes the AccountManager with a reference to the AccountHub diamond
+	/// @param _accountHub The AccountLayer diamond address
 	constructor(address _accountHub) {
 		if (_accountHub == address(0)) revert ZeroAddress();
 		accountHub = _accountHub;
 	}
 
+	/// @notice Creates a new sub-account with CUSTOM isolation type on the affiliate's first core
+	/// @param name The display name for the sub-account
+	/// @return subAccountAddress The array containing the created sub-account address
 	function addAccount(string memory name) external withSigner returns (address[] memory subAccountAddress) {
 		address[] memory cores = IAccountLayerDiamond(accountHub).getAffiliateSymmioCores(address(this));
 
@@ -43,39 +50,68 @@ contract AccountManager is IAccountManager, IAccountLayerErrors {
 		emit AddAccount(msg.sender, subAccountAddress[0], name);
 	}
 
+	/// @notice Deposits collateral for a sub-account
+	/// @param account The sub-account address
+	/// @param amount The amount to deposit
 	function depositForAccount(address account, uint256 amount) external withSigner {
 		ICoreFacet(accountHub).depositForAccount(account, amount);
 	}
 
+	/// @notice Deposits and allocates collateral for a sub-account
+	/// @param account The sub-account address
+	/// @param amount The amount to deposit and allocate
 	function depositAndAllocateForAccount(address account, uint256 amount) external withSigner {
 		ICoreFacet(accountHub).depositAndAllocateForAccount(account, amount);
 	}
 
+	/// @notice Deposits collateral for a sub-account using the express deposit rate
+	/// @param account The sub-account address
+	/// @param amount The amount to deposit
 	function depositForAccountWithExpressRate(address account, uint256 amount) external withSigner {
 		ICoreFacet(accountHub).depositForAccountWithExpressRate(account, amount);
 	}
 
+	/// @notice Deposits and allocates collateral for a sub-account using the express deposit rate
+	/// @param account The sub-account address
+	/// @param amount The amount to deposit and allocate
 	function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external withSigner {
 		ICoreFacet(accountHub).depositAndAllocateForAccountWithExpressRate(account, amount);
 	}
 
+	/// @notice Withdraws collateral from a sub-account to the caller
+	/// @param account The sub-account address
+	/// @param amount The amount to withdraw
 	function withdrawFromAccount(address account, uint256 amount) external withSigner {
 		_withdrawFromAccount(account, msg.sender, amount);
 	}
 
+	/// @notice Withdraws collateral from a sub-account to a specified recipient
+	/// @param account The sub-account address
+	/// @param to The recipient address
+	/// @param amount The amount to withdraw
 	function withdrawFromAccountTo(address account, address to, uint256 amount) external withSigner {
 		if (to == address(0)) revert ZeroAddress();
 		_withdrawFromAccount(account, to, amount);
 	}
 
+	/// @notice Executes batched calls on the Symmio core for a sub-account
+	/// @param account The sub-account address
+	/// @param callDatas The array of encoded function calls
 	function _call(address account, bytes[] memory callDatas) external withSigner {
 		IAccountLayerDiamond(accountHub)._call(account, callDatas);
 	}
 
+	/// @notice Returns the AccountHub diamond address
+	/// @return The AccountHub address
 	function getAccountHub() external view returns (address) {
 		return accountHub;
 	}
 
+	/// @notice Returns a paginated list of accounts owned by a user
+	/// @param user The user address
+	/// @param start The starting index
+	/// @param size The maximum number of accounts to return
+	/// @return The array of Account structs
 	function getAccounts(address user, uint256 start, uint256 size) external view returns (Account[] memory) {
 		uint256 total = IAccountLayerDiamond(accountHub).getSubAccountsCountOfUser(user);
 
@@ -95,10 +131,14 @@ contract AccountManager is IAccountManager, IAccountLayerErrors {
 		return accounts;
 	}
 
+	/// @notice Returns the total number of sub-accounts owned by a user
+	/// @param user The user address
+	/// @return The number of sub-accounts
 	function getAccountsLength(address user) external view returns (uint256) {
 		return IAccountLayerDiamond(accountHub).getSubAccountsCountOfUser(user);
 	}
 
+	/// @notice Executes a withdrawTo call on the Symmio core for a sub-account
 	function _withdrawFromAccount(address account, address to, uint256 amount) private {
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = abi.encodeWithSelector(ISymmio.withdrawTo.selector, to, amount);

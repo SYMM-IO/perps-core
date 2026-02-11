@@ -9,6 +9,7 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 
 library LibMuonUnifiedSettlement {
+	/// @notice Verifies a unified settlement signature for both cross and normal partyB modes.
 	function verifyUnifiedSettlement(UnifiedSettlementSig memory settleSig, bool isCrossPartyB) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();

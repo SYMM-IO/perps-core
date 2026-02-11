@@ -15,21 +15,17 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 contract PartyBQuoteActionsFacet is Accessibility, Pausable, IPartyBQuoteActionsFacet {
 	using LockedValuesOps for LockedValues;
 
-	/**
-	 * @notice Once a user issues a quote, any PartyB can secure it by providing sufficient funds, based on their estimated profit and loss from opening the position.
-	 * @param quoteId The ID of the quote to be locked.
-	 * @param upnlSig The Muon signature containing the upnl value used to lock the quote.
-	 */
+	/// @notice Once a user issues a quote, any PartyB can secure it by providing sufficient funds, based on their estimated profit and loss from opening the position.
+	/// @param quoteId The ID of the quote to be locked.
+	/// @param upnlSig The Muon signature containing the upnl value used to lock the quote.
 	function lockQuote(uint256 quoteId, SingleUpnlSig memory upnlSig) external whenNotPartyBOpenPositionsPaused onlyPartyB notLiquidated(quoteId) {
 		PartyBQuoteActionsFacetImpl.lockQuote(quoteId, upnlSig);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		emit LockQuote(quote.partyB, quoteId);
 	}
 
-	/**
-	 * @notice Unlocks the specified quote.
-	 * @param quoteId The ID of the quote to be unlocked.
-	 */
+	/// @notice Unlocks the specified quote.
+	/// @param quoteId The ID of the quote to be unlocked.
 	function unlockQuote(uint256 quoteId) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
 		QuoteStatus res = PartyBQuoteActionsFacetImpl.unlockQuote(quoteId);
 		if (res == QuoteStatus.EXPIRED) {
@@ -39,10 +35,8 @@ contract PartyBQuoteActionsFacet is Accessibility, Pausable, IPartyBQuoteActions
 		}
 	}
 
-	/**
-	 * @notice Accepts the cancellation request for the specified quote.
-	 * @param quoteId The ID of the quote for which the cancellation request is accepted.
-	 */
+	/// @notice Accepts the cancellation request for the specified quote.
+	/// @param quoteId The ID of the quote for which the cancellation request is accepted.
 	function acceptCancelRequest(uint256 quoteId) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
 		PartyBQuoteActionsFacetImpl.acceptCancelRequest(quoteId);
 		emit AcceptCancelRequest(quoteId, QuoteStatus.CANCELED);

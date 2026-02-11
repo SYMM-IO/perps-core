@@ -13,17 +13,15 @@ import { LockedValuesOps } from "./LibLockedValues.sol";
 library LibSolvency {
 	using LockedValuesOps for LockedValues;
 
-	/**
-	 * @dev Checks whether both parties (Party A and Party B) will remain solvent after opening positions for given quotes.
-	 * @param quoteIds The ID of the quotes for which the positions is being opened.
-	 * @param filledAmounts The amount of the quotes that will be filled by opening the positions.
-	 * @param marketPrices The market price of positions that will be opened.
-	 * @param upnlPartyB The upnl of partyB
-	 * @param upnlPartyA The upnl of partyA
-	 * @param partyB Address of partyB
-	 * @param partyA Address of partyA
-	 * @return A boolean indicating whether both parties remain solvent after opening the position.
-	 */
+	/// @notice Checks whether both parties (Party A and Party B) will remain solvent after opening positions for given quotes.
+	/// @param quoteIds The ID of the quotes for which the positions is being opened.
+	/// @param filledAmounts The amount of the quotes that will be filled by opening the positions.
+	/// @param marketPrices The market price of positions that will be opened.
+	/// @param upnlPartyB The upnl of partyB
+	/// @param upnlPartyA The upnl of partyA
+	/// @param partyB Address of partyB
+	/// @param partyA Address of partyA
+	/// @return A boolean indicating whether both parties remain solvent after opening the position.
 	function isSolventAfterOpenPosition(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -73,19 +71,17 @@ library LibSolvency {
 		return true;
 	}
 
-	/**
-	 * @dev Calculates the available balances for Party A and Party B after closing positions for given quotes.
-	 * @param quoteIds The ID of the quotes for which the position is being closed.
-	 * @param filledAmounts The amount of the quotes that will be filled by closing the position.
-	 * @param closedPrices The price at which the positions will be closed.
-	 * @param marketPrices The market price of positions that will be closed.
-	 * @param upnlPartyB The upnl of partyB
-	 * @param upnlPartyA The upnl of partyA
-	 * @param partyB Address of partyB
-	 * @param partyA Address of partyA
-	 * @return partyBAvailableBalance The available balance for Party B after closing the position.
-	 * @return partyAAvailableBalance The available balance for Party A after closing the position.
-	 */
+	/// @notice Calculates the available balances for Party A and Party B after closing positions for given quotes.
+	/// @param quoteIds The ID of the quotes for which the position is being closed.
+	/// @param filledAmounts The amount of the quotes that will be filled by closing the position.
+	/// @param closedPrices The price at which the positions will be closed.
+	/// @param marketPrices The market price of positions that will be closed.
+	/// @param upnlPartyB The upnl of partyB
+	/// @param upnlPartyA The upnl of partyA
+	/// @param partyB Address of partyB
+	/// @param partyA Address of partyA
+	/// @return partyBAvailableBalance The available balance for Party B after closing the position.
+	/// @return partyAAvailableBalance The available balance for Party A after closing the position.
 	function getAvailableBalanceAfterClosePosition(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -144,18 +140,16 @@ library LibSolvency {
 		}
 	}
 
-	/**
-	 * @dev Checks whether both parties (Party A and Party B) will remain solvent after closing positions for given quotes.
-	 * @param quoteIds The ID of the quotes for which the position is being closed.
-	 * @param filledAmounts The amount of the quotes that will be filled by closing the position.
-	 * @param closedPrices The price at which the positions will be closed.
-	 * @param marketPrices The market price of positions that will be closed.
-	 * @param upnlPartyB The upnl of partyB
-	 * @param upnlPartyA The upnl of partyA
-	 * @param partyB Address of partyB
-	 * @param partyA Address of partyA
-	 * @return A boolean indicating whether both parties remain solvent after closing the position.
-	 */
+	/// @notice Checks whether both parties (Party A and Party B) will remain solvent after closing positions for given quotes.
+	/// @param quoteIds The ID of the quotes for which the position is being closed.
+	/// @param filledAmounts The amount of the quotes that will be filled by closing the position.
+	/// @param closedPrices The price at which the positions will be closed.
+	/// @param marketPrices The market price of positions that will be closed.
+	/// @param upnlPartyB The upnl of partyB
+	/// @param upnlPartyA The upnl of partyA
+	/// @param partyB Address of partyB
+	/// @param partyA Address of partyA
+	/// @return A boolean indicating whether both parties remain solvent after closing the position.
 	function isSolventAfterClosePosition(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -180,58 +174,56 @@ library LibSolvency {
 		return true;
 	}
 
-	/**
-	 * @notice Calculates the maximum close amount that keeps PartyA at the edge of liquidation (available balance = 0).
-	 * @dev This is used when a full close would make PartyA insolvent - instead we close only enough to bring them
-	 *      to the liquidation threshold.
-	 *
-	 * ## Mathematical Model
-	 *
-	 * The balance change when closing amount `x` follows the same model as `getAvailableBalanceAfterClosePosition`:
-	 *
-	 *   newBalance = currentBalance + unlockedAmount + pnlAdjustment - closeFee
-	 *
-	 * Where (for closing amount `x`):
-	 *   unlockedAmount = x * (cva + lf) / openAmount
-	 *   pnlAdjustment = x * (closedPrice - marketPrice) / 1e18 (sign depends on position type)
-	 *   closeFee = x * closedPrice * quote.closeFee / 1e36
-	 *
-	 * ## Rate-Based Formulation
-	 *
-	 * We express the balance change as a linear function of close amount:
-	 *   balanceChange(x) = x * totalRate / 1e18
-	 *   totalRate = unlockRate + pnlRate - feeRate
-	 *
-	 * Where:
-	 *   unlockRate = (cva + lf) * 1e18 / openAmount
-	 *   feeRate = closedPrice * closeFee / 1e18
-	 *   pnlRate = ±(closedPrice - marketPrice) (positive when PartyA profits)
-	 *
-	 * ## Solving for Max Close Amount
-	 *
-	 * To bring balance to exactly 0: currentBalance + x * totalRate / 1e18 = 0
-	 * Solving: x = currentBalance * 1e18 / (-totalRate) (when totalRate < 0)
-	 *
-	 * ## Case Analysis
-	 *
-	 * - totalRate > 0: Closing is BENEFICIAL. If full close fails, partial can't help → revert
-	 * - totalRate < 0: Closing is HARMFUL. Limit close amount to avoid insolvency
-	 * - totalRate = 0: Closing is NEUTRAL. Full close or revert (no partial solution)
-	 *
-	 * ## Rounding Behavior
-	 *
-	 * Integer division rounds DOWN, which is intentional and conservative:
-	 * - We close slightly LESS than what would bring balance to exactly 0
-	 * - This leaves PartyA with a small positive balance (safer)
-	 * - Invariant: currentBalance + (maxCloseAmount * totalRate / 1e18) >= 0
-	 *
-	 * @param quoteId The ID of the quote for which to calculate max close amount
-	 * @param closedPrice The price at which the position would be closed
-	 * @param marketPrice The current market price
-	 * @param upnlPartyA The unrealized PnL of PartyA
-	 * @return maxCloseAmount The maximum amount that can be closed while keeping PartyA solvent
-	 * @return canCloseAll True if the full quantityToClose can be closed without making PartyA insolvent
-	 */
+	/// @notice Calculates the maximum close amount that keeps PartyA at the edge of liquidation (available balance = 0).
+	/// @dev This is used when a full close would make PartyA insolvent - instead we close only enough to bring them
+	///      to the liquidation threshold.
+	///
+	/// ## Mathematical Model
+	///
+	/// The balance change when closing amount `x` follows the same model as `getAvailableBalanceAfterClosePosition`:
+	///
+	///   newBalance = currentBalance + unlockedAmount + pnlAdjustment - closeFee
+	///
+	/// Where (for closing amount `x`):
+	///   unlockedAmount = x * (cva + lf) / openAmount
+	///   pnlAdjustment = x * (closedPrice - marketPrice) / 1e18 (sign depends on position type)
+	///   closeFee = x * closedPrice * quote.closeFee / 1e36
+	///
+	/// ## Rate-Based Formulation
+	///
+	/// We express the balance change as a linear function of close amount:
+	///   balanceChange(x) = x * totalRate / 1e18
+	///   totalRate = unlockRate + pnlRate - feeRate
+	///
+	/// Where:
+	///   unlockRate = (cva + lf) * 1e18 / openAmount
+	///   feeRate = closedPrice * closeFee / 1e18
+	///   pnlRate = +/-(closedPrice - marketPrice) (positive when PartyA profits)
+	///
+	/// ## Solving for Max Close Amount
+	///
+	/// To bring balance to exactly 0: currentBalance + x * totalRate / 1e18 = 0
+	/// Solving: x = currentBalance * 1e18 / (-totalRate) (when totalRate < 0)
+	///
+	/// ## Case Analysis
+	///
+	/// - totalRate > 0: Closing is BENEFICIAL. If full close fails, partial can't help -- revert
+	/// - totalRate < 0: Closing is HARMFUL. Limit close amount to avoid insolvency
+	/// - totalRate = 0: Closing is NEUTRAL. Full close or revert (no partial solution)
+	///
+	/// ## Rounding Behavior
+	///
+	/// Integer division rounds DOWN, which is intentional and conservative:
+	/// - We close slightly LESS than what would bring balance to exactly 0
+	/// - This leaves PartyA with a small positive balance (safer)
+	/// - Invariant: currentBalance + (maxCloseAmount * totalRate / 1e18) >= 0
+	///
+	/// @param quoteId The ID of the quote for which to calculate max close amount
+	/// @param closedPrice The price at which the position would be closed
+	/// @param marketPrice The current market price
+	/// @param upnlPartyA The unrealized PnL of PartyA
+	/// @return maxCloseAmount The maximum amount that can be closed while keeping PartyA solvent
+	/// @return canCloseAll True if the full quantityToClose can be closed without making PartyA insolvent
 	function calculateMaxCloseAmountToLiquidation(
 		uint256 quoteId,
 		uint256 closedPrice,

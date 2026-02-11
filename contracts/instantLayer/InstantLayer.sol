@@ -4,37 +4,35 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-/**
- * @title  InstantLayer
- * @author Symmetry Labs
- * @notice Advanced operation orchestration layer for the Symmio protocol enabling batched,
- *         templated, and delegated operations with comprehensive signature verification.
- *
- * @dev    This contract serves as an intermediary layer between users and the Symmio protocol,
- *         providing sophisticated operation management capabilities:
- *
- *         ┌─────────────────────────────────────────────────────────────┐
- *         │                     CORE FEATURES                           │
- *         ├─────────────────────────────────────────────────────────────┤
- *         │ • Delegation System: Users can authorize delegates to       │
- *         │   execute specific operations on their behalf               │
- *         │ • Template Operations: Pre-defined operation sequences      │
- *         │   with automatic result chaining between steps              │
- *         │ • Flexible Nonce Management: Choose between salt-only       │
- *         │   (nonce=0) or ordered execution (nonce>0)                  │
- *         │ • Multi-Account Support: Works with both PartyB and         │
- *         │   MultiAccount contracts                                    │
- *         │ • EIP-712 Signatures: Type-safe signature verification      │
- *         │ • Batch Processing: Execute multiple operations atomically  │
- *         └─────────────────────────────────────────────────────────────┘
- *
- *         SECURITY CONSIDERATIONS:
- *         - All contracts must be registered before interaction
- *         - Comprehensive replay protection via salt and optional nonce
- *         - Deadline enforcement for time-sensitive operations
- *         - Role-based access control for administrative functions
- *         - Reentrancy protection on all execution functions
- */
+/// @title  InstantLayer
+/// @author Symmetry Labs
+/// @notice Advanced operation orchestration layer for the Symmio protocol enabling batched,
+///         templated, and delegated operations with comprehensive signature verification.
+///
+/// @dev    This contract serves as an intermediary layer between users and the Symmio protocol,
+///         providing sophisticated operation management capabilities:
+///
+///         ┌─────────────────────────────────────────────────────────────┐
+///         │                     CORE FEATURES                           │
+///         ├─────────────────────────────────────────────────────────────┤
+///         │ • Delegation System: Users can authorize delegates to       │
+///         │   execute specific operations on their behalf               │
+///         │ • Template Operations: Pre-defined operation sequences      │
+///         │   with automatic result chaining between steps              │
+///         │ • Flexible Nonce Management: Choose between salt-only       │
+///         │   (nonce=0) or ordered execution (nonce>0)                  │
+///         │ • Multi-Account Support: Works with both PartyB and         │
+///         │   MultiAccount contracts                                    │
+///         │ • EIP-712 Signatures: Type-safe signature verification      │
+///         │ • Batch Processing: Execute multiple operations atomically  │
+///         └─────────────────────────────────────────────────────────────┘
+///
+///         SECURITY CONSIDERATIONS:
+///         - All contracts must be registered before interaction
+///         - Comprehensive replay protection via salt and optional nonce
+///         - Deadline enforcement for time-sensitive operations
+///         - Role-based access control for administrative functions
+///         - Reentrancy protection on all execution functions
 
 import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -46,27 +44,19 @@ import { ICoreFacet } from "../accountLayer/facets/Core/ICoreFacet.sol";
 
 /* ════════════════════════════ EXTERNAL INTERFACES ════════════════════════════ */
 
-/**
- * @notice Interface for SymmioPartyB contract that handles PartyB operations.
- * @dev    PartyB contracts execute trading operations on behalf of market makers.
- */
+/// @notice Interface for SymmioPartyB contract that handles PartyB operations.
+/// @dev    PartyB contracts execute trading operations on behalf of market makers.
 interface ISymmioPartyB {
-	/**
-	 * @notice Execute multiple operations as PartyB
-	 * @param _callDatas Array of encoded function calls to execute
-	 */
+	/// @notice Execute multiple operations as PartyB
+	/// @param _callDatas Array of encoded function calls to execute
 	function _call(bytes[] calldata _callDatas) external;
 }
 
-/**
- * @notice Interface for the core Symmio contract.
- * @dev    Used to toggle instant layer mode for optimized execution.
- */
+/// @notice Interface for the core Symmio contract.
+/// @dev    Used to toggle instant layer mode for optimized execution.
 interface ISymmio {
-	/**
-	 * @notice Enable or disable instant layer mode
-	 * @param _callFromInstantLayer True to enable instant layer mode
-	 */
+	/// @notice Enable or disable instant layer mode
+	/// @param _callFromInstantLayer True to enable instant layer mode
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external;
 }
 
@@ -170,39 +160,33 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ═══════════════════════════════ STRUCTS ═══════════════════════════════ */
 
-	/**
-	 * @notice Represents an account context for operations.
-	 * @dev    isPartyB decides between AccountHub and PartyB.
-	 * @param addr         The actual account address (PartyA account or PartyB address)
-	 * @param isPartyB     Whether this operation targets a PartyB or not
-	 */
+	/// @notice Represents an account context for operations.
+	/// @dev    isPartyB decides between AccountHub and PartyB.
+	/// @param addr         The actual account address (PartyA account or PartyB address)
+	/// @param isPartyB     Whether this operation targets a PartyB or not
 	struct Account {
 		address addr;
 		bool isPartyB;
 	}
 
-	/**
-	 * @notice Header containing anti-replay protection parameters.
-	 * @dev    Provides flexible replay protection through salt and optional nonce.
-	 * @param nonce    Sequential counter (0 = disabled/salt-only, >0 = enforced ordering)
-	 * @param deadline UNIX timestamp after which the operation expires
-	 * @param salt     Unique 32-byte value for operation uniqueness (always required)
-	 */
+	/// @notice Header containing anti-replay protection parameters.
+	/// @dev    Provides flexible replay protection through salt and optional nonce.
+	/// @param nonce    Sequential counter (0 = disabled/salt-only, >0 = enforced ordering)
+	/// @param deadline UNIX timestamp after which the operation expires
+	/// @param salt     Unique 32-byte value for operation uniqueness (always required)
 	struct ReplayAttackHeader {
 		uint256 nonce;
 		uint256 deadline;
 		bytes32 salt;
 	}
 
-	/**
-	 * @notice Represents a signed operation ready for execution.
-	 * @dev    This structure is signed via EIP-712 for secure off-chain authorization.
-	 * @param signer             Address that signed this operation (may be delegated)
-	 * @param target             Contract to execute the call against
-	 * @param callData           Encoded function call to execute
-	 * @param signerAccount      Account context for the operation
-	 * @param replayAttackHeader Anti-replay protection parameters
-	 */
+	/// @notice Represents a signed operation ready for execution.
+	/// @dev    This structure is signed via EIP-712 for secure off-chain authorization.
+	/// @param signer             Address that signed this operation (may be delegated)
+	/// @param target             Contract to execute the call against
+	/// @param callData           Encoded function call to execute
+	/// @param signerAccount      Account context for the operation
+	/// @param replayAttackHeader Anti-replay protection parameters
 	struct SignedOperation {
 		address signer;
 		address target;
@@ -211,23 +195,19 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		ReplayAttackHeader replayAttackHeader;
 	}
 
-	/**
-	 * @notice Container for delegation authorization with signature.
-	 * @param delegationInfo     Delegation parameters and permissions
-	 * @param replayAttackHeader Anti-replay protection for the delegation
-	 */
+	/// @notice Container for delegation authorization with signature.
+	/// @param delegationInfo     Delegation parameters and permissions
+	/// @param replayAttackHeader Anti-replay protection for the delegation
 	struct SignedDelegation {
 		DelegationInfo delegationInfo;
 		ReplayAttackHeader replayAttackHeader;
 	}
 
-	/**
-	 * @notice Defines delegation permissions from one address to another.
-	 * @param account           The account granting delegation
-	 * @param delegatedSigner   Address authorized to act on behalf of the account
-	 * @param selectors         Function selectors the delegate can execute
-	 * @param expiryTimestamp   UNIX timestamp when delegation expires
-	 */
+	/// @notice Defines delegation permissions from one address to another.
+	/// @param account           The account granting delegation
+	/// @param delegatedSigner   Address authorized to act on behalf of the account
+	/// @param selectors         Function selectors the delegate can execute
+	/// @param expiryTimestamp   UNIX timestamp when delegation expires
 	struct DelegationInfo {
 		Account account;
 		address delegatedSigner;
@@ -235,28 +215,24 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		uint256 expiryTimestamp;
 	}
 
-	/**
-	 * @notice Configuration for result injection between operations.
-	 * @dev    Enables chaining operation results within templates.
-	 *         IMPORTANT: Only 32-byte return values are supported (uint256, address, bytes32, bool, etc.).
-	 *         For functions returning tuples like (uint256, uint256), use sourceOffsets to specify
-	 *         which 32-byte slot to extract (e.g., offset 0 for first value, 32 for second).
-	 * @param insertionPoints Array of byte offsets where results should be inserted in calldata
-	 * @param sourceIndices   Array of operation indices whose results to inject
-	 * @param sourceOffsets   Array of byte offsets within each source result to extract the 32-byte value
-	 */
+	/// @notice Configuration for result injection between operations.
+	/// @dev    Enables chaining operation results within templates.
+	///         IMPORTANT: Only 32-byte return values are supported (uint256, address, bytes32, bool, etc.).
+	///         For functions returning tuples like (uint256, uint256), use sourceOffsets to specify
+	///         which 32-byte slot to extract (e.g., offset 0 for first value, 32 for second).
+	/// @param insertionPoints Array of byte offsets where results should be inserted in calldata
+	/// @param sourceIndices   Array of operation indices whose results to inject
+	/// @param sourceOffsets   Array of byte offsets within each source result to extract the 32-byte value
 	struct Operation {
 		uint256[] insertionPoints;
 		uint256[] sourceIndices;
 		uint256[] sourceOffsets;
 	}
 
-	/**
-	 * @notice Template definition for complex multi-operation sequences.
-	 * @param name       Human-readable identifier for the template
-	 * @param operations Array of operations with their injection configurations
-	 * @param active     Whether this template can currently be executed
-	 */
+	/// @notice Template definition for complex multi-operation sequences.
+	/// @param name       Human-readable identifier for the template
+	/// @param operations Array of operations with their injection configurations
+	/// @param active     Whether this template can currently be executed
 	struct Template {
 		string name;
 		Operation[] operations;
@@ -378,6 +354,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice AccountHub address is invalid
 	/// @param accountHub Provided AccountHub address
 	error UnregisteredAccountHub(address accountHub);
+
+	/// @notice AccountHub contract address has not been configured
 	error AccountHubNotSet();
 
 	/// @notice PartyB contract is not registered
@@ -438,20 +416,27 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param eta The eta that has not passed
 	error RevocationCooldownNotOver(uint256 eta);
 
+	/// @notice Source result is empty when a non-empty result was expected
 	error MissingSourceResult();
+
+	/// @notice Source result length is shorter than required for extraction
 	error BadSourceResultLength(bytes res, uint256 length);
+
+	/// @notice PartyB contract is already registered
 	error PartyBAlreadyRegistered(address partyB);
+
+	/// @notice Provided array must not be empty
 	error EmptyArray();
+
+	/// @notice PartyB contract is not in the registry
 	error PartyBNotRegistered(address partyB);
 
 	/* ════════════════════════════ CONSTRUCTOR ════════════════════════════ */
 
-	/**
-	 * @notice Deploy InstantLayer with Symmio integration.
-	 * @dev    Sets up EIP-712 domain and grants initial admin roles.
-	 * @param _symmio Address of the core Symmio protocol contract
-	 * @param _admin  Address to receive all administrative roles
-	 */
+	/// @notice Deploy InstantLayer with Symmio integration.
+	/// @dev    Sets up EIP-712 domain and grants initial admin roles.
+	/// @param _symmio Address of the core Symmio protocol contract
+	/// @param _admin  Address to receive all administrative roles
 	constructor(address _symmio, address _admin) EIP712("SymmioInstantLayer", "1") {
 		symmio = ISymmio(_symmio);
 
@@ -469,13 +454,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ═════════════════════ DELEGATION MANAGEMENT ═════════════════════ */
 
-	/**
-	 * @notice Grant batch delegation permissions using a signature.
-	 * @dev    Allows account owners to delegate multiple function selectors to another address
-	 *         via an off-chain signature. This enables gasless delegation setup.
-	 * @param signedDelegation Delegation details including permissions and anti-replay parameters
-	 * @param signature        EIP-712 signature from the account owner
-	 */
+	/// @notice Grant batch delegation permissions using a signature.
+	/// @dev    Allows account owners to delegate multiple function selectors to another address
+	///         via an off-chain signature. This enables gasless delegation setup.
+	/// @param signedDelegation Delegation details including permissions and anti-replay parameters
+	/// @param signature        EIP-712 signature from the account owner
 	function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature) external {
 		DelegationInfo calldata info = signedDelegation.delegationInfo;
 		ReplayAttackHeader calldata rh = signedDelegation.replayAttackHeader;
@@ -527,11 +510,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 	}
 
-	/**
-	 * @notice Grant delegation permissions directly (no signature required).
-	 * @dev    Account owners can directly grant delegation without signatures.
-	 * @param info Delegation information including delegate address and permissions
-	 */
+	/// @notice Grant delegation permissions directly (no signature required).
+	/// @dev    Account owners can directly grant delegation without signatures.
+	/// @param info Delegation information including delegate address and permissions
 	function grantDelegation(DelegationInfo calldata info) external onlyOwner(info.account) {
 		if (info.account.isPartyB) revert InvalidDelegation();
 		if (info.delegatedSigner == msg.sender) revert SelfDelegation();
@@ -550,11 +531,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ═════════════════ REGISTRATION MANAGEMENT ═════════════════ */
 
-	/**
-	 * @notice Register multiple PartyB contracts.
-	 * @dev    PartyB contracts must be registered before they can execute operations.
-	 *         Registration also grants OPERATOR_ROLE to the PartyB.
-	 */
+	/// @notice Register multiple PartyB contracts.
+	/// @dev    PartyB contracts must be registered before they can execute operations.
+	///         Registration also grants OPERATOR_ROLE to the PartyB.
 	function registerPartyBs(address[] calldata partyBs) external onlyRole(SETTER_ROLE) {
 		if (partyBs.length == 0) revert EmptyArray();
 		for (uint256 i = 0; i < partyBs.length; i++) {
@@ -565,14 +544,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 	}
 
-	/**
-	 * @notice Remove a PartyB contract from the registry.
-	 * @dev    Also revokes OPERATOR_ROLE from the PartyB.
-	 * @param partyB Address of the PartyB contract to unregister
-	 *
-	 * Requirements:
-	 * - Caller must have SETTER_ROLE
-	 */
+	/// @notice Remove a PartyB contract from the registry.
+	/// @dev    Also revokes OPERATOR_ROLE from the PartyB.
+	/// @param partyB Address of the PartyB contract to unregister
+	///
+	/// Requirements:
+	/// - Caller must have SETTER_ROLE
 	function unregisterPartyB(address partyB) external onlyRole(SETTER_ROLE) {
 		if (!registeredPartyBs[partyB]) revert PartyBNotRegistered(partyB);
 		registeredPartyBs[partyB] = false;
@@ -580,10 +557,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit PartyBUnregistered(partyB);
 	}
 
-	/**
-	 * @notice Set the AccountHub contract address.
-	 * @param _accountHub Address of the AccountHub contract.
-	 */
+	/// @notice Set the AccountHub contract address.
+	/// @param _accountHub Address of the AccountHub contract.
 	function setAccountHub(address _accountHub) external onlyRole(SETTER_ROLE) {
 		if (_accountHub == address(0)) revert UnregisteredAccountHub(_accountHub);
 		emit AccountHubUpdated(accountHub, _accountHub);
@@ -593,11 +568,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit TargetWhitelistUpdated(_accountHub, true);
 	}
 
-	/**
-	 * @notice Whitelist or remove whitelist for a target contract.
-	 * @param target  Target contract address.
-	 * @param allowed True to whitelist, false to remove.
-	 */
+	/// @notice Whitelist or remove whitelist for a target contract.
+	/// @param target  Target contract address.
+	/// @param allowed True to whitelist, false to remove.
 	function setTargetWhitelist(address target, bool allowed) external onlyRole(SETTER_ROLE) {
 		if (target == address(0)) revert InvalidCallData();
 		whitelistedTargets[target] = allowed;
@@ -606,19 +579,17 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ══════════════════════ TEMPLATE MANAGEMENT ══════════════════════ */
 
-	/**
-	 * @notice Create a new operation template.
-	 * @dev    Templates define sequences of operations with automatic result chaining.
-	 *         Each operation can reference results from previous operations.
-	 * @param name       Human-readable name for the template
-	 * @param operations Array of operation configurations with injection points
-	 *
-	 * @custom:example
-	 * For a swap-and-stake template:
-	 * - Operation 0: Swap tokens (returns amount out)
-	 * - Operation 1: Stake tokens (uses amount from operation 0)
-	 * Operation 1 would have insertionPoint=[36] and sourceIndex=[0]
-	 */
+	/// @notice Create a new operation template.
+	/// @dev    Templates define sequences of operations with automatic result chaining.
+	///         Each operation can reference results from previous operations.
+	/// @param name       Human-readable name for the template
+	/// @param operations Array of operation configurations with injection points
+	///
+	/// @custom:example
+	/// For a swap-and-stake template:
+	/// - Operation 0: Swap tokens (returns amount out)
+	/// - Operation 1: Stake tokens (uses amount from operation 0)
+	/// Operation 1 would have insertionPoint=[36] and sourceIndex=[0]
 	function addTemplate(string calldata name, Operation[] calldata operations) external onlyRole(SETTER_ROLE) {
 		if (operations.length == 0) revert EmptyTemplate();
 
@@ -635,12 +606,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit TemplateAdded(templateId, name);
 	}
 
-	/**
-	 * @notice Enable or disable a template.
-	 * @dev    Disabled templates cannot be executed.
-	 * @param templateId ID of the template to update
-	 * @param active     Whether the template should be active
-	 */
+	/// @notice Enable or disable a template.
+	/// @dev    Disabled templates cannot be executed.
+	/// @param templateId ID of the template to update
+	/// @param active     Whether the template should be active
 	function setTemplateActive(uint256 templateId, bool active) external onlyRole(SETTER_ROLE) {
 		if (templateId >= nextTemplateId) revert InvalidTemplate(templateId);
 		templates[templateId].active = active;
@@ -649,11 +618,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ═════════════════════ REVOKE DELEGATION FUNCTIONS ═════════════════════ */
 
-	/**
-	 * @notice Update the global cooldown for delegation revocations.
-	 * @dev    Only SETTER_ROLE. Add guardrails to prevent absurd values.
-	 *         Example policy: 1 minute ≤ cooldown ≤ 30 days.
-	 */
+	/// @notice Update the global cooldown for delegation revocations.
+	/// @dev    Only SETTER_ROLE. Add guardrails to prevent absurd values.
+	///         Example policy: 1 minute ≤ cooldown ≤ 30 days.
 	function setRevocationCooldown(uint256 newCooldown) external onlyRole(SETTER_ROLE) {
 		// Adjust bounds to taste; 0 disallowed to keep the two-step invariant.
 		if (newCooldown < 5 minutes || newCooldown > 30 days) revert InvalidCallData();
@@ -662,11 +629,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit RevocationCooldownUpdated(old, newCooldown);
 	}
 
-	/**
-	 * @notice Schedule revocation of specific selectors; takes effect after cooldown.
-	 * @dev    Who may schedule: account owner (delegator), the delegate themselves, or REVOKER_ROLE.
-	 *         No-ops for selectors not currently active.
-	 */
+	/// @notice Schedule revocation of specific selectors; takes effect after cooldown.
+	/// @dev    Who may schedule: account owner (delegator), the delegate themselves, or REVOKER_ROLE.
+	///         No-ops for selectors not currently active.
 	function initiateRevokeDelegation(Account calldata account, address delegate, bytes4[] calldata selectors) external {
 		bool callerIsOwner = _isAccountOwner(account);
 		bool callerIsDelegate = (msg.sender == delegate);
@@ -688,10 +653,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 	}
 
-	/**
-	 * @notice Finalize after cooldown; actually deletes the delegation.
-	 * @dev    Anyone may call once ETA has passed.
-	 */
+	/// @notice Finalize after cooldown; actually deletes the delegation.
+	/// @dev    Anyone may call once ETA has passed.
 	function finalizeRevokeDelegation(Account calldata account, address delegate, bytes4[] calldata selectors) external {
 		for (uint256 i = 0; i < selectors.length; ++i) {
 			bytes4 sel = selectors[i];
@@ -709,25 +672,23 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ═════════════════════ OPERATION EXECUTION ═════════════════════ */
 
-	/**
-	 * @notice Execute a sequence of operations using a predefined template.
-	 * @dev    Operations are executed in order with automatic result injection.
-	 *         All operations must succeed for the transaction to complete.
-	 *
-	 * @param templateId ID of the template defining the operation sequence
-	 * @param signedOps  Array of signed operations matching template requirements
-	 * @param signatures Array of signatures corresponding to each operation
-	 *
-	 * Operation Flow:
-	 * 1. Validate template exists and is active
-	 * 2. Enable instant layer mode in Symmio
-	 * 3. For each operation:
-	 *    - Verify signature and anti-replay parameters
-	 *    - Inject results from previous operations as configured
-	 *    - Execute the operation
-	 *    - Store result for potential use in later operations
-	 * 4. Disable instant layer mode
-	 */
+	/// @notice Execute a sequence of operations using a predefined template.
+	/// @dev    Operations are executed in order with automatic result injection.
+	///         All operations must succeed for the transaction to complete.
+	///
+	/// @param templateId ID of the template defining the operation sequence
+	/// @param signedOps  Array of signed operations matching template requirements
+	/// @param signatures Array of signatures corresponding to each operation
+	///
+	/// Operation Flow:
+	/// 1. Validate template exists and is active
+	/// 2. Enable instant layer mode in Symmio
+	/// 3. For each operation:
+	///    - Verify signature and anti-replay parameters
+	///    - Inject results from previous operations as configured
+	///    - Execute the operation
+	///    - Store result for potential use in later operations
+	/// 4. Disable instant layer mode
 	function executeTemplate(
 		uint256 templateId,
 		SignedOperation[] calldata signedOps,
@@ -769,16 +730,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit OperationsExecuted(templateId, msg.sender);
 	}
 
-	/**
-	 * @notice Execute a batch of independent operations.
-	 * @dev    Operations are executed sequentially without result chaining.
-	 *         All operations must succeed for the transaction to complete.
-	 *
-	 * @param signedOps  Array of signed operations to execute
-	 * @param signatures Array of signatures for the operations
-	 *
-	 * @custom:security Operations are independent - no data flows between them
-	 */
+	/// @notice Execute a batch of independent operations.
+	/// @dev    Operations are executed sequentially without result chaining.
+	///         All operations must succeed for the transaction to complete.
+	///
+	/// @param signedOps  Array of signed operations to execute
+	/// @param signatures Array of signatures for the operations
+	///
+	/// @custom:security Operations are independent - no data flows between them
 	function executeBatch(SignedOperation[] calldata signedOps, bytes[] calldata signatures) external nonReentrant onlyRole(OPERATOR_ROLE) {
 		if (signedOps.length == 0) revert EmptyBatch();
 		if (signedOps.length != signatures.length) revert ArrayLengthMismatch();
@@ -806,21 +765,19 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ═════════════════════════ INTERNAL HELPERS ═════════════════════════ */
 
-	/**
-	 * @dev Comprehensive verification of operation signatures and parameters.
-	 *
-	 * Verification Steps:
-	 * 1. Check deadline hasn't expired
-	 * 2. Validate calldata minimum length
-	 * 3. Verify contract registration (PartyB or AccountHub)
-	 * 4. Check delegation if signer != owner
-	 * 5. Verify EIP-712 signature
-	 * 6. Prevent replay attacks
-	 * 7. Update nonce if required
-	 *
-	 * @param signedOp   Operation to verify
-	 * @param sigCallData Signature data for verification
-	 */
+	/// @dev Comprehensive verification of operation signatures and parameters.
+	///
+	/// Verification Steps:
+	/// 1. Check deadline hasn't expired
+	/// 2. Validate calldata minimum length
+	/// 3. Verify contract registration (PartyB or AccountHub)
+	/// 4. Check delegation if signer != owner
+	/// 5. Verify EIP-712 signature
+	/// 6. Prevent replay attacks
+	/// 7. Update nonce if required
+	///
+	/// @param signedOp   Operation to verify
+	/// @param sigCallData Signature data for verification
 	function _verifyOperation(SignedOperation calldata signedOp, bytes calldata sigCallData) private {
 		// Check expiry
 		if (signedOp.replayAttackHeader.deadline != 0 && signedOp.replayAttackHeader.deadline < block.timestamp)
@@ -882,14 +839,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 	}
 
-	/**
-	 * @dev Execute an operation with proper routing and error handling.
-	 *
-	 * @param signedOp Signed operation containing routing information
-	 * @param callData Prepared calldata (may include injected results)
-	 * @return success True if operation succeeded
-	 * @return result  Return data from the operation
-	 */
+	/// @dev Execute an operation with proper routing and error handling.
+	///
+	/// @param signedOp Signed operation containing routing information
+	/// @param callData Prepared calldata (may include injected results)
+	/// @return success True if operation succeeded
+	/// @return result  Return data from the operation
 	function _executeOperationSafe(SignedOperation calldata signedOp, bytes memory callData) private returns (bool success, bytes memory result) {
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = callData;
@@ -916,25 +871,23 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 	}
 
-	/**
-	 * @dev Inject results from previous operations into calldata.
-	 *
-	 * This function enables complex operation chaining by automatically
-	 * inserting return values from earlier operations into the calldata
-	 * of later operations at specified byte offsets.
-	 *
-	 * @param callData        Original calldata with placeholder values
-	 * @param insertionPoints Array of byte offsets for insertions
-	 * @param sourceIndices   Array of result indices to use
-	 * @param sourceOffsets   Array of byte offsets within each source result to extract from
-	 * @param results         Array of all previous operation results
-	 * @return Modified calldata with injected values
-	 *
-	 * @custom:example
-	 * If operation 0 returns (uint256, uint256) = (100, 200) which is 64 bytes
-	 * And operation 1 has insertionPoint=[36], sourceIndex=[0], sourceOffset=[32]
-	 * Then bytes 36-67 of operation 1's calldata will be replaced with 200 (the second uint256)
-	 */
+	/// @dev Inject results from previous operations into calldata.
+	///
+	/// This function enables complex operation chaining by automatically
+	/// inserting return values from earlier operations into the calldata
+	/// of later operations at specified byte offsets.
+	///
+	/// @param callData        Original calldata with placeholder values
+	/// @param insertionPoints Array of byte offsets for insertions
+	/// @param sourceIndices   Array of result indices to use
+	/// @param sourceOffsets   Array of byte offsets within each source result to extract from
+	/// @param results         Array of all previous operation results
+	/// @return Modified calldata with injected values
+	///
+	/// @custom:example
+	/// If operation 0 returns (uint256, uint256) = (100, 200) which is 64 bytes
+	/// And operation 1 has insertionPoint=[36], sourceIndex=[0], sourceOffset=[32]
+	/// Then bytes 36-67 of operation 1's calldata will be replaced with 200 (the second uint256)
 	function _insertResults(
 		bytes calldata callData,
 		uint256[] memory insertionPoints,
@@ -979,35 +932,29 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ══════════════════════════ VIEW FUNCTIONS ══════════════════════════ */
 
-	/**
-	 * @notice Check if an address is a registered PartyB contract.
-	 * @param addr Address to check
-	 * @return True if registered, false otherwise
-	 */
+	/// @notice Check if an address is a registered PartyB contract.
+	/// @param addr Address to check
+	/// @return True if registered, false otherwise
 	function isPartyBRegistered(address addr) public view returns (bool) {
 		return registeredPartyBs[addr];
 	}
 
-	/**
-	 * @notice Check if a delegation is currently active.
-	 * @param delegator Address that granted delegation
-	 * @param delegate  Address that received delegation
-	 * @param selector  Function selector to check
-	 * @return True if delegation is active, false otherwise
-	 */
+	/// @notice Check if a delegation is currently active.
+	/// @param delegator Address that granted delegation
+	/// @param delegate  Address that received delegation
+	/// @param selector  Function selector to check
+	/// @return True if delegation is active, false otherwise
 	function isDelegationActive(address delegator, address delegate, bytes4 selector) public view returns (bool) {
 		uint256 expiry = delegations[delegator][delegate][selector];
 		uint256 eta = pendingRevocationEta[delegator][delegate][selector];
 		return expiry > block.timestamp && (eta == 0 || eta > block.timestamp);
 	}
 
-	/**
-	 * @notice Get all currently active delegations for a delegator.
-	 * @param _delegator Account to check delegations for
-	 * @param delegates Array of potential delegates to check
-	 * @param selectors  Array of selector arrays to check for each delegate
-	 * @return activeDelegates Array of active delegation information
-	 */
+	/// @notice Get all currently active delegations for a delegator.
+	/// @param _delegator Account to check delegations for
+	/// @param delegates Array of potential delegates to check
+	/// @param selectors  Array of selector arrays to check for each delegate
+	/// @return activeDelegates Array of active delegation information
 	function getActiveDelegations(
 		Account calldata _delegator,
 		address[] calldata delegates,
@@ -1068,47 +1015,37 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 	}
 
-	/**
-	 * @notice Get the EIP-712 domain separator.
-	 * @return Domain separator for signature verification
-	 */
+	/// @notice Get the EIP-712 domain separator.
+	/// @return Domain separator for signature verification
 	function domainSeparator() external view returns (bytes32) {
 		return _domainSeparatorV4();
 	}
 
-	/**
-	 * @notice Get complete template information.
-	 * @param templateId Template ID to query
-	 * @return Complete template structure
-	 */
+	/// @notice Get complete template information.
+	/// @param templateId Template ID to query
+	/// @return Complete template structure
 	function getTemplate(uint256 templateId) external view returns (Template memory) {
 		return templates[templateId];
 	}
 
-	/**
-	 * @notice Get the next assigned template ID.
-	 * @return Current value of the template ID counter
-	 */
+	/// @notice Get the next assigned template ID.
+	/// @return Current value of the template ID counter
 	function getNextTemplateId() external view returns (uint256) {
 		return nextTemplateId;
 	}
 
-	/**
-	 * @notice Get all operations for a template.
-	 * @param templateId Template ID to query
-	 * @return Array of operation configurations
-	 */
+	/// @notice Get all operations for a template.
+	/// @param templateId Template ID to query
+	/// @return Array of operation configurations
 	function getTemplateOperations(uint256 templateId) external view returns (Operation[] memory) {
 		return templates[templateId].operations;
 	}
 
-	/**
-	 * @notice Get templates by ID range.
-	 * @dev    Returns templates from startId to startId + limit. Caller can filter active ones off-chain.
-	 * @param startId Starting template ID
-	 * @param limit   Maximum number of templates to return
-	 * @return Array of templates in the specified range
-	 */
+	/// @notice Get templates by ID range.
+	/// @dev    Returns templates from startId to startId + limit. Caller can filter active ones off-chain.
+	/// @param startId Starting template ID
+	/// @param limit   Maximum number of templates to return
+	/// @return Array of templates in the specified range
 	function getTemplates(uint256 startId, uint256 limit) external view returns (Template[] memory) {
 		if (startId >= nextTemplateId) return new Template[](0);
 
@@ -1124,11 +1061,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ═════════════════════ EIP-712 HASH FUNCTIONS ═════════════════════ */
 
-	/**
-	 * @notice Calculate the EIP-712 hash for a signed operation.
-	 * @param signedOp           Operation to hash
-	 * @return msgDigest EIP-712 compliant hash
-	 */
+	/// @notice Calculate the EIP-712 hash for a signed operation.
+	/// @param signedOp           Operation to hash
+	/// @return msgDigest EIP-712 compliant hash
 	function getOperationHash(SignedOperation memory signedOp) public view returns (bytes32 msgDigest) {
 		msgDigest = _hashTypedDataV4(
 			keccak256(
@@ -1144,11 +1079,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		);
 	}
 
-	/**
-	 * @notice Calculate the EIP-712 hash for a signed delegation.
-	 * @param signedDelegation       Delegation to hash
-	 * @return msgDigest EIP-712 compliant hash
-	 */
+	/// @notice Calculate the EIP-712 hash for a signed delegation.
+	/// @param signedDelegation       Delegation to hash
+	/// @return msgDigest EIP-712 compliant hash
 	function getDelegationHash(SignedDelegation memory signedDelegation) public view returns (bytes32 msgDigest) {
 		msgDigest = _hashTypedDataV4(
 			keccak256(
@@ -1161,10 +1094,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		);
 	}
 
-	/**
-	 * @dev Hash a bytes4 array according to EIP-712 array encoding rules.
-	 * Each bytes4 is right-padded to 32 bytes, then all are concatenated and hashed.
-	 */
+	/// @dev Hash a bytes4 array according to EIP-712 array encoding rules.
+	/// Each bytes4 is right-padded to 32 bytes, then all are concatenated and hashed.
 	function _hashBytes4Array(bytes4[] memory arr) internal pure returns (bytes32) {
 		if (arr.length == 0) return keccak256("");
 		bytes32[] memory words = new bytes32[](arr.length);
@@ -1174,9 +1105,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		return keccak256(abi.encodePacked(words)); // Concatenate 32-byte encodings and hash once.
 	}
 
-	/**
-	 * @dev Hash a DelegationInfo struct according to EIP-712.
-	 */
+	/// @dev Hash a DelegationInfo struct according to EIP-712.
 	function _hashDelegationInfo(DelegationInfo memory d) internal pure returns (bytes32) {
 		return
 			keccak256(
@@ -1184,36 +1113,32 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			);
 	}
 
-	/**
-	 * @dev Hash an Account struct according to EIP-712.
-	 */
+	/// @dev Hash an Account struct according to EIP-712.
 	function _hashAccount(Account memory a) internal pure returns (bytes32) {
 		return keccak256(abi.encode(ACCOUNT_TYPEHASH, a.addr, a.isPartyB));
 	}
 
-	/**
-	 * @dev Hash a ReplayAttackHeader struct according to EIP-712.
-	 */
+	/// @dev Hash a ReplayAttackHeader struct according to EIP-712.
 	function _hashReplay(ReplayAttackHeader memory r) internal pure returns (bytes32) {
 		return keccak256(abi.encode(REPLAY_HEADER_TYPEHASH, r.nonce, r.deadline, r.salt));
 	}
 
+	/// @notice Retrieve the owner of an account via the AccountHub.
 	function _getAccountOwner(address account) private view returns (address) {
 		if (accountHub == address(0)) revert AccountHubNotSet();
 		return IViewFacet(accountHub).ownerOf(account);
 	}
 
+	/// @notice Check whether the caller is the owner of the given account.
 	function _isAccountOwner(Account memory account) internal view returns (bool) {
 		return _getAccountOwner(account.addr) == msg.sender;
 	}
 
 	/* ═══════════════════════════ MODIFIERS ═══════════════════════════ */
 
-	/**
-	 * @notice Restrict function access to the owner of a specific account.
-	 * @dev    Verifies caller owns the account through the AccountHub contract.
-	 * @param account Account information including AccountHub and address
-	 */
+	/// @notice Restrict function access to the owner of a specific account.
+	/// @dev    Verifies caller owns the account through the AccountHub contract.
+	/// @param account Account information including AccountHub and address
 	modifier onlyOwner(Account memory account) {
 		if (!_isAccountOwner(account)) revert NotOwnerOfAccount(msg.sender, account.addr);
 		_;

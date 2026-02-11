@@ -8,20 +8,16 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 
-/**
- * @title LibSafeERC20
- * @notice Library for safely calling ERC20 functions with signer protection
- * @dev Clears the signer before calling ERC20 to prevent potential impersonation through callbacks
- */
+/// @title LibSafeERC20
+/// @notice Library for safely calling ERC20 functions with signer protection
+/// @dev Clears the signer before calling ERC20 to prevent potential impersonation through callbacks
 library LibSafeERC20 {
 	using SafeERC20 for IERC20;
 
-	/**
-	 * @notice Safely transfers tokens with signer cleared
-	 * @param token The ERC20 token address
-	 * @param to The recipient address
-	 * @param amount The amount to transfer
-	 */
+	/// @notice Safely transfers tokens with signer cleared
+	/// @param token The ERC20 token address
+	/// @param to The recipient address
+	/// @param amount The amount to transfer
 	function safeTransfer(address token, address to, uint256 amount) internal {
 		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
 
@@ -35,13 +31,11 @@ library LibSafeERC20 {
 		globalLayout.signer = previousSigner;
 	}
 
-	/**
-	 * @notice Safely transfers tokens from another address with signer cleared
-	 * @param token The ERC20 token address
-	 * @param from The sender address
-	 * @param to The recipient address
-	 * @param amount The amount to transfer
-	 */
+	/// @notice Safely transfers tokens from another address with signer cleared
+	/// @param token The ERC20 token address
+	/// @param from The sender address
+	/// @param to The recipient address
+	/// @param amount The amount to transfer
 	function safeTransferFrom(address token, address from, address to, uint256 amount) internal {
 		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();
 

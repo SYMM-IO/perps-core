@@ -143,7 +143,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		it("Should fail to suspend withdraw for non-suspended user", async function () {
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(suspendedParts, false, "0x")
 
-			await expect(context.withdrawFacet.connect(context.signers.user).suspendWithdrawRequest(user.address, 1)).to.revertedWith(
+			await expect(context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, 1)).to.revertedWith(
 				"WithdrawFacet : User is not suspended",
 			)
 		})
@@ -153,7 +153,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 
-			await expect(context.withdrawFacet.connect(context.signers.user).suspendWithdrawRequest(user.address, 2)).to.revertedWith(
+			await expect(context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, 2)).to.revertedWith(
 				"WithdrawFacet : Invalid withdraw request ID",
 			)
 		})
@@ -165,7 +165,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 
-			await expect(context.withdrawFacet.connect(context.signers.user).suspendWithdrawRequest(user.address, 1)).to.revertedWith(
+			await expect(context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, 1)).to.revertedWith(
 				"WithdrawFacet : Invalid withdraw request status",
 			)
 		})
@@ -176,7 +176,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user.address)
 
 			const beforeBalance = await context.viewFacet.balanceOf(user.address)
-			await expect(context.withdrawFacet.connect(context.signers.user).suspendWithdrawRequest(user.address, 1)).not.reverted
+			await expect(context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, 1)).not.reverted
 
 			const afterBalance = await context.viewFacet.balanceOf(user.address)
 			expect(afterBalance - beforeBalance).to.equal(ethers.parseUnits("70", 18))

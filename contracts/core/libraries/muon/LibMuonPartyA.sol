@@ -9,6 +9,7 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 
 library LibMuonPartyA {
+	/// @notice Verifies Party A UPNL and price signature for a specific symbol.
 	function verifyPartyAUpnlAndPrice(SingleUpnlAndPriceSig memory upnlSig, address partyA, uint256 symbolId) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==

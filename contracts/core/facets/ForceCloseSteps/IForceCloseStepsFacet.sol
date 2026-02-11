@@ -12,35 +12,27 @@ import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../.
 /// @dev The logic is implemented in ForceCloseStepsFacet + ForceCloseStepsImpl.
 
 interface IForceCloseStepsFacet is ForceActionsFacetEvents {
-	/**
-	 * @notice Initializes the 3-step force close flow (works for both normal and cross partyB modes).
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature to calculate the close price.
-	 */
+	/// @notice Initializes the 3-step force close flow (works for both normal and cross partyB modes).
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig The Muon signature to calculate the close price.
 	function initializeForceClose(uint256 quoteId, HighLowPriceSig memory sig) external;
 
-	/**
-	 * @notice Settles uPNL for the 3-step force close using unified settlement.
-	 * @param quoteId The ID of the quote for the force close workflow.
-	 * @param settlementSig Unified settlement data (uPNLs + pricing).
-	 * @param updatedPrices Prices applied during settlement.
-	 */
+	/// @notice Settles uPNL for the 3-step force close using unified settlement.
+	/// @param quoteId The ID of the quote for the force close workflow.
+	/// @param settlementSig Unified settlement data (uPNLs + pricing).
+	/// @param updatedPrices Prices applied during settlement.
 	function settleUpnlForForceClose(uint256 quoteId, UnifiedSettlementSig memory settlementSig, uint256[] memory updatedPrices) external;
 
-	/**
-	 * @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig Fresh Muon signature (uPNLs + currentPrice) to use for solvency checks and liquidation calculations.
-	 */
+	/// @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig Fresh Muon signature (uPNLs + currentPrice) to use for solvency checks and liquidation calculations.
 	function finalizeForceClose(uint256 quoteId, PairUpnlAndPriceSig memory sig) external;
 
-	/**
-	 * @notice Initializes, settles uPNL, and finalizes the force close in a single transaction.
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature to calculate the close price.
-	 * @param settlementSig Unified settlement data (uPNLs + pricing).
-	 * @param updatedPrices Prices applied during settlement.
-	 */
+	/// @notice Initializes, settles uPNL, and finalizes the force close in a single transaction.
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig The Muon signature to calculate the close price.
+	/// @param settlementSig Unified settlement data (uPNLs + pricing).
+	/// @param updatedPrices Prices applied during settlement.
 	function forceCloseAndSettlePositionsUnified(
 		uint256 quoteId,
 		HighLowPriceSig memory sig,

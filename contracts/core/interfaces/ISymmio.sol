@@ -24,6 +24,7 @@ import { IForceActionsFacet } from "../facets/ForceActions/IForceActionsFacet.so
 import { ISettlementFacet } from "../facets/Settlement/ISettlementFacet.sol";
 import { IPartyBBatchActionsFacet } from "../facets/PartyBBatchActions/IPartyBBatchActionsFacet.sol";
 
+/// @notice Composite interface aggregating all Symmio Diamond facet interfaces
 interface ISymmio is
 	IAccountFacet,
 	IControlFacet,
@@ -45,7 +46,7 @@ interface ISymmio is
 	IDiamondCut,
 	IDiamondLoupe
 {
-	// Copied from SharedEvents library
+	/// @notice Categories of balance changes tracked for accounting and event emission
 	enum BalanceChangeType {
 		ALLOCATE,
 		DEALLOCATE,
@@ -61,9 +62,9 @@ interface ISymmio is
 		FUNDING_FEE_OUT
 	}
 
-	// Copied from SharedEvents library
+	/// @notice Emitted when a PartyA's allocated balance changes
 	event BalanceChangePartyA(address indexed partyA, uint256 amount, BalanceChangeType _type);
 
-	// Copied from SharedEvents library
+	/// @notice Emitted when a PartyB's allocated balance changes for a specific PartyA
 	event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, BalanceChangeType _type);
 }

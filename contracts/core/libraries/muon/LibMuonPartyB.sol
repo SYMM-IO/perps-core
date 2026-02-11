@@ -10,6 +10,7 @@ import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
 
 library LibMuonPartyB {
+	/// @notice Verifies a pair UPNL and price signature for Party B position actions.
 	function verifyPairUpnlAndPrice(PairUpnlAndPriceSig memory upnlSig, address partyB, address partyA, uint256 symbolId) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
@@ -35,6 +36,7 @@ library LibMuonPartyB {
 		LibMuon.verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature);
 	}
 
+	/// @notice Verifies Party B UPNL signature, delegating to LibMuon with standard nonce.
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
 		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // Here the nonce should be zero in cross partyB mode as it is called while opening, closing or locking quotes.
 	}

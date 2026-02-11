@@ -13,10 +13,12 @@ import { AccountHubStorage, VirtualAccountData } from "../../storages/AccountHub
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
 
+/// @notice Hook facet called by Symmio core on position lifecycle events to manage virtual account state
 contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
 
+	/// @notice Called by Symmio core when a position is opened (no-op in AccountLayer)
 	function onOpenPosition(
 		uint256 /* quoteId */,
 		uint256 /* filledAmount */,
@@ -28,6 +30,10 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		// This function exists to prevent hook reverts when positions are opened
 	}
 
+	/// @notice Called by Symmio core when a position is closed; removes quoteId from the virtual account
+	/// @dev If the virtual account has no remaining quotes, it is automatically deleted and its funds returned to the parent
+	/// @param quoteId The closed quote identifier
+	/// @param partyA The trader address (may be a virtual account)
 	function onClosePosition(
 		uint256 quoteId,
 		uint256 /* filledAmount */,
@@ -38,10 +44,14 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		_removeQuoteFromAccount(quoteId, partyA);
 	}
 
+	/// @notice Called by Symmio core when a quote is cancelled; removes quoteId from the virtual account
+	/// @param quoteId The cancelled quote identifier
+	/// @param partyA The trader address (may be a virtual account)
 	function onCancelQuote(uint256 quoteId, address partyA, address /* partyB */) external onlySymmio whenNotPaused {
 		_removeQuoteFromAccount(quoteId, partyA);
 	}
 
+	/// @notice Called by Symmio core when a fee is charged (no-op in AccountLayer)
 	function onFeeCharged(
 		uint256 /* quoteId */,
 		uint256 /* amount */,

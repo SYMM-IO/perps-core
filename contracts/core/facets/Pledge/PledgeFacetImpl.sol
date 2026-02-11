@@ -9,6 +9,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 
 library PledgeFacetImpl {
+	/// @notice Deposits pledge collateral for the caller
 	function depositPledge(uint256 amount, address token) internal {
 		PledgeStorage.Layout storage pledgeLayout = PledgeStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -19,6 +20,7 @@ library PledgeFacetImpl {
 		pledgeLayout.pledgeDeposit[signer][token] += amount;
 	}
 
+	/// @notice Creates a withdrawal request for pledge collateral
 	function requestPledgeWithdraw(uint256 amount, address token, address recipient) internal {
 		PledgeStorage.Layout storage pledgeLayout = PledgeStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -37,6 +39,7 @@ library PledgeFacetImpl {
 		});
 	}
 
+	/// @notice Accepts a pending pledge withdrawal request and transfers tokens to the recipient
 	function acceptPledgeWithdraw(address user, uint256 amount, address token) internal {
 		PledgeStorage.Layout storage pledgeLayout = PledgeStorage.layout();
 		PledgeWithdrawalRequest storage req = pledgeLayout.pledgeWithdrawalRequests[user];
@@ -53,6 +56,7 @@ library PledgeFacetImpl {
 		LibSafeERC20.safeTransfer(token, recipient, amount);
 	}
 
+	/// @notice Cancels the caller's pending pledge withdrawal request
 	function cancelPledgeWithdraw() internal returns (address token, uint256 amount) {
 		PledgeStorage.Layout storage pledgeLayout = PledgeStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -65,6 +69,7 @@ library PledgeFacetImpl {
 		delete pledgeLayout.pledgeWithdrawalRequests[signer];
 	}
 
+	/// @notice Slashes a user's pledge collateral and transfers the penalty to a recipient
 	function slashPledge(address user, address token, uint256 amount, address recipient) internal {
 		PledgeStorage.Layout storage pledgeLayout = PledgeStorage.layout();
 

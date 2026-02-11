@@ -9,35 +9,42 @@ import { LibAccountLayerUtils } from "../libraries/LibAccountLayerUtils.sol";
 import { AffiliateHubStorage, AffiliateState } from "../storages/AffiliateHubStorage.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
 
+/// @notice Role-based and ownership access control modifiers for the AccountLayer diamond
 abstract contract AccountLayerAccessibility is IAccountLayerErrors {
+	/// @notice Restricts access to callers with the specified role
 	modifier onlyRole(bytes32 role) {
 		if (!LibAccountLayerAccessibility.hasRole(msg.sender, role)) revert MustHaveRole();
 		_;
 	}
 
+	/// @notice Restricts access to role admins of the specified role
 	modifier onlyRoleAdmin(bytes32 role) {
 		if (!LibAccountLayerAccessibility.isRoleAdmin(msg.sender, role)) revert MustBeRoleAdmin();
 		_;
 	}
 
+	/// @notice Restricts access to the admin of the specified affiliate
 	modifier onlyAffiliateAdmin(address affiliate) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].admin != msg.sender) revert NotAffiliateAdmin();
 		_;
 	}
 
+	/// @notice Restricts access to only when the specified affiliate is in ACTIVE state
 	modifier onlyIfAffiliateIsActive(address affiliate) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
 		_;
 	}
 
+	/// @notice Restricts access to whitelisted Symmio core contracts
 	modifier onlySymmio() {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (!afLayout.whitelistedSymmioCores[msg.sender]) revert NotSymmioCore();
 		_;
 	}
 
+	/// @notice Restricts access to the account owner or callers with INSTANT_LAYER_ROLE
 	modifier onlyAccountOwner(address account) {
 		address signer = LibAccountLayerUtils.getSigner();
 		if (!_isOwnerOf(account, signer) && !LibAccountLayerAccessibility.hasRole(signer, LibAccountLayerAccessibility.INSTANT_LAYER_ROLE))
@@ -45,6 +52,7 @@ abstract contract AccountLayerAccessibility is IAccountLayerErrors {
 		_;
 	}
 
+	/// @notice Checks whether a user is the owner of the given account
 	function _isOwnerOf(address account, address user) internal view returns (bool) {
 		return LibAccountLayerUtils.resolveAccountOwner(account) == user;
 	}

@@ -12,17 +12,20 @@ import { ISymmio } from "../interfaces/ISymmio.sol";
 import { IMultiAccount } from "../interfaces/IMultiAccount.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
 
+/// @notice Utility library for account resolution, signer management, hook execution, and address generation
 library LibAccountLayerUtils {
 	using EnumerableSet for EnumerableSet.AddressSet;
 
 	bytes32 internal constant VIRTUAL_ACCOUNT_INIT_CODE_HASH = keccak256("VACC_V1");
 	uint256 internal constant MAX_NAME_LENGTH = 100;
 
+	/// @notice Returns the current effective signer (globalSigner if set, otherwise msg.sender)
 	function getSigner() internal view returns (address) {
 		address signer = AccountHubStorage.layout().globalSigner;
 		return signer == address(0) ? msg.sender : signer;
 	}
 
+	/// @notice Executes a call on the Symmio core with setSigner(account), then clears the signer
 	function executeWithSigner(address account, bytes memory callData) internal returns (bytes memory) {
 		address core = getRelatedCore(account);
 		ISymmio(core).setSigner(account);
@@ -38,6 +41,7 @@ library LibAccountLayerUtils {
 		return result;
 	}
 
+	/// @notice Resolves the Symmio core address associated with an account
 	function getRelatedCore(address account) internal view returns (address) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
@@ -62,6 +66,7 @@ library LibAccountLayerUtils {
 		revert IAccountLayerErrors.CoreNotFound();
 	}
 
+	/// @notice Resolves the owner of an account by checking sub-accounts, virtual accounts, and legacy contracts
 	function resolveAccountOwner(address account) internal view returns (address) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
@@ -90,6 +95,7 @@ library LibAccountLayerUtils {
 		return address(0);
 	}
 
+	/// @notice Generates a deterministic virtual account address using CREATE2-style hashing
 	function generateVirtualAccountAddress(address parentAccount, uint256 nonce) internal pure returns (address) {
 		return
 			address(
@@ -101,12 +107,14 @@ library LibAccountLayerUtils {
 			);
 	}
 
+	/// @notice Validates that a name is non-empty and within the maximum length
 	function validateName(string memory name) internal pure {
 		if (bytes(name).length == 0 || bytes(name).length > MAX_NAME_LENGTH) {
 			revert IAccountLayerErrors.InvalidNameLength();
 		}
 	}
 
+	/// @notice Returns the claimable fee balance for an affiliate, adjusted for collateral decimals
 	function getClaimableFee(address affiliate, address symmio) internal view returns (uint256) {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		uint8 decimals = IERC20Metadata(ISymmio(symmio).getCollateral()).decimals();
@@ -114,6 +122,7 @@ library LibAccountLayerUtils {
 		return balance / (10 ** (18 - decimals));
 	}
 
+	/// @notice Resolves the affiliate associated with an account by traversing the account hierarchy
 	function getAffiliateForAccount(address account) internal view returns (address) {
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
 
@@ -128,6 +137,7 @@ library LibAccountLayerUtils {
 		return address(0);
 	}
 
+	/// @notice Calls the affiliate's registered hook for a given selector with signer protection
 	function callHook(address affiliate, address account, address symmioCore, bytes4 selector, bytes memory data) internal {
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
@@ -154,6 +164,7 @@ library LibAccountLayerUtils {
 		}
 	}
 
+	/// @notice Deallocates all funds from an account and transfers the balance to its parent
 	function deallocateAndTransferBalance(address account, address parentAccount, address core) internal {
 		uint256 allocatedBalance = ISymmio(core).allocatedBalanceOfPartyA(account);
 		if (allocatedBalance > 0) {

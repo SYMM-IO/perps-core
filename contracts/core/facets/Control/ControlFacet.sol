@@ -373,7 +373,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().liquidatorShare = liquidatorShare;
 	}
 
-	/// @notice Sets the minimum oracle price GlobalAppStorage from requested price during force close for a specific symbol.
+	/// @notice Sets the minimum oracle price gap ratio from requested price during force close for a specific symbol.
 	/// @param symbolId The ID of the trading symbol to set the gap ratio for.
 	/// @param forceCloseGapRatio The minimum oracle price gap from requested price percentage (in 1e18 precision) during force close.
 	function setForceCloseGapRatio(
@@ -497,8 +497,9 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit RegisterHook(affiliate, hook);
 	}
 
-	/// @notice Indicates if the current operation is being executed via the instant layer.
-	/// @dev instant layer sets this flag to true before execution and MUST reset it back to false after its operation. Core can use this flag to know if this request is coming from instant layer.
+	/// @notice Sets the flag indicating if the current operation is being executed via the instant layer.
+	/// @dev Instant layer sets this flag to true before execution and MUST reset it back to false after its operation.
+	/// @param _callFromInstantLayer True when entering instant layer execution, false when exiting.
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
 		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
 		GlobalAppStorage.layout().callFromInstantLayer = _callFromInstantLayer;
@@ -527,6 +528,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		_updateWithdrawAndDeallocateCooldown(_withdrawCooldownPeriod);
 	}
 
+	/// @notice Updates both the withdraw cooldown period and deallocate cooldown to the same value.
 	function _updateWithdrawAndDeallocateCooldown(uint256 newValue) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		emit SetWithdrawCooldownPeriod(maLayout.withdrawCooldownPeriod, newValue);
@@ -600,6 +602,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit SignerSet(signer);
 	}
 
+	/// @notice Reverts if the provided address is the zero address.
 	function checkZeroAddress(address target) private pure {
 		require(target != address(0), "ControlFacet: Zero address");
 	}

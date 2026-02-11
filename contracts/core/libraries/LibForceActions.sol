@@ -17,6 +17,7 @@ import { LibMuonForceActions } from "./muon/LibMuonForceActions.sol";
 import { LibLiquidation } from "./LibLiquidation.sol";
 
 library LibForceActions {
+	/// @notice Verifies the high/low price signature and calculates the force-close price with penalty.
 	function verifyAndGetClosePrice(uint256 quoteId, HighLowPriceSig memory sig) internal view returns (uint256 closePrice) {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
@@ -48,6 +49,7 @@ library LibForceActions {
 		return closePrice;
 	}
 
+	/// @notice Liquidates Party B during a force close by adding reserved balance and triggering liquidation.
 	function liquidatePartyB(
 		uint256 quoteId,
 		uint256 closePrice,
@@ -73,6 +75,7 @@ library LibForceActions {
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlPartyB, block.timestamp);
 	}
 
+	/// @notice Validates all preconditions for a force close including signature, cooldowns, and price bounds.
 	function validateForceCloseConditions(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
@@ -95,6 +98,7 @@ library LibForceActions {
 		);
 	}
 
+	/// @notice Calculates both parties' available balances after closing a position at the given price.
 	function getAvailableBalancesAfterClose(
 		uint256 quoteId,
 		uint256 sigCurrentPrice,
@@ -126,15 +130,13 @@ library LibForceActions {
 		);
 	}
 
-	/**
-	 * @notice Closes a quote for normal partyB mode, using reserveVault as fallback if insolvent.
-	 * @param quoteId The ID of the quote to close.
-	 * @param currentPrice The current market price used for solvency checks.
-	 * @param upnlPartyB The PartyB uPNL used for solvency calculation.
-	 * @param closePrice The force-close price to apply.
-	 * @return isPartyBSolvent Whether PartyB remained solvent after the close.
-	 * @return partyBAvailableBalance The available balance of PartyB after close.
-	 */
+	/// @notice Closes a quote for normal partyB mode, using reserveVault as fallback if insolvent.
+	/// @param quoteId The ID of the quote to close.
+	/// @param currentPrice The current market price used for solvency checks.
+	/// @param upnlPartyB The PartyB uPNL used for solvency calculation.
+	/// @param closePrice The force-close price to apply.
+	/// @return isPartyBSolvent Whether PartyB remained solvent after the close.
+	/// @return partyBAvailableBalance The available balance of PartyB after close.
 	function closeQuoteWithReserveFallback(
 		uint256 quoteId,
 		uint256 currentPrice,
@@ -172,15 +174,13 @@ library LibForceActions {
 		return (false, partyBAvailableBalance);
 	}
 
-	/**
-	 * @notice Closes a quote for cross partyB mode, ignoring uPNL as fallback if insolvent.
-	 * @param quoteId The ID of the quote to close.
-	 * @param currentPrice The current market price used for solvency checks.
-	 * @param upnlPartyB The PartyB uPNL used for the primary solvency path.
-	 * @param closePrice The force-close price to apply.
-	 * @return isPartyBSolvent Whether PartyB remained solvent after the close.
-	 * @return partyBAvailableBalance The available balance of PartyB after close.
-	 */
+	/// @notice Closes a quote for cross partyB mode, ignoring uPNL as fallback if insolvent.
+	/// @param quoteId The ID of the quote to close.
+	/// @param currentPrice The current market price used for solvency checks.
+	/// @param upnlPartyB The PartyB uPNL used for the primary solvency path.
+	/// @param closePrice The force-close price to apply.
+	/// @return isPartyBSolvent Whether PartyB remained solvent after the close.
+	/// @return partyBAvailableBalance The available balance of PartyB after close.
 	function closeQuoteCrossIgnoringUpnl(
 		uint256 quoteId,
 		uint256 currentPrice,

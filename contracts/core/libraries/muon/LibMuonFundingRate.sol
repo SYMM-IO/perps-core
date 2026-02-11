@@ -10,6 +10,7 @@ import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
 
 library LibMuonFundingRate {
+	/// @notice Verifies a pair UPNL signature for funding rate operations.
 	function verifyPairUpnl(PairUpnlSig memory upnlSig, address partyB, address partyA) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==

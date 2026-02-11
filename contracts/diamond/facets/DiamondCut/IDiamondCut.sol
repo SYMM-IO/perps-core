@@ -7,13 +7,14 @@ pragma solidity >=0.8.18;
 /******************************************************************************/
 
 interface IDiamondCut {
-	// Add=0, Replace=1, Remove=2
+	/// @notice Describes the action to perform on a facet's selectors
 	enum FacetCutAction {
 		Add,
 		Replace,
 		Remove
 	}
 
+	/// @notice Groups a facet address, cut action, and function selectors for a diamond cut
 	struct FacetCut {
 		address facetAddress;
 		FacetCutAction action;
@@ -28,5 +29,6 @@ interface IDiamondCut {
 	///                  _calldata is executed with delegatecall on _init
 	function diamondCut(FacetCut[] calldata _diamondCut, address _init, bytes calldata _calldata) external;
 
+	/// @notice Emitted when a diamond cut is performed
 	event DiamondCut(FacetCut[] _diamondCut, address _init, bytes _calldata);
 }

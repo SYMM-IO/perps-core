@@ -20,24 +20,20 @@ import { PairUpnlSig } from "../../storages/MuonStorage.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 
-/**
- * @title FundingRateFacetImpl
- * @notice Implements funding rate mechanisms for perpetual futures trading
- * @dev Two funding systems are supported:
- *      1. Direct funding rate: Immediate price adjustment based on funding rate
- *      2. Accumulated funding: Tracks funding over epochs and applies in bulk
- */
+/// @title FundingRateFacetImpl
+/// @notice Implements funding rate mechanisms for perpetual futures trading
+/// @dev Two funding systems are supported:
+///      1. Direct funding rate: Immediate price adjustment based on funding rate
+///      2. Accumulated funding: Tracks funding over epochs and applies in bulk
 library FundingRateFacetImpl {
-	/**
-	 * @notice Applies direct funding rate to open positions
-	 * @dev This adjusts the open price of positions based on the funding rate
-	 *      - Positive rate: User pays funding fee
-	 *      - Negative rate: User receives funding fee
-	 * @param partyA The trader's address
-	 * @param quoteIds Array of position IDs to apply funding to
-	 * @param rates Array of funding rates (in 1e18 precision, can be negative)
-	 * @param upnlSig Signature containing unrealized PnL for solvency checks
-	 */
+	/// @notice Applies direct funding rate to open positions
+	/// @dev This adjusts the open price of positions based on the funding rate
+	///      - Positive rate: User pays funding fee
+	///      - Negative rate: User receives funding fee
+	/// @param partyA The trader's address
+	/// @param quoteIds Array of position IDs to apply funding to
+	/// @param rates Array of funding rates (in 1e18 precision, can be negative)
+	/// @param upnlSig Signature containing unrealized PnL for solvency checks
 	function chargeFundingRate(address partyA, uint256[] memory quoteIds, int256[] memory rates, PairUpnlSig memory upnlSig) internal {
 		require(!FundingStorage.layout().legacyFundingDeprecated, "FundingRateFacet: Old Funding Fee Deprecated");
 
@@ -151,13 +147,11 @@ library FundingRateFacetImpl {
 		LibAccount.increaseBothNonces(signer, partyA);
 	}
 
-	/**
-	 * @notice Updates the epoch duration for accumulated funding calculation
-	 * @dev Recalculates weighted averages to maintain consistency when changing epoch duration
-	 * @param symbolIds Array of symbol IDs to update
-	 * @param durations New epoch durations for each symbol (in seconds)
-	 * @param partyB Market maker address
-	 */
+	/// @notice Updates the epoch duration for accumulated funding calculation
+	/// @dev Recalculates weighted averages to maintain consistency when changing epoch duration
+	/// @param symbolIds Array of symbol IDs to update
+	/// @param durations New epoch durations for each symbol (in seconds)
+	/// @param partyB Market maker address
 	function setEpochDuration(uint256[] memory symbolIds, uint256[] memory durations, address partyB) internal {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
 		require(symbolIds.length == durations.length, "FundingRateFacet: Invalid length");
@@ -192,14 +186,12 @@ library FundingRateFacetImpl {
 		}
 	}
 
-	/**
-	 * @notice Updates accumulated funding fees for symbols
-	 * @dev Maintains a weighted average of funding rates across all epochs
-	 * @param symbolIds Array of symbol IDs
-	 * @param longRates New funding rates for long positions (as percentages, not price-adjusted)
-	 * @param shortRates New funding rates for short positions (as percentages, not price-adjusted)
-	 * @param marketPrices Current market prices to convert rates to price-adjusted values
-	 */
+	/// @notice Updates accumulated funding fees for symbols
+	/// @dev Maintains a weighted average of funding rates across all epochs
+	/// @param symbolIds Array of symbol IDs
+	/// @param longRates New funding rates for long positions (as percentages, not price-adjusted)
+	/// @param shortRates New funding rates for short positions (as percentages, not price-adjusted)
+	/// @param marketPrices Current market prices to convert rates to price-adjusted values
 	function updateAccumulatedFundingFee(
 		uint256[] memory symbolIds,
 		int256[] memory longRates,
@@ -228,18 +220,14 @@ library FundingRateFacetImpl {
 		}
 	}
 
-	/**
-	 * @notice Sets funding fees for both long and short positions
-	 */
+	/// @notice Sets funding fees for both long and short positions
 	function setFundingFee(uint256[] memory symbolIds, int256[] memory longRates, int256[] memory shortRates, int256[] memory marketPrices) internal {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
 		updateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices);
 	}
 
-	/**
-	 * @notice Updates only long position funding fees
-	 * @dev Preserves existing short fees while updating long fees
-	 */
+	/// @notice Updates only long position funding fees
+	/// @dev Preserves existing short fees while updating long fees
 	function setLongFundingFee(uint256[] memory symbolIds, int256[] memory longRates, int256[] memory marketPrices) internal {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
 		require(symbolIds.length == longRates.length && symbolIds.length == marketPrices.length, "FundingRateFacet: Invalid length");
@@ -258,10 +246,8 @@ library FundingRateFacetImpl {
 		updateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices);
 	}
 
-	/**
-	 * @notice Updates only short position funding fees
-	 * @dev Preserves existing long fees while updating short fees
-	 */
+	/// @notice Updates only short position funding fees
+	/// @dev Preserves existing long fees while updating short fees
 	function setShortFundingFee(uint256[] memory symbolIds, int256[] memory shortRates, int256[] memory marketPrices) internal {
 		require(symbolIds.length == shortRates.length && symbolIds.length == marketPrices.length, "FundingRateFacet: Invalid length");
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
@@ -279,14 +265,12 @@ library FundingRateFacetImpl {
 		updateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices);
 	}
 
-	/**
-	 * @notice Applies accumulated funding fees to positions
-	 * @dev Uses the accumulated funding fee system with weighted averages
-	 * @param partyA Trader address
-	 * @param partyB Market maker address
-	 * @param quoteIds Position IDs to charge
-	 * @param upnlSig Unrealized PnL signature for solvency checks
-	 */
+	/// @notice Applies accumulated funding fees to positions
+	/// @dev Uses the accumulated funding fee system with weighted averages
+	/// @param partyA Trader address
+	/// @param partyB Market maker address
+	/// @param quoteIds Position IDs to charge
+	/// @param upnlSig Unrealized PnL signature for solvency checks
 	function chargeAccumulatedFundingFee(address partyA, address partyB, uint256[] memory quoteIds, PairUpnlSig memory upnlSig) internal {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
 		LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA);

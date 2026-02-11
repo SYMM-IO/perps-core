@@ -15,6 +15,7 @@ import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 
 library BridgeFacetImpl {
+	/// @notice Creates a bridge transaction record, deducting from the user's balance and locking collateral for withdrawal.
 	function _createBridgeTransaction(address user, uint256 amount, address bridge) private returns (uint256 currentId) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
@@ -50,10 +51,12 @@ library BridgeFacetImpl {
 		bridgeLayout.bridgeTransactionIds[bridge].push(currentId);
 	}
 
+	/// @notice Initiates a transfer to a bridge by creating a bridge transaction.
 	function transferToBridge(address user, uint256 amount, address bridge) internal returns (uint256 currentId) {
 		currentId = _createBridgeTransaction(user, amount, bridge);
 	}
 
+	/// @notice Allows a bridge to withdraw collateral for a single received transaction after the cooldown period.
 	function withdrawReceivedBridgeValue(uint256 transactionId) internal {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
@@ -76,6 +79,7 @@ library BridgeFacetImpl {
 		bridgeTransaction.status = BridgeTransactionStatus.WITHDRAWN;
 	}
 
+	/// @notice Allows a bridge to batch-withdraw collateral for multiple received transactions after their cooldown periods.
 	function withdrawReceivedBridgeValues(uint256[] memory transactionIds) internal {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
@@ -105,6 +109,7 @@ library BridgeFacetImpl {
 		LibSafeERC20.safeTransfer(appLayout.collateral, msg.sender, totalAmount);
 	}
 
+	/// @notice Suspends a received bridge transaction, preventing the bridge from withdrawing the funds.
 	function suspendBridgeTransaction(uint256 transactionId) internal {
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
 		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];
@@ -114,6 +119,7 @@ library BridgeFacetImpl {
 		bridgeTransaction.status = BridgeTransactionStatus.SUSPENDED;
 	}
 
+	/// @notice Restores a suspended bridge transaction with a reduced valid amount, sending the invalid portion to the pool.
 	function restoreBridgeTransaction(uint256 transactionId, uint256 validAmount) internal {
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
 		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];

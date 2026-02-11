@@ -14,12 +14,10 @@ import { FundingStorage, FundingFee } from "../storages/FundingStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
 
 library LibQuoteFunding {
-	/**
-	 * @notice Calculates the accumulated funding fee for a position
-	 * @dev Uses weighted average funding rates over time
-	 * @param quoteId The quote ID to calculate funding for
-	 * @return fee The net funding fee (positive = trader pays, negative = trader receives)
-	 */
+	/// @notice Calculates the accumulated funding fee for a position
+	/// @dev Uses weighted average funding rates over time
+	/// @param quoteId The quote ID to calculate funding for
+	/// @return fee The net funding fee (positive = trader pays, negative = trader receives)
 	function getAccumulatedFundingFee(uint256 quoteId) public view returns (int256 fee) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB];
@@ -44,11 +42,9 @@ library LibQuoteFunding {
 		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (currentFee - quote.accumulatedPaidFunding)) / 1e18;
 	}
 
-	/**
-	 * @notice Charges accumulated funding fee for a position
-	 * @dev Transfers funds between parties based on calculated fee
-	 * @param quoteId The position ID to charge funding for
-	 */
+	/// @notice Charges accumulated funding fee for a position
+	/// @dev Transfers funds between parties based on calculated fee
+	/// @param quoteId The position ID to charge funding for
 	function chargeAccumulatedFundingFee(uint256 quoteId) public {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -89,11 +85,8 @@ library LibQuoteFunding {
 		}
 	}
 
-	/**
-	 * @notice Updates the accumulated paid funding for a quote
-	 * @dev Updates the accumulated paid funding for a quote
-	 * @param quoteId The quote ID to update the accumulated paid funding for
-	 */
+	/// @notice Updates the accumulated paid funding for a quote
+	/// @param quoteId The quote ID to update the accumulated paid funding for
 	function updateAccumulatedPaidFunding(uint256 quoteId) public {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB];

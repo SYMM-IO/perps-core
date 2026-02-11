@@ -14,6 +14,7 @@ import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 
 library SettlementFacetImpl {
+	/// @notice Settles UPNL for quotes between partyB (caller) and a specific partyA
 	function settleUpnl(
 		SettlementSig memory settleSig,
 		uint256[] memory updatedPrices,
@@ -27,6 +28,7 @@ library SettlementFacetImpl {
 		return LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, false);
 	}
 
+	/// @notice Unified settlement that works for both crossPartyB and normal partyB modes
 	function settleUpnlUnified(
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices

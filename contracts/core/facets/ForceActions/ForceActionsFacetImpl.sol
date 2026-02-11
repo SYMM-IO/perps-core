@@ -19,6 +19,7 @@ import { HighLowPriceSig, SettlementSig } from "../../storages/MuonStorage.sol";
 library ForceActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Force-cancels a pending quote after the force cancel cooldown has elapsed, refunding locked balances and trading fees.
 	function forceCancelQuote(uint256 quoteId) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -42,6 +43,7 @@ library ForceActionsFacetImpl {
 		LibQuote.removeFromPendingQuotes(quote);
 	}
 
+	/// @notice Force-cancels a pending close request after the force cancel close cooldown has elapsed.
 	function forceCancelCloseRequest(uint256 quoteId) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
@@ -57,6 +59,7 @@ library ForceActionsFacetImpl {
 		quote.quantityToClose = 0;
 	}
 
+	/// @notice Executes a force close for a non-cross partyB, using the reserve vault fallback and triggering liquidation if partyB is insolvent.
 	function forceClose(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice, int256 upnlPartyB, bool succeed) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address partyB = QuoteStorage.layout().quotes[quoteId].partyB;
@@ -84,12 +87,9 @@ library ForceActionsFacetImpl {
 		}
 	}
 
-	/* Force Close Settlement Functions*/
-
-	/**
-	 * @dev DEPRECATED: This function is kept for backward compatibility. Use settleUpnlUnified in ForceCloseStepsImpl instead,
-	 *      which supports both crossPartyB and normal partyB modes with a unified signature format.
-	 */
+	/// @notice Settles UPNL before a force close operation using the legacy settlement signature format.
+	/// @dev DEPRECATED: Use settleUpnlUnified in ForceCloseStepsImpl instead,
+	///      which supports both crossPartyB and normal partyB modes with a unified signature format.
 	function settleUPNL(uint256 quoteId, SettlementSig memory sig, uint256[] memory updatedPrices) internal {
 		address partyA = QuoteStorage.layout().quotes[quoteId].partyA;
 

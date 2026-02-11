@@ -15,6 +15,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 
 library PartyBAccountFacetImpl {
+	/// @notice Moves collateral from Party B's balance to allocated balance for a given Party A
 	function allocateForPartyB(uint256 amount, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -29,6 +30,7 @@ library PartyBAccountFacetImpl {
 		accountLayout.partyBAllocatedBalances[signer][partyA] += amount;
 	}
 
+	/// @notice Moves collateral from Party B's allocated balance back to free balance after solvency check
 	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -44,6 +46,7 @@ library PartyBAccountFacetImpl {
 		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}
 
+	/// @notice Transfers Party B's allocated balance from one Party A to another after solvency check
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -70,6 +73,7 @@ library PartyBAccountFacetImpl {
 		accountLayout.partyBAllocatedBalances[signer][recipient] += amount;
 	}
 
+	/// @notice Deposits from the caller's balance into the specified partyB's emergency reserve vault
 	function depositToReserveVault(uint256 amount, address partyB) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -79,6 +83,7 @@ library PartyBAccountFacetImpl {
 		accountLayout.reserveVault[partyB] += amount;
 	}
 
+	/// @notice Withdraws from the caller's emergency reserve vault back to free balance
 	function withdrawFromReserveVault(uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -88,6 +93,7 @@ library PartyBAccountFacetImpl {
 		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}
 
+	/// @notice Enables cross partyB mode, consolidating balances across all Party A counterparties
 	function activateCrossPartyB() internal {
 		require(GlobalAppStorage.layout().crossPartyBModeActivated, "AccountFacet: Cross disabled");
 		MAStorage.Layout storage maLayout = MAStorage.layout();

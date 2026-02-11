@@ -17,12 +17,10 @@ import { LibMuonPartyB } from "../../libraries/muon/LibMuonPartyB.sol";
 library ForceCloseStepsImpl {
 	using LockedValuesOps for LockedValues;
 
-	/**
-	 * @notice Initializes the 3-step force close flow (works for both normal and cross partyB modes).
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @param sig The Muon signature to calculate the close price.
-	 * @return closePrice The calculated close price.
-	 */
+	/// @notice Initializes the 3-step force close flow (works for both normal and cross partyB modes).
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @param sig The Muon signature to calculate the close price.
+	/// @return closePrice The calculated close price.
 	function forceCloseInit(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice) {
 		LibForceActions.validateForceCloseConditions(quoteId, sig);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
@@ -50,10 +48,8 @@ library ForceCloseStepsImpl {
 		detail.inProgress = true;
 	}
 
-	/**
-	 * @notice Refreshes the force-close uPNL/currentPrice snapshot using a fresh PairUpnlAndPriceSig.
-	 * @dev Does not modify the previously calculated closePrice.
-	 */
+	/// @notice Refreshes the force-close uPNL/currentPrice snapshot using a fresh PairUpnlAndPriceSig.
+	/// @dev Does not modify the previously calculated closePrice.
 	function refreshForceCloseSnapshot(uint256 quoteId, PairUpnlAndPriceSig memory sig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
@@ -81,14 +77,12 @@ library ForceCloseStepsImpl {
 		detail.timestamp = block.timestamp;
 	}
 
-	/**
-	 * @notice Finalizes the 3-step force close flow (handles both normal and cross partyB modes).
-	 * @dev For normal partyB: Uses reserveVault fallback and triggers liquidation if needed.
-	 *      For cross partyB: Uses CLOSED_SOLVENT/CLOSED_INSOLVENT marking without liquidation.
-	 * @param quoteId The ID of the quote for which the position should be forced to close.
-	 * @return isPartyBSolvent Whether PartyB remained solvent after the close.
-	 * @return upnlPartyB The upnl used for liquidation (only set for normal partyB when isPartyBSolvent is false).
-	 */
+	/// @notice Finalizes the 3-step force close flow (handles both normal and cross partyB modes).
+	/// @dev For normal partyB: Uses reserveVault fallback and triggers liquidation if needed.
+	///      For cross partyB: Uses CLOSED_SOLVENT/CLOSED_INSOLVENT marking without liquidation.
+	/// @param quoteId The ID of the quote for which the position should be forced to close.
+	/// @return isPartyBSolvent Whether PartyB remained solvent after the close.
+	/// @return upnlPartyB The upnl used for liquidation (only set for normal partyB when isPartyBSolvent is false).
 	function finalizeForceClose(uint256 quoteId) internal returns (bool isPartyBSolvent, int256 upnlPartyB) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];
@@ -131,6 +125,7 @@ library ForceCloseStepsImpl {
 		detail.currentPrice = 0;
 	}
 
+	/// @notice Settles UPNL using unified settlement during the force close workflow and adjusts the stored partyB UPNL snapshot.
 	function settleUpnlUnified(
 		uint256 quoteId,
 		UnifiedSettlementSig memory sig,

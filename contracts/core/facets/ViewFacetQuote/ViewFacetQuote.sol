@@ -11,21 +11,17 @@ import { IViewFacetQuote } from "./IViewFacetQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 
 contract ViewFacetQuote is IViewFacetQuote {
-	/**
-	 * @notice Returns the details of a quote by its ID.
-	 * @param quoteId The ID of the quote.
-	 * @return The details of the quote.
-	 */
+	/// @notice Returns the details of a quote by its ID.
+	/// @param quoteId The ID of the quote.
+	/// @return The details of the quote.
 	function getQuote(uint256 quoteId) external view returns (Quote memory) {
 		return QuoteStorage.layout().quotes[quoteId];
 	}
 
-	/**
-	 * @notice Returns an array of quotes associated with a parent quote ID.
-	 * @param quoteId The parent quote ID.
-	 * @param size The size of the array.
-	 * @return An array of quotes.
-	 */
+	/// @notice Returns an array of quotes associated with a parent quote ID.
+	/// @param quoteId The parent quote ID.
+	/// @param size The size of the array.
+	/// @return An array of quotes.
 	function getQuotesByParent(uint256 quoteId, uint256 size) external view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote[] memory quotes = new Quote[](size);
@@ -41,13 +37,11 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return quotes;
 	}
 
-	/**
-	 * @notice Returns an array of quote IDs associated with a party A address.
-	 * @param partyA The address of party A.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of quote IDs.
-	 */
+	/// @notice Returns an array of quote IDs associated with a party A address.
+	/// @param partyA The address of party A.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of quote IDs.
 	function quoteIdsOf(address partyA, uint256 start, uint256 size) external view returns (uint256[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		if (quoteLayout.quoteIdsOf[partyA].length < start + size) {
@@ -64,13 +58,11 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return quoteIds;
 	}
 
-	/**
-	 * @notice Returns an array of quotes associated with a party A address.
-	 * @param partyA The address of party A.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of quotes.
-	 */
+	/// @notice Returns an array of quotes associated with a party A address.
+	/// @param partyA The address of party A.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of quotes.
 	function getQuotes(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		if (quoteLayout.quoteIdsOf[partyA].length < start + size) {
@@ -87,31 +79,25 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return quotes;
 	}
 
-	/**
-	 * @notice Returns the length of the quotes array associated with a user.
-	 * @param user The address of the user.
-	 * @return The length of the quotes array.
-	 */
+	/// @notice Returns the length of the quotes array associated with a user.
+	/// @param user The address of the user.
+	/// @return The length of the quotes array.
 	function quotesLength(address user) external view returns (uint256) {
 		return QuoteStorage.layout().quoteIdsOf[user].length;
 	}
 
-	/**
-	 * @notice Returns the number of open positions associated with a party A address.
-	 * @param partyA The address of party A.
-	 * @return The number of open positions.
-	 */
+	/// @notice Returns the number of open positions associated with a party A address.
+	/// @param partyA The address of party A.
+	/// @return The number of open positions.
 	function partyAPositionsCount(address partyA) external view returns (uint256) {
 		return QuoteStorage.layout().partyAPositionsCount[partyA];
 	}
 
-	/**
-	 * @notice Internal: Returns an array of open positions associated with a party A address.
-	 * @param partyA The address of party A.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of open positions.
-	 */
+	/// @notice Internal: Returns an array of open positions associated with a party A address.
+	/// @param partyA The address of party A.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of open positions.
 	function getPartyAOpenPositionsImp(address partyA, uint256 start, uint256 size) internal view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
@@ -129,25 +115,21 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return quotes;
 	}
 
-	/**
-	 * @notice Returns an array of open positions associated with a party A address.
-	 * @param partyA The address of party A.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of open positions.
-	 */
+	/// @notice Returns an array of open positions associated with a party A address.
+	/// @param partyA The address of party A.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of open positions.
 	function getPartyAOpenPositions(address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
 		return getPartyAOpenPositionsImp(partyA, start, size);
 	}
 
-	/**
-	 * @notice Internal: Returns an array of open positions associated with a party B address and a specific party A address.
-	 * @param partyB The address of party B.
-	 * @param partyA The address of party A.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of open positions.
-	 */
+	/// @notice Internal: Returns an array of open positions associated with a party B address and a specific party A address.
+	/// @param partyB The address of party B.
+	/// @param partyA The address of party A.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of open positions.
 	function getPartyBOpenPositionsImp(address partyB, address partyA, uint256 start, uint256 size) internal view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
@@ -164,25 +146,21 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return quotes;
 	}
 
-	/**
-	 * @notice Returns an array of open positions associated with a party B address and a specific party A address.
-	 * @param partyB The address of party B.
-	 * @param partyA The address of party A.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of open positions.
-	 */
+	/// @notice Returns an array of open positions associated with a party B address and a specific party A address.
+	/// @param partyB The address of party B.
+	/// @param partyA The address of party A.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of open positions.
 	function getPartyBOpenPositions(address partyB, address partyA, uint256 start, uint256 size) external view returns (Quote[] memory) {
 		return getPartyBOpenPositionsImp(partyB, partyA, start, size);
 	}
 
-	/**
-	 * @notice Returns an array of positions associated with a party B address.
-	 * @param partyB The address of party B.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of positions.
-	 */
+	/// @notice Returns an array of positions associated with a party B address.
+	/// @param partyB The address of party B.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of positions.
 	function getPositionsFilteredByPartyB(address partyB, uint256 start, uint256 size) external view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote[] memory quotes = new Quote[](size);
@@ -201,13 +179,11 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return quotes;
 	}
 
-	/**
-	 * @notice Returns an array of open positions associated with a party B address.
-	 * @param partyB The address of party B.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of open positions.
-	 */
+	/// @notice Returns an array of open positions associated with a party B address.
+	/// @param partyB The address of party B.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of open positions.
 	function getOpenPositionsFilteredByPartyB(address partyB, uint256 start, uint256 size) external view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote[] memory quotes = new Quote[](size);
@@ -231,13 +207,11 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return quotes;
 	}
 
-	/**
-	 * @notice Returns an array of active positions associated with a party B address.
-	 * @param partyB The address of party B.
-	 * @param start The starting index.
-	 * @param size The size of the array.
-	 * @return An array of active positions.
-	 */
+	/// @notice Returns an array of active positions associated with a party B address.
+	/// @param partyB The address of party B.
+	/// @param start The starting index.
+	/// @param size The size of the array.
+	/// @return An array of active positions.
 	function getActivePositionsFilteredByPartyB(address partyB, uint256 start, uint256 size) external view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote[] memory quotes = new Quote[](size);
@@ -262,41 +236,33 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return quotes;
 	}
 
-	/**
-	 * @notice Returns the number of positions associated with a party B address and a specific party A address.
-	 * @param partyB The address of party B.
-	 * @param partyA The address of party A.
-	 * @return The number of positions.
-	 */
+	/// @notice Returns the number of positions associated with a party B address and a specific party A address.
+	/// @param partyB The address of party B.
+	/// @param partyA The address of party A.
+	/// @return The number of positions.
 	function partyBPositionsCount(address partyB, address partyA) external view returns (uint256) {
 		return QuoteStorage.layout().partyBPositionsCount[partyB][partyA];
 	}
 
-	/**
-	 * @notice Returns an array of pending quotes associated with a party A address.
-	 * @param partyA The address of party A.
-	 * @return An array of pending quotes.
-	 */
+	/// @notice Returns an array of pending quotes associated with a party A address.
+	/// @param partyA The address of party A.
+	/// @return An array of pending quotes.
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory) {
 		return QuoteStorage.layout().partyAPendingQuotes[partyA];
 	}
 
-	/**
-	 * @notice Returns an array of pending quotes associated with a party B address and a specific party A address.
-	 * @param partyB The address of party B.
-	 * @param partyA The address of party A.
-	 * @return An array of pending quotes.
-	 */
+	/// @notice Returns an array of pending quotes associated with a party B address and a specific party A address.
+	/// @param partyB The address of party B.
+	/// @param partyA The address of party A.
+	/// @return An array of pending quotes.
 	function getPartyBPendingQuotes(address partyB, address partyA) external view returns (uint256[] memory) {
 		return QuoteStorage.layout().partyBPendingQuotes[partyB][partyA];
 	}
 
-	/**
-	 * @notice Retrieves a filtered list of quotes based on a bitmap. The method returns quotes only if sufficient gas remains.
-	 * @param bitmap A structured data type representing a bitmap, used to indicate which quotes to retrieve based on their positions. The bitmap consists of multiple elements, each with an offset and a 256-bit integer representing selectable quotes.
-	 * @param gasNeededForReturn The minimum gas required to complete the function execution and return the data. This ensures the function doesn't start a retrieval that it can't complete.
-	 * @return quotes An array of `Quote` structures, each corresponding to a quote identified by the bitmap.
-	 */
+	/// @notice Retrieves a filtered list of quotes based on a bitmap. The method returns quotes only if sufficient gas remains.
+	/// @param bitmap A structured data type representing a bitmap, used to indicate which quotes to retrieve based on their positions. The bitmap consists of multiple elements, each with an offset and a 256-bit integer representing selectable quotes.
+	/// @param gasNeededForReturn The minimum gas required to complete the function execution and return the data. This ensures the function doesn't start a retrieval that it can't complete.
+	/// @return quotes An array of `Quote` structures, each corresponding to a quote identified by the bitmap.
 	function getQuotesWithBitmap(Bitmap calldata bitmap, uint256 gasNeededForReturn) external view returns (Quote[] memory quotes) {
 		QuoteStorage.Layout storage qL = QuoteStorage.layout();
 
@@ -317,41 +283,33 @@ contract ViewFacetQuote is IViewFacetQuote {
 		}
 	}
 
-	/**
-	 * @notice Retrieves the next available quote ID.
-	 * @return The next available quote ID.
-	 */
+	/// @notice Retrieves the next available quote ID.
+	/// @return The next available quote ID.
 	function getNextQuoteId() external view returns (uint256) {
 		return QuoteStorage.layout().lastId;
 	}
 
-	/**
-	 * @notice Retrieves the close ID of a quote.
-	 * @param quoteId The ID of the quote.
-	 * @return The close ID of the quote.
-	 */
+	/// @notice Retrieves the close ID of a quote.
+	/// @param quoteId The ID of the quote.
+	/// @return The close ID of the quote.
 	function getQuoteCloseId(uint256 quoteId) external view returns (uint256) {
 		return QuoteStorage.layout().closeIds[quoteId];
 	}
 
-	/**
-	 * @notice Gets the funding debt for a list of quotes
-	 * @dev Returns the funding debt each quote should pay (positive) or receive (negative)
-	 * @param quoteIds Array of quote IDs to calculate funding debts for
-	 * @return debts Array of funding debts in the same order as quoteIds
-	 */
+	/// @notice Gets the funding debt for a list of quotes
+	/// @dev Returns the funding debt each quote should pay (positive) or receive (negative)
+	/// @param quoteIds Array of quote IDs to calculate funding debts for
+	/// @return debts Array of funding debts in the same order as quoteIds
 	function getQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256[] memory debts) {
 		debts = new int256[](quoteIds.length);
 		for (uint256 i = 0; i < quoteIds.length; i++) debts[i] = LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);
 		return debts;
 	}
 
-	/**
-	 * @notice Gets the sum of funding debts for a list of quotes
-	 * @dev Returns the sum of funding debts
-	 * @param quoteIds Array of quote IDs to calculate funding debts for
-	 * @return sum Sum of funding debts
-	 */
+	/// @notice Gets the sum of funding debts for a list of quotes
+	/// @dev Returns the sum of funding debts
+	/// @param quoteIds Array of quote IDs to calculate funding debts for
+	/// @return The sum of all funding debts
 	function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256) {
 		int256 sum;
 		for (uint256 i = 0; i < quoteIds.length; i++) sum += LibQuoteFunding.getAccumulatedFundingFee(quoteIds[i]);

@@ -9,6 +9,7 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 
 library LibMuonAccount {
+	/// @notice Verifies Party A UPNL signature against the Muon oracle.
 	function verifyPartyAUpnl(SingleUpnlSig memory upnlSig, address partyA) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
@@ -29,6 +30,7 @@ library LibMuonAccount {
 		LibMuon.verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature);
 	}
 
+	/// @notice Verifies Party A UPNL signature that also includes a pending balance check.
 	function verifyPartyAUpnlWithPendingBalance(SingleUpnlWithPendingBalanceSig memory upnlSig, address partyA) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==

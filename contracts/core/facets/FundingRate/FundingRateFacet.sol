@@ -31,6 +31,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 	/// @param symbolIds An array of symbol ids.
 	/// @param longFees An array of funding fees for long positions in 18 decimals.
 	/// @param shortFees An array of funding fees for short positions in 18 decimals.
+	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
 	function setFundingFee(
 		uint256[] memory symbolIds,
 		int256[] memory longFees,
@@ -46,6 +47,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 	/// @notice Set funding rates for a given Symbols.
 	/// @param symbolIds An array of symbol ids.
 	/// @param longFees An array of funding fees for long positions in 18 decimals.
+	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
 	function setLongFundingFee(
 		uint256[] memory symbolIds,
 		int256[] memory longFees,
@@ -58,6 +60,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 	/// @notice Set funding rates for a given Symbols.
 	/// @param symbolIds An array of symbol ids.
 	/// @param shortFees An array of funding fees for short positions in 18 decimals.
+	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
 	function setShortFundingFee(
 		uint256[] memory symbolIds,
 		int256[] memory shortFees,
@@ -76,6 +79,11 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		emit SetEpochDuration(symbolIds, durations, signer);
 	}
 
+	/// @notice Updates accumulated funding fees for symbols with new long and short rates.
+	/// @param symbolIds An array of symbol ids.
+	/// @param longRates An array of new funding rates for long positions in 18 decimals.
+	/// @param shortRates An array of new funding rates for short positions in 18 decimals.
+	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
 	function updateAccumulatedFundingFee(
 		uint256[] memory symbolIds,
 		int256[] memory longRates,

@@ -27,6 +27,7 @@ library WithdrawFacetImpl {
 		uint256 totalVirtualAmount;
 	}
 
+	/// @notice Creates a new withdrawal request, debiting the caller's balance and notifying providers
 	function initiateWithdraw(WithdrawReceiverPart[] memory parts, bool speedUp, bytes memory data) internal returns (uint256, uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
@@ -100,6 +101,7 @@ library WithdrawFacetImpl {
 		return (currentId, cooldownEndTime);
 	}
 
+	/// @notice Validates and aggregates withdrawal parts, tracking provider and amount totals
 	function _processWithdrawParts(
 		WithdrawReceiverPart[] memory parts,
 		WithdrawStorage.Layout storage withdrawLayout
@@ -144,6 +146,7 @@ library WithdrawFacetImpl {
 		}
 	}
 
+	/// @notice Selects the dominant provider for the withdrawal request
 	function _selectProvider(InitiateWithdrawLocals memory locals, bool speedUp) private pure returns (address provider, bool isPureVirtual) {
 		if (locals.hasExpress) {
 			require(!speedUp, "WithdrawFacet : Speed up not allowed with express");
@@ -158,6 +161,7 @@ library WithdrawFacetImpl {
 		}
 	}
 
+	/// @notice Finalizes a withdrawal after cooldown, transferring funds to receivers and providers
 	function finalizeWithdrawRequest(address user, uint256 requestId) internal {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
@@ -220,6 +224,7 @@ library WithdrawFacetImpl {
 		emit Withdraw(LibSigner.getSigner(), withdrawRequest.user, withdrawRequest.totalAmount);
 	}
 
+	/// @notice Provider accepts a pending withdrawal request, marking it as PROVIDER_ACCEPTED
 	function acceptWithdrawRequest(address user, uint256 requestId) internal {
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
@@ -230,6 +235,7 @@ library WithdrawFacetImpl {
 		withdrawRequest.status = WithdrawStatus.PROVIDER_ACCEPTED;
 	}
 
+	/// @notice Provider rejects a pending withdrawal request, refunding the user's balance
 	function rejectWithdrawRequest(address user, uint256 requestId) internal {
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
@@ -242,6 +248,7 @@ library WithdrawFacetImpl {
 		withdrawRequest.status = WithdrawStatus.PROVIDER_REJECTED;
 	}
 
+	/// @notice Requests cancellation of a withdrawal, immediately refunding classic/virtual parts
 	function requestCancelWithdraw(uint256 requestId) internal {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(LibSigner.getSigner(), requestId);
@@ -274,6 +281,7 @@ library WithdrawFacetImpl {
 		}
 	}
 
+	/// @notice Force-cancels a withdrawal before cooldown expiry, refunding and notifying providers
 	function forceCancelWithdraw(address user, uint256 requestId) internal {
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
@@ -297,6 +305,7 @@ library WithdrawFacetImpl {
 		}
 	}
 
+	/// @notice Provider accepts a cancellation request, refunding the user and marking as CANCELLED
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) internal {
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
@@ -307,6 +316,7 @@ library WithdrawFacetImpl {
 		withdrawRequest.status = WithdrawStatus.CANCELLED;
 	}
 
+	/// @notice Suspends a withdrawal request for a suspended user, refunding and notifying providers
 	function suspendWithdrawRequest(address user, uint256 requestId) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -333,6 +343,7 @@ library WithdrawFacetImpl {
 		}
 	}
 
+	/// @notice Accepts a speed-up request, reducing the cooldown period for the withdrawal
 	function acceptSpeedUpRequest(address user, uint256 requestId, uint256 newCooldown) internal {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 
@@ -362,6 +373,7 @@ library WithdrawFacetImpl {
 	// Internal helper utils
 	// ----------------------
 
+	/// @notice Retrieves a withdrawal request by user and ID, validating that the ID exists
 	function _getWithdrawRequest(address user, uint256 requestId) internal view returns (WithdrawRequest storage) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 
@@ -370,6 +382,7 @@ library WithdrawFacetImpl {
 		return withdrawLayout.withdrawRequests[user][requestId];
 	}
 
+	/// @notice Unlocks the withdrawal locked balance and refunds the user's internal balance
 	function _unlockAndRefund(WithdrawRequest storage withdrawRequest) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
@@ -383,11 +396,13 @@ library WithdrawFacetImpl {
 		accountLayout.balances[withdrawRequest.user] += amountWith18;
 	}
 
+	/// @notice Converts an amount from collateral decimals to 18 decimals
 	function _to18Decimals(uint256 amount, uint256 collateralDecimals) internal pure returns (uint256) {
 		if (collateralDecimals == 18) return amount;
 		return (amount * 1e18) / (10 ** collateralDecimals);
 	}
 
+	/// @notice Converts a 20-byte payload into an address
 	function _bytesToAddress(bytes memory data) internal pure returns (address) {
 		require(data.length == 20, "WithdrawFacet : Invalid address bytes length");
 		return address(uint160(bytes20(data)));

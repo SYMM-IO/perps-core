@@ -4,6 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+/// @notice Custom errors used across the AccountLayer diamond
 interface IAccountLayerErrors {
 	error ZeroAddress();
 	error EmptyArray();

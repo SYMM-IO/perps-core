@@ -14,7 +14,12 @@ import { AffiliateHubStorage } from "./storages/AffiliateHubStorage.sol";
 import { LibAccountLayerAccessibility } from "./libraries/LibAccountLayerAccessibility.sol";
 import { IAccountLayerErrors } from "./interfaces/IAccountLayerErrors.sol";
 
+/// @notice Initialization contract for the AccountLayer diamond
 contract Init is IAccountLayerErrors {
+	/// @notice Initializes the AccountLayer diamond with admin roles, fee receiver, and AccountManager bytecode
+	/// @param admin The address to receive all initial admin roles
+	/// @param symmioFeeReceiver The address that receives the protocol's share of fees
+	/// @param accountManagerImplementation The bytecode for AccountManager proxy deployment
 	function init(address admin, address symmioFeeReceiver, bytes calldata accountManagerImplementation) external {
 		if (admin == address(0)) revert ZeroAddress();
 		if (symmioFeeReceiver == address(0)) revert ZeroAddress();

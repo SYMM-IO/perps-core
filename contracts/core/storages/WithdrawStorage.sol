@@ -4,6 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+/// @notice A single destination part within a multi-part withdrawal request
 struct WithdrawReceiverPart {
 	uint256 id;
 	uint256 amount;
@@ -13,6 +14,7 @@ struct WithdrawReceiverPart {
 	address expressProvider;
 }
 
+/// @notice Full state of a withdrawal request including all destination parts and provider info
 struct WithdrawRequest {
 	uint256 id;
 	address user;
@@ -29,6 +31,7 @@ struct WithdrawRequest {
 	uint256 totalVirtualAmount;
 }
 
+/// @notice Lifecycle status of a withdrawal request
 enum WithdrawStatus {
 	PENDING,
 	PROVIDER_ACCEPTED,

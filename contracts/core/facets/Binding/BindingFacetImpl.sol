@@ -13,6 +13,7 @@ import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 library BindingFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	/// @notice Binds a Party A exclusively to a Party B for trading, requiring no existing positions with other Party Bs.
 	function bindToPartyB(address partyB) internal {
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -33,6 +34,7 @@ library BindingFacetImpl {
 		bindState.modifyTimestamp = block.timestamp;
 	}
 
+	/// @notice Initiates an unbind request from the currently bound Party B, starting the cooldown period.
 	function requestToUnbindFromPartyB() internal {
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 
@@ -43,6 +45,7 @@ library BindingFacetImpl {
 		bindState.modifyTimestamp = block.timestamp;
 	}
 
+	/// @notice Cancels a pending unbind request and restores the bound state.
 	function cancelUnbindRequest() internal {
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 
@@ -53,6 +56,7 @@ library BindingFacetImpl {
 		bindState.modifyTimestamp = block.timestamp;
 	}
 
+	/// @notice Completes an unbind request, callable by Party B immediately or by Party A after the cooldown expires.
 	function completeUnbindRequest(address partyA) internal {
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		BindState storage bindState = tradingLayout.bindState[partyA];
@@ -67,12 +71,14 @@ library BindingFacetImpl {
 		bindState.modifyTimestamp = block.timestamp;
 	}
 
+	/// @notice Activates instant action mode for the signer, requiring an active binding to a Party B.
 	function activateInstantActionMode() internal {
 		address signer = LibSigner.getSigner();
 		require(TradingModeStorage.layout().bindState[signer].status == BindStatus.BOUND, "AccountFacet: Invalid state");
 		TradingModeStorage.layout().instantActionsMode[signer] = true;
 	}
 
+	/// @notice Proposes deactivation of instant action mode by scheduling a future deactivation time.
 	function proposeToDeactivateInstantActionMode() internal {
 		TradingModeStorage.Layout storage layout = TradingModeStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -80,6 +86,7 @@ library BindingFacetImpl {
 		layout.instantActionsModeDeactivateTime[signer] = block.timestamp + layout.deactiveInstantActionModeCooldown;
 	}
 
+	/// @notice Completes the deactivation of instant action mode after the scheduled waiting period has passed.
 	function deactivateInstantActionMode() internal {
 		TradingModeStorage.Layout storage layout = TradingModeStorage.layout();
 		address signer = LibSigner.getSigner();

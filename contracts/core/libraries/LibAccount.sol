@@ -16,22 +16,18 @@ import { LibQuote } from "./LibQuote.sol";
 library LibAccount {
 	using LockedValuesOps for LockedValues;
 
-	/**
-	 * @notice Calculates the total locked balances of Party A.
-	 * @param partyA The address of Party A.
-	 * @return The total locked balances of Party A.
-	 */
+	/// @notice Calculates the total locked balances of Party A.
+	/// @param partyA The address of Party A.
+	/// @return The total locked balances of Party A.
 	function partyATotalLockedBalances(address partyA) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		return accountLayout.pendingLockedBalances[partyA].totalForPartyA() + accountLayout.lockedBalances[partyA].totalForPartyA();
 	}
 
-	/**
-	 * @notice Calculates the total locked balances of Party B for a specific Party A.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @return The total locked balances of Party B for the specified Party A.
-	 */
+	/// @notice Calculates the total locked balances of Party B for a specific Party A.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @return The total locked balances of Party B for the specified Party A.
 	function partyBTotalLockedBalances(address partyB, address partyA) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address allocationKey = partyBAllocationKey(partyB, partyA);
@@ -40,12 +36,10 @@ library LibAccount {
 			accountLayout.partyBLockedBalances[partyB][allocationKey].totalForPartyB();
 	}
 
-	/**
-	 * @notice Calculates the available balance for a quote for Party A.
-	 * @param upnl The unrealized profit and loss.
-	 * @param partyA The address of Party A.
-	 * @return The available balance for a quote for Party A.
-	 */
+	/// @notice Calculates the available balance for a quote for Party A.
+	/// @param upnl The unrealized profit and loss.
+	/// @param partyA The address of Party A.
+	/// @return The available balance for a quote for Party A.
 	function partyAAvailableForQuote(int256 upnl, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		int256 available;
@@ -69,12 +63,10 @@ library LibAccount {
 		return available;
 	}
 
-	/**
-	 * @notice Calculates the available balance for Party A.
-	 * @param upnl The unrealized profit and loss.
-	 * @param partyA The address of Party A.
-	 * @return The available balance for Party A.
-	 */
+	/// @notice Calculates the available balance for Party A.
+	/// @param upnl The unrealized profit and loss.
+	/// @param partyA The address of Party A.
+	/// @return The available balance for Party A.
 	function partyAAvailableBalance(int256 upnl, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		int256 available;
@@ -91,26 +83,22 @@ library LibAccount {
 		return available;
 	}
 
-	/**
-	 * @notice Calculates the available balance for liquidation for Party A.
-	 * @param upnl The unrealized profit and loss.
-	 * @param allocatedBalance The allocatedBalance of Party A.
-	 * @param partyA The address of Party A.
-	 * @return The available balance for liquidation for Party A.
-	 */
+	/// @notice Calculates the available balance for liquidation for Party A.
+	/// @param upnl The unrealized profit and loss.
+	/// @param allocatedBalance The allocatedBalance of Party A.
+	/// @param partyA The address of Party A.
+	/// @return The available balance for liquidation for Party A.
 	function partyAAvailableBalanceForLiquidation(int256 upnl, uint256 allocatedBalance, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		int256 freeBalance = int256(allocatedBalance) - int256(accountLayout.lockedBalances[partyA].cva + accountLayout.lockedBalances[partyA].lf);
 		return freeBalance + upnl;
 	}
 
-	/**
-	 * @notice Calculates the available balance for a quote for Party B.
-	 * @param upnl The unrealized profit and loss.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @return The available balance for a quote for Party B.
-	 */
+	/// @notice Calculates the available balance for a quote for Party B.
+	/// @param upnl The unrealized profit and loss.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @return The available balance for a quote for Party B.
 	function partyBAvailableForQuote(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address allocationKey = partyBAllocationKey(partyB, partyA);
@@ -138,13 +126,11 @@ library LibAccount {
 		return available;
 	}
 
-	/**
-	 * @notice Calculates the available balance for Party B.
-	 * @param upnl The unrealized profit and loss.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @return The available balance for Party B.
-	 */
+	/// @notice Calculates the available balance for Party B.
+	/// @param upnl The unrealized profit and loss.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @return The available balance for Party B.
 	function partyBAvailableBalance(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address allocationKey = partyBAllocationKey(partyB, partyA);
@@ -165,13 +151,11 @@ library LibAccount {
 		return available;
 	}
 
-	/**
-	 * @notice Calculates the available balance for liquidation for Party B.
-	 * @param upnl The unrealized profit and loss.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @return The available balance for liquidation for Party B.
-	 */
+	/// @notice Calculates the available balance for liquidation for Party B.
+	/// @param upnl The unrealized profit and loss.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @return The available balance for liquidation for Party B.
 	function partyBAvailableBalanceForLiquidation(int256 upnl, address partyB, address partyA) internal view returns (int256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address allocationKey = partyBAllocationKey(partyB, partyA);
@@ -180,20 +164,16 @@ library LibAccount {
 		return a + upnl;
 	}
 
-	/**
-	 * @notice Returns the key used for balance allocation mapping in Party B when cross partyB mode enabled.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @return bucket Party B allocation mapping key.
-	 */
+	/// @notice Returns the key used for balance allocation mapping in Party B when cross partyB mode enabled.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @return bucket Party B allocation mapping key.
 	function partyBAllocationKey(address partyB, address partyA) internal view returns (address) {
 		return MAStorage.layout().crossModeEnabledForPartyB[partyB] ? address(0) : partyA;
 	}
 
-	/**
-	 * @notice Adds a new quote locked balance to Party B's locked balances. Always updates both per-partyA and cross bucket.
-	 * @param quote The quote whose locked values are to be added.
-	 */
+	/// @notice Adds a new quote locked balance to Party B's locked balances. Always updates both per-partyA and cross bucket.
+	/// @param quote The quote whose locked values are to be added.
 	function addToPartyBLockedBalances(Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -201,10 +181,8 @@ library LibAccount {
 		accountLayout.partyBLockedBalances[quote.partyB][address(0)].addQuote(quote);
 	}
 
-	/**
-	 * @notice Subtracts a quote's locked balance from Party B's locked balances. Always updates both per-partyA and cross bucket.
-	 * @param quote The quote whose locked values are to be subtracted.
-	 */
+	/// @notice Subtracts a quote's locked balance from Party B's locked balances. Always updates both per-partyA and cross bucket.
+	/// @param quote The quote whose locked values are to be subtracted.
 	function subFromPartyBLockedBalances(Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -212,11 +190,9 @@ library LibAccount {
 		accountLayout.partyBLockedBalances[quote.partyB][address(0)].subQuote(quote);
 	}
 
-	/**
-	 * @notice Replaces a quote's locked balance in Party B's locked balances with new locked values. Always updates both per-partyA and cross bucket.
-	 * @param quote The quote whose locked values are to be replaced.
-	 * @param newLockedValues The new locked values to set.
-	 */
+	/// @notice Replaces a quote's locked balance in Party B's locked balances with new locked values. Always updates both per-partyA and cross bucket.
+	/// @param quote The quote whose locked values are to be replaced.
+	/// @param newLockedValues The new locked values to set.
 	function updatePartyBLockedBalances(Quote storage quote, LockedValues memory newLockedValues) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -224,12 +200,10 @@ library LibAccount {
 		accountLayout.partyBLockedBalances[quote.partyB][address(0)].subQuote(quote).add(newLockedValues);
 	}
 
-	/**
-	 * @notice Adds a new quote locked balance to Party B's pending locked balances. Always updates both per-partyA and cross bucket.
-	 * @param partyB The address of Party B.
-	 * @param partyA The address of Party A.
-	 * @param quote The quote whose locked values are to be added.
-	 */
+	/// @notice Adds a new quote locked balance to Party B's pending locked balances. Always updates both per-partyA and cross bucket.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @param quote The quote whose locked values are to be added.
 	function addToPartyBPendingLockedBalances(address partyB, address partyA, Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -237,10 +211,8 @@ library LibAccount {
 		accountLayout.partyBPendingLockedBalances[partyB][address(0)].addQuote(quote);
 	}
 
-	/**
-	 * @notice Subtracts a quote's locked balance from Party B's pending locked balances. Always updates both per-partyA and cross bucket.
-	 * @param quote The quote whose locked values are to be subtracted.
-	 */
+	/// @notice Subtracts a quote's locked balance from Party B's pending locked balances. Always updates both per-partyA and cross bucket.
+	/// @param quote The quote whose locked values are to be subtracted.
 	function subFromPartyBPendingLockedBalances(Quote storage quote) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -248,42 +220,34 @@ library LibAccount {
 		accountLayout.partyBPendingLockedBalances[quote.partyB][address(0)].subQuote(quote);
 	}
 
-	/**
-	 * @notice Increments Party B nonce for a specific Party A. Always increments both per-partyA and cross nonce.
-	 * @param partyB PartyB address
-	 * @param partyA PartyA address
-	 */
+	/// @notice Increments Party B nonce for a specific Party A. Always increments both per-partyA and cross nonce.
+	/// @param partyB PartyB address
+	/// @param partyA PartyA address
 	function increasePartyBNonce(address partyB, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		accountLayout.partyBNonces[partyB][partyA]++;
 		accountLayout.partyBNonces[partyB][address(0)]++;
 	}
 
-	/**
-	 * @notice Increments Party A nonce.
-	 * @param partyA PartyA address
-	 */
+	/// @notice Increments Party A nonce.
+	/// @param partyA PartyA address
 	function increasePartyANonce(address partyA) internal {
 		AccountStorage.layout().partyANonces[partyA] += 1;
 	}
 
-	/**
-	 * @notice Increments both Party A and Party B nonces in a single call.
-	 * @param partyB PartyB address
-	 * @param partyA PartyA address
-	 */
+	/// @notice Increments both Party A and Party B nonces in a single call.
+	/// @param partyB PartyB address
+	/// @param partyA PartyA address
 	function increaseBothNonces(address partyB, address partyA) internal {
 		AccountStorage.layout().partyANonces[partyA] += 1;
 		increasePartyBNonce(partyB, partyA);
 	}
 
-	/**
-	 * @notice returns Party B nonce for standard account mode or cross partyB mode.
-	 * @param partyB The Party B address.
-	 * @param partyA The Party A address.
-	 * @param useCrossNonce Flag to return the actual cross nonce when in cross partyB mode.
-	 * @return nonce The Party B nonce in non-cross partyB mode or either zero/actual cross nonce when in cross partyB mode.
-	 */
+	/// @notice returns Party B nonce for standard account mode or cross partyB mode.
+	/// @param partyB The Party B address.
+	/// @param partyA The Party A address.
+	/// @param useCrossNonce Flag to return the actual cross nonce when in cross partyB mode.
+	/// @return nonce The Party B nonce in non-cross partyB mode or either zero/actual cross nonce when in cross partyB mode.
 	function getPartyBSignatureNonce(address partyB, address partyA, bool useCrossNonce) internal view returns (uint256) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		if (MAStorage.layout().crossModeEnabledForPartyB[partyB]) {
@@ -292,31 +256,29 @@ library LibAccount {
 		return accountLayout.partyBNonces[partyB][partyA];
 	}
 
-	/**
-	 * @notice Resolves the fee collector address for an affiliate.
-	 * @param affiliate The affiliate address.
-	 * @return The fee collector address (affiliate-specific or default).
-	 */
+	/// @notice Resolves the fee collector address for an affiliate.
+	/// @param affiliate The affiliate address.
+	/// @return The fee collector address (affiliate-specific or default).
 	function getFeeCollector(address affiliate) internal view returns (address) {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		return appLayout.affiliateFeeCollector[affiliate] == address(0) ? appLayout.defaultFeeCollector : appLayout.affiliateFeeCollector[affiliate];
 	}
 
-	/**
-	 * @notice Refunds the open trading fee for a quote back to Party A's allocated balance.
-	 * @param quoteId The ID of the quote whose fee is being refunded.
-	 * @param partyA The address of Party A receiving the refund.
-	 */
+	/// @notice Refunds the open trading fee for a quote back to Party A's allocated balance.
+	/// @param quoteId The ID of the quote whose fee is being refunded.
+	/// @param partyA The address of Party A receiving the refund.
 	function refundOpenTradingFee(uint256 quoteId, address partyA) internal {
 		uint256 fee = LibQuote.getOpenTradingFee(quoteId);
 		AccountStorage.layout().allocatedBalances[partyA] += fee;
 		emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 	}
 
+	/// @notice Converts an amount from collateral decimals to 18 decimals.
 	function to18Decimals(uint256 amount) internal view returns (uint256) {
 		return (amount * 1e18) / (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals());
 	}
 
+	/// @notice Converts an amount from 18 decimals to collateral decimals.
 	function toCollateralDecimals(uint256 amount) internal view returns (uint256) {
 		return (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18;
 	}

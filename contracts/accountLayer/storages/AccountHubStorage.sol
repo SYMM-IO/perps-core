@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
+/// @notice Isolation type for virtual accounts determining how positions are grouped
 enum VirtualAccountIsolationType {
 	POSITION,
 	MARKET,
@@ -13,6 +14,7 @@ enum VirtualAccountIsolationType {
 	MARKET_SHORT
 }
 
+/// @notice Isolation type for sub-accounts determining the VA creation strategy
 enum SubAccountIsolationType {
 	POSITION,
 	MARKET,
@@ -20,6 +22,7 @@ enum SubAccountIsolationType {
 	CUSTOM
 }
 
+/// @notice Persistent configuration data for a sub-account
 struct SubAccountData {
 	string name;
 	address owner;
@@ -31,6 +34,7 @@ struct SubAccountData {
 	SubAccountIsolationType isolationType;
 }
 
+/// @notice Persistent configuration data for a virtual account
 struct VirtualAccountData {
 	bool isExists;
 	bytes metadata;
@@ -40,6 +44,7 @@ struct VirtualAccountData {
 	EnumerableSet.UintSet quoteIds;
 }
 
+/// @notice Input parameters for creating a new sub-account
 struct SubAccountCreationData {
 	string name;
 	bytes metadata;
@@ -48,6 +53,7 @@ struct SubAccountCreationData {
 	bool singleVAMode;
 }
 
+/// @notice View-layer representation of a sub-account with its address included
 struct SubAccountDetail {
 	address accountAddress;
 	address owner;
@@ -60,6 +66,7 @@ struct SubAccountDetail {
 	SubAccountIsolationType isolationType;
 }
 
+/// @notice View-layer representation of a virtual account with its address included
 struct VirtualAccountDetail {
 	address accountAddress;
 	address parentAccount;
@@ -69,6 +76,7 @@ struct VirtualAccountDetail {
 	VirtualAccountIsolationType isolationType;
 }
 
+/// @notice Information about a legacy MultiAccount-based account
 struct LegacyAccountInfo {
 	address accountAddress;
 	string name;
@@ -76,6 +84,7 @@ struct LegacyAccountInfo {
 	bool alreadyImported;
 }
 
+/// @notice Input parameters for importing a legacy account into the new system
 struct LegacyAccountImportData {
 	address account;
 	string name;

@@ -13,12 +13,10 @@ import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { SingleUpnlSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 
 contract PartyBLiquidationFacet is Pausable, Accessibility, IPartyBLiquidationFacet {
-	/**
-	 * @notice Liquidates Party B with respect to a Party A.
-	 * @param partyB The address of Party B to be liquidated.
-	 * @param partyA The address of Party A related to the liquidation.
-	 * @param upnlSig The Muon signature containing the unrealized profit and loss data.
-	 */
+	/// @notice Liquidates Party B with respect to a Party A.
+	/// @param partyB The address of Party B to be liquidated.
+	/// @param partyA The address of Party A related to the liquidation.
+	/// @param upnlSig The Muon signature containing the unrealized profit and loss data.
 	function liquidatePartyB(
 		address partyB,
 		address partyA,
@@ -35,12 +33,10 @@ contract PartyBLiquidationFacet is Pausable, Accessibility, IPartyBLiquidationFa
 		PartyBLiquidationFacetImpl.liquidatePartyB(partyB, partyA, upnlSig);
 	}
 
-	/**
-	 * @notice Liquidates positions of Party B the Party A.
-	 * @param partyB The address of Party B whose positions are being liquidated.
-	 * @param partyA The address of Party A related to the liquidation.
-	 * @param priceSig The Muon signature containing the quote price data.
-	 */
+	/// @notice Liquidates positions of Party B for a given Party A.
+	/// @param partyB The address of Party B whose positions are being liquidated.
+	/// @param partyA The address of Party A related to the liquidation.
+	/// @param priceSig The Muon signature containing the quote price data.
 	function liquidatePositionsPartyB(
 		address partyB,
 		address partyA,
