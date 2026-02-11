@@ -39,9 +39,9 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	/// @notice Settles the positions then forces the closure of the position associated with the specified quote.
 	/// @param quoteId The ID of the quote for which the position should be forced to close.
 	/// @param sig The Muon signature to calculate the close price.
-	/// @param settleSig The data struct contains quoteIds and upnl of parties and market prices.
+	/// @param settleSig The Muon settlement signature containing quoteIds, uPNL of both parties, and market prices.
 	/// @param updatedPrices New prices to be set as openedPrice for the specified quotes.
-	/// @dev DEPRECATED: Use forceCloseAndSettlePositionsUnified instead,
+	/// @dev DEPRECATED: Use forceCloseAndSettlePositionsUnified in ForceCloseStepsFacet instead,
 	///      which supports UnifiedSettlementSig for better multi-partyB coordination.
 	function settleAndForceClosePosition(
 		uint256 quoteId,

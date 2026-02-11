@@ -164,7 +164,7 @@ library LibAccount {
 		return a + upnl;
 	}
 
-	/// @notice Returns the key used for balance allocation mapping in Party B when cross partyB mode enabled.
+	/// @notice Returns the key used for balance allocation mapping in Party B. Returns address(0) for cross partyB mode or partyA for isolated mode.
 	/// @param partyB The address of Party B.
 	/// @param partyA The address of Party A.
 	/// @return bucket Party B allocation mapping key.

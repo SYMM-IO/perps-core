@@ -30,7 +30,7 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 	/// @param filledAmounts The filled amounts for the close requests. PartyB can fill LIMIT requests in multiple steps
 	///                      and each within a different price but market requests should be filled all at once.
 	/// @param closedPrices The closed prices for the close requests.
-	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
+	/// @param upnlSig The Muon signature containing PairUpnlAndPricesSig data.
 	function fillCloseRequests(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,

@@ -233,7 +233,7 @@ library LibAggregateFunding {
 	/// @notice Internal function to calculate the current accumulated funding fee
 	/// @param fundingFee The funding fee structure
 	/// @param positionType The position type
-	/// @return The current accumulated fee multiplied by epochs since start
+	/// @return The weighted sum of (accumulatedRate * epochsBeforeLastUpdate) + (currentRate * epochsSinceLastUpdate)
 	function _calculateCurrentFee(FundingFee storage fundingFee, PositionType positionType) internal view returns (int256) {
 		uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdate(fundingFee);
 		uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;

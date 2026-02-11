@@ -65,7 +65,7 @@ library WithdrawStorage {
 		uint256 withdrawLockedBalance;
 		/// @notice Auto-incrementing request ID counter per user
 		/// @dev Each user's requests are numbered sequentially starting from 1.
-		///      Maps user => their next request ID.
+		///      Maps user => their last assigned request ID (0 means no requests yet).
 		mapping(address => uint256) lastWithdrawRequestId;
 		/// @notice All withdrawal requests indexed by user and request ID
 		/// @dev Maps user => requestId => WithdrawRequest. The full request data

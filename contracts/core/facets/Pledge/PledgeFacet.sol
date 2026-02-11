@@ -12,7 +12,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 
 contract PledgeFacet is Accessibility, Pausable, IPledgeFacet {
-	/// @notice Deposit pledge (PartyB-only) used to enable Pledge.
+	/// @notice Deposit pledge collateral for the caller.
 	/// @param token ERC20 token to deposit (token decimals, not normalized).
 	/// @param amount Amount to deposit.
 	function depositPledge(address token, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {

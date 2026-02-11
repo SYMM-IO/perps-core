@@ -95,7 +95,7 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 	/* ─────────────────────────────── Initialization ─────────────────────────────── */
 
 	/// @notice Initializes the contract with admin role assignments
-	/// @param admin Address to receive all initial administrative roles
+	/// @param admin Address to receive DEFAULT_ADMIN_ROLE, SETTER_ROLE, and UNPAUSER_ROLE
 	function initialize(address admin) external initializer {
 		__Pausable_init();
 		__AccessControl_init();
@@ -110,7 +110,7 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 	/* ─────────────────────────────── Transfer Management ─────────────────────────────── */
 
 	/// @notice Executes a cross-protocol collateral transfer between Symmio instances
-	/// @param sender Address of the user whose funds are being transferred
+	/// @param sender Address of the sub-account whose funds are being transferred
 	/// @param receiver Address of the user who will receive funds on the target protocol
 	/// @param amount Amount of collateral to transfer
 	/// @param source Address of the source Symmio protocol instance

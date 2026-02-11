@@ -54,7 +54,7 @@ library LibMuonV04ClientBase {
 	///         code below. Here "‖" means concatenation of the listed byte
 	///         arrays.
 	///
-	/// @dev 6. Let x be your secret key. Compute s = (k - d * e) % Q. Add Q to
+	/// @dev 6. Let d be your secret key. Compute s = (k - d * e) % Q. Add Q to
 	///         it, if it's negative. This is your signature. (d is your secret
 	///         key.)
 	///

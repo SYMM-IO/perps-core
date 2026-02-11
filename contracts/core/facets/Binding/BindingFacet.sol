@@ -33,7 +33,7 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 		emit CancelUnbindRequest(LibSigner.getSigner());
 	}
 
-	/// @notice Allows Party B to complete the unbind request from Party A
+	/// @notice Allows Party B (immediately) or Party A (after cooldown) to complete the unbind request
 	/// @dev Can be called by PartyA after cooldown or partyB right away
 	/// @param partyA The address of Party A
 	function completeUnbindRequest(address partyA) external notSuspended(LibSigner.getSigner()) {

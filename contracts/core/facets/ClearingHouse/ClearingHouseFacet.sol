@@ -130,7 +130,7 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 		emit SettleCrossPartyBLiquidation(partyB);
 	}
 
-	/// @notice Applies a soft liquidation penalty to a Party B by deducting from their allocated and/or available balances.
+	/// @notice Applies a soft liquidation penalty to a Party B by deducting from their allocated and/or deposit balances.
 	/// @param partyB The address of Party B being penalized.
 	/// @param partyA The address of Party A associated with the penalty.
 	/// @param penaltyFromAllocated The penalty amount to deduct from partyB's allocated balance.

@@ -36,8 +36,8 @@ library LibMuonPartyB {
 		LibMuon.verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature);
 	}
 
-	/// @notice Verifies Party B UPNL signature, delegating to LibMuon with standard nonce.
+	/// @notice Verifies Party B UPNL signature, delegating to LibMuon (uses per-partyA nonce in normal mode, zero in cross mode).
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // Here the nonce should be zero in cross partyB mode as it is called while opening, closing or locking quotes.
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // Uses useCrossNonce=false: nonce is zero in cross partyB mode, per-partyA nonce otherwise.
 	}
 }

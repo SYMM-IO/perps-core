@@ -471,9 +471,9 @@ library LibQuote {
 		}
 	}
 
-	/// @notice Gets the trading fee for a quote.
+	/// @notice Gets the open trading fee for the remaining open amount (quantity - closedAmount) of a quote.
 	/// @param quoteId The ID of the quote for which to get the trading fee.
-	/// @return fee The trading fee for the quote.
+	/// @return fee The trading fee for the remaining open amount of the quote.
 	function getOpenTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];

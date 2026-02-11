@@ -27,7 +27,7 @@ interface IVirtualProvider {
 
 	/// @notice Called when a withdrawal request's cooldown is reduced via speed-up
 	/// @param withdrawRequest The withdrawal request being sped up
-	/// @param newCooldown The new reduced cooldown end time
+	/// @param newCooldown The new reduced cooldown duration
 	function onSpeedUpWithdrawRequest(WithdrawRequest memory withdrawRequest, uint256 newCooldown) external;
 
 	/// @notice Called when a withdrawal handled by this provider is suspended

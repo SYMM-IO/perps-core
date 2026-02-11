@@ -91,10 +91,9 @@ library GlobalAppStorage {
 		/// @notice Disables the legacy deallocate function when true
 		/// @dev The old version signature was not unique and therefore muon had no control over it.
 		bool legacyDeallocateDeprecated;
-		/// @notice Address that receives excess liquidation fees above the profit cap
-		/// @dev During PartyA liquidation, if remainingLf > maxLiquidationProfitPerPosition * positionsCount,
-		///      the excess goes here. Also receives soft liquidation penalties from cross PartyBs.
-		///      These funds are used to cover deficits later in overdue liquidations.
+		/// @notice Address that receives soft liquidation penalty funds from cross PartyBs
+		/// @dev When a cross-margin PartyB is subject to a soft liquidation via the ClearingHouse,
+		///      the penalty amount is transferred to this address's balance.
 		address softLiquidationPenaltyCollector;
 		/// @notice Current signer for meta-transaction/proxy pattern
 		/// @dev When a proxy calls on behalf of a user, this is set to the actual user.

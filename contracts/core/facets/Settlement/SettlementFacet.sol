@@ -14,7 +14,7 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 
 contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 	/// @notice Allows Party B to settle the upnl of party A position for the specified quotes.
-	/// @param settlementSig The data struct contains quoteIds and upnl of parties and market prices
+	/// @param settlementSig The Muon settlement signature containing quoteIds, uPNL of both parties, and market prices.
 	/// @param updatedPrices New prices to be set as openedPrice for the specified quotes.
 	/// @param partyA Address of party A
 	/// @dev DEPRECATED: This function is kept for backward compatibility. Use settleUpnlUnified instead,

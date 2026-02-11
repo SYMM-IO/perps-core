@@ -35,7 +35,7 @@ library LibMuon {
 		// == ) ==
 	}
 
-	/// @notice Verifies Party B UPNL signature using standard account mode nonce.
+	/// @notice Verifies Party B UPNL signature (uses per-partyA nonce in normal mode, zero in cross mode).
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
 		verifyPartyBUpnl(upnlSig, partyB, partyA, false);
 	}

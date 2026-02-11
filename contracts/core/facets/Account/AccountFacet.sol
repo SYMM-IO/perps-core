@@ -36,9 +36,9 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Deposit(signer, user, amount, false);
 	}
 
-	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
+	/// @notice Allows a registered virtual provider to deposit collateral on behalf of another user without actual fund transfer.
 	/// @param user The recipient address for the deposit.
-	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
+	/// @param amount The amount of collateral to be deposited, specified in 18 decimals.
 	function _virtualDepositFor(address user, uint256 amount) internal {
 		AccountFacetImpl.virtualDepositFor(user, amount);
 		uint256 amountWithCollateralDecimal = LibAccount.toCollateralDecimals(amount);
@@ -46,9 +46,9 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Deposit(msg.sender, user, amountWithCollateralDecimal, true);
 	}
 
-	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer.
+	/// @notice Allows a registered virtual provider to deposit collateral on behalf of another user without actual fund transfer.
 	/// @param user The recipient address for the deposit.
-	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
+	/// @param amount The amount of collateral to be deposited, specified in 18 decimals.
 	function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused {
 		_virtualDepositFor(user, amount);
 	}
@@ -60,9 +60,9 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit DepositVirtualFunds(msg.sender, amount);
 	}
 
-	/// @notice Allows the virtual depositor role to deposit collateral on behalf of another user without actual fund transfer and allocate them.
+	/// @notice Allows a registered virtual provider to deposit collateral on behalf of another user without actual fund transfer and allocate them.
 	/// @param user The recipient address for the deposit.
-	/// @param amount The amount of collateral to be deposited, specified in collateral decimals.
+	/// @param amount The amount of collateral to be deposited, specified in 18 decimals.
 	function virtualDepositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
@@ -86,7 +86,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(LibSigner.getSigner(), user, amount);
 	}
 
-	/// @notice Allows the system admin to withdraw the balance of a suspended user to a target address.
+	/// @notice Allows the SUSPENDED_FUNDS_WITHDRAWER_ROLE to transfer the internal balance of a suspended user to a recipient address (no token transfer occurs).
 	/// @param user The suspended user whose funds will be moved.
 	/// @param recipient The destination address that will receive the funds.
 	/// @param amount The amount to withdraw, specified in collateral decimals.
@@ -100,7 +100,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit WithdrawSuspendedUser(msg.sender, user, recipient, amount);
 	}
 
-	/// @notice Allows the system admin to deallocate the funds of a suspended user.
+	/// @notice Allows the SUSPENDED_FUNDS_WITHDRAWER_ROLE to deallocate the funds of a suspended user.
 	/// @param user The suspended user whose allocated balance will be reduced.
 	/// @param amount The allocated amount to move back to the user's balance, specified in 18 decimals.
 	function deallocateSuspendedUserFunds(
@@ -190,7 +190,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	}
 
 	/// @notice Transfers the sender's deposited balance to the user allocated balance.
-	/// @dev The sender and the recipient user cannot be partyB.
+	/// @dev The recipient user cannot be partyB.
 	/// @dev PartyA should not be in the liquidation process.
 	/// @param user The address of the user to whom the amount will be allocated.
 	/// @param amount The amount to transfer and allocate in 18 decimals.

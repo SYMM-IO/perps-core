@@ -27,7 +27,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		emit ChargeFundingRate(LibSigner.getSigner(), partyA, quoteIds, rates);
 	}
 
-	/// @notice Set funding rates for a given Symbols.
+	/// @notice Sets funding rates for given symbols.
 	/// @param symbolIds An array of symbol ids.
 	/// @param longFees An array of funding fees for long positions in 18 decimals.
 	/// @param shortFees An array of funding fees for short positions in 18 decimals.
@@ -44,7 +44,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, signer);
 	}
 
-	/// @notice Set funding rates for a given Symbols.
+	/// @notice Sets funding rates for given symbols.
 	/// @param symbolIds An array of symbol ids.
 	/// @param longFees An array of funding fees for long positions in 18 decimals.
 	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
@@ -57,7 +57,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		emit SetLongFundingFee(symbolIds, longFees, marketPrices, LibSigner.getSigner());
 	}
 
-	/// @notice Set funding rates for a given Symbols.
+	/// @notice Sets funding rates for given symbols.
 	/// @param symbolIds An array of symbol ids.
 	/// @param shortFees An array of funding fees for short positions in 18 decimals.
 	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
@@ -70,7 +70,7 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, LibSigner.getSigner());
 	}
 
-	/// @notice Set epoch durations for funding rates for a given Symbols.
+	/// @notice Sets epoch durations for funding rates for given symbols.
 	/// @param symbolIds An array of symbol ids.
 	/// @param durations An array of durations for funding fees.
 	function setEpochDurations(uint256[] memory symbolIds, uint256[] memory durations) external whenNotPartyBActionsPaused onlyPartyB {
@@ -94,10 +94,10 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 		emit UpdateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices, LibSigner.getSigner());
 	}
 
-	/// @notice Charges funding rates for a given Party A position.
+	/// @notice Charges accumulated funding fees for a given Party A's positions with Party B.
 	/// @param partyA The address of Party A.
 	/// @param partyB The address of Party B.
-	/// @param quoteIds An array of quote IDs that we are about to get funding for.
+	/// @param quoteIds An array of quote IDs to charge accumulated funding for.
 	/// @param upnlSig The Muon signature for upnl of both parties.
 	function chargeAccumulatedFundingFee(
 		address partyA,

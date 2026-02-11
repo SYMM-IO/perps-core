@@ -43,7 +43,7 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		_finalizeForceCloseWithoutSig(quoteId);
 	}
 
-	/// @notice Initializes, settles uPNL, and finalizes the force close in a single transaction.
+	/// @notice Initializes and finalizes the force close in a single transaction, optionally settling uPNL if updatedPrices are provided.
 	/// @param quoteId The ID of the quote for which the position should be forced to close.
 	/// @param sig The Muon signature to calculate the close price.
 	/// @param settlementSig Unified settlement data (uPNLs + pricing).

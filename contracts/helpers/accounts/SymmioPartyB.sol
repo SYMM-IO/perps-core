@@ -100,7 +100,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	/// @dev For each index `i`, attempts `Symmio.adlClose(quoteIds[i], amounts[i], prices[i])`.
 	///      Catches per-quote reverts, emits `ADLSkip`, and continues processing the remaining items.
 	/// @param quoteIds Quote ids to ADL-close
-	/// @param amounts Close amounts per quote (token decimals)
+	/// @param amounts Close amounts per quote (18-decimal precision)
 	/// @param prices Execution prices per quote
 	function adlClose(uint256[] calldata quoteIds, uint256[] calldata amounts, uint256[] calldata prices) external whenNotPaused {
 		uint256 len = quoteIds.length;

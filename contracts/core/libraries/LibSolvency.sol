@@ -14,14 +14,14 @@ library LibSolvency {
 	using LockedValuesOps for LockedValues;
 
 	/// @notice Checks whether both parties (Party A and Party B) will remain solvent after opening positions for given quotes.
-	/// @param quoteIds The ID of the quotes for which the positions is being opened.
-	/// @param filledAmounts The amount of the quotes that will be filled by opening the positions.
-	/// @param marketPrices The market price of positions that will be opened.
+	/// @param quoteIds The IDs of the quotes for which the positions are being opened.
+	/// @param filledAmounts The amounts of the quotes that will be filled by opening the positions.
+	/// @param marketPrices The market prices of positions that will be opened.
 	/// @param upnlPartyB The upnl of partyB
 	/// @param upnlPartyA The upnl of partyA
 	/// @param partyB Address of partyB
 	/// @param partyA Address of partyA
-	/// @return A boolean indicating whether both parties remain solvent after opening the position.
+	/// @return A boolean indicating whether both parties remain solvent after opening the positions.
 	function isSolventAfterOpenPosition(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -72,16 +72,16 @@ library LibSolvency {
 	}
 
 	/// @notice Calculates the available balances for Party A and Party B after closing positions for given quotes.
-	/// @param quoteIds The ID of the quotes for which the position is being closed.
-	/// @param filledAmounts The amount of the quotes that will be filled by closing the position.
-	/// @param closedPrices The price at which the positions will be closed.
-	/// @param marketPrices The market price of positions that will be closed.
+	/// @param quoteIds The IDs of the quotes for which the positions are being closed.
+	/// @param filledAmounts The amounts of the quotes that will be filled by closing the positions.
+	/// @param closedPrices The prices at which the positions will be closed.
+	/// @param marketPrices The market prices of positions that will be closed.
 	/// @param upnlPartyB The upnl of partyB
 	/// @param upnlPartyA The upnl of partyA
 	/// @param partyB Address of partyB
 	/// @param partyA Address of partyA
-	/// @return partyBAvailableBalance The available balance for Party B after closing the position.
-	/// @return partyAAvailableBalance The available balance for Party A after closing the position.
+	/// @return partyBAvailableBalance The available balance for Party B after closing the positions.
+	/// @return partyAAvailableBalance The available balance for Party A after closing the positions.
 	function getAvailableBalanceAfterClosePosition(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
@@ -141,15 +141,15 @@ library LibSolvency {
 	}
 
 	/// @notice Checks whether both parties (Party A and Party B) will remain solvent after closing positions for given quotes.
-	/// @param quoteIds The ID of the quotes for which the position is being closed.
-	/// @param filledAmounts The amount of the quotes that will be filled by closing the position.
-	/// @param closedPrices The price at which the positions will be closed.
-	/// @param marketPrices The market price of positions that will be closed.
+	/// @param quoteIds The IDs of the quotes for which the positions are being closed.
+	/// @param filledAmounts The amounts of the quotes that will be filled by closing the positions.
+	/// @param closedPrices The prices at which the positions will be closed.
+	/// @param marketPrices The market prices of positions that will be closed.
 	/// @param upnlPartyB The upnl of partyB
 	/// @param upnlPartyA The upnl of partyA
 	/// @param partyB Address of partyB
 	/// @param partyA Address of partyA
-	/// @return A boolean indicating whether both parties remain solvent after closing the position.
+	/// @return A boolean indicating whether both parties remain solvent after closing the positions.
 	function isSolventAfterClosePosition(
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,

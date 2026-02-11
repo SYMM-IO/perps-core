@@ -200,6 +200,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Sets the trading fees for a specific affiliate and symbol. Fees are charged when opening and closing positions.
+	/// @param affiliate The address of the affiliate whose trading fees are being set.
 	/// @param symbolIds The list of trading symbol IDs (0 for default fee across all symbols).
 	/// @param openFees The list of open fees (in 1e18 precision).
 	/// @param closeFees The list of close fees (in 1e18 precision).
@@ -236,6 +237,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Sets custom trading fees for a specific user under an affiliate. Allows preferential rates for specific traders.
+	/// @param affiliate The address of the affiliate under which the user fees are being set.
 	/// @param users The list of users to set custom fees for.
 	/// @param symbolIds The list of trading symbol IDs (0 for default fee across all symbols).
 	/// @param openFees The list of open fees (in 1e18 precision).
@@ -315,7 +317,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Sets the waiting period after deallocation before funds can be withdrawn. Allows time for any problem resolution.
-	/// @dev Also updates the withdraw cooldown period to maintain consistency.
+	/// @dev The deallocate cooldown and withdraw cooldown share the same storage field (withdrawCooldownPeriod).
 	/// @param deallocateCooldown The cooldown duration in seconds after deallocation before withdrawal is permitted.
 	function setDeallocateCooldown(uint256 deallocateCooldown) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
 		_updateWithdrawAndDeallocateCooldown(deallocateCooldown);
@@ -366,8 +368,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MAStorage.layout().forceCancelCloseCooldown = forceCancelCloseCooldown;
 	}
 
-	/// @notice Sets the percentage of liquidation proceeds that go to liquidators as incentive for performing liquidations in partyB liquidation.
-	/// @param liquidatorShare The percentage (in 1e18 precision) of liquidation proceeds awarded to liquidators.
+	/// @notice Sets the percentage of remaining liquidation fee (LF) awarded to the initiating liquidator in partyB liquidation.
+	/// @param liquidatorShare The percentage (in 1e18 precision) of remaining LF (after covering the deficit) awarded to the liquidatePartyB caller.
 	function setLiquidatorShare(uint256 liquidatorShare) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
 		emit SetLiquidatorShare(MAStorage.layout().liquidatorShare, liquidatorShare);
 		MAStorage.layout().liquidatorShare = liquidatorShare;
@@ -384,7 +386,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		SymbolStorage.layout().forceCloseGapRatio[symbolId] = forceCloseGapRatio;
 	}
 
-	/// @notice Sets the minimum time between UPNL settlements. Prevents excessive settlement frequency by Party B that can affect other parties.
+	/// @notice Sets the minimum time between UPNL settlements. Prevents excessive settlement frequency by third-party signers (Party B is exempt from this cooldown).
 	/// @param settlementCooldown The minimum time in seconds between consecutive UPNL settlements.
 	function setSettlementCooldown(uint256 settlementCooldown) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
 		emit SetSettlementCooldown(MAStorage.layout().settlementCooldown, settlementCooldown);
@@ -453,7 +455,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Configures the liquidation insurance vault which caps liquidator profits and collects excess to protect the protocol.
 	/// @param insuranceVault The address of the insurance vault that receives excess liquidation profits.
-	/// @param maxLiquidationProfit The maximum profit (in collateral token units) a liquidator can earn per position.
+	/// @param maxLiquidationProfit The maximum profit (in 18-decimal precision) a liquidator can earn per position.
 	function setLiquidationInsuranceVaultParams(
 		address insuranceVault,
 		uint256 maxLiquidationProfit
@@ -522,13 +524,13 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	}
 
 	/// @notice Sets the waiting period after initiating a withdrawal before funds can be claimed. Provides time for security checks.
-	/// @dev Also updates the deallocate cooldown to maintain consistency.
+	/// @dev The withdraw cooldown and deallocate cooldown share the same storage field (withdrawCooldownPeriod).
 	/// @param _withdrawCooldownPeriod The cooldown duration in seconds before withdrawal can be completed.
 	function setWithdrawCooldownPeriod(uint256 _withdrawCooldownPeriod) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
 		_updateWithdrawAndDeallocateCooldown(_withdrawCooldownPeriod);
 	}
 
-	/// @notice Updates both the withdraw cooldown period and deallocate cooldown to the same value.
+	/// @notice Updates the shared cooldown value (withdrawCooldownPeriod) and emits both legacy events.
 	function _updateWithdrawAndDeallocateCooldown(uint256 newValue) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		emit SetWithdrawCooldownPeriod(maLayout.withdrawCooldownPeriod, newValue);

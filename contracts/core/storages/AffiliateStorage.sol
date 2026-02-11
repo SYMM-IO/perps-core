@@ -42,7 +42,7 @@ library AffiliateStorage {
 		// Hooks
 		// ══════════════════════════════════════════════════════════════════════════════
 		/// @notice Hook contracts called on protocol events per affiliate
-		/// @dev Called on onOpenPosition, onClosePosition, onCancelQuote events.
+		/// @dev Called on onOpenPosition, onFeeCharged, onClosePosition, onCancelQuote events.
 		///      address(0) key is the system-wide hook. Enables custom integrations.
 		mapping(address => address) affiliateHooks;
 	}

@@ -24,7 +24,7 @@ import { IForceActionsFacet } from "../facets/ForceActions/IForceActionsFacet.so
 import { ISettlementFacet } from "../facets/Settlement/ISettlementFacet.sol";
 import { IPartyBBatchActionsFacet } from "../facets/PartyBBatchActions/IPartyBBatchActionsFacet.sol";
 
-/// @notice Composite interface aggregating all Symmio Diamond facet interfaces
+/// @notice Composite interface aggregating a subset of Symmio Diamond facet interfaces
 interface ISymmio is
 	IAccountFacet,
 	IControlFacet,

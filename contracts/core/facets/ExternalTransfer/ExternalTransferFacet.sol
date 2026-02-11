@@ -27,9 +27,10 @@ contract ExternalTransferFacet is Accessibility, Pausable, IExternalTransferFace
 		emit ExternalTransfer(signer, receiver, amount, target);
 	}
 
-	/// @notice Transfers virtual collateral from sender's available balance to a target contract via a virtual provider.
-	/// @dev Used when actual token transfer isn't possible (e.g., virtual balances). The virtual provider acts as
-	///      intermediary -- it receives a callback and is expected to credit the receiver on the target contract.
+	/// @notice Initiates a virtual external transfer by deducting the sender's balance and notifying the virtual provider.
+	/// @dev Uses a virtual provider as intermediary for transfers that don't move actual tokens (e.g., cross-chain).
+	///      The provider receives an onExternalTransfer callback and must later call acceptVirtualExternalTransfer
+	///      to complete the transfer. Until accepted, the sender can cancel and reclaim their balance.
 	/// @param receiver The address of the recipient in the target contract.
 	/// @param amount The amount to transfer, specified in collateral decimals.
 	/// @param target The target contract.

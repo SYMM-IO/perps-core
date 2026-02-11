@@ -232,9 +232,9 @@ contract ViewFacet is IViewFacet {
 		return allocatedBalances;
 	}
 
-	/// @notice Returns the withdrawal cooldown of a user (indicating the most recent time the user executed a deallocation).
+	/// @notice Returns the deallocation timestamp of a user (indicating the most recent time the user executed a deallocation).
 	/// @param user The address of the user.
-	/// @return The withdrawal cooldown of the user.
+	/// @return The deallocation timestamp of the user.
 	function withdrawCooldownOf(address user) external view returns (uint256) {
 		return AccountStorage.layout().deallocateTimestamp[user];
 	}
@@ -575,8 +575,8 @@ contract ViewFacet is IViewFacet {
 		return BridgeStorage.layout().bridgeTransactions[transactionId];
 	}
 
-	/// @notice Retrieves the next available bridge transaction ID.
-	/// @return The next available bridge transaction ID.
+	/// @notice Retrieves the last assigned bridge transaction ID.
+	/// @return The last assigned bridge transaction ID.
 	function getNextBridgeTransactionId() external view returns (uint256) {
 		return BridgeStorage.layout().lastId;
 	}

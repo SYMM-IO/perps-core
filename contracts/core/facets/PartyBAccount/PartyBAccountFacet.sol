@@ -14,7 +14,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 
 contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
-	/// @notice Allows Party B to allocate a specified amount of collateral for an specified partyA.
+	/// @notice Allows Party B to allocate a specified amount of collateral for a specified partyA.
 	/// @dev This function can only be called by Party B when Party B actions are not paused and Party B is not liquidated.
 	/// @param amount The precise amount of collateral to be allocated, specified in 18 decimals.
 	/// @param partyA The address of Party A
@@ -30,7 +30,7 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 
 	/// @notice Allows Party B to deallocate a specified amount of collateral
 	/// @dev This function can only be called by Party B when Party B actions are not paused and neither Party A nor Party B is liquidated.
-	/// @param amount The precise amount of collateral to be deallocated, specified in decimals.
+	/// @param amount The precise amount of collateral to be deallocated, specified in 18 decimals.
 	/// @param partyA The address of Party A
 	/// @param upnlSig The Muon signature for SingleUpnlSig.
 	function deallocateForPartyB(
@@ -52,7 +52,7 @@ contract PartyBAccountFacet is Accessibility, Pausable, IPartyBAccountFacet {
 	}
 
 	/// @notice Allows transferring the allocation of partyB from one party A to another.
-	/// @param amount The precise amount of collateral to be transferred, specified in decimals.
+	/// @param amount The precise amount of collateral to be transferred, specified in 18 decimals.
 	/// @param origin The address of the party A whose allocation is being transferred.
 	/// @param recipient The address of the party A who will receive the transferred allocation.
 	/// @param upnlSig The Muon signature for SingleUpnlSig.

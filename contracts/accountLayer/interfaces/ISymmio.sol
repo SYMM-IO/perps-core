@@ -191,7 +191,7 @@ interface ISymmio {
 	/// @return The allocated balance
 	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
 
-	/// @notice Transfers allocated funds to another account
+	/// @notice Transfers from the signer's deposited balance to another account's allocated balance
 	/// @param user The recipient account address
 	/// @param amount The amount to transfer
 	function internalTransfer(address user, uint256 amount) external;
@@ -231,8 +231,8 @@ interface ISymmio {
 	/// @param feeCollector The fee collector address
 	function setFeeCollector(address affiliate, address feeCollector) external;
 
-	/// @notice Returns and increments the next quote ID
-	/// @return The next quote ID
+	/// @notice Returns the last assigned quote ID
+	/// @return The last assigned quote ID
 	function getNextQuoteId() external returns (uint256);
 
 	/// @notice Registers an affiliate on the Symmio core

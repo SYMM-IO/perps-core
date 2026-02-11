@@ -13,7 +13,7 @@ import { IERC165 } from "../interfaces/IERC165.sol";
 library LibDiamond {
 	bytes32 public constant DIAMOND_STORAGE_POSITION = keccak256("diamond.standard.diamond.storage");
 
-	/// @notice Maps a facet address to its selector position in the selectors array
+	/// @notice Pairs a facet address with its selector position in the selectors array
 	struct FacetAddressAndSelectorPosition {
 		address facetAddress;
 		uint16 selectorPosition;

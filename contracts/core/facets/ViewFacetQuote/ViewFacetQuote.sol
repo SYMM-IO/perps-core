@@ -18,9 +18,9 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return QuoteStorage.layout().quotes[quoteId];
 	}
 
-	/// @notice Returns an array of quotes associated with a parent quote ID.
-	/// @param quoteId The parent quote ID.
-	/// @param size The size of the array.
+	/// @notice Returns an array of quotes following the parentId chain (each quote's parentId points to the child/remainder quote created from a partial fill).
+	/// @param quoteId The starting quote ID.
+	/// @param size The maximum number of quotes to return.
 	/// @return An array of quotes.
 	function getQuotesByParent(uint256 quoteId, uint256 size) external view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -283,8 +283,8 @@ contract ViewFacetQuote is IViewFacetQuote {
 		}
 	}
 
-	/// @notice Retrieves the next available quote ID.
-	/// @return The next available quote ID.
+	/// @notice Retrieves the last assigned quote ID.
+	/// @return The last assigned quote ID.
 	function getNextQuoteId() external view returns (uint256) {
 		return QuoteStorage.layout().lastId;
 	}

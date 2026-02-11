@@ -46,7 +46,7 @@ library PartyBEmergencyActionsFacetImpl {
 		LibQuoteClose.closeQuote(quote.id, filledAmount, upnlSig.price);
 	}
 
-	/// @notice Auto-deleverages a quote proportionally, checking solvency buffers and preserving pending close intents
+	/// @notice Auto-deleverages a quote by a specified amount, checking solvency buffers and preserving pending close intents
 	/// @dev Keeps quote closeId/status consistent with existing CLOSE_PENDING/CANCEL_CLOSE_PENDING flows and emits ADL events
 	/// @param quoteId Quote to ADL close (same partyA/partyB/symbol).
 	/// @param amount Quantity to close.

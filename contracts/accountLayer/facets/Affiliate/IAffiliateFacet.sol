@@ -150,7 +150,7 @@ interface IAffiliateFacet is IAffiliateFacetEvents, IAccountLayerErrors {
 	/// @param status Whether the operator should be authorized
 	function setOperator(address affiliate, bytes4 selector, address operator, bool status) external;
 
-	// ==================== Express Withdraw Configuration ====================
+	// ==================== Express Deposit Configuration ====================
 
 	/// @notice Sets the express deposit rate for an affiliate
 	/// @param affiliate The affiliate address

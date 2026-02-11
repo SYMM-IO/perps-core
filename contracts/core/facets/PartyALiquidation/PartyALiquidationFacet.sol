@@ -34,7 +34,7 @@ contract PartyALiquidationFacet is Pausable, Accessibility, IPartyALiquidationFa
 	}
 
 	/// @notice Sets the prices of symbols at the time of liquidation.
-	/// @dev The Muon signature here should be the same as the one that got partyA liquidated.
+	/// @dev The Muon signature's liquidationId must match the one from the initial liquidatePartyA call.
 	/// @param partyA The address of Party A associated with the liquidation.
 	/// @param liquidationSig The Muon signature containing symbol IDs and their corresponding prices.
 	function setSymbolsPrice(
@@ -67,7 +67,7 @@ contract PartyALiquidationFacet is Pausable, Accessibility, IPartyALiquidationFa
 	}
 
 	/// @notice Deferred sets the prices of symbols at the time of liquidation.
-	/// @dev The Muon signature here should be the same as the one that got partyA liquidated.
+	/// @dev The Muon signature's liquidationId must match the one from the initial deferredLiquidatePartyA call.
 	/// @param partyA The address of Party A associated with the liquidation.
 	/// @param liquidationSig The Muon signature containing symbol IDs and their corresponding prices.
 	function deferredSetSymbolsPrice(
@@ -87,7 +87,7 @@ contract PartyALiquidationFacet is Pausable, Accessibility, IPartyALiquidationFa
 		emit LiquidatePendingPositionsPartyA(msg.sender, partyA, pendingQuotes, liquidatedAmounts, liquidationId);
 	}
 
-	/// @notice Liquidates other positions of Party A.
+	/// @notice Liquidates open positions of Party A.
 	/// @param partyA The address of Party A whose positions will be liquidated.
 	/// @param quoteIds An array of quote IDs representing the positions to be liquidated.
 	function liquidatePositionsPartyA(
@@ -123,7 +123,7 @@ contract PartyALiquidationFacet is Pausable, Accessibility, IPartyALiquidationFa
 	/// @param partyA The address of Party A involved in the dispute.
 	/// @param partyBs An array of addresses representing Party Bs involved in the dispute.
 	/// @param amounts An array of settlement amounts corresponding to Party Bs.
-	/// @param disputed A boolean indicating whether the liquidation was disputed.
+	/// @param disputed Whether the liquidation should remain in disputed state after resolution.
 	function resolveLiquidationDispute(
 		address partyA,
 		address[] memory partyBs,

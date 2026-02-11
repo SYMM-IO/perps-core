@@ -92,7 +92,7 @@ library AffiliateHubStorage {
 		///      Timestamp recorded for audit trail, no enforced delay.
 		mapping(address => PendingFeeUpdate) pendingFeeUpdates;
 		/// @notice Operator permissions per affiliate per function
-		/// @dev Affiliates can authorize operators for specific functions via callAsAffiliate.
+		/// @dev Affiliates can authorize operators for specific functions via setOperator.
 		///      Maps affiliate => selector => operator => allowed.
 		mapping(address => mapping(bytes4 => mapping(address => bool))) operators;
 		/// @notice Set of all legacy MultiAccount contracts

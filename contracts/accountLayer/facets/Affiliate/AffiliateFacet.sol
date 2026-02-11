@@ -93,7 +93,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
-		// Deploy AccountManager via ControlFacet's internal function
+		// Deploy AccountManager via AffiliateFacet's internal function
 		address accountManager = _deployAccountManager(afLayout.affiliates[affiliate].registrant, afLayout.affiliates[affiliate].name);
 		if (affiliate != accountManager) revert("AffiliateFacet: Deployment mismatch");
 
@@ -298,7 +298,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		emit OperatorSet(affiliate, selector, operator, status);
 	}
 
-	// ==================== Express Withdraw Configuration ====================
+	// ==================== Express Deposit Configuration ====================
 
 	/// @notice Sets the express deposit rate for an affiliate (fraction sent to virtual provider)
 	/// @param affiliate The affiliate address

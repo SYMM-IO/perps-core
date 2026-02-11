@@ -27,9 +27,9 @@ import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 ///      2. Accumulated funding: Tracks funding over epochs and applies in bulk
 library FundingRateFacetImpl {
 	/// @notice Applies direct funding rate to open positions
-	/// @dev This adjusts the open price of positions based on the funding rate
-	///      - Positive rate: User pays funding fee
-	///      - Negative rate: User receives funding fee
+	/// @dev This adjusts the open price of positions based on the funding rate.
+	///      A positive rate on a LONG position increases openedPrice (hurts PartyA),
+	///      while a negative rate on a LONG decreases openedPrice (benefits PartyA).
 	/// @param partyA The trader's address
 	/// @param quoteIds Array of position IDs to apply funding to
 	/// @param rates Array of funding rates (in 1e18 precision, can be negative)
@@ -89,7 +89,7 @@ library FundingRateFacetImpl {
 				require(latestEpochTimestamp > quote.lastFundingPaymentTimestamp, "ChargeFundingFacet: Funding already paid for this window");
 				paidTimestamp = latestEpochTimestamp;
 			} else {
-				// We're in the grace period before the next epoch
+				// We're in the early payment window before the next epoch
 				uint256 nextEpochTimestamp = latestEpochTimestamp + epochDuration;
 				require(block.timestamp >= nextEpochTimestamp - windowTime, "ChargeFundingFacet: Current timestamp is out of window");
 				require(nextEpochTimestamp > quote.lastFundingPaymentTimestamp, "ChargeFundingFacet: Funding already paid for this window");
@@ -98,7 +98,7 @@ library FundingRateFacetImpl {
 
 			// Apply funding rate to position
 			if (rates[i] >= 0) {
-				// Positive funding: Longs pay shorts
+				// Positive funding: PartyA available balance decreases, PartyB increases
 				uint256 priceAdjustment = (quote.openedPrice * uint256(rates[i])) / 1e18;
 
 				if (quote.positionType == PositionType.LONG) {
@@ -109,11 +109,11 @@ library FundingRateFacetImpl {
 					quote.openedPrice -= priceAdjustment;
 				}
 
-				// Transfer funding from longs to shorts
+				// Transfer funding from PartyA to PartyB
 				partyAAvailableBalance -= int256((LibQuote.quoteOpenAmount(quote) * priceAdjustment) / 1e18);
 				partyBAvailableBalance += int256((LibQuote.quoteOpenAmount(quote) * priceAdjustment) / 1e18);
 			} else {
-				// Negative funding: Shorts pay longs
+				// Negative funding: PartyA available balance increases, PartyB decreases
 				uint256 priceAdjustment = (quote.openedPrice * uint256(-rates[i])) / 1e18;
 
 				if (quote.positionType == PositionType.LONG) {
@@ -124,7 +124,7 @@ library FundingRateFacetImpl {
 					quote.openedPrice += priceAdjustment;
 				}
 
-				// Transfer funding from shorts to longs
+				// Transfer funding from PartyB to PartyA
 				partyAAvailableBalance += int256((LibQuote.quoteOpenAmount(quote) * priceAdjustment) / 1e18);
 				partyBAvailableBalance -= int256((LibQuote.quoteOpenAmount(quote) * priceAdjustment) / 1e18);
 			}
@@ -189,8 +189,8 @@ library FundingRateFacetImpl {
 	/// @notice Updates accumulated funding fees for symbols
 	/// @dev Maintains a weighted average of funding rates across all epochs
 	/// @param symbolIds Array of symbol IDs
-	/// @param longRates New funding rates for long positions (as percentages, not price-adjusted)
-	/// @param shortRates New funding rates for short positions (as percentages, not price-adjusted)
+	/// @param longRates New funding rates for long positions in 18 decimals
+	/// @param shortRates New funding rates for short positions in 18 decimals
 	/// @param marketPrices Current market prices to convert rates to price-adjusted values
 	function updateAccumulatedFundingFee(
 		uint256[] memory symbolIds,

@@ -35,7 +35,7 @@ library ClearingHouseStorage {
 
 	struct Layout {
 		/// @notice Liquidation state for cross PartyBs
-		/// @dev Similar to liquidationDetails but for cross-mode PartyB liquidation.
+		/// @dev Tracks cross-mode PartyB liquidation state (separate from AccountStorage.liquidationDetails which is for PartyA).
 		mapping(address => CrossLiquidationDetail) crossLiquidationDetails;
 		/// @notice Takeover state for PartyA liquidations
 		/// @dev Maps partyA => PartyATakeoverDetail. When inProgress is true,

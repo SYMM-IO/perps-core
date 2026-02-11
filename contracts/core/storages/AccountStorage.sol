@@ -10,7 +10,7 @@ import { LockedValues } from "../storages/QuoteStorage.sol";
 /// @dev Determines how remaining funds are distributed and who pays what.
 ///      NONE = not liquidated
 ///      NORMAL = liquidated on time (no deficit)
-///      LATE = liquidated with small deficit (more than LF but less than LF + CVA)
+///      LATE = liquidated with small deficit (at least LF but at most LF + CVA)
 ///      OVERDUE = liquidated with large deficit (more than LF + CVA)
 enum LiquidationType {
 	NONE,
@@ -173,9 +173,9 @@ library AccountStorage {
 		///      consistent prices throughout the liquidation process.
 		mapping(address => mapping(uint256 => Price)) symbolsPrices;
 		/// @notice Addresses participating in a user's liquidation
-		/// @dev Multiple liquidators can process a single liquidation. Each gets a share
-		///      of the liquidation fee proportional to their contribution. Cleared after
-		///      liquidation completes.
+		/// @dev Exactly two liquidators are recorded: [0] from liquidatePartyA/deferredLiquidatePartyA,
+		///      [1] from setSymbolsPrice/determineLiquidationType. The liquidation fee is split
+		///      50/50 between them. Cleared after liquidation completes.
 		mapping(address => address[]) liquidators;
 		/// @notice Reimbursement owed to PartyA from pending fees or new allocations during deferred liquidations
 		/// @dev This will be paid back to user at the end of liquidation process.

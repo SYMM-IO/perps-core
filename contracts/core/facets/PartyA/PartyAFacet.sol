@@ -27,7 +27,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	/// @param lf Liquidation Fee paid to the liquidator user
 	/// @param partyAmm The partyA Maintenance Margin value behind the position
 	/// @param partyBmm The partyB Maintenance Margin value behind the position
-	/// @param maxFundingRate The maximum funding rate allowed from user side.
+	/// @param maxFundingRate Unused, kept for backward compatibility. Funding caps are postponed to a later version.
 	/// @param deadline Expiration timestamp for the quote request
 	/// @param affiliate The affiliate of this quote
 	/// @param upnlSig The Muon signature for user upnl and symbol price
@@ -190,7 +190,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	/// @param lf Liquidation Fee paid to the liquidator user
 	/// @param partyAmm The partyA Maintenance Margin value behind the position
 	/// @param partyBmm The partyB Maintenance Margin value behind the position
-	/// @param maxFundingRate The maximum funding rate allowed from user side.
+	/// @param maxFundingRate Unused, kept for backward compatibility. Funding caps are postponed to a later version.
 	/// @param deadline Expiration timestamp for the quote request
 	/// @param upnlSig The Muon signature for user upnl and symbol price
 	function sendQuote(
@@ -257,7 +257,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		);
 	}
 
-	/// @notice Expires the specified quotes.
+	/// @notice Expires the specified quotes or close requests that have passed their deadline.
 	/// @param expiredQuoteIds An array of IDs of the quotes to be expired.
 	function expireQuote(uint256[] memory expiredQuoteIds) external whenNotPartyAActionsPaused {
 		QuoteStatus result;

@@ -22,7 +22,7 @@ pragma solidity >=0.8.18;
 ///         │ • Flexible Nonce Management: Choose between salt-only       │
 ///         │   (nonce=0) or ordered execution (nonce>0)                  │
 ///         │ • Multi-Account Support: Works with both PartyB and         │
-///         │   MultiAccount contracts                                    │
+///         │   AccountHub contracts                                      │
 ///         │ • EIP-712 Signatures: Type-safe signature verification      │
 ///         │ • Batch Processing: Execute multiple operations atomically  │
 ///         └─────────────────────────────────────────────────────────────┘
@@ -436,11 +436,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Deploy InstantLayer with Symmio integration.
 	/// @dev    Sets up EIP-712 domain and grants initial admin roles.
 	/// @param _symmio Address of the core Symmio protocol contract
-	/// @param _admin  Address to receive all administrative roles
+	/// @param _admin  Address to receive DEFAULT_ADMIN_ROLE, SETTER_ROLE, and OPERATOR_ROLE
 	constructor(address _symmio, address _admin) EIP712("SymmioInstantLayer", "1") {
 		symmio = ISymmio(_symmio);
 
-		// Grant all roles to the initial admin
+		// Grant initial roles to the admin (REVOKER_ROLE must be granted separately)
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 		_grantRole(SETTER_ROLE, _admin);
 		_grantRole(OPERATOR_ROLE, _admin);
@@ -589,7 +589,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// For a swap-and-stake template:
 	/// - Operation 0: Swap tokens (returns amount out)
 	/// - Operation 1: Stake tokens (uses amount from operation 0)
-	/// Operation 1 would have insertionPoint=[36] and sourceIndex=[0]
+	/// Operation 1 would have insertionPoint=[36], sourceIndex=[0], and sourceOffset=[0]
 	function addTemplate(string calldata name, Operation[] calldata operations) external onlyRole(SETTER_ROLE) {
 		if (operations.length == 0) revert EmptyTemplate();
 
@@ -620,7 +620,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/// @notice Update the global cooldown for delegation revocations.
 	/// @dev    Only SETTER_ROLE. Add guardrails to prevent absurd values.
-	///         Example policy: 1 minute ≤ cooldown ≤ 30 days.
+	///         Example policy: 5 minutes ≤ cooldown ≤ 30 days.
 	function setRevocationCooldown(uint256 newCooldown) external onlyRole(SETTER_ROLE) {
 		// Adjust bounds to taste; 0 disallowed to keep the two-step invariant.
 		if (newCooldown < 5 minutes || newCooldown > 30 days) revert InvalidCallData();
@@ -770,8 +770,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// Verification Steps:
 	/// 1. Check deadline hasn't expired
 	/// 2. Validate calldata minimum length
-	/// 3. Verify contract registration (PartyB or AccountHub)
-	/// 4. Check delegation if signer != owner
+	/// 3. Verify target is whitelisted
+	/// 4. Verify account authorization (PartyB registration or PartyA ownership/delegation)
 	/// 5. Verify EIP-712 signature
 	/// 6. Prevent replay attacks
 	/// 7. Update nonce if required

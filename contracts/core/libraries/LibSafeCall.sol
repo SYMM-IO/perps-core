@@ -11,7 +11,7 @@ import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 /// @dev Clears the signer before calling external contracts to prevent impersonation attacks
 library LibSafeCall {
 	/// @notice Safely calls an external contract with signer cleared, reverts on failure
-	/// @dev Unlike LibHook.safeCall, this reverts if the external call fails
+	/// @dev Reverts if the target is address(0) or if the external call fails (re-thrown with the original error). Unlike LibHook.safeCall, failures are not silently swallowed.
 	/// @param target The target contract address
 	/// @param data The encoded function call data
 	function safeExternalCall(address target, bytes memory data) internal {

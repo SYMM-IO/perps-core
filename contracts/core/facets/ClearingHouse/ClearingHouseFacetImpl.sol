@@ -466,7 +466,7 @@ library ClearingHouseFacetImpl {
 		return true;
 	}
 
-	/// @notice Applies a soft liquidation penalty to a Party B by deducting from their allocated and/or available balances.
+	/// @notice Applies a soft liquidation penalty to a Party B by deducting from their allocated and/or deposit balances.
 	function softPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		GlobalAppStorage.Layout storage globalLayout = GlobalAppStorage.layout();

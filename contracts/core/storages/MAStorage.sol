@@ -117,7 +117,7 @@ library MAStorage {
 		mapping(address => mapping(address => mapping(address => uint256))) lastUpnlSettlementTimestamp;
 		/// @notice Address that receives excess liquidation fees above the profit cap
 		/// @dev During PartyA liquidation, if remainingLf > maxLiquidationProfitPerPosition * positionsCount,
-		///      the excess goes here. These funds are used to cover deficits later in overdue liquidations.
+		///      the excess goes here. Funds accumulate in this address's balance for later manual redistribution by the address owner.
 		address liquidationInsuranceVault;
 		/// @notice Cap on profit a liquidator can make from a single position
 		/// @dev Prevents excessive liquidator profits on large positions. Excess goes

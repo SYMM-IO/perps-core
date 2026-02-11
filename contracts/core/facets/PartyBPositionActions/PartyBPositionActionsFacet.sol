@@ -95,7 +95,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 
 	/// @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation.
 	///         Use this when the standard fillCloseRequest would revert due to PartyA insolvency.
-	///         This calculates and closes only the amount that brings PartyA to exactly 0 available balance.
+	///         This calculates and closes only the amount that brings PartyA to approximately 0 available balance.
 	///         Reverts if even a full close keeps PartyA insolvent.
 	/// @param quoteId The ID of the quote for which the close request is filled.
 	/// @param closedPrice The closed price for the close request.

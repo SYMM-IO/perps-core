@@ -20,7 +20,7 @@ interface IMarginFacetEvents {
 
 /// @notice Interface for transferring margin between sub-accounts and virtual accounts
 interface IMarginFacet is IMarginFacetEvents, IAccountLayerErrors {
-	/// @notice Transfers allocated margin from a parent sub-account to a virtual account
+	/// @notice Transfers deposited balance from a parent sub-account to a virtual account's allocated balance
 	/// @param virtualAccount The virtual account to add margin to
 	/// @param amount The amount to transfer
 	function addMargin(address virtualAccount, uint256 amount) external;

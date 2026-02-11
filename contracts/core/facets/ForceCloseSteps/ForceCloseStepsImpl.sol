@@ -49,7 +49,7 @@ library ForceCloseStepsImpl {
 	}
 
 	/// @notice Refreshes the force-close uPNL/currentPrice snapshot using a fresh PairUpnlAndPriceSig.
-	/// @dev Does not modify the previously calculated closePrice.
+	/// @dev Does not modify the previously calculated closePrice. Re-validates partyA solvency; reverts if partyA would be insolvent.
 	function refreshForceCloseSnapshot(uint256 quoteId, PairUpnlAndPriceSig memory sig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		ForceCloseDetail storage detail = accountLayout.forceCloseDetails[quoteId];

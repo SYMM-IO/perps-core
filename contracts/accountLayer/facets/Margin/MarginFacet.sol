@@ -17,7 +17,7 @@ import { ISymmio } from "../../interfaces/ISymmio.sol";
 contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
 	using EnumerableSet for EnumerableSet.AddressSet;
 
-	/// @notice Transfers allocated margin from a parent sub-account to a virtual account
+	/// @notice Transfers deposited balance from a parent sub-account to a virtual account's allocated balance
 	/// @param virtualAccount The virtual account to add margin to
 	/// @param amount The amount to transfer via internalTransfer
 	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {

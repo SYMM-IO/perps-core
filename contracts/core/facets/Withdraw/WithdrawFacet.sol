@@ -18,7 +18,7 @@ import { WithdrawReceiverPart } from "../../storages/WithdrawStorage.sol";
 /// @notice Handles user-initiated withdrawals across classic, virtual-provider, and express-provider paths.
 /// @dev This is the external-facing facet for all withdrawal operations.
 ///      Core logic is implemented in `WithdrawFacetImpl`.
-///      Each withdrawal request can contain up to 50 parts, with optional provider involvement.
+///      Each withdrawal request can contain up to maxWithdrawParts parts (configurable), with optional provider involvement.
 contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGuard {
 	/// @notice Initiates a new withdrawal request.
 	/// @dev
@@ -54,9 +54,10 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 		emit WithdrawAccepted(requestId, user);
 	}
 
-	/// @notice Operator rejects a withdrawal request.
+	/// @notice Provider rejects a withdrawal request.
 	/// @dev
-	/// - Refunds the user’s internal balance immediately.
+	/// - Must be called only by the provider contract (express or virtual).
+	/// - Refunds the user's internal balance immediately.
 	/// @param user The owner of the withdrawal request.
 	/// @param requestId ID of the withdrawal request.
 	function rejectWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
@@ -72,20 +73,18 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	///      - Virtual provider executes release logic internally.
 	/// - Request must be in:
 	///      - `PENDING` (classic-only) OR
-	///      - `PROVIDER_ACCEPTED` (provider flow)
+	///      - `PROVIDER_ACCEPTED` or `CANCEL_REQUESTED` (provider flow)
 	/// @param requestId ID of the withdrawal request.
 	function finalizeWithdrawRequest(address user, uint256 requestId) external notSuspended(user) nonReentrant {
 		WithdrawFacetImpl.finalizeWithdrawRequest(user, requestId);
 		emit WithdrawFinalized(requestId, LibSigner.getSigner());
 	}
 
-	/// @notice Requests cancellation of a withdrawal during the cooldown period.
+	/// @notice Requests cancellation of a withdrawal.
 	/// @dev
-	/// - Classic parts are refunded immediately.
-	/// - Pure virtual provider-managed parts cancel immediately and refund funds.
-	/// - Express-managed parts:
-	///      - Request transitions to `CANCEL_REQUESTED`.
-	///      - Provider receives a callback to accept/reject cancellation.
+	/// - If still `PENDING`: refunded immediately and marked `CANCELLED`.
+	/// - If `PROVIDER_ACCEPTED` with pure virtual: refunded immediately, marked `CANCELLED`, provider notified.
+	/// - If `PROVIDER_ACCEPTED` with express: transitions to `CANCEL_REQUESTED`, provider receives a callback to accept/reject cancellation.
 	/// @param requestId ID of the withdrawal request.
 	function requestCancelWithdraw(uint256 requestId) external notSuspended(LibSigner.getSigner()) nonReentrant {
 		WithdrawFacetImpl.requestCancelWithdraw(requestId);

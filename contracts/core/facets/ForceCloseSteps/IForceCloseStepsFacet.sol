@@ -25,10 +25,10 @@ interface IForceCloseStepsFacet is ForceActionsFacetEvents {
 
 	/// @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
 	/// @param quoteId The ID of the quote for which the position should be forced to close.
-	/// @param sig Fresh Muon signature (uPNLs + currentPrice) to use for solvency checks and liquidation calculations.
+	/// @param sig Fresh Muon signature (uPNLs + currentPrice) to refresh the stored snapshot before finalization.
 	function finalizeForceClose(uint256 quoteId, PairUpnlAndPriceSig memory sig) external;
 
-	/// @notice Initializes, settles uPNL, and finalizes the force close in a single transaction.
+	/// @notice Initializes and finalizes the force close in a single transaction, optionally settling uPNL if updatedPrices are provided.
 	/// @param quoteId The ID of the quote for which the position should be forced to close.
 	/// @param sig The Muon signature to calculate the close price.
 	/// @param settlementSig Unified settlement data (uPNLs + pricing).

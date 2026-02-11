@@ -133,8 +133,8 @@ library AccountHubStorage {
 		/// @notice Authorized signer for protocol-level operations
 		/// @dev Used for operations requiring protocol authorization.
 		address globalSigner;
-		/// @notice Bytecode for AccountManager proxy deployment
-		/// @dev AccountManagers are minimal proxies deployed per affiliate.
+		/// @notice Bytecode for AccountManager deployment
+		/// @dev AccountManagers are full contracts deployed per affiliate via CREATE2.
 		bytes accountManagerImplementation;
 		/// @notice Expected code hash after AccountManager initialization
 		/// @dev Used to verify AccountManagers deployed correctly.

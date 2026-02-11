@@ -205,10 +205,10 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return SymbolStorage.layout().forceCloseGapRatio[symbolId];
 	}
 
-	/// @notice Retrieves the funding rate of a party B.
+	/// @notice Retrieves the funding fee structure of a party B for a specific symbol.
 	/// @param symbolId The ID of the symbol.
 	/// @param partyB The address of the party B.
-	/// @return fundingFee The funding rate of the party B.
+	/// @return fundingFee The funding fee structure of the party B.
 	function getFundingFeesOfPartyB(uint256 symbolId, address partyB) external view returns (FundingFee memory) {
 		return FundingStorage.layout().fundingFees[symbolId][partyB];
 	}

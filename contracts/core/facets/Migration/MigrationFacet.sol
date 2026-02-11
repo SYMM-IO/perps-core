@@ -13,7 +13,7 @@ import { MigrationFacetImpl } from "./MigrationFacetImpl.sol";
 contract MigrationFacet is Accessibility, IMigrationFacet {
 	/// @notice Backfill quote-derived state for v0.8.4 -> v0.8.5 upgrade
 	/// @dev Can be called multiple times with different batches. Already migrated quotes are skipped.
-	///      Backfills aggregated positions/funding, PartyB total positions counter, and PartyA<>PartyB connection cache.
+	///      Backfills aggregated positions/funding, accumulatedPaidFunding baseline, PartyB total positions counter, and PartyA<>PartyB connection cache.
 	/// @param quoteIds Array of quote IDs to migrate
 	function migrateQuotes(uint256[] calldata quoteIds) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
 		uint256 quotesMigrated = MigrationFacetImpl.migrateQuotes(quoteIds);

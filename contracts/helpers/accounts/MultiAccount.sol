@@ -76,7 +76,7 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 		delegatedAccesses[account][target][selector] = true;
 	}
 
-	/// @notice Verifies a signature for an account using the EIP-1271 standard
+	/// @notice Verifies a signature for an account by checking against the account owner
 	/// @param account Account address to verify signature for
 	/// @param hash Hash of the data that was signed
 	/// @param signature Signature bytes to verify
@@ -235,7 +235,7 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 		innerCall(account, _callData);
 	}
 
-	/// @notice Executes a delegated call on a sub-account and reverts on failure
+	/// @notice Executes a call on a sub-account and reverts on failure
 	function innerCall(address account, bytes memory _callData) internal returns (bytes memory) {
 		(bool _success, bytes memory _resultData) = ISymmioPartyA(account)._call(_callData);
 		emit Call(msg.sender, account, _callData, _success, _resultData);
