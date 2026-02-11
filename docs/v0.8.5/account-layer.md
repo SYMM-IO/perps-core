@@ -1,49 +1,18 @@
 # AccountLayer
 
-The **Symmio AccountLayer** is the unified account and affiliate management layer for the Symmio protocol. It gives **users** organized, risk-isolated trading accounts, gives **frontends** a standardized way to onboard and earn fees, and gives the **protocol** a single upgradeable system instead of fragmented per-frontend contracts.
+The **Symmio AccountLayer** is the unified account and affiliate management layer for the Symmio protocol. It replaces the old per-frontend MultiAccount contracts with a single Diamond proxy that manages every user's accounts, standardizes affiliate onboarding and fee handling, and provides flexible position isolation -- all without deploying a contract per user.
 
-In short: users create accounts, deposit funds, and trade -- all through one system, regardless of which frontend they use.
+## The Problem It Solves
 
-## Why AccountLayer
+Previously, each frontend deployed its own MultiAccount contract, which Symmio registered individually. Upgrades required every frontend to redeploy. Affiliate onboarding was manual. Implementations diverged. Users were locked into rigid account structures.
 
-In older versions, each frontend deployed its own **MultiAccount** contract, which Symmio then registered individually. This created real problems:
-
-- **Slow upgrades** -- each frontend had to redeploy contracts for every update
-- **Manual onboarding** -- every affiliate required separate setup and registration
-- **Inconsistent behavior** -- different frontends had different implementations
-- **Limited flexibility** -- users could not easily manage multiple risk strategies
-
-AccountLayer replaces all of that with:
-
-- **One system for all accounts** -- a single Diamond proxy manages every user's accounts across all frontends
-- **Standardized affiliate registry** -- consistent onboarding, fee handling, and lifecycle management
-- **Flexible risk isolation** -- users choose how to isolate their positions (per-trade, per-market, or fully custom)
-- **Affiliate hooks** -- frontends attach custom logic to account lifecycle events without any protocol changes
-- **No per-user deployments** -- accounts are virtual addresses, not deployed contracts, reducing cost and complexity
-
----
-
-## How It Works -- The User Journey
-
-Here is the typical flow from the user's perspective:
-
-1. **A frontend registers as an affiliate** and gets approved by the protocol. This deploys an AccountManager contract for that frontend as well. The address of this AccountManager will be their affiliate address in symmio.
-
-2. **A user creates a SubAccount** through the frontend. The user picks a name and an isolation strategy (how positions should be separated). The SubAccount gets a deterministic address -- no contract is deployed.
-
-3. **The user deposits collateral** into their SubAccount. The funds land in the Symmio core, credited to the SubAccount's balance.
-
-4. **The user funds and submits trades.** Before submitting a trade, the user transfers margin to the target VA -- either to an existing VA via `addMargin`, or to the predicted next VA address via `addMarginToNextVA` (pre-funding it before it even exists, using the deterministic address). When the user sends a quote, the AccountLayer automatically creates the Virtual Account (VA) based on the chosen isolation strategy and routes the trade through it. The VA is the actual trading address on the Symmio core -- it holds the margin and the positions.
-
-5. **When positions close**, the Symmio core notifies the AccountLayer via a callback. If the VA has no remaining positions, the AccountLayer automatically sweeps all remaining funds back to the parent SubAccount and recycles the VA address for future use.
-
-The user never needs to manually create or clean up Virtual Accounts (unless they opt for full manual control with CUSTOM isolation) -- the system handles that automatically. However, **funding is always manual**: the user must transfer margin to the VA address before submitting a trade.
+AccountLayer consolidates all of that into one system: a single Diamond proxy, a standardized affiliate registry, virtual accounts with deterministic addresses, and configurable isolation strategies.
 
 ---
 
 ## Account Hierarchy
 
-Accounts are organized into two layers: **SubAccounts** and **Virtual Accounts (VAs)**.
+Accounts are organized into two layers.
 
 ```mermaid
 ---
@@ -57,27 +26,32 @@ flowchart TB
     n1 --> n5(["Virtual Account (11)"]) & n6(["Virtual Account (12)"])
 ```
 
-**SubAccounts** are the user's top-level organizational unit. A user can have multiple SubAccounts -- for example, one for conservative trading and another for aggressive strategies. Each SubAccount is linked to a specific frontend (affiliate), a specific Symmio core, and an isolation type.
+**SubAccounts** are the user's top-level organizational unit. Each one is bound to a specific frontend (affiliate), a Symmio core instance, and an isolation type chosen at creation. A user might have one SubAccount for conservative trades and another for aggressive strategies.
 
-**Virtual Accounts (VAs)** sit below SubAccounts and provide position isolation. Each VA is an independent trading address on the Symmio core -- it has its own balance, its own allocated margin, and its own positions. During trading, VAs are fully isolated: a liquidation in one VA cannot affect the margin or positions of another. When positions close, funds flow back to the shared parent SubAccount.
+**Virtual Accounts (VAs)** sit below SubAccounts and provide position isolation. Each VA is an independent trading address on the Symmio core with its own balance, allocated margin, and positions. A liquidation in one VA cannot touch another. When a VA's last position closes, its funds are automatically swept back to the parent SubAccount and the VA address is recycled for future use.
+
+Both SubAccounts and VAs are **virtual addresses** -- deterministic CREATE2-style addresses with no deployed contract behind them. The AccountLayer manages their state centrally.
 
 ### Fund Flow
 
-Funds move through the hierarchy like this:
+```
+User  ──deposit──►  SubAccount  ──addMargin──►  Virtual Account
+                    SubAccount  ◄──auto-sweep──  Virtual Account (on last position close)
+```
 
-1. **User -> SubAccount**: The user deposits collateral, which is credited to the SubAccount's balance on the Symmio core
-2. **SubAccount -> Virtual Account**: The user **manually** transfers margin to a VA before submitting a trade -- either to an existing VA via `addMargin`, or pre-funding the next VA that will be created via `addMarginToNextVA`. There is no automatic fund transfer when a trade is submitted.
-3. **Virtual Account -> SubAccount**: When all positions in a VA close, funds are **automatically** swept back to the parent SubAccount. Users can also manually pull margin back via `removeMargin`, which requires a UPNL (unrealized PnL) signature to prove the VA remains solvent after the removal.
+1. **User to SubAccount** -- The user deposits collateral, credited to the SubAccount's balance on the Symmio core.
+2. **SubAccount to VA** -- The user *manually* transfers margin to a VA before trading. This can target an existing VA (`addMargin`) or pre-fund the predicted next VA address (`addMarginToNextVA`) before it exists.
+3. **VA to SubAccount** -- Automatic when the VA's last position closes. Users can also manually pull margin back via `removeMargin`, which requires a UPNL signature to prove the VA remains solvent.
 
 ---
 
 ## Isolation Types
 
-When creating a SubAccount, the user chooses an **isolation type** that determines how Virtual Accounts are created and managed. This is the key decision that shapes the trading experience.
+The isolation type, chosen when creating a SubAccount, determines how VAs are created and managed during trading.
 
-### POSITION Isolation -- One VA per Trade
+### POSITION -- One VA per Trade
 
-Each quote gets its own dedicated Virtual Account. This provides **maximum isolation** -- each position has completely separate margin, and a liquidation on one position cannot affect any other.
+Every quote gets its own VA. Maximum isolation: each position has separate margin, and a liquidation on one cannot affect any other. When the position closes, the VA is destroyed and funds return to the SubAccount.
 
 ```mermaid
 graph LR
@@ -86,15 +60,9 @@ graph LR
     SA --> VA3[VA: BTC Short #3]
 ```
 
-- Each quote gets its own VA (a new address is generated, or a previously deleted VA is reused from the recycling pool)
-- The user transfers margin to the VA before the trade executes
-- When the position closes or the pending quote is cancelled, the VA is automatically destroyed and funds return to the SubAccount
+### MARKET -- One VA per Market
 
-**Best for**: Traders who want full isolation between every position.
-
-### MARKET Isolation -- One VA per Market
-
-Positions on the same market can share a Virtual Account. For example, all BTC-USD trades go to one VA and all ETH-USD trades go to another (when Single VA Mode is enabled).
+Positions on the same market share a VA. All BTC-USD trades go to one VA, all ETH-USD trades to another. Different markets remain fully isolated.
 
 ```mermaid
 graph LR
@@ -102,15 +70,11 @@ graph LR
     SA --> VA2["VA: ETH-USD<br/>(all ETH trades)"]
 ```
 
-- The first quote for a market creates a VA dedicated to that symbolId
-- Without Single VA Mode (the default), each `sendQuote` call creates a new VA or reuses a previously deleted one -- it does not automatically route to an active VA for the same market. With Single VA Mode enabled, subsequent quotes for the same market are routed to the existing active VA.
-- Positions on different markets remain fully isolated
+Without **Single VA Mode** (the default), each `sendQuote` creates a new VA even if one already exists for that market. With Single VA Mode enabled, subsequent quotes for the same market route to the existing active VA. This setting can be toggled when no VAs are active on the SubAccount.
 
-**Best for**: Traders who want market-level isolation without managing individual position margin.
+### MARKET_DIRECTION -- One VA per Market + Direction
 
-### MARKET_DIRECTION Isolation -- One VA per Market + Direction
-
-Similar to MARKET, but also separates by direction. All BTC longs share one VA, and all BTC shorts share another.
+Like MARKET, but also separates by direction. All BTC longs share one VA; all BTC shorts share another.
 
 ```mermaid
 graph LR
@@ -119,303 +83,158 @@ graph LR
     SA --> VA3["VA: ETH Long"]
 ```
 
-- Combines market and direction as the isolation key
-- Long and short positions on the same market are fully separated
+### CUSTOM -- Full Manual Control
 
-**Best for**: Traders who want directional isolation -- ensuring a losing short does not eat into the margin of their longs.
-
-### CUSTOM Isolation -- Full Manual Control
-
-The user has complete control. Trades can be executed directly through the SubAccount (no VA, no isolation), or through manually created VAs with any configuration.
-
-- The user creates VAs manually with their desired isolation type and market assignment
-- Quotes can be routed to the SubAccount directly or to any of the user's VAs
-- No automatic VA creation. However, VAs that are traded through (have tracked quoteIds) **are** automatically cleaned up when their last position closes or quote cancels -- this cleanup applies to all VAs regardless of the parent's isolation type.
-
-**Best for**: Power users and integrators who need full flexibility.
+No automatic VA creation. Trades can execute directly through the SubAccount (no isolation), or through manually created VAs with any configuration the user chooses. VAs that track quoteIds are still automatically cleaned up when their last position closes.
 
 ---
 
-## Virtual Account Lifecycle
+## The Trading Flow
 
-VAs are created and destroyed automatically as part of normal trading. The lifecycle is:
+Here is how a trade moves through the system, end to end:
 
-1. **Creation** -- When a user sends a quote on a non-CUSTOM SubAccount, the system creates a new VA (or reuses an inactive one). The VA gets a deterministic address based on the parent SubAccount and a nonce.
+1. **Pre-fund** -- The user transfers margin to the target VA address. For a new trade, this means calling `addMarginToNextVA` with the predicted next VA address (which the `ViewFacet.predictNextVirtualAccountAddress` helper can compute). For an existing VA, `addMargin` works.
 
-2. **Active** -- The VA holds positions and margin. It appears as an independent trading account on the Symmio core. New quotes can be routed to it (for MARKET and MARKET_DIRECTION SubAccount types, when Single VA Mode is enabled).
+2. **Send quote** -- The user submits a `sendQuote` through `_call()`. The AccountLayer intercepts it:
+   - On a **non-CUSTOM SubAccount**: creates or reuses a VA based on the isolation type, routes the quote through it, and tracks the quoteId.
+   - On a **CUSTOM SubAccount**: executes directly, no VA involved.
+   - On a **VA directly**: enforces isolation rules (POSITION allows max 1 quote; MARKET/MARKET_LONG/MARKET_SHORT enforce symbolId and direction match), then executes and tracks the quoteId.
 
-3. **Deletion** -- When the last position in a VA closes (or the last pending quote cancels), the system automatically:
-   - Deallocates any remaining margin from the VA (via `zeroUpnlDeallocate` -- this requires zero unrealized PnL, no signature needed)
-   - Transfers all funds back to the parent SubAccount
-   - Recycles the VA address into a reuse pool so future VAs can reuse it instead of generating new addresses
+3. **Position opens** -- The Symmio core calls `onOpenPosition` (a no-op on the AccountLayer side).
 
-The user does not need to manage any of this -- it happens in the background through Symmio core callbacks.
+4. **Position closes** -- The Symmio core calls `onClosePosition`. The AccountLayer removes the quoteId from the VA. If the VA has no remaining quoteIds:
+   - All remaining margin is deallocated (via `zeroUpnlDeallocate` -- zero unrealized PnL, no signature needed)
+   - All funds are transferred back to the parent SubAccount
+   - The VA address is pushed into a recycling pool
+   - The VA deletion hook fires (if configured)
 
-### Deterministic Addresses
-
-VA addresses are **predictable before creation**. The frontend can compute the next VA address in advance, but the prediction logic must account for multiple sources: first check the deletion/reuse pool (recycled VAs are reused before new ones), then check `activeVAByKey` if Single VA Mode is enabled, and finally fall back to generating a new address from the SubAccount address and the current nonce. The AccountLayer's `ViewFacet` exposes a `predictNextVirtualAccountAddress` helper for this. This predictability is important because margin must be transferred to the VA address **before** the quote is submitted -- knowing the address ahead of time makes this possible in a single transaction flow.
-
----
-
-## Margin Management
-
-Margin flows between SubAccounts and Virtual Accounts through dedicated operations:
-
-**Adding margin to a VA** -- Transfers funds from the SubAccount's balance to the VA's allocated balance (via Symmio's `internalTransfer`). This is needed before submitting trades.
-
-**Pre-funding the next VA** -- Before a new VA is even created, the user can pre-allocate margin to the predicted next VA address. When the quote is submitted and the VA is created, the margin is already there. This enables atomic trade submission through the InstantLayer.
-
-**Removing margin from a VA** -- Pulls excess margin from a VA back to the parent SubAccount. Requires a UPNL (unrealized PnL) signature to prove the VA remains solvent after the removal.
-
-**Emergency recovery** -- If margin was sent to a predicted VA address that was never actually created (e.g., due to a failed transaction), it can be recovered back to the parent SubAccount.
-
----
-
-## Single VA Mode
-
-**Single VA Mode** is an optional setting for MARKET and MARKET_DIRECTION SubAccounts that simplifies address management.
-
-When enabled, the system ensures only **one active VA** exists per market (or per market + direction). Instead of potentially creating multiple VAs for the same market over time, the same VA address is reused as long as it has open positions. This means:
-
-- The frontend always knows which VA address is handling a given market
-- No need to track multiple VA addresses per market
-- Simpler integration logic
-
-When disabled (the default), each new batch of trades can create a new VA even if one already exists for that market. This can be toggled at any time, as long as no VAs are currently active on the SubAccount.
+The user never manages VA lifecycle manually (unless using CUSTOM isolation). Funding is always manual.
 
 ---
 
 ## Affiliate System
 
-Affiliates are frontends and integrators that bring users to the protocol. The AccountLayer provides a complete lifecycle for managing them.
+Affiliates are frontends and integrators that bring users to the protocol. The AccountLayer manages their full lifecycle: registration, approval, fee splitting, hooks, and delegated actions.
 
-### Registration and Approval
+### Registration
 
-1. **Request** -- Anyone can request to register as an affiliate, providing: a name, brand color, admin address, fee stakeholder configuration, and which Symmio core(s) to use.
+1. Anyone can **request** registration, providing a name, brand color, admin address, fee stakeholder configuration, and which Symmio core(s) to use.
+2. A protocol `APPROVER_ROLE` holder **reviews and approves**. On approval, an AccountManager proxy is deployed (deterministic CREATE2), a fee distributor address is generated, and the affiliate is registered on each allowed Symmio core.
+3. The affiliate is **active**. Users can create SubAccounts under it.
 
-2. **Approval** -- A protocol approver reviews and approves the request. On approval:
-   - An **AccountManager** proxy contract is deployed for the affiliate (deterministic address based on registrant + name)
-   - A **fee distributor address** is generated for collecting trading fees
-   - The affiliate is registered on each allowed Symmio core
-
-3. **Active** -- The affiliate is live. Users can create SubAccounts under it.
-
-The actual state transitions implemented in code are: `NONE -> PENDING -> ACTIVE <-> PAUSED`. A pending registration can be cancelled or rejected, which deletes the data entirely (resetting to `NONE`).
+State transitions: `NONE -> PENDING -> ACTIVE <-> PAUSED`. Pending registrations can be cancelled or rejected, which deletes the data entirely (resetting to `NONE`).
 
 ### The AccountManager
 
-Each affiliate gets an AccountManager contract. Its primary purpose is **migration convenience** -- it gives each frontend a single contract address that replaces their old MultiAccount contract, minimizing the code changes needed to integrate with the new system. Frontends that previously called their MultiAccount can point to the AccountManager instead and get a nearly identical API:
+Each affiliate gets an AccountManager contract whose primary purpose is **migration convenience**. It provides a nearly identical API to the old MultiAccount contracts -- create accounts, deposit, withdraw, execute trades, list accounts -- so frontends can swap contract addresses with minimal code changes. Under the hood, it authenticates the caller (by temporarily setting `globalSigner` on the AccountLayer) and proxies the call through. There is no reason to use it directly beyond backward compatibility.
 
-- Create accounts
-- Deposit (with or without express rate)
-- Withdraw
-- Execute trades and other operations
-- List accounts
+### Fee Distribution
 
-Beyond this backward-compatible entry point, there is no particular reason to use the AccountManager directly -- all the real logic lives in the AccountLayer Diamond. The AccountManager simply authenticates the caller (temporarily setting the user as the signer on the AccountLayer) and proxies the call through.
+Trading fees accrue under a virtual fee distributor address on the Symmio core. When an affiliate registers, they configure **stakeholders** -- a list of addresses and percentage shares (e.g., frontend operator 70%, referral partner 20%, protocol 10%). All shares including `symmioShare` must sum to exactly `1e18`.
 
-### Custom Logic via Hooks
+Any stakeholder receiver or `DISTRIBUTOR_ROLE` holder can trigger fee claims. The system withdraws accumulated fees from the core, splits them according to configured shares, and transfers each portion to the respective recipient.
 
-In the old model, frontends owned their MultiAccount contracts and could add any custom logic they wanted -- NFT minting on signup, cashback distribution, automatic partyB binding, analytics tracking, etc. With AccountLayer, that same flexibility is preserved through the **hook system**. Affiliates register hook contracts for lifecycle events (account creation, VA creation/deletion, SubAccount deletion), and the hooks fire automatically during those events. This means frontends do not lose any customization power by moving to AccountLayer -- they just express it through hooks instead of custom contract code.
+Fee changes are two-step: the affiliate admin requests an update, then a protocol approver confirms it.
+
+### Hooks
+
+Affiliates can attach hook contracts to account lifecycle events:
+
+| Event | Trigger |
+|-------|---------|
+| Account creation | A new SubAccount is created |
+| VA creation | A new VA is created (auto or manual) |
+| VA deletion | A VA is cleaned up (last position closed) |
+| SubAccount deletion | A SubAccount is removed |
+| Call execution | `_call` is invoked on an account (fires after all calls complete) |
+
+Hooks preserve the customization power frontends had when they owned their MultiAccount contracts -- NFT minting on signup, cashback, auto-binding to a PartyB, analytics tracking. During execution, hooks can **call back into the Symmio core** via `CoreFacet.executeForAccount(callData)`, gated by two conditions: `hookContext.isActive` must be true (only during hook execution), and the function selector must be in `hookAllowedSelectors[affiliate]` (controlled by `SETTER_ROLE`).
+
+**Audit note**: Hooks are unsandboxed external calls. A malicious hook can revert and block the operation (griefing) or consume excessive gas. The signer clearing mechanism (see Security below) prevents impersonation, and `hookAllowedSelectors` limits callback scope, but hooks can still affect liveness.
 
 ### Delegated Actions
 
-Affiliates can execute certain protocol-level operations through `callAsAffiliate`, which lets the affiliate admin (or authorized operators) call whitelisted functions on the Symmio core with the affiliate's identity. This is useful for administrative tasks like fee configuration.
+Affiliates can execute protocol-level operations through `callAsAffiliate`, which lets the affiliate admin (or authorized operators) call whitelisted functions on the Symmio core with the affiliate's identity. Useful for administrative tasks like fee configuration.
 
----
+### Express Deposits
 
-## Fee Distribution
-
-Trading fees generated by users of an affiliate accrue under a virtual **fee distributor address** on the Symmio core. This address is deterministic and does not require a deployed contract.
-
-### How Fees Are Split
-
-When an affiliate registers, they configure **stakeholders** -- a list of addresses and their percentage shares. For example:
-
-- Frontend operator: 70%
-- Referral partner: 20%
-- Protocol (symmioShare): 10%
-
-All shares (including `symmioShare`) must sum to exactly `1e18` (representing 100%). Each individual share is expressed on an 18-decimal scale.
-
-### Claiming Fees
-
-Any stakeholder **receiver address** (or a holder of `DISTRIBUTOR_ROLE`) can trigger fee claims. The system:
-
-1. Withdraws the accumulated fees from the Symmio core
-2. Splits the amount according to the configured stakeholder shares
-3. Transfers each portion to the respective recipient
-
-### Updating Fee Configuration
-
-Fee changes are two-step to prevent unilateral modifications:
-
-1. The affiliate admin **requests** a fee update with new stakeholder shares
-2. A protocol **approver** reviews and confirms the change
-
----
-
-## Hooks
-
-Affiliates can attach **hooks** -- external contracts that execute custom logic when account lifecycle events occur:
-
-| Event | When It Fires |
-|-------|---------------|
-| Account creation | A new SubAccount is created |
-| Virtual account creation | A new VA is created (auto or manual) |
-| Virtual account deletion | A VA is cleaned up (all positions closed) |
-| SubAccount deletion | A SubAccount is removed |
-
-> **Note for integrators**: The `IAccountHubHook` interface also defines an `onCall` function, but it is not currently triggered by any code path. The four events above are the only active hook events.
-
-### What Hooks Enable
-
-Hooks let affiliates customize the user experience without any changes to the protocol:
-
-- **Mint an NFT** when a user creates their first account
-- **Issue loyalty points** or cashback on trades
-- **Auto-bind accounts** to a specific PartyB (hedger)
-- **Update external whitelists** or analytics systems
-
-Hooks can also **call back into the Symmio core** during execution to perform operations on behalf of the account (e.g., auto-allocating funds or binding to a PartyB). Only protocol-whitelisted function selectors are allowed for these callbacks.
-
-### Hook Execution Model
-
-When a hook fires, the system:
-
-1. Saves and **clears `globalSigner`** -- the hook cannot impersonate the user via `getSigner()`
-2. Sets `HookContext` with the current account, affiliate, and symmioCore (plus `isActive = true`)
-3. Calls the hook contract via a low-level `call`
-4. Clears `HookContext` (`isActive = false`)
-5. Restores `globalSigner`
-6. If the hook reverted, the entire transaction reverts with `HookFailed`
-
-During step 3, the hook can call `CoreFacet.executeForAccount(callData)` to execute operations on the Symmio core on behalf of the account. This is gated by:
-- `hookContext.isActive` must be `true` (only during hook execution)
-- The function selector in `callData` must be in `hookAllowedSelectors[affiliate]` (set by `SETTER_ROLE`)
-
-**Audit focus**: Hooks are **unsandboxed external calls**. A malicious or buggy hook can: revert and block the entire operation (griefing), consume excessive gas, or execute arbitrary logic. The signer clearing prevents impersonation, but hooks can still affect liveness. The protocol admin (`SETTER_ROLE`) controls which selectors hooks can call back via `hookAllowedSelectors`, limiting the blast radius of callback operations.
-
----
-
-## Express Deposits
-
-Express deposits let affiliates split user deposits to maintain **instant-withdrawal liquidity**. This is covered in detail in the [Express Deposit](express-deposit.md) doc, but here is the summary:
-
-A deposit is split into two portions based on the affiliate's configured **express rate**:
-
-- **Real portion** -- deposited into the Symmio core as protocol collateral
-- **Virtual portion** -- sent to a Virtual Provider that credits the user immediately with virtual funds
-
-The user sees the full deposit amount in their balance right away. The virtual portion builds a liquidity pool that can be used to offer express (instant) withdrawals. The system enforces a strict invariant: the total balance increase must equal the deposited amount.
+Express deposits let affiliates split user deposits to maintain instant-withdrawal liquidity. A deposit is divided by the affiliate's configured **express rate**: the real portion goes to the Symmio core as collateral, the virtual portion goes to a Virtual Provider that credits the user immediately. See [Express Deposit](express-deposit.md) for details.
 
 ---
 
 ## Security Model
 
-### Access Control Roles
+### The Global Signer Pattern
 
-| Role Constant | What It Controls |
-|------|------------------|
-| `DEFAULT_ADMIN_ROLE` | Role admin for all roles -- can grant/revoke any role and assign role admins. Does **not** implicitly hold other roles (cannot bypass `onlyRole` checks for PAUSER, SETTER, etc.) |
-| `APPROVER_ROLE` | Activates affiliates, approves fee updates |
-| `SETTER_ROLE` | Manages core whitelists, hook/call allowed selectors, AccountManager implementation, fee receiver |
-| `PAUSER_ROLE` | Pause operations (also: affiliate admin can pause their own affiliate) |
-| `UNPAUSER_ROLE` | Unpause operations |
-| `SIGNER_SETTER_ROLE` | Can set `globalSigner` -- granted to each AccountManager during affiliate approval |
-| `DEPLOYER_ROLE` | Defined but not currently used by any code path. AccountManager deployment is handled inside `approveAffiliate` (gated by `APPROVER_ROLE`) |
-| `DISTRIBUTOR_ROLE` | Trigger fee distribution |
-| `INSTANT_LAYER_ROLE` | Bypass ownership checks -- granted to the InstantLayer for batched execution |
-
-Role admins are managed separately from role holders: `setRoleAdmin(user, role, status)` grants/revokes admin power for a specific role. A `DEFAULT_ADMIN_ROLE` holder is implicitly a role admin for all roles.
-
-### Authentication Chain
-
-The AccountLayer uses a **global signer pattern** instead of relying on `msg.sender` directly. This is the most security-critical mechanism in the system:
+The AccountLayer authenticates users through a `globalSigner` variable instead of relying on `msg.sender` directly. This is the most security-critical mechanism in the system:
 
 ```
-User (EOA) calls AccountManager
-    → AccountManager.withSigner() sets globalSigner = msg.sender
-        → AccountLayer.getSigner() returns globalSigner (the user) instead of msg.sender (the AccountManager)
-            → AccountLayer.executeWithSigner(account, callData) calls symmio.setSigner(account), executes, clears
-        → AccountManager.withSigner() clears globalSigner = address(0)
+User (EOA)  ──calls──►  AccountManager.withSigner()
+                            sets globalSigner = msg.sender
+                            ──delegates──►  AccountLayer
+                                              getSigner() returns globalSigner (the user)
+                                              executes operation
+                            clears globalSigner = address(0)
 ```
-
-The core functions:
 
 ```solidity
-// Returns globalSigner if set, otherwise msg.sender
 function getSigner() internal view returns (address) {
     address signer = AccountHubStorage.layout().globalSigner;
     return signer == address(0) ? msg.sender : signer;
 }
-
-// AccountManager modifier that authenticates the user
-modifier withSigner() {
-    IAccountLayerDiamond(accountHub).setSigner(msg.sender);
-    _;
-    IAccountLayerDiamond(accountHub).setSigner(address(0));
-}
 ```
 
-**Audit focus**: Any path where `globalSigner` is non-zero during an external call is a potential impersonation vector. The system mitigates this by clearing `globalSigner` before every external call (hooks, ERC20 transfers, virtual provider callbacks) and restoring it afterward.
+### Signer Clearing
 
-### Signer Clearing Mechanism
-
-All external calls are wrapped to prevent callback attacks:
+Every external call -- hooks, ERC20 transfers, virtual provider callbacks -- is wrapped to prevent callback attacks:
 
 ```solidity
-// Used for hooks, virtual provider callbacks, and other external calls
 function safeExternalCall(address target, bytes memory data) internal {
     address previousSigner = ahLayout.globalSigner;
     ahLayout.globalSigner = address(0);     // Clear before external call
     (bool success, bytes memory reason) = target.call(data);
     ahLayout.globalSigner = previousSigner; // Restore after
-    // ... error handling
 }
 ```
 
-The same pattern is used in `LibAccountLayerSafeERC20` for `safeTransfer`, `safeTransferFrom`, and `safeIncreaseAllowance`. It is also used in `callHook()` with the additional step of setting and clearing the `HookContext`.
+The same pattern is used in `LibAccountLayerSafeERC20` for token transfers and in `callHook()` (with the additional step of setting/clearing `HookContext`).
 
-**Why this matters**: Without signer clearing, a malicious hook or token contract could re-enter the AccountLayer during an external call. Since `getSigner()` would still return the user's address, the attacker could execute operations as the user.
+Without this, a malicious hook or token contract could re-enter the AccountLayer during an external call and, since `getSigner()` would still return the user's address, execute operations as the user.
 
-### Key Invariants
+### Access Control
 
-1. **Express deposit balance invariant** -- After an express deposit, `(user's balance increase) + (user's allocated increase) == (amount * 1e18) / (10 ** collateralDecimals)`. The expected increase is the deposited amount normalized to 18-decimal precision. Enforced in `CoreFacet` after the split between real deposit and virtual provider.
+| Role | Controls |
+|------|----------|
+| `DEFAULT_ADMIN_ROLE` | Can grant/revoke any role and assign role admins. Does **not** implicitly hold other roles. |
+| `APPROVER_ROLE` | Activate affiliates, approve fee updates |
+| `SETTER_ROLE` | Core whitelists, hook/call allowed selectors, AccountManager implementation, fee receiver |
+| `PAUSER_ROLE` | Pause operations (affiliate admins can also pause their own affiliate) |
+| `UNPAUSER_ROLE` | Unpause operations |
+| `SIGNER_SETTER_ROLE` | Set `globalSigner` -- granted to each AccountManager during affiliate approval |
+| `DEPLOYER_ROLE` | Defined but unused; AccountManager deployment is handled inside `approveAffiliate` |
+| `DISTRIBUTOR_ROLE` | Trigger fee distribution |
+| `INSTANT_LAYER_ROLE` | Bypass ownership checks for InstantLayer batched execution |
 
-2. **Fee share invariant** -- `sum(stakeholder.share) + symmioShare == 1e18` (100%). Enforced during registration and fee updates.
-
-3. **VA cleanup completeness** -- When a VA is deleted (last quote removed), `deallocateAndTransferBalance` sweeps **all** allocated balance and **all** free balance back to the parent SubAccount. No funds can be stranded in a deleted VA.
-
-4. **VA isolation enforcement** -- A POSITION-type VA reverts if it already has a quoteId. MARKET_LONG reverts on SHORT quotes. MARKET/MARKET_LONG/MARKET_SHORT revert if `symbolId` does not match. These checks happen in `_handleVirtualAccountSendQuote`.
-
-5. **Signer always cleared** -- After every `withSigner` modifier, after every `executeWithSigner` call, after every `safeExternalCall`, and after every `callHook`, `globalSigner` is reset to `address(0)`. Any code path that leaves `globalSigner` set is a bug.
-
-6. **`internalTransferToBalance` blocked from `_call`** -- Users cannot directly call `internalTransferToBalance` through `_call()`. This function is reserved for internal VA cleanup. Attempting it reverts with `Unauthorized`.
+Role admins are managed via `setRoleAdmin(user, role, status)`. A `DEFAULT_ADMIN_ROLE` holder is implicitly a role admin for all roles.
 
 ### Reentrancy Protection
 
-A custom reentrancy guard uses a dedicated storage slot (`keccak256("diamond.standard.storage.accountlayer.reentrancy")`), separate from any Diamond storage. The `nonReentrant` modifier is applied to the primary entry points: `_call`, `createSubAccounts`, `deleteSubAccount`, `createCustomVirtualAccount`, deposit functions, and all MarginFacet functions. Note that not all state-changing functions use `nonReentrant` -- administrative functions in AffiliateFacet (registration, fee updates, hooks, operators) and ControlFacet (role management, pause) rely on access control rather than reentrancy guards. The SymmioHookFacet's `onClosePosition` uses `nonReentrant`, but `onCancelQuote` does not.
+A custom reentrancy guard uses a dedicated storage slot (`keccak256("diamond.standard.storage.accountlayer.reentrancy")`). The `nonReentrant` modifier covers primary entry points: `_call`, `createSubAccounts`, `deleteSubAccount`, `createCustomVirtualAccount`, deposits, and MarginFacet functions. Administrative functions rely on access control instead. `SymmioHookFacet.onClosePosition` uses `nonReentrant`; `onCancelQuote` does not.
 
-### Key Security Properties
+### Key Invariants
 
-- **No per-user contracts** -- SubAccounts and VAs are virtual addresses, not deployed contracts. The AccountLayer manages them centrally.
-- **Signer isolation** -- The authenticated signer context is always cleared before any external call to prevent impersonation attacks.
-- **Independent pause** -- The AccountLayer has its own pause mechanism (`AccountLayerStorage.globalPaused`), independent of the Symmio core's pause.
-- **Hook context gating** -- `executeForAccount` (hook callback into Symmio core) only works when `hookContext.isActive == true` AND the function selector is in `hookAllowedSelectors`. Outside hook execution, it always reverts.
+1. **Express deposit balance** -- After an express deposit: `(balance increase) + (allocated increase) == (amount * 1e18) / (10 ** collateralDecimals)`.
+2. **Fee shares** -- `sum(stakeholder.share) + symmioShare == 1e18`.
+3. **VA cleanup completeness** -- On deletion, `deallocateAndTransferBalance` sweeps all allocated and free balance back to the parent. No funds can be stranded.
+4. **VA isolation enforcement** -- POSITION VAs revert if they already have a quoteId. MARKET_LONG rejects SHORT quotes. MARKET/MARKET_LONG/MARKET_SHORT revert on symbolId mismatch.
+5. **Signer always cleared** -- After every `withSigner`, `executeWithSigner`, `safeExternalCall`, and `callHook`, `globalSigner` is reset to `address(0)`.
+6. **`internalTransferToBalance` blocked from `_call`** -- Reserved for internal VA cleanup; user calls revert with `Unauthorized`.
 
 ---
 
 ## Legacy Migration
 
-Frontends that used the old MultiAccount system can migrate their users' existing accounts into the AccountLayer:
-
-- Existing account addresses are imported as SubAccounts with CUSTOM isolation
-- Ownership is preserved -- only the actual owner can import their accounts
-- Once imported, accounts can use all AccountLayer features
-- Double-import is prevented
-
-This ensures backward compatibility while allowing a smooth transition to the new system.
+Frontends on the old MultiAccount system can import existing accounts into the AccountLayer as SubAccounts with CUSTOM isolation. Ownership is preserved (only the actual owner can import), double-import is prevented, and imported accounts gain access to all AccountLayer features.
 
 ---
 
@@ -425,16 +244,14 @@ This ensures backward compatibility while allowing a smooth transition to the ne
 
 | Facet | Responsibility |
 |-------|----------------|
-| **CoreFacet** | SubAccount and VA lifecycle, deposits, trade execution routing, hook callbacks |
-| **AffiliateFacet** | Affiliate registration, fee configuration, hooks, operators, express config |
+| **CoreFacet** | SubAccount/VA lifecycle, deposits, trade execution routing, hook callbacks |
+| **AffiliateFacet** | Affiliate registration, fee config, hooks, operators, express config |
 | **MarginFacet** | Margin transfers between SubAccounts and VAs, emergency recovery |
-| **ViewFacet** | Read-only queries for accounts, affiliates, addresses, and predictions |
+| **ViewFacet** | Read-only queries for accounts, affiliates, addresses, predictions |
 | **ControlFacet** | Role management, pause control, core whitelisting, allowed selectors |
 | **SymmioHookFacet** | Receives callbacks from Symmio core for automatic VA cleanup |
 
 ### Storage Layout
-
-The AccountLayer uses four separate storage slots following the Diamond storage pattern:
 
 | Storage Contract | Slot Key | Contents |
 |---|---|---|
@@ -446,10 +263,7 @@ The AccountLayer uses four separate storage slots following the Diamond storage 
 ### Key Data Structures
 
 ```solidity
-// SubAccount isolation types (set once at creation, immutable)
 enum SubAccountIsolationType { POSITION, MARKET, MARKET_DIRECTION, CUSTOM }
-
-// VA isolation types (determined by parent SubAccount's type + direction)
 enum VirtualAccountIsolationType { POSITION, MARKET, MARKET_LONG, MARKET_SHORT }
 
 struct SubAccountData {
@@ -466,10 +280,10 @@ struct SubAccountData {
 struct VirtualAccountData {
     bool isExists;
     bytes metadata;
-    address parentAccount;      // Always set, even after deletion (used to detect deleted VAs)
+    address parentAccount;      // Always set, even after deletion (detects deleted VAs)
     uint256 symbolId;
     VirtualAccountIsolationType isolationType;
-    EnumerableSet.UintSet quoteIds;  // Active quote IDs on this VA
+    EnumerableSet.UintSet quoteIds;
 }
 
 struct AffiliateData {
@@ -499,29 +313,24 @@ struct HookContext {
 
 ### Deterministic Address Generation
 
-SubAccounts, VAs, and fee distributors are **virtual addresses** -- no contracts are deployed. AccountManagers are deployed via real CREATE2. All follow the CREATE2 address formula: `keccak256(0xff, deployer, salt, initCodeHash)`.
+SubAccounts, VAs, and fee distributors are virtual addresses (no deployed contracts). AccountManagers are real CREATE2 deployments. All follow the CREATE2 formula: `keccak256(0xff, deployer, salt, initCodeHash)`.
 
 ```solidity
-// SubAccount (virtual -- no contract deployed)
-// deployer = affiliate, salt = keccak256(user, globalNonce), initCodeHash = keccak256("ACC_V1")
+// SubAccount: deployer=affiliate, salt=keccak256(user, globalNonce), initCodeHash=keccak256("ACC_V1")
 address(uint160(uint256(keccak256(abi.encodePacked(
     bytes1(0xff), affiliate, keccak256(abi.encodePacked(user, nonce)), keccak256("ACC_V1")
 )))))
 
-// Virtual Account (virtual -- no contract deployed)
-// deployer = parentAccount, salt = keccak256(nonce), initCodeHash = keccak256("VACC_V1")
+// Virtual Account: deployer=parentAccount, salt=keccak256(nonce), initCodeHash=keccak256("VACC_V1")
 address(uint160(uint256(keccak256(abi.encodePacked(
     bytes1(0xff), parentAccount, keccak256(abi.encodePacked(nonce)), keccak256("VACC_V1")
 )))))
 
-// AccountManager (real CREATE2 deployment)
-// deployer = AccountLayer diamond, salt = keccak256(ACM_V1_HASH, registrant, name)
-// initCode = accountManagerImplementation ++ abi.encode(accountLayerDiamond)
+// AccountManager (real deployment): deployer=AccountLayer diamond
 bytes32 salt = keccak256(abi.encodePacked(keccak256("ACM_V1"), registrant, name));
 bytes32 initCodeHash = keccak256(abi.encodePacked(implementation, abi.encode(diamond)));
 
-// Fee Distributor (virtual -- no contract deployed)
-// deployer = affiliate, salt = keccak256(globalNonce), initCodeHash = keccak256("VFD_V1")
+// Fee Distributor: deployer=affiliate, salt=keccak256(globalNonce), initCodeHash=keccak256("VFD_V1")
 // Note: nonce comes from AccountHubStorage.globalNonce (shared with SubAccount generation)
 address(uint160(uint256(keccak256(abi.encodePacked(
     bytes1(0xff), affiliate, keccak256(abi.encodePacked(nonce)), keccak256("VFD_V1")
@@ -530,44 +339,38 @@ address(uint160(uint256(keccak256(abi.encodePacked(
 
 ### Critical Code Paths
 
-#### The `_call()` Routing Logic
+#### `_call()` Routing
 
-`_call(account, callDatas[])` is the primary entry point for all user operations. For each calldata in the batch:
+`_call(account, callDatas[])` is the primary entry point for all user operations. For each calldata:
 
-1. **Block `internalTransferToBalance`** -- always reverts with `Unauthorized`
-2. **Deleted VA check** -- if `account` is a deleted VA (isExists=false but parentAccount is set), reverts
-3. **Legacy account** -- if not a SubAccount or VA, falls through to legacy handling
-4. **sendQuote interception** -- if the calldata is a `sendQuote` variant:
-   - On a **VA**: enforces isolation rules (POSITION allows max 1 quote, MARKET/MARKET_LONG/MARKET_SHORT enforce symbolId/direction match), then executes and tracks the quoteId
-   - On a **SubAccount**: auto-creates or reuses a VA based on isolation type, routes the quote through the VA, and tracks the quoteId
-   - On a **CUSTOM SubAccount**: executes directly, no VA created
-5. **All other calls** -- executes directly via `executeWithSigner`
+1. Block `internalTransferToBalance` -- always reverts with `Unauthorized`
+2. Deleted VA check -- if `account` is a deleted VA (`isExists=false` but `parentAccount` is set), revert
+3. Legacy account -- if not a SubAccount or VA, fall through to legacy handling
+4. `sendQuote` interception -- create/reuse VA based on isolation type, route quote, track quoteId
+5. All other calls -- execute directly via `executeWithSigner`
 
-#### VA Automatic Deletion (SymmioHookFacet)
-
-When the Symmio core calls `onClosePosition` or `onCancelQuote`:
+#### VA Automatic Deletion
 
 ```
-onClosePosition(quoteId, partyA) → _removeQuoteFromAccount(quoteId, partyA)
-    → vData.quoteIds.remove(quoteId)
-    → if quoteIds is empty → _deleteVirtualAccount(account)
-        → deallocateAndTransferBalance(va, parent, core)  // Sweep all funds
-        → vData.isExists = false
-        → clear activeVAByKey if this was the active VA
-        → push to deletedVirtualAccountsPool              // Recycle address
-        → remove from parent's VA set
-        → fire onVirtualAccountDeletion hook
+onClosePosition(quoteId, partyA)
+  → vData.quoteIds.remove(quoteId)
+  → if quoteIds is empty:
+      → deallocateAndTransferBalance(va, parent, core)
+      → vData.isExists = false
+      → clear activeVAByKey if applicable
+      → push to deletedVirtualAccountsPool
+      → remove from parent's VA set
+      → fire onVirtualAccountDeletion hook
 ```
 
-#### Fee Claiming Path
+#### Fee Claiming
 
 ```
 claimAllFees(affiliate, symmio)
-    → setSigner(feeDistributor) on Symmio core
-    → initiateWithdraw(feeDistributor, amount, symmio)
-    → finalizeWithdrawRequest(feeDistributor, symmio)     // Tokens arrive at AccountLayer
-    → setSigner(address(0))
-    → distribute tokens proportionally to stakeholders and symmioFeeReceiver
+  → setSigner(feeDistributor) on Symmio core
+  → initiateWithdraw + finalizeWithdrawRequest (tokens arrive at AccountLayer)
+  → setSigner(address(0))
+  → distribute tokens proportionally to stakeholders and symmioFeeReceiver
 ```
 
 ### Function Signatures
@@ -585,7 +388,7 @@ function depositAndAllocateForAccount(address account, uint256 amount) external;
 function depositForAccountWithExpressRate(address account, uint256 amount) external;
 function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external;
 function _call(address account, bytes[] calldata callDatas) external returns (bytes[] memory);
-function executeForAccount(bytes calldata callData) external;  // Only callable during hook execution
+function executeForAccount(bytes calldata callData) external;
 function importLegacyAccounts(address legacyContract, address affiliate, address[] calldata symmioCores, LegacyAccountImportData[] calldata accountsData) external returns (address[] memory);
 ```
 
@@ -634,15 +437,13 @@ function callAsAffiliate(address affiliate, address symmio, bytes calldata callD
 #### SymmioHookFacet (called by Symmio core, not users)
 
 ```solidity
-function onOpenPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, address partyA, address partyB) external;    // No-op
-function onClosePosition(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, address partyA, address partyB) external;  // Triggers VA cleanup
-function onCancelQuote(uint256 quoteId, address partyA, address partyB) external;                                                // Triggers VA cleanup
-function onFeeCharged(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, uint8 feeType) external;  // No-op
+function onOpenPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, address partyA, address partyB) external;
+function onClosePosition(uint256 quoteId, uint256 filledAmount, uint256 closedPrice, address partyA, address partyB) external;
+function onCancelQuote(uint256 quoteId, address partyA, address partyB) external;
+function onFeeCharged(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, uint8 feeType) external;
 ```
 
 ### Cross-Contract Permissions
-
-The AccountLayer requires specific roles on the Symmio core diamond to function:
 
 | Role on Symmio Core | Why |
 |---|---|

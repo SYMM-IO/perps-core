@@ -2244,6 +2244,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				onAccountCreation: IAccountHubHook__factory.createInterface().getFunction("onAccountCreation").selector,
 				onVirtualAccountCreation: IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
 				onVirtualAccountDeletion: IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+				onCall: IAccountHubHook__factory.createInterface().getFunction("onCall").selector,
 			}
 			const SYMMIO_HOOK_SELECTORS = {
 				onCancelQuote: ISymmioHook__factory.createInterface().getFunction("onCancelQuote").selector,
@@ -2547,6 +2548,102 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const quotesAfter = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 					expect(quotesAfter.length).to.equal(1)
 					expect(quotesAfter[0]).to.equal(quoteId)
+				})
+			})
+
+			describe("onCall hook", async () => {
+				it("should call onCall hook when _call is executed on a sub-account", async () => {
+					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onCall)
+
+					// Execute a non-sendQuote call on the sub-account (e.g. allocate)
+					const allocateCallData = context.accountFacet.interface.encodeFunctionData("allocate", [decimal(10n)])
+					await context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, [allocateCallData])
+
+					const callCountAfter = await hookContract.getCallCount(HOOK_SELECTORS.onCall)
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
+				})
+
+				it("should call onCall hook when _call is executed on a virtual account", async () => {
+					// Create a virtual account with a quote
+					const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+					const virtualAccounts = await sendQuoteAndGetVirtualAccount(subAccountAddress, quoteRequest)
+					const virtualAccount = virtualAccounts[0]
+
+					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onCall)
+
+					// Execute a non-balance-dependent call on the virtual account (cancel the pending quote)
+					const quotes = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccount, 0, 10)
+					const cancelCallData = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quotes[0]])
+					await context.alCoreFacet.connect(context.signers.user)._call(virtualAccount, [cancelCallData])
+
+					const callCountAfter = await hookContract.getCallCount(HOOK_SELECTORS.onCall)
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
+				})
+
+				it("should pass correct account to onCall hook", async () => {
+					const allocateCallData = context.accountFacet.interface.encodeFunctionData("allocate", [decimal(10n)])
+					await context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, [allocateCallData])
+
+					const lastAccount = await hookContract.getLastAccountForSelector(HOOK_SELECTORS.onCall)
+					expect(lastAccount).to.equal(subAccountAddress)
+				})
+
+				it("should call onCall hook once per _call invocation regardless of callDatas length", async () => {
+					const callCountBefore = await hookContract.getCallCount(HOOK_SELECTORS.onCall)
+
+					// Execute multiple calls in one _call invocation
+					const allocateCallData1 = context.accountFacet.interface.encodeFunctionData("allocate", [decimal(5n)])
+					const allocateCallData2 = context.accountFacet.interface.encodeFunctionData("allocate", [decimal(5n)])
+					await context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, [allocateCallData1, allocateCallData2])
+
+					const callCountAfter = await hookContract.getCallCount(HOOK_SELECTORS.onCall)
+					expect(callCountAfter).to.equal(callCountBefore + 1n)
+				})
+
+				it("should revert _call if onCall hook reverts", async () => {
+					await hookContract.setRevertForSelector(HOOK_SELECTORS.onCall, true, "Hook rejected call")
+
+					const allocateCallData = context.accountFacet.interface.encodeFunctionData("allocate", [decimal(10n)])
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, [allocateCallData])).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"HookFailed",
+					)
+				})
+
+				it("should not call onCall hook if no hook is registered", async () => {
+					// Create a new affiliate without onCall hook registered
+					const affData = {
+						name: "test affiliate no call hook",
+						brandColor: "d69d00",
+						admin: context.signers.admin.address,
+						stakeholders: [
+							{
+								receiver: context.signers.admin.address,
+								share: decimal(9n, 17),
+							},
+						],
+						symmioShare: decimal(1n, 17),
+						metadata: "0x",
+						legacyMultiAccounts: [ZeroAddress],
+						symmioCores: [context.diamond],
+					}
+					const affiliateAddress = await context.alAffiliateFacet.requestToRegisterAffiliate.staticCall(affData)
+					await context.alAffiliateFacet.requestToRegisterAffiliate(affData)
+					await context.alAffiliateFacet.approveAffiliate(affiliateAddress)
+
+					// Create sub-account under the new affiliate (no onCall hook set)
+					const subAccountData = [createSubAccountData("NO_HOOK_CALL", 0)]
+					await context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, subAccountData)
+					const accounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const noHookAccount = accounts[accounts.length - 1]
+
+					// Deposit funds
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositFor(noHookAccount, BALANCES.DEPOSIT_AMOUNT)
+
+					// Should succeed without reverting
+					const allocateCallData = context.accountFacet.interface.encodeFunctionData("allocate", [decimal(10n)])
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(noHookAccount, [allocateCallData])).to.not.be.reverted
 				})
 			})
 

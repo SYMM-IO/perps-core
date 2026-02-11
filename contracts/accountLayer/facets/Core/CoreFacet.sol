@@ -307,6 +307,15 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			results[i] = _executeWithSigner(account, cd);
 		}
 
+		// Fire onCall hook
+		LibAccountLayerUtils.callHook(
+			LibAccountLayerUtils.getAffiliateForAccount(account),
+			account,
+			LibAccountLayerUtils.getRelatedCore(account),
+			IAccountHubHook.onCall.selector,
+			abi.encodeWithSelector(IAccountHubHook.onCall.selector, account, callDatas)
+		);
+
 		return results;
 	}
 
