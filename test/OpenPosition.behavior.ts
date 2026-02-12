@@ -519,6 +519,20 @@ export function shouldBehaveLikeOpenPosition(): void {
 				// Allow generous connection cap so we don't trip the limit mid-tests
 				await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)
 				await user.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+				// Clear any (B,A) pending quotes so connection removal only depends on open positions.
+				// removeConnectionIfNoPositions() now requires both no open positions AND no pending quotes.
+				const clearPendingFor = async (b: Hedger) => {
+					const partyA = context.signers.user.address
+					const partyB = await b.getAddress()
+					const pendingIds = await context.viewFacetQuote.getPartyBPendingQuotes(partyB, partyA)
+					for (const id of pendingIds) {
+						await user.requestToCancelQuote(id)
+						await b.acceptCancelRequest(id)
+					}
+				}
+				await clearPendingFor(hedger)
+				await clearPendingFor(hedger2)
 			})
 
 			const openWith = async (b: Hedger) => {

@@ -71,14 +71,18 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 
 	/// @notice Removes a TSS public key from the registered keys
 	/// @param pubKey The public key to remove
+	/// @dev Reverts if the key is not found
 	function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE) {
+		bool found = false;
 		for (uint256 i = 0; i < publicKeys.length; i++) {
 			if (publicKeys[i].x == pubKey.x && publicKeys[i].parity == pubKey.parity) {
 				publicKeys[i] = publicKeys[publicKeys.length - 1];
 				publicKeys.pop();
+				found = true;
 				break;
 			}
 		}
+		require(found, "MuonSignatureVerifier: public key not found");
 		emit PublicKeyRemoved(pubKey.x, pubKey.parity);
 	}
 

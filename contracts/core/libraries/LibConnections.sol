@@ -24,11 +24,14 @@ library LibConnections {
 		}
 	}
 
-	/// @notice Removes a connection between partyA and partyB if no positions remain
+	/// @notice Removes a connection between partyA and partyB if no positions and no pending quotes remain
 	function removeConnectionIfNoPositions(address partyA, address partyB) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
-		if (QuoteStorage.layout().partyBOpenPositions[partyB][partyA].length == 0) {
+		bool noOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA].length == 0;
+		bool noPendingQuotes = quoteLayout.partyBPendingQuotes[partyB][partyA].length == 0;
+		if (noOpenPositions && noPendingQuotes) {
 			if (accountLayout.isConnectedPartyB[partyA][partyB]) {
 				address[] storage connections = accountLayout.connectedPartyBs[partyA];
 				for (uint256 i = 0; i < connections.length; i++) {
