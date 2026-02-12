@@ -203,6 +203,7 @@ library LibQuoteClose {
 			if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
 				LibAccount.subFromPartyBPendingLockedBalances(quote);
 				LibQuote.removeFromPartyBPendingQuotes(quote);
+				LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 			}
 
 			quote.quoteStatus = QuoteStatus.EXPIRED;

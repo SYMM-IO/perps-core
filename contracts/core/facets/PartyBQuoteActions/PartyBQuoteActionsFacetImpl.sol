@@ -19,6 +19,7 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
 
 library PartyBQuoteActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -57,6 +58,7 @@ library PartyBQuoteActionsFacetImpl {
 			quote.quoteStatus = QuoteStatus.PENDING;
 			LibAccount.subFromPartyBPendingLockedBalances(quote);
 			LibQuote.removeFromPartyBPendingQuotes(quote);
+			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 			quote.partyB = address(0);
 			return QuoteStatus.PENDING;
 		}
@@ -77,6 +79,7 @@ library PartyBQuoteActionsFacetImpl {
 		LibAccount.refundOpenTradingFee(quoteId, quote.partyA);
 
 		LibQuote.removeFromPendingQuotes(quote);
+		LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 
 		LibHook.callCancelQuoteHooks(quoteId, quote.partyA, quote.partyB, quote.affiliate);
 	}

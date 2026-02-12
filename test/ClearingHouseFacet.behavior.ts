@@ -742,6 +742,11 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.connect(context.signers.liquidator)
 					.liquidatePositionsForClearingHouse(context.signers.hedger, [4n], [decimal(1n)])
 
+				// Clear pending quotes (B,A) so connection can be removed (MED-21: requires no open + no pending)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger, [context.signers.user])
+
 				expect(await context.viewFacetSymbol.isConnectedPartyB(user.address, hedger.address)).to.equal(false)
 			})
 		})

@@ -12,6 +12,7 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibQuote } from "./LibQuote.sol";
 import { LibSigner } from "./LibSigner.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
+import { LibConnections } from "./LibConnections.sol";
 
 library LibLiquidation {
 	using LockedValuesOps for LockedValues;
@@ -74,6 +75,7 @@ library LibLiquidation {
 
 		// Clear pending quotes and reset balances for Party B
 		delete quoteLayout.partyBPendingQuotes[partyB][partyA];
+		LibConnections.removeConnectionIfNoPositions(partyA, partyB);
 		emit SharedEvents.BalanceChangePartyB(
 			partyB,
 			partyA,

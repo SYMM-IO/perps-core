@@ -15,7 +15,6 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
-import { LibConnections } from "../../libraries/LibConnections.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 
@@ -240,6 +239,7 @@ library ClearingHouseFacetImpl {
 					}
 				}
 				_clearPartyBPendingQuotes(partyB, partyA);
+				LibConnections.removeConnectionIfNoPositions(partyA, partyB);
 			}
 			liquidatedAmounts = new uint256[](0); // Not tracked for cross partyB
 		} else {
@@ -251,6 +251,7 @@ library ClearingHouseFacetImpl {
 				Quote storage quote = quoteLayout.quotes[quoteLayout.partyAPendingQuotes[partyA][index]];
 				if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
 					_clearPartyBPendingQuotes(quote.partyB, partyA);
+					LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
 				}
 				uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 				accountLayout.partyAReimbursement[partyA] += fee;

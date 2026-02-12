@@ -15,6 +15,7 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { HighLowPriceSig, SettlementSig } from "../../storages/MuonStorage.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
 
 library ForceActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -41,6 +42,7 @@ library ForceActionsFacetImpl {
 		LibAccount.refundOpenTradingFee(quote.id, quote.partyA);
 
 		LibQuote.removeFromPendingQuotes(quote);
+		LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 	}
 
 	/// @notice Force-cancels a pending close request after the force cancel close cooldown has elapsed.
