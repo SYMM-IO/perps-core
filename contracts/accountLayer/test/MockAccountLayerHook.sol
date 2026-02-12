@@ -6,11 +6,11 @@ interface ICoreFacetCallback {
 }
 
 /**
- * @title MockAccountHubHook
- * @notice Mock implementation of IAccountHubHook for testing AccountHub hook functionality
+ * @title MockAccountLayerHook
+ * @notice Mock implementation of IAccountLayerHook for testing AccountLayer hook functionality
  * @dev Implements all hook functions and provides testing utilities to verify hook calls
  */
-contract MockAccountHubHook {
+contract MockAccountLayerHook {
 	// ==================== Structs ====================
 
 	struct HookCall {
@@ -46,8 +46,8 @@ contract MockAccountHubHook {
 	/// @notice Whether to record calls (can be disabled for gas testing)
 	bool public recordCalls;
 
-	/// @notice AccountHub address for executeForAccount callback
-	address public accountHub;
+	/// @notice AccountLayer address for executeForAccount callback
+	address public accountLayer;
 
 	/// @notice Maps selector to calldata to execute via executeForAccount
 	mapping(bytes4 => bytes) public executeForAccountCallData;
@@ -93,10 +93,10 @@ contract MockAccountHubHook {
 		}
 
 		// Execute callback if configured
-		if (shouldExecuteForAccount[selector] && accountHub != address(0)) {
+		if (shouldExecuteForAccount[selector] && accountLayer != address(0)) {
 			bytes memory callData = executeForAccountCallData[selector];
 			if (callData.length > 0) {
-				ICoreFacetCallback(accountHub).executeForAccount(callData);
+				ICoreFacetCallback(accountLayer).executeForAccount(callData);
 				executeForAccountCallCount++;
 				lastExecuteForAccountSuccess = true;
 			}
@@ -134,10 +134,10 @@ contract MockAccountHubHook {
 		}
 
 		// Execute callback if configured
-		if (shouldExecuteForAccount[selector] && accountHub != address(0)) {
+		if (shouldExecuteForAccount[selector] && accountLayer != address(0)) {
 			bytes memory callData = executeForAccountCallData[selector];
 			if (callData.length > 0) {
-				ICoreFacetCallback(accountHub).executeForAccount(callData);
+				ICoreFacetCallback(accountLayer).executeForAccount(callData);
 				executeForAccountCallCount++;
 				lastExecuteForAccountSuccess = true;
 			}
@@ -258,11 +258,11 @@ contract MockAccountHubHook {
 	}
 
 	/**
-	 * @notice Sets the AccountHub address for executeForAccount callbacks
-	 * @param _accountHub The AccountHub contract address
+	 * @notice Sets the AccountLayer address for executeForAccount callbacks
+	 * @param _accountLayer The AccountLayer contract address
 	 */
-	function setAccountHub(address _accountHub) external {
-		accountHub = _accountHub;
+	function setAccountLayer(address _accountLayer) external {
+		accountLayer = _accountLayer;
 	}
 
 	/**

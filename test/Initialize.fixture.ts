@@ -125,7 +125,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	context.instantLayer = instantLayer
 
 	// set AccountLayer diamond address for InstantLayer
-	await instantLayer.setAccountHub(accountLayerDiamondAddress)
+	await instantLayer.setAccountLayer(accountLayerDiamondAddress)
 
 	// Grant roles to admin
 	const rolesToGrant = [

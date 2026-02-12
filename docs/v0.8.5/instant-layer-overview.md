@@ -41,7 +41,7 @@ struct Account {
 }
 ```
 
-- For **PartyA accounts**: `isPartyB = false`, and `addr` is the trading account address (sub-account, virtual account, or a legacy MultiAccount account). Ownership is resolved through `AccountHub.ownerOf(addr)`.
+- For **PartyA accounts**: `isPartyB = false`, and `addr` is the trading account address (sub-account, virtual account, or a legacy MultiAccount account). Ownership is resolved through `AccountLayer.ownerOf(addr)`.
 - For **PartyB accounts**: `isPartyB = true`, and `addr` is the PartyB contract address.
 
 ### Replay Attack Protection
@@ -143,7 +143,7 @@ Authorization is still fully enforced before the signature skip:
 
 ### Target and Whitelisting
 
-- If `target` is the Symmio core, the call is routed through `AccountHub._call(...)` so the core sees the correct trading account via `setSigner`.
+- If `target` is the Symmio core, the call is routed through `AccountLayer._call(...)` so the core sees the correct trading account via `setSigner`.
 - If `target` is not Symmio, the Instant Layer calls `target` directly. Only whitelisted targets can be called.
 - For external targets, `msg.sender` is the Instant Layer contract (the signature is what authorizes the call).
 - Return data from external targets will be dropped.
@@ -312,7 +312,7 @@ This is the same behavior implemented in `_hashBytes4Array` inside the contract,
 ### 2. Contract Registration and Whitelists
 
 - PartyB contracts must be registered via `registerPartyBs(...)`.
-- The `AccountHub` address must be set via `setAccountHub(...)` (and the Instant Layer must have `INSTANT_LAYER_ROLE` on the hub to call `AccountHub._call`).
+- The `AccountLayer` address must be set via `setAccountLayer(...)` (and the Instant Layer must have `INSTANT_LAYER_ROLE` on the AccountLayer to call `AccountLayer._call`).
 - `target` contracts must be whitelisted via `setTargetWhitelist(...)` (Symmio is whitelisted by default).
 
 ### 3. Self-Execution Security

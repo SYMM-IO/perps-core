@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 /// @title AccountLayerStorage
-/// @notice Access control and pause state for AffiliateHub and AccountHub
+/// @notice Access control and pause state for the AccountLayer diamond
 /// @dev The account layer diamond has its own RBAC separate from perps-core.
 ///      Key roles: APPROVER_ROLE (activates affiliates, approves fee updates),
 ///      SETTER_ROLE (manages core whitelists), DEPLOYER_ROLE (deploys AccountManagers).

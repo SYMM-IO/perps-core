@@ -209,7 +209,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 	/// @notice Transfers the sender's deposited balance to the user's balance (not allocated balance).
 	/// @dev This function is restricted to INTERNAL_TRANSFER_TO_BALANCE_ROLE to prevent cooldown manipulation attacks.
-	/// @dev Used by AccountHub when returning funds from virtual accounts to parent accounts.
+	/// @dev Used by AccountLayer when returning funds from virtual accounts to parent accounts.
 	/// @param user The address of the user to whom the balance will be transferred.
 	/// @param amount The amount to transfer in 18 decimals.
 	function internalTransferToBalance(

@@ -2,12 +2,12 @@
 pragma solidity >=0.8.18;
 
 /**
- * @title MaliciousAccountHubHook
- * @notice A hook that attempts to exploit the signer mechanism by calling back into AccountHub
+ * @title MaliciousAccountLayerHook
+ * @notice A hook that attempts to exploit the signer mechanism by calling back into AccountLayer
  * @dev Used for testing that LibAccountLayerUtils.callHook properly clears the globalSigner
  */
-contract MaliciousAccountHubHook {
-	address public accountHub;
+contract MaliciousAccountLayerHook {
+	address public accountLayer;
 	address public targetAccount;
 
 	bool public attemptedReentry;
@@ -24,8 +24,8 @@ contract MaliciousAccountHubHook {
 
 	event ReentryAttempted(bool success, bytes error);
 
-	function setAccountHub(address _accountHub) external {
-		accountHub = _accountHub;
+	function setAccountLayer(address _accountLayer) external {
+		accountLayer = _accountLayer;
 	}
 
 	function setTargetAccount(address _targetAccount) external {
@@ -43,7 +43,7 @@ contract MaliciousAccountHubHook {
 	function onAccountCreation(address /* user */, address account, bytes memory /* metadata */) external returns (bool) {
 		onAccountCreationCallCount++;
 
-		if (shouldAttemptReentry && accountHub != address(0) && reentryCallData.length > 0) {
+		if (shouldAttemptReentry && accountLayer != address(0) && reentryCallData.length > 0) {
 			_attemptReentry(account);
 		}
 
@@ -53,7 +53,7 @@ contract MaliciousAccountHubHook {
 	function onVirtualAccountCreation(address virtualAccount, address /* parent */, bytes memory /* metadata */) external returns (bool) {
 		onVirtualAccountCreationCallCount++;
 
-		if (shouldAttemptReentry && accountHub != address(0) && reentryCallData.length > 0) {
+		if (shouldAttemptReentry && accountLayer != address(0) && reentryCallData.length > 0) {
 			_attemptReentry(virtualAccount);
 		}
 
@@ -63,13 +63,13 @@ contract MaliciousAccountHubHook {
 	function onVirtualAccountDeletion(address account) external {
 		onVirtualAccountDeletionCallCount++;
 
-		if (shouldAttemptReentry && accountHub != address(0) && reentryCallData.length > 0) {
+		if (shouldAttemptReentry && accountLayer != address(0) && reentryCallData.length > 0) {
 			_attemptReentry(account);
 		}
 	}
 
 	function onCall(address account, bytes[] memory /* callDatas */) external {
-		if (shouldAttemptReentry && accountHub != address(0) && reentryCallData.length > 0) {
+		if (shouldAttemptReentry && accountLayer != address(0) && reentryCallData.length > 0) {
 			_attemptReentry(account);
 		}
 	}
@@ -80,9 +80,9 @@ contract MaliciousAccountHubHook {
 			targetAccount = account;
 		}
 
-		// Try to call the AccountHub with the configured calldata
+		// Try to call the AccountLayer with the configured calldata
 		// This should fail because globalSigner is cleared during hook execution
-		(bool success, bytes memory result) = accountHub.call(reentryCallData);
+		(bool success, bytes memory result) = accountLayer.call(reentryCallData);
 
 		if (success) {
 			reentrySucceeded = true;

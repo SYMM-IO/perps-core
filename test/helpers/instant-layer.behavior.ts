@@ -136,7 +136,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		await context.controlFacet.connect(context.signers.admin).registerPartyB(await context.symmioPartyB.getAddress())
 		await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await context.symmioPartyB.getAddress(), true)
 
-		await context.instantLayer.setAccountHub(context.accountLayerDiamond)
+		await context.instantLayer.setAccountLayer(context.accountLayerDiamond)
 
 		const requestSendQuote = limitQuoteRequestBuilder()
 			.partyBWhiteList([await context.symmioPartyB.getAddress()])
@@ -454,37 +454,39 @@ export function shouldBehaveLikeInstantLayer(): void {
 	// ════════════════════════════════════════════════════════════════════════════
 
 	describe("AccountLayer Configuration", function () {
-		describe("setAccountHub", function () {
+		describe("setAccountLayer", function () {
 			it("reverts when caller lacks SETTER_ROLE", async function () {
-				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).setAccountHub(ctx.partyB1.address)).to.be.reverted
+				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).setAccountLayer(ctx.partyB1.address)).to.be.reverted
 			})
 
 			it("updates accountLayer address", async function () {
 				const hubAddress = ctx.context.accountLayerDiamond
-				await ctx.context.instantLayer.setAccountHub(hubAddress)
+				await ctx.context.instantLayer.setAccountLayer(hubAddress)
 
-				expect(await ctx.context.instantLayer.accountHub()).to.equal(hubAddress)
+				expect(await ctx.context.instantLayer.accountLayer()).to.equal(hubAddress)
 				// Verify new hub is whitelisted
 				expect(await ctx.context.instantLayer.whitelistedTargets(hubAddress)).to.be.true
 			})
 
 			it("reverts when setting to zero address", async function () {
-				await expect(ctx.context.instantLayer.setAccountHub(ZeroAddress)).to.be.revertedWithCustomError(
+				await expect(ctx.context.instantLayer.setAccountLayer(ZeroAddress)).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
-					"UnregisteredAccountHub",
+					"UnregisteredAccountLayer",
 				)
 			})
 
-			it("emits AccountHubUpdated event", async function () {
+			it("emits AccountLayerUpdated event", async function () {
 				const newHub = ethers.Wallet.createRandom().address
-				const oldHub = await ctx.context.instantLayer.accountHub()
+				const oldHub = await ctx.context.instantLayer.accountLayer()
 
-				await expect(ctx.context.instantLayer.setAccountHub(newHub)).to.emit(ctx.context.instantLayer, "AccountHubUpdated").withArgs(oldHub, newHub)
+				await expect(ctx.context.instantLayer.setAccountLayer(newHub))
+					.to.emit(ctx.context.instantLayer, "AccountLayerUpdated")
+					.withArgs(oldHub, newHub)
 			})
 
 			it("auto-whitelists new accountLayer as target", async function () {
 				const newHub = ethers.Wallet.createRandom().address
-				await ctx.context.instantLayer.setAccountHub(newHub)
+				await ctx.context.instantLayer.setAccountLayer(newHub)
 				expect(await ctx.context.instantLayer.whitelistedTargets(newHub)).to.be.true
 			})
 
@@ -492,10 +494,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const hub1 = ctx.context.accountLayerDiamond
 				const hub2 = ethers.Wallet.createRandom().address
 
-				await ctx.context.instantLayer.setAccountHub(hub1)
+				await ctx.context.instantLayer.setAccountLayer(hub1)
 				expect(await ctx.context.instantLayer.whitelistedTargets(hub1)).to.be.true
 
-				await ctx.context.instantLayer.setAccountHub(hub2)
+				await ctx.context.instantLayer.setAccountLayer(hub2)
 				expect(await ctx.context.instantLayer.whitelistedTargets(hub1)).to.be.false
 			})
 		})

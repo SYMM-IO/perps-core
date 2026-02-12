@@ -7,8 +7,8 @@ pragma solidity >=0.8.18;
 import { IControlFacet } from "./IControlFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
-import { AccountHubStorage } from "../../storages/AccountHubStorage.sol";
-import { AffiliateHubStorage } from "../../storages/AffiliateHubStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 
 /// @notice Administrative facet for role management, pause control, and system configuration
@@ -54,14 +54,14 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		_unpause();
 	}
 
-	// ==================== AccountHub Configuration ====================
+	// ==================== Account Configuration ====================
 
 	/// @notice Sets the bytecode used to deploy new AccountManager proxies for affiliates
 	/// @param implementation The AccountManager proxy bytecode
 	function setAccountManagerImplementation(bytes memory implementation) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
 		if (implementation.length == 0) revert EmptyArray();
 
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		bytes memory oldImplementation = ahLayout.accountManagerImplementation;
 		ahLayout.accountManagerImplementation = implementation;
 		ahLayout.initAccountManagerCodeHash = keccak256(abi.encodePacked(implementation));
@@ -72,21 +72,21 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 	/// @notice Sets the global signer used to authorize protocol-level operations
 	/// @param _signer The new signer address (address(0) to clear)
 	function setSigner(address _signer) external onlyRole(LibAccountLayerAccessibility.SIGNER_SETTER_ROLE) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		address oldSigner = ahLayout.globalSigner;
 		ahLayout.globalSigner = _signer;
 
 		emit SignerUpdated(oldSigner, _signer);
 	}
 
-	// ==================== AffiliateHub Configuration ====================
+	// ==================== Affiliate Configuration ====================
 
 	/// @notice Sets the address that receives Symmio's share of affiliate fees
 	/// @param receiver The new fee receiver address
 	function setSymmioFeeReceiver(address receiver) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
 		if (receiver == address(0)) revert ZeroAddress();
 
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		address oldReceiver = afLayout.symmioFeeReceiver;
 		afLayout.symmioFeeReceiver = receiver;
 
@@ -97,7 +97,7 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 	/// @param core The Symmio core diamond address
 	/// @param status Whether the core should be whitelisted
 	function setWhitelistedSymmioCore(address core, bool status) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
-		AffiliateHubStorage.layout().whitelistedSymmioCores[core] = status;
+		AffiliateStorage.layout().whitelistedSymmioCores[core] = status;
 		emit WhitelistedSymmioCoreSet(core, status);
 	}
 
@@ -110,7 +110,7 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		bytes4[] calldata selectors,
 		bool allowed
 	) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		for (uint256 i = 0; i < selectors.length; i++) {
 			afLayout.hookAllowedSelectors[affiliate][selectors[i]] = allowed;
 		}
@@ -126,7 +126,7 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		bytes4[] calldata selectors,
 		bool allowed
 	) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		for (uint256 i = 0; i < selectors.length; i++) {
 			afLayout.callAllowedSelectors[affiliate][selectors[i]] = allowed;
 		}

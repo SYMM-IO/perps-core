@@ -17,7 +17,7 @@
     },
     {
         "inputs": [],
-        "name": "AccountHubNotSet",
+        "name": "AccountLayerNotSet",
         "type": "error"
     },
     {
@@ -317,11 +317,11 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "accountHub",
+                "name": "accountLayer",
                 "type": "address"
             }
         ],
-        "name": "UnregisteredAccountHub",
+        "name": "UnregisteredAccountLayer",
         "type": "error"
     },
     {
@@ -341,17 +341,17 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "oldAccountHub",
+                "name": "oldAccountLayer",
                 "type": "address"
             },
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "newAccountHub",
+                "name": "newAccountLayer",
                 "type": "address"
             }
         ],
-        "name": "AccountHubUpdated",
+        "name": "AccountLayerUpdated",
         "type": "event"
     },
     {
@@ -806,7 +806,7 @@
     },
     {
         "inputs": [],
-        "name": "accountHub",
+        "name": "accountLayer",
         "outputs": [
             {
                 "internalType": "address",
@@ -1997,11 +1997,11 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "_accountHub",
+                "name": "_accountLayer",
                 "type": "address"
             }
         ],
-        "name": "setAccountHub",
+        "name": "setAccountLayer",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

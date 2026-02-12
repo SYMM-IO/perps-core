@@ -283,6 +283,1053 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "AdminTransferCancelled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "oldAdmin",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newAdmin",
+                "type": "address"
+            }
+        ],
+        "name": "AdminTransferCompleted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newAdmin",
+                "type": "address"
+            }
+        ],
+        "name": "AdminTransferProposed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "feeDistributor",
+                "type": "address"
+            }
+        ],
+        "name": "AffiliateApproved",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "AffiliatePaused",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "string",
+                "name": "name",
+                "type": "string"
+            }
+        ],
+        "name": "AffiliateRegistered",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "AffiliateUnpaused",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "string",
+                "name": "name",
+                "type": "string"
+            },
+            {
+                "indexed": false,
+                "internalType": "string",
+                "name": "brandColor",
+                "type": "string"
+            }
+        ],
+        "name": "AffiliateUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "expressRate",
+                "type": "uint256"
+            }
+        ],
+        "name": "ExpressRateSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "FeeUpdateCancelled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "symmio",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "FeesClaimed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "recipient",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "FeesDistributed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "HookRemoved",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "hook",
+                "type": "address"
+            }
+        ],
+        "name": "HookSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "operator",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "status",
+                "type": "bool"
+            }
+        ],
+        "name": "OperatorSet",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "RegistrationCancelled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "admin",
+                "type": "address"
+            }
+        ],
+        "name": "RegistrationRejected",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "StakeholdersUpdateRequested",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "StakeholdersUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "virtualProvider",
+                "type": "address"
+            }
+        ],
+        "name": "VirtualProviderSet",
+        "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "acceptAdminTransfer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "approveAffiliate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "approveFeeUpdate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "symmio",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes",
+                "name": "callData",
+                "type": "bytes"
+            }
+        ],
+        "name": "callAsAffiliate",
+        "outputs": [
+            {
+                "internalType": "bytes",
+                "name": "result",
+                "type": "bytes"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "cancelAdminTransfer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "cancelFeeUpdate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "cancelRegistration",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "symmio",
+                "type": "address"
+            }
+        ],
+        "name": "claimAllFees",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "symmio",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "claimFees",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "pauseAffiliate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "newAdmin",
+                "type": "address"
+            }
+        ],
+        "name": "proposeAdminTransfer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "rejectRegistration",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "removeHook",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "receiver",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "share",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct Stakeholder[]",
+                "name": "newStakeholders",
+                "type": "tuple[]"
+            },
+            {
+                "internalType": "uint256",
+                "name": "newSymmioShare",
+                "type": "uint256"
+            }
+        ],
+        "name": "requestFeeUpdate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "brandColor",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "admin",
+                        "type": "address"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "address",
+                                "name": "receiver",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "share",
+                                "type": "uint256"
+                            }
+                        ],
+                        "internalType": "struct Stakeholder[]",
+                        "name": "stakeholders",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symmioShare",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "metadata",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "address[]",
+                        "name": "legacyMultiAccounts",
+                        "type": "address[]"
+                    },
+                    {
+                        "internalType": "address[]",
+                        "name": "symmioCores",
+                        "type": "address[]"
+                    }
+                ],
+                "internalType": "struct AffiliateRegistration",
+                "name": "reg",
+                "type": "tuple"
+            }
+        ],
+        "name": "requestToRegisterAffiliate",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "affiliateAddress",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "expressRate",
+                "type": "uint256"
+            }
+        ],
+        "name": "setExpressRate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            },
+            {
+                "internalType": "address",
+                "name": "hook",
+                "type": "address"
+            }
+        ],
+        "name": "setHook",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            },
+            {
+                "internalType": "address",
+                "name": "operator",
+                "type": "address"
+            },
+            {
+                "internalType": "bool",
+                "name": "status",
+                "type": "bool"
+            }
+        ],
+        "name": "setOperator",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "virtualProvider",
+                "type": "address"
+            }
+        ],
+        "name": "setVirtualProvider",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
+        "name": "unpauseAffiliate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "string",
+                "name": "name",
+                "type": "string"
+            },
+            {
+                "internalType": "string",
+                "name": "brandColor",
+                "type": "string"
+            }
+        ],
+        "name": "updateAffiliateDetails",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "Paused",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "Unpaused",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "AddMargin",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "EmergencyMarginRecovered",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "RemoveMargin",
+        "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "addMargin",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "enum VirtualAccountIsolationType",
+                "name": "isolationType",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "addMarginToNextVA",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "nonce",
+                "type": "uint256"
+            }
+        ],
+        "name": "emergencyRecoverMargin",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "virtualAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "reqId",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "upnl",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "gatewaySignature",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "signature",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "owner",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "nonce",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct ISymmio.SchnorrSign",
+                        "name": "sigs",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct ISymmio.SingleUpnlSig",
+                "name": "upnlSig",
+                "type": "tuple"
+            }
+        ],
+        "name": "removeMargin",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "sender",
                 "type": "address"
             },
@@ -393,19 +1440,6 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            }
-        ],
-        "name": "Paused",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
                 "indexed": true,
                 "internalType": "address",
                 "name": "subAccount",
@@ -475,19 +1509,6 @@
             }
         ],
         "name": "SubAccountDeleted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            }
-        ],
-        "name": "Unpaused",
         "type": "event"
     },
     {
@@ -855,7 +1876,7 @@
             },
             {
                 "internalType": "address",
-                "name": "partyB",
+                "name": "",
                 "type": "address"
             }
         ],
@@ -873,12 +1894,12 @@
             },
             {
                 "internalType": "uint256",
-                "name": "filledAmount",
+                "name": "",
                 "type": "uint256"
             },
             {
                 "internalType": "uint256",
-                "name": "closedPrice",
+                "name": "",
                 "type": "uint256"
             },
             {
@@ -888,7 +1909,7 @@
             },
             {
                 "internalType": "address",
-                "name": "partyB",
+                "name": "",
                 "type": "address"
             }
         ],
@@ -901,37 +1922,37 @@
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "quoteId",
+                "name": "",
                 "type": "uint256"
             },
             {
                 "internalType": "uint256",
-                "name": "amount",
+                "name": "",
                 "type": "uint256"
             },
             {
                 "internalType": "address",
-                "name": "partyA",
+                "name": "",
                 "type": "address"
             },
             {
                 "internalType": "address",
-                "name": "partyB",
+                "name": "",
                 "type": "address"
             },
             {
                 "internalType": "uint256",
-                "name": "symbolId",
+                "name": "",
                 "type": "uint256"
             },
             {
                 "internalType": "address",
-                "name": "affiliate",
+                "name": "",
                 "type": "address"
             },
             {
                 "internalType": "uint8",
-                "name": "feeType",
+                "name": "",
                 "type": "uint8"
             }
         ],
@@ -944,27 +1965,27 @@
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "quoteId",
+                "name": "",
                 "type": "uint256"
             },
             {
                 "internalType": "uint256",
-                "name": "filledAmount",
+                "name": "",
                 "type": "uint256"
             },
             {
                 "internalType": "uint256",
-                "name": "openedPrice",
+                "name": "",
                 "type": "uint256"
             },
             {
                 "internalType": "address",
-                "name": "partyA",
+                "name": "",
                 "type": "address"
             },
             {
                 "internalType": "address",
-                "name": "partyB",
+                "name": "",
                 "type": "address"
             }
         ],
@@ -1935,1027 +2956,6 @@
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
-            }
-        ],
-        "name": "AdminTransferCancelled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "oldAdmin",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "newAdmin",
-                "type": "address"
-            }
-        ],
-        "name": "AdminTransferCompleted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "newAdmin",
-                "type": "address"
-            }
-        ],
-        "name": "AdminTransferProposed",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "feeDistributor",
-                "type": "address"
-            }
-        ],
-        "name": "AffiliateApproved",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "AffiliatePaused",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "string",
-                "name": "name",
-                "type": "string"
-            }
-        ],
-        "name": "AffiliateRegistered",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "AffiliateUnpaused",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "string",
-                "name": "name",
-                "type": "string"
-            },
-            {
-                "indexed": false,
-                "internalType": "string",
-                "name": "brandColor",
-                "type": "string"
-            }
-        ],
-        "name": "AffiliateUpdated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "expressRate",
-                "type": "uint256"
-            }
-        ],
-        "name": "ExpressRateSet",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "FeeUpdateCancelled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "symmio",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "FeesClaimed",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "recipient",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "FeesDistributed",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            }
-        ],
-        "name": "HookRemoved",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "hook",
-                "type": "address"
-            }
-        ],
-        "name": "HookSet",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "operator",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "status",
-                "type": "bool"
-            }
-        ],
-        "name": "OperatorSet",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "RegistrationCancelled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "admin",
-                "type": "address"
-            }
-        ],
-        "name": "RegistrationRejected",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "StakeholdersUpdateRequested",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "StakeholdersUpdated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "virtualProvider",
-                "type": "address"
-            }
-        ],
-        "name": "VirtualProviderSet",
-        "type": "event"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "acceptAdminTransfer",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "approveAffiliate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "approveFeeUpdate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "symmio",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes",
-                "name": "callData",
-                "type": "bytes"
-            }
-        ],
-        "name": "callAsAffiliate",
-        "outputs": [
-            {
-                "internalType": "bytes",
-                "name": "result",
-                "type": "bytes"
-            }
-        ],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "cancelAdminTransfer",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "cancelFeeUpdate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "cancelRegistration",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "symmio",
-                "type": "address"
-            }
-        ],
-        "name": "claimAllFees",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "symmio",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "claimFees",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "pauseAffiliate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "newAdmin",
-                "type": "address"
-            }
-        ],
-        "name": "proposeAdminTransfer",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "rejectRegistration",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            }
-        ],
-        "name": "removeHook",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "receiver",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "share",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct Stakeholder[]",
-                "name": "newStakeholders",
-                "type": "tuple[]"
-            },
-            {
-                "internalType": "uint256",
-                "name": "newSymmioShare",
-                "type": "uint256"
-            }
-        ],
-        "name": "requestFeeUpdate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "string",
-                        "name": "name",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "brandColor",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "admin",
-                        "type": "address"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "address",
-                                "name": "receiver",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "share",
-                                "type": "uint256"
-                            }
-                        ],
-                        "internalType": "struct Stakeholder[]",
-                        "name": "stakeholders",
-                        "type": "tuple[]"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "symmioShare",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "metadata",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "address[]",
-                        "name": "legacyMultiAccounts",
-                        "type": "address[]"
-                    },
-                    {
-                        "internalType": "address[]",
-                        "name": "symmioCores",
-                        "type": "address[]"
-                    }
-                ],
-                "internalType": "struct AffiliateRegistration",
-                "name": "reg",
-                "type": "tuple"
-            }
-        ],
-        "name": "requestToRegisterAffiliate",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "affiliateAddress",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "expressRate",
-                "type": "uint256"
-            }
-        ],
-        "name": "setExpressRate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            },
-            {
-                "internalType": "address",
-                "name": "hook",
-                "type": "address"
-            }
-        ],
-        "name": "setHook",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            },
-            {
-                "internalType": "address",
-                "name": "operator",
-                "type": "address"
-            },
-            {
-                "internalType": "bool",
-                "name": "status",
-                "type": "bool"
-            }
-        ],
-        "name": "setOperator",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "virtualProvider",
-                "type": "address"
-            }
-        ],
-        "name": "setVirtualProvider",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "unpauseAffiliate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "internalType": "string",
-                "name": "name",
-                "type": "string"
-            },
-            {
-                "internalType": "string",
-                "name": "brandColor",
-                "type": "string"
-            }
-        ],
-        "name": "updateAffiliateDetails",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "virtualAccount",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "AddMargin",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "virtualAccount",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "EmergencyMarginRecovered",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "virtualAccount",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "RemoveMargin",
-        "type": "event"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "virtualAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "addMargin",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "enum VirtualAccountIsolationType",
-                "name": "isolationType",
-                "type": "uint8"
-            },
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "addMarginToNextVA",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "subAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "nonce",
-                "type": "uint256"
-            }
-        ],
-        "name": "emergencyRecoverMargin",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "virtualAccount",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "bytes",
-                        "name": "reqId",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "upnl",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "gatewaySignature",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "signature",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "owner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "nonce",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct ISymmio.SchnorrSign",
-                        "name": "sigs",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct ISymmio.SingleUpnlSig",
-                "name": "upnlSig",
-                "type": "tuple"
-            }
-        ],
-        "name": "removeMargin",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
             },
             {
                 "indexed": true,
@@ -3351,6 +3351,123 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "APPROVER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "DEFAULT_ADMIN_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "DEPLOYER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "DISTRIBUTOR_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "INSTANT_LAYER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "PAUSER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "SETTER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "SIGNER_SETTER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "UNPAUSER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "bytes",
@@ -3468,123 +3585,6 @@
             }
         ],
         "stateMutability": "pure",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "APPROVER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "DEFAULT_ADMIN_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "DEPLOYER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "DISTRIBUTOR_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "INSTANT_LAYER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "PAUSER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "SETTER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "SIGNER_SETTER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "UNPAUSER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
         "type": "function"
     }
 ]

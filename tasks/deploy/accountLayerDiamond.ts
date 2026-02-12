@@ -346,7 +346,7 @@ export async function deployAccountLayerDiamond(hre: any, { admin, symmioFeeRece
 	}
 }
 
-export const accountLayerDiamondTask = task("deploy:accountLayer", "Deploys the AccountLayer diamond (unified AccountHub + AffiliateHub)")
+export const accountLayerDiamondTask = task("deploy:accountLayer", "Deploys the AccountLayer diamond (unified account and affiliate management)")
 	.addOption({ name: "logData", description: "Log deployment data to file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
 		default: async ({ logData }, hre) => {

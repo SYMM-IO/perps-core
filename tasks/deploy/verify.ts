@@ -6,9 +6,9 @@ import path from "path"
 
 import { readData } from "../utils/fs.js"
 import {
-	ACCOUNTHUB_DEPLOYMENT_LOG_FILE,
+	ACCOUNTLAYER_ACCOUNT_DEPLOYMENT_LOG_FILE,
 	ACCOUNTLAYER_DEPLOYMENT_FILE,
-	AFFILIATEHUB_DEPLOYMENT_FILE,
+	ACCOUNTLAYER_AFFILIATE_DEPLOYMENT_FILE,
 	DEPLOYMENT_LOG_FILE,
 	INSTANTLAYER_DEPLOYMENT_FILE,
 	PARTYB_DEPLOYMENT_FILE,
@@ -35,8 +35,8 @@ const verifyDeploymentAction = async (_: unknown, hre: any) => {
 	}
 }
 
-const verifyAffiliateHubAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(AFFILIATEHUB_DEPLOYMENT_FILE)
+const verifyAffiliateAction = async (_: unknown, hre: any) => {
+	const deployedAddresses = readData(ACCOUNTLAYER_AFFILIATE_DEPLOYMENT_FILE)
 
 	for (const address of deployedAddresses) {
 		try {
@@ -54,8 +54,8 @@ const verifyAffiliateHubAction = async (_: unknown, hre: any) => {
 	}
 }
 
-const verifyAccountHubAction = async (_: unknown, hre: any) => {
-	const deployedAddresses = readData(ACCOUNTHUB_DEPLOYMENT_LOG_FILE)
+const verifyAccountAction = async (_: unknown, hre: any) => {
+	const deployedAddresses = readData(ACCOUNTLAYER_ACCOUNT_DEPLOYMENT_LOG_FILE)
 
 	for (const address of deployedAddresses) {
 		try {
@@ -235,12 +235,12 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 	}))
 	.build()
 
-export const verifyAffiliateHubTask = task("verify:affiliateHub", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyAffiliateHubAction }))
+export const verifyAffiliateTask = task("verify:affiliate", "Verifies the deployed contracts")
+	.setAction(async () => ({ default: verifyAffiliateAction }))
 	.build()
 
-export const verifyAccountHubTask = task("verify:accountHub", "Verifies the deployed contracts")
-	.setAction(async () => ({ default: verifyAccountHubAction }))
+export const verifyAccountTask = task("verify:account", "Verifies the deployed contracts")
+	.setAction(async () => ({ default: verifyAccountAction }))
 	.build()
 
 export const verifyInstantLayerTask = task("verify:instantLayer", "Verifies the deployed contracts")
@@ -738,42 +738,42 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 
 					const instantLayer = await ethers.getContractAt("InstantLayer", addresses.instantLayer)
 
-					// Check AccountHub
+					// Check AccountLayer
 					try {
-						const accountHub = await instantLayer.accountHub()
-						if (accountHub === ethers.ZeroAddress) {
+						const accountLayer = await instantLayer.accountLayer()
+						if (accountLayer === ethers.ZeroAddress) {
 							results.push({
 								category: "InstantLayer",
-								check: "AccountHub set",
+								check: "AccountLayer set",
 								status: "fail",
 							})
-							console.log("   [FAIL] AccountHub not set")
-						} else if (addresses.accountLayer && accountHub.toLowerCase() !== addresses.accountLayer.toLowerCase()) {
+							console.log("   [FAIL] AccountLayer not set")
+						} else if (addresses.accountLayer && accountLayer.toLowerCase() !== addresses.accountLayer.toLowerCase()) {
 							results.push({
 								category: "InstantLayer",
-								check: "AccountHub set",
+								check: "AccountLayer set",
 								status: "fail",
 								expected: addresses.accountLayer,
-								actual: accountHub,
+								actual: accountLayer,
 							})
-							console.log(`   [FAIL] AccountHub mismatch: expected ${addresses.accountLayer}, got ${accountHub}`)
+							console.log(`   [FAIL] AccountLayer mismatch: expected ${addresses.accountLayer}, got ${accountLayer}`)
 						} else {
 							results.push({
 								category: "InstantLayer",
-								check: "AccountHub set",
+								check: "AccountLayer set",
 								status: "pass",
-								actual: accountHub,
+								actual: accountLayer,
 							})
-							console.log(`   [PASS] AccountHub: ${accountHub}`)
+							console.log(`   [PASS] AccountLayer: ${accountLayer}`)
 						}
 					} catch (e: any) {
 						results.push({
 							category: "InstantLayer",
-							check: "AccountHub set",
+							check: "AccountLayer set",
 							status: "fail",
 							message: e.message,
 						})
-						console.log(`   [FAIL] Could not get AccountHub: ${e.message}`)
+						console.log(`   [FAIL] Could not get AccountLayer: ${e.message}`)
 					}
 
 					// Check Diamond whitelisted

@@ -6,8 +6,8 @@ pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { AccountHubStorage } from "../storages/AccountHubStorage.sol";
-import { AffiliateHubStorage, HookContext } from "../storages/AffiliateHubStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
+import { AffiliateStorage, HookContext } from "../storages/AffiliateStorage.sol";
 import { ISymmio } from "../interfaces/ISymmio.sol";
 import { IMultiAccount } from "../interfaces/IMultiAccount.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
@@ -21,7 +21,7 @@ library LibAccountLayerUtils {
 
 	/// @notice Returns the current effective signer (globalSigner if set, otherwise msg.sender)
 	function getSigner() internal view returns (address) {
-		address signer = AccountHubStorage.layout().globalSigner;
+		address signer = AccountStorage.layout().globalSigner;
 		return signer == address(0) ? msg.sender : signer;
 	}
 
@@ -43,8 +43,8 @@ library LibAccountLayerUtils {
 
 	/// @notice Resolves the Symmio core address associated with an account
 	function getRelatedCore(address account) internal view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 
 		if (ahLayout.subAccounts[account].isExists) {
 			return ahLayout.subAccounts[account].symmioCore;
@@ -68,8 +68,8 @@ library LibAccountLayerUtils {
 
 	/// @notice Resolves the owner of an account by checking sub-accounts, virtual accounts, and legacy contracts
 	function resolveAccountOwner(address account) internal view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 
 		address owner = ahLayout.subAccounts[account].owner;
 		if (owner != address(0)) {
@@ -116,7 +116,7 @@ library LibAccountLayerUtils {
 
 	/// @notice Returns the claimable fee balance for an affiliate, adjusted for collateral decimals
 	function getClaimableFee(address affiliate, address symmio) internal view returns (uint256) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		uint8 decimals = IERC20Metadata(ISymmio(symmio).getCollateral()).decimals();
 		uint256 balance = ISymmio(symmio).balanceOf(afLayout.affiliates[affiliate].feeDetails.feeDistributor);
 		return balance / (10 ** (18 - decimals));
@@ -124,7 +124,7 @@ library LibAccountLayerUtils {
 
 	/// @notice Resolves the affiliate associated with an account by traversing the account hierarchy
 	function getAffiliateForAccount(address account) internal view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
 		if (ahLayout.subAccounts[account].isExists) {
 			return ahLayout.subAccounts[account].affiliate;
@@ -139,8 +139,8 @@ library LibAccountLayerUtils {
 
 	/// @notice Calls the affiliate's registered hook for a given selector with signer protection
 	function callHook(address affiliate, address account, address symmioCore, bytes4 selector, bytes memory data) internal {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		address hook = afLayout.affiliates[affiliate].hooks[selector];
 		if (hook == address(0)) return;
 

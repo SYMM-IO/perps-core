@@ -551,9 +551,9 @@ async function setupSystem(
 		await alControlFacet.connect(deployer).setWhitelistedSymmioCore(deployedContracts.diamond!, true)
 	})
 
-	// InstantLayer AccountHub
-	await checkpointedStep(checkpoint, "setup.ilSetAccountHub", "Setting AccountHub on InstantLayer", async () => {
-		await instantLayer.connect(deployer).setAccountHub(deployedContracts.accountLayerDiamond!)
+	// InstantLayer AccountLayer
+	await checkpointedStep(checkpoint, "setup.ilSetAccountLayer", "Setting AccountLayer on InstantLayer", async () => {
+		await instantLayer.connect(deployer).setAccountLayer(deployedContracts.accountLayerDiamond!)
 	})
 
 	// Diamond system parameters

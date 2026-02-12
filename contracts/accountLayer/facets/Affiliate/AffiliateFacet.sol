@@ -9,15 +9,15 @@ import { IAffiliateFacet } from "./IAffiliateFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
-import { AccountHubStorage } from "../../storages/AccountHubStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
 import {
-	AffiliateHubStorage,
+	AffiliateStorage,
 	AffiliateData,
 	AffiliateRegistration,
 	AffiliateState,
 	Stakeholder,
 	PendingFeeUpdate
-} from "../../storages/AffiliateHubStorage.sol";
+} from "../../storages/AffiliateStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
@@ -37,8 +37,8 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @param reg The registration data including name, admin, fee stakeholders, and Symmio cores
 	/// @return affiliateAddress The deterministic affiliate address
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
 		affiliateAddress = _generateAccountManagerAddress(msg.sender, reg.name, ahLayout);
 
@@ -70,7 +70,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @notice Cancels a pending affiliate registration (affiliate admin only)
 	/// @param affiliate The affiliate address whose registration to cancel
 	function cancelRegistration(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
 		_clearAffiliateData(afLayout, affiliate);
@@ -80,7 +80,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @notice Rejects a pending affiliate registration (APPROVER_ROLE only)
 	/// @param affiliate The affiliate address whose registration to reject
 	function rejectRegistration(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
 		_clearAffiliateData(afLayout, affiliate);
@@ -90,7 +90,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @notice Approves a pending affiliate, deploying its AccountManager and registering it on Symmio cores
 	/// @param affiliate The affiliate address to approve
 	function approveAffiliate(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
 		// Deploy AccountManager via AffiliateFacet's internal function
@@ -100,7 +100,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		// Grant SIGNER_SETTER_ROLE to the account manager
 		LibAccountLayerAccessibility.grantRole(accountManager, LibAccountLayerAccessibility.SIGNER_SETTER_ROLE);
 
-		address feeDistributor = _generateFeeDistributorAddress(affiliate, ++AccountHubStorage.layout().globalNonce);
+		address feeDistributor = _generateFeeDistributorAddress(affiliate, ++AccountStorage.layout().globalNonce);
 
 		afLayout.affiliates[affiliate].state = AffiliateState.ACTIVE;
 		afLayout.affiliates[affiliate].accountManager = accountManager;
@@ -127,14 +127,14 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	) external whenNotPaused onlyIfAffiliateIsActive(affiliate) onlyAffiliateAdmin(affiliate) {
 		if (newAdmin == address(0)) revert ZeroAddress();
 
-		AffiliateHubStorage.layout().affiliates[affiliate].pendingAdmin = newAdmin;
+		AffiliateStorage.layout().affiliates[affiliate].pendingAdmin = newAdmin;
 		emit AdminTransferProposed(affiliate, newAdmin);
 	}
 
 	/// @notice Accepts a pending admin transfer (must be called by the proposed new admin)
 	/// @param affiliate The affiliate address
 	function acceptAdminTransfer(address affiliate) external whenNotPaused {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (afLayout.affiliates[affiliate].pendingAdmin != msg.sender) revert Unauthorized();
 
 		address oldAdmin = afLayout.affiliates[affiliate].admin;
@@ -147,7 +147,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @notice Cancels a pending admin transfer proposal
 	/// @param affiliate The affiliate address
 	function cancelAdminTransfer(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
-		AffiliateHubStorage.layout().affiliates[affiliate].pendingAdmin = address(0);
+		AffiliateStorage.layout().affiliates[affiliate].pendingAdmin = address(0);
 		emit AdminTransferCancelled(affiliate);
 	}
 
@@ -162,7 +162,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		LibAccountLayerUtils.validateName(name);
 
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		afLayout.affiliates[affiliate].name = name;
 		afLayout.affiliates[affiliate].brandColor = brandColor;
 
@@ -173,7 +173,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @dev Can be called by the affiliate admin or a PAUSER_ROLE holder
 	/// @param affiliate The affiliate address to pause
 	function pauseAffiliate(address affiliate) external whenNotPaused onlyIfAffiliateIsActive(affiliate) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (
 			!LibAccountLayerAccessibility.hasRole(msg.sender, LibAccountLayerAccessibility.PAUSER_ROLE) &&
 			afLayout.affiliates[affiliate].admin != msg.sender
@@ -188,7 +188,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @notice Unpauses a previously paused affiliate (UNPAUSER_ROLE only)
 	/// @param affiliate The affiliate address to unpause
 	function unpauseAffiliate(address affiliate) external onlyRole(LibAccountLayerAccessibility.UNPAUSER_ROLE) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PAUSED) revert InvalidState();
 
 		afLayout.affiliates[affiliate].state = AffiliateState.ACTIVE;
@@ -208,7 +208,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		_validateFeeShares(newStakeholders, newSymmioShare);
 
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		PendingFeeUpdate storage pending = afLayout.pendingFeeUpdates[affiliate];
 		pending.symmioShare = newSymmioShare;
 		pending.timestamp = block.timestamp;
@@ -221,7 +221,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @notice Cancels a pending fee configuration update
 	/// @param affiliate The affiliate address
 	function cancelFeeUpdate(address affiliate) external whenNotPaused onlyAffiliateAdmin(affiliate) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (!afLayout.pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
 
 		delete afLayout.pendingFeeUpdates[affiliate];
@@ -231,7 +231,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @notice Approves a pending fee configuration update (APPROVER_ROLE only)
 	/// @param affiliate The affiliate address whose fee update to approve
 	function approveFeeUpdate(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (!afLayout.pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
 
 		delete afLayout.affiliates[affiliate].feeDetails.stakeholders;
@@ -268,7 +268,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		bytes4 selector,
 		address hook
 	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
-		AffiliateHubStorage.layout().affiliates[affiliate].hooks[selector] = hook;
+		AffiliateStorage.layout().affiliates[affiliate].hooks[selector] = hook;
 		emit HookSet(affiliate, selector, hook);
 	}
 
@@ -276,7 +276,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @param affiliate The affiliate address
 	/// @param selector The function selector to remove the hook for
 	function removeHook(address affiliate, bytes4 selector) external whenNotPaused onlyAffiliateAdmin(affiliate) {
-		delete AffiliateHubStorage.layout().affiliates[affiliate].hooks[selector];
+		delete AffiliateStorage.layout().affiliates[affiliate].hooks[selector];
 		emit HookRemoved(affiliate, selector);
 	}
 
@@ -294,7 +294,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		bool status
 	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		if (operator == address(0)) revert ZeroAddress();
-		AffiliateHubStorage.layout().operators[affiliate][selector][operator] = status;
+		AffiliateStorage.layout().operators[affiliate][selector][operator] = status;
 		emit OperatorSet(affiliate, selector, operator, status);
 	}
 
@@ -308,7 +308,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		uint256 expressRate
 	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
 		if (expressRate > SHARE_PRECISION) revert InvalidShare();
-		AffiliateHubStorage.layout().affiliates[affiliate].expressRate = expressRate;
+		AffiliateStorage.layout().affiliates[affiliate].expressRate = expressRate;
 		emit ExpressRateSet(affiliate, expressRate);
 	}
 
@@ -319,7 +319,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		address affiliate,
 		address virtualProvider
 	) external whenNotPaused onlyAffiliateAdmin(affiliate) onlyIfAffiliateIsActive(affiliate) {
-		AffiliateHubStorage.layout().affiliates[affiliate].virtualProvider = virtualProvider;
+		AffiliateStorage.layout().affiliates[affiliate].virtualProvider = virtualProvider;
 		emit VirtualProviderSet(affiliate, virtualProvider);
 	}
 
@@ -338,7 +338,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	) external whenNotPaused nonReentrant onlyIfAffiliateIsActive(affiliate) returns (bytes memory result) {
 		if (callData.length < 4) revert InvalidCallData();
 
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		bytes4 selector = bytes4(callData[:4]);
 		if (!afLayout.callAllowedSelectors[affiliate][selector]) revert SelectorNotAllowed(selector);
 		if (afLayout.affiliates[affiliate].admin != msg.sender && !afLayout.operators[affiliate][selector][msg.sender]) revert Unauthorized();
@@ -362,7 +362,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @dev Properly clears AffiliateData including nested EnumerableSet before deletion.
 	///      Mappings inside structs are not cleared by `delete`, so we must explicitly
 	///      remove all elements from the EnumerableSet to prevent stale data.
-	function _clearAffiliateData(AffiliateHubStorage.Layout storage afLayout, address affiliate) private {
+	function _clearAffiliateData(AffiliateStorage.Layout storage afLayout, address affiliate) private {
 		AffiliateData storage data = afLayout.affiliates[affiliate];
 
 		// Clear the EnumerableSet (contains internal mappings that `delete` won't clear)
@@ -391,7 +391,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	}
 
 	function _setupAffiliateOnSymmioCore(address affiliate) private {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		EnumerableSet.AddressSet storage cores = afLayout.affiliates[affiliate].symmioCores;
 		address feeDistributor = afLayout.affiliates[affiliate].feeDetails.feeDistributor;
 
@@ -402,7 +402,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	}
 
 	function _claimFees(address affiliate, address symmio, uint256 amount, address caller) private {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		address collateral = ISymmio(symmio).getCollateral();
 		Stakeholder[] memory stakeholders = afLayout.affiliates[affiliate].feeDetails.stakeholders;
 
@@ -465,7 +465,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	function _generateAccountManagerAddress(
 		address registrant,
 		string memory name,
-		AccountHubStorage.Layout storage ahLayout
+		AccountStorage.Layout storage ahLayout
 	) private view returns (address) {
 		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, registrant, name));
 		bytes memory bytecode = abi.encodePacked(ahLayout.accountManagerImplementation, abi.encode(address(this)));
@@ -474,7 +474,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	}
 
 	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
 		bytes memory bytecode = abi.encodePacked(ahLayout.accountManagerImplementation, abi.encode(address(this)));
 

@@ -186,7 +186,7 @@ sequenceDiagram
 
 ```solidity
 function getSigner() internal view returns (address) {
-    address signer = AccountHubStorage.layout().globalSigner;
+    address signer = AccountStorage.layout().globalSigner;
     return signer == address(0) ? msg.sender : signer;
 }
 ```
@@ -253,8 +253,8 @@ Frontends on the old MultiAccount system can import existing accounts into the A
 
 | Storage Contract | Slot Key | Contents |
 |---|---|---|
-| `AccountHubStorage` | `keccak256("diamond.standard.storage.accounthub")` | SubAccount/VA data, nonces, globalSigner, AccountManager bytecode |
-| `AffiliateHubStorage` | `keccak256("diamond.standard.storage.affiliatehub")` | Affiliate configs, fee details, hooks, operators, hookContext |
+| `AccountStorage` | `keccak256("diamond.standard.storage.accountlayer.account")` | SubAccount/VA data, nonces, globalSigner, AccountManager bytecode |
+| `AffiliateStorage` | `keccak256("diamond.standard.storage.accountlayer.affiliate")` | Affiliate configs, fee details, hooks, operators, hookContext |
 | `AccountLayerStorage` | `keccak256("diamond.standard.storage.accountlayer")` | RBAC (hasRole, roleAdmins), globalPaused |
 | Reentrancy Guard | `keccak256("diamond.standard.storage.accountlayer.reentrancy")` | Reentrancy status flag |
 
@@ -278,7 +278,7 @@ bytes32 salt = keccak256(abi.encodePacked(keccak256("ACM_V1"), registrant, name)
 bytes32 initCodeHash = keccak256(abi.encodePacked(implementation, abi.encode(diamond)));
 
 // Fee Distributor: deployer=affiliate, salt=keccak256(globalNonce), initCodeHash=keccak256("VFD_V1")
-// Note: nonce comes from AccountHubStorage.globalNonce (shared with SubAccount generation)
+// Note: nonce comes from AccountStorage.globalNonce (shared with SubAccount generation)
 address(uint160(uint256(keccak256(abi.encodePacked(
     bytes1(0xff), affiliate, keccak256(abi.encodePacked(nonce)), keccak256("VFD_V1")
 )))))

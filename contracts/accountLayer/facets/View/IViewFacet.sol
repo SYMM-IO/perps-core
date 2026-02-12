@@ -4,8 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { SubAccountDetail, VirtualAccountDetail, VirtualAccountIsolationType, LegacyAccountInfo } from "../../storages/AccountHubStorage.sol";
-import { AffiliateState, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
+import { SubAccountDetail, VirtualAccountDetail, VirtualAccountIsolationType, LegacyAccountInfo } from "../../storages/AccountStorage.sol";
+import { AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
 
 /// @notice Read-only interface for accounts, affiliates, roles, and system state
 interface IViewFacet {

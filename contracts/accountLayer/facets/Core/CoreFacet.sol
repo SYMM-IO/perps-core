@@ -11,21 +11,21 @@ import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
 import {
-	AccountHubStorage,
+	AccountStorage,
 	SubAccountData,
 	VirtualAccountData,
 	SubAccountCreationData,
 	VirtualAccountIsolationType,
 	SubAccountIsolationType,
 	LegacyAccountImportData
-} from "../../storages/AccountHubStorage.sol";
-import { AffiliateHubStorage, AffiliateState, HookContext } from "../../storages/AffiliateHubStorage.sol";
+} from "../../storages/AccountStorage.sol";
+import { AffiliateStorage, AffiliateState, HookContext } from "../../storages/AffiliateStorage.sol";
 import { LibQuoteParams, QuoteParams } from "../../libraries/LibQuoteParams.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerSafeCall } from "../../libraries/LibAccountLayerSafeCall.sol";
 import { LibAccountLayerSafeERC20 } from "../../libraries/LibAccountLayerSafeERC20.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
-import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
+import { IAccountLayerHook } from "../../interfaces/IAccountLayerHook.sol";
 import { IVirtualProvider } from "../../../core/interfaces/IVirtualProvider.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
@@ -64,7 +64,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	function editAccountName(address account, string memory name) external whenNotPaused onlyAccountOwner(account) {
 		LibAccountLayerUtils.validateName(name);
 
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (!ahLayout.subAccounts[account].isExists) revert AccountDoesNotExist();
 
 		ahLayout.subAccounts[account].name = name;
@@ -76,7 +76,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	/// @param subAccount The sub-account address
 	/// @param enabled Whether single VA mode should be enabled
 	function setSingleVAMode(address subAccount, bool enabled) external whenNotPaused onlyAccountOwner(subAccount) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		SubAccountData storage s = ahLayout.subAccounts[subAccount];
 		if (!s.isExists) revert AccountDoesNotExist();
 
@@ -95,7 +95,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	/// @notice Deletes a sub-account that has no active virtual accounts, positions, or balance
 	/// @param subAccount The sub-account address to delete
 	function deleteSubAccount(address subAccount) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		SubAccountData storage s = ahLayout.subAccounts[subAccount];
 
 		if (!s.isExists) revert AccountDoesNotExist();
@@ -137,8 +137,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			affiliate,
 			subAccount,
 			symmioCore,
-			IAccountHubHook.onSubAccountDeletion.selector,
-			abi.encodeWithSelector(IAccountHubHook.onSubAccountDeletion.selector, subAccount, owner)
+			IAccountLayerHook.onSubAccountDeletion.selector,
+			abi.encodeWithSelector(IAccountLayerHook.onSubAccountDeletion.selector, subAccount, owner)
 		);
 
 		emit SubAccountDeleted(subAccount, owner, affiliate);
@@ -158,7 +158,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId
 	) external whenNotPaused nonReentrant onlyAccountOwner(parentAccount) returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		SubAccountData storage parent = ahLayout.subAccounts[parentAccount];
 
 		if (parent.isolationType != SubAccountIsolationType.CUSTOM) {
@@ -215,7 +215,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	function _getExpressDepositConfig(address account) private view returns (uint256 expressRate, address virtualProvider) {
 		address affiliate = LibAccountLayerUtils.getAffiliateForAccount(account);
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 
 		expressRate = afLayout.affiliates[affiliate].expressRate;
 		virtualProvider = afLayout.affiliates[affiliate].virtualProvider;
@@ -271,7 +271,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	}
 
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		address previousSigner = ahLayout.globalSigner;
 		ahLayout.globalSigner = address(0);
 
@@ -304,7 +304,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	) external whenNotPaused nonReentrant onlyAccountOwner(account) returns (bytes[] memory) {
 		if (callDatas.length == 0) revert EmptyArray();
 
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		bytes[] memory results = new bytes[](callDatas.length);
 
 		for (uint256 i = 0; i < callDatas.length; i++) {
@@ -350,8 +350,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			LibAccountLayerUtils.getAffiliateForAccount(account),
 			account,
 			LibAccountLayerUtils.getRelatedCore(account),
-			IAccountHubHook.onCall.selector,
-			abi.encodeWithSelector(IAccountHubHook.onCall.selector, account, callDatas)
+			IAccountLayerHook.onCall.selector,
+			abi.encodeWithSelector(IAccountLayerHook.onCall.selector, account, callDatas)
 		);
 
 		return results;
@@ -363,7 +363,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	/// @dev Can only be called while a hook is active. The selector must be in hookAllowedSelectors.
 	/// @param callData The encoded function call to execute on the Symmio core
 	function executeForAccount(bytes calldata callData) external {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		HookContext memory ctx = afLayout.hookContext;
 
 		if (!ctx.isActive) revert NoActiveHookContext();
@@ -390,8 +390,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	// ==================== Internal Functions ====================
 
 	function _createSubAccount(address affiliate, address sender, SubAccountCreationData memory data) private returns (address subAccountAddress) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
 		LibAccountLayerUtils.validateName(data.name);
 		if (!afLayout.whitelistedSymmioCores[data.symmioCore]) revert NotSymmioCore();
@@ -425,8 +425,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			affiliate,
 			subAccountAddress,
 			data.symmioCore,
-			IAccountHubHook.onAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onAccountCreation.selector, sender, subAccountAddress, data.metadata)
+			IAccountLayerHook.onAccountCreation.selector,
+			abi.encodeWithSelector(IAccountLayerHook.onAccountCreation.selector, sender, subAccountAddress, data.metadata)
 		);
 
 		emit SubAccountCreated(subAccountAddress, sender, affiliate, data.name);
@@ -438,7 +438,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId
 	) private returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
 		if (ahLayout.subAccounts[parentAccount].singleVAMode) {
 			address existingVA = ahLayout.activeVAByKey[parentAccount][isolationType][symbolId];
@@ -453,7 +453,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	}
 
 	function _tryReuseVirtualAccount(address parentAccount, VirtualAccountIsolationType isolationType, uint256 symbolId) private returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		address[] storage pool = ahLayout.deletedVirtualAccountsPool[parentAccount][isolationType][symbolId];
 		if (pool.length == 0) return address(0);
 
@@ -503,8 +503,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			parent.affiliate,
 			reusedAccount,
 			parent.symmioCore,
-			IAccountHubHook.onVirtualAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount, v.metadata)
+			IAccountLayerHook.onVirtualAccountCreation.selector,
+			abi.encodeWithSelector(IAccountLayerHook.onVirtualAccountCreation.selector, reusedAccount, parentAccount, v.metadata)
 		);
 
 		emit VirtualAccountReused(reusedAccount, parentAccount);
@@ -518,7 +518,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId
 	) private returns (address virtualAccount) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		SubAccountData storage parent = ahLayout.subAccounts[parentAccount];
 		if (!parent.isExists) revert InvalidParent();
 
@@ -551,15 +551,15 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 			parent.affiliate,
 			virtualAccount,
 			parent.symmioCore,
-			IAccountHubHook.onVirtualAccountCreation.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount, metadata)
+			IAccountLayerHook.onVirtualAccountCreation.selector,
+			abi.encodeWithSelector(IAccountLayerHook.onVirtualAccountCreation.selector, virtualAccount, parentAccount, metadata)
 		);
 
 		emit VirtualAccountCreated(virtualAccount, parentAccount);
 	}
 
 	function _handleVirtualAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private returns (bytes memory) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		VirtualAccountData storage accountData = ahLayout.virtualAccounts[account];
 		VirtualAccountIsolationType isolationType = accountData.isolationType;
 
@@ -585,7 +585,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	}
 
 	function _handleSubAccountSendQuote(address account, bytes memory cd, QuoteParams memory p) private returns (bytes memory) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		SubAccountData storage accountData = ahLayout.subAccounts[account];
 
 		if (accountData.isolationType == SubAccountIsolationType.CUSTOM) {
@@ -646,8 +646,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	) external whenNotPaused nonReentrant returns (address[] memory importedAccounts) {
 		if (accountsData.length == 0) revert EmptyArray();
 
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
 		// Validate legacy contract is registered
 		if (!afLayout.legacyMultiAccounts.contains(legacyContract)) {

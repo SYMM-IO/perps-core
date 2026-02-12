@@ -73,14 +73,14 @@ struct HookContext {
 	bool isActive;
 }
 
-/// @title AffiliateHubStorage
+/// @title AffiliateStorage
 /// @notice Affiliate registration, fee splits, and hook management
 /// @dev Replaces per-frontend MultiAccount deployments. Affiliates register via
 ///      requestToRegisterAffiliate (PENDING) and are activated by APPROVER_ROLE.
 ///      Fees accrue in a deterministic feeDistributor address and are split on-chain
 ///      between stakeholders and Symmio (shares must sum to 1e18).
-library AffiliateHubStorage {
-	bytes32 internal constant AFFILIATE_HUB_STORAGE_SLOT = keccak256("diamond.standard.storage.affiliatehub");
+library AffiliateStorage {
+	bytes32 internal constant AFFILIATE_STORAGE_SLOT = keccak256("diamond.standard.storage.accountlayer.affiliate");
 
 	struct Layout {
 		/// @notice All registered affiliate configurations
@@ -96,7 +96,7 @@ library AffiliateHubStorage {
 		///      Maps affiliate => selector => operator => allowed.
 		mapping(address => mapping(bytes4 => mapping(address => bool))) operators;
 		/// @notice Set of all legacy MultiAccount contracts
-		/// @dev For backward compatibility. AccountHub.ownerOf() scans these for ownership.
+		/// @dev For backward compatibility. AccountLayer.ownerOf() scans these for ownership.
 		EnumerableSet.AddressSet legacyMultiAccounts;
 		/// @notice Whitelisted Symmio core contracts
 		/// @dev Affiliates can only operate on whitelisted cores. Prevents connection
@@ -123,7 +123,7 @@ library AffiliateHubStorage {
 	}
 
 	function layout() internal pure returns (Layout storage l) {
-		bytes32 slot = AFFILIATE_HUB_STORAGE_SLOT;
+		bytes32 slot = AFFILIATE_STORAGE_SLOT;
 		assembly {
 			l.slot := slot
 		}

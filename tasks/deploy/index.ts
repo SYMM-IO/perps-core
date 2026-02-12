@@ -10,9 +10,9 @@ import { signatureVerifierTask } from "./signatureVerifier.js"
 import { stablecoinTask } from "./stablecoin.js"
 import {
 	checkDeploymentTask,
-	verifyAccountHubTask,
+	verifyAccountTask,
 	verifyAccountLayerTask,
-	verifyAffiliateHubTask,
+	verifyAffiliateTask,
 	verifyAllTask,
 	verifyDeploymentTask,
 	verifyInstantLayerTask,
@@ -33,7 +33,7 @@ export const deployTasks = [
 	verifyAllTask,
 	verifyDeploymentTask,
 	verifyAccountLayerTask,
-	verifyAffiliateHubTask,
-	verifyAccountHubTask,
+	verifyAffiliateTask,
+	verifyAccountTask,
 	verifyInstantLayerTask,
 ]

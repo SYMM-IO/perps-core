@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 /// @notice Hook interface that affiliates can implement to receive callbacks on account lifecycle events
-interface IAccountHubHook {
+interface IAccountLayerHook {
 	/// @notice Called when a new sub-account is created under the affiliate
 	/// @param user The owner of the new sub-account
 	/// @param subAccount The created sub-account address

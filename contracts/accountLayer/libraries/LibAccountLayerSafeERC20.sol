@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { AccountHubStorage } from "../storages/AccountHubStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
 
 /// @title LibAccountLayerSafeERC20
 /// @notice Library for safely calling ERC20 functions with signer protection
@@ -19,7 +19,7 @@ library LibAccountLayerSafeERC20 {
 	/// @param to The recipient address
 	/// @param amount The amount to transfer
 	function safeTransfer(address token, address to, uint256 amount) internal {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
 		// Save and clear signer before external call
 		address previousSigner = ahLayout.globalSigner;
@@ -37,7 +37,7 @@ library LibAccountLayerSafeERC20 {
 	/// @param to The recipient address
 	/// @param amount The amount to transfer
 	function safeTransferFrom(address token, address from, address to, uint256 amount) internal {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
 		// Save and clear signer before external call
 		address previousSigner = ahLayout.globalSigner;
@@ -54,7 +54,7 @@ library LibAccountLayerSafeERC20 {
 	/// @param spender The spender address
 	/// @param amount The amount to increase allowance by
 	function safeIncreaseAllowance(address token, address spender, uint256 amount) internal {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
 		// Save and clear signer before external call
 		address previousSigner = ahLayout.globalSigner;

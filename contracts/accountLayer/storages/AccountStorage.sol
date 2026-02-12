@@ -91,13 +91,13 @@ struct LegacyAccountImportData {
 	uint256 coreIndex;
 }
 
-/// @title AccountHubStorage
+/// @title AccountStorage
 /// @notice Unified account management with SubAccounts and Virtual Accounts (VAs)
 /// @dev Replaces per-affiliate MultiAccount deployments with a single hub. Creates a
 ///      three-tier hierarchy: User → SubAccounts → Virtual Accounts. SubAccounts define
 ///      isolation strategy, VAs are the actual trading addresses interacting with Symmio.
-library AccountHubStorage {
-	bytes32 internal constant ACCOUNT_HUB_STORAGE_SLOT = keccak256("diamond.standard.storage.accounthub");
+library AccountStorage {
+	bytes32 internal constant ACCOUNT_STORAGE_SLOT = keccak256("diamond.standard.storage.accountlayer.account");
 
 	struct Layout {
 		/// @notice SubAccount configuration by address
@@ -142,7 +142,7 @@ library AccountHubStorage {
 	}
 
 	function layout() internal pure returns (Layout storage l) {
-		bytes32 slot = ACCOUNT_HUB_STORAGE_SLOT;
+		bytes32 slot = ACCOUNT_STORAGE_SLOT;
 		assembly {
 			l.slot := slot
 		}

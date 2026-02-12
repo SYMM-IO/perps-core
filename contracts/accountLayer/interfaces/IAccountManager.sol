@@ -15,9 +15,9 @@ interface IAccountManager {
 	/// @notice Emitted when a new sub-account is created through the AccountManager
 	event AddAccount(address indexed user, address indexed account, string name);
 
-	/// @notice Returns the AccountLayer diamond (AccountHub) address this manager is connected to
-	/// @return The AccountHub address
-	function getAccountHub() external view returns (address);
+	/// @notice Returns the AccountLayer diamond address this manager is connected to
+	/// @return The AccountLayer address
+	function getAccountLayer() external view returns (address);
 
 	/// @notice Returns paginated accounts for a user
 	/// @param user The user address

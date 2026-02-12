@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { VirtualAccountIsolationType } from "../../storages/AccountHubStorage.sol";
+import { VirtualAccountIsolationType } from "../../storages/AccountStorage.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
 

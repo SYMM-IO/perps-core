@@ -9,7 +9,7 @@ import { IMarginFacet } from "./IMarginFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
-import { AccountHubStorage, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountHubStorage.sol";
+import { AccountStorage, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
@@ -23,7 +23,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
 		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
 
@@ -46,7 +46,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
 		if (amount == 0) revert ZeroAmount();
 
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (!ahLayout.subAccounts[subAccount].isExists) revert AccountDoesNotExist();
 		SubAccountIsolationType subIsolation = ahLayout.subAccounts[subAccount].isolationType;
 
@@ -79,7 +79,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
 		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
 
@@ -94,7 +94,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	/// @param subAccount The parent sub-account to recover funds to
 	/// @param nonce The nonce used to derive the lost virtual account address
 	function emergencyRecoverMargin(address subAccount, uint256 nonce) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (!ahLayout.subAccounts[subAccount].isExists) revert AccountDoesNotExist();
 
 		uint256 currentNonce = ahLayout.subAccountVirtualNonces[subAccount];
@@ -129,7 +129,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId
 	) private view returns (address) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
 		address[] storage pool = ahLayout.deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
 		if (pool.length > 0) {
@@ -148,7 +148,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	}
 
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		address previousSigner = ahLayout.globalSigner;
 		ahLayout.globalSigner = address(0);
 

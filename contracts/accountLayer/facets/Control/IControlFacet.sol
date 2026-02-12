@@ -58,7 +58,7 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	/// @notice Unpauses the AccountLayer diamond
 	function unpause() external;
 
-	// ==================== AccountHub Configuration ====================
+	// ==================== Account Configuration ====================
 
 	/// @notice Sets the bytecode used to deploy new AccountManager proxies
 	/// @param implementation The AccountManager proxy bytecode
@@ -68,7 +68,7 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	/// @param _signer The new signer address
 	function setSigner(address _signer) external;
 
-	// ==================== AffiliateHub Configuration ====================
+	// ==================== Affiliate Configuration ====================
 
 	/// @notice Sets the address that receives Symmio's share of affiliate fees
 	/// @param receiver The new fee receiver address

@@ -37,5 +37,5 @@ export const PARTYB_DEPLOYMENT_FILE = "partyb.json"
 export const STABLECOIN_DEPLOYMENT_FILE = "stablecoin.json"
 
 // Legacy files (kept for backwards compatibility)
-export const ACCOUNTHUB_DEPLOYMENT_LOG_FILE = "accounthub.json"
-export const AFFILIATEHUB_DEPLOYMENT_FILE = "affiliatehub.json"
+export const ACCOUNTLAYER_ACCOUNT_DEPLOYMENT_LOG_FILE = "accounthub.json"
+export const ACCOUNTLAYER_AFFILIATE_DEPLOYMENT_FILE = "affiliatehub.json"

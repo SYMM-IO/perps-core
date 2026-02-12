@@ -3,7 +3,7 @@ pragma solidity ^0.8.18;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract MockAffiliateHub {
+contract MockSymmioCore {
 	address public collateral;
 	address public signer;
 	mapping(address => uint256) private balances;

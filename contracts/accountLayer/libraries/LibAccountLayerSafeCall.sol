@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { AccountHubStorage } from "../storages/AccountHubStorage.sol";
+import { AccountStorage } from "../storages/AccountStorage.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
 
 /// @title LibAccountLayerSafeCall
@@ -16,7 +16,7 @@ library LibAccountLayerSafeCall {
 	/// @param target The target contract address
 	/// @param data The encoded function call data
 	function safeExternalCall(address target, bytes memory data) internal {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (target == address(0)) revert IAccountLayerErrors.ZeroAddress();
 
 		// Save and clear signer before external call to prevent target from impersonating user

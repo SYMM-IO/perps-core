@@ -37,7 +37,7 @@ export function shouldBehaveLikeAccountManager(): void {
 		describe("constructor", function () {
 			it("stores the account layer reference", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				expect(await context.accountManager.getAccountHub()).to.equal(context.accountLayerDiamond)
+				expect(await context.accountManager.getAccountLayer()).to.equal(context.accountLayerDiamond)
 			})
 		})
 
@@ -66,7 +66,7 @@ export function shouldBehaveLikeAccountManager(): void {
 
 			it("always picks the first configured symmio core", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				const MockSymmioCore = await ethers.getContractFactory("MockAffiliateHub")
+				const MockSymmioCore = await ethers.getContractFactory("MockSymmioCore")
 				const coreA = await MockSymmioCore.deploy()
 				await coreA.setCollateral(await context.token.getAddress())
 				await context.alControlFacet.connect(context.signers.deployer).setWhitelistedSymmioCore(await coreA.getAddress(), true)
@@ -423,7 +423,7 @@ export function shouldBehaveLikeAccountManager(): void {
 		describe("view helpers", function () {
 			it("exposes account layer address", async function () {
 				const context = await loadFixture(accountManagerFixture)
-				expect(await context.accountManager.getAccountHub()).to.equal(context.accountLayerDiamond)
+				expect(await context.accountManager.getAccountLayer()).to.equal(context.accountLayerDiamond)
 			})
 		})
 	})

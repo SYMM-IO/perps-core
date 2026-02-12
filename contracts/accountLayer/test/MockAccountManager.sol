@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-import { SubAccountCreationData } from "../storages/AccountHubStorage.sol";
+import { SubAccountCreationData } from "../storages/AccountStorage.sol";
 
-contract MockAffiliateHubForAccountManager {
+contract MockAffiliateStorageForAccountManager {
 	mapping(address => address[]) private affiliateCores;
 
 	function setAffiliateCores(address affiliate, address[] memory cores) external {
@@ -12,16 +12,16 @@ contract MockAffiliateHubForAccountManager {
 
 	function getAffiliateSymmioCores(address affiliate) external view returns (address[] memory) {
 		address[] memory cores = affiliateCores[affiliate];
-		require(cores.length > 0, "MockAffiliateHub: no cores configured");
+		require(cores.length > 0, "MockAffiliate: no cores configured");
 		return cores;
 	}
 }
 
-contract MockAccountHubForAccountManager {
+contract MockAccountLayerForAccountManager {
 	address public signer;
 	address public lastCallAccount;
 	address public lastCreateAffiliate;
-	address public affiliateHub;
+	address public affiliateStorage;
 
 	bytes4 private constant DEPOSIT_FOR_ACCOUNT_SELECTOR = bytes4(keccak256("depositForAccount(address,uint256)"));
 	bytes4 private constant DEPOSIT_AND_ALLOCATE_FOR_ACCOUNT_SELECTOR = bytes4(keccak256("depositAndAllocateForAccount(address,uint256)"));
@@ -46,8 +46,8 @@ contract MockAccountHubForAccountManager {
 		signerLog.push(_signer);
 	}
 
-	function setAffiliateHub(address _affiliateHub) external {
-		affiliateHub = _affiliateHub;
+	function setAffiliateStorage(address _affiliateStorage) external {
+		affiliateStorage = _affiliateStorage;
 	}
 
 	function configureRelatedCore(address account, address core) external {
@@ -79,14 +79,14 @@ contract MockAccountHubForAccountManager {
 
 	function getAffiliateSymmioCores(address affiliate) external view returns (address[] memory) {
 		address[] memory cores = affiliateCores[affiliate];
-		require(cores.length > 0, "MockAffiliateHub: no cores configured");
+		require(cores.length > 0, "MockAffiliate: no cores configured");
 		return cores;
 	}
 
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory data) external returns (address[] memory) {
 		if (revertOnCreate) {
 			revertOnCreate = false;
-			revert("MockAccountHub: create reverted");
+			revert("MockAccountLayer: create reverted");
 		}
 
 		lastCreateAffiliate = affiliate;
@@ -111,7 +111,7 @@ contract MockAccountHubForAccountManager {
 	function _call(address account, bytes[] memory callDatas) public returns (bytes[] memory) {
 		if (revertOnCall) {
 			revertOnCall = false;
-			revert("MockAccountHub: call reverted");
+			revert("MockAccountLayer: call reverted");
 		}
 
 		lastCallAccount = account;
@@ -149,7 +149,7 @@ contract MockAccountHubForAccountManager {
 
 	function getRelatedCore(address account) external view returns (address) {
 		if (requireRelatedCore && relatedCores[account] == address(0)) {
-			revert("MockAccountHub: core not set");
+			revert("MockAccountLayer: core not set");
 		}
 		return relatedCores[account];
 	}

@@ -5,7 +5,7 @@ import { IMultiAccount } from "../interfaces/IMultiAccount.sol";
 
 /**
  * @title MockMultiAccount
- * @notice Mock implementation of MultiAccount for testing AccountHub legacy account support
+ * @notice Mock implementation of MultiAccount for testing AccountLayer legacy account support
  * @dev Implements the full IMultiAccount interface for comprehensive testing
  */
 contract MockMultiAccount is IMultiAccount {

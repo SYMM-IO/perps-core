@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { SubAccountCreationData, SubAccountDetail } from "../storages/AccountHubStorage.sol";
+import { SubAccountCreationData, SubAccountDetail } from "../storages/AccountStorage.sol";
 
 /// @notice Subset of the AccountLayer diamond interface used by AccountManager for cross-facet calls
 interface IAccountLayerDiamond {

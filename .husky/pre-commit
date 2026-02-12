@@ -26,10 +26,10 @@ fi
 
 # Run prettier checks
 echo "Formatting Solidity files..."
-yarn prettier:contracts
+npm run prettier:contracts
 
 echo "Formatting TypeScript files..."
-yarn prettier:ts
+npm run prettier:ts
 
 # Stage any formatting changes
 git add -u

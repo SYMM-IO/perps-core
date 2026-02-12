@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { LibAccountLayerAccessibility } from "../libraries/LibAccountLayerAccessibility.sol";
 import { LibAccountLayerUtils } from "../libraries/LibAccountLayerUtils.sol";
-import { AffiliateHubStorage, AffiliateState } from "../storages/AffiliateHubStorage.sol";
+import { AffiliateStorage, AffiliateState } from "../storages/AffiliateStorage.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
 
 /// @notice Role-based and ownership access control modifiers for the AccountLayer diamond
@@ -25,21 +25,21 @@ abstract contract AccountLayerAccessibility is IAccountLayerErrors {
 
 	/// @notice Restricts access to the admin of the specified affiliate
 	modifier onlyAffiliateAdmin(address affiliate) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (afLayout.affiliates[affiliate].admin != msg.sender) revert NotAffiliateAdmin();
 		_;
 	}
 
 	/// @notice Restricts access to only when the specified affiliate is in ACTIVE state
 	modifier onlyIfAffiliateIsActive(address affiliate) {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.ACTIVE) revert AffiliateNotActive();
 		_;
 	}
 
 	/// @notice Restricts access to whitelisted Symmio core contracts
 	modifier onlySymmio() {
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (!afLayout.whitelistedSymmioCores[msg.sender]) revert NotSymmioCore();
 		_;
 	}

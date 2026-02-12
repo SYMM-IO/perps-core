@@ -9,8 +9,8 @@ import { IDiamondLoupe } from "../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IDiamondCut } from "../diamond/facets/DiamondCut/IDiamondCut.sol";
 import { IERC165 } from "../diamond/interfaces/IERC165.sol";
 import { AccountLayerStorage } from "./storages/AccountLayerStorage.sol";
-import { AccountHubStorage } from "./storages/AccountHubStorage.sol";
-import { AffiliateHubStorage } from "./storages/AffiliateHubStorage.sol";
+import { AccountStorage } from "./storages/AccountStorage.sol";
+import { AffiliateStorage } from "./storages/AffiliateStorage.sol";
 import { LibAccountLayerAccessibility } from "./libraries/LibAccountLayerAccessibility.sol";
 import { IAccountLayerErrors } from "./interfaces/IAccountLayerErrors.sol";
 
@@ -38,13 +38,13 @@ contract Init is IAccountLayerErrors {
 		LibAccountLayerAccessibility.grantRole(admin, LibAccountLayerAccessibility.UNPAUSER_ROLE);
 		LibAccountLayerAccessibility.grantRole(admin, LibAccountLayerAccessibility.APPROVER_ROLE);
 
-		// Initialize AccountHub storage
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		// Initialize Account storage
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		ahLayout.accountManagerImplementation = accountManagerImplementation;
 		ahLayout.initAccountManagerCodeHash = keccak256(abi.encodePacked(accountManagerImplementation));
 
-		// Initialize AffiliateHub storage
-		AffiliateHubStorage.Layout storage afLayout = AffiliateHubStorage.layout();
+		// Initialize Affiliate storage
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		afLayout.symmioFeeReceiver = symmioFeeReceiver;
 	}
 }

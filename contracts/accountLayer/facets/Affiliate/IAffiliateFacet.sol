@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { AffiliateRegistration, Stakeholder } from "../../storages/AffiliateHubStorage.sol";
+import { AffiliateRegistration, Stakeholder } from "../../storages/AffiliateStorage.sol";
 import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
 
 /// @notice Events emitted by the AffiliateFacet

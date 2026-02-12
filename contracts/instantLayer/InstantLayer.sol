@@ -22,7 +22,7 @@ pragma solidity >=0.8.18;
 ///         │ • Flexible Nonce Management: Choose between salt-only       │
 ///         │   (nonce=0) or ordered execution (nonce>0)                  │
 ///         │ • Multi-Account Support: Works with both PartyB and         │
-///         │   AccountHub contracts                                      │
+///         │   AccountLayer contracts                                      │
 ///         │ • EIP-712 Signatures: Type-safe signature verification      │
 ///         │ • Batch Processing: Execute multiple operations atomically  │
 ///         └─────────────────────────────────────────────────────────────┘
@@ -38,7 +38,7 @@ import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessCo
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { VirtualAccountDetail } from "../accountLayer/storages/AccountHubStorage.sol";
+import { VirtualAccountDetail } from "../accountLayer/storages/AccountStorage.sol";
 import { IViewFacet } from "../accountLayer/facets/View/IViewFacet.sol";
 import { ICoreFacet } from "../accountLayer/facets/Core/ICoreFacet.sol";
 
@@ -131,8 +131,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Registry of whitelisted call targets
 	mapping(address => bool) public whitelistedTargets;
 
-	/// @notice Configured AccountHub contract
-	address public accountHub;
+	/// @notice Configured AccountLayer contract
+	address public accountLayer;
 
 	/// @notice Tracking of executed operation hashes to prevent replay attacks
 	/// @dev    Each operation can only be executed once
@@ -161,7 +161,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/* ═══════════════════════════════ STRUCTS ═══════════════════════════════ */
 
 	/// @notice Represents an account context for operations.
-	/// @dev    isPartyB decides between AccountHub and PartyB.
+	/// @dev    isPartyB decides between AccountLayer and PartyB.
 	/// @param addr         The actual account address (PartyA account or PartyB address)
 	/// @param isPartyB     Whether this operation targets a PartyB or not
 	struct Account {
@@ -274,10 +274,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param partyB Address of the unregistered PartyB
 	event PartyBUnregistered(address indexed partyB);
 
-	/// @notice Emitted when the configured AccountHub is updated
-	/// @param oldAccountHub old AccountHub
-	/// @param newAccountHub new AccountHub
-	event AccountHubUpdated(address indexed oldAccountHub, address indexed newAccountHub);
+	/// @notice Emitted when the configured AccountLayer is updated
+	/// @param oldAccountLayer old AccountLayer
+	/// @param newAccountLayer new AccountLayer
+	event AccountLayerUpdated(address indexed oldAccountLayer, address indexed newAccountLayer);
 
 	/// @notice Emitted when target whitelist status changes
 	/// @param target Target contract address
@@ -351,12 +351,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice CallData is too short (minimum 4 bytes for selector)
 	error CallDataLengthMismatch();
 
-	/// @notice AccountHub address is invalid
-	/// @param accountHub Provided AccountHub address
-	error UnregisteredAccountHub(address accountHub);
+	/// @notice AccountLayer address is invalid
+	/// @param accountLayer Provided AccountLayer address
+	error UnregisteredAccountLayer(address accountLayer);
 
-	/// @notice AccountHub contract address has not been configured
-	error AccountHubNotSet();
+	/// @notice AccountLayer contract address has not been configured
+	error AccountLayerNotSet();
 
 	/// @notice PartyB contract is not registered
 	/// @param partyB The unregistered PartyB address
@@ -557,15 +557,15 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit PartyBUnregistered(partyB);
 	}
 
-	/// @notice Set the AccountHub contract address.
-	/// @param _accountHub Address of the AccountHub contract.
-	function setAccountHub(address _accountHub) external onlyRole(SETTER_ROLE) {
-		if (_accountHub == address(0)) revert UnregisteredAccountHub(_accountHub);
-		emit AccountHubUpdated(accountHub, _accountHub);
-		whitelistedTargets[accountHub] = false;
-		accountHub = _accountHub;
-		whitelistedTargets[_accountHub] = true;
-		emit TargetWhitelistUpdated(_accountHub, true);
+	/// @notice Set the AccountLayer contract address.
+	/// @param _accountLayer Address of the AccountLayer contract.
+	function setAccountLayer(address _accountLayer) external onlyRole(SETTER_ROLE) {
+		if (_accountLayer == address(0)) revert UnregisteredAccountLayer(_accountLayer);
+		emit AccountLayerUpdated(accountLayer, _accountLayer);
+		whitelistedTargets[accountLayer] = false;
+		accountLayer = _accountLayer;
+		whitelistedTargets[_accountLayer] = true;
+		emit TargetWhitelistUpdated(_accountLayer, true);
 	}
 
 	/// @notice Whitelist or remove whitelist for a target contract.
@@ -797,7 +797,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			if (signer != signedOp.signerAccount.addr) revert MismatchSignerAndAccount(signer, signedOp.signerAccount.addr);
 			if (!isPartyBRegistered(signer)) revert UnregisteredPartyB(signer);
 		} else {
-			// PartyA operation through AccountHub
+			// PartyA operation through AccountLayer
 			address accountOwner = _getAccountOwner(signedOp.signerAccount.addr);
 
 			// Check delegation if signer is not the owner
@@ -807,7 +807,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				assembly ("memory-safe") {
 					selector := calldataload(callData.offset) // Extract first 4 bytes
 				}
-				VirtualAccountDetail memory virtualAccount = IViewFacet(accountHub).getVirtualAccount(signedOp.signerAccount.addr);
+				VirtualAccountDetail memory virtualAccount = IViewFacet(accountLayer).getVirtualAccount(signedOp.signerAccount.addr);
 				address delegator = signedOp.signerAccount.addr;
 				if (virtualAccount.isExists) delegator = virtualAccount.parentAccount;
 				if (!isDelegationActive(delegator, signedOp.signer, selector)) {
@@ -855,9 +855,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Route to PartyB
 			(success, result) = signedOp.signer.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
 		} else if (signedOp.target == address(symmio)) {
-			// Route to AccountHub
-			if (accountHub == address(0)) revert AccountHubNotSet();
-			(success, result) = accountHub.call(abi.encodeWithSelector(ICoreFacet._call.selector, signedOp.signerAccount.addr, callDatas));
+			// Route to AccountLayer
+			if (accountLayer == address(0)) revert AccountLayerNotSet();
+			(success, result) = accountLayer.call(abi.encodeWithSelector(ICoreFacet._call.selector, signedOp.signerAccount.addr, callDatas));
 			decodeNestedResult = true;
 		} else {
 			// Route to a whitelisted target
@@ -1123,10 +1123,10 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		return keccak256(abi.encode(REPLAY_HEADER_TYPEHASH, r.nonce, r.deadline, r.salt));
 	}
 
-	/// @notice Retrieve the owner of an account via the AccountHub.
+	/// @notice Retrieve the owner of an account via the AccountLayer.
 	function _getAccountOwner(address account) private view returns (address) {
-		if (accountHub == address(0)) revert AccountHubNotSet();
-		return IViewFacet(accountHub).ownerOf(account);
+		if (accountLayer == address(0)) revert AccountLayerNotSet();
+		return IViewFacet(accountLayer).ownerOf(account);
 	}
 
 	/// @notice Check whether the caller is the owner of the given account.
@@ -1137,8 +1137,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/* ═══════════════════════════ MODIFIERS ═══════════════════════════ */
 
 	/// @notice Restrict function access to the owner of a specific account.
-	/// @dev    Verifies caller owns the account through the AccountHub contract.
-	/// @param account Account information including AccountHub and address
+	/// @dev    Verifies caller owns the account through the AccountLayer contract.
+	/// @param account Account information including AccountLayer and address
 	modifier onlyOwner(Account memory account) {
 		if (!_isAccountOwner(account)) revert NotOwnerOfAccount(msg.sender, account.addr);
 		_;

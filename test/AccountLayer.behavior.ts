@@ -2,8 +2,8 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers"
 import { expect } from "chai"
 import { BytesLike, toUtf8Bytes, ZeroAddress } from "ethers"
 
-import { IAccountHubHook__factory, ISymmioHook__factory } from "../src/types/index.js"
-import type { MockAccountHubHook } from "../src/types/index.js"
+import { IAccountLayerHook__factory, ISymmioHook__factory } from "../src/types/index.js"
+import type { MockAccountLayerHook } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
@@ -1207,17 +1207,17 @@ export function shouldBehaveLikeAccountLayer(): void {
 			})
 
 			describe("hook integration", async () => {
-				let mockHook: MockAccountHubHook
+				let mockHook: MockAccountLayerHook
 
 				beforeEach(async () => {
 					// Deploy mock hook
-					const MockAccountHubHook = await ethers.getContractFactory("MockAccountHubHook")
-					mockHook = await MockAccountHubHook.deploy()
+					const MockAccountLayerHook = await ethers.getContractFactory("MockAccountLayerHook")
+					mockHook = await MockAccountLayerHook.deploy()
 					await mockHook.waitForDeployment()
 
 					// Register the hook for onSubAccountDeletion
 					const affiliateAddress = await context.accountManager.getAddress()
-					const onSubAccountDeletionSelector = IAccountHubHook__factory.createInterface().getFunction("onSubAccountDeletion").selector
+					const onSubAccountDeletionSelector = IAccountLayerHook__factory.createInterface().getFunction("onSubAccountDeletion").selector
 					await context.alAffiliateFacet.setHook(affiliateAddress, onSubAccountDeletionSelector, await mockHook.getAddress())
 				})
 
@@ -1229,7 +1229,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 					await context.alCoreFacet.connect(context.signers.user).deleteSubAccount(subAccountAddress)
 
 					// Verify hook was called
-					const onSubAccountDeletionSelector = IAccountHubHook__factory.createInterface().getFunction("onSubAccountDeletion").selector
+					const onSubAccountDeletionSelector = IAccountLayerHook__factory.createInterface().getFunction("onSubAccountDeletion").selector
 					const callCount = await mockHook.selectorCallCount(onSubAccountDeletionSelector)
 					expect(callCount).to.equal(1)
 				})
@@ -2235,16 +2235,16 @@ export function shouldBehaveLikeAccountLayer(): void {
 		})
 
 		describe("hooks", async () => {
-			let hookContract: MockAccountHubHook
+			let hookContract: MockAccountLayerHook
 			let subAccountAddress: string
 			let customSubAccountAddress: string
 			let hookEvents: any
 
 			const HOOK_SELECTORS = {
-				onAccountCreation: IAccountHubHook__factory.createInterface().getFunction("onAccountCreation").selector,
-				onVirtualAccountCreation: IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
-				onVirtualAccountDeletion: IAccountHubHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
-				onCall: IAccountHubHook__factory.createInterface().getFunction("onCall").selector,
+				onAccountCreation: IAccountLayerHook__factory.createInterface().getFunction("onAccountCreation").selector,
+				onVirtualAccountCreation: IAccountLayerHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
+				onVirtualAccountDeletion: IAccountLayerHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+				onCall: IAccountLayerHook__factory.createInterface().getFunction("onCall").selector,
 			}
 			const SYMMIO_HOOK_SELECTORS = {
 				onCancelQuote: ISymmioHook__factory.createInterface().getFunction("onCancelQuote").selector,
@@ -2252,7 +2252,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 			beforeEach(async () => {
 				// Deploy mock hook contract
-				const MockHook = await ethers.getContractFactory("MockAccountHubHook")
+				const MockHook = await ethers.getContractFactory("MockAccountLayerHook")
 				hookContract = await MockHook.deploy()
 				await hookContract.waitForDeployment()
 
@@ -2649,8 +2649,8 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 			describe("executeForAccount hook callback", async () => {
 				beforeEach(async () => {
-					// Set the AccountHub address in the mock hook
-					await hookContract.setAccountHub(context.accountLayerDiamond)
+					// Set the AccountLayer address in the mock hook
+					await hookContract.setAccountLayer(context.accountLayerDiamond)
 
 					// Make hedger bindable
 					await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
@@ -2781,12 +2781,12 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 				beforeEach(async () => {
 					// Deploy malicious hook contract
-					const MaliciousHook = await ethers.getContractFactory("MaliciousAccountHubHook")
+					const MaliciousHook = await ethers.getContractFactory("MaliciousAccountLayerHook")
 					maliciousHook = await MaliciousHook.deploy()
 					await maliciousHook.waitForDeployment()
 
-					// Set the AccountHub address in the malicious hook
-					await maliciousHook.setAccountHub(context.accountLayerDiamond)
+					// Set the AccountLayer address in the malicious hook
+					await maliciousHook.setAccountLayer(context.accountLayerDiamond)
 				})
 
 				it("should prevent hook from impersonating user during onAccountCreation", async () => {

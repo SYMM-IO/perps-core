@@ -144,7 +144,7 @@ The task automatically configures:
 - Admin receives DEFAULT_ADMIN_ROLE and SETTER_ROLE on InstantLayer
 - Diamond (Symmio) is whitelisted on InstantLayer (setTargetWhitelist)
 - AccountLayerDiamond is whitelisted on InstantLayer (setTargetWhitelist)
-- AccountHub is set on InstantLayer (setAccountHub)
+- AccountLayer is set on InstantLayer (setAccountLayer)
 
 ### InstantLayer Templates (if `SETUP_INSTANT_LAYER_TEMPLATES=true`)
 

@@ -9,9 +9,9 @@ import { ISymmioHookFacet } from "./ISymmioHookFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
-import { AccountHubStorage, VirtualAccountData } from "../../storages/AccountHubStorage.sol";
+import { AccountStorage, VirtualAccountData } from "../../storages/AccountStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
-import { IAccountHubHook } from "../../interfaces/IAccountHubHook.sol";
+import { IAccountLayerHook } from "../../interfaces/IAccountLayerHook.sol";
 
 /// @notice Hook facet called by Symmio core on position lifecycle events to manage virtual account state
 contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
@@ -68,7 +68,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	// ==================== Internal Functions ====================
 
 	function _removeQuoteFromAccount(uint256 quoteId, address partyA) private {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		VirtualAccountData storage vData = ahLayout.virtualAccounts[partyA];
 
 		if (vData.isExists) {
@@ -80,7 +80,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	}
 
 	function _deleteVirtualAccount(address account) private {
-		AccountHubStorage.Layout storage ahLayout = AccountHubStorage.layout();
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		VirtualAccountData storage vData = ahLayout.virtualAccounts[account];
 		if (!vData.isExists) revert AlreadyDeleted();
 		if (vData.quoteIds.length() != 0) revert OpenPositionsExist();
@@ -105,8 +105,8 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 			affiliate,
 			account,
 			core,
-			IAccountHubHook.onVirtualAccountDeletion.selector,
-			abi.encodeWithSelector(IAccountHubHook.onVirtualAccountDeletion.selector, account)
+			IAccountLayerHook.onVirtualAccountDeletion.selector,
+			abi.encodeWithSelector(IAccountLayerHook.onVirtualAccountDeletion.selector, account)
 		);
 
 		emit VirtualAccountDeleted(account, parentAccount);

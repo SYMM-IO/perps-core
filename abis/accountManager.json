@@ -3,7 +3,7 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "_accountHub",
+                "name": "_accountLayer",
                 "type": "address"
             }
         ],
@@ -333,7 +333,7 @@
     },
     {
         "inputs": [],
-        "name": "accountHub",
+        "name": "accountLayer",
         "outputs": [
             {
                 "internalType": "address",
@@ -437,7 +437,7 @@
     },
     {
         "inputs": [],
-        "name": "getAccountHub",
+        "name": "getAccountLayer",
         "outputs": [
             {
                 "internalType": "address",
