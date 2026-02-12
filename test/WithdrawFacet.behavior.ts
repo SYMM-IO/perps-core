@@ -515,6 +515,142 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 		})
 	})
 
+	describe("Withdraw View Functions", function () {
+		it("Should return 0 for user with no withdraw requests", async function () {
+			expect(await context.viewFacet.getLastWithdrawRequestId(user.address)).to.equal(0)
+		})
+
+		it("Should return correct last withdraw request ID after initiating", async function () {
+			await userDeposit("100")
+			const parts = await buildParts(["10"])
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+			expect(await context.viewFacet.getLastWithdrawRequestId(user.address)).to.equal(1)
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+			expect(await context.viewFacet.getLastWithdrawRequestId(user.address)).to.equal(2)
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+			expect(await context.viewFacet.getLastWithdrawRequestId(user.address)).to.equal(3)
+		})
+
+		it("Should return empty array for batch with start beyond last ID", async function () {
+			await userDeposit("100")
+			const parts = await buildParts(["10"])
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+
+			const requests = await context.viewFacet.getWithdrawRequestsBatch(user.address, 5, 3)
+			expect(requests.length).to.equal(0)
+		})
+
+		it("Should return correct batch of withdraw requests", async function () {
+			await userDeposit("100")
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["10"]), false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["20"]), false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["15"]), false, "0x")
+
+			const requests = await context.viewFacet.getWithdrawRequestsBatch(user.address, 1, 3)
+			expect(requests.length).to.equal(3)
+			expect(requests[0].totalAmount).to.equal(ethers.parseUnits("10", 18))
+			expect(requests[1].totalAmount).to.equal(ethers.parseUnits("20", 18))
+			expect(requests[2].totalAmount).to.equal(ethers.parseUnits("15", 18))
+		})
+
+		it("Should clamp batch size when it exceeds last ID", async function () {
+			await userDeposit("100")
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["10"]), false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["20"]), false, "0x")
+
+			const requests = await context.viewFacet.getWithdrawRequestsBatch(user.address, 1, 10)
+			expect(requests.length).to.equal(2)
+		})
+
+		it("Should return empty array for pending requests when user has none", async function () {
+			const requests = await context.viewFacet.getPendingWithdrawRequests(user.address, 1, 10)
+			expect(requests.length).to.equal(0)
+		})
+
+		it("Should return only pending withdraw requests", async function () {
+			await userDeposit("100")
+
+			// Create 3 requests
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["10"]), false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["20"]), false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["15"]), false, "0x")
+
+			// All 3 should be pending
+			let pending = await context.viewFacet.getPendingWithdrawRequests(user.address, 1, 10)
+			expect(pending.length).to.equal(3)
+
+			// Cancel request #1
+			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)
+
+			// Finalize request #2
+			await time.increase(1000)
+			await context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(user.address, 2)
+
+			// Only request #3 should remain pending
+			pending = await context.viewFacet.getPendingWithdrawRequests(user.address, 1, 10)
+			expect(pending.length).to.equal(1)
+			expect(pending[0].totalAmount).to.equal(ethers.parseUnits("15", 18))
+			expect(pending[0].status).to.equal(WithdrawStatus.PENDING)
+		})
+
+		it("Should return all non-terminal statuses in pending requests", async function () {
+			await userDeposit("100")
+
+			// Create requests
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["10"]), false, "0x") // #1 - will cancel
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["20"]), false, "0x") // #2 - will complete
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["15"]), false, "0x") // #3 - stays pending
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["5"]), false, "0x") // #4 - will suspend
+
+			// Cancel #1
+			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)
+
+			// Finalize #2
+			await time.increase(1000)
+			await context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(user.address, 2)
+
+			// Suspend #4
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, 4)
+			await context.pauseControlFacet.connect(context.signers.admin).unsuspendedAddress(user.address)
+
+			// Should return #3 (PENDING) and #4 (SUSPENDED)
+			const pending = await context.viewFacet.getPendingWithdrawRequests(user.address, 1, 10)
+			expect(pending.length).to.equal(2)
+			expect(pending[0].status).to.equal(WithdrawStatus.PENDING)
+			expect(pending[1].status).to.equal(WithdrawStatus.SUSPENDED)
+		})
+
+		it("Should paginate pending requests correctly", async function () {
+			await userDeposit("100")
+
+			// Create 4 requests: #1 pending, #2 cancelled, #3 pending, #4 pending
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["10"]), false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["10"]), false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["10"]), false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(await buildParts(["10"]), false, "0x")
+
+			// Cancel #2
+			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(2)
+
+			// Scan only IDs 1-2: should return only #1
+			let pending = await context.viewFacet.getPendingWithdrawRequests(user.address, 1, 2)
+			expect(pending.length).to.equal(1)
+			expect(pending[0].id).to.equal(1)
+
+			// Scan only IDs 3-4: should return #3 and #4
+			pending = await context.viewFacet.getPendingWithdrawRequests(user.address, 3, 2)
+			expect(pending.length).to.equal(2)
+			expect(pending[0].id).to.equal(3)
+			expect(pending[1].id).to.equal(4)
+		})
+	})
+
 	describe("Virtual Withdraw", function () {
 		beforeEach(async function () {
 			const MockVirtualProvider = await ethers.getContractFactory("contracts/core/test/MockVirtualProvider.sol:VirtualProvider")

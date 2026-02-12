@@ -14236,6 +14236,25 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "user",
+                "type": "address"
+            }
+        ],
+        "name": "getLastWithdrawRequestId",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "partyA",
                 "type": "address"
             }
@@ -14515,6 +14534,134 @@
                 "internalType": "bool",
                 "name": "isEmergency",
                 "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "start",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "size",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPendingWithdrawRequests",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "user",
+                        "type": "address"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "amount",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "int256",
+                                "name": "chainId",
+                                "type": "int256"
+                            },
+                            {
+                                "internalType": "bytes",
+                                "name": "receiver",
+                                "type": "bytes"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "virtualProvider",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "expressProvider",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct WithdrawReceiverPart[]",
+                        "name": "parts",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "cooldownEndTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum WithdrawStatus",
+                        "name": "status",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "speedUp",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isCooldownModified",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "provider",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPureVirtual",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "providerData",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalVirtualAmount",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct WithdrawRequest[]",
+                "name": "",
+                "type": "tuple[]"
             }
         ],
         "stateMutability": "view",
@@ -14821,6 +14968,134 @@
                 "internalType": "struct WithdrawRequest",
                 "name": "",
                 "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "start",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "size",
+                "type": "uint256"
+            }
+        ],
+        "name": "getWithdrawRequestsBatch",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "user",
+                        "type": "address"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "amount",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "int256",
+                                "name": "chainId",
+                                "type": "int256"
+                            },
+                            {
+                                "internalType": "bytes",
+                                "name": "receiver",
+                                "type": "bytes"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "virtualProvider",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "expressProvider",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct WithdrawReceiverPart[]",
+                        "name": "parts",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "cooldownEndTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum WithdrawStatus",
+                        "name": "status",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "speedUp",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isCooldownModified",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "provider",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPureVirtual",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "providerData",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalVirtualAmount",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct WithdrawRequest[]",
+                "name": "",
+                "type": "tuple[]"
             }
         ],
         "stateMutability": "view",

@@ -12,7 +12,7 @@ import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } fr
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
 import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { ExternalTransferStorage, VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
-import { WithdrawStorage, WithdrawRequest } from "../../storages/WithdrawStorage.sol";
+import { WithdrawStorage, WithdrawRequest, WithdrawStatus } from "../../storages/WithdrawStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { MAStorage, EntityMetadata } from "../../storages/MAStorage.sol";
@@ -687,6 +687,64 @@ contract ViewFacet is IViewFacet {
 	/// @return The withdraw request.
 	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory) {
 		return WithdrawStorage.layout().withdrawRequests[user][requestId];
+	}
+
+	/// @notice Retrieves the last assigned withdraw request ID for a user.
+	/// @param user The address of the user.
+	/// @return The last assigned withdraw request ID (0 means no requests yet).
+	function getLastWithdrawRequestId(address user) external view returns (uint256) {
+		return WithdrawStorage.layout().lastWithdrawRequestId[user];
+	}
+
+	/// @notice Retrieves a batch of withdraw requests for a user.
+	/// @param user The address of the user.
+	/// @param start The starting request ID (inclusive).
+	/// @param size The number of requests to retrieve.
+	/// @return An array of withdraw requests.
+	function getWithdrawRequestsBatch(address user, uint256 start, uint256 size) external view returns (WithdrawRequest[] memory) {
+		WithdrawStorage.Layout storage ws = WithdrawStorage.layout();
+		uint256 lastId = ws.lastWithdrawRequestId[user];
+		if (start > lastId) {
+			return new WithdrawRequest[](0);
+		}
+		if (start + size - 1 > lastId) {
+			size = lastId - start + 1;
+		}
+		WithdrawRequest[] memory requests = new WithdrawRequest[](size);
+		for (uint256 i = 0; i < size; i++) {
+			requests[i] = ws.withdrawRequests[user][start + i];
+		}
+		return requests;
+	}
+
+	/// @notice Retrieves unfinished withdraw requests for a user within a paginated range.
+	/// @dev Returns requests with status PENDING, PROVIDER_ACCEPTED, CANCEL_REQUESTED, or SUSPENDED.
+	///      Skips requests that are COMPLETED, CANCELLED, or PROVIDER_REJECTED.
+	/// @param user The address of the user.
+	/// @param start The starting request ID (inclusive).
+	/// @param size The number of request IDs to scan.
+	/// @return An array of unfinished withdraw requests found in the scanned range.
+	function getPendingWithdrawRequests(address user, uint256 start, uint256 size) external view returns (WithdrawRequest[] memory) {
+		WithdrawStorage.Layout storage ws = WithdrawStorage.layout();
+		uint256 lastId = ws.lastWithdrawRequestId[user];
+		if (start > lastId) {
+			return new WithdrawRequest[](0);
+		}
+		if (start + size - 1 > lastId) {
+			size = lastId - start + 1;
+		}
+		WithdrawRequest[] memory requests = new WithdrawRequest[](size);
+		uint256 count = 0;
+		for (uint256 i = start; i < start + size; i++) {
+			WithdrawStatus status = ws.withdrawRequests[user][i].status;
+			if (status != WithdrawStatus.COMPLETED && status != WithdrawStatus.CANCELLED && status != WithdrawStatus.PROVIDER_REJECTED) {
+				requests[count++] = ws.withdrawRequests[user][i];
+			}
+		}
+		assembly {
+			mstore(requests, count)
+		}
+		return requests;
 	}
 
 	/// @notice Checks if an address is a registered express provider.

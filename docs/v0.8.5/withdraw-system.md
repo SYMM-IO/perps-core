@@ -239,12 +239,25 @@ struct WithdrawRequest {
 
 ```solidity
 function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory);
+function getLastWithdrawRequestId(address user) external view returns (uint256);
+function getWithdrawRequestsBatch(address user, uint256 start, uint256 size) external view returns (WithdrawRequest[] memory);
+function getPendingWithdrawRequests(address user, uint256 start, uint256 size) external view returns (WithdrawRequest[] memory);
 function getWithdrawableTime(address user) external view returns (uint256);
 function isExpressProviderRegistered(address provider) external view returns (bool);
 function isVirtualProviderRegistered(address provider) external view returns (bool);
 function isSpeedUpEligible(address user) external view returns (bool);
 function getModifiedCooldownEndTime(address user, uint256 requestId) external view returns (uint256);
 ```
+
+#### Listing Withdraw Requests
+
+To retrieve a user's unfinished withdrawal requests from a frontend:
+
+1. **Filtered:** Use `getPendingWithdrawRequests(user, start, size)` to scan a range of request IDs and return only those with non-terminal status (`PENDING`, `PROVIDER_ACCEPTED`, `CANCEL_REQUESTED`, `SUSPENDED`). Requests that are `COMPLETED`, `CANCELLED`, or `PROVIDER_REJECTED` are excluded.
+
+2. **Unfiltered:** Use `getWithdrawRequestsBatch(user, start, size)` to get all requests in a range regardless of status, and filter client-side.
+
+Both approaches are paginated. Call `getLastWithdrawRequestId(user)` first to get the ID range, then page through with `start`/`size`. Request IDs are sequential starting from 1.
 
 ### User Functions
 

@@ -171,6 +171,12 @@ interface IViewFacet {
 
 	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory);
 
+	function getLastWithdrawRequestId(address user) external view returns (uint256);
+
+	function getWithdrawRequestsBatch(address user, uint256 start, uint256 size) external view returns (WithdrawRequest[] memory);
+
+	function getPendingWithdrawRequests(address user, uint256 start, uint256 size) external view returns (WithdrawRequest[] memory);
+
 	function isExpressProviderRegistered(address provider) external view returns (bool);
 
 	function isVirtualProviderRegistered(address provider) external view returns (bool);
