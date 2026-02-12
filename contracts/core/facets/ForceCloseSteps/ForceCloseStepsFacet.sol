@@ -31,14 +31,14 @@ contract ForceCloseStepsFacet is Accessibility, Pausable, IPartiesEvents, IForce
 		uint256 quoteId,
 		UnifiedSettlementSig memory settlementSig,
 		uint256[] memory updatedPrices
-	) external whenNotPartyAActionsPaused {
+	) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		_settleUpnlForForceClose(quoteId, settlementSig, updatedPrices);
 	}
 
 	/// @notice Finalizes the 3-step force close flow using a fresh PairUpnlAndPriceSig to refresh uPNL/currentPrice.
 	/// @param quoteId The ID of the quote for which the position should be forced to close.
 	/// @param sig Fresh Muon signature (uPNLs + currentPrice).
-	function finalizeForceClose(uint256 quoteId, PairUpnlAndPriceSig memory sig) external {
+	function finalizeForceClose(uint256 quoteId, PairUpnlAndPriceSig memory sig) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		ForceCloseStepsImpl.refreshForceCloseSnapshot(quoteId, sig);
 		_finalizeForceCloseWithoutSig(quoteId);
 	}

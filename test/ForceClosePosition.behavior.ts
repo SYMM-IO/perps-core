@@ -21,7 +21,13 @@ import {
 	calculateExpectedClosePriceForForceClose,
 	calculateExpectedClosePriceForForceCloseWithAvg,
 } from "./utils/PriceUtils.js"
-import { getDummyHighLowPriceSig, getDummyPairUpnlAndPriceSig, getDummyPriceSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
+import {
+	getDummyHighLowPriceSig,
+	getDummyLiquidationSig,
+	getDummyPairUpnlAndPriceSig,
+	getDummyPriceSig,
+	getDummyUnifiedSettlementSig,
+} from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeForceClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -910,6 +916,105 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					})
 				})
 			})
+		})
+	})
+
+	describe("notLiquidated modifier on force close steps", function () {
+		beforeEach(async function () {
+			await hedger.lockQuote(quote1LongOpened.id)
+			await hedger.openPosition(quote1LongOpened.id)
+
+			await hedger.lockQuote(quote2ShortOpened.id)
+			await hedger.openPosition(quote2ShortOpened.id)
+
+			await hedger.lockQuote(quote4LongOpened.id)
+			await hedger.openPosition(quote4LongOpened.id)
+
+			await user.requestToClosePosition(
+				quote1LongOpened.id,
+				limitCloseRequestBuilder()
+					.quantityToClose(await getQuoteQuantity(context, quote1LongOpened.id))
+					.closePrice(decimal(1n))
+					.deadline((await getBlockTimestamp()) + 1000n)
+					.build(),
+			)
+
+			quote1LongOpened = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+		})
+
+		it("Should revert settleUpnlForForceClose when partyA is liquidated", async function () {
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio = await context.viewFacetSymbol.forceCloseGapRatio(quote1LongOpened.symbolId)
+
+			const highLowSig = await getDummyHighLowPriceSig(
+				sigTimes[0],
+				sigTimes[1],
+				decimal(1n),
+				BigInt(quote1LongOpened.requestedClosePrice) + unDecimal(BigInt(quote1LongOpened.requestedClosePrice) * BigInt(gapRatio)) + decimal(1n),
+				decimal(1n),
+				decimal(1n),
+				quote1LongOpened.symbolId,
+				0n,
+				0n,
+			)
+
+			// Step 1: initialize force close (passes notLiquidated)
+			await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+
+			// Trigger partyA liquidation between steps
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const liquidationSig = await getDummyLiquidationSig(
+				"0x10",
+				-decimal(10000n),
+				[quote1LongOpened.symbolId],
+				[decimal(1n)],
+				-decimal(10000n),
+				allocatedBalance,
+			)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(await user.getAddress(), liquidationSig)
+
+			// Step 2: settleUpnlForForceClose should revert because partyA is now liquidated
+			const settlementSig = await getDummyUnifiedSettlementSig()
+			await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSig, [])).to.be.revertedWith(
+				"Accessibility: PartyA isn't solvent",
+			)
+		})
+
+		it("Should revert finalizeForceClose when partyA is liquidated", async function () {
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio = await context.viewFacetSymbol.forceCloseGapRatio(quote1LongOpened.symbolId)
+
+			const highLowSig = await getDummyHighLowPriceSig(
+				sigTimes[0],
+				sigTimes[1],
+				decimal(1n),
+				BigInt(quote1LongOpened.requestedClosePrice) + unDecimal(BigInt(quote1LongOpened.requestedClosePrice) * BigInt(gapRatio)) + decimal(1n),
+				decimal(1n),
+				decimal(1n),
+				quote1LongOpened.symbolId,
+				0n,
+				0n,
+			)
+
+			// Step 1: initialize force close (passes notLiquidated)
+			await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+
+			// Trigger partyA liquidation between steps
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const liquidationSig = await getDummyLiquidationSig(
+				"0x10",
+				-decimal(10000n),
+				[quote1LongOpened.symbolId],
+				[decimal(1n)],
+				-decimal(10000n),
+				allocatedBalance,
+			)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(await user.getAddress(), liquidationSig)
+
+			// Step 3: finalizeForceClose should revert because partyA is now liquidated
+			await expect(context.forceCloseStepsFacet.finalizeForceClose(quote1LongOpened.id, await getDummyPairUpnlAndPriceSig())).to.be.revertedWith(
+				"Accessibility: PartyA isn't solvent",
+			)
 		})
 	})
 }
