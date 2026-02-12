@@ -612,6 +612,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the address that receives penalties from soft liquidations.
 	/// @param softLiquidationPenaltyCollector The address that will receive soft liquidation penalty funds.
 	function setSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector) external onlyRole(LibAccessibility.FEE_ADMIN_ROLE) {
+		checkZeroAddress(softLiquidationPenaltyCollector);
 		GlobalAppStorage.layout().softLiquidationPenaltyCollector = softLiquidationPenaltyCollector;
 		emit SetSoftLiquidationPenaltyCollector(softLiquidationPenaltyCollector);
 	}
