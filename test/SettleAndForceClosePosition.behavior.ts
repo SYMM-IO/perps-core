@@ -369,7 +369,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 					.liquidateCrossPartyB(await hedger.getAddress(), "0x", BigInt("-999999999999999999999999999999"), await getBlockTimestamp())
 
 				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSigCross, [updatePrice])).to.be.revertedWith(
-					"LibSettlement: PartyB is in cross liquidation process",
+					"Accessibility: PartyB isn't solvent",
 				)
 			})
 
