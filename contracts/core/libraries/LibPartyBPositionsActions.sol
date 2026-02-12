@@ -185,7 +185,9 @@ library LibPartyBPositionsActions {
 		quote.quoteStatus = QuoteStatus.OPENED;
 		LibQuote.addToOpenPositions(quoteId);
 
-		uint256 openFee = (filledAmount * quote.openedPrice * quote.tradingFee) / 1e36;
+		uint256 openFee = quote.orderType == OrderType.LIMIT
+			? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
+			: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
 		{
 			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
 			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
