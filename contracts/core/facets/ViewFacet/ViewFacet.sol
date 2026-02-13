@@ -741,7 +741,7 @@ contract ViewFacet is IViewFacet {
 				requests[count++] = ws.withdrawRequests[user][i];
 			}
 		}
-		assembly {
+		assembly ("memory-safe") {
 			mstore(requests, count)
 		}
 		return requests;

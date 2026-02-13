@@ -280,16 +280,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	) external view returns (AggregatedPositionBySymbol[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbols[partyB];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
-		if (start + size > totalLength) size = totalLength - start;
+		if (activeSymbols.length <= start || size == 0) return new AggregatedPositionBySymbol[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
 
 		results = new AggregatedPositionBySymbol[](size * 2);
 		uint256 count;
-		uint256 end = start + size;
 
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < start + size; ) {
 			uint256 symbolId = activeSymbols[i];
 
 			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
@@ -317,7 +314,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 		}
 
-		assembly {
+		assembly ("memory-safe") {
 			mstore(results, count)
 		}
 	}
@@ -336,16 +333,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	) external view returns (AggregatedPositionBySymbol[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
-		if (start + size > totalLength) size = totalLength - start;
+		if (activeSymbols.length <= start || size == 0) return new AggregatedPositionBySymbol[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
 
 		results = new AggregatedPositionBySymbol[](size * 2);
 		uint256 count;
-		uint256 end = start + size;
 
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < start + size; ) {
 			uint256 symbolId = activeSymbols[i];
 
 			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][
@@ -377,7 +371,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 		}
 
-		assembly {
+		assembly ("memory-safe") {
 			mstore(results, count)
 		}
 	}
@@ -396,16 +390,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	) external view returns (AggregatedPositionBySymbol[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new AggregatedPositionBySymbol[](0);
-		if (start + size > totalLength) size = totalLength - start;
+		if (activeSymbols.length <= start || size == 0) return new AggregatedPositionBySymbol[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
 
 		results = new AggregatedPositionBySymbol[](size * 2);
 		uint256 count;
-		uint256 end = start + size;
 
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < start + size; ) {
 			uint256 symbolId = activeSymbols[i];
 
 			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][
@@ -437,7 +428,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 		}
 
-		assembly {
+		assembly ("memory-safe") {
 			mstore(results, count)
 		}
 	}
@@ -456,16 +447,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
-		if (start + size > totalLength) size = totalLength - start;
+		if (activeSymbols.length <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
 
 		results = new AggregatedFundingDebtBySymbol[](size * 2);
 		uint256 count;
-		uint256 end = start + size;
 
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < start + size; ) {
 			uint256 symbolId = activeSymbols[i];
 
 			if (aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
@@ -489,7 +477,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 		}
 
-		assembly {
+		assembly ("memory-safe") {
 			mstore(results, count)
 		}
 	}
@@ -508,16 +496,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
-		if (start + size > totalLength) size = totalLength - start;
+		if (activeSymbols.length <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
 
 		results = new AggregatedFundingDebtBySymbol[](size * 2);
 		uint256 count;
-		uint256 end = start + size;
 
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < start + size; ) {
 			uint256 symbolId = activeSymbols[i];
 
 			if (aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmount > 0) {
@@ -541,7 +526,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 		}
 
-		assembly {
+		assembly ("memory-safe") {
 			mstore(results, count)
 		}
 	}
@@ -559,16 +544,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	) external view returns (AggregatedFundingDebtBySymbol[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbols[partyB];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
-		if (start + size > totalLength) size = totalLength - start;
+		if (activeSymbols.length <= start || size == 0) return new AggregatedFundingDebtBySymbol[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
 
 		results = new AggregatedFundingDebtBySymbol[](size * 2);
 		uint256 count;
-		uint256 end = start + size;
 
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < start + size; ) {
 			uint256 symbolId = activeSymbols[i];
 
 			if (aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
@@ -592,7 +574,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 		}
 
-		assembly {
+		assembly ("memory-safe") {
 			mstore(results, count)
 		}
 	}
@@ -611,16 +593,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	function getPartyAUpnlData(address partyA, address partyB, uint256 start, uint256 size) external view returns (UpnlData[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new UpnlData[](0);
-		if (start + size > totalLength) size = totalLength - start;
+		if (activeSymbols.length <= start || size == 0) return new UpnlData[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
 
 		results = new UpnlData[](size * 2);
 		uint256 count;
-		uint256 end = start + size;
 
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < start + size; ) {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
@@ -656,7 +635,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 		}
 
-		assembly {
+		assembly ("memory-safe") {
 			mstore(results, count)
 		}
 	}
@@ -673,16 +652,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	function getPartyBUpnlData(address partyB, address partyA, uint256 start, uint256 size) external view returns (UpnlData[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new UpnlData[](0);
-		if (start + size > totalLength) size = totalLength - start;
+		if (activeSymbols.length <= start || size == 0) return new UpnlData[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
 
 		results = new UpnlData[](size * 2);
 		uint256 count;
-		uint256 end = start + size;
 
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < start + size; ) {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
@@ -718,7 +694,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 		}
 
-		assembly {
+		assembly ("memory-safe") {
 			mstore(results, count)
 		}
 	}
@@ -734,16 +710,13 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 	function getPartyBGlobalUpnlData(address partyB, uint256 start, uint256 size) external view returns (UpnlData[] memory results) {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbols[partyB];
-		uint256 totalLength = activeSymbols.length;
-
-		if (totalLength <= start || size == 0) return new UpnlData[](0);
-		if (start + size > totalLength) size = totalLength - start;
+		if (activeSymbols.length <= start || size == 0) return new UpnlData[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
 
 		results = new UpnlData[](size * 2);
 		uint256 count;
-		uint256 end = start + size;
 
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < start + size; ) {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
@@ -775,7 +748,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 			}
 		}
 
-		assembly {
+		assembly ("memory-safe") {
 			mstore(results, count)
 		}
 	}
