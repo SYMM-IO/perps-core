@@ -1,0 +1,185 @@
+{
+  "status": "success",
+  "startedAt": "2026-02-16T11:12:09.910Z",
+  "steps": [
+    {
+      "name": "validate_inputs",
+      "status": "ok",
+      "details": {
+        "diamondAddress": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+        "diamondCutChunkSize": 6
+      }
+    },
+    {
+      "name": "discover_parties",
+      "status": "ok",
+      "details": {
+        "partyAsCount": 1,
+        "partyBsCount": 1
+      }
+    },
+    {
+      "name": "resolve_parties",
+      "status": "ok",
+      "details": {
+        "partyAsCount": 1,
+        "partyBsCount": 1,
+        "partyASource": "discovery",
+        "partyBSource": "discovery"
+      }
+    },
+    {
+      "name": "capture_pre_state",
+      "status": "ok",
+      "details": {
+        "source": "fresh",
+        "partyAsCount": 1,
+        "partyBsCount": 1,
+        "totalQuoteIds": 4
+      }
+    },
+    {
+      "name": "deploy_facets",
+      "status": "ok",
+      "details": {
+        "facetCount": 28,
+        "facets": {
+          "AccountFacet": "0x1D3EDBa836caB11C26A186873abf0fFeB8bbaE63",
+          "PartyBAccountFacet": "0x9C85258d9A00C01d00ded98065ea3840dF06f09c",
+          "ExternalTransferFacet": "0xFCFE742e19790Dd67a627875ef8b45F17DB1DaC6",
+          "BindingFacet": "0x398E4948e373Db819606A459456176D31C3B1F91",
+          "PledgeFacet": "0xbe18A1B61ceaF59aEB6A9bC81AB4FB87D56Ba167",
+          "MigrationFacet": "0x25C0a2F0A077F537Bd11897F04946794c2f6f1Ef",
+          "ControlFacet": "0x01cf58e264d7578D4C67022c58A24CbC4C4a304E",
+          "SymbolControlFacet": "0xd038A2EE73b64F30d65802Ad188F27921656f28F",
+          "PauseControlFacet": "0x666432Ccb747B2220875cE185f487Ed53677faC9",
+          "DiamondLoupeFacet": "0xeC1BB74f5799811c0c1Bff94Ef76Fb40abccbE4a",
+          "PartyALiquidationFacet": "0xF6a8aD553b265405526030c2102fda2bDcdDC177",
+          "PartyBLiquidationFacet": "0x09120eAED8e4cD86D85a616680151DAA653880F2",
+          "PartyAFacet": "0x3E661784267F128e5f706De17Fac1Fc1c9d56f30",
+          "BridgeFacet": "0x6732128F9cc0c4344b2d4DC6285BCd516b7E59E6",
+          "ViewFacet": "0x15Ff10fCc8A1a50bFbE07847A22664801eA79E0f",
+          "ViewFacetSymbol": "0xAe9Ed85dE2670e3112590a2BB17b7283ddF44d9c",
+          "ViewFacetQuote": "0xD1760AA0FCD9e64bA4ea43399Ad789CFd63C7809",
+          "ViewFacetAggregate": "0x75b0B516B47A27b1819D21B26203Abf314d42CCE",
+          "FundingRateFacet": "0x906B067e392e2c5f9E4f101f36C0b8CdA4885EBf",
+          "ForceActionsFacet": "0xD94A92749C0bb33c4e4bA7980c6dAD0e3eFfb720",
+          "ForceCloseStepsFacet": "0xDf951d2061b12922BFbF22cb17B17f3b39183570",
+          "SettlementFacet": "0x4f42528B7bF8Da96516bECb22c1c6f53a8Ac7312",
+          "PartyBPositionActionsFacet": "0x8f119cd256a0FfFeed643E830ADCD9767a1d517F",
+          "PartyBQuoteActionsFacet": "0xe14058B1c3def306e2cb37535647A04De03Db092",
+          "ClearingHouseFacet": "0x74ef2B06A1D2035C33244A4a263FF00B84504865",
+          "PartyBBatchActionsFacet": "0xF5b81Fe0B6F378f9E6A3fb6A6cD1921FCeA11799",
+          "PartyBEmergencyActionsFacet": "0x67baFF31318638F497f4c4894Cd73918563942c8",
+          "WithdrawFacet": "0x6533158b042775e2FdFeF3cA1a782EFDbB8EB9b1"
+        }
+      }
+    },
+    {
+      "name": "build_diamond_cut",
+      "status": "ok",
+      "details": {
+        "cutCount": 28,
+        "totalSelectors": 365,
+        "actionCounts": {
+          "add": 0,
+          "replace": 28,
+          "remove": 0
+        }
+      }
+    },
+    {
+      "name": "apply_diamond_cut",
+      "status": "ok",
+      "details": {
+        "chunkSize": 6,
+        "cutCount": 28,
+        "totalSelectors": 365
+      }
+    },
+    {
+      "name": "capture_post_state",
+      "status": "ok",
+      "details": {
+        "partyAsCount": 1,
+        "partyBsCount": 1,
+        "totalQuoteIds": 4
+      }
+    },
+    {
+      "name": "compare_states",
+      "status": "ok",
+      "details": {
+        "partyAsCount": 1,
+        "partyBsCount": 1
+      }
+    },
+    {
+      "name": "cleanup_progress",
+      "status": "ok",
+      "details": {
+        "kept": true,
+        "progressFile": "./scripts/config/upgradeTest-progress.json"
+      }
+    }
+  ],
+  "quoteScanLimit": 500,
+  "progressFile": "./scripts/config/upgradeTest-progress.json",
+  "reportFile": "./scripts/config/upgradeTest-report.json",
+  "keepProgress": true,
+  "verbose": true,
+  "diamondAddress": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+  "adminAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "partyAs": [
+    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+  ],
+  "partyBs": [
+    "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+  ],
+  "preState": {
+    "nextQuoteId": "4",
+    "nextBridgeTransactionId": "0",
+    "deallocateDebounceTime": "120",
+    "partyAs": {
+      "0x70997970C51812dc3A010C7d01b50e0d17dc79C8": {
+        "allocatedBalance": "1187000000000000000000",
+        "quotesLength": "4",
+        "quoteIds": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ]
+      }
+    },
+    "partyBAllocated": {
+      "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65": {
+        "0x70997970C51812dc3A010C7d01b50e0d17dc79C8": "240000000000000000000"
+      }
+    }
+  },
+  "postState": {
+    "nextQuoteId": "4",
+    "nextBridgeTransactionId": "0",
+    "deallocateDebounceTime": "120",
+    "partyAs": {
+      "0x70997970C51812dc3A010C7d01b50e0d17dc79C8": {
+        "allocatedBalance": "1187000000000000000000",
+        "quotesLength": "4",
+        "quoteIds": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ]
+      }
+    },
+    "partyBAllocated": {
+      "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65": {
+        "0x70997970C51812dc3A010C7d01b50e0d17dc79C8": "240000000000000000000"
+      }
+    }
+  },
+  "finishedAt": "2026-02-16T11:12:11.766Z",
+  "durationMs": 1856
+}

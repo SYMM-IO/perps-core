@@ -3,7 +3,7 @@ import { toUtf8Bytes } from "ethers"
 import { ethers } from "../test/helpers/hardhat-connection.js"
 
 async function decodeCustomError(data: string, address: string) {
-	const contract = await ethers.getContractAt("ControlFacet", address)
+	const contract = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", address)
 	const iface = new ethers.Interface(contract.interface.fragments)
 
 	try {
