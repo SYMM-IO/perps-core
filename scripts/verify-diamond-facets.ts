@@ -44,6 +44,7 @@ async function main() {
 				{
 					address: facetAddress,
 					constructorArgs: [],
+					force: true,
 				},
 				hre,
 			)

@@ -3142,6 +3142,25 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "core",
+                "type": "address"
+            }
+        ],
+        "name": "SymmioCoreAddedToAffiliate",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "oldReceiver",
                 "type": "address"
             },
@@ -3173,6 +3192,24 @@
         ],
         "name": "WhitelistedSymmioCoreSet",
         "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "core",
+                "type": "address"
+            }
+        ],
+        "name": "addSymmioCoreToAffiliate",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     },
     {
         "inputs": [

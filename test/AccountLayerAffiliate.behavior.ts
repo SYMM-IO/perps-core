@@ -1107,6 +1107,90 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 					).to.be.revertedWithCustomError(context.alControlFacet, "MustHaveRole")
 				})
 			})
+
+			describe("addSymmioCoreToAffiliate", function () {
+				let affiliate: string
+				let mockCore: any
+
+				beforeEach(async function () {
+					// activate an affiliate with the default diamond core
+					affiliate = (await activateAffiliate()).affiliate
+
+					// deploy a second mock Symmio core
+					const MockSymmioCore = await ethers.getContractFactory("MockSymmioCore")
+					mockCore = await MockSymmioCore.deploy()
+					await mockCore.setCollateral(await context.collateral.getAddress())
+
+					// whitelist the new core
+					await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(await mockCore.getAddress(), true)
+				})
+
+				it("adds a new core to an active affiliate", async function () {
+					const coreAddress = await mockCore.getAddress()
+
+					// verify the affiliate only has the original core
+					const coresBefore = await context.alViewFacet.getAffiliateSymmioCores(affiliate)
+					expect(coresBefore).to.deep.equal([context.diamond])
+
+					// add the new core
+					await expect(context.alControlFacet.connect(context.signers.admin).addSymmioCoreToAffiliate(affiliate, coreAddress))
+						.to.emit(context.alControlFacet, "SymmioCoreAddedToAffiliate")
+						.withArgs(affiliate, coreAddress)
+
+					// verify both cores are now present
+					const coresAfter = await context.alViewFacet.getAffiliateSymmioCores(affiliate)
+					expect(coresAfter).to.include(context.diamond)
+					expect(coresAfter).to.include(coreAddress)
+					expect(coresAfter.length).to.equal(2)
+				})
+
+				it("registers the affiliate on the new core and sets fee collector", async function () {
+					const coreAddress = await mockCore.getAddress()
+					const feeDistributor = await context.alViewFacet.getAffiliateFeeDistributor(affiliate)
+
+					await context.alControlFacet.connect(context.signers.admin).addSymmioCoreToAffiliate(affiliate, coreAddress)
+
+					// verify fee collector was set on the mock core
+					expect(await mockCore.feeCollectors(affiliate)).to.equal(feeDistributor)
+				})
+
+				it("requires the approver role", async function () {
+					const coreAddress = await mockCore.getAddress()
+					await expect(
+						context.alControlFacet.connect(context.signers.user).addSymmioCoreToAffiliate(affiliate, coreAddress),
+					).to.be.revertedWithCustomError(context.alControlFacet, "MustHaveRole")
+				})
+
+				it("reverts for non-active affiliates", async function () {
+					const coreAddress = await mockCore.getAddress()
+
+					// pending affiliate
+					const pending = await requestAffiliate({ name: "PendingAffiliate" })
+					await expect(
+						context.alControlFacet.connect(context.signers.admin).addSymmioCoreToAffiliate(pending.affiliate, coreAddress),
+					).to.be.revertedWithCustomError(context.alControlFacet, "InvalidState")
+
+					// paused affiliate
+					await context.alAffiliateFacet.connect(context.signers.user).pauseAffiliate(affiliate)
+					await expect(
+						context.alControlFacet.connect(context.signers.admin).addSymmioCoreToAffiliate(affiliate, coreAddress),
+					).to.be.revertedWithCustomError(context.alControlFacet, "InvalidState")
+				})
+
+				it("reverts for non-whitelisted cores", async function () {
+					const nonWhitelisted = context.signers.others[1].address
+					await expect(
+						context.alControlFacet.connect(context.signers.admin).addSymmioCoreToAffiliate(affiliate, nonWhitelisted),
+					).to.be.revertedWithCustomError(context.alControlFacet, "NoWhitelistedSymmioCore")
+				})
+
+				it("reverts if the core is already added to the affiliate", async function () {
+					// context.diamond is already in the affiliate's cores from registration
+					await expect(
+						context.alControlFacet.connect(context.signers.admin).addSymmioCoreToAffiliate(affiliate, context.diamond),
+					).to.be.revertedWithCustomError(context.alControlFacet, "AlreadyRegistered")
+				})
+			})
 		})
 	})
 }
