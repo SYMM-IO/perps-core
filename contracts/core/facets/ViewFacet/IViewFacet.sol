@@ -167,7 +167,7 @@ interface IViewFacet {
 
 	function getSigner() external view returns (address);
 
-	function getFee(address affiliate, uint256 symbolId) external view returns (Fee memory fee);
+	function getFeeForUser(address affiliate, address user, uint256 symbolId) external view returns (Fee memory fee);
 
 	function getWithdrawRequests(address user, uint256 requestId) external view returns (WithdrawRequest memory);
 

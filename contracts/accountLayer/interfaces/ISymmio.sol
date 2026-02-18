@@ -240,11 +240,6 @@ interface ISymmio {
 	function registerAffiliate(address affiliate) external;
 
 	/// @notice Returns the fee configuration for an affiliate and symbol
-	/// @param affiliate The affiliate address
-	/// @param symbolId The symbol identifier
-	/// @return The fee struct
-	function getFee(address affiliate, uint256 symbolId) external returns (Fee memory);
-
 	/// @notice Binds the caller (partyA) to a specific partyB
 	/// @param partyB The partyB address to bind to
 	function bindToPartyB(address partyB) external;

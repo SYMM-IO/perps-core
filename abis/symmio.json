@@ -6945,6 +6945,30 @@
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
+            }
+        ],
+        "name": "getFeeCollector",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
             },
             {
                 "internalType": "uint256",
@@ -6952,7 +6976,7 @@
                 "type": "uint256"
             }
         ],
-        "name": "getFee",
+        "name": "getFeeForUser",
         "outputs": [
             {
                 "components": [
@@ -6975,25 +6999,6 @@
                 "internalType": "struct Fee",
                 "name": "fee",
                 "type": "tuple"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            }
-        ],
-        "name": "getFeeCollector",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
             }
         ],
         "stateMutability": "view",
