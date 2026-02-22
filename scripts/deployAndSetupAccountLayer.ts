@@ -126,6 +126,12 @@ tx = await instantLayer.setAccountLayer(accountLayerAddress)
 await tx.wait()
 console.log(`  ✓ setAccountLayer (also auto-whitelists new + de-whitelists old)`)
 
+// ── Step 7: Register AccountLayer as system hook on Symmio Core ──
+console.log(`\n▶ Registering AccountLayer as system hook on Symmio Core...`)
+tx = await controlFacet.registerHook(ethers.ZeroAddress, accountLayerAddress)
+await tx.wait()
+console.log(`  ✓ registerHook(address(0), ${accountLayerAddress})`)
+
 // ── Done ────────────────────────────────────────────────────
 console.log("\n" + "=".repeat(60))
 console.log("DONE")
