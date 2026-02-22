@@ -122,6 +122,10 @@ Adds delegated role management on top of the existing RBAC. Previously, only a s
 
 The new owner must explicitly call `acceptOwnership` after the current owner calls `transferOwnership`. Prevents accidental ownership loss from address typos.
 
+### [Event Changelog](event-changelog.md)
+
+Complete changelog of every event change from v0.8.4 to v0.8.5 — removed backward-compatible overloads, changed signatures, new events on existing facets, events from new facets (ClearingHouse, Binding, Pledge, ExternalTransfer, Withdraw), and all AccountLayer diamond events. Includes migration checklists for subgraph developers, hedger integrators, and frontend teams.
+
 ---
 
 ## Upgrade & Migration
