@@ -524,6 +524,11 @@ async function setupSystem(
 		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("INTERNAL_TRANSFER_TO_BALANCE_ROLE"))
 	})
 
+	// Register AccountLayer as system hook on Diamond
+	await checkpointedStep(checkpoint, "setup.registerHook", "Registering AccountLayer as system hook on Diamond", async () => {
+		await controlFacet.connect(deployer).registerHook(ethers.ZeroAddress, deployedContracts.accountLayerDiamond!)
+	})
+
 	// InstantLayer role on Diamond
 	await checkpointedStep(checkpoint, "setup.ilRoleOnDiamond", "Granting INSTANT_LAYER_ROLE to InstantLayer on Diamond", async () => {
 		await controlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("INSTANT_LAYER_ROLE"))

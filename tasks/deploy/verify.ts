@@ -708,6 +708,50 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 						})
 						console.log(`   [FAIL] Could not check whitelist: ${e.message}`)
 					}
+
+					// Check system hook registered on Symmio Core (address(0) key)
+					try {
+						const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", addresses.diamond)
+						const hookAddress = await coreView.getAffiliateHook(ethers.ZeroAddress)
+
+						if (hookAddress === ethers.ZeroAddress) {
+							results.push({
+								category: "AccountLayer",
+								check: "System hook registered on Symmio Core",
+								status: "fail",
+								expected: addresses.accountLayer,
+								actual: hookAddress,
+								message: "No system hook registered",
+							})
+							console.log("   [FAIL] No system hook registered on Symmio Core")
+						} else if (hookAddress.toLowerCase() !== addresses.accountLayer.toLowerCase()) {
+							results.push({
+								category: "AccountLayer",
+								check: "System hook registered on Symmio Core",
+								status: "fail",
+								expected: addresses.accountLayer,
+								actual: hookAddress,
+								message: "System hook address mismatch",
+							})
+							console.log(`   [FAIL] System hook mismatch: expected ${addresses.accountLayer}, got ${hookAddress}`)
+						} else {
+							results.push({
+								category: "AccountLayer",
+								check: "System hook registered on Symmio Core",
+								status: "pass",
+								actual: hookAddress,
+							})
+							console.log(`   [PASS] System hook registered: ${hookAddress}`)
+						}
+					} catch (e: any) {
+						results.push({
+							category: "AccountLayer",
+							check: "System hook registered on Symmio Core",
+							status: "fail",
+							message: e.message,
+						})
+						console.log(`   [FAIL] Could not check system hook: ${e.message}`)
+					}
 				}
 				console.log("")
 			}
