@@ -5268,6 +5268,220 @@ export function shouldBehaveLikeAccountLayer(): void {
 				vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
 				expect(vaData.isExists).to.be.false
 			})
+
+			it("Non-VA partyA: hooks fire without reverting for regular accounts", async () => {
+				// Create a CUSTOM sub-account — trades directly, no VA created
+				const customSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("CUSTOM_DIRECT", 3)], // 3 = CUSTOM isolation
+					BALANCES.DEPOSIT_AMOUNT,
+					true, // allocate too (CUSTOM needs direct allocation)
+				)
+
+				// Verify this is NOT a virtual account
+				const vaData = await context.alViewFacet.getVirtualAccount(customSubAccount)
+				expect(vaData.isExists).to.be.false
+
+				// Send quote directly from the CUSTOM sub-account (no VA)
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+				await context.alCoreFacet.connect(context.signers.user)._call(customSubAccount, [sendQuoteCallData])
+
+				// Lock and open the position — fires onOpenPosition hook (no-op for non-VA, should not revert)
+				const quoteIds = await context.viewFacetQuote.getPartyAPendingQuotes(customSubAccount)
+				expect(quoteIds.length).to.equal(1)
+				await hedger.lockQuote(quoteIds[0])
+				const openRequest = limitOpenRequestBuilder().build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.openPosition(
+						quoteIds[0],
+						openRequest.filledAmount,
+						openRequest.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
+					)
+
+				// Close the position — fires onClosePosition hook (should be no-op for non-VA)
+				await closePositionForQuote(context.signers.user, quoteIds[0], customSubAccount)
+
+				// Sub-account should still exist and not have been corrupted
+				const subAccountData = await context.alViewFacet.getSubAccount(customSubAccount)
+				expect(subAccountData.isExists).to.be.true
+
+				// Verify the quote is closed
+				const quoteData = await context.viewFacetQuote.getQuote(quoteIds[0])
+				expect(quoteData.quoteStatus).to.equal(7n) // CLOSED
+			})
+
+			it("Force partial close should NOT delete the virtual account", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesBeforeClose.length).to.equal(1)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// Request to close only part (50 out of 100)
+				const now = await getBlockTimestamp()
+				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					quoteId,
+					decimal(1n), // closePrice
+					decimal(50n), // quantityToClose — partial
+					0, // OrderType.LIMIT
+					now + 10000n,
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
+
+				// Advance time past both cooldowns
+				await time.increase(450n)
+
+				// Build high-low price sig for force close
+				const afterTime = await getBlockTimestamp()
+				const sigStartTime = afterTime - 149n
+				const sigEndTime = afterTime - 121n
+				const highLowSig = await getDummyHighLowPriceSig(
+					sigStartTime,
+					sigEndTime,
+					decimal(1n), // lowest
+					decimal(1n), // highest (>= closePrice=1 for LONG)
+					decimal(1n), // currentPrice
+					decimal(1n), // averagePrice
+					1n, // symbolId
+					0n, // upnlPartyB
+					0n, // upnlPartyA
+				)
+
+				// Force close — only partial (50 out of 100)
+				await context.forceActionsFacet.connect(context.signers.user).forceClosePosition(quoteId, highLowSig)
+
+				// VA should still exist — position still open (partial close)
+				const vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.true
+
+				// Quote should still be tracked
+				const quotesAfter = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesAfter.length).to.equal(1)
+				expect(quotesAfter[0]).to.equal(quoteId)
+
+				// Position should still be open on core
+				const posCount = await context.viewFacetQuote.partyAPositionsCount(virtualAccountAddress)
+				expect(posCount).to.equal(1)
+			})
+
+			it("settleCrossPartyBLiquidation with finalize=false does NOT clear inProgress", async () => {
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// Enable cross mode and initiate cross partyB liquidation
+				await migratePartyBToCross(context, hedger, [quoteId])
+
+				const timestamp = await getBlockTimestamp()
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(context.signers.hedger.address, "0x", decimal(-1000n), timestamp)
+
+				// Liquidate pending and open positions
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [virtualAccountAddress])
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(1n)])
+
+				// Call settle with finalize=false — hooks fire but inProgress should remain true
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settleCrossPartyBLiquidation(context.signers.hedger.address, [virtualAccountAddress], false)
+
+				// VA should be deleted (hook fired and cleared pending cross liq partyBs)
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
+
+				// But cross liquidation should STILL be in progress (finalize=false)
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.true
+
+				// Now finalize with empty partyAs array
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger.address, [], true)
+
+				// Now cross liq should be settled
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.false
+			})
+
+			it("Auto-takeover during cross partyB liq when partyA is a VA", async () => {
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				// Create a VA with a SHORT position (so we can liquidate the partyA too)
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// Liquidate the VA (partyA) first — set it in liquidation state
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
+				const upnl = decimal(-700n)
+				const totalUnrealizedLoss = decimal(-700n)
+				const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [decimal(8n)], totalUnrealizedLoss, allocatedBalance)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(virtualAccountAddress, liquidationSig)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(virtualAccountAddress, liquidationSig)
+
+				expect(await context.viewFacet.isPartyALiquidated(virtualAccountAddress)).to.be.true
+
+				// Now put hedger into cross liquidation — triggers auto-takeover of the VA's partyA liq
+				await migratePartyBToCross(context, hedger, [quoteId])
+
+				const timestamp = await getBlockTimestamp()
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(context.signers.hedger.address, "0x", decimal(-1000n), timestamp)
+
+				// Liquidate pending positions — this triggers _autoTakeoverPartyALiquidation for the VA
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [virtualAccountAddress])
+
+				// VA should now be in takeover (auto-takeover happened)
+				expect(await context.viewFacet.isPartyATakeoverInProgress(virtualAccountAddress)).to.be.true
+
+				// Liquidate the open position
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(8n)])
+
+				// VA quoteIds empty but still exists (deferred — both takeover and cross liq active)
+				expect((await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)).length).to.equal(0)
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.true
+
+				// Settle the takeover first — this fires onLiquidationSettled
+				// But cross partyB liq is still in progress, so the hook clears pending cross liq entries
+				// and _tryDeleteVirtualAccount checks isPartyALiquidated (false after takeover settle)
+				// and isPartyATakeoverInProgress (false after settle). But the cross liq is still in progress
+				// via vaPendingCrossLiqPartyBs — which was just cleared by onLiquidationSettled.
+				// So VA should be deleted here.
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settlePartyATakeover(virtualAccountAddress, [context.signers.hedger.address])
+
+				expect(await context.viewFacet.isPartyATakeoverInProgress(virtualAccountAddress)).to.be.false
+
+				// VA should be deleted (onLiquidationSettled from settlePartyATakeover cleaned it up)
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
+
+				// Finalize cross partyB liq (no VAs left to settle)
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger.address, [], true)
+
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.false
+			})
 		})
 	})
 }

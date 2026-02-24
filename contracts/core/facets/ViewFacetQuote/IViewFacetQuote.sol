@@ -43,6 +43,8 @@ interface IViewFacetQuote {
 
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 
+	function partyAPendingQuotesCount(address partyA) external view returns (uint256);
+
 	function getPartyBPendingQuotes(address partyB, address partyA) external view returns (uint256[] memory);
 
 	function getQuotesWithBitmap(Bitmap calldata bitmap, uint256 gasNeededForReturn) external view returns (Quote[] memory quotes);

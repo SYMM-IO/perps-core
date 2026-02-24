@@ -14231,6 +14231,25 @@
                 "type": "address"
             }
         ],
+        "name": "partyAPendingQuotesCount",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
         "name": "partyAPositionsCount",
         "outputs": [
             {

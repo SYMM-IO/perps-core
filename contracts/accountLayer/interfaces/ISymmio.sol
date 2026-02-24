@@ -222,6 +222,11 @@ interface ISymmio {
 	/// @return The array of pending quote IDs
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 
+	/// @notice Returns the number of pending quotes for a partyA (cheaper than getPartyAPendingQuotes)
+	/// @param partyA The partyA address
+	/// @return The number of pending quotes
+	function partyAPendingQuotesCount(address partyA) external view returns (uint256);
+
 	/// @notice Checks if the current call originates from the InstantLayer
 	/// @return Whether the call is from InstantLayer
 	function isCallFromInstantLayer() external view returns (bool);

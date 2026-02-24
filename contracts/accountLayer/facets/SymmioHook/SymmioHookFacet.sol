@@ -91,7 +91,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		if (!vData.isExists) return;
 
 		address core = LibAccountLayerUtils.getRelatedCore(vData.parentAccount);
-		uint256 coreTotal = ISymmio(core).partyAPositionsCount(partyA) + ISymmio(core).getPartyAPendingQuotes(partyA).length;
+		uint256 coreTotal = ISymmio(core).partyAPositionsCount(partyA) + ISymmio(core).partyAPendingQuotesCount(partyA);
 
 		if (coreTotal < vData.quoteIds.length()) {
 			vData.quoteIds.remove(quoteId); // full close/cancel/liquidation
