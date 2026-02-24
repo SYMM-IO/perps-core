@@ -51,4 +51,8 @@ interface ISymmioHook {
 		address affiliate,
 		TradingFeeType feeType
 	) external;
+
+	/// @notice Called after a partyA's liquidation is fully settled
+	/// @param partyA The trader address whose liquidation was settled
+	function onLiquidationSettled(address partyA) external;
 }

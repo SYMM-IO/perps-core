@@ -255,4 +255,19 @@ interface ISymmio {
 	/// @param user The user address
 	/// @return The bind state struct
 	function getBindState(address user) external view returns (BindState memory);
+
+	/// @notice Checks if a party A is in liquidation
+	/// @param partyA The partyA address
+	/// @return True if party A is liquidated, false otherwise
+	function isPartyALiquidated(address partyA) external view returns (bool);
+
+	/// @notice Checks if a PartyA takeover liquidation is in progress
+	/// @param partyA The partyA address
+	/// @return True if a takeover is in progress, false otherwise
+	function isPartyATakeoverInProgress(address partyA) external view returns (bool);
+
+	/// @notice Checks if a party B is in cross liquidation
+	/// @param partyB The partyB address
+	/// @return True if cross liquidation is in progress, false otherwise
+	function getPartyBCrossLiquidationStatus(address partyB) external view returns (bool);
 }

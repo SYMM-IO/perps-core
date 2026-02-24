@@ -846,6 +846,13 @@ contract ViewFacet is IViewFacet {
 		return ClearingHouseStorage.layout().partyATakeoverDetails[partyA];
 	}
 
+	/// @notice Checks if a PartyA takeover liquidation is in progress.
+	/// @param partyA The address of Party A.
+	/// @return True if a takeover is in progress, false otherwise.
+	function isPartyATakeoverInProgress(address partyA) external view returns (bool) {
+		return ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress;
+	}
+
 	/// @notice Calculates the maximum close amount that keeps PartyA at the liquidation threshold.
 	/// @dev Use this to preview the result of `fillCloseRequestToLiquidation` before calling it.
 	///      This helps frontends determine if a partial close is possible and what amount will be filled.

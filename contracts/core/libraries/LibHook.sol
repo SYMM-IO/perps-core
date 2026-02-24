@@ -51,6 +51,13 @@ library LibHook {
 		safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, partyA, partyB)), quoteId);
 	}
 
+	/// @notice Calls onLiquidationSettled on the system hook only (no quote context, so affiliate is unknown).
+	/// @param partyA The address of Party A whose liquidation was settled.
+	function callLiquidationSettledHooks(address partyA) internal {
+		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
+		safeCall(systemHook, abi.encodeCall(ISymmioHook.onLiquidationSettled, (partyA)), 0);
+	}
+
 	/// @notice Calls onClosePosition on both affiliate and system hooks.
 	/// @param quoteId The ID of the closed quote.
 	/// @param closedAmount The amount that was closed.

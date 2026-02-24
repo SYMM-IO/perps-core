@@ -108,6 +108,8 @@ Here is how a trade moves through the system, end to end:
    - The VA address is pushed into a recycling pool
    - The VA deletion hook fires (if configured)
 
+   Cancellations and liquidations are also handled automatically. See [Virtual Account Lifecycle Hooks](va-lifecycle-hooks.md) for the full flow including partial closes, liquidation deferral, and settlement recovery.
+
 The user never manages VA lifecycle manually (unless using CUSTOM isolation). Funding is always manual.
 
 ---
@@ -247,7 +249,7 @@ Frontends on the old MultiAccount system can import existing accounts into the A
 | **MarginFacet** | Margin transfers between SubAccounts and VAs, emergency recovery |
 | **ViewFacet** | Read-only queries for accounts, affiliates, addresses, predictions |
 | **ControlFacet** | Role management, pause control, core whitelisting, allowed selectors |
-| **SymmioHookFacet** | Receives callbacks from Symmio core for automatic VA cleanup |
+| **SymmioHookFacet** | Receives callbacks from Symmio core for automatic VA cleanup (see [VA Lifecycle Hooks](va-lifecycle-hooks.md)) |
 
 ### Storage Layout
 

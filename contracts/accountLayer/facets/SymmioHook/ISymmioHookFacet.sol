@@ -53,4 +53,8 @@ interface ISymmioHookFacet is ISymmioHookFacetEvents, IAccountLayerErrors {
 		address affiliate,
 		uint8 feeType
 	) external;
+
+	/// @notice Called after a partyA's liquidation is fully settled; attempts deferred VA cleanup
+	/// @param partyA The trader address whose liquidation was settled
+	function onLiquidationSettled(address partyA) external;
 }

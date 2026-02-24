@@ -8131,6 +8131,25 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
+        "name": "isPartyATakeoverInProgress",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "user",
                 "type": "address"
             }
@@ -15592,6 +15611,16 @@
                 "internalType": "address",
                 "name": "partyB",
                 "type": "address"
+            },
+            {
+                "internalType": "address[]",
+                "name": "settledPartyAs",
+                "type": "address[]"
+            },
+            {
+                "internalType": "bool",
+                "name": "finalize",
+                "type": "bool"
             }
         ],
         "name": "settleCrossPartyBLiquidation",

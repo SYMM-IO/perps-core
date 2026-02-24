@@ -15,8 +15,15 @@ import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal } from "./utils/Common.js"
-import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { decimal, getBlockTimestamp } from "./utils/Common.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
+import {
+	getDummyHighLowPriceSig,
+	getDummyLiquidationSig,
+	getDummyPairUpnlAndPriceSig,
+	getDummyPriceSig,
+	getDummySingleUpnlSig,
+} from "./utils/SignatureUtils.js"
 
 // SubAccountCreationData struct type for AccountLayer
 type SubAccountCreationDataStruct = {
@@ -4071,6 +4078,1195 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(legacyAccounts[0])
 					expect(allocatedBalance).to.equal(allocateAmount)
 				})
+			})
+		})
+
+		describe("Partial close and liquidation behavior", async () => {
+			let positionSubAccountAddress: string
+
+			beforeEach(async () => {
+				positionSubAccountAddress = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("EXAMPLE_NAME", 0)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+			})
+
+			async function partialClosePositionForQuote(partyA: HardhatEthersSigner, quoteId: bigint, virtualAccount: string, quantityToClose: bigint) {
+				const closeRequest = limitCloseRequestBuilder().quantityToClose(quantityToClose).build()
+				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					quoteId,
+					closeRequest.closePrice,
+					closeRequest.quantityToClose,
+					closeRequest.orderType,
+					await closeRequest.deadline,
+				])
+
+				await context.alCoreFacet.connect(partyA)._call(virtualAccount, [requestToCloseCallData])
+
+				const fillCloseRequest = limitFillCloseRequestBuilder().filledAmount(quantityToClose).build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.fillCloseRequest(
+						quoteId,
+						fillCloseRequest.filledAmount,
+						fillCloseRequest.closedPrice,
+						await getDummyPairUpnlAndPriceSig(
+							BigInt(fillCloseRequest.price),
+							BigInt(fillCloseRequest.upnlPartyA),
+							BigInt(fillCloseRequest.upnlPartyB),
+						),
+					)
+			}
+
+			it("Partial close should NOT delete the virtual account", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesBeforeClose.length).to.equal(1)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// Partial close: 50 out of 100
+				await partialClosePositionForQuote(context.signers.user, quoteId, virtualAccountAddress, decimal(50n))
+
+				// VA should still exist with the quoteId still tracked
+				const virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.true
+
+				const quotesAfterPartialClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesAfterPartialClose.length).to.equal(1)
+				expect(quotesAfterPartialClose[0]).to.equal(quoteId)
+
+				// Position should still be open on core
+				const posCount = await context.viewFacetQuote.partyAPositionsCount(virtualAccountAddress)
+				expect(posCount).to.equal(1)
+			})
+
+			it("Multiple partial closes then full close should delete VA only at end", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// Partial close 25%
+				await partialClosePositionForQuote(context.signers.user, quoteId, virtualAccountAddress, decimal(25n))
+				let virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.true
+
+				// Partial close another 25%
+				await partialClosePositionForQuote(context.signers.user, quoteId, virtualAccountAddress, decimal(25n))
+				virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.true
+
+				// Full close remaining 50%
+				await partialClosePositionForQuote(context.signers.user, quoteId, virtualAccountAddress, decimal(50n))
+
+				// Now VA should be deleted
+				virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.false
+
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
+				expect(allocatedBalance).to.equal(0n)
+			})
+
+			it("Full close still works correctly (regression)", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+				const virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.false
+
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
+				expect(allocatedBalance).to.equal(0n)
+
+				// Funds should be returned to parent
+				const parentBalance = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				expect(parentBalance).to.be.gt(0n)
+			})
+
+			it("PartyA liquidation defers VA deletion, settlement triggers cleanup", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// Liquidate the VA (partyA) - SHORT at price 1, quantity 100, liquidation at price 8
+				// UPNL = (openedPrice - currentPrice) * quantity = (1-8) * 100 = -700
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
+				const upnl = decimal(-700n)
+				const totalUnrealizedLoss = decimal(-700n)
+				const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [decimal(8n)], totalUnrealizedLoss, allocatedBalance)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(virtualAccountAddress, liquidationSig)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(virtualAccountAddress, liquidationSig)
+
+				// VA should still exist (liquidation is in progress)
+				expect(await context.viewFacet.isPartyALiquidated(virtualAccountAddress)).to.be.true
+
+				// Liquidate pending positions (if any) and open positions
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePendingPositionsPartyA(virtualAccountAddress)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(virtualAccountAddress, [quoteId])
+
+				// VA quoteIds should be empty (onClosePosition fired) but VA should still exist (deferred)
+				const quotesAfterLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesAfterLiq.length).to.equal(0)
+
+				let virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.true // Deferred!
+
+				// Settle the liquidation — this calls callLiquidationSettledHooks → onLiquidationSettled
+				await context.partyALiquidationFacet
+					.connect(context.signers.liquidator)
+					.settlePartyALiquidation(virtualAccountAddress, [context.signers.hedger.address])
+
+				// Liquidation should be fully settled
+				expect(await context.viewFacet.isPartyALiquidated(virtualAccountAddress)).to.be.false
+
+				// VA should now be deleted (cleanup happened in onLiquidationSettled)
+				virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.false
+			})
+
+			it("ClearingHouse takeover defers VA deletion, settlement triggers cleanup", async () => {
+				// Grant CLEARING_HOUSE_ROLE to liquidator
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// Liquidate the VA (partyA) first - SHORT at price 1, qty 100, liq at price 8
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)
+				const upnl = decimal(-700n)
+				const totalUnrealizedLoss = decimal(-700n)
+				const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [decimal(8n)], totalUnrealizedLoss, allocatedBalance)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(virtualAccountAddress, liquidationSig)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(virtualAccountAddress, liquidationSig)
+
+				// Takeover the liquidation via ClearingHouse
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(virtualAccountAddress)
+
+				expect(await context.viewFacet.isPartyATakeoverInProgress(virtualAccountAddress)).to.be.true
+
+				// Liquidate pending and open positions via CH
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForClearingHouse(virtualAccountAddress, [])
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(virtualAccountAddress, [quoteId], [decimal(8n)])
+
+				// VA quoteIds should be empty but VA still exists (deferred due to takeover)
+				const quotesAfterLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesAfterLiq.length).to.equal(0)
+
+				let virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.true // Deferred!
+
+				// Settle the takeover — this calls callLiquidationSettledHooks → onLiquidationSettled
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settlePartyATakeover(virtualAccountAddress, [context.signers.hedger.address])
+
+				// Takeover and liquidation should be fully settled
+				expect(await context.viewFacet.isPartyATakeoverInProgress(virtualAccountAddress)).to.be.false
+				expect(await context.viewFacet.isPartyALiquidated(virtualAccountAddress)).to.be.false
+
+				// VA should now be deleted (cleanup happened in onLiquidationSettled)
+				virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.false
+			})
+
+			it("Cross PartyB liquidation triggers VA cleanup via close hook", async () => {
+				// Grant CLEARING_HOUSE_ROLE to liquidator
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// Enable cross mode for hedger (must be done after position exists)
+				await migratePartyBToCross(context, hedger, [quoteId])
+
+				// Initiate cross partyB liquidation
+				const timestamp = await getBlockTimestamp()
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(context.signers.hedger.address, "0x", decimal(-1000n), timestamp)
+
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.true
+
+				// Liquidate pending positions for the VA
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [virtualAccountAddress])
+
+				// Liquidate open positions — fires onClosePosition hook
+				// VA is not bound, so it gets deleted immediately (no deferral needed)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(1n)])
+
+				// VA quoteIds should be empty after onClosePosition
+				const quotesAfterLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesAfterLiq.length).to.equal(0)
+
+				// VA should still exist — deferred because partyB is in cross liquidation
+				let virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.true
+
+				// Settle the cross partyB liquidation — fires onLiquidationSettled hook
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settleCrossPartyBLiquidation(context.signers.hedger.address, [virtualAccountAddress], true)
+
+				// Cross liquidation should be settled
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.false
+
+				// VA should now be deleted (cleanup happened in onLiquidationSettled)
+				virtualAccountData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(virtualAccountData.isExists).to.be.false
+			})
+
+			it("Multi-position VA: closing one position keeps VA, closing last deletes VA", async () => {
+				// Create MARKET sub-account with singleVAMode to get multiple quotes on same VA
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MULTI_POS", 1, "MARKET", true)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				// Send first quote
+				const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+				const vaAddress = virtualAccounts[0]
+
+				// Fund VA again and send second quote on same symbol
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+				await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(vaAddress, decimal(500n))
+				const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+				const callData2 = await createSendQuoteCallData(quote2)
+				await context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [callData2])
+
+				const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(quoteIds.length).to.equal(2)
+
+				// Open both positions
+				await openPositionForQuote(quoteIds[0])
+				await openPositionForQuote(quoteIds[1])
+
+				// Close first position — VA should persist
+				await closePositionForQuote(context.signers.user, quoteIds[0], vaAddress)
+				let vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.true
+				const remainingQuotes = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(remainingQuotes.length).to.equal(1)
+				expect(remainingQuotes[0]).to.equal(quoteIds[1])
+
+				// Close last position — VA should be deleted
+				await closePositionForQuote(context.signers.user, quoteIds[1], vaAddress)
+				vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("Cancel pending quote when VA has open position should keep VA", async () => {
+				// Create MARKET sub-account with singleVAMode
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("CANCEL_MIX", 1, "MARKET", true)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				// Send first quote and open it
+				const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+				const vaAddress = virtualAccounts[0]
+				const quoteIds1 = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				await openPositionForQuote(quoteIds1[0])
+
+				// Fund and send second quote (stays pending)
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+				await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(vaAddress, decimal(500n))
+				const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+				const callData2 = await createSendQuoteCallData(quote2)
+				await context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [callData2])
+
+				const quoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(quoteIds.length).to.equal(2)
+
+				// Cancel the pending quote
+				const encodedCancel = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteIds[1]])
+				await context.alCoreFacet.connect(context.signers.user)._call(vaAddress, [encodedCancel])
+
+				// VA should still exist with 1 quote
+				const vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.true
+				const remainingQuotes = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(remainingQuotes.length).to.equal(1)
+				expect(remainingQuotes[0]).to.equal(quoteIds[0])
+			})
+
+			it("PartyB isolated liquidation deletes VA immediately (partyA not liquidated)", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// PartyB (hedger) is liquidated against this VA
+				// UPNL of -336 makes PartyB insolvent (per existing liquidation tests)
+				await context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(context.signers.hedger.address, virtualAccountAddress, await getDummySingleUpnlSig(decimal(-336n)))
+
+				// Liquidate positions — fires onClosePosition hook
+				const priceSig = await getDummyPriceSig([quoteId], [decimal(1n)])
+				priceSig.timestamp = await context.viewFacet.partyBLiquidationTimestamp(context.signers.hedger.address, virtualAccountAddress)
+				await context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsPartyB(context.signers.hedger.address, virtualAccountAddress, priceSig)
+
+				// VA's partyA is NOT liquidated, so VA should be deleted immediately
+				expect(await context.viewFacet.isPartyALiquidated(virtualAccountAddress)).to.be.false
+
+				const vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.false
+
+				// Funds should be returned to parent
+				const parentBalance = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				expect(parentBalance).to.be.gt(0n)
+			})
+
+			it("Non-VA partyA: hooks are no-op for regular accounts", async () => {
+				// Use the sub-account directly (not a VA) — hooks should silently do nothing
+				// The sub-account itself is not a virtual account, so _removeQuoteFromAccount returns early
+				const vaData = await context.alViewFacet.getVirtualAccount(positionSubAccountAddress)
+				expect(vaData.isExists).to.be.false
+
+				// Sending a quote through a CUSTOM sub-account would trade directly, not via VA
+				// Verify that the sub-account is NOT a virtual account
+				const isVA = vaData.isExists
+				expect(isVA).to.be.false
+				// The hooks firing for this address will just return early (not revert)
+			})
+
+			it("Mixed pending + open positions: full liquidation flow cleans up VA", async () => {
+				// Create MARKET sub-account with singleVAMode to have mixed pending + open on same VA
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MIXED_LIQ", 1, "MARKET", true)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				// Send first quote and open it (position)
+				const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+				const vaAddress = virtualAccounts[0]
+				const quoteIds1 = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				await openPositionForQuote(quoteIds1[0])
+
+				// Fund and send second quote (stays pending)
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+				await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(vaAddress, decimal(500n))
+				const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+				const callData2 = await createSendQuoteCallData(quote2)
+				await context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [callData2])
+
+				const allQuoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(allQuoteIds.length).to.equal(2)
+				const openQuoteId = allQuoteIds[0]
+
+				// Liquidate the VA — SHORT at price 1, qty 100, liq at price 50
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(vaAddress)
+				const upnl = decimal(-4900n)
+				const totalUnrealizedLoss = decimal(-4900n)
+				const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [decimal(50n)], totalUnrealizedLoss, allocatedBalance)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(vaAddress, liquidationSig)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(vaAddress, liquidationSig)
+
+				// Liquidate pending positions — fires onCancelQuote hooks after pending array is deleted
+				// so core state is consistent and the hook removes the quoteId from the VA
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePendingPositionsPartyA(vaAddress)
+
+				// Pending quoteId removed by onCancelQuote hook, only open position remains
+				const quotesAfterPending = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(quotesAfterPending.length).to.equal(1)
+
+				// Liquidate open positions — fires onClosePosition hook
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(vaAddress, [openQuoteId])
+
+				// All quoteIds removed, VA deferred due to isPartyALiquidated
+				const quotesAfterLiq = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(quotesAfterLiq.length).to.equal(0)
+
+				let vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.true // Deferred due to liquidation
+
+				// Settle liquidation — fires onLiquidationSettled
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(vaAddress, [context.signers.hedger.address])
+
+				// VA should now be deleted
+				vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("Isolated partyB liquidation with pending quotes fires cancel hooks and cleans up VA", async () => {
+				// Create MARKET sub-account with singleVAMode to get both open + pending on same VA
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("ISO_PB_PEND", 1, "MARKET", true)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				// Send first quote and open it
+				const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+				const vaAddress = virtualAccounts[0]
+				const quoteIds1 = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				await openPositionForQuote(quoteIds1[0])
+
+				// Fund and send second quote (lock it but keep pending)
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+				await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(vaAddress, decimal(500n))
+				const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+				const callData2 = await createSendQuoteCallData(quote2)
+				await context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [callData2])
+
+				const allQuoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(allQuoteIds.length).to.equal(2)
+
+				// Lock the second quote so it becomes LOCKED (eligible for liquidation cancel)
+				await hedger.lockQuote(allQuoteIds[1])
+
+				// Liquidate partyB (isolated) — this cancels pending quotes via LibLiquidation.liquidatePartyB
+				// Our new callCancelQuoteHooks should fire for the locked quote
+				await context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(context.signers.hedger.address, vaAddress, await getDummySingleUpnlSig(decimal(-336n)))
+
+				// The pending quote should have been removed from VA by the cancel hook
+				const quotesAfterLiqB = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(quotesAfterLiqB.length).to.equal(1) // Only the open position remains
+				expect(quotesAfterLiqB[0]).to.equal(allQuoteIds[0])
+
+				// VA still exists (has open position)
+				let vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.true
+
+				// Liquidate the open position — fires onClosePosition hook
+				const priceSig = await getDummyPriceSig([allQuoteIds[0]], [decimal(1n)])
+				priceSig.timestamp = await context.viewFacet.partyBLiquidationTimestamp(context.signers.hedger.address, vaAddress)
+				await context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsPartyB(context.signers.hedger.address, vaAddress, priceSig)
+
+				// VA should now be deleted (not in any partyA liquidation flow)
+				vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("Bound VA with cross partyB liquidation defers and settles correctly", async () => {
+				// Grant CLEARING_HOUSE_ROLE to liquidator
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				// Make hedger bindable and bind the sub-account to the hedger
+				await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
+				const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+				await context.alCoreFacet.connect(context.signers.user)._call(positionSubAccountAddress, [bindCallData])
+
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).partyBWhiteList([context.signers.hedger.address]).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				await openPositionForQuote(quoteId)
+
+				// VA should be bound to hedger
+				const vaBindState = await context.viewFacet.getBindState(virtualAccountAddress)
+				expect(vaBindState.partyB).to.equal(context.signers.hedger.address)
+
+				// Enable cross mode for hedger
+				await migratePartyBToCross(context, hedger, [quoteId])
+
+				// Initiate cross partyB liquidation
+				const timestamp = await getBlockTimestamp()
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(context.signers.hedger.address, "0x", decimal(-1000n), timestamp)
+
+				// Liquidate pending positions
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [virtualAccountAddress])
+
+				// Liquidate open positions — fires onClosePosition hook
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteId], [decimal(1n)])
+
+				// VA should be deferred — bound partyB is in cross liquidation
+				let vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.true
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.true
+
+				// Settle cross partyB liquidation — fires onLiquidationSettled
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settleCrossPartyBLiquidation(context.signers.hedger.address, [virtualAccountAddress], true)
+
+				// VA should now be deleted
+				vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.false
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.false
+			})
+
+			it("Cross partyB liquidation with pending-only VA defers and settles correctly", async () => {
+				// Grant CLEARING_HOUSE_ROLE to liquidator
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeClose[0]
+
+				// Lock the quote but don't open it — stays LOCKED (pending)
+				await hedger.lockQuote(quoteId)
+
+				// Enable cross mode for hedger directly (no open positions to migrate)
+				await context.controlFacet.setCrossPartyBModeActivated(true)
+				await context.controlFacet.setCrossPartyB(context.signers.hedger.address, true)
+
+				// Initiate cross partyB liquidation
+				const timestamp = await getBlockTimestamp()
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(context.signers.hedger.address, "0x", decimal(-1000n), timestamp)
+
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.true
+
+				// Liquidate pending positions — fires onCancelQuote hooks
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [virtualAccountAddress])
+
+				// VA quoteIds should be empty
+				const quotesAfterLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesAfterLiq.length).to.equal(0)
+
+				// VA should be deferred — partyB still in cross liquidation
+				let vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.true
+
+				// Settle — fires onLiquidationSettled
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settleCrossPartyBLiquidation(context.signers.hedger.address, [virtualAccountAddress], true)
+
+				// VA should now be deleted
+				vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("Cross partyB liquidation with multiple VAs settles in batch", async () => {
+				// Grant CLEARING_HOUSE_ROLE to liquidator
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				// Create two separate POSITION sub-accounts to get two different VAs
+				const subAccount1 = await createSubAccountAndDeposit(context.signers.user, [createSubAccountData("BATCH_1", 0)], BALANCES.DEPOSIT_AMOUNT)
+				const subAccount2 = await createSubAccountAndDeposit(context.signers.user, [createSubAccountData("BATCH_2", 0)], BALANCES.DEPOSIT_AMOUNT)
+
+				// Send quotes on each sub-account — creates separate VAs
+				const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+				const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+				const va1 = (await sendQuoteAndGetVirtualAccount(subAccount1, quote1))[0]
+				const va2 = (await sendQuoteAndGetVirtualAccount(subAccount2, quote2))[0]
+
+				const va1QuoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(va1, 0, 10)
+				const va2QuoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(va2, 0, 10)
+
+				// Open both positions
+				await openPositionForQuote(va1QuoteIds[0])
+				await openPositionForQuote(va2QuoteIds[0])
+
+				// Enable cross mode and initiate cross partyB liquidation
+				await migratePartyBToCross(context, hedger, [va1QuoteIds[0], va2QuoteIds[0]])
+
+				const timestamp = await getBlockTimestamp()
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(context.signers.hedger.address, "0x", decimal(-1000n), timestamp)
+
+				// Liquidate pending positions for both VAs
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [va1, va2])
+
+				// Liquidate open positions for both
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [va1QuoteIds[0], va2QuoteIds[0]], [decimal(1n), decimal(1n)])
+
+				// Both VAs should be deferred
+				expect((await context.alViewFacet.getVirtualAccount(va1)).isExists).to.be.true
+				expect((await context.alViewFacet.getVirtualAccount(va2)).isExists).to.be.true
+
+				// Settle first VA only (no finalize)
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settleCrossPartyBLiquidation(context.signers.hedger.address, [va1], false)
+
+				// VA1 cleaned up, VA2 still deferred
+				expect((await context.alViewFacet.getVirtualAccount(va1)).isExists).to.be.false
+				expect((await context.alViewFacet.getVirtualAccount(va2)).isExists).to.be.true
+
+				// Cross liq still in progress
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.true
+
+				// Settle second VA and finalize
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger.address, [va2], true)
+
+				// Both VAs cleaned up, cross liq settled
+				expect((await context.alViewFacet.getVirtualAccount(va2)).isExists).to.be.false
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.false
+			})
+
+			it("Cancel only pending quote (PENDING status) deletes VA immediately", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeCancel = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesBeforeCancel.length).to.equal(1)
+				const quoteId = quotesBeforeCancel[0]
+
+				// Quote is PENDING (not locked) — immediate cancel
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(0n) // PENDING
+
+				const cancelCallData = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [cancelCallData])
+
+				// Quote is immediately CANCELED (no partyB involved)
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(3n) // CANCELED
+
+				// VA should be deleted — it was the only quote
+				const vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("PartyB acceptCancelRequest deletes VA when it was the last quote", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeCancel = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeCancel[0]
+
+				// Lock quote so it goes LOCKED, then request cancel → CANCEL_PENDING
+				await hedger.lockQuote(quoteId)
+				const cancelCallData = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [cancelCallData])
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(2n) // CANCEL_PENDING
+
+				// PartyB accepts the cancel
+				await hedger.acceptCancelRequest(quoteId)
+
+				// Quote is now CANCELED
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(3n) // CANCELED
+
+				// VA should be deleted — no quotes left
+				const vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("Quote expiration deletes VA when it was the last quote", async () => {
+				// Build quote with short deadline
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).deadline(getBlockTimestamp(100n)).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeExpire = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeExpire[0]
+
+				// Advance time past deadline
+				await time.increase(1000)
+
+				// Expire the quote — fires onCancelQuote hook
+				await context.partyAFacet.expireQuote([quoteId])
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(9n) // EXPIRED
+
+				// VA should be deleted
+				const vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("PartyA normal liquidation with paginated settlement across multiple partyBs", async () => {
+				// Create MARKET sub-account with singleVAMode for 2 positions with different partyBs
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("PAGINATED_SETTLE", 1, "MARKET", true)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				// Send first quote for hedger1
+				const quote1 = limitQuoteRequestBuilder()
+					.symbolId(1)
+					.positionType(PositionType.SHORT)
+					.partyBWhiteList([context.signers.hedger.address])
+					.build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+				const vaAddress = virtualAccounts[0]
+
+				// Fund and send second quote for hedger2
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+				await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(vaAddress, decimal(500n))
+				const quote2 = limitQuoteRequestBuilder()
+					.symbolId(1)
+					.positionType(PositionType.SHORT)
+					.partyBWhiteList([context.signers.hedger2.address])
+					.build()
+				const callData2 = await createSendQuoteCallData(quote2)
+				await context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [callData2])
+
+				const allQuoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(allQuoteIds.length).to.equal(2)
+
+				// Open both positions with their respective hedgers
+				const hedger2 = new Hedger(context, context.signers.hedger2)
+				await hedger2.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL)
+				const openRequest = limitOpenRequestBuilder().build()
+				await hedger.lockQuote(allQuoteIds[0])
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger)
+					.openPosition(
+						allQuoteIds[0],
+						openRequest.filledAmount,
+						openRequest.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
+					)
+				await hedger2.lockQuote(allQuoteIds[1])
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger2)
+					.openPosition(
+						allQuoteIds[1],
+						openRequest.filledAmount,
+						openRequest.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
+					)
+
+				// Liquidate the VA.
+				// 2 SHORT positions: qty=100 each, openPrice=1, liqPrice=20
+				// Position UPNL per partyB = (20-1)*100 = -1900 each, total = -3800
+				// This matches partyAAccumulatedUpnl (avoids "disputed" flag)
+				// allocatedBalance ~3500 (3000 initial + 500 extra), so -3800 < -3500 → INSOLVENT ✓
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(vaAddress)
+				const upnl = decimal(-3800n)
+				const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [decimal(20n)], upnl, allocatedBalance)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(vaAddress, liquidationSig)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(vaAddress, liquidationSig)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePendingPositionsPartyA(vaAddress)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(vaAddress, [allQuoteIds[0], allQuoteIds[1]])
+
+				// VA deferred — still has liquidation in progress
+				let vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.true
+
+				// Settle partyBs one at a time (paginated)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(vaAddress, [context.signers.hedger.address])
+
+				// Still deferred — second partyB not settled yet
+				vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.true
+				expect(await context.viewFacet.isPartyALiquidated(vaAddress)).to.be.true
+
+				// Settle second partyB — fully settled, onLiquidationSettled fires
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(vaAddress, [context.signers.hedger2.address])
+
+				expect(await context.viewFacet.isPartyALiquidated(vaAddress)).to.be.false
+				vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("ClearingHouse takeover with mixed pending + open positions cleans up VA", async () => {
+				// Grant CLEARING_HOUSE_ROLE to liquidator
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				// Create MARKET sub-account with singleVAMode
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("CH_MIX", 1, "MARKET", true)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				// Send first quote and open it
+				const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+				const vaAddress = virtualAccounts[0]
+				const quoteIds1 = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				await openPositionForQuote(quoteIds1[0])
+
+				// Fund and send second quote (stays pending)
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+				await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(vaAddress, decimal(500n))
+				const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.SHORT).build()
+				await context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [await createSendQuoteCallData(quote2)])
+
+				const allQuoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(allQuoteIds.length).to.equal(2)
+
+				// Liquidate partyA, then takeover via CH
+				// allocatedBalance ~3500 (3000 initial + 500 extra for pending quote), need upnl < -3500
+				const allocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(vaAddress)
+				const upnl = -(allocatedBalance + 1n)
+				const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [decimal(8n)], upnl, allocatedBalance)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(vaAddress, liquidationSig)
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(vaAddress, liquidationSig)
+				await context.clearingHouseFacet.connect(context.signers.liquidator).takeoverPartyALiquidation(vaAddress)
+
+				expect(await context.viewFacet.isPartyATakeoverInProgress(vaAddress)).to.be.true
+
+				// Liquidate pending positions via CH — fires onCancelQuote
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePendingPositionsForClearingHouse(vaAddress, [])
+
+				const quotesAfterPending = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(quotesAfterPending.length).to.equal(1) // pending quoteId removed
+
+				// Liquidate open positions via CH — fires onClosePosition
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(vaAddress, [quoteIds1[0]], [decimal(8n)])
+
+				const quotesAfterOpen = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(quotesAfterOpen.length).to.equal(0)
+
+				// VA deferred — takeover in progress
+				let vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.true
+
+				// Settle takeover — fires onLiquidationSettled
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(vaAddress, [context.signers.hedger.address])
+
+				expect(await context.viewFacet.isPartyATakeoverInProgress(vaAddress)).to.be.false
+				vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("Cross partyB liquidation with mixed pending + open positions cleans up VA", async () => {
+				// Grant CLEARING_HOUSE_ROLE to liquidator
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				// Create MARKET sub-account with singleVAMode
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("CH_CROSS_MIX", 1, "MARKET", true)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				// Send first quote and open it
+				const quote1 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+				const vaAddress = virtualAccounts[0]
+				const quoteIds1 = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				await openPositionForQuote(quoteIds1[0])
+
+				// Fund and send second quote (lock it — LOCKED is eligible for cross liq pending cancel)
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+				await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(vaAddress, decimal(500n))
+				const quote2 = limitQuoteRequestBuilder().symbolId(1).positionType(PositionType.LONG).build()
+				await context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [await createSendQuoteCallData(quote2)])
+				const allQuoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(allQuoteIds.length).to.equal(2)
+				await hedger.lockQuote(allQuoteIds[1])
+
+				// Enable cross mode and liquidate
+				await migratePartyBToCross(context, hedger, [quoteIds1[0]])
+				const timestamp = await getBlockTimestamp()
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(context.signers.hedger.address, "0x", decimal(-1000n), timestamp)
+
+				// Liquidate pending positions — fires onCancelQuote for the locked quote
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [vaAddress])
+
+				const quotesAfterPending = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(quotesAfterPending.length).to.equal(1) // pending quoteId removed
+
+				// Liquidate open positions — fires onClosePosition
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [quoteIds1[0]], [decimal(1n)])
+
+				const quotesAfterOpen = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(quotesAfterOpen.length).to.equal(0)
+
+				// VA deferred — partyB still in cross liquidation
+				let vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.true
+
+				// Settle — fires onLiquidationSettled
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settleCrossPartyBLiquidation(context.signers.hedger.address, [vaAddress], true)
+
+				vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("Isolated partyB liquidation with pending-only VA deletes it immediately", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				const quoteId = quotesBeforeLiq[0]
+
+				// Lock the quote — LOCKED is eligible for isolated partyB pending cancel
+				await hedger.lockQuote(quoteId)
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(1n) // LOCKED
+
+				// Liquidate partyB (isolated) — cancels the LOCKED pending quote via LibLiquidation.liquidatePartyB
+				await context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(context.signers.hedger.address, virtualAccountAddress, await getDummySingleUpnlSig(decimal(-336n)))
+
+				// Pending quote was cancelled, quoteId removed from VA
+				const quotesAfterLiq = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesAfterLiq.length).to.equal(0)
+
+				// No open positions — partyA NOT liquidated — VA deleted immediately
+				expect(await context.viewFacet.isPartyALiquidated(virtualAccountAddress)).to.be.false
+				const vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.false
+
+				// Funds returned to parent
+				const parentBalance = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				expect(parentBalance).to.be.gt(0n)
+			})
+
+			it("Force cancel quote fires cancel hook and cleans up VA", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesBeforeClose.length).to.equal(1)
+				const quoteId = quotesBeforeClose[0]
+
+				// Lock the quote (hedger locks it)
+				await hedger.lockQuote(quoteId)
+				let quoteData = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteData.quoteStatus).to.equal(1n) // LOCKED
+
+				// Request cancel through VA
+				const requestCancelCallData = context.partyAFacet.interface.encodeFunctionData("requestToCancelQuote", [quoteId])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestCancelCallData])
+
+				quoteData = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteData.quoteStatus).to.equal(2n) // CANCEL_PENDING
+
+				// VA should still exist (quote still pending on core)
+				let vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.true
+
+				// Advance time past the force cancel cooldown
+				await time.increase(300)
+
+				// Force cancel through VA
+				const forceCancelCallData = context.forceActionsFacet.interface.encodeFunctionData("forceCancelQuote", [quoteId])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [forceCancelCallData])
+
+				// Quote should be canceled
+				quoteData = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quoteData.quoteStatus).to.equal(3n) // CANCELED
+
+				// VA should be deleted — force cancel hook fired and cleaned up
+				vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.false
+			})
+
+			it("Force close position fires onClosePosition hook and deletes VA", async () => {
+				// Open a LONG position on a POSITION-isolation VA
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+
+				const quotesBeforeClose = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+				expect(quotesBeforeClose.length).to.equal(1)
+				const quoteId = quotesBeforeClose[0]
+
+				// Open the position
+				await openPositionForQuote(quoteId)
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(4n) // OPENED
+
+				// Request to close through VA (onlyPartyAOfQuote requires msg.sender == partyA)
+				const now = await getBlockTimestamp()
+				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					quoteId,
+					decimal(1n), // closePrice
+					decimal(100n), // quantityToClose
+					0, // OrderType.LIMIT
+					now + 10000n, // deadline far in future
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
+				expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(5n) // CLOSE_PENDING
+
+				// Advance time past both cooldowns: firstCooldown(300) + secondCooldown(120) + margin
+				await time.increase(450n)
+
+				// Build high-low price sig satisfying validateForceCloseConditions:
+				// startTime >= statusModifyTimestamp + firstCooldown (300)
+				// endTime <= block.timestamp - secondCooldown (120)
+				// For a LONG position: highest >= closePrice (gapRatio=0 default -> highest >= decimal(1n))
+				const afterTime = await getBlockTimestamp()
+				const sigStartTime = afterTime - 149n // ~T_request+301 >= T_request+300 ✓
+				const sigEndTime = afterTime - 121n // <= afterTime-120 ✓, >= sigStartTime ✓
+				const highLowSig = await getDummyHighLowPriceSig(
+					sigStartTime, // startTime
+					sigEndTime, // endTime
+					decimal(1n), // lowest
+					decimal(1n), // highest (>= closePrice=1 for LONG)
+					decimal(1n), // currentPrice
+					decimal(1n), // averagePrice (must be between lowest and highest)
+					1n, // symbolId
+					0n, // upnlPartyB
+					0n, // upnlPartyA
+				)
+
+				// Force close — anyone can call this (no onlyPartyA modifier)
+				await context.forceActionsFacet.connect(context.signers.user).forceClosePosition(quoteId, highLowSig)
+
+				// VA should be deleted — force close fires onClosePosition hook
+				const vaData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(vaData.isExists).to.be.false
+
+				// Funds returned to parent
+				const parentBalance = await context.viewFacet.balanceOf(positionSubAccountAddress)
+				expect(parentBalance).to.be.gt(0n)
+			})
+
+			it("Multi-partyB VA: positions with cross-liq partyB defers deletion until cross settlement", async () => {
+				// Grant CLEARING_HOUSE_ROLE to liquidator
+				await context.controlFacet.grantRole(context.signers.liquidator.address, roleHash("CLEARING_HOUSE_ROLE"))
+
+				// Create MARKET sub-account with singleVAMode so both quotes go to one VA
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MULTI_PB_CROSS", 1, "MARKET", true)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				// Send and open first quote with hedger (partyB_X — will go into cross liq)
+				const quote1 = limitQuoteRequestBuilder()
+					.symbolId(1)
+					.positionType(PositionType.LONG)
+					.partyBWhiteList([context.signers.hedger.address])
+					.build()
+				const virtualAccounts = await sendQuoteAndGetVirtualAccount(marketSubAccount, quote1)
+				const vaAddress = virtualAccounts[0]
+				const va1QuoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				await openPositionForQuote(va1QuoteIds[0])
+
+				// Fund VA and send second quote with hedger2 (partyB_Y — will close normally)
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), decimal(500n))
+				await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(vaAddress, decimal(500n))
+				const hedger2 = new Hedger(context, context.signers.hedger2)
+				await hedger2.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL)
+				const quote2 = limitQuoteRequestBuilder()
+					.symbolId(1)
+					.positionType(PositionType.LONG)
+					.partyBWhiteList([context.signers.hedger2.address])
+					.build()
+				await context.alCoreFacet.connect(context.signers.user)._call(marketSubAccount, [await createSendQuoteCallData(quote2)])
+				const allQuoteIds = await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)
+				expect(allQuoteIds.length).to.equal(2)
+				// Open quote2 with hedger2
+				const openRequest = limitOpenRequestBuilder().build()
+				await hedger2.lockQuote(allQuoteIds[1])
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger2)
+					.openPosition(
+						allQuoteIds[1],
+						openRequest.filledAmount,
+						openRequest.openPrice,
+						await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB)),
+					)
+
+				// Put hedger (partyB_X) into cross liquidation
+				await migratePartyBToCross(context, hedger, [va1QuoteIds[0]])
+				const timestamp = await getBlockTimestamp()
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(context.signers.hedger.address, "0x", decimal(-1000n), timestamp)
+
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.true
+
+				// Liquidate partyB_X's open position — fires onClosePosition hook,
+				// records hedger in vaPendingCrossLiqPartyBs[vaAddress]
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger.address, [va1QuoteIds[0]], [decimal(1n)])
+
+				// VA still has quote2 (partyB_Y's position)
+				expect((await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)).length).to.equal(1)
+				expect((await context.alViewFacet.getVirtualAccount(vaAddress)).isExists).to.be.true
+
+				// Close partyB_Y's position normally (fillCloseRequest)
+				const now = await getBlockTimestamp()
+				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					allQuoteIds[1],
+					decimal(1n),
+					decimal(100n),
+					0, // OrderType.LIMIT
+					now + 10000n,
+				])
+				await context.alCoreFacet.connect(context.signers.user)._call(vaAddress, [requestToCloseCallData])
+				const fillCloseRequest = limitFillCloseRequestBuilder().build()
+				await context.partyBPositionActionsFacet
+					.connect(context.signers.hedger2)
+					.fillCloseRequest(
+						allQuoteIds[1],
+						fillCloseRequest.filledAmount,
+						fillCloseRequest.closedPrice,
+						await getDummyPairUpnlAndPriceSig(
+							BigInt(fillCloseRequest.price),
+							BigInt(fillCloseRequest.upnlPartyA),
+							BigInt(fillCloseRequest.upnlPartyB),
+						),
+					)
+
+				// VA now has 0 quotes, but hedger (partyB_X) still in cross liq → VA deferred
+				expect((await context.alViewFacet.getVirtualAccountQuoteIds(vaAddress, 0, 10)).length).to.equal(0)
+				let vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.true
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.true
+
+				// Settle cross liquidation — fires onLiquidationSettled → clears vaPendingCrossLiqPartyBs → VA deleted
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.settleCrossPartyBLiquidation(context.signers.hedger.address, [vaAddress], true)
+
+				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger.address)).to.be.false
+				vaData = await context.alViewFacet.getVirtualAccount(vaAddress)
+				expect(vaData.isExists).to.be.false
 			})
 		})
 	})

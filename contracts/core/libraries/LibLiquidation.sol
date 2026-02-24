@@ -13,6 +13,7 @@ import { LibQuote } from "./LibQuote.sol";
 import { LibSigner } from "./LibSigner.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibConnections } from "./LibConnections.sol";
+import { LibHook } from "./LibHook.sol";
 
 library LibLiquidation {
 	using LockedValuesOps for LockedValues;
@@ -53,10 +54,15 @@ library LibLiquidation {
 
 		uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
 
+		// Collect liquidated pending quoteIds for hook calls after state changes
+		uint256[] memory liquidatedPendingIds = new uint256[](pendingQuotes.length);
+		uint256 liquidatedCount = 0;
+
 		for (uint256 index = 0; index < pendingQuotes.length; ) {
 			Quote storage quote = quoteLayout.quotes[pendingQuotes[index]];
 
 			if (quote.partyB == partyB && (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING)) {
+				liquidatedPendingIds[liquidatedCount++] = pendingQuotes[index];
 				accountLayout.pendingLockedBalances[partyA].subQuote(quote);
 				LibAccount.refundOpenTradingFee(quote.id, partyA);
 				pendingQuotes[index] = pendingQuotes[pendingQuotes.length - 1];
@@ -96,6 +102,12 @@ library LibLiquidation {
 		accountLayout.partyBPendingLockedBalances[partyB][partyA].makeZero();
 
 		LibAccount.increasePartyANonce(partyA);
+
+		// Fire cancel hooks after all state changes so core state is consistent when hooks run
+		for (uint256 i = 0; i < liquidatedCount; i++) {
+			Quote storage quote = quoteLayout.quotes[liquidatedPendingIds[i]];
+			LibHook.callCancelQuoteHooks(liquidatedPendingIds[i], partyA, partyB, quote.affiliate);
+		}
 
 		// Transfer liquidator share to the liquidator
 		if (liquidatorShare > 0) {

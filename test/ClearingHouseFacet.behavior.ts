@@ -253,7 +253,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			expect((await context.viewFacetQuote.getPartyBPendingQuotes(context.signers.hedger, context.signers.user)).length).to.equal(0)
 			expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
 
-			await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger))
+			await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger, [], true))
 				.to.emit(context.clearingHouseFacet, "SettleCrossPartyBLiquidation")
 				.withArgs(context.signers.hedger.address)
 			expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(false)
@@ -673,7 +673,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.liquidatePositionsForClearingHouse(context.signers.hedger, [1n, 4n], [decimal(1n), decimal(1n)])
 				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(true)
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger),
+					context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger, [], true),
 				).to.be.revertedWith("ClearingHouseFacet: PartyB has pending quotes")
 
 				await context.clearingHouseFacet
@@ -683,7 +683,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const balancesAfter = await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger)
 				const pendingAfter = balancesAfter[5] + balancesAfter[6] + balancesAfter[7] + balancesAfter[8]
 				expect(pendingAfter).to.equal(0)
-				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger))
+				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger, [], true))
 					.to.emit(context.clearingHouseFacet, "SettleCrossPartyBLiquidation")
 					.withArgs(context.signers.hedger.address)
 				expect(await context.viewFacet.getPartyBCrossLiquidationStatus(context.signers.hedger)).to.equal(false)
@@ -699,7 +699,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				expect(await context.viewFacetQuote.partyBPositionsCount(context.signers.hedger, ZeroAddress)).to.be.greaterThan(0)
 
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger),
+					context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger, [], true),
 				).to.be.revertedWith("ClearingHouseFacet: PartyB has still open positions")
 			})
 
@@ -725,7 +725,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				// Settlement should fail
 				await expect(
-					context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger),
+					context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger, [], true),
 				).to.be.revertedWith("ClearingHouseFacet: Undistributed funds in deallocated pool")
 			})
 
@@ -796,7 +796,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				const settleBeforeOut = await settleValidator.before(context, { hedger: hedger2 })
 
 				// Explicitly settle the cross partyB liquidation
-				await context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(hedger2.address)
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(hedger2.address, [], true)
 
 				await settleValidator.after(context, { hedger: hedger2, beforeOutput: settleBeforeOut })
 
@@ -1704,7 +1704,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				}
 
 				// Step 7: Settle cross partyB
-				await context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger.address)
+				await context.clearingHouseFacet.connect(context.signers.liquidator).settleCrossPartyBLiquidation(context.signers.hedger.address, [], true)
 
 				// Step 8: Process remaining partyA pending quotes (quotes 3, 4 are SENT, no partyB assigned)
 				// These weren't handled by cross partyB flow. Use takeover flow to clear them.
