@@ -8,6 +8,7 @@ import { multicallTask } from "./multicall.js"
 import { partyBTask } from "./partyB.js"
 import { signatureVerifierTask } from "./signatureVerifier.js"
 import { stablecoinTask } from "./stablecoin.js"
+import { upgradeProxyTask } from "./upgrade.js"
 import {
 	checkDeploymentTask,
 	verifyAccountTask,
@@ -30,6 +31,7 @@ export const deployTasks = [
 	partyBTask,
 	signatureVerifierTask,
 	stablecoinTask,
+	upgradeProxyTask,
 	verifyAllTask,
 	verifyDeploymentTask,
 	verifyAccountLayerTask,
