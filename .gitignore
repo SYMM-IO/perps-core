@@ -32,6 +32,7 @@ serverLog.log
 detailedDebug.log
 pnpm-lock.yaml
 .openzeppelin
+AGENTS.md
 
 .yarn/
 .venv

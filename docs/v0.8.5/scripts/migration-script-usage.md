@@ -5,11 +5,13 @@ This document explains how to use the migration script for upgrading SYMMIO from
 ## Overview
 
 The migration script (`scripts/migrate.ts`) handles:
+
 - Migrating quotes to populate aggregated positions
 - Backfilling PartyA ↔ PartyB connections for active positions (`connectedPartyBs` / `isConnectedPartyB`)
 - Migrating partyB balances to the master bucket
 
 Key features:
+
 - **Automatic resume** - If interrupted, continues from where it left off
 - **Retry with backoff** - Failed transactions are retried automatically
 - **Dry run mode** - Test without executing transactions
@@ -18,8 +20,8 @@ Key features:
 ## Prerequisites
 
 1. Collect migration data from your indexer:
-   - All open quote IDs (status: OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
-   - All partyB addresses with their associated partyAs
+    - All open quote IDs (status: OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
+    - All partyB addresses with their associated partyAs
 
 2. Ensure the executor address has `MIGRATION_ROLE`
 
@@ -64,16 +66,16 @@ const report = await migrate(migrationFacet, input, {
 
 ## Configuration Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `chunkSize` | 50 | Items per transaction batch |
-| `maxRetries` | 3 | Retry attempts for failed transactions |
-| `retryDelayMs` | 2000 | Initial delay between retries (ms) |
-| `retryBackoffMultiplier` | 2 | Exponential backoff multiplier |
-| `confirmations` | 1 | Block confirmations to wait |
-| `progressFile` | `./migration-progress.json` | Progress file path (null to disable) |
-| `strict` | false | Throw error on any failure |
-| `dryRun` | false | Log without executing transactions |
+| Option                   | Default                     | Description                            |
+| ------------------------ | --------------------------- | -------------------------------------- |
+| `chunkSize`              | 50                          | Items per transaction batch            |
+| `maxRetries`             | 3                           | Retry attempts for failed transactions |
+| `retryDelayMs`           | 2000                        | Initial delay between retries (ms)     |
+| `retryBackoffMultiplier` | 2                           | Exponential backoff multiplier         |
+| `confirmations`          | 1                           | Block confirmations to wait            |
+| `progressFile`           | `./migration-progress.json` | Progress file path (null to disable)   |
+| `strict`                 | false                       | Throw error on any failure             |
+| `dryRun`                 | false                       | Log without executing transactions     |
 
 ## Resume After Failure
 
@@ -91,14 +93,15 @@ npx ts-node scripts/migrate-example.ts
 ```
 
 Progress is tracked in `migration-progress.json`:
+
 ```json
 {
-  "startedAt": "2024-01-27T10:00:00.000Z",
-  "phase": "quotes",
-  "quotesProcessed": 200,
-  "partyBsProcessed": 0,
-  "lastProcessedQuoteChunk": 4,
-  "lastProcessedPartyB": -1
+	"startedAt": "2024-01-27T10:00:00.000Z",
+	"phase": "quotes",
+	"quotesProcessed": 200,
+	"partyBsProcessed": 0,
+	"lastProcessedQuoteChunk": 4,
+	"lastProcessedPartyB": -1
 }
 ```
 
@@ -113,8 +116,9 @@ DRY_RUN=true npx ts-node scripts/migrate-example.ts
 ```
 
 Or in code:
+
 ```typescript
-await migrate(migrationFacet, input, { dryRun: true })
+await migrate(migrationFacet, input, { dryRun: true });
 ```
 
 ## Migration Report
@@ -141,7 +145,7 @@ Example of collecting data from a subgraph:
 
 ```typescript
 async function collectQuoteIds(): Promise<bigint[]> {
-    const query = `
+	const query = `
         query {
             quotes(where: {
                 quoteStatus_in: ["OPENED", "CLOSE_PENDING", "CANCEL_CLOSE_PENDING"]
@@ -149,17 +153,17 @@ async function collectQuoteIds(): Promise<bigint[]> {
                 id
             }
         }
-    `
-    const result = await fetch(SUBGRAPH_URL, {
-        method: "POST",
-        body: JSON.stringify({ query })
-    }).then(r => r.json())
+    `;
+	const result = await fetch(SUBGRAPH_URL, {
+		method: "POST",
+		body: JSON.stringify({ query }),
+	}).then(r => r.json());
 
-    return result.data.quotes.map(q => BigInt(q.id))
+	return result.data.quotes.map(q => BigInt(q.id));
 }
 
 async function collectPartyBTasks(): Promise<PartyBMigrationTask[]> {
-    const query = `
+	const query = `
         query {
             partyBs {
                 id
@@ -170,41 +174,49 @@ async function collectPartyBTasks(): Promise<PartyBMigrationTask[]> {
                 }
             }
         }
-    `
-    const result = await fetch(SUBGRAPH_URL, {
-        method: "POST",
-        body: JSON.stringify({ query })
-    }).then(r => r.json())
+    `;
+	const result = await fetch(SUBGRAPH_URL, {
+		method: "POST",
+		body: JSON.stringify({ query }),
+	}).then(r => r.json());
 
-    return result.data.partyBs.map(pb => ({
-        partyB: pb.id,
-        partyAs: [...new Set(pb.quotes.map(q => q.partyA.id))]
-    }))
+	return result.data.partyBs.map(pb => ({
+		partyB: pb.id,
+		partyAs: [...new Set(pb.quotes.map(q => q.partyA.id))],
+	}));
 }
 ```
 
 ## Troubleshooting
 
 ### "Already migrated" warnings
+
 Normal if resuming - the script checks on-chain state and skips completed work.
 
 ### Transaction failures
+
 The script retries with exponential backoff. Check:
+
 - RPC endpoint health
 - Executor has sufficient gas
 - Executor has `MIGRATION_ROLE`
 
 ### "PartyA max connection limit exceeded"
+
 If a PartyA has too many distinct connected PartyBs, the quote migration transaction can revert with:
+
 - `AccountFacet: PartyA max connection limit exceeded`
 
 Increase the limit before migrating via `ControlFacet.setMaxPartyAConnectionLimit`, then re-run the script (it will resume/skip already-migrated quotes).
 
 ### Stuck migration
+
 Delete `migration-progress.json` to start fresh (already-migrated items will be skipped via on-chain checks).
 
 ### Strict mode
+
 Use `strict: true` to stop immediately on any failure instead of continuing:
+
 ```typescript
-await migrate(migrationFacet, input, { strict: true })
+await migrate(migrationFacet, input, { strict: true });
 ```
