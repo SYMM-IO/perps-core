@@ -54,10 +54,6 @@ Replaces the old broad `delegateAccess` with a safer model: users sign a specifi
 
 Solver-specific integration guide covering how PartyBs set up their operator, register with the Instant Layer, handle user signatures, and execute templated workflows.
 
-### [Instant Layer Template Script](scripts/instant-layer-template-script.md)
-
-Practical guide for running `scripts/addSendAllocateLockOpenTemplate.ts`, including dry-run JSON output, RPC health checks, and real execution.
-
 ---
 
 ## Risk & Liquidation
@@ -138,7 +134,7 @@ Complete changelog of every event change from v0.8.4 to v0.8.5 — removed backw
 
 Backfills the new aggregated position structures and master account buckets from existing v0.8.4 data. Run during a global pause after the diamond cut — migrates quote-level data into symbol-level aggregates and sums per-PartyA balances into the cross-margin bucket.
 
-### [Migration Script Usage](scripts/migration-script-usage.md)
+### [Migration Script Usage](migration-script-usage.md)
 
 Practical guide for running the migration scripts against a live deployment.
 
