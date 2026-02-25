@@ -664,20 +664,29 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().signer == address(0) ? msg.sender : GlobalAppStorage.layout().signer;
 	}
 
-	/// @notice Returns the effective fee for an affiliate and symbol, falling back to the default symbol trading fee.
+	/// @notice Returns the effective fee for an affiliate, user, and symbol, using the full resolution priority:
+	///         1. affiliateFeeForUser[affiliate][user][symbolId]
+	///         2. affiliateFeeForUser[affiliate][user][0]
+	///         3. affiliateFee[affiliate][symbolId]
+	///         4. affiliateFee[affiliate][0]
+	///         5. symbol default tradingFee
 	/// @param affiliate The address of the affiliate.
+	/// @param user The address of the user (partyA). Pass address(0) to skip user-specific fee levels.
 	/// @param symbolId The id of the symbol.
 	/// @return fee The resolved fee structure.
-	function getFee(address affiliate, uint256 symbolId) external view returns (Fee memory fee) {
-		if (AffiliateStorage.layout().affiliateFee[affiliate][symbolId].isSet) {
-			fee = AffiliateStorage.layout().affiliateFee[affiliate][symbolId];
+	function getFeeForUser(address affiliate, address user, uint256 symbolId) external view returns (Fee memory fee) {
+		AffiliateStorage.Layout storage affiliateLayout = AffiliateStorage.layout();
+		if (affiliateLayout.affiliateFeeForUser[affiliate][user][symbolId].isSet) {
+			fee = affiliateLayout.affiliateFeeForUser[affiliate][user][symbolId];
+		} else if (affiliateLayout.affiliateFeeForUser[affiliate][user][0].isSet) {
+			fee = affiliateLayout.affiliateFeeForUser[affiliate][user][0];
+		} else if (affiliateLayout.affiliateFee[affiliate][symbolId].isSet) {
+			fee = affiliateLayout.affiliateFee[affiliate][symbolId];
+		} else if (affiliateLayout.affiliateFee[affiliate][0].isSet) {
+			fee = affiliateLayout.affiliateFee[affiliate][0];
 		} else {
-			if (AffiliateStorage.layout().affiliateFee[affiliate][0].isSet) {
-				fee = AffiliateStorage.layout().affiliateFee[affiliate][0];
-			} else {
-				uint256 symbolTradingFee = SymbolStorage.layout().symbols[symbolId].tradingFee;
-				fee = Fee(symbolTradingFee, symbolTradingFee, true);
-			}
+			uint256 symbolTradingFee = SymbolStorage.layout().symbols[symbolId].tradingFee;
+			fee = Fee(symbolTradingFee, symbolTradingFee, true);
 		}
 	}
 

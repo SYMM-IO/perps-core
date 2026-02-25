@@ -28,6 +28,8 @@ interface IControlFacetEvents {
 	event HookAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
 	/// @notice Emitted when call-allowed selectors are configured for an affiliate
 	event CallAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
+	/// @notice Emitted when a Symmio core is added to an affiliate after registration
+	event SymmioCoreAddedToAffiliate(address indexed affiliate, address indexed core);
 }
 
 /// @notice Administrative interface for role management, pause control, and system configuration
@@ -90,4 +92,9 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 	/// @param selectors The function selectors to configure
 	/// @param allowed Whether the selectors should be allowed
 	function setCallAllowedSelectors(address affiliate, bytes4[] calldata selectors, bool allowed) external;
+
+	/// @notice Adds a Symmio core to an active affiliate and registers it on that core
+	/// @param affiliate The affiliate address
+	/// @param core The whitelisted Symmio core address to add
+	function addSymmioCoreToAffiliate(address affiliate, address core) external;
 }

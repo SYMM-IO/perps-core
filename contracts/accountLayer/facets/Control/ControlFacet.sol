@@ -4,15 +4,19 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { IControlFacet } from "./IControlFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
+import { AffiliateStorage, AffiliateState } from "../../storages/AffiliateStorage.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
+import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 /// @notice Administrative facet for role management, pause control, and system configuration
 contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerPausable {
+	using EnumerableSet for EnumerableSet.AddressSet;
+
 	bytes32 private constant ACCOUNT_MANAGER_CODE_HASH = keccak256("ACM_V1");
 
 	// ==================== Role Management ====================
@@ -131,5 +135,20 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 			afLayout.callAllowedSelectors[affiliate][selectors[i]] = allowed;
 		}
 		emit CallAllowedSelectorsSet(affiliate, selectors, allowed);
+	}
+
+	/// @notice Adds a Symmio core to an active affiliate and registers it on that core
+	/// @param affiliate The affiliate address
+	/// @param core The whitelisted Symmio core address to add
+	function addSymmioCoreToAffiliate(address affiliate, address core) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) {
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+		if (afLayout.affiliates[affiliate].state != AffiliateState.ACTIVE) revert InvalidState();
+		if (!afLayout.whitelistedSymmioCores[core]) revert NoWhitelistedSymmioCore();
+		if (!afLayout.affiliates[affiliate].symmioCores.add(core)) revert AlreadyRegistered();
+
+		ISymmio(core).registerAffiliate(affiliate);
+		ISymmio(core).setFeeCollector(affiliate, afLayout.affiliates[affiliate].feeDetails.feeDistributor);
+
+		emit SymmioCoreAddedToAffiliate(affiliate, core);
 	}
 }
