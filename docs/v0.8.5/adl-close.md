@@ -23,47 +23,9 @@ controlFacet.setADLEnabled(partyBAddress, false);
 bool enabled = viewFacet.isADLEnabled(partyBAddress);
 ```
 
-## Assurance Collateral
+## Pledge Collateral
 
-### What is Assurance Collateral?
-
-Assurance collateral is a separate collateral pool that PartyB deposits as a guarantee of good behavior. It is independent of the trading collateral used for positions.
-
-### Depositing Assurance Collateral
-
-```solidity
-// PartyB deposits assurance collateral
-assuranceFacet.depositAssuranceCollateral(tokenAddress, amount);
-```
-
-### Withdrawing Assurance Collateral
-
-Withdrawal follows a request-approval flow:
-
-```solidity
-// 1. PartyB requests withdrawal
-assuranceFacet.requestAssuranceWithdraw(tokenAddress, amount, recipientAddress);
-
-// 2. Admin approves withdrawal (requires PARTY_B_MANAGER_ROLE)
-assuranceFacet.acceptAssuranceWithdraw(partyBAddress, amount, tokenAddress);
-
-// Or PartyB can cancel their request
-assuranceFacet.cancelAssuranceWithdraw();
-```
-
-### Relation with ADL
-
-Assurance collateral serves as a penalty mechanism for ADL usage:
-
-1. **Enabling ADL**: Before enabling ADL for a PartyB, they should have deposited sufficient assurance collateral.
-2. **Slashing**: If PartyB misuses ADL (e.g., closes positions at unfair prices harming PartyA), their assurance collateral can be slashed:
-
-```solidity
-// Admin slashes PartyB's assurance collateral (requires PARTY_B_MANAGER_ROLE)
-assuranceFacet.slashUser(partyBAddress, tokenAddress, penaltyAmount, recipientAddress);
-```
-
-This mechanism ensures PartyB has "skin in the game" and is incentivized to use ADL fairly.
+ADL requires PartyBs to have deposited [pledge collateral](pledge.md) -- a separate collateral pool that acts as a guarantee of good behavior. If a PartyB misuses ADL (e.g., closes positions at unfair prices harming PartyA), their pledge can be slashed by an admin. See the [Pledge Collateral](pledge.md) page for full details on depositing, withdrawing, and slashing.
 
 ## Event Emissions for Off-Chain Compatibility
 
