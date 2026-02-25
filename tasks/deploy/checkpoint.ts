@@ -40,6 +40,7 @@ export interface DeploymentCheckpoint {
 		collateral?: DeployedContract
 		diamond?: DiamondCheckpoint
 		accountLayerDiamond?: AccountLayerCheckpoint
+		signatureVerifier?: DeployedContract
 		instantLayer?: DeployedContract
 		symmioPartyB?: DeployedContract & { implementation?: string; admin?: string }
 		accountManager?: DeployedContract
@@ -305,6 +306,9 @@ export function displayCheckpointStatus(checkpoint: DeploymentCheckpoint): void 
 	}
 	if (checkpoint.contracts.instantLayer) {
 		console.log(`  - InstantLayer: ${checkpoint.contracts.instantLayer.address}`)
+	}
+	if (checkpoint.contracts.signatureVerifier) {
+		console.log(`  - MuonSignatureVerifier: ${checkpoint.contracts.signatureVerifier.address}`)
 	}
 	if (checkpoint.contracts.symmioPartyB) {
 		console.log(`  - SymmioPartyB: ${checkpoint.contracts.symmioPartyB.address}`)

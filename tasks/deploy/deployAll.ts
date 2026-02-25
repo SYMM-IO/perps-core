@@ -21,6 +21,7 @@ import { deployDiamond } from "./diamond.js"
 import { getConnection } from "./helpers.js"
 import { deployInstantLayer } from "./instantLayer.js"
 import { deploySymmioPartyB } from "./partyB.js"
+import { deploySignatureVerifier } from "./signatureVerifier.js"
 import { deployStablecoin } from "./stablecoin.js"
 
 interface DeploymentResult {
@@ -40,6 +41,13 @@ interface SystemDeploymentReport {
 		deployPartyB: boolean
 		registerDummyAffiliate: boolean
 		setupInstantLayerTemplates: boolean
+		signatureVerifierAddress: string
+		muonAppId: string
+		muonUpnlValidTime: string
+		muonPriceValidTime: string
+		muonPublicKeyX: string
+		muonPublicKeyParity: string
+		muonGatewaySigners: string[]
 	}
 	summary: {
 		totalContracts: number
@@ -53,6 +61,7 @@ interface SystemDeploymentReport {
 interface DeployedContracts {
 	collateral?: string
 	diamond?: string
+	signatureVerifier?: string
 	accountLayerDiamond?: string
 	instantLayer?: string
 	symmioPartyB?: string
@@ -74,6 +83,18 @@ async function getEnvConfig(hre: any) {
 	const partyBSigner = process.env.PARTYB_SIGNER || ""
 	// Setup InstantLayer templates (default: true, set to "false" to skip)
 	const setupInstantLayerTemplates = process.env.SETUP_INSTANT_LAYER_TEMPLATES !== "false"
+	// Optional: use existing MuonSignatureVerifier address instead of deploying
+	const signatureVerifierAddress = process.env.MUON_SIGNATURE_VERIFIER_ADDRESS || ""
+	// Optional Muon runtime config (set on Diamond if provided)
+	const muonAppId = process.env.MUON_APP_ID || ""
+	const muonUpnlValidTime = process.env.MUON_UPNL_VALID_TIME || ""
+	const muonPriceValidTime = process.env.MUON_PRICE_VALID_TIME || ""
+	const muonPublicKeyX = process.env.MUON_PUBLIC_KEY_X || ""
+	const muonPublicKeyParity = process.env.MUON_PUBLIC_KEY_PARITY || ""
+	const muonGatewaySigners = (process.env.MUON_GATEWAY_SIGNERS || "")
+		.split(",")
+		.map(s => s.trim())
+		.filter(Boolean)
 
 	return {
 		admin,
@@ -83,6 +104,13 @@ async function getEnvConfig(hre: any) {
 		registerDummyAffiliate,
 		partyBSigner,
 		setupInstantLayerTemplates,
+		signatureVerifierAddress,
+		muonAppId,
+		muonUpnlValidTime,
+		muonPriceValidTime,
+		muonPublicKeyX,
+		muonPublicKeyParity,
+		muonGatewaySigners,
 	}
 }
 
@@ -142,6 +170,13 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			console.log(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
 			console.log(`Register Dummy Affiliate: ${config.registerDummyAffiliate}`)
 			console.log(`Setup InstantLayer Templates: ${config.setupInstantLayerTemplates}`)
+			console.log(`Signature Verifier Address: ${config.signatureVerifierAddress || "(will deploy MuonSignatureVerifier)"}`)
+			console.log(`Muon App ID: ${config.muonAppId || "(not set)"}`)
+			console.log(`Muon UPNL Valid Time: ${config.muonUpnlValidTime || "(not set)"}`)
+			console.log(`Muon Price Valid Time: ${config.muonPriceValidTime || "(not set)"}`)
+			console.log(`Muon Public Key X: ${config.muonPublicKeyX || "(not set)"}`)
+			console.log(`Muon Public Key Parity: ${config.muonPublicKeyParity || "(not set)"}`)
+			console.log(`Muon Gateway Signers: ${config.muonGatewaySigners.length > 0 ? config.muonGatewaySigners.join(",") : "(not set)"}`)
 			console.log("=".repeat(80))
 			console.log()
 
@@ -228,9 +263,60 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			})
 
 			await runDeploymentStep(checkpoint, {
+				id: "signatureVerifier",
+				title: "Setting up MuonSignatureVerifier",
+				order: 3,
+				run: async () => {
+					if (config.signatureVerifierAddress) {
+						console.log(`Using existing MuonSignatureVerifier at: ${config.signatureVerifierAddress}`)
+						deployedContracts.signatureVerifier = config.signatureVerifierAddress
+						if (!checkpoint.contracts.signatureVerifier) {
+							checkpoint.contracts.signatureVerifier = createDeployedContract(config.signatureVerifierAddress)
+							saveCheckpoint(checkpoint)
+						}
+						deploymentResults.push({
+							contract: "MuonSignatureVerifier (existing)",
+							address: config.signatureVerifierAddress,
+							status: "skipped",
+							timestamp: new Date().toISOString(),
+						})
+					} else {
+						try {
+							const wasAlreadyDeployed = !!checkpoint.contracts.signatureVerifier
+							console.log(wasAlreadyDeployed ? "Resuming MuonSignatureVerifier..." : "Deploying MuonSignatureVerifier...")
+							const signatureVerifier = await deploySignatureVerifier(hre, {
+								admin: deployerAddress,
+								logData,
+								checkpoint,
+							})
+							deployedContracts.signatureVerifier = await signatureVerifier.getAddress()
+							console.log(`MuonSignatureVerifier deployed at: ${deployedContracts.signatureVerifier}`)
+							deploymentResults.push({
+								contract: "MuonSignatureVerifier",
+								address: deployedContracts.signatureVerifier,
+								status: wasAlreadyDeployed ? "skipped" : "success",
+								timestamp: new Date().toISOString(),
+							})
+						} catch (err: any) {
+							console.error(`Failed to deploy MuonSignatureVerifier: ${err.message}`)
+							deploymentResults.push({
+								contract: "MuonSignatureVerifier",
+								address: "N/A",
+								status: "failed",
+								error: err.message,
+								timestamp: new Date().toISOString(),
+							})
+							throw err
+						}
+					}
+					console.log()
+				},
+			})
+
+			await runDeploymentStep(checkpoint, {
 				id: "accountLayerDiamond",
 				title: "Deploying AccountLayer Diamond",
-				order: 3,
+				order: 4,
 				run: async () => {
 					try {
 						const wasAlreadyComplete = !!checkpoint.contracts.accountLayerDiamond?.diamondCutComplete
@@ -266,7 +352,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			await runDeploymentStep(checkpoint, {
 				id: "instantLayer",
 				title: "Deploying InstantLayer",
-				order: 4,
+				order: 5,
 				run: async () => {
 					try {
 						const wasAlreadyDeployed = !!checkpoint.contracts.instantLayer
@@ -303,7 +389,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				await runDeploymentStep(checkpoint, {
 					id: "symmioPartyB",
 					title: "Deploying SymmioPartyB",
-					order: 5,
+					order: 6,
 					run: async () => {
 						try {
 							const wasAlreadyDeployed = !!checkpoint.contracts.symmioPartyB
@@ -340,7 +426,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			await runDeploymentStep(checkpoint, {
 				id: "systemSetup",
 				title: "Setting up system roles and connections",
-				order: 6,
+				order: 7,
 				run: async () => {
 					if (!checkpoint.setupComplete?.systemRoles) {
 						await setupSystem(hre, deployedContracts, config, checkpoint)
@@ -358,7 +444,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				await runDeploymentStep(checkpoint, {
 					id: "instantLayerTemplates",
 					title: "Setting up InstantLayer templates",
-					order: 7,
+					order: 8,
 					run: async () => {
 						if (!checkpoint.setupComplete?.instantLayerTemplates) {
 							await setupInstantLayerTemplates(hre, deployedContracts, checkpoint)
@@ -377,7 +463,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				await runDeploymentStep(checkpoint, {
 					id: "dummyAffiliate",
 					title: "Registering dummy affiliate",
-					order: 8,
+					order: 9,
 					run: async () => {
 						if (!checkpoint.setupComplete?.dummyAffiliate) {
 							const accountManagerAddress = await registerDummyAffiliate(hre, deployedContracts, config, checkpoint)
@@ -414,7 +500,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			await runDeploymentStep(checkpoint, {
 				id: "transferOwnership",
 				title: "Transferring Diamond ownership to admin",
-				order: 9,
+				order: 10,
 				run: async () => {
 					const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
 					await checkpointedStep(checkpoint, "setup.transferOwnership", "Transferring ownership to admin", async () => {
@@ -469,13 +555,22 @@ async function setupSystem(
 	const deployerAddress = deployer.address
 
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", deployedContracts.diamond!)
+	const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", deployedContracts.diamond!)
 	const alControlFacet = await ethers.getContractAt(
 		"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
 		deployedContracts.accountLayerDiamond!,
 	)
 	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
+	const signatureVerifier = deployedContracts.signatureVerifier
+		? await ethers.getContractAt("MuonSignatureVerifier", deployedContracts.signatureVerifier)
+		: null
 	const roleHash = (role: string) => ethers.keccak256(ethers.toUtf8Bytes(role))
 	const instantLayerDefaultAdminRole = await instantLayer.DEFAULT_ADMIN_ROLE()
+	const requireMuonSetterOnVerifier = (hasSetterRole: boolean) => {
+		if (!hasSetterRole) {
+			throw new Error("Cannot seed MuonSignatureVerifier: deployer does not have SETTER_ROLE on the verifier")
+		}
+	}
 
 	// Diamond admin setup
 	await checkpointedStep(checkpoint, "setup.setDeployerAdmin", "Granting DEFAULT_ADMIN_ROLE to deployer on Diamond", async () => {
@@ -560,6 +655,144 @@ async function setupSystem(
 	await checkpointedStep(checkpoint, "setup.ilSetAccountLayer", "Setting AccountLayer on InstantLayer", async () => {
 		await instantLayer.connect(deployer).setAccountLayer(deployedContracts.accountLayerDiamond!)
 	})
+
+	// MuonSignatureVerifier setup
+	if (signatureVerifier) {
+		const signatureVerifierDefaultAdminRole = await signatureVerifier.DEFAULT_ADMIN_ROLE()
+		const signatureVerifierSetterRole = await signatureVerifier.SETTER_ROLE()
+		const deployerIsVerifierAdmin = await signatureVerifier.hasRole(signatureVerifierDefaultAdminRole, deployerAddress)
+		const deployerIsVerifierSetter = await signatureVerifier.hasRole(signatureVerifierSetterRole, deployerAddress)
+
+		if (deployerIsVerifierAdmin) {
+			await checkpointedStep(checkpoint, "setup.msvDefaultAdmin", "Granting DEFAULT_ADMIN_ROLE on MuonSignatureVerifier to admin", async () => {
+				await signatureVerifier.connect(deployer).grantRole(signatureVerifierDefaultAdminRole, config.admin)
+			})
+
+			await checkpointedStep(checkpoint, "setup.msvSetterRole", "Granting SETTER_ROLE on MuonSignatureVerifier to admin", async () => {
+				await signatureVerifier.connect(deployer).grantRole(signatureVerifierSetterRole, config.admin)
+			})
+		} else {
+			console.log("  ⚠ Skipping verifier role grants: deployer is not DEFAULT_ADMIN_ROLE on MuonSignatureVerifier")
+		}
+
+		await checkpointedStep(checkpoint, "setup.setSignatureVerifier", "Setting MuonSignatureVerifier on Diamond", async () => {
+			await controlFacet.connect(deployer).setSignatureVerifierAddress(deployedContracts.signatureVerifier!)
+		})
+
+		const shouldSeedPublicKey = !!config.muonPublicKeyX || !!config.muonPublicKeyParity
+		if (shouldSeedPublicKey) {
+			requireMuonSetterOnVerifier(deployerIsVerifierSetter)
+			if (config.muonPublicKeyX && config.muonPublicKeyParity) {
+				const parity = Number(config.muonPublicKeyParity)
+				if (parity !== 0 && parity !== 1) {
+					throw new Error(`Invalid MUON_PUBLIC_KEY_PARITY: ${config.muonPublicKeyParity}. Expected 0 or 1`)
+				}
+				await checkpointedStep(checkpoint, "setup.msvPublicKey", "Adding Muon public key on MuonSignatureVerifier", async () => {
+					const existingKeys = await signatureVerifier.getAllPublicKeys()
+					const exists = existingKeys.some(
+						(key: { x: bigint; parity: number }) => key.x.toString() === config.muonPublicKeyX && key.parity === parity,
+					)
+					if (exists) {
+						console.log("  ⏭ Muon public key already present on MuonSignatureVerifier")
+						return
+					}
+					await signatureVerifier.connect(deployer).addPublicKey({
+						x: config.muonPublicKeyX,
+						parity,
+					})
+				})
+			} else {
+				console.log("  ⚠ Skipping addPublicKey: both MUON_PUBLIC_KEY_X and MUON_PUBLIC_KEY_PARITY are required")
+			}
+		}
+
+		if (config.muonGatewaySigners.length > 0) {
+			requireMuonSetterOnVerifier(deployerIsVerifierSetter)
+			await checkpointedBatch(
+				checkpoint,
+				"setup.msvGatewaySigners",
+				config.muonGatewaySigners,
+				"Adding gateway signers on MuonSignatureVerifier",
+				async signer => {
+					const existingSigners = (await signatureVerifier.getAllGatewaySigners()).map((s: string) => s.toLowerCase())
+					if (existingSigners.includes(signer.toLowerCase())) return
+					await signatureVerifier.connect(deployer).addGatewaySigner(signer)
+				},
+			)
+		}
+	}
+
+	// Muon runtime configuration on Diamond (optional via env)
+	const shouldConfigureMuonIds = !!config.muonAppId
+	const shouldConfigureMuonTimes = !!config.muonUpnlValidTime || !!config.muonPriceValidTime
+	if (shouldConfigureMuonIds || shouldConfigureMuonTimes) {
+		if (config.admin.toLowerCase() !== deployerAddress.toLowerCase()) {
+			await checkpointedStep(checkpoint, "setup.muonSetterOnDeployer", "Granting MUON_SETTER_ROLE to deployer for setup", async () => {
+				await controlFacet.connect(deployer).grantRole(deployerAddress, roleHash("MUON_SETTER_ROLE"))
+			})
+		}
+	}
+
+	if (shouldConfigureMuonIds) {
+		await checkpointedStep(checkpoint, "setup.setMuonIds", "Setting Muon app ID on Diamond", async () => {
+			await controlFacet.connect(deployer).setMuonIds(config.muonAppId)
+		})
+	}
+
+	if (config.muonUpnlValidTime && config.muonPriceValidTime) {
+		await checkpointedStep(checkpoint, "setup.setMuonConfig", "Setting Muon validity config on Diamond", async () => {
+			await controlFacet.connect(deployer).setMuonConfig(config.muonUpnlValidTime, config.muonPriceValidTime)
+		})
+	} else if (shouldConfigureMuonTimes) {
+		console.log("  ⚠ Skipping setMuonConfig: both MUON_UPNL_VALID_TIME and MUON_PRICE_VALID_TIME are required")
+	}
+
+	// Muon verification via view/read calls
+	if (signatureVerifier && deployedContracts.signatureVerifier) {
+		await checkpointedStep(checkpoint, "setup.verifyMuonViews", "Verifying Muon configuration via view calls", async () => {
+			const configuredVerifier = (await viewFacet.getSignatureVerifier()).toLowerCase()
+			const expectedVerifier = deployedContracts.signatureVerifier!.toLowerCase()
+			if (configuredVerifier !== expectedVerifier) {
+				throw new Error(`Muon verifier mismatch: expected ${expectedVerifier}, got ${configuredVerifier}`)
+			}
+
+			if (config.muonAppId) {
+				const muonAppId = await viewFacet.getMuonIds()
+				if (muonAppId.toString() !== config.muonAppId) {
+					throw new Error(`Muon app ID mismatch: expected ${config.muonAppId}, got ${muonAppId.toString()}`)
+				}
+			}
+
+			if (config.muonUpnlValidTime && config.muonPriceValidTime) {
+				const muonConfig = await viewFacet.getMuonConfig()
+				const upnlValidTime = muonConfig[0]
+				const priceValidTime = muonConfig[1]
+				if (upnlValidTime.toString() !== config.muonUpnlValidTime || priceValidTime.toString() !== config.muonPriceValidTime) {
+					throw new Error(
+						`Muon validity mismatch: expected (${config.muonUpnlValidTime}, ${config.muonPriceValidTime}), got (${upnlValidTime.toString()}, ${priceValidTime.toString()})`,
+					)
+				}
+			}
+
+			if (config.muonPublicKeyX && config.muonPublicKeyParity) {
+				const parity = Number(config.muonPublicKeyParity)
+				const keys = await signatureVerifier.getAllPublicKeys()
+				const found = keys.some((key: { x: bigint; parity: number }) => key.x.toString() === config.muonPublicKeyX && key.parity === parity)
+				if (!found) {
+					throw new Error("Expected Muon public key is not present on MuonSignatureVerifier")
+				}
+			}
+
+			if (config.muonGatewaySigners.length > 0) {
+				const existingSigners = (await signatureVerifier.getAllGatewaySigners()).map((s: string) => s.toLowerCase())
+				for (const signer of config.muonGatewaySigners) {
+					if (!existingSigners.includes(signer.toLowerCase())) {
+						throw new Error(`Expected Muon gateway signer is missing: ${signer}`)
+					}
+				}
+			}
+		})
+	}
 
 	// Diamond system parameters
 	console.log("  Configuring Diamond system parameters...")
@@ -786,6 +1019,13 @@ function generateReport(deployments: DeploymentResult[], config: ReturnType<type
 			deployPartyB: config.deployPartyB,
 			registerDummyAffiliate: config.registerDummyAffiliate,
 			setupInstantLayerTemplates: config.setupInstantLayerTemplates,
+			signatureVerifierAddress: config.signatureVerifierAddress,
+			muonAppId: config.muonAppId,
+			muonUpnlValidTime: config.muonUpnlValidTime,
+			muonPriceValidTime: config.muonPriceValidTime,
+			muonPublicKeyX: config.muonPublicKeyX,
+			muonPublicKeyParity: config.muonPublicKeyParity,
+			muonGatewaySigners: config.muonGatewaySigners,
 		},
 		summary: {
 			totalContracts: deployments.length,
@@ -810,6 +1050,7 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	console.log("-".repeat(80))
 	if (deployedContracts.collateral) console.log(`Collateral:           ${deployedContracts.collateral}`)
 	if (deployedContracts.diamond) console.log(`Diamond:              ${deployedContracts.diamond}`)
+	if (deployedContracts.signatureVerifier) console.log(`MuonSignatureVerifier: ${deployedContracts.signatureVerifier}`)
 	if (deployedContracts.accountLayerDiamond) console.log(`AccountLayerDiamond:  ${deployedContracts.accountLayerDiamond}`)
 	if (deployedContracts.instantLayer) console.log(`InstantLayer:         ${deployedContracts.instantLayer}`)
 	if (deployedContracts.symmioPartyB) console.log(`SymmioPartyB:         ${deployedContracts.symmioPartyB}`)
@@ -823,6 +1064,14 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	console.log(`Deploy PartyB:               ${report.config.deployPartyB}`)
 	console.log(`Register Dummy Affiliate:    ${report.config.registerDummyAffiliate}`)
 	console.log(`Setup InstantLayer Templates: ${report.config.setupInstantLayerTemplates}`)
+	console.log(`Muon App ID:                 ${report.config.muonAppId || "(not set)"}`)
+	console.log(`Muon UPNL Valid Time:        ${report.config.muonUpnlValidTime || "(not set)"}`)
+	console.log(`Muon Price Valid Time:       ${report.config.muonPriceValidTime || "(not set)"}`)
+	console.log(`Muon Public Key X:           ${report.config.muonPublicKeyX || "(not set)"}`)
+	console.log(`Muon Public Key Parity:      ${report.config.muonPublicKeyParity || "(not set)"}`)
+	console.log(
+		`Muon Gateway Signers:        ${report.config.muonGatewaySigners.length > 0 ? report.config.muonGatewaySigners.join(",") : "(not set)"}`,
+	)
 	console.log()
 
 	console.log("=".repeat(80))
