@@ -251,6 +251,13 @@ contract ViewFacetQuote is IViewFacetQuote {
 		return QuoteStorage.layout().partyAPendingQuotes[partyA];
 	}
 
+	/// @notice Returns the number of pending quotes for a party A (single SLOAD, cheaper than getPartyAPendingQuotes).
+	/// @param partyA The address of party A.
+	/// @return The number of pending quotes.
+	function partyAPendingQuotesCount(address partyA) external view returns (uint256) {
+		return QuoteStorage.layout().partyAPendingQuotes[partyA].length;
+	}
+
 	/// @notice Returns an array of pending quotes associated with a party B address and a specific party A address.
 	/// @param partyB The address of party B.
 	/// @param partyA The address of party A.

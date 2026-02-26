@@ -135,6 +135,10 @@ contract MockHook is ISymmioHook {
 		emit OnFeeCharged(quoteId, amount, partyA, partyB, symbolId, affiliate, feeType);
 	}
 
+	function onLiquidationSettled(address /* partyA */) external pure override {
+		return;
+	}
+
 	// Getters for test assertions
 	function getLastOpenCall()
 		external

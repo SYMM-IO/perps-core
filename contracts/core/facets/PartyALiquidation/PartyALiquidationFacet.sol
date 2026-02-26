@@ -10,7 +10,6 @@ import { IPartyALiquidationFacet } from "./IPartyALiquidationFacet.sol";
 import { PartyALiquidationFacetImpl } from "./PartyALiquidationFacetImpl.sol";
 import { DeferredLiquidationFacetImpl } from "./DeferredLiquidationFacetImpl.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LiquidationSig, DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
 
@@ -112,9 +111,12 @@ contract PartyALiquidationFacet is Pausable, Accessibility, IPartyALiquidationFa
 	/// @param partyA The address of Party A to settle liquidation for.
 	/// @param partyBs An array of addresses representing Party Bs involved in the settlement.
 	function settlePartyALiquidation(address partyA, address[] memory partyBs) external whenNotLiquidationPaused {
-		(int256[] memory settleAmounts, bytes memory liquidationId) = PartyALiquidationFacetImpl.settlePartyALiquidation(partyA, partyBs);
+		(int256[] memory settleAmounts, bytes memory liquidationId, bool fullySettled) = PartyALiquidationFacetImpl.settlePartyALiquidation(
+			partyA,
+			partyBs
+		);
 		emit SettlePartyALiquidation(partyA, partyBs, settleAmounts, liquidationId);
-		if (MAStorage.layout().liquidationStatus[partyA] == false) {
+		if (fullySettled) {
 			emit FullyLiquidatedPartyA(partyA, liquidationId);
 		}
 	}

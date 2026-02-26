@@ -9,6 +9,7 @@ import { Accessibility } from "../../utils/Accessibility.sol";
 import { IClearingHouseFacet } from "./IClearingHouseFacet.sol";
 import { ClearingHouseFacetImpl } from "./ClearingHouseFacetImpl.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { LibHook } from "../../libraries/LibHook.sol";
 
 contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 	/// @notice Initiates clearing house liquidation for a cross-margin PartyB.
@@ -118,16 +119,26 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 		address[] memory settledPartyBs
 	) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
 		bytes memory liquidationId = ClearingHouseFacetImpl.settlePartyATakeover(partyA, settledPartyBs);
+		LibHook.callLiquidationSettledHooks(partyA);
 		emit SettlePartyATakeover(partyA, liquidationId);
 	}
 
 	/// @notice Settles the clearing house liquidation for a cross PartyB.
 	/// @dev Only applicable to cross PartyB liquidation flow.
-	///      Requires all positions closed and all funds distributed.
+	///      Supports pagination: call with finalize=false to fire hooks for batches of settled partyAs,
+	///      then call with finalize=true on the last batch to complete the settlement.
 	/// @param partyB The address of Party B.
-	function settleCrossPartyBLiquidation(address partyB) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
-		ClearingHouseFacetImpl.settleCrossPartyBLiquidation(partyB);
-		emit SettleCrossPartyBLiquidation(partyB);
+	/// @param settledPartyAs The partyAs whose liquidation hooks should be called in this batch.
+	/// @param finalize Whether to finalize the settlement (checks all positions closed and funds distributed).
+	function settleCrossPartyBLiquidation(
+		address partyB,
+		address[] memory settledPartyAs,
+		bool finalize
+	) external whenNotLiquidationPaused onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
+		ClearingHouseFacetImpl.settleCrossPartyBLiquidation(partyB, settledPartyAs, finalize);
+		if (finalize) {
+			emit SettleCrossPartyBLiquidation(partyB);
+		}
 	}
 
 	/// @notice Applies a soft liquidation penalty to a Party B by deducting from their allocated and/or deposit balances.

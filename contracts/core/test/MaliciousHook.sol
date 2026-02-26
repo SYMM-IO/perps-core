@@ -107,6 +107,10 @@ contract MaliciousHook is ISymmioHook {
 		return;
 	}
 
+	function onLiquidationSettled(address /* partyA */) external pure override {
+		return;
+	}
+
 	function resetState() external {
 		attemptedReentry = false;
 		reentrySucceeded = false;

@@ -16,8 +16,6 @@ import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/Q
 import { LiquidationSig, MuonStorage } from "../../storages/MuonStorage.sol";
 import { LiquidationType, LiquidationDetail, LiquidationSettlementState, Price, AccountStorage } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
-import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
-import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 
@@ -94,10 +92,14 @@ library PartyALiquidationFacetImpl {
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
-		liquidatedAmounts = new uint256[](quoteLayout.partyAPendingQuotes[partyA].length);
+		uint256 pendingCount = quoteLayout.partyAPendingQuotes[partyA].length;
+		liquidatedAmounts = new uint256[](pendingCount);
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
-		for (uint256 index = 0; index < quoteLayout.partyAPendingQuotes[partyA].length; index++) {
-			Quote storage quote = quoteLayout.quotes[quoteLayout.partyAPendingQuotes[partyA][index]];
+		uint256[] memory pendingQuoteIds = new uint256[](pendingCount);
+		for (uint256 index = 0; index < pendingCount; index++) {
+			uint256 quoteId = quoteLayout.partyAPendingQuotes[partyA][index];
+			pendingQuoteIds[index] = quoteId;
+			Quote storage quote = quoteLayout.quotes[quoteId];
 			if (
 				(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) &&
 				quoteLayout.partyBPendingQuotes[quote.partyB][partyA].length > 0
@@ -119,6 +121,11 @@ library PartyALiquidationFacetImpl {
 		}
 		accountLayout.pendingLockedBalances[partyA].makeZero();
 		delete quoteLayout.partyAPendingQuotes[partyA];
+		// Fire hooks after pending array is deleted so core state is consistent when hooks run
+		for (uint256 i = 0; i < pendingQuoteIds.length; i++) {
+			Quote storage quote = quoteLayout.quotes[pendingQuoteIds[i]];
+			LibHook.callCancelQuoteHooks(pendingQuoteIds[i], partyA, quote.partyB, quote.affiliate);
+		}
 	}
 
 	/// @notice Liquidates open positions of Party A, settles PnL per Party B, and detects disputes
@@ -295,7 +302,7 @@ library PartyALiquidationFacetImpl {
 	function settlePartyALiquidation(
 		address partyA,
 		address[] memory partyBs
-	) internal returns (int256[] memory settleAmounts, bytes memory liquidationId) {
+	) internal returns (int256[] memory settleAmounts, bytes memory liquidationId, bool fullySettled) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -368,6 +375,8 @@ library PartyALiquidationFacetImpl {
 			maLayout.liquidationStatus[partyA] = false;
 			maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;
 			LibAccount.increasePartyANonce(partyA);
+			LibHook.callLiquidationSettledHooks(partyA);
+			fullySettled = true;
 		}
 	}
 }

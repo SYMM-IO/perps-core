@@ -184,13 +184,6 @@ library ClearingHouseFacetImpl {
 		}
 	}
 
-	/// @notice Calls cancel quote hooks and marks the quote as liquidated pending.
-	function _callCancelQuoteHooksAndUpdateStatus(Quote storage quote, address partyA, address partyB) private {
-		LibHook.callCancelQuoteHooks(quote.id, partyA, partyB, quote.affiliate);
-		quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
-		quote.statusModifyTimestamp = block.timestamp;
-	}
-
 	/// @notice Clears all pending quotes between a partyB and partyA and zeroes out the associated locked balances.
 	function _clearPartyBPendingQuotes(address partyB, address partyA) private {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -222,16 +215,23 @@ library ClearingHouseFacetImpl {
 				address partyA = counterparties[j];
 				_autoTakeoverPartyALiquidation(partyA);
 				uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
+
+				// Collect cancelled quoteIds for hook calls after state changes
+				uint256[] memory cancelledIds = new uint256[](pendingQuotes.length);
+				uint256 cancelledCount = 0;
+
 				for (uint256 i = 0; i < pendingQuotes.length; ) {
 					Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
 					if (quote.partyB == partyB) {
+						cancelledIds[cancelledCount++] = pendingQuotes[i];
 						accountLayout.pendingLockedBalances[partyA].subQuote(quote);
 						if (MAStorage.layout().liquidationStatus[partyA]) {
 							accountLayout.partyAReimbursement[partyA] += LibQuote.getOpenTradingFee(quote.id);
 						} else {
 							LibAccount.refundOpenTradingFee(quote.id, partyA);
 						}
-						_callCancelQuoteHooksAndUpdateStatus(quote, partyA, partyB);
+						quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
+						quote.statusModifyTimestamp = block.timestamp;
 						pendingQuotes[i] = pendingQuotes[pendingQuotes.length - 1];
 						pendingQuotes.pop();
 					} else {
@@ -240,15 +240,25 @@ library ClearingHouseFacetImpl {
 				}
 				_clearPartyBPendingQuotes(partyB, partyA);
 				LibConnections.removeConnectionIfNoPositions(partyA, partyB);
+
+				// Fire hooks after state changes so core state is consistent when hooks run
+				for (uint256 k = 0; k < cancelledCount; k++) {
+					Quote storage quote = quoteLayout.quotes[cancelledIds[k]];
+					LibHook.callCancelQuoteHooks(cancelledIds[k], partyA, partyB, quote.affiliate);
+				}
 			}
 			liquidatedAmounts = new uint256[](0); // Not tracked for cross partyB
 		} else {
 			// PartyA takeover - process all of partyA's pending quotes
 			address partyA = subject;
-			liquidatedAmounts = new uint256[](quoteLayout.partyAPendingQuotes[partyA].length);
+			uint256 pendingCount = quoteLayout.partyAPendingQuotes[partyA].length;
+			liquidatedAmounts = new uint256[](pendingCount);
+			uint256[] memory pendingQuoteIds = new uint256[](pendingCount);
 
-			for (uint256 index = 0; index < quoteLayout.partyAPendingQuotes[partyA].length; index++) {
-				Quote storage quote = quoteLayout.quotes[quoteLayout.partyAPendingQuotes[partyA][index]];
+			for (uint256 index = 0; index < pendingCount; index++) {
+				uint256 quoteId = quoteLayout.partyAPendingQuotes[partyA][index];
+				pendingQuoteIds[index] = quoteId;
+				Quote storage quote = quoteLayout.quotes[quoteId];
 				if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
 					_clearPartyBPendingQuotes(quote.partyB, partyA);
 					LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
@@ -257,11 +267,18 @@ library ClearingHouseFacetImpl {
 				accountLayout.partyAReimbursement[partyA] += fee;
 				// No BalanceChangePartyA event: reimbursement is escrow during takeover.
 				// settlePartyATakeover handles final fund distribution.
-				_callCancelQuoteHooksAndUpdateStatus(quote, partyA, quote.partyB);
+				quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
+				quote.statusModifyTimestamp = block.timestamp;
 				liquidatedAmounts[index] = quote.quantity;
 			}
 			accountLayout.pendingLockedBalances[partyA].makeZero();
 			delete quoteLayout.partyAPendingQuotes[partyA];
+
+			// Fire hooks after pending array is deleted so core state is consistent when hooks run
+			for (uint256 i = 0; i < pendingQuoteIds.length; i++) {
+				Quote storage quote = quoteLayout.quotes[pendingQuoteIds[i]];
+				LibHook.callCancelQuoteHooks(pendingQuoteIds[i], partyA, quote.partyB, quote.affiliate);
+			}
 		}
 	}
 
@@ -422,21 +439,35 @@ library ClearingHouseFacetImpl {
 	}
 
 	/// @notice Settles the clearing house liquidation for a cross partyB
+	/// @dev Supports pagination: call with finalize=false to fire hooks for batches of settled partyAs,
+	///      then call with finalize=true on the last batch to complete the settlement.
 	/// @param partyB The cross partyB being settled
-	function settleCrossPartyBLiquidation(address partyB) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+	/// @param settledPartyAs The partyAs whose liquidation hooks should be called in this batch
+	/// @param finalize Whether to finalize the settlement (checks all positions closed and funds distributed)
+	function settleCrossPartyBLiquidation(address partyB, address[] memory settledPartyAs, bool finalize) internal {
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 		CrossLiquidationDetail storage detail = chLayout.crossLiquidationDetails[partyB];
 
 		require(detail.inProgress, "ClearingHouseFacet: Cross liquidation not in progress");
-		require(quoteLayout.partyBPositionsCount[partyB][address(0)] == 0, "ClearingHouseFacet: PartyB has still open positions");
-		// NOTE: Using partyBPendingLockedBalances as a proxy for pending quotes; it can be zero even with pending quotes in edge cases.
-		require(accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0, "ClearingHouseFacet: PartyB has pending quotes");
-		require(detail.deallocatedPool == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
 
-		detail.inProgress = false;
-		detail.timestamp = 0;
+		if (finalize) {
+			require(QuoteStorage.layout().partyBPositionsCount[partyB][address(0)] == 0, "ClearingHouseFacet: PartyB has still open positions");
+			// NOTE: Using partyBPendingLockedBalances as a proxy for pending quotes; it can be zero even with pending quotes in edge cases.
+			require(
+				AccountStorage.layout().partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0,
+				"ClearingHouseFacet: PartyB has pending quotes"
+			);
+			require(detail.deallocatedPool == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
+
+			detail.inProgress = false;
+			detail.timestamp = 0;
+		}
+
+		// Fire hooks AFTER finalize clears inProgress, so bound VAs can be deleted
+		// For non-finalize calls, hooks still fire but bound VAs will be deferred (expected behavior)
+		for (uint256 i = 0; i < settledPartyAs.length; i++) {
+			LibHook.callLiquidationSettledHooks(settledPartyAs[i]);
+		}
 	}
 
 	event AutoTakeoverPartyALiquidation(address indexed partyA, bytes liquidationId);

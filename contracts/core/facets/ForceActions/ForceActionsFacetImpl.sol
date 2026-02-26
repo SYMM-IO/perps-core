@@ -16,6 +16,7 @@ import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { HighLowPriceSig, SettlementSig } from "../../storages/MuonStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
+import { LibHook } from "../../libraries/LibHook.sol";
 
 library ForceActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -43,6 +44,7 @@ library ForceActionsFacetImpl {
 
 		LibQuote.removeFromPendingQuotes(quote);
 		LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
+		LibHook.callCancelQuoteHooks(quoteId, quote.partyA, quote.partyB, quote.affiliate);
 	}
 
 	/// @notice Force-cancels a pending close request after the force cancel close cooldown has elapsed.
