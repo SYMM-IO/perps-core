@@ -131,16 +131,16 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	) private view returns (address) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
-		address[] storage pool = ahLayout.deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
-		if (pool.length > 0) {
-			return pool[pool.length - 1];
-		}
-
 		if (ahLayout.subAccounts[subAccount].singleVAMode) {
 			address existingVA = ahLayout.activeVAByKey[subAccount][isolationType][symbolId];
 			if (existingVA != address(0) && ahLayout.virtualAccounts[existingVA].isExists) {
 				return existingVA;
 			}
+		}
+
+		address[] storage pool = ahLayout.deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
+		if (pool.length > 0) {
+			return pool[pool.length - 1];
 		}
 
 		uint256 nextNonce = ahLayout.subAccountVirtualNonces[subAccount] + 1;
