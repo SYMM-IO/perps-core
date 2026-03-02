@@ -150,11 +150,13 @@ library LibAccountLayerUtils {
 
 		// Set hook context before calling
 		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true });
+		afLayout.activeHookCaller = hook;
 
 		(bool success, bytes memory result) = hook.call(data);
 
 		// Clear hook context after call
 		delete afLayout.hookContext;
+		afLayout.activeHookCaller = address(0);
 
 		// Restore signer after hook call
 		ahLayout.globalSigner = previousSigner;

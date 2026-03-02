@@ -120,6 +120,9 @@ library AffiliateStorage {
 		/// @dev Maps affiliate => selector => allowed. callAsAffiliate executes with
 		///      setSigner(affiliate) on the target Symmio core.
 		mapping(address => mapping(bytes4 => bool)) callAllowedSelectors;
+		/// @notice The currently executing hook contract during an active hook context
+		/// @dev Used to bind executeForAccount authorization to the exact hook caller.
+		address activeHookCaller;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
