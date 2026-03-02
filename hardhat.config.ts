@@ -82,6 +82,14 @@ const customChains = [
 			browserURL: "https://mantlescan.xyz",
 		},
 	},
+	{
+		network: "hyperevm",
+		chainId: 999,
+		urls: {
+			apiURL: "https://api.hyperevmscan.io/api",
+			browserURL: "https://hyperevmscan.io",
+		},
+	},
 ]
 
 export default defineConfig({
@@ -137,6 +145,7 @@ export default defineConfig({
 		mantle: createNetworkConfig("mantle", "https://mantle.drpc.org"),
 		mantle2: createNetworkConfig("mantle2", "https://mantle.drpc.org"),
 		arbitrum: createNetworkConfig("arbitrum", "https://arbitrum.llamarpc.com"),
+		hyperevm: createNetworkConfig("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
 	},
 	verify: {
 		etherscan: {

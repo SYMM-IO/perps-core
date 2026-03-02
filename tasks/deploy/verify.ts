@@ -134,9 +134,10 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 	})
 	.setAction(async () => ({
 		default: async (args: { skip: number }, hre: any) => {
-			const { ethers } = await getConnection(hre)
+			const connection = await getConnection(hre)
+			const { ethers } = connection
 			const chainId = Number((await ethers.provider.getNetwork()).chainId)
-			const network = hre.network?.name || "localhost"
+			const network = connection.networkName || "unknown"
 
 			console.log("")
 			console.log("=".repeat(80))
@@ -1192,9 +1193,10 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 	})
 	.setAction(async () => ({
 		default: async (args: any, hre: any) => {
-			const { ethers } = await getConnection(hre)
+			const connection = await getConnection(hre)
+			const { ethers } = connection
 			const chainId = (await ethers.provider.getNetwork()).chainId
-			const network = hre.network?.name || "localhost"
+			const network = connection.networkName || "unknown"
 
 			// Convert empty strings to undefined for cleaner handling
 			let addresses = {
