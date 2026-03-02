@@ -3831,6 +3831,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 		describe("Legacy Account Migration", async () => {
 			let legacyMultiAccount: any
 			let legacyAccounts: string[]
+			let registerAffiliateWithInvalidLegacyEntry: () => Promise<void>
 
 			beforeEach(async () => {
 				context = await loadFixture(initializeFixture)
@@ -3856,6 +3857,28 @@ export function shouldBehaveLikeAccountLayer(): void {
 					}
 				}
 				expect(legacyAccounts.length).to.equal(3)
+
+				registerAffiliateWithInvalidLegacyEntry = async () => {
+					const badLegacyAffiliate = {
+						name: "legacy-invalid-owner-call",
+						brandColor: "111111",
+						admin: context.signers.admin.address,
+						stakeholders: [
+							{
+								receiver: context.signers.admin.address,
+								share: decimal(9n, 17),
+							},
+						],
+						symmioShare: decimal(1n, 17),
+						metadata: "0x",
+						legacyMultiAccounts: [ZeroAddress],
+						symmioCores: [context.diamond],
+					}
+
+					const badAffiliateAddress = await context.alAffiliateFacet.requestToRegisterAffiliate.staticCall(badLegacyAffiliate)
+					await context.alAffiliateFacet.requestToRegisterAffiliate(badLegacyAffiliate)
+					await context.alAffiliateFacet.approveAffiliate(badAffiliateAddress)
+				}
 			})
 
 			describe("getLegacyAccountsOfUser", async () => {
@@ -3902,6 +3925,23 @@ export function shouldBehaveLikeAccountLayer(): void {
 					expect(accounts[0].alreadyImported).to.be.true
 					expect(accounts[1].alreadyImported).to.be.false
 					expect(accounts[2].alreadyImported).to.be.false
+				})
+			})
+
+			describe("invalid legacy owner-call resilience", async () => {
+				it("should skip invalid legacy entries in ownerOf resolution", async () => {
+					await registerAffiliateWithInvalidLegacyEntry()
+
+					expect(await context.alViewFacet.ownerOf(context.signers.others[0].address)).to.equal(ZeroAddress)
+				})
+
+				it("should preserve CoreNotFound behavior in getRelatedCore when owner lookup fails on invalid legacy entry", async () => {
+					await registerAffiliateWithInvalidLegacyEntry()
+
+					await expect(context.alViewFacet.getRelatedCore(context.signers.others[0].address)).to.be.revertedWithCustomError(
+						context.alViewFacet,
+						"CoreNotFound",
+					)
 				})
 			})
 
