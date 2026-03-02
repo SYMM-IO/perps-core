@@ -2124,6 +2124,44 @@ export function shouldBehaveLikeAccountLayer(): void {
 					context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [encodedCancelQuote, sendQuoteCallData]),
 				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
 			})
+
+			it("should reject standard deposit paths for deleted virtual accounts", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+				await cancelVirtualAccountQuote(virtualAccountAddress)
+
+				const deletedData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(deletedData.isExists).to.be.false
+
+				await context.collateral.connect(context.signers.user).approve(context.diamond, BALANCES.DEPOSIT_AMOUNT)
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).depositForAccount(virtualAccountAddress, BALANCES.SMALL_AMOUNT),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).depositAndAllocateForAccount(virtualAccountAddress, BALANCES.SMALL_AMOUNT),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
+			})
+
+			it("should reject express deposit paths for deleted virtual accounts", async () => {
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+				await cancelVirtualAccountQuote(virtualAccountAddress)
+
+				const deletedData = await context.alViewFacet.getVirtualAccount(virtualAccountAddress)
+				expect(deletedData.isExists).to.be.false
+
+				await context.collateral.connect(context.signers.user).approve(context.accountLayerDiamond, BALANCES.DEPOSIT_AMOUNT)
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).depositForAccountWithExpressRate(virtualAccountAddress, BALANCES.SMALL_AMOUNT),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
+
+				await expect(
+					context.alCoreFacet.connect(context.signers.user).depositAndAllocateForAccountWithExpressRate(virtualAccountAddress, BALANCES.SMALL_AMOUNT),
+				).to.be.revertedWithCustomError(context.alCoreFacet, "AccountDoesNotExist")
+			})
 		})
 
 		describe("Fund return to parent balance on virtual account deletion", async () => {
