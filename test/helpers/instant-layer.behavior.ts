@@ -2238,6 +2238,87 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(quoteIds.length).to.equal(2)
 		})
 
+		it("normalizes VA direct delegation grant to parent key", async function () {
+			const selectorQuote = quoteCallDataLocal.slice(0, 10) as `0x${string}`
+			const expiry = await getBlockTimestamp(DEFAULT_EXPIRY_OFFSET)
+
+			await expect(
+				ctx.context.instantLayer.connect(ctx.partyA1.signer).grantDelegation({
+					account: { addr: virtualAccountAddress, isPartyB: false },
+					delegatedSigner: ctx.context.signers.user2.address,
+					selectors: [selectorQuote],
+					expiryTimestamp: expiry,
+				}),
+			)
+				.to.emit(ctx.context.instantLayer, "DelegationGranted")
+				.withArgs(subAccountAddress, ctx.context.signers.user2.address, selectorQuote, expiry)
+
+			expect(await ctx.context.instantLayer.delegations(subAccountAddress, ctx.context.signers.user2.address, selectorQuote)).to.equal(expiry)
+			expect(await ctx.context.instantLayer.delegations(virtualAccountAddress, ctx.context.signers.user2.address, selectorQuote)).to.equal(0)
+
+			const transferToVa = ctx.context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccountAddress, decimal(500n)])
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer)._call(subAccountAddress, [transferToVa])
+
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+			const op = createSignedOperation(
+				ctx.context.signers.user2.address,
+				symmioAddress,
+				quoteCallDataLocal,
+				{ addr: virtualAccountAddress, isPartyB: false },
+				1n,
+				deadline,
+			)
+			const sig = await signOperation(ctx.context.signers.user2, ctx.domain, ctx.types, op)
+
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+
+			const quoteIds = await ctx.context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+			expect(quoteIds.length).to.equal(2)
+		})
+
+		it("normalizes VA signed delegation grant to parent key", async function () {
+			const selectorQuote = quoteCallDataLocal.slice(0, 10) as `0x${string}`
+			const now = BigInt((await ethers.provider.getBlock("latest"))!.timestamp)
+			const expiry = now + DEFAULT_EXPIRY_OFFSET
+			const deadline = now + 600n
+
+			const signedDelegation = {
+				delegationInfo: {
+					account: { addr: virtualAccountAddress, isPartyB: false },
+					delegatedSigner: ctx.context.signers.user2.address,
+					selectors: [selectorQuote],
+					expiryTimestamp: expiry,
+				},
+				replayAttackHeader: { nonce: 1n, deadline, salt: ethers.id("va-delegation-nonce-1") },
+			}
+			const delegationSig = await ctx.partyA1.signer.signTypedData(ctx.domain, DELEGATE_TYPES, signedDelegation)
+
+			await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).grantBatchDelegationBySig(signedDelegation, delegationSig))
+				.to.emit(ctx.context.instantLayer, "DelegationGranted")
+				.withArgs(subAccountAddress, ctx.context.signers.user2.address, selectorQuote, expiry)
+
+			expect(await ctx.context.instantLayer.delegations(subAccountAddress, ctx.context.signers.user2.address, selectorQuote)).to.equal(expiry)
+			expect(await ctx.context.instantLayer.delegations(virtualAccountAddress, ctx.context.signers.user2.address, selectorQuote)).to.equal(0)
+			expect(await ctx.context.instantLayer.delegationNonces(subAccountAddress)).to.equal(1n)
+			expect(await ctx.context.instantLayer.delegationNonces(virtualAccountAddress)).to.equal(0n)
+
+			const transferToVa = ctx.context.accountFacet.interface.encodeFunctionData("internalTransfer", [virtualAccountAddress, decimal(500n)])
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer)._call(subAccountAddress, [transferToVa])
+
+			const opDeadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+			const op = createSignedOperation(
+				ctx.context.signers.user2.address,
+				symmioAddress,
+				quoteCallDataLocal,
+				{ addr: virtualAccountAddress, isPartyB: false },
+				1n,
+				opDeadline,
+			)
+			const sig = await signOperation(ctx.context.signers.user2, ctx.domain, ctx.types, op)
+
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+		})
+
 		it("decodes sendQuoteWithAffiliateAndData params correctly via _handleSubAccountSendQuote", async function () {
 			// This test verifies LibQuoteParams.decodeQuoteParams correctly decodes sendQuoteWithAffiliateAndData
 			// by going through the SubAccount flow: _call -> selector match -> decodeQuoteParams -> _handleSubAccountSendQuote
@@ -2372,6 +2453,20 @@ export function shouldBehaveLikeInstantLayer(): void {
 			expect(await ctx.context.instantLayer.isDelegationActive(virtualAccountAddress, ctx.context.signers.admin.address, selectorQuote)).to.be.false
 		})
 
+		it("resolves active delegations when queried with VA account", async function () {
+			const selectorQuote = quoteCallDataLocal.slice(0, 10) as `0x${string}`
+			const delegations = await ctx.context.instantLayer.getActiveDelegations(
+				{ addr: virtualAccountAddress, isPartyB: false },
+				[ctx.context.signers.admin.address],
+				[[selectorQuote]],
+			)
+
+			expect(delegations.length).to.equal(1)
+			expect(delegations[0].account.addr).to.equal(virtualAccountAddress)
+			expect(delegations[0].delegatedSigner).to.equal(ctx.context.signers.admin.address)
+			expect(delegations[0].selectors).to.deep.equal([selectorQuote])
+		})
+
 		it("revocation on parent affects virtual account operations", async function () {
 			const selectorQuote = quoteCallDataLocal.slice(0, 10) as `0x${string}`
 
@@ -2402,6 +2497,40 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig = await signOperation(ctx.context.signers.admin, ctx.domain, ctx.types, op)
 
 			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidDelegation")
+		})
+
+		it("normalizes VA revocation input to parent key", async function () {
+			const selectorQuote = quoteCallDataLocal.slice(0, 10) as `0x${string}`
+
+			await ctx.context.instantLayer.setRevocationCooldown(MIN_REVOCATION_COOLDOWN)
+
+			await expect(
+				ctx.context.instantLayer
+					.connect(ctx.partyA1.signer)
+					.initiateRevokeDelegation({ addr: virtualAccountAddress, isPartyB: false }, ctx.context.signers.admin.address, [selectorQuote]),
+			)
+				.to.emit(ctx.context.instantLayer, "RevocationScheduled")
+				.withArgs(subAccountAddress, ctx.context.signers.admin.address, selectorQuote, anyValue)
+
+			expect(
+				await ctx.context.instantLayer.pendingRevocationEta(subAccountAddress, ctx.context.signers.admin.address, selectorQuote),
+			).to.be.greaterThan(0n)
+			expect(await ctx.context.instantLayer.pendingRevocationEta(virtualAccountAddress, ctx.context.signers.admin.address, selectorQuote)).to.equal(
+				0n,
+			)
+
+			await increaseTime(MIN_REVOCATION_COOLDOWN + 1)
+
+			await expect(
+				ctx.context.instantLayer.finalizeRevokeDelegation({ addr: virtualAccountAddress, isPartyB: false }, ctx.context.signers.admin.address, [
+					selectorQuote,
+				]),
+			)
+				.to.emit(ctx.context.instantLayer, "DelegationSelectorRevoked")
+				.withArgs(subAccountAddress, ctx.context.signers.admin.address, selectorQuote)
+
+			expect(await ctx.context.instantLayer.delegations(subAccountAddress, ctx.context.signers.admin.address, selectorQuote)).to.equal(0)
+			expect(await ctx.context.instantLayer.delegations(virtualAccountAddress, ctx.context.signers.admin.address, selectorQuote)).to.equal(0)
 		})
 	})
 
