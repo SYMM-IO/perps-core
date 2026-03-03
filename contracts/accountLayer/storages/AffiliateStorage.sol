@@ -120,6 +120,9 @@ library AffiliateStorage {
 		/// @dev Maps affiliate => selector => allowed. callAsAffiliate executes with
 		///      setSigner(affiliate) on the target Symmio core.
 		mapping(address => mapping(bytes4 => bool)) callAllowedSelectors;
+		/// @notice Integrity lock for pending affiliate registrations
+		/// @dev Maps affiliate => hash(registrant, registration payload)
+		mapping(address => bytes32) pendingRegistrationHashes;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -89,6 +89,7 @@ export async function initializeFixture(): Promise<RunContext> {
 
 	const affiliateAddress = await context.alAffiliateFacet.requestToRegisterAffiliate.staticCall(affiliateData)
 	await context.alAffiliateFacet.requestToRegisterAffiliate(affiliateData)
+	const affiliateHash = await context.alAffiliateFacet.getRegistrationHash(context.signers.admin.address, affiliateData)
 
 	// Register second affiliate
 	const affiliate2Data = {
@@ -109,14 +110,15 @@ export async function initializeFixture(): Promise<RunContext> {
 
 	const affiliate2Address = await context.alAffiliateFacet.requestToRegisterAffiliate.staticCall(affiliate2Data)
 	await context.alAffiliateFacet.requestToRegisterAffiliate(affiliate2Data)
+	const affiliate2Hash = await context.alAffiliateFacet.getRegistrationHash(context.signers.admin.address, affiliate2Data)
 
 	// Approve affiliates - grant AFFILIATE_MANAGER_ROLE to accountLayer diamond on core diamond first
 	await context.controlFacet.connect(context.signers.admin).setAdmin(context.signers.admin.address)
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
-	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliateAddress)
-	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate2Address)
+	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliateAddress, affiliateHash)
+	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate2Address, affiliate2Hash)
 
 	// Set up account managers (affiliate and accountManager are the same address)
 	context.accountManager = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", affiliateAddress)

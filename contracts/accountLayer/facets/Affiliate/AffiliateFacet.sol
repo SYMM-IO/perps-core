@@ -64,7 +64,15 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 			affiliate.symmioCores.add(reg.symmioCores[i]);
 		}
 
+		afLayout.pendingRegistrationHashes[affiliateAddress] = getRegistrationHash(msg.sender, reg);
+
 		emit AffiliateRegistered(affiliateAddress, reg.name);
+	}
+
+	/// @notice Computes a stable registration hash for approval binding
+	/// @dev Includes the registrant so identical payloads from different users are distinct
+	function getRegistrationHash(address registrant, AffiliateRegistration memory reg) public pure returns (bytes32 registrationHash) {
+		return keccak256(abi.encode(registrant, reg));
 	}
 
 	/// @notice Cancels a pending affiliate registration (affiliate admin only)
@@ -89,9 +97,14 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	/// @notice Approves a pending affiliate, deploying its AccountManager and registering it on Symmio cores
 	/// @param affiliate The affiliate address to approve
-	function approveAffiliate(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused {
+	/// @param expectedRegistrationHash Hash of the request reviewed by the approver
+	function approveAffiliate(
+		address affiliate,
+		bytes32 expectedRegistrationHash
+	) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
+		if (afLayout.pendingRegistrationHashes[affiliate] != expectedRegistrationHash) revert InvalidCallData();
 
 		// Deploy AccountManager via AffiliateFacet's internal function
 		address accountManager = _deployAccountManager(afLayout.affiliates[affiliate].registrant, afLayout.affiliates[affiliate].name);
@@ -112,6 +125,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		for (uint256 i = 0; i < legacyAccounts.length; i++) {
 			afLayout.legacyMultiAccounts.add(legacyAccounts[i]);
 		}
+		delete afLayout.pendingRegistrationHashes[affiliate];
 
 		emit AffiliateApproved(affiliate, feeDistributor);
 	}
@@ -376,6 +390,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 		// Now delete the struct (clears all non-mapping fields)
 		delete afLayout.affiliates[affiliate];
+		delete afLayout.pendingRegistrationHashes[affiliate];
 	}
 
 	function _validateFeeShares(Stakeholder[] memory stakeholders, uint256 symmioShare) private pure {

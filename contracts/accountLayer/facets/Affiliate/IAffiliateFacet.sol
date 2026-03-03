@@ -60,6 +60,12 @@ interface IAffiliateFacet is IAffiliateFacetEvents, IAccountLayerErrors {
 	/// @return affiliateAddress The deterministic affiliate address
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external returns (address affiliateAddress);
 
+	/// @notice Computes a registration hash used for approval binding
+	/// @param registrant The registrant address
+	/// @param reg The registration payload
+	/// @return registrationHash The hash bound during approval
+	function getRegistrationHash(address registrant, AffiliateRegistration memory reg) external pure returns (bytes32 registrationHash);
+
 	/// @notice Cancels a pending affiliate registration
 	/// @param affiliate The affiliate address
 	function cancelRegistration(address affiliate) external;
@@ -70,7 +76,8 @@ interface IAffiliateFacet is IAffiliateFacetEvents, IAccountLayerErrors {
 
 	/// @notice Approves a pending affiliate and deploys its AccountManager
 	/// @param affiliate The affiliate address
-	function approveAffiliate(address affiliate) external;
+	/// @param expectedRegistrationHash Hash of the reviewed pending request
+	function approveAffiliate(address affiliate, bytes32 expectedRegistrationHash) external;
 
 	// ==================== Affiliate Admin Management ====================
 
