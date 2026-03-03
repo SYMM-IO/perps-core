@@ -62,7 +62,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	// Grant additional roles via AccountLayer ControlFacet (admin already has DEFAULT_ADMIN_ROLE, SETTER_ROLE, PAUSER_ROLE, UNPAUSER_ROLE, APPROVER_ROLE from init)
 	await context.alControlFacet
 		.connect(context.signers.admin)
-		.grantRole(await instantLayer.getAddress(), ethers.keccak256(toUtf8Bytes("INSTANT_LAYER_ROLE")))
+		.grantRole(await instantLayer.getAddress(), ethers.keccak256(toUtf8Bytes("SIGNER_SETTER_ROLE")))
 
 	// Whitelist the Symmio core
 	await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(await diamond.getAddress(), true)

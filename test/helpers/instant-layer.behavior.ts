@@ -3027,4 +3027,192 @@ export function shouldBehaveLikeInstantLayer(): void {
 			})
 		})
 	})
+
+	// ════════════════════════════════════════════════════════════════════════════
+	// SIGNER ACCOUNT BINDING SECURITY
+	// ════════════════════════════════════════════════════════════════════════════
+
+	describe("Signer Account Binding Security", function () {
+		let victimSubAccount: string
+		let attackerSubAccount: string
+		let attacker: typeof ctx.partyA2
+
+		beforeEach(async function () {
+			attacker = ctx.partyA2
+
+			// Create victim's sub-account (owned by partyA1)
+			const victimSubAccountData = [
+				{
+					name: "victimAccount",
+					metadata: ethers.keccak256(toUtf8Bytes("victim")),
+					symmioCore: ctx.context.diamond,
+					isolationType: 1,
+					singleVAMode: false,
+				},
+			]
+			await ctx.context.alCoreFacet.connect(ctx.partyA1.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), victimSubAccountData)
+			const victimAccounts = await ctx.context.alViewFacet.getUserSubAccountsAddresses(ctx.partyA1.address, 0, 100)
+			victimSubAccount = victimAccounts[0]
+
+			// Create attacker's sub-account (owned by partyA2/alice)
+			const attackerSubAccountData = [
+				{
+					name: "attackerAccount",
+					metadata: ethers.keccak256(toUtf8Bytes("attacker")),
+					symmioCore: ctx.context.diamond,
+					isolationType: 1,
+					singleVAMode: false,
+				},
+			]
+			await ctx.context.alCoreFacet.connect(attacker.signer).createSubAccounts(await ctx.context.accountManager.getAddress(), attackerSubAccountData)
+			const attackerAccounts = await ctx.context.alViewFacet.getUserSubAccountsAddresses(attacker.address, 0, 100)
+			attackerSubAccount = attackerAccounts[0]
+
+			// Fund victim's sub-account
+			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, ethers.MaxUint256)
+			await ctx.context.collateral.connect(ctx.partyA1.signer).mint(victimSubAccount, decimal(500n))
+			await ctx.context.accountFacet.connect(ctx.partyA1.signer).depositFor(victimSubAccount, decimal(500n))
+		})
+
+		it("blocks cross-account attack via accountLayer _call target", async function () {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+
+			// Attacker encodes a malicious _call targeting the victim's account
+			// This calls CoreFacet._call(victimSubAccount, [withdrawTo(attacker, 500)])
+			const withdrawCallData = ctx.context.accountFacet.interface.encodeFunctionData("withdrawTo", [attacker.address, decimal(500n)])
+			const maliciousCallData = ctx.context.alCoreFacet.interface.encodeFunctionData("_call", [victimSubAccount, [withdrawCallData]])
+
+			// Attacker signs the operation with their own EOA and their own sub-account as signerAccount
+			const op = createSignedOperation(
+				attacker.address,
+				ctx.context.accountLayerDiamond,
+				maliciousCallData,
+				{ addr: attackerSubAccount, isPartyB: false },
+				1n,
+				deadline,
+			)
+			const sig = await signOperation(attacker.signer, ctx.domain, ctx.types, op)
+
+			// The operation should revert because:
+			// 1. setSigner sets attacker's EOA (owner of attackerSubAccount) as globalSigner
+			// 2. _call(victimSubAccount, ...) checks onlyAccountOwner(victimSubAccount)
+			// 3. getSigner() returns attacker's EOA, which is NOT the owner of victimSubAccount
+			// 4. Reverts with NotOwner
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "OperationFailed")
+
+			// Verify victim's balance is unchanged
+			const victimBalance = await ctx.context.viewFacet.balanceOf(victimSubAccount)
+			expect(victimBalance).to.equal(decimal(500n))
+		})
+
+		it("blocks cross-account attack via symmio target routing", async function () {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+
+			// Attacker tries to use the Symmio target path to call withdrawTo on victim's account
+			// When target == symmio address, InstantLayer routes through accountLayer._call(signerAccount.addr, ...)
+			// So the attacker would need signerAccount.addr = victimSubAccount
+			// But _getAccountOwner(victimSubAccount) returns partyA1, not attacker
+			// So setSigner sets partyA1 as globalSigner, but the EIP-712 signature must be from the signer field
+			// The attacker cannot sign as partyA1, so this path also fails
+
+			const withdrawCallData = ctx.context.accountFacet.interface.encodeFunctionData("withdrawTo", [attacker.address, decimal(500n)])
+
+			// If attacker tries to set signerAccount to victim's account but sign with their own key
+			const op = createSignedOperation(
+				attacker.address,
+				ctx.context.diamond, // symmio target
+				withdrawCallData,
+				{ addr: victimSubAccount, isPartyB: false }, // targeting victim's account
+				1n,
+				deadline,
+			)
+			const sig = await signOperation(attacker.signer, ctx.domain, ctx.types, op)
+
+			// This should fail because _validatePartyASignature checks that the signer (attacker)
+			// is either the account owner or has a valid delegation for the victim's account
+			// Attacker is not the owner of victimSubAccount and has no delegation
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.reverted
+
+			// Verify victim's balance unchanged
+			const victimBalance = await ctx.context.viewFacet.balanceOf(victimSubAccount)
+			expect(victimBalance).to.equal(decimal(500n))
+		})
+
+		it("allows owner to call their own account via accountLayer target", async function () {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+
+			// Fund attacker's sub-account
+			await ctx.context.collateral.connect(attacker.signer).approve(ctx.context.diamond, ethers.MaxUint256)
+			await ctx.context.collateral.connect(attacker.signer).mint(attackerSubAccount, decimal(200n))
+			await ctx.context.accountFacet.connect(attacker.signer).depositFor(attackerSubAccount, decimal(200n))
+
+			const balanceBefore = await ctx.context.viewFacet.balanceOf(attackerSubAccount)
+			expect(balanceBefore).to.equal(decimal(200n))
+
+			// Owner encodes a _call targeting their own account
+			const withdrawCallData = ctx.context.accountFacet.interface.encodeFunctionData("withdrawTo", [attacker.address, decimal(100n)])
+			const ownCallData = ctx.context.alCoreFacet.interface.encodeFunctionData("_call", [attackerSubAccount, [withdrawCallData]])
+
+			// Owner signs operation with their own EOA and their own sub-account
+			const op = createSignedOperation(
+				attacker.address,
+				ctx.context.accountLayerDiamond,
+				ownCallData,
+				{ addr: attackerSubAccount, isPartyB: false },
+				1n,
+				deadline,
+			)
+			const sig = await signOperation(attacker.signer, ctx.domain, ctx.types, op)
+
+			// This should succeed because:
+			// 1. setSigner sets attacker's EOA (owner of attackerSubAccount) as globalSigner
+			// 2. _call(attackerSubAccount, ...) checks onlyAccountOwner(attackerSubAccount)
+			// 3. getSigner() returns attacker's EOA, which IS the owner of attackerSubAccount
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+
+			// Verify funds were withdrawn
+			const balanceAfter = await ctx.context.viewFacet.balanceOf(attackerSubAccount)
+			expect(balanceAfter).to.equal(decimal(100n))
+		})
+
+		it("allows owner to call their own account via accountLayer addMarginToNextVA", async function () {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+
+			// Fund attacker's sub-account (using attacker as the legitimate user here)
+			await ctx.context.collateral.connect(attacker.signer).approve(ctx.context.diamond, ethers.MaxUint256)
+			await ctx.context.collateral.connect(attacker.signer).mint(attackerSubAccount, decimal(200n))
+			await ctx.context.accountFacet.connect(attacker.signer).depositFor(attackerSubAccount, decimal(200n))
+
+			const balanceBefore = await ctx.context.viewFacet.balanceOf(attackerSubAccount)
+			expect(balanceBefore).to.equal(decimal(200n))
+
+			// Encode addMarginToNextVA call targeting own sub-account
+			const amount = decimal(50n)
+			const addMarginCallData = ctx.context.alMarginFacet.interface.encodeFunctionData("addMarginToNextVA", [
+				attackerSubAccount,
+				1, // VirtualAccountIsolationType.MARKET
+				1, // symbolId
+				amount,
+			])
+
+			// Owner signs operation targeting AccountLayerDiamond with their own sub-account
+			const op = createSignedOperation(
+				attacker.address,
+				ctx.context.accountLayerDiamond,
+				addMarginCallData,
+				{ addr: attackerSubAccount, isPartyB: false },
+				1n,
+				deadline,
+			)
+			const sig = await signOperation(attacker.signer, ctx.domain, ctx.types, op)
+
+			// This should succeed because setSigner sets the owner as globalSigner,
+			// and onlyAccountOwner confirms ownership
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+
+			// Verify sub-account balance decreased
+			const balanceAfter = await ctx.context.viewFacet.balanceOf(attackerSubAccount)
+			expect(balanceAfter).to.equal(balanceBefore - amount)
+		})
+	})
 }

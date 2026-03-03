@@ -41,6 +41,7 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { VirtualAccountDetail } from "../accountLayer/storages/AccountStorage.sol";
 import { IViewFacet } from "../accountLayer/facets/View/IViewFacet.sol";
 import { ICoreFacet } from "../accountLayer/facets/Core/ICoreFacet.sol";
+import { IAccountLayerDiamond } from "../accountLayer/interfaces/IAccountLayerDiamond.sol";
 
 /* ════════════════════════════ EXTERNAL INTERFACES ════════════════════════════ */
 
@@ -854,11 +855,18 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (signedOp.signerAccount.isPartyB) {
 			// Route to PartyB
 			(success, result) = signedOp.signer.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
-		} else if (signedOp.target == address(symmio)) {
-			// Route to AccountLayer
+		} else if (signedOp.target == address(symmio) || signedOp.target == accountLayer) {
+			// Route to AccountLayer (wrapping Symmio calls via _call, or direct AL calls)
 			if (accountLayer == address(0)) revert AccountLayerNotSet();
-			(success, result) = accountLayer.call(abi.encodeWithSelector(ICoreFacet._call.selector, signedOp.signerAccount.addr, callDatas));
-			decodeNestedResult = true;
+			address owner = _getAccountOwner(signedOp.signerAccount.addr);
+			IAccountLayerDiamond(accountLayer).setSigner(owner);
+			if (signedOp.target == address(symmio)) {
+				(success, result) = accountLayer.call(abi.encodeWithSelector(ICoreFacet._call.selector, signedOp.signerAccount.addr, callDatas));
+				decodeNestedResult = true;
+			} else {
+				(success, result) = accountLayer.call(callData);
+			}
+			IAccountLayerDiamond(accountLayer).setSigner(address(0));
 		} else {
 			// Route to a whitelisted target
 			(success, result) = signedOp.target.call(callData);

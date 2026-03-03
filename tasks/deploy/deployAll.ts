@@ -732,9 +732,9 @@ async function setupSystem(
 		await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("UNPAUSER_ROLE"))
 	})
 
-	// InstantLayer role on AccountLayerDiamond
-	await checkpointedStep(checkpoint, "setup.ilRoleOnAL", "Granting INSTANT_LAYER_ROLE on AccountLayerDiamond", async () => {
-		await alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("INSTANT_LAYER_ROLE"))
+	// InstantLayer SIGNER_SETTER_ROLE on AccountLayerDiamond (allows InstantLayer to call setSigner)
+	await checkpointedStep(checkpoint, "setup.ilRoleOnAL", "Granting SIGNER_SETTER_ROLE on AccountLayerDiamond", async () => {
+		await alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("SIGNER_SETTER_ROLE"))
 	})
 
 	// Whitelist Symmio Core
