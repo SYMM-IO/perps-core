@@ -181,9 +181,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 	/// @notice Deallocates collateral without requiring a Muon UPNL signature, only when the user has no open or pending positions.
 	/// @param amount The amount of collateral to deallocate, specified in 18 decimals.
-	function zeroUpnlDeallocate(
-		uint256 amount
-	) external onlyRoleAllowProxy(LibAccessibility.BALANCE_SETTLER_ROLE) notLiquidatedPartyA(LibSigner.getSigner()) {
+	function zeroUpnlDeallocate(uint256 amount) external onlyRoleAllowProxy(LibAccessibility.BALANCE_SETTLER_ROLE) {
 		address signer = LibSigner.getSigner();
 
 		AccountFacetImpl.zeroUpnlDeallocate(amount, signer);
