@@ -166,7 +166,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.controlFacet.connect(context.signers.admin).grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("SIGNER_ADMIN_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
-		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("INTERNAL_TRANSFER_TO_BALANCE_ROLE")))
+		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("BALANCE_SETTLER_ROLE")))
 
 	// Configure system
 	await context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress())

@@ -41,6 +41,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 	async function triggerCooldown() {
 		const smallAmount = ethers.parseEther("1")
+		await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), roleHash("BALANCE_SETTLER_ROLE"))
 		await context.accountFacet.connect(context.signers.user).allocate(smallAmount)
 		await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(smallAmount)
 	}
@@ -357,6 +358,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100")
 			const parts = [await buildPart("50")]
 
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), roleHash("BALANCE_SETTLER_ROLE"))
 			await context.accountFacet.connect(context.signers.user).allocate(ethers.parseEther("1"))
 			await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(ethers.parseEther("1"))
 
@@ -453,6 +455,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await userDeposit("100")
 			const parts = await buildParts(["50", "20"])
 
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), roleHash("BALANCE_SETTLER_ROLE"))
 			await context.accountFacet.connect(context.signers.user).allocate(ethers.parseEther("1"))
 			await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(ethers.parseEther("1"))
 
