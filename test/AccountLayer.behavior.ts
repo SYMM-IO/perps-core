@@ -2354,8 +2354,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const affiliateAddress = await context.alAffiliateFacet.requestToRegisterAffiliate.staticCall(affData)
 
 					await context.alAffiliateFacet.requestToRegisterAffiliate(affData)
-					const registrationHash = await context.alAffiliateFacet.getRegistrationHash(context.signers.admin.address, affData)
-					await context.alAffiliateFacet.approveAffiliate(affiliateAddress, registrationHash)
+					await context.alAffiliateFacet.approveAffiliate(affiliateAddress)
 
 					// Should not revert even without hook
 					await expect(
@@ -2630,8 +2629,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 					}
 					const affiliateAddress = await context.alAffiliateFacet.requestToRegisterAffiliate.staticCall(affData)
 					await context.alAffiliateFacet.requestToRegisterAffiliate(affData)
-					const registrationHash = await context.alAffiliateFacet.getRegistrationHash(context.signers.admin.address, affData)
-					await context.alAffiliateFacet.approveAffiliate(affiliateAddress, registrationHash)
+					await context.alAffiliateFacet.approveAffiliate(affiliateAddress)
 
 					// Create sub-account under the new affiliate (no onCall hook set)
 					const subAccountData = [createSubAccountData("NO_HOOK_CALL", 0)]

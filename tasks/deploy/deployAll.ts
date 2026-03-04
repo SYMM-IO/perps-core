@@ -947,8 +947,7 @@ async function registerDummyAffiliate(
 
 	// Approve affiliate
 	await checkpointedStep(checkpoint, "affiliate.approve", "Approving affiliate", async () => {
-		const registrationHash = await alAffiliateFacet.getRegistrationHash(await deployer.getAddress(), affiliateData)
-		await alAffiliateFacet.connect(deployer).approveAffiliate(accountManagerAddress!, registrationHash)
+		await alAffiliateFacet.connect(deployer).approveAffiliate(accountManagerAddress!)
 	})
 
 	console.log(`  Dummy affiliate registered! AccountManager: ${accountManagerAddress}`)

@@ -58,20 +58,19 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 			await expect(context.alAffiliateFacet.connect(signer).requestToRegisterAffiliate(registration))
 				.to.emit(context.alAffiliateFacet, "AffiliateRegistered")
 				.withArgs(predicted, registration.name)
-			const registrationHash = await context.alAffiliateFacet.getRegistrationHash(signer.address, registration)
-			return { affiliate: predicted, registration, registrationHash }
+			return { affiliate: predicted, registration }
 		}
 
-		const approveAffiliate = async (affiliate: string, registrationHash: string) => {
-			await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate, registrationHash)).to.emit(
+		const approveAffiliate = async (affiliate: string) => {
+			await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.emit(
 				context.alAffiliateFacet,
 				"AffiliateApproved",
 			)
 		}
 
 		const activateAffiliate = async (registrationOverrides: Partial<AffiliateRegistrationInput> = {}) => {
-			const { affiliate, registration, registrationHash } = await requestAffiliate(registrationOverrides)
-			await approveAffiliate(affiliate, registrationHash)
+			const { affiliate, registration } = await requestAffiliate(registrationOverrides)
+			await approveAffiliate(affiliate)
 			return { affiliate, registration }
 		}
 
@@ -144,13 +143,13 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 				).to.be.revertedWithCustomError(context.alAffiliateFacet, "NoWhitelistedSymmioCore")
 			})
 
-			it("enforces unique registrations per affiliate id for the same sender", async function () {
-				// register once
-				const { registration } = await requestAffiliate()
-				// repeated call by same user reverts
-				await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.be.revertedWithCustomError(
+			it("assigns a new affiliate address for repeated requests by the same sender", async function () {
+				const { affiliate: firstAffiliate, registration } = await requestAffiliate()
+				const secondAffiliate = await context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate.staticCall(registration)
+				expect(secondAffiliate).to.not.equal(firstAffiliate)
+				await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(
 					context.alAffiliateFacet,
-					"AlreadyRegistered",
+					"AffiliateRegistered",
 				)
 			})
 
@@ -179,13 +178,11 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 			describe("cancelRegistration", function () {
 				let affiliate: string
 				let registration: AffiliateRegistrationInput
-				let registrationHash: string
 
 				beforeEach(async function () {
 					const pending = await requestAffiliate()
 					affiliate = pending.affiliate
 					registration = pending.registration
-					registrationHash = pending.registrationHash
 				})
 
 				it("allows only the affiliate admin to cancel", async function () {
@@ -210,7 +207,7 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 				})
 
 				it("reverts once the affiliate is approved", async function () {
-					await approveAffiliate(affiliate, registrationHash)
+					await approveAffiliate(affiliate)
 					await expect(context.alAffiliateFacet.connect(context.signers.user).cancelRegistration(affiliate)).to.be.revertedWithCustomError(
 						context.alAffiliateFacet,
 						"NotPending",
@@ -268,40 +265,41 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 
 			describe("approveAffiliate", function () {
 				let affiliate: string
-				let registrationHash: string
 
 				beforeEach(async function () {
 					const pending = await requestAffiliate()
 					affiliate = pending.affiliate
-					registrationHash = pending.registrationHash
 				})
 
 				it("requires approver role and pending state", async function () {
 					// approve without role
-					await expect(
-						context.alAffiliateFacet.connect(context.signers.user).approveAffiliate(affiliate, registrationHash),
-					).to.be.revertedWithCustomError(context.alAffiliateFacet, "MustHaveRole")
+					await expect(context.alAffiliateFacet.connect(context.signers.user).approveAffiliate(affiliate)).to.be.revertedWithCustomError(
+						context.alAffiliateFacet,
+						"MustHaveRole",
+					)
 
-					await approveAffiliate(affiliate, registrationHash)
+					await approveAffiliate(affiliate)
 					// approve on not pending state
-					await expect(
-						context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate, registrationHash),
-					).to.be.revertedWithCustomError(context.alAffiliateFacet, "NotPending")
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWithCustomError(
+						context.alAffiliateFacet,
+						"NotPending",
+					)
 				})
 
-				it("rejects approval when expected hash does not match current pending request", async function () {
+				it("uses a new affiliate address after cancel + re-request with same name", async function () {
 					await context.alAffiliateFacet.connect(context.signers.user).cancelRegistration(affiliate)
 
 					const updated = buildRegistration({ brandColor: "#ffffff" })
+					const newAffiliate = await context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate.staticCall(updated)
+					expect(newAffiliate).to.not.equal(affiliate)
 					await context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(updated)
 
-					const updatedHash = await context.alAffiliateFacet.getRegistrationHash(context.signers.user.address, updated)
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWithCustomError(
+						context.alAffiliateFacet,
+						"NotPending",
+					)
 
-					await expect(
-						context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate, registrationHash),
-					).to.be.revertedWithCustomError(context.alAffiliateFacet, "InvalidCallData")
-
-					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate, updatedHash)).to.emit(
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(newAffiliate)).to.emit(
 						context.alAffiliateFacet,
 						"AffiliateApproved",
 					)
@@ -310,7 +308,7 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 				// happy path
 				it("deploys the account manager, fee distributor, and assigns permissions", async function () {
 					const nonceBefore = await context.alViewFacet.globalNonce()
-					await approveAffiliate(affiliate, registrationHash)
+					await approveAffiliate(affiliate)
 
 					expect(await context.alViewFacet.getAffiliateState(affiliate)).to.equal(AffiliateState.ACTIVE)
 					const feeDistributor = await context.alViewFacet.getAffiliateFeeDistributor(affiliate)
@@ -325,9 +323,10 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 
 				it("cannot be called while the hub is paused", async function () {
 					await pauseAccountLayer()
-					await expect(
-						context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate, registrationHash),
-					).to.be.revertedWithCustomError(context.alAffiliateFacet, "EnforcedPause")
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWithCustomError(
+						context.alAffiliateFacet,
+						"EnforcedPause",
+					)
 				})
 			})
 		})

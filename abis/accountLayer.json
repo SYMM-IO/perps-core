@@ -670,11 +670,6 @@
                 "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
-            },
-            {
-                "internalType": "bytes32",
-                "name": "expectedRegistrationHash",
-                "type": "bytes32"
             }
         ],
         "name": "approveAffiliate",
@@ -802,84 +797,6 @@
         "name": "claimFees",
         "outputs": [],
         "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "registrant",
-                "type": "address"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "string",
-                        "name": "name",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "brandColor",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "admin",
-                        "type": "address"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "address",
-                                "name": "receiver",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "share",
-                                "type": "uint256"
-                            }
-                        ],
-                        "internalType": "struct Stakeholder[]",
-                        "name": "stakeholders",
-                        "type": "tuple[]"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "symmioShare",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "metadata",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "address[]",
-                        "name": "legacyMultiAccounts",
-                        "type": "address[]"
-                    },
-                    {
-                        "internalType": "address[]",
-                        "name": "symmioCores",
-                        "type": "address[]"
-                    }
-                ],
-                "internalType": "struct AffiliateRegistration",
-                "name": "reg",
-                "type": "tuple"
-            }
-        ],
-        "name": "getRegistrationHash",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "registrationHash",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "pure",
         "type": "function"
     },
     {

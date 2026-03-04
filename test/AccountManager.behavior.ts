@@ -89,8 +89,7 @@ export function shouldBehaveLikeAccountManager(): void {
 
 				const affiliateAddress = await context.alAffiliateFacet.connect(context.signers.deployer).requestToRegisterAffiliate.staticCall(affiliateData)
 				await context.alAffiliateFacet.connect(context.signers.deployer).requestToRegisterAffiliate(affiliateData)
-				const affiliateHash = await context.alAffiliateFacet.getRegistrationHash(context.signers.deployer.address, affiliateData)
-				await context.alAffiliateFacet.connect(context.signers.deployer).approveAffiliate(affiliateAddress, affiliateHash)
+				await context.alAffiliateFacet.connect(context.signers.deployer).approveAffiliate(affiliateAddress)
 
 				const accManager = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", affiliateAddress)
 
@@ -123,8 +122,7 @@ export function shouldBehaveLikeAccountManager(): void {
 
 				const affiliateAddress = await context.alAffiliateFacet.connect(context.signers.deployer).requestToRegisterAffiliate.staticCall(affiliateData)
 				await context.alAffiliateFacet.connect(context.signers.deployer).requestToRegisterAffiliate(affiliateData)
-				const affiliateHash = await context.alAffiliateFacet.getRegistrationHash(context.signers.deployer.address, affiliateData)
-				await context.alAffiliateFacet.connect(context.signers.deployer).approveAffiliate(affiliateAddress, affiliateHash)
+				await context.alAffiliateFacet.connect(context.signers.deployer).approveAffiliate(affiliateAddress)
 
 				const accManager = await ethers.getContractAt("contracts/accountLayer/AccountManager.sol:AccountManager", affiliateAddress)
 				await expect(accManager.connect(context.signers.user).addAccount("Trading account")).to.be.reverted
