@@ -21,8 +21,10 @@ library AccountLayerStorage {
 		/// @dev Maps role => admin => is_admin. Role admins manage hasRole for their role.
 		mapping(bytes32 => mapping(address => bool)) roleAdmins;
 		/// @notice Global pause switch for the account layer
-		/// @dev When true, all account layer operations are blocked. Independent from
-		///      perps-core globalPaused.
+		/// @dev When true, all user-facing account layer operations are blocked.
+		///      Admin/role-gated functions (ControlFacet, unpauseAffiliate, rejectRegistration)
+		///      remain callable so administrators can reconfigure during emergencies.
+		///      Independent from perps-core globalPaused.
 		bool globalPaused;
 	}
 
