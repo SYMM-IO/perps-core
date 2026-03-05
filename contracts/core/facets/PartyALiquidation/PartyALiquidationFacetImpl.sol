@@ -223,11 +223,12 @@ library PartyALiquidationFacetImpl {
 				if (settleAmount < 0) {
 					accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += settleAmount;
 				} else {
-					if (accountLayout.partyBAllocatedBalances[quote.partyB][partyA] >= uint256(settleAmount)) {
+					address disputeAllocKey = LibAccount.partyBAllocationKey(quote.partyB, partyA);
+					if (accountLayout.partyBAllocatedBalances[quote.partyB][disputeAllocKey] >= uint256(settleAmount)) {
 						accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += settleAmount;
 					} else {
 						accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += int256(
-							accountLayout.partyBAllocatedBalances[quote.partyB][partyA]
+							accountLayout.partyBAllocatedBalances[quote.partyB][disputeAllocKey]
 						);
 					}
 				}
@@ -339,6 +340,10 @@ library PartyALiquidationFacetImpl {
 					settleAmounts[i] = settleAmount;
 					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 				} else {
+					// Cross-mode PartyBs must settle uPNL first via settlePartyBUpnlForLiquidation
+					// to convert unrealized profit into allocated balance before settlement.
+					// The clearing house takeover flow handles cases where settlement is not possible.
+					require(!maLayout.crossModeEnabledForPartyB[partyB], "LiquidationFacet: Settle cross partyB uPNL first");
 					settleAmounts[i] = int256(accountLayout.partyBAllocatedBalances[partyB][allocKey]);
 					accountLayout.partyBAllocatedBalances[partyB][allocKey] = 0;
 					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);

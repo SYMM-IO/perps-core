@@ -150,7 +150,7 @@ library ForceCloseStepsImpl {
 		}
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB);
 
-		// Use the unified settlement function with isForceClose=true
+		// Use the unified settlement function with privilegedMode=true
 		int256[] memory settleAmountsPerPartyA;
 		(newPartyAsAllocatedBalances, settleAmountsPerPartyA) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
 
