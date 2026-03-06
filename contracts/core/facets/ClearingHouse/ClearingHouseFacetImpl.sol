@@ -98,7 +98,13 @@ library ClearingHouseFacetImpl {
 
 			if (amount == 0) continue;
 
-			if (party == subject && liqType == LiquidationType.PARTY_A_TAKEOVER) {
+			if (liqType == LiquidationType.CROSS_PARTY_B && party != subject) {
+				// in cross PartyB liquidation, non subject parties are partyA
+				require(allocationKey == address(0), "ClearingHouseFacet: Invalid allocation key for partyA");
+				require(accountLayout.allocatedBalances[party] >= amount, "ClearingHouseFacet: Insufficient allocated balance");
+				accountLayout.allocatedBalances[party] -= amount;
+				emit SharedEvents.BalanceChangePartyA(party, amount, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			} else if (party == subject && liqType == LiquidationType.PARTY_A_TAKEOVER) {
 				// Pulling from partyA's own balances
 				if (allocationKey == address(0)) {
 					// Pull from allocatedBalances
