@@ -177,8 +177,9 @@ library AccountStorage {
 		///      [1] from setSymbolsPrice/determineLiquidationType. The liquidation fee is split
 		///      50/50 between them. Cleared after liquidation completes.
 		mapping(address => address[]) liquidators;
-		/// @notice Reimbursement owed to PartyA from pending fees or new allocations during deferred liquidations
-		/// @dev This will be paid back to user at the end of liquidation process.
+		/// @notice Reimbursement owed to PartyA, used by clearing house takeover flow
+		/// @dev In CH takeover: stores pending fees added by liquidatePendingPositionsForClearingHouse.
+		///      CH can pull via deallocateForClearingHouse(REIMBURSEMENT_KEY). Released at settlePartyATakeover.
 		mapping(address => uint256) partyAReimbursement;
 		/// @notice UPNL settlement state between PartyA-PartyB pairs during liquidation
 		/// @dev Used during PartyA liquidation to track UPNL reconciliation with each PartyB.
@@ -206,6 +207,13 @@ library AccountStorage {
 		///      PartyB solvency result. The inProgress flag gates step progression but does
 		///      NOT prevent re-initialization - quote status is the primary guard.
 		mapping(uint256 => ForceCloseDetail) forceCloseDetails;
+		/// @notice Escrowed funds from LATE/OVERDUE liquidations awaiting CH distribution
+		/// @dev Created at settlement when liquidation type is LATE or OVERDUE. CH distributes via distributeLiquidationEscrow.
+		///      Per-partyA (only one active liquidation per partyA). Accumulates if CH hasn't distributed before next liquidation.
+		mapping(address => uint256) liquidationEscrow;
+		/// @notice PartyA's excess balance from deferred liquidation (current balance minus historical insolvency point)
+		/// @dev Always returned to partyA at settlement regardless of liquidation type. Not accessible by clearing house.
+		mapping(address => uint256) partyADeferredBalance;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

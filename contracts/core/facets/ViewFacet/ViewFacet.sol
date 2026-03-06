@@ -839,6 +839,20 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().partyAReimbursement[partyA];
 	}
 
+	/// @notice Returns PartyA's deferred balance (excess from deferred liquidation, always returned to partyA).
+	/// @param partyA The address of Party A.
+	/// @return The deferred balance amount.
+	function getPartyADeferredBalance(address partyA) external view returns (uint256) {
+		return AccountStorage.layout().partyADeferredBalance[partyA];
+	}
+
+	/// @notice Returns the liquidation escrow balance for a Party A (from LATE/OVERDUE liquidations).
+	/// @param partyA The address of Party A.
+	/// @return The escrow balance awaiting CH distribution.
+	function getLiquidationEscrow(address partyA) external view returns (uint256) {
+		return AccountStorage.layout().liquidationEscrow[partyA];
+	}
+
 	/// @notice Returns the takeover details for a Party A liquidation.
 	/// @param partyA The address of Party A.
 	/// @return The PartyATakeoverDetail struct.

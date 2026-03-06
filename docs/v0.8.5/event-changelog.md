@@ -175,6 +175,9 @@ event LiquidatePositionsPartyA(
     address liquidator, address partyA, uint256[] quoteIds,
     uint256[] liquidatedAmounts, uint256[] closeIds, uint256[] averageClosedPrices, bytes liquidationId
 );
+
+// Emitted when LATE/OVERDUE settlement moves pending fees to escrow (see liquidation-escrow.md)
+event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
 ```
 
 **PartyB** (`IPartyBLiquidationEvents`):
@@ -399,6 +402,10 @@ event AutoTakeoverPartyALiquidation(address indexed partyA, bytes liquidationId)
 event SettlePartyATakeover(address indexed partyA, bytes liquidationId);
 event SettleCrossPartyBLiquidation(address indexed partyB);
 
+// Liquidation escrow (see liquidation-escrow.md)
+event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
+event DistributeFromLiquidationEscrow(address indexed partyA, address[] receivers, address[] allocationKeys, uint256[] amounts);
+
 // Soft liquidation
 event SoftPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance);
 ```
@@ -555,7 +562,14 @@ event VirtualAccountDeleted(address indexed account, address indexed parent);
 
 ### 7.2 New Enums in SharedEvents
 
-The `BalanceChangeType` enum is unchanged between versions (same 12 values). Two new enums have been added:
+The `BalanceChangeType` enum has two new values appended (14 total, up from 12):
+
+- `DEFERRED_BALANCE_IN` (index 12): Emitted when deferred excess balance is returned to PartyA at settlement.
+- `DEFERRED_BALANCE_OUT` (index 13): Emitted when excess balance is moved to `partyADeferredBalance` during deferred liquidation initiation.
+
+See [Liquidation Escrow](liquidation-escrow.md) for context on how these relate to the escrow mechanism.
+
+Two new enums have also been added:
 
 - `TradeVolumeType`: `OPEN`, `CLOSE`, `LIQUIDATE`
 - `TradingFeeType`: `OPEN`, `CLOSE`
@@ -578,6 +592,8 @@ These are used by the new `TradeVolumeRecorded` and `TradingFeeCharged` events.
 - [ ] Index ClearingHouse events if tracking cross PartyB liquidation flows
 - [ ] Index Binding events if tracking PartyA-PartyB binding state
 - [ ] Index `TradeVolumeRecorded` and `TradingFeeCharged` for fee/volume analytics
+- [ ] Index `LiquidationEscrowCreated` and `DistributeFromLiquidationEscrow` for escrow tracking
+- [ ] Handle new `DEFERRED_BALANCE_IN` and `DEFERRED_BALANCE_OUT` values in `BalanceChangeType` enum
 - [ ] Index `ADLClose` for auto-deleveraging tracking
 - [ ] Add AccountLayer diamond address as a new data source if indexing sub-accounts/affiliates
 

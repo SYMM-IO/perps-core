@@ -35,6 +35,14 @@ interface IClearingHouseFacet is IClearingHouseFacetEvents {
 	function settlePartyATakeover(address partyA, address[] memory settledPartyBs) external;
 	function settleCrossPartyBLiquidation(address partyB) external;
 
+	// Liquidation escrow distribution
+	function distributeFromLiquidationEscrow(
+		address partyA,
+		address[] memory receivers,
+		address[] memory allocationKeys,
+		uint256[] memory amounts
+	) external;
+
 	// Soft liquidation
 	function softPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance) external;
 }

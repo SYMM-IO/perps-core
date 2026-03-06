@@ -24,6 +24,8 @@ import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 library PartyALiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
+	event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
+
 	/// @notice Verifies insolvency and initiates the liquidation process for Party A
 	function liquidatePartyA(address partyA, LiquidationSig memory liquidationSig) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -348,11 +350,28 @@ library PartyALiquidationFacetImpl {
 		}
 		if (accountLayout.liquidationDetails[partyA].involvedPartyBCounts == 0) {
 			emit SharedEvents.BalanceChangePartyA(partyA, accountLayout.allocatedBalances[partyA], SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			uint256 deferredBalance = accountLayout.partyADeferredBalance[partyA];
 			uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
-			accountLayout.allocatedBalances[partyA] = reimbursement;
+
+			LiquidationType liqType = accountLayout.liquidationDetails[partyA].liquidationType;
+			if (liqType == LiquidationType.LATE || liqType == LiquidationType.OVERDUE) {
+				// Deferred balance always goes back to partyA; reimbursement (pending fees) goes to clearing pool for CH distribution
+				accountLayout.allocatedBalances[partyA] = deferredBalance;
+				if (reimbursement > 0) {
+					accountLayout.liquidationEscrow[partyA] += reimbursement;
+					emit LiquidationEscrowCreated(partyA, accountLayout.liquidationDetails[partyA].liquidationId, reimbursement);
+				}
+			} else {
+				// NORMAL: everything goes back to partyA
+				accountLayout.allocatedBalances[partyA] = deferredBalance + reimbursement;
+			}
+			accountLayout.partyADeferredBalance[partyA] = 0;
 			accountLayout.partyAReimbursement[partyA] = 0;
-			if (reimbursement > 0) {
-				emit SharedEvents.BalanceChangePartyA(partyA, reimbursement, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			if (deferredBalance > 0) {
+				emit SharedEvents.BalanceChangePartyA(partyA, deferredBalance, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_IN);
+			}
+			if (liqType != LiquidationType.LATE && liqType != LiquidationType.OVERDUE && reimbursement > 0) {
+				emit SharedEvents.BalanceChangePartyA(partyA, reimbursement, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 			}
 			accountLayout.lockedBalances[partyA].makeZero();
 

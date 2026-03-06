@@ -13,6 +13,7 @@ import { LiquidationType, LiquidationDetail, Price, AccountStorage } from "../..
 import { DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
+import { SharedEvents } from "../../libraries/SharedEvents.sol";
 
 library DeferredLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -39,7 +40,8 @@ library DeferredLiquidationFacetImpl {
 		);
 		if (availableBalance > 0) {
 			accountLayout.allocatedBalances[partyA] -= uint256(availableBalance);
-			accountLayout.partyAReimbursement[partyA] += uint256(availableBalance);
+			accountLayout.partyADeferredBalance[partyA] += uint256(availableBalance);
+			emit SharedEvents.BalanceChangePartyA(partyA, uint256(availableBalance), SharedEvents.BalanceChangeType.DEFERRED_BALANCE_OUT);
 		}
 
 		maLayout.liquidationStatus[partyA] = true;
