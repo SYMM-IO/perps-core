@@ -149,6 +149,7 @@ library PartyAFacetImpl {
 
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
 		accountLayout.allocatedBalances[signer] -= feeAmount;
+		LibAccount.reserveOpenTradingFee(signer, feeAmount);
 		emit SharedEvents.BalanceChangePartyA(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 	}
 

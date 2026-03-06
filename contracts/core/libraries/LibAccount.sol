@@ -264,11 +264,34 @@ library LibAccount {
 		return appLayout.affiliateFeeCollector[affiliate] == address(0) ? appLayout.defaultFeeCollector : appLayout.affiliateFeeCollector[affiliate];
 	}
 
+	/// @notice Returns PartyA's effective allocated balance used for balance limit checks.
+	/// @dev Includes reserved open fees from pending/locked quotes
+	function effectiveAllocatedBalance(address partyA) internal view returns (uint256) {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		return accountLayout.allocatedBalances[partyA] + accountLayout.partyAReservedOpenFees[partyA];
+	}
+
+	/// @notice Reserves open trading fee for a newly sent quote
+	function reserveOpenTradingFee(address partyA, uint256 fee) internal {
+		AccountStorage.layout().partyAReservedOpenFees[partyA] += fee;
+	}
+
+	/// @notice Releases previously reserved open trading fee
+	function releaseReservedOpenTradingFee(address partyA, uint256 fee) internal {
+		_decreaseReservedOpenTradingFee(partyA, fee);
+	}
+
+	/// @notice Marks reserved open trading fee as realized when quote amount is opened
+	function realizeOpenTradingFee(address partyA, uint256 fee) internal {
+		_decreaseReservedOpenTradingFee(partyA, fee);
+	}
+
 	/// @notice Refunds the open trading fee for a quote back to Party A's allocated balance.
 	/// @param quoteId The ID of the quote whose fee is being refunded.
 	/// @param partyA The address of Party A receiving the refund.
 	function refundOpenTradingFee(uint256 quoteId, address partyA) internal {
 		uint256 fee = LibQuote.getOpenTradingFee(quoteId);
+		releaseReservedOpenTradingFee(partyA, fee);
 		AccountStorage.layout().allocatedBalances[partyA] += fee;
 		emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 	}
@@ -281,5 +304,12 @@ library LibAccount {
 	/// @notice Converts an amount from 18 decimals to collateral decimals.
 	function toCollateralDecimals(uint256 amount) internal view returns (uint256) {
 		return (amount * (10 ** IERC20Metadata(GlobalAppStorage.layout().collateral).decimals())) / 1e18;
+	}
+
+	/// @notice Decreases reserved open trading fee without reverting on legacy or untracked reservations
+	function _decreaseReservedOpenTradingFee(address partyA, uint256 fee) private {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		uint256 reserved = accountLayout.partyAReservedOpenFees[partyA];
+		accountLayout.partyAReservedOpenFees[partyA] = fee >= reserved ? 0 : reserved - fee;
 	}
 }
