@@ -7,20 +7,16 @@ pragma solidity >=0.8.18;
 import { LibMuonPartyBBatchActions } from "../../libraries/muon/LibMuonPartyBBatchActions.sol";
 import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
-import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
-import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
-import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
-import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
@@ -143,12 +139,10 @@ library PartyBBatchActionsFacetImpl {
 		uint256[] memory quoteIds,
 		uint256[] memory filledAmounts,
 		uint256[] memory closedPrices,
-		PairUpnlAndPricesSig memory upnlSig,
-		bool isAdl
+		PairUpnlAndPricesSig memory upnlSig
 	) internal returns (QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 
 		require(
 			quoteIds.length == filledAmounts.length && quoteIds.length == closedPrices.length && quoteIds.length > 0,
@@ -197,30 +191,10 @@ library PartyBBatchActionsFacetImpl {
 
 			require(quote.partyB == firstQuotePartyB, "PartyBBatchActionsFacet: All positions must have same partyB");
 			require(quote.partyA == firstQuotePartyA, "PartyBBatchActionsFacet: All positions must have same partyA");
-
-			if (isAdl) {
-				uint256 quantityToClose = filledAmounts[i];
-				uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-				require(quote.quoteStatus == QuoteStatus.OPENED, "PartyBBatchActionsFacet: Invalid position state");
-				require(openAmount >= quantityToClose && quantityToClose > 0, "PartyBBatchActionsFacet: Invalid filled amount");
-				if (openAmount > quantityToClose) {
-					require(
-						((openAmount - quantityToClose) * quote.lockedValues.totalForPartyA()) / openAmount >=
-							symbolLayout.symbols[quote.symbolId].minAcceptableQuoteValue,
-						"PartyBBatchActionsFacet: Remaining quote value is low"
-					);
-				}
-				quote.quantityToClose = quantityToClose;
-				LibQuoteClose.closeQuote(quote.id, filledAmounts[i], closedPrices[i]);
-				quoteStatuses[i] = quote.quoteStatus;
-				closeIds[i] = 0; // not used in ADL
-			} else {
-				// Normal close request flow
-				require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender should be the partyB");
-				LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);
-				quoteStatuses[i] = quote.quoteStatus;
-				closeIds[i] = quoteLayout.closeIds[quoteId];
-			}
+			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender should be the partyB");
+			LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);
+			quoteStatuses[i] = quote.quoteStatus;
+			closeIds[i] = quoteLayout.closeIds[quoteId];
 		}
 	}
 }
