@@ -220,14 +220,15 @@ library PartyALiquidationFacetImpl {
 
 			if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
 				int256 settleAmount = accountLayout.settlementStates[partyA][quote.partyB].expectedAmount;
+				address allocKey = LibAccount.partyBAllocationKey(quote.partyB, partyA);
 				if (settleAmount < 0) {
 					accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += settleAmount;
 				} else {
-					if (accountLayout.partyBAllocatedBalances[quote.partyB][partyA] >= uint256(settleAmount)) {
+					if (accountLayout.partyBAllocatedBalances[quote.partyB][allocKey] >= uint256(settleAmount)) {
 						accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += settleAmount;
 					} else {
 						accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += int256(
-							accountLayout.partyBAllocatedBalances[quote.partyB][partyA]
+							accountLayout.partyBAllocatedBalances[quote.partyB][allocKey]
 						);
 					}
 				}
