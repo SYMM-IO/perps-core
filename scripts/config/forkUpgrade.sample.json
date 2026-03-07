@@ -1,0 +1,15 @@
+{
+  "diamondAddress": "0x...",
+  "adminAddress": "",
+  "diamondCutChunkSize": 6,
+  "migrateChunkSize": 50,
+  "quoteScanLimit": 500,
+  "newV085Parameters": {
+    "maxPartyAConnectionLimit": 5,
+    "settlementCooldown": 300,
+    "deallocateDebounceTime": 120
+  },
+  "skipMigration": false,
+  "skipUnpause": false,
+  "verbose": false
+}

@@ -1,47 +1,79 @@
 import fs from "fs"
+import path from "path"
 
 import { ethers } from "../test/helpers/hardhat-connection.js"
-import { PositionType, QuoteStatus } from "../test/models/Enums.js"
-import { migrate, MigrationConfig, MigrationInput } from "./migrate.js"
+import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
 
-type PartyBTask = { partyB: string; partyAs: string[] }
+export type PartyBTask = { partyB: string; partyAs: string[] }
+
+type ScriptStep = {
+	name: string
+	status: "ok" | "error"
+	details?: Record<string, unknown>
+}
+
+type MigrationOnDemandReport = {
+	status: "running" | "success" | "failed"
+	startedAt: string
+	finishedAt?: string
+	durationMs?: number
+	diamondAddress?: string
+	adminAddress?: string
+	migrationInputFile?: string
+	outputDir?: string
+	progressFile?: string
+	reportFile?: string
+	config?: Record<string, unknown>
+	input?: {
+		quoteIdsTotal: number
+		partyBTasksTotal: number
+		aggregateKeys: number
+	}
+	migrationReport?: MigrationReport
+	verification?: {
+		performed: boolean
+		quoteChecks: number
+		partyBChecks: number
+		aggregateChecks: number
+	}
+	steps: ScriptStep[]
+	error?: string
+}
 
 /**
- * On-demand migration script for v0.8.5.
+ * Migration script for v0.8.5.
+ *
+ * Takes a validated migration input file (from prepareMigrationInput.ts)
+ * and runs the migration + verification. Assumes:
+ * - System is already paused (by multisig or fork upgrade script)
+ * - Upgrade (diamondCut) is already applied
+ * - Caller has MIGRATION_ROLE granted
  *
  * Run:
- *   DIAMOND_ADDRESS=0x... PARTY_A_ADDRESSES=0x...,0x... npx hardhat run ./scripts/migrateOnDemand.ts --network localhost
+ *   DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
+ *     npx hardhat run ./scripts/migrateOnDemand.ts --network localhost
  *
  * Config:
  *   cp scripts/config/migrateOnDemand.sample.json scripts/config/migrateOnDemand.json
- *   # edit scripts/config/migrateOnDemand.json
- *
- * Overrides:
- *   MIGRATION_CONFIG_FILE=./path/to/config.json
  *
  * Resume:
- *   Re-run the command; migration progress is stored in migrateProgressFile.
- *
- * Auto-discovery:
- *   If no PartyA list or input file is provided, the script scans all quote IDs.
+ *   Re-run the command; migration progress is stored in the progress file.
  */
 type MigrationConfigFile = {
 	diamondAddress?: string
-	partyAAddresses?: string[]
-	partyBAddresses?: string[]
 	migrationInputFile?: string
-	migrateQuotes?: boolean
-	migrateBalances?: boolean
-	pauseDuringMigration?: boolean
-	grantRoles?: boolean
 	migrateChunkSize?: number
 	dryRun?: boolean
 	migrateProgressFile?: string
+	migrateReportFile?: string
+	outputDir?: string
 	migrateStrict?: boolean
 }
 
+const MIGRATION_CONFIG_FILE = process.env.MIGRATION_CONFIG_FILE ?? "./scripts/config/migrateOnDemand.json"
+
 function loadMigrationConfigFile(): MigrationConfigFile {
-	const configPath = process.env.MIGRATION_CONFIG_FILE ?? "./scripts/config/migrateOnDemand.json"
+	const configPath = MIGRATION_CONFIG_FILE
 	if (!fs.existsSync(configPath)) return {}
 	let raw: string
 	try {
@@ -60,26 +92,8 @@ function loadMigrationConfigFile(): MigrationConfigFile {
 	}
 }
 
-const configFile = loadMigrationConfigFile()
-const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress
-const PARTY_A_ADDRESSES = process.env.PARTY_A_ADDRESSES
-const PARTY_B_ADDRESSES = process.env.PARTY_B_ADDRESSES
-const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile
-
-const MIGRATE_QUOTES = parseBool(process.env.MIGRATE_QUOTES, configFile.migrateQuotes ?? true)
-const MIGRATE_BALANCES = parseBool(process.env.MIGRATE_BALANCES, configFile.migrateBalances ?? true)
-const PAUSE_DURING_MIGRATION = parseBool(process.env.PAUSE_DURING_MIGRATION, configFile.pauseDuringMigration ?? true)
-const GRANT_ROLES = parseBool(process.env.GRANT_ROLES, configFile.grantRoles ?? true)
-
-const MIGRATION_CONFIG: MigrationConfig = {
-	chunkSize: Number(process.env.MIGRATE_CHUNK_SIZE ?? configFile.migrateChunkSize ?? "50"),
-	dryRun: parseBool(process.env.DRY_RUN, configFile.dryRun ?? false),
-	progressFile: process.env.MIGRATE_PROGRESS_FILE ?? configFile.migrateProgressFile ?? "./migration-progress.json",
-	strict: parseBool(process.env.MIGRATE_STRICT, configFile.migrateStrict ?? false),
-}
-
 function parseBool(value: string | boolean | undefined, fallback: boolean): boolean {
-	if (!value) return fallback
+	if (value === undefined || value === null || value === "") return fallback
 	if (typeof value === "boolean") return value
 	const normalized = value.toLowerCase()
 	if (normalized === "true" || normalized === "1") return true
@@ -87,12 +101,31 @@ function parseBool(value: string | boolean | undefined, fallback: boolean): bool
 	throw new Error(`Invalid boolean value: ${value}`)
 }
 
-function parseAddressList(value: string | undefined, fallback: string[] = []): string[] {
-	if (!value) return fallback
-	return value
-		.split(",")
-		.map(item => item.trim())
-		.filter(Boolean)
+function formatError(error: unknown): string {
+	if (error instanceof Error && error.stack) return error.stack
+	if (error instanceof Error && error.message) return error.message
+	return String(error)
+}
+
+function ensureParentDir(filePath: string): void {
+	const dir = path.dirname(filePath)
+	if (dir && dir !== "." && !fs.existsSync(dir)) {
+		fs.mkdirSync(dir, { recursive: true })
+	}
+}
+
+function writeJson(filePath: string, value: unknown): void {
+	if (!filePath) return
+	ensureParentDir(filePath)
+	fs.writeFileSync(filePath, JSON.stringify(value, null, 2))
+}
+
+function tryWriteReport(filePath: string, report: MigrationOnDemandReport): void {
+	try {
+		writeJson(filePath, report)
+	} catch (error) {
+		console.error(`Failed to write migration report file: ${filePath}. ${formatError(error)}`)
+	}
 }
 
 function toBigInt(value: unknown): bigint {
@@ -102,144 +135,10 @@ function toBigInt(value: unknown): bigint {
 	return BigInt((value as any).toString())
 }
 
-function normalizeAddressList(value: unknown, label: string): string[] {
-	if (!value) return []
-	if (!Array.isArray(value)) {
-		throw new Error(`${label} must be an array of addresses.`)
-	}
-	for (const entry of value) {
-		if (typeof entry !== "string") {
-			throw new Error(`${label} must contain only strings.`)
-		}
-	}
-	return value.map(item => item.trim()).filter(Boolean)
-}
-
-function validateAddressList(label: string, addresses: string[]): void {
-	for (const addr of addresses) {
-		if (!ethers.isAddress(addr)) {
-			throw new Error(`${label} has invalid address: ${addr}`)
-		}
-		if (addr === ethers.ZeroAddress) {
-			throw new Error(`${label} contains zero address.`)
-		}
-	}
-}
-
-function buildAddressList(envValue: string | undefined, configList: string[], label: string): string[] {
-	const list = envValue ? parseAddressList(envValue) : configList
-	validateAddressList(label, list)
-	return list
-}
-
-async function fetchQuoteIds(viewFacetQuote: any, partyA: string): Promise<bigint[]> {
-	const total = toBigInt(await viewFacetQuote.quotesLength(partyA))
-	if (total === 0n) return []
-
-	const ids: bigint[] = []
-	const chunkSize = 100n
-	let start = 0n
-	while (start < total) {
-		const size = total - start > chunkSize ? chunkSize : total - start
-		const batch = await viewFacetQuote.quoteIdsOf(partyA, start, size)
-		for (const id of batch) {
-			ids.push(toBigInt(id))
-		}
-		start += size
-	}
-	return ids
-}
-
-function addQuoteToCollections(
-	quote: any,
-	quoteId: bigint,
-	partyBFilter: Set<string> | null,
-	openQuoteIdsSet: Set<bigint>,
-	partyBTasks: Map<string, Set<string>>,
-	expectedAggregates: Map<string, { long: bigint; short: bigint }>,
-): void {
-	const status = Number(quote.quoteStatus)
-	if (status !== QuoteStatus.OPENED && status !== QuoteStatus.CLOSE_PENDING && status !== QuoteStatus.CANCEL_CLOSE_PENDING) {
-		return
-	}
-
-	const partyB = quote.partyB
-	if (partyBFilter && !partyBFilter.has(partyB)) {
-		return
-	}
-
-	openQuoteIdsSet.add(quoteId)
-	if (!partyBTasks.has(partyB)) {
-		partyBTasks.set(partyB, new Set())
-	}
-	partyBTasks.get(partyB)!.add(quote.partyA)
-
-	const symbolId = toBigInt(quote.symbolId)
-	const positionType = Number(quote.positionType)
-	const openAmount = toBigInt(quote.quantity) - toBigInt(quote.closedAmount)
-	const key = `${partyB}-${quote.partyA}-${symbolId.toString()}`
-	if (!expectedAggregates.has(key)) {
-		expectedAggregates.set(key, { long: 0n, short: 0n })
-	}
-	const agg = expectedAggregates.get(key)!
-	if (positionType === PositionType.LONG) {
-		agg.long += openAmount
-	} else {
-		agg.short += openAmount
-	}
-}
-
-async function collectOpenQuotes(viewFacetQuote: any, partyAs: string[], partyBFilter: Set<string> | null) {
-	const openQuoteIdsSet: Set<bigint> = new Set()
-	const partyBTasks: Map<string, Set<string>> = new Map()
-	const expectedAggregates: Map<string, { long: bigint; short: bigint }> = new Map()
-
-	for (const partyA of partyAs) {
-		const quoteIds = await fetchQuoteIds(viewFacetQuote, partyA)
-		for (const quoteId of quoteIds) {
-			const quote = await viewFacetQuote.getQuote(quoteId)
-			addQuoteToCollections(quote, toBigInt(quoteId), partyBFilter, openQuoteIdsSet, partyBTasks, expectedAggregates)
-		}
-	}
-
-	return {
-		openQuoteIds: [...openQuoteIdsSet].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-		partyBTasks: [...partyBTasks.entries()]
-			.map(([partyB, partyAsSet]) => ({
-				partyB,
-				partyAs: [...partyAsSet].sort(),
-			}))
-			.sort((a, b) => a.partyB.localeCompare(b.partyB)),
-		expectedAggregates,
-	}
-}
-
-async function collectOpenQuotesFromAll(viewFacetQuote: any, partyBFilter: Set<string> | null) {
-	const openQuoteIdsSet: Set<bigint> = new Set()
-	const partyBTasks: Map<string, Set<string>> = new Map()
-	const expectedAggregates: Map<string, { long: bigint; short: bigint }> = new Map()
-
-	const lastId = toBigInt(await viewFacetQuote.getNextQuoteId())
-	let id = 1n
-	while (id <= lastId) {
-		const quote = await viewFacetQuote.getQuote(id)
-		addQuoteToCollections(quote, id, partyBFilter, openQuoteIdsSet, partyBTasks, expectedAggregates)
-		id += 1n
-	}
-
-	return {
-		openQuoteIds: [...openQuoteIdsSet].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-		partyBTasks: [...partyBTasks.entries()]
-			.map(([partyB, partyAsSet]) => ({
-				partyB,
-				partyAs: [...partyAsSet].sort(),
-			}))
-			.sort((a, b) => a.partyB.localeCompare(b.partyB)),
-		expectedAggregates,
-	}
-}
-
-function loadMigrationInput(filePath: string): MigrationInput {
+function loadMigrationInput(filePath: string): {
+	input: MigrationInput
+	expectedAggregates: Map<string, { long: bigint; short: bigint }> | null
+} {
 	let raw: string
 	try {
 		raw = fs.readFileSync(filePath, "utf-8")
@@ -294,13 +193,28 @@ function loadMigrationInput(filePath: string): MigrationInput {
 		}
 	})
 
+	// Load expectedAggregates if present in the input file
+	let expectedAggregates: Map<string, { long: bigint; short: bigint }> | null = null
+	if (data.expectedAggregates && typeof data.expectedAggregates === "object") {
+		expectedAggregates = new Map()
+		for (const [key, value] of Object.entries(data.expectedAggregates as Record<string, { long: string; short: string }>)) {
+			expectedAggregates.set(key, {
+				long: BigInt(value.long),
+				short: BigInt(value.short),
+			})
+		}
+	}
+
 	return {
-		quoteIds: quoteIds.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-		partyBTasks: partyBTasks.sort((a, b) => a.partyB.localeCompare(b.partyB)),
+		input: {
+			quoteIds: quoteIds.sort((a: bigint, b: bigint) => (a < b ? -1 : a > b ? 1 : 0)),
+			partyBTasks: partyBTasks.sort((a: PartyBTask, b: PartyBTask) => a.partyB.localeCompare(b.partyB)),
+		},
+		expectedAggregates,
 	}
 }
 
-async function verifyMigration(
+export async function verifyMigration(
 	migrationFacet: any,
 	viewFacet: any,
 	viewFacetAggregate: any,
@@ -355,117 +269,220 @@ async function verifyMigration(
 	}
 }
 
+const configFile = loadMigrationConfigFile()
+if (configFile.migrateProgressFile && typeof configFile.migrateProgressFile !== "string") {
+	throw new Error("migrateProgressFile must be a string path.")
+}
+if (configFile.migrateReportFile && typeof configFile.migrateReportFile !== "string") {
+	throw new Error("migrateReportFile must be a string path.")
+}
+if (configFile.outputDir && typeof configFile.outputDir !== "string") {
+	throw new Error("outputDir must be a string path.")
+}
+
+const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress
+const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile
+
+const DEFAULT_OUTPUT_DIR = "./scripts/output"
+const outputDir = process.env.MIGRATION_OUTPUT_DIR ?? configFile.outputDir ?? DEFAULT_OUTPUT_DIR
+const DEFAULT_PROGRESS_FILE = `${outputDir}/migration-progress.json`
+let migrateProgressFile = process.env.MIGRATE_PROGRESS_FILE ?? configFile.migrateProgressFile ?? DEFAULT_PROGRESS_FILE
+const DEFAULT_REPORT_FILE = `${outputDir}/migrateOnDemand-report.json`
+let migrateReportFile = process.env.MIGRATE_REPORT_FILE ?? configFile.migrateReportFile ?? DEFAULT_REPORT_FILE
+
+if (path.resolve(migrateProgressFile) === path.resolve(MIGRATION_CONFIG_FILE)) {
+	console.warn("migrateProgressFile matches migration config file; falling back to default progress file.")
+	migrateProgressFile = DEFAULT_PROGRESS_FILE
+}
+if (path.resolve(migrateReportFile) === path.resolve(MIGRATION_CONFIG_FILE)) {
+	console.warn("migrateReportFile matches migration config file; falling back to default report file.")
+	migrateReportFile = DEFAULT_REPORT_FILE
+}
+if (path.resolve(migrateReportFile) === path.resolve(migrateProgressFile)) {
+	console.warn("migrateReportFile matches progress file; falling back to default report file.")
+	migrateReportFile = DEFAULT_REPORT_FILE
+}
+
+const MIGRATION_CONFIG: MigrationConfig = {
+	chunkSize: Number(process.env.MIGRATE_CHUNK_SIZE ?? configFile.migrateChunkSize ?? "50"),
+	dryRun: parseBool(process.env.DRY_RUN, configFile.dryRun ?? false),
+	progressFile: migrateProgressFile,
+	strict: parseBool(process.env.MIGRATE_STRICT, configFile.migrateStrict ?? false),
+}
+
 async function main() {
-	if (!DIAMOND_ADDRESS) {
-		throw new Error("DIAMOND_ADDRESS is required.")
+	const startedAtMs = Date.now()
+	const report: MigrationOnDemandReport = {
+		status: "running",
+		startedAt: new Date(startedAtMs).toISOString(),
+		migrationInputFile: MIGRATION_INPUT_FILE,
+		outputDir,
+		progressFile: migrateProgressFile,
+		reportFile: migrateReportFile,
+		config: {
+			chunkSize: MIGRATION_CONFIG.chunkSize,
+			dryRun: MIGRATION_CONFIG.dryRun,
+			strict: MIGRATION_CONFIG.strict,
+		},
+		steps: [],
 	}
-	if (!ethers.isAddress(DIAMOND_ADDRESS) || DIAMOND_ADDRESS === ethers.ZeroAddress) {
-		throw new Error(`Invalid DIAMOND_ADDRESS: ${DIAMOND_ADDRESS}`)
-	}
-	if (MIGRATION_INPUT_FILE && typeof MIGRATION_INPUT_FILE !== "string") {
-		throw new Error("migrationInputFile must be a string path.")
-	}
-	if (!Number.isInteger(MIGRATION_CONFIG.chunkSize) || MIGRATION_CONFIG.chunkSize <= 0) {
-		throw new Error(`Invalid migrateChunkSize: ${MIGRATION_CONFIG.chunkSize}`)
-	}
+	tryWriteReport(migrateReportFile, report)
+	let currentStep: string | null = null
 
-	const signers = await ethers.getSigners()
-	const admin = signers[0]
-	const adminAddress = await admin.getAddress()
-
-	const configPartyAs = normalizeAddressList(configFile.partyAAddresses, "partyAAddresses")
-	const configPartyBs = normalizeAddressList(configFile.partyBAddresses, "partyBAddresses")
-	const partyAs = [...new Set(buildAddressList(PARTY_A_ADDRESSES, configPartyAs, "PartyA addresses"))].sort()
-	const partyBs = [...new Set(buildAddressList(PARTY_B_ADDRESSES, configPartyBs, "PartyB addresses"))].sort()
-	const partyBFilter = partyBs.length > 0 ? new Set(partyBs) : null
-
-	console.log(`Diamond: ${DIAMOND_ADDRESS}`)
-	console.log(`Admin:   ${adminAddress}`)
-	console.log(`PartyAs: ${partyAs.join(", ") || "-"}`)
-	console.log(`PartyBs: ${partyBs.join(", ") || "-"}`)
-
-	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS, admin)
-	const pauseControlFacet = await ethers.getContractAt(
-		"contracts/core/facets/PauseControl/PauseControlFacet.sol:PauseControlFacet",
-		DIAMOND_ADDRESS,
-		admin,
-	)
-	const migrationFacet = await ethers.getContractAt("contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet", DIAMOND_ADDRESS, admin)
-	const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
-	const viewFacetQuote = await ethers.getContractAt("contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote", DIAMOND_ADDRESS, admin)
-	const viewFacetAggregate = await ethers.getContractAt(
-		"contracts/core/facets/ViewFacetAggregate/ViewFacetAggregate.sol:ViewFacetAggregate",
-		DIAMOND_ADDRESS,
-		admin,
-	)
-
-	let pausedByScript = false
-	let input: MigrationInput
-	let expectedAggregates: Map<string, { long: bigint; short: bigint }> | null = null
-
-	if (MIGRATION_INPUT_FILE) {
+	try {
+		// Validate inputs
+		currentStep = "validate_inputs"
+		if (!DIAMOND_ADDRESS) {
+			throw new Error("DIAMOND_ADDRESS is required.")
+		}
+		if (!ethers.isAddress(DIAMOND_ADDRESS) || DIAMOND_ADDRESS === ethers.ZeroAddress) {
+			throw new Error(`Invalid DIAMOND_ADDRESS: ${DIAMOND_ADDRESS}`)
+		}
+		if (!MIGRATION_INPUT_FILE) {
+			throw new Error("MIGRATION_INPUT_FILE is required. Run prepareMigrationInput.ts first.")
+		}
 		if (!fs.existsSync(MIGRATION_INPUT_FILE)) {
 			throw new Error(`Migration input file not found: ${MIGRATION_INPUT_FILE}`)
 		}
-		input = loadMigrationInput(MIGRATION_INPUT_FILE)
-	} else {
-		if (partyAs.length === 0) {
-			console.log("No PartyA list provided; scanning all quotes to build migration input.")
+		if (!Number.isInteger(MIGRATION_CONFIG.chunkSize) || (MIGRATION_CONFIG.chunkSize ?? 0) <= 0) {
+			throw new Error(`Invalid migrateChunkSize: ${MIGRATION_CONFIG.chunkSize}`)
 		}
-		const collected =
-			partyAs.length > 0
-				? await collectOpenQuotes(viewFacetQuote, partyAs, partyBFilter)
-				: await collectOpenQuotesFromAll(viewFacetQuote, partyBFilter)
-		input = { quoteIds: collected.openQuoteIds, partyBTasks: collected.partyBTasks }
-		expectedAggregates = collected.expectedAggregates
-	}
+		report.diamondAddress = DIAMOND_ADDRESS
+		report.steps.push({
+			name: "validate_inputs",
+			status: "ok",
+			details: {
+				diamondAddress: DIAMOND_ADDRESS,
+				migrationInputFile: MIGRATION_INPUT_FILE,
+			},
+		})
+		currentStep = null
+		tryWriteReport(migrateReportFile, report)
 
-	if (GRANT_ROLES) {
-		await (await controlFacet.grantRole(adminAddress, ethers.id("MIGRATION_ROLE"))).wait()
-		if (PAUSE_DURING_MIGRATION) {
-			await (await controlFacet.grantRole(adminAddress, ethers.id("PAUSER_ROLE"))).wait()
-			await (await controlFacet.grantRole(adminAddress, ethers.id("UNPAUSER_ROLE"))).wait()
+		// Resolve signer
+		currentStep = "resolve_signer"
+		const signers = await ethers.getSigners()
+		const admin = signers[0]
+		const adminAddress = await admin.getAddress()
+		report.adminAddress = adminAddress
+		report.steps.push({
+			name: "resolve_signer",
+			status: "ok",
+			details: { adminAddress },
+		})
+		currentStep = null
+		tryWriteReport(migrateReportFile, report)
+
+		console.log(`Diamond: ${DIAMOND_ADDRESS}`)
+		console.log(`Admin:   ${adminAddress}`)
+		console.log(`Input:   ${MIGRATION_INPUT_FILE}`)
+		console.log(`Progress file: ${migrateProgressFile}`)
+		console.log(`Report file: ${migrateReportFile}`)
+
+		// Connect facets
+		currentStep = "connect_facets"
+		const migrationFacet = await ethers.getContractAt("contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet", DIAMOND_ADDRESS, admin)
+		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
+		const viewFacetAggregate = await ethers.getContractAt(
+			"contracts/core/facets/ViewFacetAggregate/ViewFacetAggregate.sol:ViewFacetAggregate",
+			DIAMOND_ADDRESS,
+			admin,
+		)
+		report.steps.push({ name: "connect_facets", status: "ok" })
+		currentStep = null
+		tryWriteReport(migrateReportFile, report)
+
+		// Load validated input
+		currentStep = "load_input"
+		const { input, expectedAggregates } = loadMigrationInput(MIGRATION_INPUT_FILE)
+		report.input = {
+			quoteIdsTotal: input.quoteIds.length,
+			partyBTasksTotal: input.partyBTasks.length,
+			aggregateKeys: expectedAggregates?.size ?? 0,
 		}
-	}
+		report.steps.push({
+			name: "load_input",
+			status: "ok",
+			details: {
+				quoteIds: input.quoteIds.length,
+				partyBTasks: input.partyBTasks.length,
+				aggregateKeys: expectedAggregates?.size ?? 0,
+			},
+		})
+		currentStep = null
+		tryWriteReport(migrateReportFile, report)
 
-	if (PAUSE_DURING_MIGRATION) {
-		const pauseState = await viewFacet.pauseState()
-		if (!pauseState.globalPaused) {
-			await (await pauseControlFacet.pauseGlobal()).wait()
-			pausedByScript = true
+		// Run migration
+		if (input.quoteIds.length === 0 && input.partyBTasks.length === 0) {
+			console.log("No migration tasks to run.")
+			report.steps.push({ name: "migrate", status: "ok", details: { skipped: true } })
+			tryWriteReport(migrateReportFile, report)
 		} else {
-			console.log("Global pause already active; skipping pause.")
+			currentStep = "migrate"
+			console.log(`Migrating ${input.quoteIds.length} quotes for ${input.partyBTasks.length} partyBs...`)
+			const migrationReport = await migrate(migrationFacet, input, MIGRATION_CONFIG)
+			report.migrationReport = migrationReport
+			report.steps.push({
+				name: "migrate",
+				status: "ok",
+				details: {
+					status: migrationReport.status,
+					quotesMigrated: migrationReport.quotesMigrated,
+					partyBsMigrated: migrationReport.partyBsMigrated,
+					operations: migrationReport.operations.length,
+				},
+			})
+			currentStep = null
+			tryWriteReport(migrateReportFile, report)
 		}
-	}
 
-	if (!MIGRATE_QUOTES) {
-		input.quoteIds = []
-	}
-	if (!MIGRATE_BALANCES) {
-		input.partyBTasks = []
-	}
-
-	if (input.quoteIds.length === 0 && input.partyBTasks.length === 0) {
-		console.log("No migration tasks to run.")
-	} else {
-		console.log(`Migrating ${input.quoteIds.length} quotes for ${input.partyBTasks.length} partyBs...`)
-		await migrate(migrationFacet, input, MIGRATION_CONFIG)
-	}
-
-	if (PAUSE_DURING_MIGRATION) {
-		if (pausedByScript) {
-			await (await pauseControlFacet.unpauseGlobal()).wait()
+		// Verify migration
+		if (input.quoteIds.length > 0 || input.partyBTasks.length > 0) {
+			currentStep = "verify_migration"
+			console.log("Verifying migration results...")
+			await verifyMigration(migrationFacet, viewFacet, viewFacetAggregate, input.quoteIds, input.partyBTasks, expectedAggregates)
+			report.verification = {
+				performed: true,
+				quoteChecks: input.quoteIds.length,
+				partyBChecks: input.partyBTasks.length,
+				aggregateChecks: expectedAggregates?.size ?? 0,
+			}
+			report.steps.push({
+				name: "verify_migration",
+				status: "ok",
+				details: report.verification,
+			})
+			currentStep = null
+			tryWriteReport(migrateReportFile, report)
 		} else {
-			console.log("Global pause left unchanged.")
+			report.verification = {
+				performed: false,
+				quoteChecks: 0,
+				partyBChecks: 0,
+				aggregateChecks: 0,
+			}
 		}
-	}
 
-	if (input.quoteIds.length > 0 || input.partyBTasks.length > 0) {
-		console.log("Verifying migration results...")
-		await verifyMigration(migrationFacet, viewFacet, viewFacetAggregate, input.quoteIds, input.partyBTasks, expectedAggregates)
+		console.log("Migration completed successfully.")
+		report.status = "success"
+	} catch (error) {
+		if (currentStep) {
+			report.steps.push({
+				name: currentStep,
+				status: "error",
+				details: { error: formatError(error) },
+			})
+			currentStep = null
+		}
+		report.status = "failed"
+		report.error = formatError(error)
+		tryWriteReport(migrateReportFile, report)
+		throw error
+	} finally {
+		report.finishedAt = new Date().toISOString()
+		report.durationMs = Date.now() - startedAtMs
+		tryWriteReport(migrateReportFile, report)
 	}
-
-	console.log("Migration run completed successfully.")
 }
 
 main().catch(error => {

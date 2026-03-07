@@ -107,7 +107,7 @@ library MigrationFacetImpl {
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		require(!migrationLayout.partyBLockedValuesMigrated[partyB], "MigrationFacet: Already migrated");
+		// require(!migrationLayout.partyBLockedValuesMigrated[partyB], "MigrationFacet: Already migrated");
 
 		for (uint256 i = 0; i < partyAs.length; i++) {
 			address partyA = partyAs[i];
@@ -124,6 +124,6 @@ library MigrationFacetImpl {
 			partyAsProcessed++;
 		}
 
-		migrationLayout.partyBLockedValuesMigrated[partyB] = true;
+		// migrationLayout.partyBLockedValuesMigrated[partyB] = true;
 	}
 }

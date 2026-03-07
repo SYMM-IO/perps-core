@@ -134,9 +134,17 @@ Complete changelog of every event change from v0.8.4 to v0.8.5 — removed backw
 
 Backfills the new aggregated position structures and master account buckets from existing v0.8.4 data. Run during a global pause after the diamond cut — migrates quote-level data into symbol-level aggregates and sums per-PartyA balances into the cross-margin bucket.
 
-### [Migration Script Usage](scripts/migration-script-usage.md)
+### [Migration Script Usage](../../scripts/docs/migration-script-usage.md)
 
 Practical guide for running the migration scripts against a live deployment.
+
+### [Update And Migration Path](../../scripts/docs/update-and-migration-path.md)
+
+Operational runbook for local rehearsal (v0.8.4 state seed -> v0.8.5 upgrade -> migration phase), including worktree setup and output locations.
+
+### [Upgrade Output Verification](../../scripts/docs/upgrade-output-verification.md)
+
+How to read generated reports, verify invariant checks, and identify selector-level `diamondCut` add/replace/remove changes.
 
 ### [Setup Task](setup-task.md)
 

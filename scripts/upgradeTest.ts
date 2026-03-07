@@ -17,8 +17,10 @@ import { ethers } from "../test/helpers/hardhat-connection.js"
  *
  * Overrides:
  *   UPGRADE_CONFIG_FILE=./path/to/config.json
+ *   UPGRADE_OUTPUT_DIR=./scripts/output
  *   UPGRADE_PROGRESS_FILE=./path/to/progress.json
  *   UPGRADE_REPORT_FILE=./path/to/report.json
+ *   UPGRADE_DIAMOND_CUT_FILE=./path/to/diamond-cut.json
  *   KEEP_PROGRESS=true
  *   VERBOSE=true
  *
@@ -42,9 +44,27 @@ const QUOTE_ABI_V85 = [
 const QuoteIfaceV84 = new ethers.Interface(QUOTE_ABI_V84)
 const QuoteIfaceV85 = new ethers.Interface(QUOTE_ABI_V85)
 
-type FacetInfo = {
+export type FacetInfo = {
 	address: string
 	selectors: string[]
+}
+
+export type SelectorChangeAction = "add" | "replace" | "remove"
+
+export type SelectorChange = {
+	selector: string
+	action: SelectorChangeAction
+	signature: string | null
+	fromFacetAddress: string | null
+	toFacetAddress: string | null
+	toFacetName: string | null
+}
+
+type DiamondCutDetails = {
+	diamondAddress: string
+	generatedAt: string
+	selectorChanges: SelectorChange[]
+	selectorActionCounts: Record<SelectorChangeAction, number>
 }
 
 type PartyAState = {
@@ -53,7 +73,7 @@ type PartyAState = {
 	quoteIds: bigint[]
 }
 
-type PreState = {
+export type PreState = {
 	nextQuoteId: bigint
 	nextBridgeTransactionId: bigint
 	deallocateDebounceTime: bigint
@@ -61,7 +81,7 @@ type PreState = {
 	partyBAllocated: Record<string, Record<string, bigint>>
 }
 
-type UpgradeConfig = {
+export type UpgradeConfig = {
 	diamondAddress?: string
 	partyAAddresses?: string[]
 	partyBAddresses?: string[]
@@ -71,11 +91,14 @@ type UpgradeConfig = {
 	keepProgress?: boolean
 	verbose?: boolean
 	reportFile?: string
+	outputDir?: string
+	diamondCutDetailsFile?: string
 }
 
 type UpgradeProgress = {
 	preState?: PreStateSerialized
 	facets?: Record<string, FacetInfo>
+	selectorSignatures?: Record<string, string>
 	diamondCutApplied?: boolean
 }
 
@@ -109,8 +132,10 @@ type VerificationReport = {
 	partyAs?: string[]
 	partyBs?: string[]
 	quoteScanLimit?: number | null
+	outputDir?: string
 	progressFile?: string
 	reportFile?: string
+	diamondCutDetailsFile?: string
 	keepProgress?: boolean
 	verbose?: boolean
 	preState?: PreStateSerialized
@@ -148,6 +173,12 @@ if (config.progressFile && typeof config.progressFile !== "string") {
 if (config.reportFile && typeof config.reportFile !== "string") {
 	throw new Error("reportFile must be a string path.")
 }
+if (config.outputDir && typeof config.outputDir !== "string") {
+	throw new Error("outputDir must be a string path.")
+}
+if (config.diamondCutDetailsFile && typeof config.diamondCutDetailsFile !== "string") {
+	throw new Error("diamondCutDetailsFile must be a string path.")
+}
 if (config.quoteScanLimit && typeof config.quoteScanLimit !== "number") {
 	throw new Error("quoteScanLimit must be a number.")
 }
@@ -161,10 +192,14 @@ const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 const PARTY_A_ADDRESSES = process.env.PARTY_A_ADDRESSES
 const PARTY_B_ADDRESSES = process.env.PARTY_B_ADDRESSES
 const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? "6")
-const DEFAULT_PROGRESS_FILE = "./scripts/config/upgradeTest-progress.json"
+const DEFAULT_OUTPUT_DIR = "./scripts/output"
+const outputDir = process.env.UPGRADE_OUTPUT_DIR ?? config.outputDir ?? DEFAULT_OUTPUT_DIR
+const DEFAULT_PROGRESS_FILE = `${outputDir}/upgradeTest-progress.json`
 let progressFile = process.env.UPGRADE_PROGRESS_FILE ?? config.progressFile ?? DEFAULT_PROGRESS_FILE
-const DEFAULT_REPORT_FILE = "./scripts/config/upgradeTest-report.json"
+const DEFAULT_REPORT_FILE = `${outputDir}/upgradeTest-report.json`
 let reportFile = process.env.UPGRADE_REPORT_FILE ?? config.reportFile ?? DEFAULT_REPORT_FILE
+const DEFAULT_DIAMOND_CUT_DETAILS_FILE = `${outputDir}/upgradeTest-diamond-cut.json`
+let diamondCutDetailsFile = process.env.UPGRADE_DIAMOND_CUT_FILE ?? config.diamondCutDetailsFile ?? DEFAULT_DIAMOND_CUT_DETAILS_FILE
 const QUOTE_SCAN_LIMIT = process.env.QUOTE_SCAN_LIMIT ? Number(process.env.QUOTE_SCAN_LIMIT) : (config.quoteScanLimit ?? null)
 const KEEP_PROGRESS = parseBool(process.env.KEEP_PROGRESS, config.keepProgress ?? false)
 const VERBOSE = parseBool(process.env.VERBOSE, config.verbose ?? false)
@@ -179,6 +214,18 @@ if (path.resolve(reportFile) === path.resolve(UPGRADE_CONFIG_FILE)) {
 if (path.resolve(reportFile) === path.resolve(progressFile)) {
 	console.warn("reportFile matches progress file; falling back to default report file.")
 	reportFile = DEFAULT_REPORT_FILE
+}
+if (path.resolve(diamondCutDetailsFile) === path.resolve(UPGRADE_CONFIG_FILE)) {
+	console.warn("diamondCutDetailsFile matches upgrade config file; falling back to default details file.")
+	diamondCutDetailsFile = DEFAULT_DIAMOND_CUT_DETAILS_FILE
+}
+if (path.resolve(diamondCutDetailsFile) === path.resolve(progressFile)) {
+	console.warn("diamondCutDetailsFile matches progress file; falling back to default details file.")
+	diamondCutDetailsFile = DEFAULT_DIAMOND_CUT_DETAILS_FILE
+}
+if (path.resolve(diamondCutDetailsFile) === path.resolve(reportFile)) {
+	console.warn("diamondCutDetailsFile matches report file; falling back to default details file.")
+	diamondCutDetailsFile = DEFAULT_DIAMOND_CUT_DETAILS_FILE
 }
 
 const IGNORE_REMOVE_SELECTORS = new Set<string>([
@@ -223,13 +270,22 @@ function formatError(error: unknown): string {
 	return String(error)
 }
 
-function writeReport(filePath: string, report: VerificationReport): void {
-	if (!filePath) return
+function ensureParentDir(filePath: string): void {
 	const dir = path.dirname(filePath)
 	if (dir && dir !== "." && !fs.existsSync(dir)) {
 		fs.mkdirSync(dir, { recursive: true })
 	}
-	fs.writeFileSync(filePath, JSON.stringify(report, null, 2))
+}
+
+function writeJson(filePath: string, value: unknown): void {
+	if (!filePath) return
+	ensureParentDir(filePath)
+	fs.writeFileSync(filePath, JSON.stringify(value, null, 2))
+}
+
+function writeReport(filePath: string, report: VerificationReport): void {
+	if (!filePath) return
+	writeJson(filePath, report)
 }
 
 function tryWriteReport(filePath: string, report: VerificationReport): void {
@@ -283,7 +339,7 @@ function validateAddressList(label: string, addresses: string[]): void {
 	}
 }
 
-async function discoverPartiesFromQuotes(
+export async function discoverPartiesFromQuotes(
 	viewFacetQuote: any,
 	diamondAddress: string,
 	quoteScanLimit: number | null,
@@ -339,7 +395,7 @@ function assertEqualArray(label: string, pre: bigint[], post: bigint[]): void {
 	}
 }
 
-function serializePreState(state: PreState): PreStateSerialized {
+export function serializePreState(state: PreState): PreStateSerialized {
 	const partyAs: Record<string, PartyAStateSerialized> = {}
 	for (const [addr, info] of Object.entries(state.partyAs)) {
 		partyAs[addr] = {
@@ -418,7 +474,7 @@ function saveProgress(filePath: string, progress: UpgradeProgress): void {
 	if (progress.preState) {
 		toSave.preState = progress.preState
 	}
-	fs.writeFileSync(filePath, JSON.stringify(toSave, null, 2))
+	writeJson(filePath, toSave)
 }
 
 function deleteProgress(filePath: string): void {
@@ -444,7 +500,7 @@ async function fetchQuoteIds(viewFacetQuote: any, partyA: string): Promise<bigin
 	return ids
 }
 
-async function captureState(viewFacet: any, viewFacetQuote: any, partyAs: string[], partyBs: string[]): Promise<PreState> {
+export async function captureState(viewFacet: any, viewFacetQuote: any, partyAs: string[], partyBs: string[]): Promise<PreState> {
 	const state: PreState = {
 		nextQuoteId: toBigInt(await viewFacetQuote.getNextQuoteId()),
 		nextBridgeTransactionId: toBigInt(await viewFacet.getNextBridgeTransactionId()),
@@ -472,7 +528,7 @@ async function captureState(viewFacet: any, viewFacetQuote: any, partyAs: string
 	return state
 }
 
-function compareStates(pre: PreState, post: PreState): void {
+export function compareStates(pre: PreState, post: PreState): void {
 	if (VERBOSE) {
 		console.log("Verifying invariant fields...")
 	}
@@ -530,7 +586,21 @@ function summarizeFacets(facets: Record<string, FacetInfo>): Record<string, stri
 	return summary
 }
 
-async function deployLibraries(): Promise<Record<string, string>> {
+function summarizeSelectorChanges(selectorChanges: SelectorChange[]): {
+	totalSelectorChanges: number
+	selectorActionCounts: Record<SelectorChangeAction, number>
+} {
+	const selectorActionCounts: Record<SelectorChangeAction, number> = { add: 0, replace: 0, remove: 0 }
+	for (const change of selectorChanges) {
+		selectorActionCounts[change.action] += 1
+	}
+	return {
+		totalSelectorChanges: selectorChanges.length,
+		selectorActionCounts,
+	}
+}
+
+export async function deployLibraries(): Promise<Record<string, string>> {
 	const libraries: Record<string, string> = {}
 
 	const LibQuoteFundingFactory = await ethers.getContractFactory("LibQuoteFunding")
@@ -555,9 +625,10 @@ async function deployLibraries(): Promise<Record<string, string>> {
 	return libraries
 }
 
-async function deployFacets(): Promise<Record<string, FacetInfo>> {
+export async function deployFacets(): Promise<{ facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
 	const libraries = await deployLibraries()
 	const facets: Record<string, FacetInfo> = {}
+	const selectorSignatures: Record<string, string> = {}
 
 	for (const facetName of FacetNames) {
 		const shortName = facetName.includes(":") ? facetName.split(":").pop()! : facetName
@@ -580,13 +651,26 @@ async function deployFacets(): Promise<Record<string, FacetInfo>> {
 		const selectors = getSelectors(ethers, facetFactory).selectors
 
 		facets[shortName] = { address, selectors }
+		for (const fragment of facetFactory.interface.fragments) {
+			if (fragment.type !== "function") continue
+			const signature = fragment.format("sighash")
+			if (signature === "init(bytes)") continue
+			const selector = ethers.id(signature).substring(0, 10)
+			if (!selectorSignatures[selector]) {
+				selectorSignatures[selector] = signature
+			}
+		}
 		console.log(`Deployed ${shortName}: ${address}`)
 	}
 
-	return facets
+	return { facets, selectorSignatures }
 }
 
-async function buildDiamondCut(diamondAddress: string, newFacets: Record<string, FacetInfo>): Promise<any[]> {
+export async function buildDiamondCut(
+	diamondAddress: string,
+	newFacets: Record<string, FacetInfo>,
+	knownSelectorSignatures: Record<string, string>,
+): Promise<{ diamondCut: any[]; selectorChanges: SelectorChange[] }> {
 	const diamondLoupeFacet = await ethers.getContractAt("DiamondLoupeFacet", diamondAddress)
 	const facets = await diamondLoupeFacet.facets()
 
@@ -604,20 +688,43 @@ async function buildDiamondCut(diamondAddress: string, newFacets: Record<string,
 		}
 	}
 
-	const actions: Record<string, { action: FacetCutAction; facetAddress: string }> = {}
+	const facetNameByAddress: Record<string, string> = {}
+	for (const [facetName, facetInfo] of Object.entries(newFacets)) {
+		facetNameByAddress[facetInfo.address.toLowerCase()] = facetName
+	}
 
-	for (const [selector, _] of currentSelectors) {
+	const actions: Record<string, { action: FacetCutAction; facetAddress: string }> = {}
+	const selectorChanges: SelectorChange[] = []
+
+	for (const [selector, currentFacetAddress] of currentSelectors) {
 		if (newSelectors.has(selector)) {
+			const toFacetAddress = newSelectors.get(selector)!
 			actions[selector] = {
 				action: FacetCutAction.Replace,
-				facetAddress: newSelectors.get(selector)!,
+				facetAddress: toFacetAddress,
 			}
+			selectorChanges.push({
+				selector,
+				action: "replace",
+				signature: knownSelectorSignatures[selector] ?? null,
+				fromFacetAddress: currentFacetAddress,
+				toFacetAddress,
+				toFacetName: facetNameByAddress[toFacetAddress.toLowerCase()] ?? null,
+			})
 			newSelectors.delete(selector)
 		} else if (!IGNORE_REMOVE_SELECTORS.has(selector)) {
 			actions[selector] = {
 				action: FacetCutAction.Remove,
 				facetAddress: ethers.ZeroAddress,
 			}
+			selectorChanges.push({
+				selector,
+				action: "remove",
+				signature: knownSelectorSignatures[selector] ?? null,
+				fromFacetAddress: currentFacetAddress,
+				toFacetAddress: null,
+				toFacetName: null,
+			})
 		}
 	}
 
@@ -626,6 +733,14 @@ async function buildDiamondCut(diamondAddress: string, newFacets: Record<string,
 			action: FacetCutAction.Add,
 			facetAddress,
 		}
+		selectorChanges.push({
+			selector,
+			action: "add",
+			signature: knownSelectorSignatures[selector] ?? null,
+			fromFacetAddress: null,
+			toFacetAddress: facetAddress,
+			toFacetName: facetNameByAddress[facetAddress.toLowerCase()] ?? null,
+		})
 	}
 
 	const cutMap: Record<string, { facetAddress: string; action: FacetCutAction; selectors: string[] }> = {}
@@ -641,25 +756,35 @@ async function buildDiamondCut(diamondAddress: string, newFacets: Record<string,
 		cutMap[key].selectors.push(selector)
 	}
 
-	return Object.values(cutMap)
+	const diamondCut = Object.values(cutMap)
 		.filter(cut => cut.selectors.length > 0)
 		.map(cut => ({
 			facetAddress: cut.facetAddress,
 			action: cut.action,
 			functionSelectors: cut.selectors,
 		}))
+
+	selectorChanges.sort((a, b) => a.selector.localeCompare(b.selector))
+
+	return {
+		diamondCut,
+		selectorChanges,
+	}
 }
 
-async function applyDiamondCut(diamondAddress: string, diamondCut: any[]): Promise<void> {
+export async function applyDiamondCut(diamondAddress: string, diamondCut: any[], signer?: any, chunkSize?: number): Promise<void> {
 	if (diamondCut.length === 0) {
 		console.log("No diamond cut required")
 		return
 	}
 
-	const diamondCutFacet = await ethers.getContractAt("DiamondCutFacet", diamondAddress)
+	const effectiveChunkSize = chunkSize ?? DIAMOND_CUT_CHUNK_SIZE
+	const diamondCutFacet = signer
+		? await ethers.getContractAt("DiamondCutFacet", diamondAddress, signer)
+		: await ethers.getContractAt("DiamondCutFacet", diamondAddress)
 	const chunks: any[][] = []
-	for (let i = 0; i < diamondCut.length; i += DIAMOND_CUT_CHUNK_SIZE) {
-		chunks.push(diamondCut.slice(i, i + DIAMOND_CUT_CHUNK_SIZE))
+	for (let i = 0; i < diamondCut.length; i += effectiveChunkSize) {
+		chunks.push(diamondCut.slice(i, i + effectiveChunkSize))
 	}
 
 	for (let i = 0; i < chunks.length; i++) {
@@ -680,8 +805,10 @@ async function main() {
 		startedAt: new Date(startedAtMs).toISOString(),
 		steps: [],
 		quoteScanLimit: QUOTE_SCAN_LIMIT,
+		outputDir,
 		progressFile,
 		reportFile,
+		diamondCutDetailsFile,
 		keepProgress: KEEP_PROGRESS,
 		verbose: VERBOSE,
 	}
@@ -782,8 +909,10 @@ async function main() {
 		console.log(`Admin:   ${adminAddress}`)
 		console.log(`PartyAs: ${partyAs.join(", ") || "-"}`)
 		console.log(`PartyBs: ${partyBs.join(", ") || "-"}`)
+		console.log(`Output dir: ${outputDir}`)
 		console.log(`Progress file: ${progressFile}`)
 		console.log(`Report file: ${reportFile}`)
+		console.log(`Diamond cut details file: ${diamondCutDetailsFile}`)
 		if (QUOTE_SCAN_LIMIT !== null) {
 			console.log(`Quote scan limit: ${QUOTE_SCAN_LIMIT} (verification-only)`)
 		}
@@ -839,15 +968,18 @@ async function main() {
 		}
 
 		let newFacets: Record<string, FacetInfo> | null = null
+		let knownSelectorSignatures: Record<string, string> = {}
 		if (progress.facets) {
 			currentStep = "load_facets"
 			newFacets = progress.facets
+			knownSelectorSignatures = progress.selectorSignatures ?? {}
 			report.steps.push({
 				name: "load_facets",
 				status: "ok",
 				details: {
 					source: "progress",
 					facetCount: Object.keys(newFacets).length,
+					selectorSignatureCount: Object.keys(knownSelectorSignatures).length,
 					facets: summarizeFacets(newFacets),
 				},
 			})
@@ -857,14 +989,18 @@ async function main() {
 		} else {
 			currentStep = "deploy_facets"
 			console.log("Deploying v0.8.5 facets...")
-			newFacets = await deployFacets()
+			const deployed = await deployFacets()
+			newFacets = deployed.facets
+			knownSelectorSignatures = deployed.selectorSignatures
 			progress.facets = newFacets
+			progress.selectorSignatures = knownSelectorSignatures
 			saveProgress(progressFile, progress)
 			report.steps.push({
 				name: "deploy_facets",
 				status: "ok",
 				details: {
 					facetCount: Object.keys(newFacets).length,
+					selectorSignatureCount: Object.keys(knownSelectorSignatures).length,
 					facets: summarizeFacets(newFacets),
 				},
 			})
@@ -875,7 +1011,7 @@ async function main() {
 		if (!progress.diamondCutApplied) {
 			currentStep = "build_diamond_cut"
 			console.log("Preparing diamond cut...")
-			const diamondCut = await buildDiamondCut(DIAMOND_ADDRESS, newFacets)
+			const { diamondCut, selectorChanges } = await buildDiamondCut(DIAMOND_ADDRESS, newFacets, knownSelectorSignatures)
 
 			const actionCounts = { add: 0, replace: 0, remove: 0 }
 			let totalSelectors = 0
@@ -885,13 +1021,25 @@ async function main() {
 				else if (cut.action === FacetCutAction.Replace) actionCounts.replace += 1
 				else if (cut.action === FacetCutAction.Remove) actionCounts.remove += 1
 			}
+
+			const selectorSummary = summarizeSelectorChanges(selectorChanges)
+			const details: DiamondCutDetails = {
+				diamondAddress: DIAMOND_ADDRESS,
+				generatedAt: new Date().toISOString(),
+				selectorChanges,
+				selectorActionCounts: selectorSummary.selectorActionCounts,
+			}
+			writeJson(diamondCutDetailsFile, details)
+
 			report.steps.push({
 				name: "build_diamond_cut",
 				status: "ok",
 				details: {
 					cutCount: diamondCut.length,
 					totalSelectors,
-					actionCounts,
+					facetActionCounts: actionCounts,
+					...selectorSummary,
+					diamondCutDetailsFile,
 				},
 			})
 			currentStep = null
