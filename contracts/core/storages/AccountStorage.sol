@@ -206,6 +206,13 @@ library AccountStorage {
 		///      PartyB solvency result. The inProgress flag gates step progression but does
 		///      NOT prevent re-initialization - quote status is the primary guard.
 		mapping(uint256 => ForceCloseDetail) forceCloseDetails;
+		/// @notice List of PartyAs that currently have at least one active connection with a PartyB
+		/// @dev Reverse index of connectedPartyBs used when PartyB side operations need to fan out
+		///      over related PartyAs (e.g., nonce invalidation on funding config changes).
+		mapping(address => address[]) connectedPartyAs;
+		/// @notice Fast lookup for whether a PartyB has an active connection with a PartyA
+		/// @dev O(1) check to avoid duplicates in connectedPartyAs.
+		mapping(address => mapping(address => bool)) isConnectedPartyA;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

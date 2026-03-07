@@ -22,6 +22,10 @@ library LibConnections {
 			accountLayout.connectedPartyBs[partyA].push(partyB);
 			accountLayout.isConnectedPartyB[partyA][partyB] = true;
 		}
+		if (!accountLayout.isConnectedPartyA[partyB][partyA]) {
+			accountLayout.connectedPartyAs[partyB].push(partyA);
+			accountLayout.isConnectedPartyA[partyB][partyA] = true;
+		}
 	}
 
 	/// @notice Removes a connection between partyA and partyB if no positions and no pending quotes remain
@@ -42,6 +46,17 @@ library LibConnections {
 					}
 				}
 				accountLayout.isConnectedPartyB[partyA][partyB] = false;
+			}
+			if (accountLayout.isConnectedPartyA[partyB][partyA]) {
+				address[] storage reverseConnections = accountLayout.connectedPartyAs[partyB];
+				for (uint256 i = 0; i < reverseConnections.length; i++) {
+					if (reverseConnections[i] == partyA) {
+						reverseConnections[i] = reverseConnections[reverseConnections.length - 1];
+						reverseConnections.pop();
+						break;
+					}
+				}
+				accountLayout.isConnectedPartyA[partyB][partyA] = false;
 			}
 		}
 	}
