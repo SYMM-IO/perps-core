@@ -9,6 +9,7 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibFundingRate } from "../../libraries/LibFundingRate.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType } from "../../storages/QuoteStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
@@ -17,9 +18,11 @@ import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 library MigrationFacetImpl {
 	using LockedValuesOps for LockedValues;
 
-	/// @notice Backfills v0.8.5 quote-derived state for existing active positions
+	/// @notice Backfills v0.8.5 quote-derived state for existing quotes
 	/// @dev This function is idempotent - calling it multiple times with the same quote IDs will not cause issues.
-	///      For each migrated quote, it backfills:
+	///      For PENDING/LOCKED/CANCEL_PENDING quotes, it backfills:
+	///      - partyAReservedOpenFees (prevents balanceLimitPerUser bypass via fee refund)
+	///      For OPENED/CLOSE_PENDING/CANCEL_CLOSE_PENDING quotes, it backfills:
 	///      - aggregated positions/funding + active symbols (used by new UPNL/funding flows)
 	///      - quote.accumulatedPaidFunding baseline (when accumulated funding is configured)
 	///      - partyBPositionsCount[partyB][address(0)] total positions counter
@@ -37,6 +40,19 @@ library MigrationFacetImpl {
 			if (migrationLayout.quoteMigrated[quoteId]) continue;
 
 			Quote storage quote = quoteLayout.quotes[quoteId];
+
+			// Skip non-existent quotes (default storage has status PENDING but partyA == address(0))
+			if (quote.partyA == address(0)) continue;
+
+			if (
+				quote.quoteStatus == QuoteStatus.PENDING || quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING
+			) {
+				// Backfill reserved open fees for pending/locked quotes
+				LibAccount.reserveOpenTradingFee(quote.partyA, LibQuote.getOpenTradingFee(quoteId));
+				migrationLayout.quoteMigrated[quoteId] = true;
+				quotesMigrated++;
+				continue;
+			}
 
 			// Only process active positions (OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
 			if (

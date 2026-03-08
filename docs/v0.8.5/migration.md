@@ -125,16 +125,20 @@ The migration facet provides two main functions:
 
 ### `migrateQuotes(uint256[] quoteIds)`
 
-Populates aggregated position and funding structures for existing quotes.
+Populates aggregated position and funding structures for existing quotes and backfills reserved open fee tracking for pending/locked quotes.
 
 **What it does for each quote:**
 
 - Skips if already migrated (idempotent)
-- Skips non-active quotes (only processes OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
-- Initializes `accumulatedPaidFunding` based on current funding rates
-- Adds to `partyBAggregatedPositions` and `partyAAggregatedPositions`
-- Updates `activeSymbols` arrays
-- Adds to aggregate funding structures
+- Skips non-existent quote IDs (detected by `partyA == address(0)`)
+- For `PENDING`, `LOCKED`, or `CANCEL_PENDING` quotes:
+  - Backfills `partyAReservedOpenFees` by calling `reserveOpenTradingFee` with the quote's open trading fee
+  - This prevents a `balanceLimitPerUser` bypass where a user could allocate up to the cap, then cancel pending quotes to receive fee refunds that push the balance above the limit
+- For `OPENED`, `CLOSE_PENDING`, or `CANCEL_CLOSE_PENDING` quotes:
+  - Initializes `accumulatedPaidFunding` based on current funding rates
+  - Adds to `partyBAggregatedPositions` and `partyAAggregatedPositions`
+  - Updates `activeSymbols` arrays
+  - Adds to aggregate funding structures
 
 **Access Control:** Requires `MIGRATION_ROLE`
 
@@ -195,14 +199,14 @@ controlFacet.setGlobalPaused(true);
 
 ### Step 3: Migrate Quotes
 
-Migrate all open quotes in batches to populate aggregated structures:
+Migrate all active and pending quotes in batches:
 
 ```tsx
 const BATCH_SIZE = 100;
-const allOpenQuoteIds = await getOpenQuoteIds(); // From indexer/events
+const allQuoteIds = await getQuoteIdsToMigrate(); // From indexer/events
 
-for (let i = 0; i < allOpenQuoteIds.length; i += BATCH_SIZE) {
-    const batch = allOpenQuoteIds.slice(i, i + BATCH_SIZE);
+for (let i = 0; i < allQuoteIds.length; i += BATCH_SIZE) {
+    const batch = allQuoteIds.slice(i, i + BATCH_SIZE);
     await migrationFacet.migrateQuotes(batch);
     console.log(`Migrated quotes ${i} to ${i + batch.length}`);
 }
@@ -210,8 +214,8 @@ for (let i = 0; i < allOpenQuoteIds.length; i += BATCH_SIZE) {
 
 **Which quotes to migrate:**
 
-- Status: `OPENED`, `CLOSE_PENDING`, or `CANCEL_CLOSE_PENDING`
-- These are positions that have open amounts requiring aggregation
+- Status: `PENDING`, `LOCKED`, or `CANCEL_PENDING` -- backfills reserved open fee tracking to prevent `balanceLimitPerUser` bypass
+- Status: `OPENED`, `CLOSE_PENDING`, or `CANCEL_CLOSE_PENDING` -- populates aggregated positions and funding structures
 
 ### Step 4: Migrate PartyB Balances
 
