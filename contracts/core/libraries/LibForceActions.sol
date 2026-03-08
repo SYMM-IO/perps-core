@@ -150,6 +150,7 @@ library LibForceActions {
 		(partyBAvailableBalance, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
 
 		if (partyBAvailableBalance >= 0) {
+			LibAccount.increaseBothNonces(partyB, quote.partyA);
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			return (true, partyBAvailableBalance);
 		}
@@ -165,7 +166,7 @@ library LibForceActions {
 			accountLayout.partyBAllocatedBalances[partyB][allocationKey] += available;
 			emit SharedEvents.BalanceChangePartyB(partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
-			LibAccount.increasePartyBNonce(partyB, quote.partyA);
+			LibAccount.increaseBothNonces(partyB, quote.partyA);
 
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			return (true, partyBAvailableBalance);
@@ -192,6 +193,7 @@ library LibForceActions {
 		// Close using UPNL
 		(partyBAvailableBalance, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
 		if (partyBAvailableBalance >= 0) {
+			LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			return (true, partyBAvailableBalance);
 		}
@@ -199,6 +201,7 @@ library LibForceActions {
 		// Close ignoring UPNL
 		(partyBAvailableBalance, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, 0, closePrice);
 		require(partyBAvailableBalance >= 0, "ForceActionsFacet: Insufficient balance");
+		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 		LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 
 		return (false, partyBAvailableBalance);
