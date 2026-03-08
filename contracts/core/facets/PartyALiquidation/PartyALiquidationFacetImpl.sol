@@ -20,6 +20,7 @@ import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyALiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -31,7 +32,7 @@ library PartyALiquidationFacetImpl {
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		require(QuoteStorage.layout().partyAPositionsCount[partyA] > 0, "LiquidationFacet: PartyA has no open positions");
-		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA);
+		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA, MuonFunction.LiquidatePartyA);
 		require(block.timestamp <= liquidationSig.timestamp + MuonStorage.layout().upnlValidTime, "LiquidationFacet: Expired signature");
 		int256 availableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			liquidationSig.upnl,
@@ -63,7 +64,7 @@ library PartyALiquidationFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
-		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA);
+		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA, MuonFunction.SetSymbolsPrice);
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 		require(
 			keccak256(accountLayout.liquidationDetails[partyA].liquidationId) == keccak256(liquidationSig.liquidationId),

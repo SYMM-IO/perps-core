@@ -15,6 +15,7 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibSolvency } from "./LibSolvency.sol";
 import { LibMuonForceActions } from "./muon/LibMuonForceActions.sol";
 import { LibLiquidation } from "./LibLiquidation.sol";
+import { MuonFunction } from "../interfaces/IMuonSignatureVerifier.sol";
 
 library LibForceActions {
 	/// @notice Verifies the high/low price signature and calculates the force-close price with penalty.
@@ -76,11 +77,11 @@ library LibForceActions {
 	}
 
 	/// @notice Validates all preconditions for a force close including signature, cooldowns, and price bounds.
-	function validateForceCloseConditions(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view {
+	function validateForceCloseConditions(uint256 quoteId, HighLowPriceSig memory highLowPrice, MuonFunction func) internal view {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
-		LibMuonForceActions.verifyHighLowPrice(highLowPrice, quote.partyB, quote.partyA, quote.symbolId);
+		LibMuonForceActions.verifyHighLowPrice(highLowPrice, quote.partyB, quote.partyA, quote.symbolId, func);
 
 		require(quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyAFacet: Invalid state");
 

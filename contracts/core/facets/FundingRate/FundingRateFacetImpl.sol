@@ -19,6 +19,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { PairUpnlSig } from "../../storages/MuonStorage.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 /// @title FundingRateFacetImpl
 /// @notice Implements funding rate mechanisms for perpetual futures trading
@@ -137,7 +138,7 @@ library FundingRateFacetImpl {
 
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		if (tradingLayout.bindState[partyA].partyB != signer || !tradingLayout.isPartyBBindable[signer]) {
-			LibMuonFundingRate.verifyPairUpnl(upnlSig, signer, partyA);
+			LibMuonFundingRate.verifyPairUpnl(upnlSig, signer, partyA, MuonFunction.ChargeFundingRate);
 			// Ensure neither party becomes insolvent after funding payments
 			require(partyAAvailableBalance >= 0, "ChargeFundingFacet: PartyA will be insolvent");
 			require(partyBAvailableBalance >= 0, "ChargeFundingFacet: PartyB will be insolvent");
@@ -273,7 +274,7 @@ library FundingRateFacetImpl {
 	/// @param upnlSig Unrealized PnL signature for solvency checks
 	function chargeAccumulatedFundingFee(address partyA, address partyB, uint256[] memory quoteIds, PairUpnlSig memory upnlSig) internal {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
-		LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA);
+		LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA, MuonFunction.ChargeAccumulatedFundingFee);
 
 		// Apply accumulated funding to each position
 		for (uint256 i = 0; i < quoteIds.length; i++) {

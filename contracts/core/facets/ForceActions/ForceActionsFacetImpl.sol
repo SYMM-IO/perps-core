@@ -16,6 +16,7 @@ import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { HighLowPriceSig, SettlementSig } from "../../storages/MuonStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library ForceActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -68,7 +69,7 @@ library ForceActionsFacetImpl {
 
 		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "ForceActionsFacet: Cross partyB mode enabled");
 
-		LibForceActions.validateForceCloseConditions(quoteId, sig);
+		LibForceActions.validateForceCloseConditions(quoteId, sig, MuonFunction.ForceClose);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
 		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
@@ -96,7 +97,7 @@ library ForceActionsFacetImpl {
 		address partyA = QuoteStorage.layout().quotes[quoteId].partyA;
 
 		//realize uPNL
-		LibMuonSettlement.verifySettlement(sig, partyA);
+		LibMuonSettlement.verifySettlement(sig, partyA, MuonFunction.SettleUpnlForForceCloseLegacy);
 		LibSettlement.settleUpnl(sig, updatedPrices, partyA, true);
 	}
 }

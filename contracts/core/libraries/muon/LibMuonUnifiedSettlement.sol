@@ -7,10 +7,11 @@ pragma solidity >=0.8.18;
 import { MuonStorage, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonUnifiedSettlement {
 	/// @notice Verifies a unified settlement signature for both cross and normal partyB modes.
-	function verifyUnifiedSettlement(UnifiedSettlementSig memory settleSig, bool isCrossPartyB) internal view {
+	function verifyUnifiedSettlement(UnifiedSettlementSig memory settleSig, bool isCrossPartyB, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
@@ -83,6 +84,6 @@ library LibMuonUnifiedSettlement {
 			);
 		}
 
-		LibMuon.verifyTSSAndGateway(hash, settleSig.sigs, settleSig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, settleSig.sigs, settleSig.gatewaySignature, func);
 	}
 }

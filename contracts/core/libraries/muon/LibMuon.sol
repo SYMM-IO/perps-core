@@ -8,7 +8,7 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { MuonStorage, SingleUpnlSig } from "../../storages/MuonStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { LibAccount } from "../LibAccount.sol";
 
 library LibMuon {
@@ -29,19 +29,24 @@ library LibMuon {
 	// However, it is crucial to note that these lines should not be disabled in the production deployed version.
 	// We emphasize this because they are only disabled for testing purposes.
 	/// @notice Verifies the TSS signature and gateway signature through the MuonSignatureVerifier.
-	function verifyTSSAndGateway(bytes32 hash, IMuonSignatureVerifier.SchnorrSign memory sign, bytes memory gatewaySignature) internal view {
+	function verifyTSSAndGateway(
+		bytes32 hash,
+		IMuonSignatureVerifier.SchnorrSign memory sign,
+		bytes memory gatewaySignature,
+		MuonFunction func
+	) internal view {
 		// == SignatureCheck( ==
-		IMuonSignatureVerifier(GlobalAppStorage.layout().signatureVerifier).verify(hash, sign, gatewaySignature);
+		IMuonSignatureVerifier(GlobalAppStorage.layout().signatureVerifier).verify(hash, sign, gatewaySignature, func);
 		// == ) ==
 	}
 
 	/// @notice Verifies Party B UPNL signature (uses per-partyA nonce in normal mode, zero in cross mode).
-	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		verifyPartyBUpnl(upnlSig, partyB, partyA, false);
+	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, MuonFunction func) internal view {
+		verifyPartyBUpnl(upnlSig, partyB, partyA, false, func);
 	}
 
 	/// @notice Verifies Party B UPNL signature with configurable cross partyB nonce usage.
-	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, bool useCrossNonce) internal view {
+	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, bool useCrossNonce, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
@@ -59,6 +64,6 @@ library LibMuon {
 				getChainId()
 			)
 		);
-		verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature);
+		verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature, func);
 	}
 }

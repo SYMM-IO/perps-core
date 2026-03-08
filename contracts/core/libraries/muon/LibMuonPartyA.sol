@@ -7,10 +7,11 @@ pragma solidity >=0.8.18;
 import { MuonStorage, SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonPartyA {
 	/// @notice Verifies Party A UPNL and price signature for a specific symbol.
-	function verifyPartyAUpnlAndPrice(SingleUpnlAndPriceSig memory upnlSig, address partyA, uint256 symbolId) internal view {
+	function verifyPartyAUpnlAndPrice(SingleUpnlAndPriceSig memory upnlSig, address partyA, uint256 symbolId, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
@@ -29,6 +30,6 @@ library LibMuonPartyA {
 				LibMuon.getChainId()
 			)
 		);
-		LibMuon.verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature, func);
 	}
 }

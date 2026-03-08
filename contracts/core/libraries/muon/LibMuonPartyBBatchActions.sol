@@ -8,10 +8,17 @@ import { MuonStorage, PairUpnlAndPricesSig } from "../../storages/MuonStorage.so
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonPartyBBatchActions {
 	/// @notice Verifies a pair UPNL and prices signature for batch Party B actions.
-	function verifyPairUpnlAndPrices(PairUpnlAndPricesSig memory upnlSig, address partyB, address partyA, uint256[] memory quoteIds) internal view {
+	function verifyPairUpnlAndPrices(
+		PairUpnlAndPricesSig memory upnlSig,
+		address partyB,
+		address partyA,
+		uint256[] memory quoteIds,
+		MuonFunction func
+	) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
@@ -33,6 +40,6 @@ library LibMuonPartyBBatchActions {
 				LibMuon.getChainId()
 			)
 		);
-		LibMuon.verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature, func);
 	}
 }

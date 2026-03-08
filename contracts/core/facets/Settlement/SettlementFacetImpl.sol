@@ -12,6 +12,7 @@ import { SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library SettlementFacetImpl {
 	/// @notice Settles UPNL for quotes between partyB (caller) and a specific partyA
@@ -23,7 +24,7 @@ library SettlementFacetImpl {
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		address signer = LibSigner.getSigner();
 		if (tradingLayout.bindState[partyA].partyB != signer || !tradingLayout.isPartyBBindable[signer]) {
-			LibMuonSettlement.verifySettlement(settleSig, partyA);
+			LibMuonSettlement.verifySettlement(settleSig, partyA, MuonFunction.SettleUpnl);
 		}
 		return LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, false);
 	}
@@ -34,7 +35,7 @@ library SettlementFacetImpl {
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
 		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[sig.partyB];
-		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB);
+		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.SettleUpnlUnified);
 		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
 	}
 }

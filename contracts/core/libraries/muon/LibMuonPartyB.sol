@@ -8,10 +8,17 @@ import { MuonStorage, PairUpnlAndPriceSig, SingleUpnlSig } from "../../storages/
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonPartyB {
 	/// @notice Verifies a pair UPNL and price signature for Party B position actions.
-	function verifyPairUpnlAndPrice(PairUpnlAndPriceSig memory upnlSig, address partyB, address partyA, uint256 symbolId) internal view {
+	function verifyPairUpnlAndPrice(
+		PairUpnlAndPriceSig memory upnlSig,
+		address partyB,
+		address partyA,
+		uint256 symbolId,
+		MuonFunction func
+	) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
@@ -33,11 +40,11 @@ library LibMuonPartyB {
 				LibMuon.getChainId()
 			)
 		);
-		LibMuon.verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature, func);
 	}
 
 	/// @notice Verifies Party B UPNL signature, delegating to LibMuon (uses per-partyA nonce in normal mode, zero in cross mode).
-	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // Uses useCrossNonce=false: nonce is zero in cross partyB mode, per-partyA nonce otherwise.
+	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, MuonFunction func) internal view {
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA, func); // Uses useCrossNonce=false: nonce is zero in cross partyB mode, per-partyA nonce otherwise.
 	}
 }

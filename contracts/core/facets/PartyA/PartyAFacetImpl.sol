@@ -22,6 +22,7 @@ import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyAFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -75,7 +76,7 @@ library PartyAFacetImpl {
 			require(tradingLayout.isPartyBBindable[boundedPartyB], "PartyAFacet: Bound Party B is not Bindable");
 			require(partyBsWhiteList.length == 1 && partyBsWhiteList[0] == boundedPartyB, "PartyAFacet: PartyA is bound to a different PartyB");
 		} else {
-			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId);
+			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId, MuonFunction.SendQuote);
 		}
 
 		Fee memory fee;

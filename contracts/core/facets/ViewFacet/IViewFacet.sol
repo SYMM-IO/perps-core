@@ -9,7 +9,7 @@ import { CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/Cle
 import { BindState } from "../../storages/TradingModeStorage.sol";
 import { VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
 import { BridgeTransaction } from "../../storages/BridgeStorage.sol";
-import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { WithdrawRequest } from "../../storages/WithdrawStorage.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
@@ -141,7 +141,12 @@ interface IViewFacet {
 
 	function getBalanceLimitPerUser() external view returns (uint256);
 
-	function verifyMuonTSSAndGateway(bytes32 hash, IMuonSignatureVerifier.SchnorrSign memory sign, bytes memory gatewaySignature) external view;
+	function verifyMuonTSSAndGateway(
+		bytes32 hash,
+		IMuonSignatureVerifier.SchnorrSign memory sign,
+		bytes memory gatewaySignature,
+		MuonFunction func
+	) external view;
 
 	function getBridgeTransaction(uint256 transactionId) external view returns (BridgeTransaction memory);
 

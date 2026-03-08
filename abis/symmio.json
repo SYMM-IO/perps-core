@@ -8640,6 +8640,11 @@
                 "internalType": "bytes",
                 "name": "gatewaySignature",
                 "type": "bytes"
+            },
+            {
+                "internalType": "enum MuonFunction",
+                "name": "func",
+                "type": "uint8"
             }
         ],
         "name": "verifyMuonTSSAndGateway",

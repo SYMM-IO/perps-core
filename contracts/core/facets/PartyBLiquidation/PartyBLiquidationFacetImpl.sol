@@ -18,6 +18,7 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -26,7 +27,7 @@ library PartyBLiquidationFacetImpl {
 	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
 		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
-		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA);
+		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA, MuonFunction.LiquidatePartyB);
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);
 	}
 
@@ -40,7 +41,7 @@ library PartyBLiquidationFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
-		LibMuonLiquidation.verifyQuotePrices(priceSig);
+		LibMuonLiquidation.verifyQuotePrices(priceSig, MuonFunction.LiquidatePositionsPartyB);
 		require(
 			priceSig.timestamp <= maLayout.partyBLiquidationTimestamp[partyB][partyA] + maLayout.liquidationTimeout,
 			"LiquidationFacet: Invalid signature"

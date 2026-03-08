@@ -19,7 +19,7 @@ import { MAStorage, EntityMetadata } from "../../storages/MAStorage.sol";
 import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { MuonStorage } from "../../storages/MuonStorage.sol";
-import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { BridgeStorage, BridgeTransaction } from "../../storages/BridgeStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
@@ -564,8 +564,13 @@ contract ViewFacet is IViewFacet {
 	/// @param hash The hash to verify.
 	/// @param sign The Schnorr signature.
 	/// @param gatewaySignature The Muon signature from the gateway.
-	function verifyMuonTSSAndGateway(bytes32 hash, IMuonSignatureVerifier.SchnorrSign memory sign, bytes memory gatewaySignature) external view {
-		LibMuon.verifyTSSAndGateway(hash, sign, gatewaySignature);
+	function verifyMuonTSSAndGateway(
+		bytes32 hash,
+		IMuonSignatureVerifier.SchnorrSign memory sign,
+		bytes memory gatewaySignature,
+		MuonFunction func
+	) external view {
+		LibMuon.verifyTSSAndGateway(hash, sign, gatewaySignature, func);
 	}
 
 	/// @notice Retrieves the bridge transaction information.
