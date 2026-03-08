@@ -134,6 +134,18 @@ quotesSettlementsData[] — per-quote data with partyAIndex mapping each quote t
 
 The legacy `settleUpnl` is kept for backward compatibility with integrations that have not migrated.
 
+### Quote Subset Constraints
+
+Solvency is validated using aggregate UPNL -- which includes unrealized gains from positions not being settled -- but each party's `uint256` balance must independently absorb the realized settlement amount. If a party is solvent in aggregate but the settlement loss from the chosen quote subset exceeds their raw allocated balance, the transaction will revert.
+
+Callers must select quote subsets where each individual party's allocated balance can cover the realized settlement:
+
+- **PartyA**: The net settlement loss from quotes with this specific PartyB must not exceed `allocatedBalances[partyA]`.
+- **Non-cross PartyB**: The net settlement loss from quotes with a specific PartyA must not exceed `partyBAllocatedBalances[partyB][partyA]`.
+- **Cross PartyB**: The **net** settlement loss across all PartyAs must not exceed `partyBAllocatedBalances[partyB][address(0)]`. The ordering of PartyAs in the signature does not matter -- the contract accumulates a signed delta and applies it once.
+
+If a desired settlement would violate these constraints, callers should either include offsetting (winning) quotes in the batch, split the settlement into multiple transactions, or wait for the party to deposit/allocate additional funds.
+
 ### Settlement Examples
 
 **Scenario 1: PartyA lacks money, PartyB settles to charge PartyA.**
