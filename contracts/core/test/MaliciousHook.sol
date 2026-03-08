@@ -95,7 +95,23 @@ contract MaliciousHook is ISymmioHook {
 		return;
 	}
 
+	function onCloseExpired(uint256 /* quoteId */, address /* partyA */, address /* partyB */) external pure override {
+		return;
+	}
+
 	function onFeeCharged(
+		uint256 /* quoteId */,
+		uint256 /* amount */,
+		address /* partyA */,
+		address /* partyB */,
+		uint256 /* symbolId */,
+		address /* affiliate */,
+		TradingFeeType /* feeType */
+	) external pure override {
+		return;
+	}
+
+	function onFeeRefunded(
 		uint256 /* quoteId */,
 		uint256 /* amount */,
 		address /* partyA */,

@@ -1,8 +1,8 @@
 # Hook System
 
-The Hook System is SYMMIO's extensibility layer for reacting to core trading events on-chain. It allows external contracts to receive callbacks when positions are opened, closed, or cancelled, and when trading fees are charged. Hooks are registered per-affiliate, enabling each frontend or integration partner to run its own custom logic — campaign tracking, cashback distribution, loyalty programs, analytics — without modifying the core protocol.
+The Hook System is SYMMIO's extensibility layer for reacting to core trading events on-chain. It allows external contracts to receive callbacks when positions are opened, closed, or cancelled, when close requests are expired/force-cancelled, and when trading fees are charged or refunded. Hooks are registered per-affiliate, enabling each frontend or integration partner to run its own custom logic — campaign tracking, cashback distribution, loyalty programs, analytics — without modifying the core protocol.
 
-Hooks are deeply integrated into the trading lifecycle. They fire from 7 distinct call sites across 6 core contracts, covering every path through which a position can be opened, closed, cancelled, or liquidated.
+Hooks are deeply integrated into the trading lifecycle and cover open/close/cancel/liquidation/close-expiry/refund paths.
 
 ## ISymmioHook Interface
 
@@ -39,7 +39,23 @@ interface ISymmioHook {
         address partyB
     ) external;
 
+    function onCloseExpired(
+        uint256 quoteId,
+        address partyA,
+        address partyB
+    ) external;
+
     function onFeeCharged(
+        uint256 quoteId,
+        uint256 amount,
+        address partyA,
+        address partyB,
+        uint256 symbolId,
+        address affiliate,
+        TradingFeeType feeType
+    ) external;
+
+    function onFeeRefunded(
         uint256 quoteId,
         uint256 amount,
         address partyA,
@@ -57,7 +73,11 @@ interface ISymmioHook {
 
 **`onCancelQuote`** — Called when a quote is cancelled or expires before being filled. This covers direct cancellation by PartyA, accepted cancellation by PartyB, expiration, and cancellation during ClearingHouse liquidation.
 
+**`onCloseExpired`** — Called when a close request is removed and the quote returns to `OPENED` (expiration of `CLOSE_PENDING`/`CANCEL_CLOSE_PENDING`, or force-cancel of `CANCEL_CLOSE_PENDING`).
+
 **`onFeeCharged`** — Called alongside `onOpenPosition` and `onClosePosition` to report the exact fee amount charged. The `TradingFeeType` enum distinguishes between open fees and close fees. The `affiliate` address and `symbolId` are included so the hook can attribute fees to the correct campaign.
+
+**`onFeeRefunded`** — Called when an open fee is refunded/reimbursed back to PartyA (direct refund or reimbursement during liquidation/takeover flows).
 
 ## Hook Registration
 
@@ -67,7 +87,8 @@ Hooks are stored in `AffiliateStorage` as a simple mapping from affiliate addres
 // contracts/core/storages/AffiliateStorage.sol
 
 /// @notice Hook contracts called on protocol events per affiliate
-/// @dev Called on onOpenPosition, onClosePosition, onCancelQuote events.
+/// @dev Called on onOpenPosition, onClosePosition, onCancelQuote,
+///      onCloseExpired, onFeeCharged, and onFeeRefunded events.
 ///      address(0) key is the system-wide hook. Enables custom integrations.
 mapping(address => address) affiliateHooks;
 ```
@@ -119,9 +140,14 @@ The following table maps every hook call site to the contract function that trig
 | Position closed | `onClosePosition` + `onFeeCharged(CLOSE)` | `LibQuoteClose.closeQuote` | PartyB fills a close request |
 | Quote cancelled (PartyA) | `onCancelQuote` | `PartyAFacetImpl.requestToCancelQuote` | PartyA cancels a PENDING quote |
 | Quote cancelled (PartyB) | `onCancelQuote` | `PartyBQuoteActionsFacetImpl.acceptCancelRequest` | PartyB accepts a cancel request |
+| Quote force-cancelled | `onCancelQuote` | `ForceActionsFacetImpl.forceCancelQuote` | PartyA force-cancels a previously LOCKED quote after cooldown |
 | Quote expired | `onCancelQuote` | `LibQuoteClose.expireQuote` | Quote deadline passes |
+| Pending liquidated in PartyA liquidation | `onCancelQuote` | `PartyALiquidationFacetImpl.liquidatePendingPositionsPartyA` | PartyA liquidation on pending quotes |
+| Pending liquidated in PartyB liquidation | `onCancelQuote` | `PartyBLiquidationFacetImpl.liquidatePartyB`, `LibForceActions.liquidatePartyB` | PartyB liquidation path |
 | PartyB liquidation | `onClosePosition` | `PartyBLiquidationFacetImpl.liquidatePositionsPartyB` | Isolated-mode PartyB liquidation |
 | PartyA liquidation | `onClosePosition` | `PartyALiquidationFacetImpl.liquidatePositionsPartyA` | PartyA liquidation |
+| Close request expired/force-cancelled | `onCloseExpired` | `LibQuoteClose.expireQuote`, `ForceActionsFacetImpl.forceCancelCloseRequest` | Close request is removed and quote reopens |
+| Fee refunded/reimbursed | `onFeeRefunded` | `LibAccount.refundOpenTradingFee`, liquidation/clearing-house reimbursement flows | Open fee refund paths |
 | ClearingHouse pending cancel | `onCancelQuote` | `ClearingHouseFacetImpl._callCancelQuoteHooksAndUpdateStatus` | Cross-PartyB or PartyA takeover liquidation (pending quotes) |
 | ClearingHouse position liquidation | `onClosePosition` | `ClearingHouseFacetImpl.liquidatePositionsForClearingHouse` | Cross-PartyB or PartyA takeover liquidation (open positions) |
 
@@ -270,7 +296,7 @@ function onCancelQuote(
 }
 ```
 
-When all quotes for a virtual account are closed or cancelled, the hook automatically deletes the virtual account and returns remaining funds to the parent account. The `onOpenPosition` and `onFeeCharged` callbacks are no-ops in this implementation but are still defined to satisfy the interface and prevent reverts.
+When all quotes for a virtual account are closed or cancelled, the hook automatically deletes the virtual account and returns remaining funds to the parent account. The `onOpenPosition`, `onCloseExpired`, `onFeeCharged`, and `onFeeRefunded` callbacks are no-ops in this implementation but are still defined to satisfy the interface and prevent reverts.
 
 ## Use Cases
 
@@ -289,7 +315,7 @@ When all quotes for a virtual account are closed or cancelled, the hook automati
 | File | Role |
 |---|---|
 | `contracts/core/interfaces/ISymmioHook.sol` | Interface definition |
-| `contracts/core/libraries/LibHook.sol` | `safeCall`, `callCancelQuoteHooks`, `callClosePositionHooks` |
+| `contracts/core/libraries/LibHook.sol` | `safeCall`, `callCancelQuoteHooks`, `callCloseExpiredHooks`, `callClosePositionHooks`, `callFeeRefundedHooks` |
 | `contracts/core/storages/AffiliateStorage.sol` | `affiliateHooks` mapping |
 | `contracts/core/facets/Control/ControlFacet.sol` | `registerHook` (registration) |
 | `contracts/core/facets/ViewFacet/ViewFacet.sol` | `getAffiliateHook` (query) |

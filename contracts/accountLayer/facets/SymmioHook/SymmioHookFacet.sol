@@ -51,6 +51,9 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		_removeQuoteFromAccount(quoteId, partyA);
 	}
 
+	/// @notice Called by Symmio core when a close request expires or is force cancelled
+	function onCloseExpired(uint256 /* quoteId */, address /* partyA */, address /* partyB */) external onlySymmio whenNotPaused {}
+
 	/// @notice Called by Symmio core when a fee is charged (no-op in AccountLayer)
 	function onFeeCharged(
 		uint256 /* quoteId */,
@@ -64,6 +67,17 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		// No-op: Account layer doesn't need to track fee charges
 		// This function exists to prevent hook reverts when fees are charged
 	}
+
+	/// @notice Called by Symmio core when a fee is refunded
+	function onFeeRefunded(
+		uint256 /* quoteId */,
+		uint256 /* amount */,
+		address /* partyA */,
+		address /* partyB */,
+		uint256 /* symbolId */,
+		address /* affiliate */,
+		uint8 /* feeType */
+	) external onlySymmio whenNotPaused {}
 
 	// ==================== Internal Functions ====================
 

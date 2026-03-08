@@ -15,8 +15,6 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { SingleUpnlSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
-import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 
 library PartyBLiquidationFacetImpl {
@@ -24,10 +22,31 @@ library PartyBLiquidationFacetImpl {
 
 	/// @notice Verifies insolvency and initiates the liquidation process for Party B against a Party A
 	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
 		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
 		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA);
+
+		uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
+		uint256[] memory removedQuoteIds = new uint256[](pendingQuotes.length);
+		uint256 removedCount = 0;
+		for (uint256 i = 0; i < pendingQuotes.length; i++) {
+			Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
+			if (quote.partyB == partyB && (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING)) {
+				removedQuoteIds[removedCount] = quote.id;
+				removedCount++;
+			}
+		}
+
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);
+
+		for (uint256 i = 0; i < removedCount; i++) {
+			Quote storage quote = quoteLayout.quotes[removedQuoteIds[i]];
+			if (quote.quoteStatus == QuoteStatus.LIQUIDATED_PENDING) {
+				LibHook.callCancelQuoteHooks(quote.id, quote.partyA, quote.partyB, quote.affiliate);
+			}
+		}
 	}
 
 	/// @notice Closes all specified positions at liquidation prices and distributes liquidation fees

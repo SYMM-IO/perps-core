@@ -34,6 +34,12 @@ interface ISymmioHook {
 	/// @param partyB The hedger address (zero if quote was not locked)
 	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external;
 
+	/// @notice Called when a close request is expired or force cancelled and quote returns to OPENED
+	/// @param quoteId The quote ID
+	/// @param partyA The trader address
+	/// @param partyB The hedger address
+	function onCloseExpired(uint256 quoteId, address partyA, address partyB) external;
+
 	/// @notice Called when a trading fee is charged for affiliate distribution
 	/// @param quoteId The quote the fee relates to
 	/// @param amount The fee amount charged
@@ -43,6 +49,24 @@ interface ISymmioHook {
 	/// @param affiliate The affiliate address receiving fee share
 	/// @param feeType Whether this is an open or close fee
 	function onFeeCharged(
+		uint256 quoteId,
+		uint256 amount,
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		address affiliate,
+		TradingFeeType feeType
+	) external;
+
+	/// @notice Called when a previously charged trading fee is refunded
+	/// @param quoteId The quote the refund relates to
+	/// @param amount The refund amount
+	/// @param partyA The trader address
+	/// @param partyB The hedger address
+	/// @param symbolId The symbol being traded
+	/// @param affiliate The affiliate address
+	/// @param feeType Whether this is an open or close fee refund
+	function onFeeRefunded(
 		uint256 quoteId,
 		uint256 amount,
 		address partyA,

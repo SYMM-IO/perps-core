@@ -51,6 +51,18 @@ library LibHook {
 		safeCall(systemHook, abi.encodeCall(ISymmioHook.onCancelQuote, (quoteId, partyA, partyB)), quoteId);
 	}
 
+	/// @notice Calls onCloseExpired on both affiliate and system hooks.
+	/// @param quoteId The ID of the quote whose close request expired/was force-cancelled.
+	/// @param partyA The address of Party A.
+	/// @param partyB The address of Party B.
+	/// @param affiliate The affiliate address for hook resolution.
+	function callCloseExpiredHooks(uint256 quoteId, address partyA, address partyB, address affiliate) internal {
+		address affiliateHook = AffiliateStorage.layout().affiliateHooks[affiliate];
+		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
+		safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onCloseExpired, (quoteId, partyA, partyB)), quoteId);
+		safeCall(systemHook, abi.encodeCall(ISymmioHook.onCloseExpired, (quoteId, partyA, partyB)), quoteId);
+	}
+
 	/// @notice Calls onClosePosition on both affiliate and system hooks.
 	/// @param quoteId The ID of the closed quote.
 	/// @param closedAmount The amount that was closed.
@@ -70,5 +82,21 @@ library LibHook {
 		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 		safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onClosePosition, (quoteId, closedAmount, closedPrice, partyA, partyB)), quoteId);
 		safeCall(systemHook, abi.encodeCall(ISymmioHook.onClosePosition, (quoteId, closedAmount, closedPrice, partyA, partyB)), quoteId);
+	}
+
+	/// @notice Calls onFeeRefunded on both affiliate and system hooks.
+	function callFeeRefundedHooks(
+		uint256 quoteId,
+		uint256 amount,
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		address affiliate,
+		ISymmioHook.TradingFeeType feeType
+	) internal {
+		address affiliateHook = AffiliateStorage.layout().affiliateHooks[affiliate];
+		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
+		safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onFeeRefunded, (quoteId, amount, partyA, partyB, symbolId, affiliate, feeType)), quoteId);
+		safeCall(systemHook, abi.encodeCall(ISymmioHook.onFeeRefunded, (quoteId, amount, partyA, partyB, symbolId, affiliate, feeType)), quoteId);
 	}
 }
