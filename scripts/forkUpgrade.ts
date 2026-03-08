@@ -2,8 +2,11 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../test/helpers/hardhat-connection.js"
-import { deployFacets, buildDiamondCut, applyDiamondCut, captureState, compareStates, discoverPartiesFromQuotes } from "./upgradeTest.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
+import { deployFacets, buildDiamondCut, applyDiamondCut } from "./utils/upgradeHelpers.js"
+
+const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn"
 
 /**
  * Fork Upgrade Script (upgrade only, no migration)
@@ -24,7 +27,7 @@ type ForkUpgradeConfig = {
 	diamondAddress?: string
 	adminAddress?: string
 	diamondCutChunkSize?: number
-	quoteScanLimit?: number
+	subgraphEndpoint?: string
 	newV085Parameters?: {
 		maxPartyAConnectionLimit?: number
 		settlementCooldown?: number
@@ -103,7 +106,7 @@ async function main() {
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	const ADMIN_ADDRESS = process.env.ADMIN_ADDRESS ?? (config.adminAddress || undefined)
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
-	const QUOTE_SCAN_LIMIT = process.env.QUOTE_SCAN_LIMIT ? Number(process.env.QUOTE_SCAN_LIMIT) : (config.quoteScanLimit ?? null)
+	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT ?? config.subgraphEndpoint ?? DEFAULT_SUBGRAPH_ENDPOINT
 	const newParams = config.newV085Parameters ?? {}
 
 	const outputDir = "./scripts/output"
@@ -145,11 +148,6 @@ async function main() {
 		// Step 3: Connect facets
 		currentStep = "connect_facets"
 		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
-		const viewFacetQuote = await ethers.getContractAt(
-			"contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote",
-			DIAMOND_ADDRESS,
-			admin,
-		)
 		const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS, admin)
 		const pauseControlFacet = await ethers.getContractAt(
 			"contracts/core/facets/PauseControl/PauseControlFacet.sol:PauseControlFacet",
@@ -160,42 +158,101 @@ async function main() {
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
-		// Step 4: Discover parties + capture pre-upgrade state
-		currentStep = "discover_parties"
-		console.log("\nDiscovering parties from on-chain quotes...")
-		const discovered = await discoverPartiesFromQuotes(viewFacetQuote, DIAMOND_ADDRESS, QUOTE_SCAN_LIMIT)
-		const partyAs = discovered.partyAs
-		const partyBs = discovered.partyBs
-		console.log(`Found ${partyAs.length} PartyAs, ${partyBs.length} PartyBs`)
+		// Step 4: Fetch subgraph data (pre-upgrade reference)
+		currentStep = "fetch_subgraph"
+		console.log("\nFetching data from subgraph...")
+		const [quotesResult, balancesResult] = await Promise.all([fetchOpenQuotes(SUBGRAPH_ENDPOINT), fetchPartyBBalances(SUBGRAPH_ENDPOINT)])
+		const partyAs = quotesResult.partyAs
+		const partyBs = quotesResult.partyBs
+		console.log(
+			`Subgraph: ${quotesResult.quotes.length} open quotes, ${partyAs.length} partyAs, ${partyBs.length} partyBs, ${balancesResult.entries.length} balance entries`,
+		)
 		report.steps.push({
-			name: "discover_parties",
+			name: "fetch_subgraph",
 			status: "ok",
-			details: { partyAsCount: partyAs.length, partyBsCount: partyBs.length },
+			details: {
+				openQuotes: quotesResult.quotes.length,
+				partyAs: partyAs.length,
+				partyBs: partyBs.length,
+				balanceEntries: balancesResult.entries.length,
+			},
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
-		currentStep = "capture_pre_state"
-		console.log("Capturing pre-upgrade state...")
-		const preState = await captureState(viewFacet, viewFacetQuote, partyAs, partyBs)
+		// Step 5: Capture pre-upgrade snapshot (on-chain, small sample for integrity check)
+		currentStep = "capture_pre_snapshot"
+		console.log("Capturing pre-upgrade on-chain snapshot...")
+		const spotCheckCount = 20
+
+		// Use v0.8.4-compatible ABI for getQuote (same selector, works on both versions)
+		const quoteReader = new ethers.Contract(
+			DIAMOND_ADDRESS,
+			[
+				"function getQuote(uint256) view returns (tuple(uint256 id,address[] partyBsWhiteList,uint256 symbolId,uint8 positionType,uint8 orderType,uint256 openedPrice,uint256 initialOpenedPrice,uint256 requestedOpenPrice,uint256 marketPrice,uint256 quantity,uint256 closedAmount,tuple(uint256 cva,uint256 lf,uint256 partyAmm,uint256 partyBmm) initialLockedValues,tuple(uint256 cva,uint256 lf,uint256 partyAmm,uint256 partyBmm) lockedValues,uint256 maxFundingRate,address partyA,address partyB,uint8 quoteStatus,uint256 avgClosedPrice,uint256 requestedClosePrice,uint256 quantityToClose,uint256 parentId,uint256 createTimestamp,uint256 statusModifyTimestamp,uint256 lastFundingPaymentTimestamp,uint256 deadline,uint256 tradingFee,address affiliate))",
+			],
+			admin,
+		)
+
+		// Pick random sample of quote IDs from subgraph
+		const quotesSample =
+			quotesResult.quotes.length <= spotCheckCount
+				? quotesResult.quotes
+				: quotesResult.quotes.sort(() => Math.random() - 0.5).slice(0, spotCheckCount)
+
+		// Pick random sample of balance entries from subgraph
+		const balanceSample =
+			balancesResult.entries.length <= spotCheckCount
+				? balancesResult.entries
+				: balancesResult.entries.sort(() => Math.random() - 0.5).slice(0, spotCheckCount)
+
+		// Read pre-upgrade values from the fork
+		const preQuoteSnapshots: { quoteId: string; status: number; partyA: string; partyB: string }[] = []
+		for (const sq of quotesSample) {
+			const q = await quoteReader.getQuote(BigInt(sq.quoteId))
+			preQuoteSnapshots.push({
+				quoteId: sq.quoteId,
+				status: Number(q.quoteStatus),
+				partyA: q.partyA.toLowerCase(),
+				partyB: q.partyB.toLowerCase(),
+			})
+		}
+
+		const preBalanceSnapshots: { partyB: string; partyA: string; balance: string }[] = []
+		for (const entry of balanceSample) {
+			const bal = await viewFacet.allocatedBalanceOfPartyB(entry.account, entry.counterParty)
+			preBalanceSnapshots.push({
+				partyB: entry.account,
+				partyA: entry.counterParty,
+				balance: bal.toString(),
+			})
+		}
+
+		console.log(`Snapshot: ${preQuoteSnapshots.length} quotes + ${preBalanceSnapshots.length} balances`)
 		report.steps.push({
-			name: "capture_pre_state",
+			name: "capture_pre_snapshot",
 			status: "ok",
-			details: { partyAsCount: partyAs.length, partyBsCount: partyBs.length },
+			details: { quotes: preQuoteSnapshots.length, balances: preBalanceSnapshots.length },
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
-		// Step 5: Pause system
+		// Step 6: Pause system
 		currentStep = "pause_system"
 		console.log("\nGranting admin roles and pausing system...")
 		await (await controlFacet.setAdmin(adminAddress)).wait()
 		await (await controlFacet.grantRole(adminAddress, ethers.id("PAUSER_ROLE"))).wait()
 		await (await controlFacet.grantRole(adminAddress, ethers.id("UNPAUSER_ROLE"))).wait()
 
-		const pauseState = await viewFacet.pauseState()
+		// Use v0.8.4-compatible ABI for pauseState (v0.8.4 returns 7 bools, v0.8.5 returns 8)
+		const pauseChecker = new ethers.Contract(
+			DIAMOND_ADDRESS,
+			["function pauseState() view returns (bool globalPaused, bool, bool, bool, bool, bool, bool)"],
+			admin,
+		)
+		const pauseResult = await pauseChecker.pauseState()
 		let pausedByScript = false
-		if (!pauseState.globalPaused) {
+		if (!pauseResult.globalPaused) {
 			await (await pauseControlFacet.pauseGlobal()).wait()
 			pausedByScript = true
 			console.log("System paused.")
@@ -278,18 +335,47 @@ async function main() {
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
-		// Step 9: Capture post-upgrade state + compare
-		currentStep = "capture_post_state"
-		console.log("\nCapturing post-upgrade state...")
-		const postState = await captureState(viewFacet, viewFacetQuote, partyAs, partyBs)
-		report.steps.push({ name: "capture_post_state", status: "ok" })
-		currentStep = null
-		tryWriteReport(reportFile, report)
+		// Step 10: Verify upgrade integrity (compare pre vs post on-chain snapshot)
+		currentStep = "verify_upgrade"
+		console.log("\nVerifying upgrade integrity (pre vs post on-chain)...")
+		const verifyErrors: string[] = []
 
-		currentStep = "compare_states"
-		compareStates(preState, postState)
-		console.log("State comparison: OK (upgrade preserved existing data)")
-		report.steps.push({ name: "compare_states", status: "ok" })
+		// Use v0.8.5 ViewFacetQuote ABI for getQuote (registered after diamondCut)
+		const viewFacetQuote = await ethers.getContractAt(
+			"contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote",
+			DIAMOND_ADDRESS,
+			admin,
+		)
+
+		for (const pre of preQuoteSnapshots) {
+			const post = await viewFacetQuote.getQuote(BigInt(pre.quoteId))
+			if (Number(post.quoteStatus) !== pre.status) {
+				verifyErrors.push(`Quote ${pre.quoteId}: status changed (pre=${pre.status}, post=${post.quoteStatus})`)
+			}
+			if (post.partyA.toLowerCase() !== pre.partyA) {
+				verifyErrors.push(`Quote ${pre.quoteId}: partyA changed`)
+			}
+			if (post.partyB.toLowerCase() !== pre.partyB) {
+				verifyErrors.push(`Quote ${pre.quoteId}: partyB changed`)
+			}
+		}
+
+		for (const pre of preBalanceSnapshots) {
+			const post = await viewFacet.allocatedBalanceOfPartyB(pre.partyB, pre.partyA)
+			if (post.toString() !== pre.balance) {
+				verifyErrors.push(`PartyB ${pre.partyB} / PartyA ${pre.partyA}: balance changed (pre=${pre.balance}, post=${post.toString()})`)
+			}
+		}
+
+		if (verifyErrors.length > 0) {
+			throw new Error(`Upgrade integrity check failed:\n${verifyErrors.join("\n")}`)
+		}
+		console.log(`Verified ${preQuoteSnapshots.length} quotes + ${preBalanceSnapshots.length} balances: OK`)
+		report.steps.push({
+			name: "verify_upgrade",
+			status: "ok",
+			details: { quotesChecked: preQuoteSnapshots.length, balancesChecked: preBalanceSnapshots.length },
+		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
 

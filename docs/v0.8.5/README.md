@@ -138,13 +138,9 @@ Backfills the new aggregated position structures and master account buckets from
 
 Practical guide for running the migration scripts against a live deployment.
 
-### [Update And Migration Path](../../scripts/docs/update-and-migration-path.md)
+### [Fork Upgrade And Migration](../../scripts/docs/fork-upgrade-and-migrate.md)
 
-Operational runbook for local rehearsal (v0.8.4 state seed -> v0.8.5 upgrade -> migration phase), including worktree setup and output locations.
-
-### [Upgrade Output Verification](../../scripts/docs/upgrade-output-verification.md)
-
-How to read generated reports, verify invariant checks, and identify selector-level `diamondCut` add/replace/remove changes.
+Fork-based upgrade and migration rehearsal workflow. Three-step pipeline (upgrade -> prepare migration input -> migrate) tested against real mainnet state via Hardhat fork.
 
 ### [Setup Task](setup-task.md)
 

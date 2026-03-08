@@ -87,6 +87,16 @@ const customChains = [
 export default defineConfig({
 	plugins: [hardhatToolboxMochaEthers, hardhatEthersPlugin, hardhatVerify],
 	tasks: deployTasks,
+	chainDescriptors: {
+		42161: {
+			name: "Arbitrum One",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+	},
 	solidity: {
 		profiles: {
 			default: {
@@ -139,11 +149,12 @@ export default defineConfig({
 		arbitrum: createNetworkConfig("arbitrum", "https://arbitrum.llamarpc.com"),
 		"fork-arbitrum": {
 			type: "edr-simulated",
+			chainId: 42161,
 			blockGasLimit: 30_000_000,
 			allowUnlimitedContractSize: true,
-			hardfork: "shanghai",
+			hardfork: "cancun",
 			forking: {
-				url: "https://arbitrum.drpc.org",
+				url: process.env.FORK_RPC_URL || "https://arbitrum.drpc.org",
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},
