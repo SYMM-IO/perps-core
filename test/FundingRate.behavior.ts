@@ -278,6 +278,66 @@ export function shouldBehaveLikeFundingRate(): void {
 				expect(fundingFee.lastUpdatedEpoch).to.approximately(blockTimestamp / BigInt(NineHourInSec), 1)
 				expect(fundingFee.startEpoch).to.equal(0)
 			})
+
+			it("should invalidate stale UPNL signatures after epoch duration change", async () => {
+				// Set initial epoch duration and update funding so chargeAccumulatedFundingFee can work
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+
+				// Get a UPNL signature at current timestamp
+				const staleSig = await getDummyPairUpnlSig()
+
+				// Advance time and change epoch duration — this sets lastEpochDurationChangeTimestamp
+				await time.increase(1)
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+				// Try to use the stale signature — should fail
+				await expect(
+					context.fundingRateFacet
+						.connect(context.signers.hedger)
+						.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], staleSig),
+				).to.be.revertedWith("LibMuon: Stale signature after epoch duration change")
+			})
+
+			it("should accept fresh signatures after epoch duration change", async () => {
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+
+				// Change epoch duration
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+				// Get a fresh signature AFTER the epoch change
+				const freshSig = await getDummyPairUpnlSig()
+
+				// Should succeed
+				await expect(
+					context.fundingRateFacet
+						.connect(context.signers.hedger)
+						.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], freshSig),
+				).to.not.reverted
+			})
+
+			it("should not invalidate signatures when epoch duration is unchanged", async () => {
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+
+				const sig = await getDummyPairUpnlSig()
+
+				// Set same epoch duration again — should NOT invalidate signatures
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+
+				await expect(
+					context.fundingRateFacet
+						.connect(context.signers.hedger)
+						.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], sig),
+				).to.not.reverted
+			})
 		})
 
 		describe("updateAccumulatedFundingFee", () => {

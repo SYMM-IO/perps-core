@@ -156,8 +156,10 @@ library FundingRateFacetImpl {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
 		require(symbolIds.length == durations.length, "FundingRateFacet: Invalid length");
 
+		bool durationChanged = false;
 		for (uint256 i = 0; i < symbolIds.length; i++) {
 			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][partyB];
+			uint256 previousEpochDuration = fundingFee.epochDuration;
 			uint256 timestampForEpoch = 0;
 
 			if (fundingFee.epochDuration != 0) {
@@ -183,6 +185,16 @@ library FundingRateFacetImpl {
 			// Update epoch duration
 			fundingFee.lastUpdatedEpoch = LibFundingRate.getEpochOfTimestamp(timestampForEpoch, durations[i]);
 			fundingFee.epochDuration = durations[i];
+
+			if (previousEpochDuration != durations[i]) {
+				durationChanged = true;
+			}
+		}
+
+		// Invalidate stale UPNL signatures by recording the change timestamp.
+		// Signature verification checks this to reject pre-change signatures.
+		if (durationChanged) {
+			FundingStorage.layout().lastEpochDurationChangeTimestamp[partyB] = block.timestamp;
 		}
 	}
 
