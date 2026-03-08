@@ -9,9 +9,12 @@ import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
+import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
@@ -321,6 +324,15 @@ library ClearingHouseFacetImpl {
 
 			accountLayout.lockedBalances[partyA].subQuote(quote);
 			LibAccount.subFromPartyBLockedBalances(quote);
+
+			if (FundingStorage.layout().fundingFees[quote.symbolId][partyB].epochDuration > 0) {
+				// sync funding for aggregate accounting. skip transfers so clearing house liquidation stays non blocking
+				int256 oldAccumulatedPaidFunding = quote.accumulatedPaidFunding;
+				uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+				quote.lastFundingPaymentTimestamp = block.timestamp;
+				LibQuoteFunding.updateAccumulatedPaidFunding(quote.id);
+				LibAggregateFunding.updatePartiesAggregateFunding(quote, oldAccumulatedPaidFunding, openAmount);
+			}
 
 			uint256 liquidationPrice = prices[i];
 			uint256 closedAmount = LibQuote.closePositionFully(quote.id, liquidationPrice);
