@@ -99,18 +99,20 @@ library MigrationFacetImpl {
 	/// @notice Migrates partyB locked values to the cross bucket (address(0))
 	/// @dev This aggregates all per-partyA balances into the cross bucket for cross partyB mode.
 	///      Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
-	///      This function is idempotent per partyB - calling it twice will revert.
+	///      This function is idempotent - already migrated partyA pairs are skipped.
+	///      Can be called in multiple batches if the partyAs array is too large for a single transaction.
 	/// @param partyB The partyB to migrate
 	/// @param partyAs Array of partyA addresses that have balances with this partyB
-	/// @return partyAsProcessed Number of partyAs actually processed
+	/// @return partyAsProcessed Number of partyAs actually processed (excluding already migrated)
 	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) internal returns (uint256 partyAsProcessed) {
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		require(!migrationLayout.partyBLockedValuesMigrated[partyB], "MigrationFacet: Already migrated");
-
 		for (uint256 i = 0; i < partyAs.length; i++) {
 			address partyA = partyAs[i];
+
+			// Skip if already migrated
+			if (migrationLayout.crossLockedValuesMigrated[partyB][partyA]) continue;
 
 			// Aggregate allocated balances to cross bucket
 			accountLayout.partyBAllocatedBalances[partyB][address(0)] += accountLayout.partyBAllocatedBalances[partyB][partyA];
@@ -121,9 +123,8 @@ library MigrationFacetImpl {
 			// Aggregate pending locked balances to cross bucket (only for pre-v8.5 data)
 			accountLayout.partyBPendingLockedBalances[partyB][address(0)].add(accountLayout.partyBPendingLockedBalances[partyB][partyA]);
 
+			migrationLayout.crossLockedValuesMigrated[partyB][partyA] = true;
 			partyAsProcessed++;
 		}
-
-		migrationLayout.partyBLockedValuesMigrated[partyB] = true;
 	}
 }

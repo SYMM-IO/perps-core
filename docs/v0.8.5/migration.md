@@ -138,7 +138,7 @@ Populates aggregated position and funding structures for existing quotes.
 
 **Access Control:** Requires `MIGRATION_ROLE`
 
-### `migrateMasterAccountLockedValues(address partyB, address[] partyAs)`
+### `migrateCrossLockedValues(address partyB, address[] partyAs)`
 
 Aggregates per-partyA balances into the master bucket for a partyB.
 
@@ -147,7 +147,8 @@ Aggregates per-partyA balances into the master bucket for a partyB.
 - Sums `partyBAllocatedBalances[partyB][partyA]` → `partyBAllocatedBalances[partyB][address(0)]`
 - Sums `partyBLockedBalances[partyB][partyA]` → `partyBLockedBalances[partyB][address(0)]`
 - Sums `partyBPendingLockedBalances[partyB][partyA]` → `partyBPendingLockedBalances[partyB][address(0)]`
-- Marks partyB as migrated (prevents double-calling)
+- Tracks migration per partyB+partyA pair -- already-migrated pairs are skipped
+- Can be called in multiple batches if the partyAs array is too large for a single transaction
 
 **Access Control:** Requires `MIGRATION_ROLE`
 
@@ -157,8 +158,8 @@ Aggregates per-partyA balances into the master bucket for a partyB.
 // Check if a specific quote has been migrated
 function isQuoteMigrated(uint256 quoteId) external view returns (bool);
 
-// Check if a partyB's balances have been migrated to master bucket
-function isPartyBLockedValuesMigrated(address partyB) external view returns (bool);
+// Check if a specific partyB+partyA pair has been migrated to the cross bucket
+function isCrossLockedValuesMigrated(address partyB, address partyA) external view returns (bool);
 ```
 
 ### 3. Master Account Mode Activation
@@ -215,15 +216,20 @@ for (let i = 0; i < allOpenQuoteIds.length; i += BATCH_SIZE) {
 
 ### Step 4: Migrate PartyB Balances
 
-For each partyB, migrate their per-partyA balances to the master bucket:
+For each partyB, migrate their per-partyA balances to the master bucket. This can be done in batches if the partyAs array is too large for a single transaction:
 
 ```tsx
+const BATCH_SIZE = 100;
+
 for (const partyB of allPartyBs) {
     // Get all partyAs this partyB has relationships with
     const partyAs = await getPartyAsForPartyB(partyB);
 
-    await migrationFacet.migrateMasterAccountLockedValues(partyB, partyAs);
-    console.log(`Migrated balances for partyB: ${partyB}`);
+    for (let i = 0; i < partyAs.length; i += BATCH_SIZE) {
+        const batch = partyAs.slice(i, i + BATCH_SIZE);
+        await migrationFacet.migrateCrossLockedValues(partyB, batch);
+        console.log(`Migrated batch ${i / BATCH_SIZE + 1} for partyB: ${partyB}`);
+    }
 }
 ```
 
@@ -282,8 +288,11 @@ for (const quoteId of migratedQuoteIds) {
 
 ```tsx
 for (const partyB of allPartyBs) {
-    const isMigrated = await migrationFacet.isPartyBLockedValuesMigrated(partyB);
-    assert(isMigrated, `PartyB ${partyB} not migrated`);
+    const partyAs = await getPartyAsForPartyB(partyB);
+    for (const partyA of partyAs) {
+        const isMigrated = await migrationFacet.isCrossLockedValuesMigrated(partyB, partyA);
+        assert(isMigrated, `PartyB ${partyB} + PartyA ${partyA} not migrated`);
+    }
 }
 ```
 

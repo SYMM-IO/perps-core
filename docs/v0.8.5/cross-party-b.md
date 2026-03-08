@@ -32,7 +32,7 @@ Activating cross mode for a PartyB is a multi-step process:
 
 3. **Activation (one of two paths):**
    - **Admin path**: An admin with `MIGRATION_ROLE` calls `setCrossPartyB(partyB, true)` on the `ControlFacet`. Requires the global flag to be on and the PartyB to be registered. Does not check migration status on-chain.
-   - **Self-activation path**: The PartyB itself calls `activateCrossPartyB()` on the `PartyBAccountFacet`. Requires the global flag AND the locked-values migration to be complete (`partyBLockedValuesMigrated[partyB]` must be true).
+   - **Self-activation path**: The PartyB itself calls `activateCrossPartyB()` on the `PartyBAccountFacet`. Requires the global flag to be on and cross mode to not already be active.
 
 After activation, `address(0)` becomes the PartyB's allocation key. The solver only needs to allocate to `address(0)` — no need to allocate/deallocate per PartyA. The helper `LibAccount.partyBAllocationKey(partyB, partyA)` returns `address(0)` when cross mode is active, and `partyA` otherwise. All balance functions (available balance, locked balance calculations) use this key transparently.
 

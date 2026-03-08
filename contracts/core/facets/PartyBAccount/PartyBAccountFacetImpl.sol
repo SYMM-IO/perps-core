@@ -8,7 +8,6 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
-import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
@@ -98,7 +97,6 @@ library PartyBAccountFacetImpl {
 		require(GlobalAppStorage.layout().crossPartyBModeActivated, "AccountFacet: Cross disabled");
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(MigrationStorage.layout().partyBLockedValuesMigrated[signer], "AccountFacet: Cross migration incomplete");
 		require(!maLayout.crossModeEnabledForPartyB[signer], "AccountFacet: Cross partyB mode is active");
 		maLayout.crossModeEnabledForPartyB[signer] = true;
 	}
