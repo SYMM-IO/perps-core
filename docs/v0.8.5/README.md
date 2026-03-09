@@ -68,7 +68,11 @@ A tiered warning system before hard liquidation. As a PartyB's balance approache
 
 ### [ADL Close](adl-close.md)
 
-Allows solvers to unilaterally close positions to reduce risk exposure without needing emergency mode or delisted symbols. No solvency checks are enforced on PartyB during ADL, which means it works even when the solver is underwater. To prevent abuse, PartyBs must deposit assurance collateral that can be slashed if ADL is misused. Emits mock events that mirror the normal close flow so indexers and UIs don't need special handling.
+Allows solvers to unilaterally close positions to reduce risk exposure without needing emergency mode or delisted symbols. No solvency checks are enforced on PartyB during ADL, which means it works even when the solver is underwater. To prevent abuse, PartyBs must deposit [pledge collateral](pledge.md) that can be slashed if ADL is misused. Emits mock events that mirror the normal close flow so indexers and UIs don't need special handling.
+
+### [Pledge Collateral](pledge.md)
+
+A separate collateral pool that PartyBs deposit as a guarantee of good behavior. Independent of trading collateral, pledge serves as "skin in the game" -- if a PartyB acts maliciously (e.g., abuses ADL), their pledge can be slashed by an admin. Supports any ERC20 token with a two-step request-approval withdrawal flow to prevent rug-pulls.
 
 ### [Liquidation Insurance Vault](liquidation-insurance.md)
 

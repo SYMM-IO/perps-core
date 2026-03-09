@@ -227,7 +227,9 @@ library ClearingHouseFacetImpl {
 					if (quote.partyB == partyB) {
 						accountLayout.pendingLockedBalances[partyA].subQuote(quote);
 						if (MAStorage.layout().liquidationStatus[partyA]) {
-							accountLayout.partyAReimbursement[partyA] += LibQuote.getOpenTradingFee(quote.id);
+							uint256 fee = LibQuote.getOpenTradingFee(quote.id);
+							LibAccount.releaseReservedOpenTradingFee(partyA, fee);
+							accountLayout.partyAReimbursement[partyA] += fee;
 						} else {
 							LibAccount.refundOpenTradingFee(quote.id, partyA);
 						}
@@ -254,6 +256,7 @@ library ClearingHouseFacetImpl {
 					LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
 				}
 				uint256 fee = LibQuote.getOpenTradingFee(quote.id);
+				LibAccount.releaseReservedOpenTradingFee(partyA, fee);
 				accountLayout.partyAReimbursement[partyA] += fee;
 				// No BalanceChangePartyA event: reimbursement is escrow during takeover.
 				// settlePartyATakeover handles final fund distribution.

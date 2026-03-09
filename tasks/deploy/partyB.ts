@@ -4,7 +4,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { writeData } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { PARTYB_DEPLOYMENT_FILE } from "./constants.js"
-import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
 import { logger } from "./logger.js"
 
 type DeploySymmioPartyBArgs = {
@@ -14,8 +14,14 @@ type DeploySymmioPartyBArgs = {
 	checkpoint?: DeploymentCheckpoint
 }
 
-export async function deploySymmioPartyB(hre: any, { symmioAddress, admin, logData = true, checkpoint }: DeploySymmioPartyBArgs) {
+export async function deploySymmioPartyB(
+	hre: any,
+	{ symmioAddress: rawSymmio, admin: rawAdmin, logData = true, checkpoint }: DeploySymmioPartyBArgs,
+) {
 	const { ethers, upgrades } = await getConnection(hre)
+
+	const admin = checksumAddress(rawAdmin)
+	const symmioAddress = checksumAddress(rawSymmio)
 
 	const [deployer] = await ethers.getSigners()
 	logger.debug("Deploying SymmioPartyB with account:", deployer.address)

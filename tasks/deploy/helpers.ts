@@ -1,6 +1,17 @@
+import { ethers as ethersLib } from "ethers"
+
 type NetworkConnection = {
 	ethers: any
 	upgrades?: any
+	networkName?: string
+}
+
+/**
+ * Normalize an address string to EIP-55 checksum format.
+ * Lowercases first to avoid EIP-55 validation errors from mixed-case input.
+ */
+export function checksumAddress(addr: string): string {
+	return ethersLib.getAddress(addr.toLowerCase())
 }
 
 // Use a consistent key for caching the connection across the entire application
@@ -29,7 +40,7 @@ export async function deployProxyWithFallback(
 	args: unknown[],
 	options?: { initializer?: string; kind?: string },
 ): Promise<any> {
-	const { upgrades } = await getConnection(hre)
+	const { ethers, upgrades } = await getConnection(hre)
 
 	if (upgrades?.deployProxy) {
 		return upgrades.deployProxy(factory, args, options)
@@ -39,7 +50,14 @@ export async function deployProxyWithFallback(
 	await implementation.waitForDeployment()
 	const implAddress = await implementation.getAddress()
 
-	const { ethers } = await getConnection(hre)
+	// Wait for implementation to be visible to RPC node (L2 race condition)
+	for (let attempt = 0; attempt < 10; attempt++) {
+		const code = await ethers.provider.getCode(implAddress)
+		if (code !== "0x") break
+		console.log("  Waiting for implementation to be indexed by RPC... (attempt %d)", attempt + 1)
+		await new Promise(r => setTimeout(r, 3000))
+	}
+
 	const proxyFactory = await ethers.getContractFactory("LocalERC1967Proxy")
 	const initializer = options?.initializer ?? "initialize"
 

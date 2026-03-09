@@ -650,6 +650,241 @@ export function shouldBehaveLikeAccountFacet(): void {
 			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(BALANCES.ALLOCATE_AMOUNT)
 		})
 
+		it("Should not bypass balance limit via sendQuote and cancel fee refund cycle", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			expect(allocatedAfterSend).to.be.lt(balanceLimit)
+
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId)
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should enforce balance limit for internalTransfer when fee is reserved", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(userAddress, freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+		})
+
+		it("Should allow reallocation up to cap after open fee is realized", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const feeAmount = balanceLimit - allocatedAfterSend
+			expect(feeAmount).to.be.gt(0)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(feeAmount)).to.not.be.reverted
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should not leave reserved fee dust after partial open and cancel", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.quantity(decimal(101n) + 150n)
+					.build(),
+			)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(
+				quoteId,
+				limitOpenRequestBuilder()
+					.filledAmount(decimal(50n) + 75n)
+					.build(),
+			)
+
+			const splitQuoteId = BigInt(quoteId) + 1n
+			await user.requestToCancelQuote(splitQuoteId)
+
+			const allocatedBeforeRefill = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const refillAmount = balanceLimit - allocatedBeforeRefill
+			expect(refillAmount).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(refillAmount)).to.not.be.reverted
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should enforce limit through locked cancel flow and restore after cancel acceptance", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId)
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await hedger.acceptCancelRequest(quoteId)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should keep cap enforced across multiple pending quotes and partial fee release", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(250n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId1 = await user.sendQuote()
+			const quoteId2 = await user.sendQuote()
+
+			const allocatedAfterTwoQuotes = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByTwoReservedFees = balanceLimit - allocatedAfterTwoQuotes
+			expect(freedByTwoReservedFees).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByTwoReservedFees)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId1)
+
+			const allocatedAfterFirstCancel = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const stillFreedByRemainingReservedFee = balanceLimit - allocatedAfterFirstCancel
+			expect(stillFreedByRemainingReservedFee).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(stillFreedByRemainingReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId2)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should release reserved fee on quote expiry and restore allocation cap state", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([quoteId])
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should release reserved fee on force-cancel and restore allocation cap state", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+			await user.requestToCancelQuote(quoteId)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await time.increase(300)
+			await user.forceCancelQuote(quoteId)
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should keep cap enforced after unlocking a quote back to pending", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+			await hedger.unlockQuote(quoteId)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
 		it("Should deposit and allocate collateral", async function () {
 			const userAddress = await context.signers.user.getAddress()
 			const additionalDeposit = BALANCES.WITHDRAW_AMOUNT

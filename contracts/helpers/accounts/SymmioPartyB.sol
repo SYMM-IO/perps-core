@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
@@ -17,7 +18,7 @@ interface ISymmio {
 }
 
 /// @notice PartyB (solver/hedger) contract that manages positions and executes calls against Symmio
-contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, IERC1271 {
+contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, UUPSUpgradeable, IERC1271 {
 	bytes32 public constant TRUSTED_ROLE = keccak256("TRUSTED_ROLE");
 	bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -43,12 +44,15 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	function initialize(address admin, address symmioAddress_) public initializer {
 		__Pausable_init();
 		__AccessControl_init();
+		__UUPSUpgradeable_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 		_grantRole(TRUSTED_ROLE, admin);
 		_grantRole(MANAGER_ROLE, admin);
 		symmioAddress = symmioAddress_;
 	}
+
+	function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
 	/// @notice Emitted when an `adlClose` attempt reverts for a quote, including the raw revert data
 	/// @dev The raw data is the ABI-encoded revert payload (e.g., `Error(string)` / `Panic(uint256)` / custom error)

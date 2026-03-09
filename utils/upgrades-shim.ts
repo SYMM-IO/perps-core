@@ -32,6 +32,15 @@ export async function deployProxy(hre: HardhatRuntimeEnvironment, factory: Contr
 
 	const implementation = await factory.deploy()
 	await implementation.waitForDeployment()
+	const implAddress = await implementation.getAddress()
+
+	// Wait for implementation to be visible to RPC node (L2 race condition)
+	for (let attempt = 0; attempt < 10; attempt++) {
+		const code = await hre.ethers.provider.getCode(implAddress)
+		if (code !== "0x") break
+		console.log("  Waiting for implementation to be indexed by RPC... (attempt %d)", attempt + 1)
+		await new Promise(r => setTimeout(r, 3000))
+	}
 
 	let initData = "0x"
 	if (initializer !== false) {

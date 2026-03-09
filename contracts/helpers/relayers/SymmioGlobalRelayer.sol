@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -34,7 +36,7 @@ interface IMultiAccount {
 	function owners(address account) external view returns (address);
 }
 
-contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgradeable {
+contract SymmioGlobalRelayer is Initializable, AccessControlEnumerableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
 	using SafeERC20 for IERC20;
 
 	/* ─────────────────────────────── Roles ─────────────────────────────── */
@@ -94,11 +96,17 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 
 	/* ─────────────────────────────── Initialization ─────────────────────────────── */
 
+	/// @custom:oz-upgrades-unsafe-allow constructor
+	constructor() {
+		_disableInitializers();
+	}
+
 	/// @notice Initializes the contract with admin role assignments
 	/// @param admin Address to receive DEFAULT_ADMIN_ROLE, SETTER_ROLE, and UNPAUSER_ROLE
 	function initialize(address admin) external initializer {
 		__Pausable_init();
 		__AccessControl_init();
+		__UUPSUpgradeable_init();
 
 		if (admin == address(0)) revert InvalidAddress();
 
@@ -106,6 +114,8 @@ contract SymmioGlobalRelayer is AccessControlEnumerableUpgradeable, PausableUpgr
 		_grantRole(SETTER_ROLE, admin);
 		_grantRole(UNPAUSER_ROLE, admin);
 	}
+
+	function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
 	/* ─────────────────────────────── Transfer Management ─────────────────────────────── */
 

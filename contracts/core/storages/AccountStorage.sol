@@ -206,6 +206,8 @@ library AccountStorage {
 		///      PartyB solvency result. The inProgress flag gates step progression but does
 		///      NOT prevent re-initialization - quote status is the primary guard.
 		mapping(uint256 => ForceCloseDetail) forceCloseDetails;
+		/// @notice Open trading fees reserved from PartyA allocated balance for pending or locked quotes
+		mapping(address => uint256) partyAReservedOpenFees;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

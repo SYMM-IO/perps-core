@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
 import { SafeERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -22,7 +23,7 @@ interface ISymmioCore {
 /// @title SymmioFeeDistributor
 /// @notice This contract manages the distribution of fees from the Symmio protocol to various stakeholders
 /// @dev This contract is upgradeable, pausable, and uses role-based access control
-contract SymmioFeeDistributor is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable {
+contract SymmioFeeDistributor is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, UUPSUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 
 	/// @notice Represents a stakeholder with a receiver address and fee share
@@ -88,6 +89,7 @@ contract SymmioFeeDistributor is Initializable, PausableUpgradeable, AccessContr
 
 		__Pausable_init();
 		__AccessControl_init();
+		__UUPSUpgradeable_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 
@@ -97,6 +99,8 @@ contract SymmioFeeDistributor is Initializable, PausableUpgradeable, AccessContr
 
 		stakeholders.push(Stakeholder(symmioReceiver_, symmioShare_));
 	}
+
+	function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
 	/// @notice Sets the address of the Symmio contract
 	/// @param symmioAddress_ New address of the Symmio contract

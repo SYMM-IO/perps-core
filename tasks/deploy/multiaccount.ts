@@ -3,7 +3,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 
 import { readData, writeData } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
-import { deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
 import { logger } from "./logger.js"
 
 export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAccount")
@@ -16,9 +16,12 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
-		default: async ({ symmioAddress, admin, logData }, hre) => {
+		default: async ({ symmioAddress: rawSymmio, admin: rawAdmin, logData }, hre) => {
 			const { ethers, upgrades } = await getConnection(hre)
 			logger.section("MultiAccount Deployment")
+
+			const admin = checksumAddress(rawAdmin)
+			const symmioAddress = checksumAddress(rawSymmio)
 
 			const [deployer] = await ethers.getSigners()
 

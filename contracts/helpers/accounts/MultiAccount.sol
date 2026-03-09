@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
 import { SafeERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -17,7 +18,7 @@ import { ISymmioPartyA } from "../../core/interfaces/ISymmioPartyA.sol";
 import { IMultiAccount } from "../../core/interfaces/IMultiAccount.sol";
 
 /// @notice Multi-account manager that deploys and manages PartyA sub-accounts for users
-contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, AccessControlUpgradeable {
+contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, AccessControlUpgradeable, UUPSUpgradeable {
 	using SafeERC20Upgradeable for IERC20Upgradeable;
 
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
@@ -56,6 +57,7 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 	function initialize(address admin, address symmioAddress_, bytes memory accountImplementation_) public initializer {
 		__Pausable_init();
 		__AccessControl_init();
+		__UUPSUpgradeable_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 		_grantRole(PAUSER_ROLE, admin);
@@ -65,6 +67,8 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 		symmioAddress = symmioAddress_;
 		accountImplementation = accountImplementation_;
 	}
+
+	function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
 	/// @notice Allows the owner of an account to delegate access to a specific function selector of a target contract
 	/// @param account The address of the account
