@@ -1,7 +1,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../test/helpers/hardhat-connection.js"
+import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
 
 export type PartyBTask = { partyB: string; partyAs: string[] }
@@ -50,11 +50,11 @@ type MigrationOnDemandReport = {
  * - Caller has MIGRATION_ROLE granted
  *
  * Run:
- *   DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
- *     npx hardhat run ./scripts/migrateOnDemand.ts --network localhost
+ *   DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
+ *     npx hardhat run ./scripts/upgrade/migrateOnDemand.ts --network localhost
  *
  * Config:
- *   cp scripts/config/migrateOnDemand.sample.json scripts/config/migrateOnDemand.json
+ *   cp scripts/upgrade/config/migrateOnDemand.sample.json scripts/upgrade/config/migrateOnDemand.json
  *
  * Resume:
  *   Re-run the command; migration progress is stored in the progress file.
@@ -70,7 +70,7 @@ type MigrationConfigFile = {
 	migrateStrict?: boolean
 }
 
-const MIGRATION_CONFIG_FILE = process.env.MIGRATION_CONFIG_FILE ?? "./scripts/config/migrateOnDemand.json"
+const MIGRATION_CONFIG_FILE = process.env.MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/migrateOnDemand.json"
 
 function loadMigrationConfigFile(): MigrationConfigFile {
 	const configPath = MIGRATION_CONFIG_FILE
@@ -283,7 +283,7 @@ if (configFile.outputDir && typeof configFile.outputDir !== "string") {
 const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? configFile.diamondAddress
 const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migrationInputFile
 
-const DEFAULT_OUTPUT_DIR = "./scripts/output"
+const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"
 const outputDir = process.env.MIGRATION_OUTPUT_DIR ?? configFile.outputDir ?? DEFAULT_OUTPUT_DIR
 const DEFAULT_PROGRESS_FILE = `${outputDir}/migration-progress.json`
 let migrateProgressFile = process.env.MIGRATE_PROGRESS_FILE ?? configFile.migrateProgressFile ?? DEFAULT_PROGRESS_FILE

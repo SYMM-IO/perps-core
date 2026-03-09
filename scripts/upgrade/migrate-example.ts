@@ -11,7 +11,7 @@
  */
 import { ethers } from "ethers"
 
-import { MigrationFacet__factory } from "../src/types/index.js"
+import { MigrationFacet__factory } from "../../src/types/index.js"
 import { migrate, MigrationInput, MigrationConfig } from "./migrate.js"
 
 // =============================================================================

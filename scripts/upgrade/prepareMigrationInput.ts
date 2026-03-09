@@ -1,7 +1,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../test/helpers/hardhat-connection.js"
+import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 
 /**
@@ -11,13 +11,13 @@ import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js
  * against on-chain state, and writes a validated JSON file for migrateOnDemand.ts.
  *
  * Usage:
- *   DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/prepareMigrationInput.ts --network localhost
+ *   DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
  *
  * Config:
- *   Set in scripts/config/forkUpgrade.json or env vars.
+ *   Set in scripts/upgrade/config/forkUpgrade.json or env vars.
  *
  * Output:
- *   scripts/output/migration-input.json
+ *   scripts/upgrade/output/migration-input.json
  */
 
 const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn"
@@ -47,7 +47,7 @@ type PrepareReport = {
 	error?: string
 }
 
-const CONFIG_FILE = process.env.PREPARE_CONFIG_FILE ?? "./scripts/config/forkUpgrade.json"
+const CONFIG_FILE = process.env.PREPARE_CONFIG_FILE ?? "./scripts/upgrade/config/forkUpgrade.json"
 
 function loadConfig(): PrepareConfig {
 	if (!fs.existsSync(CONFIG_FILE)) return {}
@@ -98,7 +98,7 @@ async function main() {
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT ?? config.subgraphEndpoint ?? DEFAULT_SUBGRAPH_ENDPOINT
 	const SPOT_CHECK_COUNT = Number(process.env.SPOT_CHECK_COUNT ?? config.spotCheckCount ?? 20)
-	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/output"
+	const outputDir = process.env.PREPARE_OUTPUT_DIR ?? config.outputDir ?? "./scripts/upgrade/output"
 	const outputFile = process.env.PREPARE_OUTPUT_FILE ?? config.outputFile ?? `${outputDir}/migration-input.json`
 	const reportFile = `${outputDir}/prepareMigrationInput-report.json`
 

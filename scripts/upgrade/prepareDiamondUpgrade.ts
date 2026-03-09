@@ -1,6 +1,6 @@
-import { FacetNames } from "../tasks/deploy/constants.js"
-import { FacetCutAction, getSelectors } from "../tasks/utils/diamondCut.js"
-import { ethers } from "../test/helpers/hardhat-connection.js"
+import { FacetNames } from "../../tasks/deploy/constants.js"
+import { FacetCutAction, getSelectors } from "../../tasks/utils/diamondCut.js"
+import { ethers } from "../../test/helpers/hardhat-connection.js"
 
 const diamondAddress = ""
 const facetAddresses = new Map<string, string>()

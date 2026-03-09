@@ -34,7 +34,7 @@ FORK_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY npx hardhat node --ne
 Terminal 2:
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/forkUpgrade.ts --network localhost
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
 What it does:
@@ -53,7 +53,7 @@ Output: `scripts/output/forkUpgrade-report.json`
 ## 3) Prepare Migration Input
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/prepareMigrationInput.ts --network localhost
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 ```
 
 What it does:
@@ -69,7 +69,7 @@ Output: `scripts/output/migration-input.json`
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  npx hardhat run scripts/migrateOnDemand.ts --network localhost
+  npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
 ```
 
 What it does:

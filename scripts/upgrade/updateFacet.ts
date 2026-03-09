@@ -1,11 +1,11 @@
-import { FacetCutAction, getSelectors } from "../tasks/utils/diamondCut.js"
-import { ethers } from "../test/helpers/hardhat-connection.js"
+import { FacetCutAction, getSelectors } from "../../tasks/utils/diamondCut.js"
+import { ethers } from "../../test/helpers/hardhat-connection.js"
 
 /**
  * Replace a facet on the diamond.
  *
  * Run:
- *   DIAMOND_ADDRESS=0x... FACET_NAME=PartyAFacet npx hardhat run ./scripts/updateFacet.ts --network localhost
+ *   DIAMOND_ADDRESS=0x... FACET_NAME=PartyAFacet npx hardhat run ./scripts/upgrade/updateFacet.ts --network localhost
  *
  * Optional:
  *   FACET_ADDRESS=0x...   # if you already deployed the facet

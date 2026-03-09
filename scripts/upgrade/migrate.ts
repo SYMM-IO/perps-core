@@ -1,7 +1,7 @@
 import { ethers as eth } from "ethers"
 import * as fs from "fs"
 
-import { MigrationFacet } from "../src/types/index.js"
+import { MigrationFacet } from "../../src/types/index.js"
 
 // =============================================================================
 // Configuration

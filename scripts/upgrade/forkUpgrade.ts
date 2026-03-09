@@ -1,7 +1,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../test/helpers/hardhat-connection.js"
+import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut } from "./utils/upgradeHelpers.js"
@@ -16,11 +16,11 @@ const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm
  * prepareMigrationInput.ts then migrateOnDemand.ts after this completes.
  *
  * Usage:
- *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/forkUpgrade.ts --network localhost
+ *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
  *
  * Config:
- *   cp scripts/config/forkUpgrade.sample.json scripts/config/forkUpgrade.json
- *   # edit scripts/config/forkUpgrade.json
+ *   cp scripts/upgrade/config/forkUpgrade.sample.json scripts/upgrade/config/forkUpgrade.json
+ *   # edit scripts/upgrade/config/forkUpgrade.json
  */
 
 type ForkUpgradeConfig = {
@@ -53,7 +53,7 @@ type ForkUpgradeReport = {
 	error?: string
 }
 
-const CONFIG_FILE = process.env.FORK_UPGRADE_CONFIG_FILE ?? "./scripts/config/forkUpgrade.json"
+const CONFIG_FILE = process.env.FORK_UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/forkUpgrade.json"
 
 function loadConfig(): ForkUpgradeConfig {
 	if (!fs.existsSync(CONFIG_FILE)) return {}
@@ -109,7 +109,7 @@ async function main() {
 	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT ?? config.subgraphEndpoint ?? DEFAULT_SUBGRAPH_ENDPOINT
 	const newParams = config.newV085Parameters ?? {}
 
-	const outputDir = "./scripts/output"
+	const outputDir = "./scripts/upgrade/output"
 	const reportFile = `${outputDir}/forkUpgrade-report.json`
 
 	const report: ForkUpgradeReport = {

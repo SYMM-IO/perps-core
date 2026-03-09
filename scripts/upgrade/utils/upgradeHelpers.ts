@@ -2,9 +2,9 @@
  * Diamond upgrade utilities — deploy facets, build diamondCut, apply it.
  * Extracted from upgradeTest.ts for use by forkUpgrade.ts.
  */
-import { FacetNames } from "../../tasks/deploy/constants.js"
-import { FacetCutAction, getSelectors } from "../../tasks/utils/diamondCut.js"
-import { ethers } from "../../test/helpers/hardhat-connection.js"
+import { FacetNames } from "../../../tasks/deploy/constants.js"
+import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
+import { ethers } from "../../../test/helpers/hardhat-connection.js"
 
 export type FacetInfo = {
 	address: string

@@ -9,7 +9,7 @@ Migration is a two-step process:
 1. **Prepare input** (`prepareMigrationInput.ts`) -- fetches open quotes and partyB balances from the subgraph, validates against on-chain state, writes a validated JSON file
 2. **Run migration** (`migrateOnDemand.ts`) -- executes migration using the validated input, then verifies results on-chain
 
-The low-level migration logic lives in `scripts/migrate.ts`, which handles:
+The low-level migration logic lives in `scripts/upgrade/migrate.ts`, which handles:
 - Migrating quotes to populate aggregated positions
 - Backfilling PartyA <-> PartyB connections for active positions (`connectedPartyBs` / `isConnectedPartyB`)
 - Migrating partyB balances to the master bucket
@@ -33,10 +33,10 @@ Key features:
 Fetches data from the subgraph, validates it against on-chain state, and writes a JSON file.
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/prepareMigrationInput.ts --network localhost
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 
 # With custom subgraph endpoint
-DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/prepareMigrationInput.ts --network localhost
+DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 ```
 
 Output: `scripts/output/migration-input.json`
@@ -62,7 +62,7 @@ Takes the validated input file and runs migration + verification.
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  npx hardhat run scripts/migrateOnDemand.ts --network localhost
+  npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
 ```
 
 Output: `scripts/output/migrateOnDemand-report.json`
@@ -99,7 +99,7 @@ cp scripts/config/migrateOnDemand.sample.json scripts/config/migrateOnDemand.jso
 | `MIGRATION_OUTPUT_DIR` | `outputDir` |
 | `MIGRATE_STRICT` | `migrateStrict` |
 
-## Low-Level API (`scripts/migrate.ts`)
+## Low-Level API (`scripts/upgrade/migrate.ts`)
 
 For programmatic use:
 
@@ -141,12 +141,12 @@ The script automatically saves progress after each successful operation. If it f
 ```bash
 # First run - fails at chunk 5
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  npx hardhat run scripts/migrateOnDemand.ts --network localhost
+  npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
 # Output: error at chunk 5
 
 # Second run - automatically resumes from chunk 5
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  npx hardhat run scripts/migrateOnDemand.ts --network localhost
+  npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
 # Output: Resuming migration from quotes phase
 ```
 
@@ -158,7 +158,7 @@ Test the migration without executing transactions:
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  DRY_RUN=true npx hardhat run scripts/migrateOnDemand.ts --network localhost
+  DRY_RUN=true npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
 ```
 
 ## Migration Report

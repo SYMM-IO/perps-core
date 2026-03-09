@@ -1,4 +1,4 @@
-import { ethers, networkHelpers } from "../../test/helpers/hardhat-connection.js"
+import { ethers, networkHelpers } from "../../../test/helpers/hardhat-connection.js"
 
 /**
  * Reads the diamond owner from LibDiamond storage.

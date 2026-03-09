@@ -55,10 +55,10 @@ Impersonates the diamond owner, pauses, deploys v0.8.5 facets, applies diamondCu
 
 ```bash
 # Terminal 2
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/forkUpgrade.ts --network localhost
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 
 # With admin override (if owner() returns a multisig)
-DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... npx hardhat run scripts/forkUpgrade.ts --network localhost
+DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
 Output: `scripts/output/forkUpgrade-report.json`
@@ -68,10 +68,10 @@ Output: `scripts/output/forkUpgrade-report.json`
 Fetches open quotes and partyB balances from the subgraph, validates them against on-chain state (boundary check, spot-checks, balance verification), and writes a validated JSON file.
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/prepareMigrationInput.ts --network localhost
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 
 # With custom subgraph endpoint
-DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/prepareMigrationInput.ts --network localhost
+DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 ```
 
 Output: `scripts/output/migration-input.json`
@@ -84,7 +84,7 @@ Runs migration using the validated input file, then verifies results on-chain.
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  npx hardhat run scripts/migrateOnDemand.ts --network localhost
+  npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
 ```
 
 Output: `scripts/output/migrateOnDemand-report.json`

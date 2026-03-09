@@ -1,5 +1,5 @@
-import { FacetCutAction } from "../tasks/utils/diamondCut.js"
-import { ethers } from "../test/helpers/hardhat-connection.js"
+import { FacetCutAction } from "../../tasks/utils/diamondCut.js"
+import { ethers } from "../../test/helpers/hardhat-connection.js"
 
 const diamondAddress = ""
 const [deployer] = await ethers.getSigners()

@@ -1,7 +1,7 @@
 import fs from "fs"
 import path from "path"
 
-import { ethers } from "../test/helpers/hardhat-connection.js"
+import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { deployFacets, buildDiamondCut, type FacetInfo } from "./utils/upgradeHelpers.js"
 
 /**
@@ -13,22 +13,22 @@ import { deployFacets, buildDiamondCut, type FacetInfo } from "./utils/upgradeHe
  *
  * Usage:
  *   # Deploy facets + generate batch (on target network)
- *   DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/generateSafeBatch.ts --network arbitrum
+ *   DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
  *
  *   # Load pre-deployed facets (skip deployment)
- *   DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... FACETS_FILE=./scripts/output/deployed-facets.json \
- *     npx hardhat run scripts/generateSafeBatch.ts --network arbitrum
+ *   DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... FACETS_FILE=./scripts/upgrade/output/deployed-facets.json \
+ *     npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
  *
  *   # Different migration runner than Safe
  *   DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... MIGRATION_RUNNER=0x... \
- *     npx hardhat run scripts/generateSafeBatch.ts --network arbitrum
+ *     npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
  *
- * Config: scripts/config/forkUpgrade.json (reuses diamondAddress, diamondCutChunkSize, newV085Parameters)
+ * Config: scripts/upgrade/config/forkUpgrade.json (reuses diamondAddress, diamondCutChunkSize, newV085Parameters)
  *
  * Output:
- *   scripts/output/safe-batch.json          — Safe Transaction Builder JSON
- *   scripts/output/deployed-facets.json     — Deployed addresses (if deploying)
- *   scripts/output/safe-batch-details.json  — Selector changes + transaction breakdown
+ *   scripts/upgrade/output/safe-batch.json          — Safe Transaction Builder JSON
+ *   scripts/upgrade/output/deployed-facets.json     — Deployed addresses (if deploying)
+ *   scripts/upgrade/output/safe-batch-details.json  — Selector changes + transaction breakdown
  */
 
 type AbiInput = {
@@ -79,8 +79,8 @@ type DeployedFacets = {
 	selectorSignatures: Record<string, string>
 }
 
-const CONFIG_FILE = process.env.FORK_UPGRADE_CONFIG_FILE ?? "./scripts/config/forkUpgrade.json"
-const OUTPUT_DIR = "./scripts/output"
+const CONFIG_FILE = process.env.FORK_UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/forkUpgrade.json"
+const OUTPUT_DIR = "./scripts/upgrade/output"
 
 function loadConfig(): Config {
 	if (!fs.existsSync(CONFIG_FILE)) return {}
