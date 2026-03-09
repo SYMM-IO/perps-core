@@ -328,7 +328,11 @@ library ClearingHouseFacetImpl {
 
 			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, partyB, quote.affiliate);
 
-			LibAccount.increasePartyBNonce(partyB, partyA);
+			if (liqType == LiquidationType.CROSS_PARTY_B) {
+				LibAccount.increaseBothNonces(partyB, partyA);
+			} else {
+				LibAccount.increasePartyBNonce(partyB, partyA);
+			}
 
 			// Emit TradeVolumeRecorded for both liquidation types
 			emit SharedEvents.TradeVolumeRecorded(

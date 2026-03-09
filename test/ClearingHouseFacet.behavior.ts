@@ -651,6 +651,22 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				expect(quote4After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
 			})
 
+			it("should increment partyA nonce for each cross-liquidated position", async () => {
+				const partyA = context.signers.user.address
+				const partyB = context.signers.hedger.address
+				const partyANonceBefore = await context.viewFacet.nonceOfPartyA(partyA)
+				const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger, [1n, 4n], [decimal(1n), decimal(1n)])
+
+				const partyANonceAfter = await context.viewFacet.nonceOfPartyA(partyA)
+				const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+				expect(partyANonceAfter).to.equal(partyANonceBefore + 2n)
+				expect(partyBNonceAfter).to.equal(partyBNonceBefore + 2n)
+			})
+
 			it("should keep cross liquidation active while pending quotes remain", async () => {
 				expect((await context.viewFacetQuote.getPartyBPendingQuotes(context.signers.hedger, context.signers.user)).length).to.be.greaterThan(0)
 
@@ -808,6 +824,34 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				const nonceAfter = await context.viewFacet.nonceOfPartyB(await hedger2.getAddress(), ZeroAddress)
 				expect(nonceAfter).to.be.greaterThan(nonceBefore)
+			})
+
+			it("increments partyA nonce for each partyA in cross liquidation", async () => {
+				const partyA1 = await user.getAddress()
+				const partyA2 = await user2.getAddress()
+				const partyB = await hedger2.getAddress()
+
+				const partyANonceBefore1 = await context.viewFacet.nonceOfPartyA(partyA1)
+				const partyANonceBefore2 = await context.viewFacet.nonceOfPartyA(partyA2)
+				const partyBNonceBefore1 = await context.viewFacet.nonceOfPartyB(partyB, partyA1)
+				const partyBNonceBefore2 = await context.viewFacet.nonceOfPartyB(partyB, partyA2)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(partyB, "0x", -decimal(1_000_000n), await getBlockTimestamp())
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(partyB, [quoteUser1.id, quoteUser2.id], [quoteUser1.openedPrice, quoteUser2.openedPrice])
+
+				const partyANonceAfter1 = await context.viewFacet.nonceOfPartyA(partyA1)
+				const partyANonceAfter2 = await context.viewFacet.nonceOfPartyA(partyA2)
+				const partyBNonceAfter1 = await context.viewFacet.nonceOfPartyB(partyB, partyA1)
+				const partyBNonceAfter2 = await context.viewFacet.nonceOfPartyB(partyB, partyA2)
+
+				expect(partyANonceAfter1).to.equal(partyANonceBefore1 + 1n)
+				expect(partyANonceAfter2).to.equal(partyANonceBefore2 + 1n)
+				expect(partyBNonceAfter1).to.equal(partyBNonceBefore1 + 1n)
+				expect(partyBNonceAfter2).to.equal(partyBNonceBefore2 + 1n)
 			})
 		})
 	})
@@ -1249,6 +1293,20 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						.liquidatePositionsForClearingHouse(context.signers.user.address, [1n], [decimal(25n)]),
 				).to.be.revertedWith("ClearingHouseFacet: PartyB is in cross liquidation process")
 			})
+
+			it("should not increment partyA nonce during partyA takeover position liquidation", async () => {
+				const partyA = context.signers.user.address
+				const partyB = context.signers.hedger.address
+				const partyANonceBefore = await context.viewFacet.nonceOfPartyA(partyA)
+				const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForClearingHouse(partyA, [1n], [decimal(25n)])
+
+				const partyANonceAfter = await context.viewFacet.nonceOfPartyA(partyA)
+				const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+				expect(partyANonceAfter).to.equal(partyANonceBefore)
+				expect(partyBNonceAfter).to.equal(partyBNonceBefore + 1n)
+			})
 		})
 
 		describe("settlePartyATakeover", () => {
@@ -1530,6 +1588,20 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						.connect(context.signers.liquidator)
 						.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)]),
 				).to.not.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
+			})
+
+			it("should increment partyA nonce even when auto-takeover is triggered", async () => {
+				const partyA = context.signers.user.address
+				const partyB = context.signers.hedger.address
+				const partyANonceBefore = await context.viewFacet.nonceOfPartyA(partyA)
+				const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+				await context.clearingHouseFacet.connect(context.signers.liquidator).liquidatePositionsForClearingHouse(partyB, [1n], [decimal(1n)])
+
+				const partyANonceAfter = await context.viewFacet.nonceOfPartyA(partyA)
+				const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+				expect(partyANonceAfter).to.equal(partyANonceBefore + 1n)
+				expect(partyBNonceAfter).to.equal(partyBNonceBefore + 1n)
 			})
 		})
 
