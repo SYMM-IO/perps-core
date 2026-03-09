@@ -173,11 +173,13 @@ async function main() {
 		}, 0n)
 
 		if (maxSubgraphQuoteId >= onChainNextQuoteId) {
-			throw new Error(
-				`Subgraph has quoteId ${maxSubgraphQuoteId} but on-chain nextQuoteId is ${onChainNextQuoteId}. Subgraph may be ahead or corrupted.`,
-			)
+			const before = quotesResult.quotes.length
+			quotesResult.quotes = quotesResult.quotes.filter(q => BigInt(q.quoteId) < onChainNextQuoteId)
+			const dropped = before - quotesResult.quotes.length
+			console.log(`  Subgraph ahead of on-chain (max quoteId=${maxSubgraphQuoteId}, nextQuoteId=${onChainNextQuoteId}). Filtered ${dropped} quotes.`)
+		} else {
+			console.log(`  Boundary check: on-chain nextQuoteId=${onChainNextQuoteId}, subgraph max quoteId=${maxSubgraphQuoteId} -- OK`)
 		}
-		console.log(`  Boundary check: on-chain nextQuoteId=${onChainNextQuoteId}, subgraph max quoteId=${maxSubgraphQuoteId} -- OK`)
 		report.steps.push({
 			name: "validate_boundary",
 			status: "ok",
