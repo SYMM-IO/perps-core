@@ -141,12 +141,7 @@ interface IViewFacet {
 
 	function getBalanceLimitPerUser() external view returns (uint256);
 
-	function verifyMuonTSSAndGateway(
-		bytes32 hash,
-		IMuonSignatureVerifier.SchnorrSign memory sign,
-		bytes memory gatewaySignature,
-		MuonFunction func
-	) external view;
+	function verifyMuonTSSAndGateway(bytes32 hash, IMuonSignatureVerifier.SchnorrSign memory sign, bytes memory gatewaySignature) external view;
 
 	function getBridgeTransaction(uint256 transactionId) external view returns (BridgeTransaction memory);
 

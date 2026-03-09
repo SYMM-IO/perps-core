@@ -50,11 +50,11 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 	}
 
 	/// @notice Verifies both the TSS Schnorr signature and the gateway ECDSA signature,
-	///         and checks that both the signing key and gateway are authorized for the given function
+	///         and checks that both the signing key and gateway are authorized for the given category
 	/// @param hash The hash of the signed data
 	/// @param sign The Schnorr signature to verify against registered public keys
 	/// @param gatewaySignature The ECDSA gateway signature to verify
-	/// @param func The facet function requesting verification
+	/// @param func The operation category requesting verification
 	function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature, MuonFunction func) external view {
 		// Verify TSS via Muon
 		bool verifiedTSS = false;
@@ -73,6 +73,33 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 		for (uint256 i = 0; i < gatewaySigners.length; i++) {
 			if (signer == gatewaySigners[i]) {
 				require(gatewaySignerPermissions[signer][func], "MuonSignatureVerifier: Gateway not authorized for function");
+				gatewayVerified = true;
+				break;
+			}
+		}
+		require(gatewayVerified, "MuonSignatureVerifier: Gateway is not valid");
+	}
+
+	/// @notice Verifies the TSS and gateway signatures without per-category authorization checks
+	/// @param hash The hash of the signed data
+	/// @param sign The Schnorr signature to verify against registered public keys
+	/// @param gatewaySignature The ECDSA gateway signature to verify
+	function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature) external view {
+		// Verify TSS via Muon
+		bool verifiedTSS = false;
+		for (uint256 i = 0; i < publicKeys.length; i++) {
+			if (LibMuonV04ClientBase.muonVerify(uint256(hash), sign, publicKeys[i])) {
+				verifiedTSS = true;
+				break;
+			}
+		}
+		require(verifiedTSS, "MuonSignatureVerifier: TSS not verified");
+
+		// Verify Gateway Signature
+		address signer = hash.toEthSignedMessageHash().recover(gatewaySignature);
+		bool gatewayVerified = false;
+		for (uint256 i = 0; i < gatewaySigners.length; i++) {
+			if (signer == gatewaySigners[i]) {
 				gatewayVerified = true;
 				break;
 			}

@@ -76,7 +76,7 @@ library PartyAFacetImpl {
 			require(tradingLayout.isPartyBBindable[boundedPartyB], "PartyAFacet: Bound Party B is not Bindable");
 			require(partyBsWhiteList.length == 1 && partyBsWhiteList[0] == boundedPartyB, "PartyAFacet: PartyA is bound to a different PartyB");
 		} else {
-			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId, MuonFunction.SendQuote);
+			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId, MuonFunction.Trading);
 		}
 
 		Fee memory fee;

@@ -560,17 +560,12 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().balanceLimitPerUser;
 	}
 
-	/// @notice Verifies the Muon signature of the Muon TSS and gateway.
+	/// @notice Verifies the Muon signature of the Muon TSS and gateway (no per-category authorization checks).
 	/// @param hash The hash to verify.
 	/// @param sign The Schnorr signature.
 	/// @param gatewaySignature The Muon signature from the gateway.
-	function verifyMuonTSSAndGateway(
-		bytes32 hash,
-		IMuonSignatureVerifier.SchnorrSign memory sign,
-		bytes memory gatewaySignature,
-		MuonFunction func
-	) external view {
-		LibMuon.verifyTSSAndGateway(hash, sign, gatewaySignature, func);
+	function verifyMuonTSSAndGateway(bytes32 hash, IMuonSignatureVerifier.SchnorrSign memory sign, bytes memory gatewaySignature) external view {
+		LibMuon.verifyTSSAndGateway(hash, sign, gatewaySignature);
 	}
 
 	/// @notice Retrieves the bridge transaction information.

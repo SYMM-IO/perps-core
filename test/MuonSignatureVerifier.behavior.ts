@@ -7,34 +7,13 @@ import { loadFixture } from "./helpers/network-helpers.js"
 
 // MuonFunction enum values (must match the Solidity enum order)
 const MuonFunction = {
-	Deallocate: 0,
-	SafeDeallocate: 1,
-	SendQuote: 2,
-	LockQuote: 3,
-	DeallocateForPartyB: 4,
-	TransferAllocation: 5,
-	LiquidatePartyB: 6,
-	OpenPosition: 7,
-	FillCloseRequest: 8,
-	FillCloseRequestToLiquidation: 9,
-	EmergencyClosePosition: 10,
-	OpenPositions: 11,
-	ClosePositions: 12,
-	SettleUpnl: 13,
-	SettleUpnlUnified: 14,
-	ForceClose: 15,
-	InitializeForceClose: 16,
-	SettleUpnlForForceClose: 17,
-	SettleUpnlForForceCloseLegacy: 18,
-	FinalizeForceClose: 19,
-	ChargeFundingRate: 20,
-	ChargeAccumulatedFundingFee: 21,
-	LiquidatePartyA: 22,
-	SetSymbolsPrice: 23,
-	DeferredLiquidatePartyA: 24,
-	DeferredSetSymbolsPrice: 25,
-	LiquidatePositionsPartyB: 26,
-	VerifyMuonTSSAndGateway: 27,
+	Trading: 0,
+	AccountManagement: 1,
+	Settlement: 2,
+	ForceClose: 3,
+	Funding: 4,
+	LiquidationPartyA: 5,
+	LiquidationPartyB: 6,
 } as const
 
 export function shouldBehaveLikeMuonSignatureVerifier(): void {
@@ -69,87 +48,88 @@ export function shouldBehaveLikeMuonSignatureVerifier(): void {
 
 	describe("MuonSignatureVerifier Permissions", function () {
 		describe("Public Key Permissions", function () {
-			it("should default to unauthorized for all functions", async function () {
+			it("should default to unauthorized for all categories", async function () {
 				await verifier.connect(setter).addPublicKey(dummyPubKey)
 
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(false)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LockQuote)).to.equal(false)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.OpenPosition)).to.equal(false)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LiquidatePartyA)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.AccountManagement)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Settlement)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LiquidationPartyA)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LiquidationPartyB)).to.equal(false)
 			})
 
-			it("should authorize a key for specific functions", async function () {
+			it("should authorize a key for specific categories", async function () {
 				await verifier.connect(setter).addPublicKey(dummyPubKey)
-				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate, MuonFunction.LockQuote], true)
+				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading, MuonFunction.AccountManagement], true)
 
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(true)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LockQuote)).to.equal(true)
-				// Other functions remain unauthorized
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.OpenPosition)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.AccountManagement)).to.equal(true)
+				// Other categories remain unauthorized
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LiquidationPartyA)).to.equal(false)
 			})
 
-			it("should revoke permissions for specific functions", async function () {
+			it("should revoke permissions for specific categories", async function () {
 				await verifier.connect(setter).addPublicKey(dummyPubKey)
-				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate, MuonFunction.LockQuote], true)
+				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading, MuonFunction.AccountManagement], true)
 
-				// Revoke one function
-				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate], false)
+				// Revoke one category
+				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading], false)
 
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(false)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LockQuote)).to.equal(true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.AccountManagement)).to.equal(true)
 			})
 
 			it("should handle multiple keys independently", async function () {
 				await verifier.connect(setter).addPublicKey(dummyPubKey)
 				await verifier.connect(setter).addPublicKey(dummyPubKey2)
 
-				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate], true)
-				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey2, [MuonFunction.LockQuote], true)
+				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading], true)
+				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey2, [MuonFunction.LiquidationPartyA], true)
 
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(true)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LockQuote)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.LiquidationPartyA)).to.equal(false)
 
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey2, MuonFunction.Deallocate)).to.equal(false)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey2, MuonFunction.LockQuote)).to.equal(true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey2, MuonFunction.Trading)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey2, MuonFunction.LiquidationPartyA)).to.equal(true)
 			})
 
 			it("should emit PublicKeyPermissionsUpdated on grant", async function () {
-				await expect(verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate, MuonFunction.LockQuote], true))
+				await expect(verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading, MuonFunction.AccountManagement], true))
 					.to.emit(verifier, "PublicKeyPermissionsUpdated")
-					.withArgs(dummyPubKey.x, dummyPubKey.parity, [MuonFunction.Deallocate, MuonFunction.LockQuote], true)
+					.withArgs(dummyPubKey.x, dummyPubKey.parity, [MuonFunction.Trading, MuonFunction.AccountManagement], true)
 			})
 
 			it("should emit PublicKeyPermissionsUpdated on revoke", async function () {
-				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate], true)
+				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading], true)
 
-				await expect(verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate], false))
+				await expect(verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading], false))
 					.to.emit(verifier, "PublicKeyPermissionsUpdated")
-					.withArgs(dummyPubKey.x, dummyPubKey.parity, [MuonFunction.Deallocate], false)
+					.withArgs(dummyPubKey.x, dummyPubKey.parity, [MuonFunction.Trading], false)
 			})
 
 			it("should revert when non-setter sets permissions", async function () {
-				await expect(verifier.connect(nonSetter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate], true)).to.be.reverted
+				await expect(verifier.connect(nonSetter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading], true)).to.be.reverted
 			})
 
 			it("should allow admin to set permissions", async function () {
 				// Admin also has SETTER_ROLE (granted in constructor)
-				await verifier.connect(admin).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate], true)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(true)
+				await verifier.connect(admin).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading], true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(true)
 			})
 
-			it("should handle setting permissions for all functions at once", async function () {
-				const allFunctions = Object.values(MuonFunction)
-				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, allFunctions, true)
+			it("should handle setting permissions for all categories at once", async function () {
+				const allCategories = Object.values(MuonFunction)
+				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, allCategories, true)
 
-				for (const func of allFunctions) {
-					expect(await verifier.isPublicKeyAuthorized(dummyPubKey, func)).to.equal(true)
+				for (const cat of allCategories) {
+					expect(await verifier.isPublicKeyAuthorized(dummyPubKey, cat)).to.equal(true)
 				}
 			})
 
 			it("should handle empty functions array", async function () {
 				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [], true)
 				// No permissions should be set
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(false)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(false)
 			})
 		})
 
@@ -163,69 +143,71 @@ export function shouldBehaveLikeMuonSignatureVerifier(): void {
 				gatewaySigner2 = signers[5].address
 			})
 
-			it("should default to unauthorized for all functions", async function () {
+			it("should default to unauthorized for all categories", async function () {
 				await verifier.connect(setter).addGatewaySigner(gatewaySigner)
 
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.Deallocate)).to.equal(false)
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.LockQuote)).to.equal(false)
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.OpenPosition)).to.equal(false)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.Trading)).to.equal(false)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.AccountManagement)).to.equal(false)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.LiquidationPartyA)).to.equal(false)
 			})
 
-			it("should authorize a signer for specific functions", async function () {
+			it("should authorize a signer for specific categories", async function () {
 				await verifier.connect(setter).addGatewaySigner(gatewaySigner)
-				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Deallocate, MuonFunction.LockQuote], true)
+				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Trading, MuonFunction.AccountManagement], true)
 
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.Deallocate)).to.equal(true)
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.LockQuote)).to.equal(true)
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.OpenPosition)).to.equal(false)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.Trading)).to.equal(true)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.AccountManagement)).to.equal(true)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.LiquidationPartyA)).to.equal(false)
 			})
 
-			it("should revoke permissions for specific functions", async function () {
-				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Deallocate, MuonFunction.LockQuote], true)
-				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Deallocate], false)
+			it("should revoke permissions for specific categories", async function () {
+				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Trading, MuonFunction.AccountManagement], true)
+				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Trading], false)
 
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.Deallocate)).to.equal(false)
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.LockQuote)).to.equal(true)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.Trading)).to.equal(false)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.AccountManagement)).to.equal(true)
 			})
 
 			it("should handle multiple signers independently", async function () {
 				await verifier.connect(setter).addGatewaySigner(gatewaySigner)
 				await verifier.connect(setter).addGatewaySigner(gatewaySigner2)
 
-				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Deallocate], true)
-				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner2, [MuonFunction.LockQuote], true)
+				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Trading], true)
+				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner2, [MuonFunction.LiquidationPartyA], true)
 
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.Deallocate)).to.equal(true)
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.LockQuote)).to.equal(false)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.Trading)).to.equal(true)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, MuonFunction.LiquidationPartyA)).to.equal(false)
 
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner2, MuonFunction.Deallocate)).to.equal(false)
-				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner2, MuonFunction.LockQuote)).to.equal(true)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner2, MuonFunction.Trading)).to.equal(false)
+				expect(await verifier.isGatewaySignerAuthorized(gatewaySigner2, MuonFunction.LiquidationPartyA)).to.equal(true)
 			})
 
 			it("should emit GatewaySignerPermissionsUpdated on grant", async function () {
-				await expect(verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Deallocate, MuonFunction.LockQuote], true))
+				await expect(
+					verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Trading, MuonFunction.AccountManagement], true),
+				)
 					.to.emit(verifier, "GatewaySignerPermissionsUpdated")
-					.withArgs(gatewaySigner, [MuonFunction.Deallocate, MuonFunction.LockQuote], true)
+					.withArgs(gatewaySigner, [MuonFunction.Trading, MuonFunction.AccountManagement], true)
 			})
 
 			it("should emit GatewaySignerPermissionsUpdated on revoke", async function () {
-				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Deallocate], true)
+				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Trading], true)
 
-				await expect(verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Deallocate], false))
+				await expect(verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Trading], false))
 					.to.emit(verifier, "GatewaySignerPermissionsUpdated")
-					.withArgs(gatewaySigner, [MuonFunction.Deallocate], false)
+					.withArgs(gatewaySigner, [MuonFunction.Trading], false)
 			})
 
 			it("should revert when non-setter sets permissions", async function () {
-				await expect(verifier.connect(nonSetter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Deallocate], true)).to.be.reverted
+				await expect(verifier.connect(nonSetter).setGatewaySignerPermissions(gatewaySigner, [MuonFunction.Trading], true)).to.be.reverted
 			})
 
-			it("should handle setting permissions for all functions at once", async function () {
-				const allFunctions = Object.values(MuonFunction)
-				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, allFunctions, true)
+			it("should handle setting permissions for all categories at once", async function () {
+				const allCategories = Object.values(MuonFunction)
+				await verifier.connect(setter).setGatewaySignerPermissions(gatewaySigner, allCategories, true)
 
-				for (const func of allFunctions) {
-					expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, func)).to.equal(true)
+				for (const cat of allCategories) {
+					expect(await verifier.isGatewaySignerAuthorized(gatewaySigner, cat)).to.equal(true)
 				}
 			})
 		})
@@ -250,8 +232,8 @@ export function shouldBehaveLikeMuonSignatureVerifier(): void {
 				expect(await verifier.hasRole(SETTER_ROLE, newSetter.address)).to.equal(true)
 
 				// New setter can set permissions
-				await verifier.connect(newSetter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate], true)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(true)
+				await verifier.connect(newSetter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading], true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(true)
 			})
 
 			it("should not allow non-setter to add/remove public keys", async function () {
@@ -327,25 +309,25 @@ export function shouldBehaveLikeMuonSignatureVerifier(): void {
 		describe("Permissions persist independently of key lifecycle", function () {
 			it("should allow setting permissions before adding the key", async function () {
 				// Set permissions for a key that hasn't been added yet
-				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate], true)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(true)
+				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading], true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(true)
 
 				// Permissions survive adding the key
 				await verifier.connect(setter).addPublicKey(dummyPubKey)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(true)
 			})
 
 			it("should retain permissions after removing and re-adding a key", async function () {
 				await verifier.connect(setter).addPublicKey(dummyPubKey)
-				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Deallocate], true)
+				await verifier.connect(setter).setPublicKeyPermissions(dummyPubKey, [MuonFunction.Trading], true)
 
 				await verifier.connect(setter).removePublicKey(dummyPubKey)
 				// Permission mapping still exists
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(true)
 
 				// Re-add key - permissions are still there
 				await verifier.connect(setter).addPublicKey(dummyPubKey)
-				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Deallocate)).to.equal(true)
+				expect(await verifier.isPublicKeyAuthorized(dummyPubKey, MuonFunction.Trading)).to.equal(true)
 			})
 		})
 	})

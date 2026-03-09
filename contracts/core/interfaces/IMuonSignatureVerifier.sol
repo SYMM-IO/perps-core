@@ -5,36 +5,15 @@
 
 pragma solidity >=0.8.18;
 
-/// @notice Enum identifying which facet function requires signature verification
+/// @notice Categories of operations requiring Muon signature verification
 enum MuonFunction {
-	Deallocate,
-	SafeDeallocate,
-	SendQuote,
-	LockQuote,
-	DeallocateForPartyB,
-	TransferAllocation,
-	LiquidatePartyB,
-	OpenPosition,
-	FillCloseRequest,
-	FillCloseRequestToLiquidation,
-	EmergencyClosePosition,
-	OpenPositions,
-	ClosePositions,
-	SettleUpnl,
-	SettleUpnlUnified,
-	ForceClose,
-	InitializeForceClose,
-	SettleUpnlForForceClose,
-	SettleUpnlForForceCloseLegacy,
-	FinalizeForceClose,
-	ChargeFundingRate,
-	ChargeAccumulatedFundingFee,
-	LiquidatePartyA,
-	SetSymbolsPrice,
-	DeferredLiquidatePartyA,
-	DeferredSetSymbolsPrice,
-	LiquidatePositionsPartyB,
-	VerifyMuonTSSAndGateway
+	Trading, // SendQuote, LockQuote, OpenPosition, FillCloseRequest, FillCloseRequestToLiquidation, EmergencyClosePosition, OpenPositions, ClosePositions
+	AccountManagement, // Deallocate, SafeDeallocate, DeallocateForPartyB, TransferAllocation
+	Settlement, // SettleUpnl, SettleUpnlUnified
+	ForceClose, // ForceClose, InitializeForceClose, SettleUpnlForForceClose, SettleUpnlForForceCloseLegacy, FinalizeForceClose
+	Funding, // ChargeFundingRate, ChargeAccumulatedFundingFee
+	LiquidationPartyA, // LiquidatePartyA, SetSymbolsPrice, DeferredLiquidatePartyA, DeferredSetSymbolsPrice
+	LiquidationPartyB // LiquidatePartyB, LiquidatePositionsPartyB
 }
 
 /// @notice Interface for the Muon oracle signature verification contract
@@ -52,12 +31,18 @@ interface IMuonSignatureVerifier {
 		address nonce;
 	}
 
-	/// @notice Verifies a Muon TSS Schnorr signature with gateway co-signature
+	/// @notice Verifies a Muon TSS Schnorr signature with gateway co-signature and per-category authorization
 	/// @param hash The message hash that was signed
 	/// @param sign The Schnorr signature components
 	/// @param gatewaySignature The gateway co-signature for additional verification
-	/// @param func The facet function requesting verification (used for per-function key authorization)
+	/// @param func The operation category requesting verification (used for per-category key authorization)
 	function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature, MuonFunction func) external view;
+
+	/// @notice Verifies a Muon TSS Schnorr signature with gateway co-signature without authorization checks
+	/// @param hash The message hash that was signed
+	/// @param sign The Schnorr signature components
+	/// @param gatewaySignature The gateway co-signature for additional verification
+	function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature) external view;
 
 	/// @notice Adds a new TSS public key to the set of valid signing keys
 	/// @param pubKey The compressed public key to add

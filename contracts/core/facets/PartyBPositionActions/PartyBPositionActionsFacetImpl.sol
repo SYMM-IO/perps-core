@@ -57,7 +57,7 @@ library PartyBPositionActionsFacetImpl {
 		if (
 			TradingModeStorage.layout().bindState[quote.partyA].partyB != quote.partyB || !TradingModeStorage.layout().isPartyBBindable[quote.partyB]
 		) {
-			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.OpenPosition);
+			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
 
 			uint256[] memory quoteIds = new uint256[](1);
 			uint256[] memory filledAmounts = new uint256[](1);
@@ -84,7 +84,7 @@ library PartyBPositionActionsFacetImpl {
 			TradingModeStorage.layout().bindState[quote.partyA].partyB != LibSigner.getSigner() ||
 			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
 		) {
-			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.FillCloseRequest);
+			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
 			uint256[] memory quoteIds = new uint256[](1);
 			uint256[] memory filledAmounts = new uint256[](1);
 			uint256[] memory closedPrices = new uint256[](1);
@@ -150,7 +150,7 @@ library PartyBPositionActionsFacetImpl {
 			TradingModeStorage.layout().bindState[quote.partyA].partyB != LibSigner.getSigner() ||
 			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
 		) {
-			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.FillCloseRequestToLiquidation);
+			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
 		}
 
 		// Calculate max close amount that keeps PartyA at liquidation threshold

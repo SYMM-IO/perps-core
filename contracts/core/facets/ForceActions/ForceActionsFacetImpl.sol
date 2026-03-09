@@ -97,7 +97,7 @@ library ForceActionsFacetImpl {
 		address partyA = QuoteStorage.layout().quotes[quoteId].partyA;
 
 		//realize uPNL
-		LibMuonSettlement.verifySettlement(sig, partyA, MuonFunction.SettleUpnlForForceCloseLegacy);
+		LibMuonSettlement.verifySettlement(sig, partyA, MuonFunction.ForceClose);
 		LibSettlement.settleUpnl(sig, updatedPrices, partyA, true);
 	}
 }

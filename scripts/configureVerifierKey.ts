@@ -9,36 +9,15 @@ const PUBLIC_KEY = { x: "0x0", parity: 0 } // TSS public key (set x to "0x0" to 
 const GATEWAY_SIGNER = "0x0000000000000000000000000000000000000000" // Gateway signer address (set to zero to skip)
 
 // Comment out lines to remove permissions from the list.
-// Only the uncommented functions will be granted.
+// Only the uncommented categories will be granted.
 const FUNCTIONS = [
-	0, // Deallocate
-	1, // SafeDeallocate
-	2, // SendQuote
-	3, // LockQuote
-	4, // DeallocateForPartyB
-	5, // TransferAllocation
-	6, // LiquidatePartyB
-	7, // OpenPosition
-	8, // FillCloseRequest
-	9, // FillCloseRequestToLiquidation
-	10, // EmergencyClosePosition
-	11, // OpenPositions
-	12, // ClosePositions
-	13, // SettleUpnl
-	14, // SettleUpnlUnified
-	15, // ForceClose
-	16, // InitializeForceClose
-	17, // SettleUpnlForForceClose
-	18, // SettleUpnlForForceCloseLegacy
-	19, // FinalizeForceClose
-	20, // ChargeFundingRate
-	21, // ChargeAccumulatedFundingFee
-	22, // LiquidatePartyA
-	23, // SetSymbolsPrice
-	24, // DeferredLiquidatePartyA
-	25, // DeferredSetSymbolsPrice
-	26, // LiquidatePositionsPartyB
-	27, // VerifyMuonTSSAndGateway
+	0, // Trading           (SendQuote, LockQuote, OpenPosition, FillCloseRequest, FillCloseRequestToLiquidation, EmergencyClosePosition, OpenPositions, ClosePositions)
+	1, // AccountManagement (Deallocate, SafeDeallocate, DeallocateForPartyB, TransferAllocation)
+	2, // Settlement        (SettleUpnl, SettleUpnlUnified)
+	3, // ForceClose        (ForceClose, InitializeForceClose, SettleUpnlForForceClose, SettleUpnlForForceCloseLegacy, FinalizeForceClose)
+	4, // Funding           (ChargeFundingRate, ChargeAccumulatedFundingFee)
+	5, // LiquidationPartyA (LiquidatePartyA, SetSymbolsPrice, DeferredLiquidatePartyA, DeferredSetSymbolsPrice)
+	6, // LiquidationPartyB (LiquidatePartyB, LiquidatePositionsPartyB)
 ]
 
 // Set to false to revoke the listed permissions instead of granting them
@@ -46,36 +25,7 @@ const ALLOWED = true
 
 // ─── Script ─────────────────────────────────────────────────────────────────
 
-const FUNCTION_NAMES = [
-	"Deallocate",
-	"SafeDeallocate",
-	"SendQuote",
-	"LockQuote",
-	"DeallocateForPartyB",
-	"TransferAllocation",
-	"LiquidatePartyB",
-	"OpenPosition",
-	"FillCloseRequest",
-	"FillCloseRequestToLiquidation",
-	"EmergencyClosePosition",
-	"OpenPositions",
-	"ClosePositions",
-	"SettleUpnl",
-	"SettleUpnlUnified",
-	"ForceClose",
-	"InitializeForceClose",
-	"SettleUpnlForForceClose",
-	"SettleUpnlForForceCloseLegacy",
-	"FinalizeForceClose",
-	"ChargeFundingRate",
-	"ChargeAccumulatedFundingFee",
-	"LiquidatePartyA",
-	"SetSymbolsPrice",
-	"DeferredLiquidatePartyA",
-	"DeferredSetSymbolsPrice",
-	"LiquidatePositionsPartyB",
-	"VerifyMuonTSSAndGateway",
-]
+const FUNCTION_NAMES = ["Trading", "AccountManagement", "Settlement", "ForceClose", "Funding", "LiquidationPartyA", "LiquidationPartyB"]
 
 async function main() {
 	const { ethers } = await hre.network.connect()

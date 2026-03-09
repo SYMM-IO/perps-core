@@ -82,7 +82,7 @@ library PartyBBatchActionsFacetImpl {
 		);
 
 		// Verify the upnl and prices
-		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds, MuonFunction.OpenPositions);
+		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds, MuonFunction.Trading);
 
 		LibAccount.increaseBothNonces(firstQuote.partyB, firstQuote.partyA);
 
@@ -165,7 +165,7 @@ library PartyBBatchActionsFacetImpl {
 			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
 		) {
 			// Verify the upnl and prices
-			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds, MuonFunction.ClosePositions);
+			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds, MuonFunction.Trading);
 		}
 
 		LibSolvency.isSolventAfterClosePosition(

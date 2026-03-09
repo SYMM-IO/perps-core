@@ -24,7 +24,7 @@ library SettlementFacetImpl {
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		address signer = LibSigner.getSigner();
 		if (tradingLayout.bindState[partyA].partyB != signer || !tradingLayout.isPartyBBindable[signer]) {
-			LibMuonSettlement.verifySettlement(settleSig, partyA, MuonFunction.SettleUpnl);
+			LibMuonSettlement.verifySettlement(settleSig, partyA, MuonFunction.Settlement);
 		}
 		return LibSettlement.settleUpnl(settleSig, updatedPrices, partyA, false);
 	}
@@ -35,7 +35,7 @@ library SettlementFacetImpl {
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
 		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[sig.partyB];
-		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.SettleUpnlUnified);
+		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.Settlement);
 		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
 	}
 }

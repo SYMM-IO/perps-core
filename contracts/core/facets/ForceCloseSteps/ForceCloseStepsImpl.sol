@@ -23,7 +23,7 @@ library ForceCloseStepsImpl {
 	/// @param sig The Muon signature to calculate the close price.
 	/// @return closePrice The calculated close price.
 	function forceCloseInit(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice) {
-		LibForceActions.validateForceCloseConditions(quoteId, sig, MuonFunction.InitializeForceClose);
+		LibForceActions.validateForceCloseConditions(quoteId, sig, MuonFunction.ForceClose);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
 		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
@@ -59,7 +59,7 @@ library ForceCloseStepsImpl {
 
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
-		LibMuonPartyB.verifyPairUpnlAndPrice(sig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.FinalizeForceClose);
+		LibMuonPartyB.verifyPairUpnlAndPrice(sig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.ForceClose);
 
 		// Ensure partyA solvency for the stored closePrice with this fresh snapshot.
 		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
@@ -149,7 +149,7 @@ library ForceCloseStepsImpl {
 			require(sig.partyAs.length == 1, "ForceActionsFacet: Non-cross partyB can only settle with forceClose partyA");
 			require(sig.partyAs[0] == forceCloseQuote.partyA, "ForceActionsFacet: Invalid partyA for non-cross settlement");
 		}
-		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.SettleUpnlForForceClose);
+		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.ForceClose);
 
 		// Use the unified settlement function with isForceClose=true
 		int256[] memory settleAmountsPerPartyA;

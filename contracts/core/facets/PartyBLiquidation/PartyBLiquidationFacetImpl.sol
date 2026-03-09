@@ -27,7 +27,7 @@ library PartyBLiquidationFacetImpl {
 	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
 		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
-		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA, MuonFunction.LiquidatePartyB);
+		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA, MuonFunction.LiquidationPartyB);
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);
 	}
 
@@ -41,7 +41,7 @@ library PartyBLiquidationFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
-		LibMuonLiquidation.verifyQuotePrices(priceSig, MuonFunction.LiquidatePositionsPartyB);
+		LibMuonLiquidation.verifyQuotePrices(priceSig, MuonFunction.LiquidationPartyB);
 		require(
 			priceSig.timestamp <= maLayout.partyBLiquidationTimestamp[partyB][partyA] + maLayout.liquidationTimeout,
 			"LiquidationFacet: Invalid signature"

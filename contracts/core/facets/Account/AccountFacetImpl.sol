@@ -99,7 +99,7 @@ library AccountFacetImpl {
 			"AccountFacet: Too many deallocate in a short window"
 		);
 		require(accountLayout.allocatedBalances[signer] >= amount, "AccountFacet: Insufficient allocated Balance");
-		LibMuonAccount.verifyPartyAUpnl(upnlSig, signer, MuonFunction.Deallocate);
+		LibMuonAccount.verifyPartyAUpnl(upnlSig, signer, MuonFunction.AccountManagement);
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: partyA will be liquidatable");
@@ -116,7 +116,7 @@ library AccountFacetImpl {
 			"AccountFacet: Too many deallocate in a short window"
 		);
 		require(accountLayout.allocatedBalances[signer] >= amount, "AccountFacet: Insufficient allocated Balance");
-		LibMuonAccount.verifyPartyAUpnlWithPendingBalance(upnlSig, signer, MuonFunction.SafeDeallocate);
+		LibMuonAccount.verifyPartyAUpnlWithPendingBalance(upnlSig, signer, MuonFunction.AccountManagement);
 		int256 availableBalance = LibAccount.partyAAvailableForQuote(upnlSig.upnl, signer);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= upnlSig.pendingBalance + amount, "AccountFacet: Insufficient balance considering pending allocations");

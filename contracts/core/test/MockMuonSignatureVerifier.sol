@@ -20,6 +20,11 @@ contract MockMuonSignatureVerifier is IMuonSignatureVerifier {
 		// Intentionally empty - accepts all signatures for testing
 	}
 
+	/// @notice Accepts any signature without verification (permissionless overload)
+	function verify(bytes32, SchnorrSign memory, bytes calldata) external pure override {
+		// Intentionally empty - accepts all signatures for testing
+	}
+
 	function addPublicKey(PublicKey memory pubKey) external override {
 		_publicKeys.push(pubKey);
 	}

@@ -36,7 +36,7 @@ library PartyBQuoteActionsFacetImpl {
 			require(tradingLayout.bindState[quote.partyA].partyB == signer, "PartyBFacet: PartyB is not bounded to this partyA");
 			require(tradingLayout.isPartyBBindable[signer], "PartyBFacet: PartyB is not bindable");
 		} else {
-			LibMuonPartyB.verifyPartyBUpnl(upnlSig, signer, quote.partyA, MuonFunction.LockQuote);
+			LibMuonPartyB.verifyPartyBUpnl(upnlSig, signer, quote.partyA, MuonFunction.Trading);
 			int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, quote.partyA);
 			require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");
 			require(uint256(availableBalance) >= quote.lockedValues.totalForPartyB(), "PartyBFacet: insufficient available balance");
