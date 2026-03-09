@@ -29,8 +29,6 @@ contract MockHook is ISymmioHook {
 	CallData private _lastCloseExpiredCall;
 	FeeCallData private _lastOpenFeeCall;
 	FeeCallData private _lastCloseFeeCall;
-	FeeCallData private _lastRefundFeeCall;
-
 	// Call counters
 	uint256 public openCallCount;
 	uint256 public closeCallCount;
@@ -38,8 +36,6 @@ contract MockHook is ISymmioHook {
 	uint256 public closeExpiredCallCount;
 	uint256 public openFeeCallCount;
 	uint256 public closeFeeCallCount;
-	uint256 public refundFeeCallCount;
-
 	// Configurable behavior
 	bool public shouldRevertOnOpen;
 	bool public shouldRevertOnClose;
@@ -55,8 +51,6 @@ contract MockHook is ISymmioHook {
 	event OnCancelQuote(uint256 quoteId, address partyA, address partyB);
 	event OnCloseExpired(uint256 quoteId, address partyA, address partyB);
 	event OnFeeCharged(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, TradingFeeType feeType);
-	event OnFeeRefunded(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, TradingFeeType feeType);
-
 	function setRevertOnOpen(bool shouldRevert, string memory message) external {
 		shouldRevertOnOpen = shouldRevert;
 		revertMessageOnOpen = message;
@@ -152,28 +146,6 @@ contract MockHook is ISymmioHook {
 		emit OnFeeCharged(quoteId, amount, partyA, partyB, symbolId, affiliate, feeType);
 	}
 
-	function onFeeRefunded(
-		uint256 quoteId,
-		uint256 amount,
-		address partyA,
-		address partyB,
-		uint256 symbolId,
-		address affiliate,
-		TradingFeeType feeType
-	) external override {
-		refundFeeCallCount += 1;
-		_lastRefundFeeCall = FeeCallData({
-			quoteId: quoteId,
-			amount: amount,
-			partyA: partyA,
-			partyB: partyB,
-			symbolId: symbolId,
-			affiliate: affiliate,
-			feeType: feeType
-		});
-		emit OnFeeRefunded(quoteId, amount, partyA, partyB, symbolId, affiliate, feeType);
-	}
-
 	// Getters for test assertions
 	function getLastOpenCall()
 		external
@@ -237,23 +209,5 @@ contract MockHook is ISymmioHook {
 	{
 		FeeCallData memory c = _lastCloseFeeCall;
 		return (c.quoteId, c.amount, c.partyA, c.partyB, c.symbolId, c.affiliate, c.feeType, closeFeeCallCount);
-	}
-
-	function getLastFeeRefundCall()
-		external
-		view
-		returns (
-			uint256 quoteId,
-			uint256 amount,
-			address partyA,
-			address partyB,
-			uint256 symbolId,
-			address affiliate,
-			TradingFeeType feeType,
-			uint256 callCount
-		)
-	{
-		FeeCallData memory c = _lastRefundFeeCall;
-		return (c.quoteId, c.amount, c.partyA, c.partyB, c.symbolId, c.affiliate, c.feeType, refundFeeCallCount);
 	}
 }

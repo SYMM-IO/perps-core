@@ -83,20 +83,4 @@ library LibHook {
 		safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onClosePosition, (quoteId, closedAmount, closedPrice, partyA, partyB)), quoteId);
 		safeCall(systemHook, abi.encodeCall(ISymmioHook.onClosePosition, (quoteId, closedAmount, closedPrice, partyA, partyB)), quoteId);
 	}
-
-	/// @notice Calls onFeeRefunded on both affiliate and system hooks.
-	function callFeeRefundedHooks(
-		uint256 quoteId,
-		uint256 amount,
-		address partyA,
-		address partyB,
-		uint256 symbolId,
-		address affiliate,
-		ISymmioHook.TradingFeeType feeType
-	) internal {
-		address affiliateHook = AffiliateStorage.layout().affiliateHooks[affiliate];
-		address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
-		safeCall(affiliateHook, abi.encodeCall(ISymmioHook.onFeeRefunded, (quoteId, amount, partyA, partyB, symbolId, affiliate, feeType)), quoteId);
-		safeCall(systemHook, abi.encodeCall(ISymmioHook.onFeeRefunded, (quoteId, amount, partyA, partyB, symbolId, affiliate, feeType)), quoteId);
-	}
 }

@@ -111,18 +111,6 @@ contract MaliciousHook is ISymmioHook {
 		return;
 	}
 
-	function onFeeRefunded(
-		uint256 /* quoteId */,
-		uint256 /* amount */,
-		address /* partyA */,
-		address /* partyB */,
-		uint256 /* symbolId */,
-		address /* affiliate */,
-		TradingFeeType /* feeType */
-	) external pure override {
-		return;
-	}
-
 	function resetState() external {
 		attemptedReentry = false;
 		reentrySucceeded = false;

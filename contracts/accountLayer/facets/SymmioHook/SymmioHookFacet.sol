@@ -68,17 +68,6 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		// This function exists to prevent hook reverts when fees are charged
 	}
 
-	/// @notice Called by Symmio core when a fee is refunded
-	function onFeeRefunded(
-		uint256 /* quoteId */,
-		uint256 /* amount */,
-		address /* partyA */,
-		address /* partyB */,
-		uint256 /* symbolId */,
-		address /* affiliate */,
-		uint8 /* feeType */
-	) external onlySymmio whenNotPaused {}
-
 	// ==================== Internal Functions ====================
 
 	function _removeQuoteFromAccount(uint256 quoteId, address partyA) private {

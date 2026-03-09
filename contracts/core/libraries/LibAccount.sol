@@ -8,12 +8,10 @@ import { AccountStorage } from "../storages/AccountStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
-import { Quote, LockedValues, QuoteStorage } from "../storages/QuoteStorage.sol";
+import { Quote, LockedValues } from "../storages/QuoteStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibQuote } from "./LibQuote.sol";
-import { LibHook } from "./LibHook.sol";
-import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 
 library LibAccount {
 	using LockedValuesOps for LockedValues;
@@ -270,11 +268,9 @@ library LibAccount {
 	/// @param quoteId The ID of the quote whose fee is being refunded.
 	/// @param partyA The address of Party A receiving the refund.
 	function refundOpenTradingFee(uint256 quoteId, address partyA) internal {
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		uint256 fee = LibQuote.getOpenTradingFee(quoteId);
 		AccountStorage.layout().allocatedBalances[partyA] += fee;
 		emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
-		LibHook.callFeeRefundedHooks(quoteId, fee, partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN);
 	}
 
 	/// @notice Converts an amount from collateral decimals to 18 decimals.

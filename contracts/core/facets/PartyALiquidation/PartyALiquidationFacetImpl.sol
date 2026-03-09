@@ -113,7 +113,6 @@ library PartyALiquidationFacetImpl {
 			uint256 fee = LibQuote.getOpenTradingFee(quote.id);
 			accountLayout.partyAReimbursement[partyA] += fee;
 			emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
-			LibHook.callFeeRefundedHooks(quote.id, fee, quote.partyA, quote.partyB, quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN);
 			quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 			quote.statusModifyTimestamp = block.timestamp;
 			liquidatedAmounts[index] = quote.quantity;

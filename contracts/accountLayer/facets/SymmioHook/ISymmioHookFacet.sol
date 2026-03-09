@@ -59,22 +59,4 @@ interface ISymmioHookFacet is ISymmioHookFacetEvents, IAccountLayerErrors {
 		address affiliate,
 		uint8 feeType
 	) external;
-
-	/// @notice Called when a fee is refunded
-	/// @param quoteId The quote identifier
-	/// @param amount The refund amount
-	/// @param partyA The trader address
-	/// @param partyB The hedger address
-	/// @param symbolId The symbol identifier
-	/// @param affiliate The affiliate address
-	/// @param feeType The type of fee refunded
-	function onFeeRefunded(
-		uint256 quoteId,
-		uint256 amount,
-		address partyA,
-		address partyB,
-		uint256 symbolId,
-		address affiliate,
-		uint8 feeType
-	) external;
 }

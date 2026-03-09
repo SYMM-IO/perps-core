@@ -57,22 +57,4 @@ interface ISymmioHook {
 		address affiliate,
 		TradingFeeType feeType
 	) external;
-
-	/// @notice Called when a previously charged trading fee is refunded
-	/// @param quoteId The quote the refund relates to
-	/// @param amount The refund amount
-	/// @param partyA The trader address
-	/// @param partyB The hedger address
-	/// @param symbolId The symbol being traded
-	/// @param affiliate The affiliate address
-	/// @param feeType Whether this is an open or close fee refund
-	function onFeeRefunded(
-		uint256 quoteId,
-		uint256 amount,
-		address partyA,
-		address partyB,
-		uint256 symbolId,
-		address affiliate,
-		TradingFeeType feeType
-	) external;
 }
