@@ -53,8 +53,8 @@ async function fetchGraphQL(endpoint: string, query: string): Promise<any> {
 
 /**
  * Fetch all quotes that need migration with pagination.
- * Statuses: PENDING=1, LOCKED=2, CANCEL_PENDING=3 (fee reservation)
- *           OPENED=4, CLOSE_PENDING=6, CANCEL_CLOSE_PENDING=7 (aggregated positions/funding)
+ * Statuses: PENDING=0, LOCKED=1, CANCEL_PENDING=2 (fee reservation)
+ *           OPENED=4, CLOSE_PENDING=5, CANCEL_CLOSE_PENDING=6 (aggregated positions/funding)
  */
 export async function fetchOpenQuotes(endpoint: string, pageSize: number = DEFAULT_PAGE_SIZE): Promise<SubgraphOpenQuotesResult> {
 	const allQuotes: SubgraphQuote[] = []
@@ -67,7 +67,7 @@ export async function fetchOpenQuotes(endpoint: string, pageSize: number = DEFAU
 			quotes(
 				first: ${pageSize}
 				skip: ${skip}
-				where: { quoteStatus_in: [1, 2, 3, 4, 6, 7] }
+				where: { quoteStatus_in: [0, 1, 2, 4, 5, 6] }
 				orderBy: quoteId
 				orderDirection: asc
 			) {

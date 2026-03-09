@@ -28,6 +28,7 @@ type ForkUpgradeConfig = {
 	adminAddress?: string
 	diamondCutChunkSize?: number
 	subgraphEndpoint?: string
+	spotCheckCount?: number
 	newV085Parameters?: {
 		maxPartyAConnectionLimit?: number
 		settlementCooldown?: number
@@ -106,7 +107,7 @@ async function main() {
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	const ADMIN_ADDRESS = process.env.ADMIN_ADDRESS ?? (config.adminAddress || undefined)
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
-	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT ?? config.subgraphEndpoint ?? DEFAULT_SUBGRAPH_ENDPOINT
+	const SUBGRAPH_ENDPOINT = process.env.SUBGRAPH_ENDPOINT || config.subgraphEndpoint || DEFAULT_SUBGRAPH_ENDPOINT
 	const newParams = config.newV085Parameters ?? {}
 
 	const outputDir = "./scripts/upgrade/output"
@@ -183,7 +184,7 @@ async function main() {
 		// Step 5: Capture pre-upgrade snapshot (on-chain, small sample for integrity check)
 		currentStep = "capture_pre_snapshot"
 		console.log("Capturing pre-upgrade on-chain snapshot...")
-		const spotCheckCount = 20
+		const spotCheckCount = Number(process.env.SPOT_CHECK_COUNT ?? config.spotCheckCount ?? 20)
 
 		// Use v0.8.4-compatible ABI for getQuote (same selector, works on both versions)
 		const quoteReader = new ethers.Contract(
