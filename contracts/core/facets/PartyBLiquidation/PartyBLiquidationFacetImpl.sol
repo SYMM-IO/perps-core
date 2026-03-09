@@ -33,7 +33,7 @@ library PartyBLiquidationFacetImpl {
 		uint256 removedCount = 0;
 		for (uint256 i = 0; i < pendingQuotes.length; i++) {
 			Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
-			if (quote.partyB == partyB && (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING)) {
+			if (quote.partyB == partyB) {
 				removedQuoteIds[removedCount] = quote.id;
 				removedCount++;
 			}

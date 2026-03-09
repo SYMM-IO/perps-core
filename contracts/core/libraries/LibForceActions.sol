@@ -69,10 +69,7 @@ library LibForceActions {
 		uint256 removedCount = 0;
 		for (uint256 i = 0; i < pendingQuotes.length; i++) {
 			Quote storage pendingQuote = quoteLayout.quotes[pendingQuotes[i]];
-			if (
-				pendingQuote.partyB == partyB &&
-				(pendingQuote.quoteStatus == QuoteStatus.LOCKED || pendingQuote.quoteStatus == QuoteStatus.CANCEL_PENDING)
-			) {
+			if (pendingQuote.partyB == partyB) {
 				removedQuoteIds[removedCount] = pendingQuote.id;
 				removedCount++;
 			}
