@@ -16,6 +16,7 @@ import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/Q
 import { SingleUpnlSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -26,7 +27,7 @@ library PartyBLiquidationFacetImpl {
 
 		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
-		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA);
+		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA, MuonFunction.LiquidationPartyB);
 
 		uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
 		uint256[] memory removedQuoteIds = new uint256[](pendingQuotes.length);
@@ -59,7 +60,7 @@ library PartyBLiquidationFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 
-		LibMuonLiquidation.verifyQuotePrices(priceSig);
+		LibMuonLiquidation.verifyQuotePrices(priceSig, MuonFunction.LiquidationPartyB);
 		require(
 			priceSig.timestamp <= maLayout.partyBLiquidationTimestamp[partyB][partyA] + maLayout.liquidationTimeout,
 			"LiquidationFacet: Invalid signature"

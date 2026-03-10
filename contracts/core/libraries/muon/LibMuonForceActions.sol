@@ -8,10 +8,11 @@ import { MuonStorage, HighLowPriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonForceActions {
 	/// @notice Verifies a high/low price signature for force close actions.
-	function verifyHighLowPrice(HighLowPriceSig memory sig, address partyB, address partyA, uint256 symbolId) internal view {
+	function verifyHighLowPrice(HighLowPriceSig memory sig, address partyB, address partyA, uint256 symbolId, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 
 		// == SignatureCheck( ==
@@ -40,6 +41,6 @@ library LibMuonForceActions {
 				LibMuon.getChainId()
 			)
 		);
-		LibMuon.verifyTSSAndGateway(hash, sig.sigs, sig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, sig.sigs, sig.gatewaySignature, func);
 	}
 }

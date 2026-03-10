@@ -19,7 +19,8 @@ import { MAStorage, EntityMetadata } from "../../storages/MAStorage.sol";
 import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { MuonStorage } from "../../storages/MuonStorage.sol";
-import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { BridgeStorage, BridgeTransaction } from "../../storages/BridgeStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
@@ -552,7 +553,7 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().balanceLimitPerUser;
 	}
 
-	/// @notice Verifies the Muon signature of the Muon TSS and gateway.
+	/// @notice Verifies the Muon signature of the Muon TSS and gateway (no per-category authorization checks).
 	/// @param hash The hash to verify.
 	/// @param sign The Schnorr signature.
 	/// @param gatewaySignature The Muon signature from the gateway.

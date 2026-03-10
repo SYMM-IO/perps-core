@@ -14,6 +14,7 @@ import { DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library DeferredLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -24,7 +25,7 @@ library DeferredLiquidationFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
-		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA);
+		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
 
 		int256 liquidationAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			liquidationSig.upnl,
@@ -68,7 +69,7 @@ library DeferredLiquidationFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
-		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA);
+		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 
 		LiquidationDetail storage detail = accountLayout.liquidationDetails[partyA];

@@ -21,6 +21,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -80,7 +81,7 @@ library PartyBBatchActionsFacetImpl {
 
 		if (requireMuonAndSolvencyChecks) {
 			// Verify the upnl and prices
-			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
+			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds, MuonFunction.Trading);
 		}
 
 		LibAccount.increaseBothNonces(firstQuote.partyB, firstQuote.partyA);
@@ -163,7 +164,7 @@ library PartyBBatchActionsFacetImpl {
 
 		if (requireMuonAndSolvencyChecks) {
 			// Verify the upnl and prices
-			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
+			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds, MuonFunction.Trading);
 			LibSolvency.isSolventAfterClosePosition(
 				quoteIds,
 				filledAmounts,

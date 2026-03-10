@@ -7,15 +7,16 @@ pragma solidity >=0.8.18;
 import { MuonStorage, SingleUpnlSig, LiquidationSig, DeferredLiquidationSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonLiquidation {
 	/// @notice Verifies Party B UPNL signature for liquidation (uses per-partyA nonce in normal mode, zero in cross mode).
-	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA); // Uses useCrossNonce=false: per-partyA nonce in normal mode, zero in cross mode.
+	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, MuonFunction func) internal view {
+		LibMuon.verifyPartyBUpnl(upnlSig, partyB, partyA, func); // Uses useCrossNonce=false: per-partyA nonce in normal mode, zero in cross mode.
 	}
 
 	/// @notice Verifies a liquidation signature containing symbol prices and UPNL for Party A.
-	function verifyLiquidationSig(LiquidationSig memory liquidationSig, address partyA) internal view {
+	function verifyLiquidationSig(LiquidationSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
 		LibMuon.verifyNotStaleAfterEpochChange(liquidationSig.timestamp, partyA);
@@ -36,11 +37,11 @@ library LibMuonLiquidation {
 				LibMuon.getChainId()
 			)
 		);
-		LibMuon.verifyTSSAndGateway(hash, liquidationSig.sigs, liquidationSig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, liquidationSig.sigs, liquidationSig.gatewaySignature, func);
 	}
 
 	/// @notice Verifies a deferred liquidation signature that includes block number and timestamp data.
-	function verifyDeferredLiquidationSig(DeferredLiquidationSig memory liquidationSig, address partyA) internal view {
+	function verifyDeferredLiquidationSig(DeferredLiquidationSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
 		LibMuon.verifyNotStaleAfterEpochChange(liquidationSig.timestamp, partyA);
@@ -64,11 +65,11 @@ library LibMuonLiquidation {
 				LibMuon.getChainId()
 			)
 		);
-		LibMuon.verifyTSSAndGateway(hash, liquidationSig.sigs, liquidationSig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, liquidationSig.sigs, liquidationSig.gatewaySignature, func);
 	}
 
 	/// @notice Verifies a quote prices signature for liquidation position settlement.
-	function verifyQuotePrices(QuotePriceSig memory priceSig) internal view {
+	function verifyQuotePrices(QuotePriceSig memory priceSig, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		require(priceSig.prices.length == priceSig.quoteIds.length, "LibMuon: Invalid length");
 		bytes32 hash = keccak256(
@@ -82,6 +83,6 @@ library LibMuonLiquidation {
 				LibMuon.getChainId()
 			)
 		);
-		LibMuon.verifyTSSAndGateway(hash, priceSig.sigs, priceSig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, priceSig.sigs, priceSig.gatewaySignature, func);
 	}
 }

@@ -9,10 +9,11 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonSettlement {
 	/// @notice Verifies a settlement signature for non-cross partyB mode UPNL settlement.
-	function verifySettlement(SettlementSig memory settleSig, address partyA) internal view {
+	function verifySettlement(SettlementSig memory settleSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
@@ -51,6 +52,6 @@ library LibMuonSettlement {
 				LibMuon.getChainId()
 			)
 		);
-		LibMuon.verifyTSSAndGateway(hash, settleSig.sigs, settleSig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, settleSig.sigs, settleSig.gatewaySignature, func);
 	}
 }

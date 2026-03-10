@@ -9,7 +9,7 @@ import { CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/Cle
 import { BindState } from "../../storages/TradingModeStorage.sol";
 import { VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
 import { BridgeTransaction } from "../../storages/BridgeStorage.sol";
-import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { WithdrawRequest } from "../../storages/WithdrawStorage.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
