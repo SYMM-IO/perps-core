@@ -2096,6 +2096,13 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 		})
 
+		it("Should fail when partyA actions are paused", async () => {
+			await context.pauseControlFacet.pausePartyAActions()
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
+				"Pausable: PartyA actions paused",
+			)
+		})
+
 		it("Should fail when user is not partyA", async () => {
 			await expect(context.bindingFacet.connect(context.signers.hedger).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"Accessibility: Shouldn't be partyB",
@@ -2251,6 +2258,13 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 		})
 
+		it("Should fail when partyA actions are paused", async () => {
+			await context.pauseControlFacet.pausePartyAActions()
+			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith(
+				"Pausable: PartyA actions paused",
+			)
+		})
+
 		it("Should fail when not bound", async () => {
 			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith("AccountFacet: Invalid state")
 		})
@@ -2327,10 +2341,17 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).setUnbindCooldown(LIMITS.UNBIND_COOLDOWN)
 		})
 
-		it("Should fail when user suspended", async () => {
+		it("Should allow suspended bound partyB to complete unbind request", async () => {
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.hedger.address)
+			await expect(context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.not.be.reverted
+		})
+
+		it("Should fail when partyA actions are paused", async () => {
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+			await context.pauseControlFacet.pausePartyAActions()
 			await expect(context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.be.revertedWith(
-				"Accessibility: Sender is Suspended",
+				"Pausable: PartyA actions paused",
 			)
 		})
 
@@ -2368,6 +2389,16 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const bindState = await context.viewFacet.getBindState(context.signers.user.address)
 			expect(bindState.status).to.equal(BIND_STATUS.UNBOUND)
 			expect(bindState.partyB).to.equal(ZeroAddress)
+		})
+
+		it("Should allow suspended third party to complete unbind after cooldown", async () => {
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user2.address)
+
+			const unbindCooldown = await context.viewFacet.unbindCooldown()
+			await time.increase(unbindCooldown + 1n)
+
+			await expect(context.bindingFacet.connect(context.signers.user2).completeUnbindRequest(context.signers.user.address)).to.not.be.reverted
 		})
 	})
 
