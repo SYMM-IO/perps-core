@@ -215,6 +215,42 @@ export function shouldBehaveLikeAccountLayer(): void {
 		TRANSFER_AMOUNT: decimal(500n),
 	}
 
+	async function prepareSingleVAModeStateWithActiveAndPool(subAccount: string, symbolId: number): Promise<{ activeVA: string; pooledVA: string }> {
+		const quoteLong = limitQuoteRequestBuilder().symbolId(symbolId).positionType(PositionType.LONG).build()
+		const vaSet1 = await sendQuoteAndGetVirtualAccount(subAccount, quoteLong)
+		const va1 = vaSet1[0]
+
+		const quoteShort = limitQuoteRequestBuilder().symbolId(symbolId).positionType(PositionType.SHORT).build()
+		const vaSet2 = await sendQuoteAndGetVirtualAccount(subAccount, quoteShort)
+		const va2 = vaSet2[1]
+
+		const quoteId1 = (await context.alViewFacet.getVirtualAccountQuoteIds(va1, 0, 10))[0]
+		const quoteId2 = (await context.alViewFacet.getVirtualAccountQuoteIds(va2, 0, 10))[0]
+
+		await openPositionForQuote(quoteId1)
+		await closePositionForQuote(context.signers.user, quoteId1, va1)
+
+		await openPositionForQuote(quoteId2)
+		await closePositionForQuote(context.signers.user, quoteId2, va2)
+
+		expect((await context.alViewFacet.getVirtualAccount(va1)).isExists).to.be.false
+		expect((await context.alViewFacet.getVirtualAccount(va2)).isExists).to.be.false
+
+		await context.alCoreFacet.connect(context.signers.user).setSingleVAMode(subAccount, true)
+
+		await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+		await context.accountFacet.connect(context.signers.user).depositFor(subAccount, BALANCES.DEPOSIT_AMOUNT)
+
+		const quoteAgain = limitQuoteRequestBuilder().symbolId(symbolId).positionType(PositionType.LONG).build()
+		const vaSet3 = await sendQuoteAndGetVirtualAccount(subAccount, quoteAgain)
+		const activeVA = vaSet3[0]
+
+		expect(activeVA).to.equal(va2)
+		expect(await context.alViewFacet.getActiveVAByKey(subAccount, 1, symbolId)).to.equal(va2)
+
+		return { activeVA: va2, pooledVA: va1 }
+	}
+
 	describe("AccountLayer", async function () {
 		beforeEach(async function () {
 			context = await loadFixture(initializeFixture)
@@ -3663,6 +3699,21 @@ export function shouldBehaveLikeAccountLayer(): void {
 				// The addresses should be different for different isolation types
 				expect(predictedPositionAddress).to.not.equal(predictedMarketAddress)
 			})
+
+			it("should prioritize active VA over deleted pool in singleVAMode", async () => {
+				const marketSubAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MARKET_MISMATCH", 1, "MARKET", false)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+
+				const { activeVA, pooledVA } = await prepareSingleVAModeStateWithActiveAndPool(marketSubAccount, 1)
+
+				const predicted = await context.alViewFacet.predictNextVirtualAccountAddress(marketSubAccount, 1, 1)
+
+				expect(predicted).to.equal(activeVA)
+				expect(predicted).to.not.equal(pooledVA)
+			})
 		})
 
 		describe("addMarginToNextVA", async () => {
@@ -3683,6 +3734,31 @@ export function shouldBehaveLikeAccountLayer(): void {
 						.connect(context.signers.user)
 						.addMarginToNextVA(subAccount, wrongIsolationType, quoteRequest.symbolId, BALANCES.TRANSFER_AMOUNT),
 				).to.be.revertedWithCustomError(context.alMarginFacet, "InvalidIsolationType")
+			})
+
+			it("should fund active VA instead of deleted pool VA in singleVAMode", async () => {
+				const subAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MARKET_MARGIN_TARGET", 1, "MARKET", false)],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+				const symbolId = 1
+
+				const { activeVA, pooledVA } = await prepareSingleVAModeStateWithActiveAndPool(subAccount, symbolId)
+
+				await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.DEPOSIT_AMOUNT)
+				await context.accountFacet.connect(context.signers.user).depositFor(subAccount, BALANCES.DEPOSIT_AMOUNT)
+
+				const activeBefore = await context.viewFacet.allocatedBalanceOfPartyA(activeVA)
+				const pooledBefore = await context.viewFacet.allocatedBalanceOfPartyA(pooledVA)
+
+				await context.alMarginFacet.connect(context.signers.user).addMarginToNextVA(subAccount, 1, symbolId, BALANCES.TRANSFER_AMOUNT)
+
+				const activeAfter = await context.viewFacet.allocatedBalanceOfPartyA(activeVA)
+				const pooledAfter = await context.viewFacet.allocatedBalanceOfPartyA(pooledVA)
+
+				expect(activeAfter - activeBefore).to.equal(BALANCES.TRANSFER_AMOUNT)
+				expect(pooledAfter - pooledBefore).to.equal(0n)
 			})
 		})
 
