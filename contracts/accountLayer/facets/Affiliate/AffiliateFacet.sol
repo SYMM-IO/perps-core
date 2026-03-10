@@ -192,6 +192,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	}
 
 	/// @notice Unpauses a previously paused affiliate (UNPAUSER_ROLE only)
+	/// @dev Intentionally callable during global AccountLayer pause so affiliate state can be prepared before global unpause
 	/// @param affiliate The affiliate address to unpause
 	function unpauseAffiliate(address affiliate) external onlyRole(LibAccountLayerAccessibility.UNPAUSER_ROLE) {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();

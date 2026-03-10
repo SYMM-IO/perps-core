@@ -507,6 +507,16 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 						.withArgs(affiliate)
 					expect(await context.alViewFacet.getAffiliateState(affiliate)).to.equal(AffiliateState.ACTIVE)
 				})
+
+				it("allows unpausing an affiliate while the hub is globally paused", async function () {
+					await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("PAUSER_ROLE"))
+					await context.alControlFacet.connect(context.signers.admin).pause()
+
+					await expect(context.alAffiliateFacet.connect(context.signers.hedger).unpauseAffiliate(affiliate))
+						.to.emit(context.alAffiliateFacet, "AffiliateUnpaused")
+						.withArgs(affiliate)
+					expect(await context.alViewFacet.getAffiliateState(affiliate)).to.equal(AffiliateState.ACTIVE)
+				})
 			})
 
 			describe("contract pause state", function () {
