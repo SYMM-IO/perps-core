@@ -3,7 +3,7 @@ import { ethers, toUtf8Bytes, ZeroAddress } from "ethers"
 
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
-import { loadFixture } from "./helpers/network-helpers.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { LiquidationType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
@@ -679,6 +679,39 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				expect(quote1.closedAmount).to.equal(quote1.quantity)
 			})
 
+			it("should sync accumulated funding before cross liquidation close", async () => {
+				const epochDuration = 3600
+				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [epochDuration])
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee([1], [decimal(1n, 16)], [-decimal(1n, 16)], [decimal(1n)])
+				await time.increase(epochDuration * 2)
+
+				const quoteBefore = await context.viewFacetQuote.getQuote(1)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.hedger, [1n], [decimal(1n)])
+
+				const quoteAfter = await context.viewFacetQuote.getQuote(1)
+				expect(quoteAfter.accumulatedPaidFunding).to.not.equal(quoteBefore.accumulatedPaidFunding)
+				expect(quoteAfter.lastFundingPaymentTimestamp).to.be.gt(quoteBefore.lastFundingPaymentTimestamp)
+			})
+
+			it("should not revert cross liquidation when accrued funding exceeds balances", async () => {
+				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [1])
+				await context.fundingRateFacet.connect(context.signers.hedger).updateAccumulatedFundingFee([1], [decimal(1n)], [-decimal(1n)], [decimal(1n)])
+				await time.increase(5000)
+
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.liquidatePositionsForClearingHouse(context.signers.hedger, [1n], [decimal(1n)]),
+				).to.not.be.reverted
+			})
+
 			it("should fail when partyB is not liquidated", async () => {
 				await expect(
 					context.clearingHouseFacet
@@ -1267,6 +1300,26 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				const quote1After = await context.viewFacetQuote.getQuote(1)
 				expect(quote1After.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
+			})
+
+			it("should sync accumulated funding before partyA takeover liquidation close", async () => {
+				const epochDuration = 3600
+				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [epochDuration])
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.updateAccumulatedFundingFee([1], [decimal(1n, 16)], [-decimal(1n, 16)], [decimal(1n)])
+				await time.increase(epochDuration * 2)
+
+				const quoteBefore = await context.viewFacetQuote.getQuote(1)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidatePositionsForClearingHouse(context.signers.user.address, [1n], [decimal(25n)])
+
+				const quoteAfter = await context.viewFacetQuote.getQuote(1)
+				expect(quoteAfter.accumulatedPaidFunding).to.not.equal(quoteBefore.accumulatedPaidFunding)
+				expect(quoteAfter.lastFundingPaymentTimestamp).to.be.gt(quoteBefore.lastFundingPaymentTimestamp)
 			})
 
 			it("should emit LiquidatePositionsForClearingHouse event", async () => {

@@ -9,9 +9,12 @@ import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
+import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
@@ -133,6 +136,10 @@ library ClearingHouseFacetImpl {
 	}
 
 	/// @notice Distributes funds to receivers during clearing house liquidation
+	/// @dev IMPORTANT: The clearing house operator is responsible for computing distribution amounts off-chain.
+	///      These amounts must account for BOTH realized PnL AND accrued funding fees for each position.
+	///      During liquidation, funding fees are not transferred on-chain (only aggregate state is synced).
+	///      The operator must include any unpaid funding obligations when determining each receiver's share.
 	/// @param subject The party being liquidated (partyB for cross, partyA for takeover)
 	/// @param receivers The addresses to distribute to
 	/// @param allocationKeys The allocation keys for each receiver (for partyB: address(0) for cross mode, partyA for isolated)
@@ -343,6 +350,19 @@ library ClearingHouseFacetImpl {
 
 			accountLayout.lockedBalances[partyA].subQuote(quote);
 			LibAccount.subFromPartyBLockedBalances(quote);
+
+			if (FundingStorage.layout().fundingFees[quote.symbolId][partyB].epochDuration > 0) {
+				// Sync funding state for aggregate accounting so subFromPartiesAggregateFunding
+				// (called inside closePositionFully) uses an up-to-date accumulatedPaidFunding.
+				// Balance transfers are intentionally skipped to keep liquidation non-reverting;
+				// the clearing house operator must account for accrued funding fees when calling
+				// distributeForClearingHouse.
+				int256 oldAccumulatedPaidFunding = quote.accumulatedPaidFunding;
+				uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+				quote.lastFundingPaymentTimestamp = block.timestamp;
+				LibQuoteFunding.updateAccumulatedPaidFunding(quote.id);
+				LibAggregateFunding.updatePartiesAggregateFunding(quote, oldAccumulatedPaidFunding, openAmount);
+			}
 
 			uint256 liquidationPrice = prices[i];
 			uint256 closedAmount = LibQuote.closePositionFully(quote.id, liquidationPrice);
