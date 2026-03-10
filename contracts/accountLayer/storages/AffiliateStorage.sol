@@ -71,6 +71,7 @@ struct HookContext {
 	address affiliate;
 	address symmioCore;
 	bool isActive;
+	address activeHook;
 }
 
 /// @title AffiliateStorage

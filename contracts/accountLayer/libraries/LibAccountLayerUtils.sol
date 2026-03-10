@@ -153,7 +153,7 @@ library LibAccountLayerUtils {
 		ahLayout.globalSigner = address(0);
 
 		// Set hook context before calling
-		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true });
+		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true, activeHook: hook });
 
 		(bool success, bytes memory result) = hook.call(data);
 

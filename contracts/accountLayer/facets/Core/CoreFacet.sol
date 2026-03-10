@@ -374,6 +374,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		HookContext memory ctx = afLayout.hookContext;
 
 		if (!ctx.isActive) revert NoActiveHookContext();
+		if (msg.sender != ctx.activeHook) revert UnauthorizedHookCaller();
 
 		// Validate selector is whitelisted for this affiliate
 		bytes4 selector = bytes4(callData[:4]);

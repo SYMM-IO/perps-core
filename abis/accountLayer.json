@@ -264,6 +264,11 @@
     },
     {
         "inputs": [],
+        "name": "UnauthorizedHookCaller",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "VirtualProviderRequired",
         "type": "error"
     },

@@ -2749,6 +2749,29 @@ export function shouldBehaveLikeAccountLayer(): void {
 					await expect(context.alCoreFacet.executeForAccount(bindCallData)).to.be.revertedWithCustomError(context.alCoreFacet, "NoActiveHookContext")
 				})
 
+				it("should revert when a downstream contract tries to use active hook context", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+					const bindToPartyBSelector = context.bindingFacet.interface.getFunction("bindToPartyB").selector
+					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], true)
+
+					const DownstreamCaller = await ethers.getContractFactory("DownstreamExecuteForAccountCaller")
+					const downstreamCaller = await DownstreamCaller.deploy()
+					await downstreamCaller.waitForDeployment()
+
+					const ForwardingHook = await ethers.getContractFactory("ForwardingAccountLayerHook")
+					const forwardingHook = await ForwardingHook.deploy()
+					await forwardingHook.waitForDeployment()
+
+					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					await forwardingHook.configure(await context.alCoreFacet.getAddress(), await downstreamCaller.getAddress(), bindCallData)
+					await context.alAffiliateFacet.setHook(affiliateAddress, HOOK_SELECTORS.onAccountCreation, await forwardingHook.getAddress())
+
+					const subAccountData = [createSubAccountData("CONFUSED_DEPUTY", 0)]
+					await expect(
+						context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, subAccountData),
+					).to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
+				})
+
 				it("should emit HookActionExecuted event on successful callback", async () => {
 					const affiliateAddress = await context.accountManager.getAddress()
 					const bindToPartyBSelector = context.bindingFacet.interface.getFunction("bindToPartyB").selector
