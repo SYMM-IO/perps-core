@@ -847,7 +847,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
 
 			await expect(virtualProvider.rejectWithdrawRequest(user.address, 1)).to.revertedWith(
-				"WithdrawFacet : Only Virtual or Express withdraw needs to accept",
+				"WithdrawFacet : Only Virtual or Express withdraw needs to reject",
 			)
 		})
 
@@ -867,7 +867,7 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
 
 			await expect(context.withdrawFacet.connect(context.signers.user).rejectWithdrawRequest(user.address, 1)).to.revertedWith(
-				"WithdrawFacet : Not allowed to accept withdrawal",
+				"WithdrawFacet : Not allowed to reject withdrawal",
 			)
 		})
 
