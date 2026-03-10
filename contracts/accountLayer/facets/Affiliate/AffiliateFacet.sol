@@ -237,9 +237,18 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	/// @notice Approves a pending fee configuration update (APPROVER_ROLE only)
 	/// @param affiliate The affiliate address whose fee update to approve
-	function approveFeeUpdate(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused {
+	function approveFeeUpdate(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused nonReentrant {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (!afLayout.pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
+
+		EnumerableSet.AddressSet storage cores = afLayout.affiliates[affiliate].symmioCores;
+		for (uint256 i = 0; i < cores.length(); i++) {
+			address core = cores.at(i);
+			uint256 claimable = LibAccountLayerUtils.getClaimableFee(affiliate, core);
+			if (claimable > 0) {
+				_claimFees(affiliate, core, claimable, address(0), false);
+			}
+		}
 
 		delete afLayout.affiliates[affiliate].feeDetails.stakeholders;
 		afLayout.affiliates[affiliate].feeDetails.symmioShare = afLayout.pendingFeeUpdates[affiliate].symmioShare;
@@ -253,7 +262,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @param affiliate The affiliate address
 	/// @param symmio The Symmio core to claim fees from
 	function claimAllFees(address affiliate, address symmio) external whenNotPaused nonReentrant {
-		_claimFees(affiliate, symmio, LibAccountLayerUtils.getClaimableFee(affiliate, symmio), msg.sender);
+		_claimFees(affiliate, symmio, LibAccountLayerUtils.getClaimableFee(affiliate, symmio), msg.sender, true);
 	}
 
 	/// @notice Claims a specific amount of fees for an affiliate and distributes to stakeholders
@@ -261,7 +270,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @param symmio The Symmio core to claim fees from
 	/// @param amount The amount of fees to claim
 	function claimFees(address affiliate, address symmio, uint256 amount) external whenNotPaused nonReentrant {
-		_claimFees(affiliate, symmio, amount, msg.sender);
+		_claimFees(affiliate, symmio, amount, msg.sender, true);
 	}
 
 	// ==================== Hook Management ====================
@@ -408,20 +417,22 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		}
 	}
 
-	function _claimFees(address affiliate, address symmio, uint256 amount, address caller) private {
+	function _claimFees(address affiliate, address symmio, uint256 amount, address caller, bool checkAuthorization) private {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		address collateral = ISymmio(symmio).getCollateral();
 		Stakeholder[] memory stakeholders = afLayout.affiliates[affiliate].feeDetails.stakeholders;
 
-		bool auth = false;
-		for (uint256 i = 0; i < stakeholders.length; i++) {
-			if (caller == stakeholders[i].receiver) {
-				auth = true;
-				break;
+		if (checkAuthorization) {
+			bool auth = false;
+			for (uint256 i = 0; i < stakeholders.length; i++) {
+				if (caller == stakeholders[i].receiver) {
+					auth = true;
+					break;
+				}
 			}
-		}
 
-		if (!auth && !LibAccountLayerAccessibility.hasRole(caller, LibAccountLayerAccessibility.DISTRIBUTOR_ROLE)) revert Unauthorized();
+			if (!auth && !LibAccountLayerAccessibility.hasRole(caller, LibAccountLayerAccessibility.DISTRIBUTOR_ROLE)) revert Unauthorized();
+		}
 
 		if (amount == 0) {
 			emit FeesClaimed(affiliate, symmio, 0);

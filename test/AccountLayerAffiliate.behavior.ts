@@ -692,6 +692,42 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 					expect(after - before).to.equal((feeAmount * ethers.parseEther("0.8")) / ethers.parseEther("1"))
 				})
 
+				it("claims accrued fees with the old split before applying the new split", async function () {
+					const feeAmount = ethers.parseEther("100")
+					const oldStakeholder1 = context.signers.feeCollector
+					const oldStakeholder2 = context.signers.feeCollector2
+					const newStakeholder = context.signers.user2
+					const symmioReceiver = context.signers.symmioFeeReceiver
+
+					await depositFeesForAffiliate(affiliate, feeAmount, coreAddress)
+
+					await context.alAffiliateFacet
+						.connect(context.signers.user)
+						.requestFeeUpdate(affiliate, [{ receiver: newStakeholder.address, share: ethers.parseEther("0.8") }], ethers.parseEther("0.2"))
+
+					const oldStakeholder1Before = await context.collateral.balanceOf(oldStakeholder1.address)
+					const oldStakeholder2Before = await context.collateral.balanceOf(oldStakeholder2.address)
+					const newStakeholderBefore = await context.collateral.balanceOf(newStakeholder.address)
+					const symmioBefore = await context.collateral.balanceOf(symmioReceiver.address)
+
+					await context.alAffiliateFacet.connect(context.signers.admin).approveFeeUpdate(affiliate)
+
+					const oldStakeholder1After = await context.collateral.balanceOf(oldStakeholder1.address)
+					const oldStakeholder2After = await context.collateral.balanceOf(oldStakeholder2.address)
+					const newStakeholderAfter = await context.collateral.balanceOf(newStakeholder.address)
+					const symmioAfter = await context.collateral.balanceOf(symmioReceiver.address)
+
+					expect(oldStakeholder1After - oldStakeholder1Before).to.equal((feeAmount * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+					expect(oldStakeholder2After - oldStakeholder2Before).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
+					expect(symmioAfter - symmioBefore).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
+					expect(newStakeholderAfter - newStakeholderBefore).to.equal(0n)
+					expect(await context.collateral.balanceOf(context.accountLayerDiamond)).to.equal(0n)
+
+					const [holders, shares] = await context.alViewFacet.dryClaimAllFees(affiliate, coreAddress)
+					expect(holders).to.deep.equal([newStakeholder.address])
+					expect(shares).to.deep.equal([0n])
+				})
+
 				it("requires the approver role", async function () {
 					await expect(context.alAffiliateFacet.connect(context.signers.user).approveFeeUpdate(affiliate)).to.be.revertedWithCustomError(
 						context.alAffiliateFacet,
