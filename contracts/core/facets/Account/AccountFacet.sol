@@ -63,7 +63,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows a registered virtual provider to deposit collateral on behalf of another user without actual fund transfer and allocate them.
 	/// @param user The recipient address for the deposit.
 	/// @param amount The amount of collateral to be deposited, specified in 18 decimals.
-	function virtualDepositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused {
+	function virtualDepositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(user) {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);

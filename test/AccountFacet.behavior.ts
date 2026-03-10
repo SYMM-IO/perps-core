@@ -172,6 +172,42 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			await context.controlFacet.connect(provider).setSigner(ZeroAddress)
 		})
+
+		it("Should virtual deposit and allocate for non-liquidated user", async function () {
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(context.signers.admin.address)
+
+			const userAddress = await user.getAddress()
+			const allocateAmount = decimal(2n)
+			const balanceBefore = await context.viewFacet.balanceOf(userAddress)
+			const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+
+			await context.accountFacet.connect(context.signers.admin).virtualDepositAndAllocateFor(userAddress, allocateAmount)
+
+			const balanceAfter = await context.viewFacet.balanceOf(userAddress)
+			const allocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			expect(balanceAfter).to.equal(balanceBefore)
+			expect(allocatedAfter).to.equal(allocatedBefore + allocateAmount)
+		})
+
+		it("Should fail virtualDepositAndAllocateFor when partyA is liquidated", async function () {
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(context.signers.admin.address)
+			await user.setBalances(decimal(2000n), decimal(1000n), decimal(500n))
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(decimal(2000n), decimal(2000n))
+
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(25n)], [quoteId])
+			expect(await context.viewFacet.isPartyALiquidated(await user.getAddress())).to.equal(true)
+
+			await expect(
+				context.accountFacet.connect(context.signers.admin).virtualDepositAndAllocateFor(await user.getAddress(), decimal(1n)),
+			).to.be.revertedWith("Accessibility: PartyA isn't solvent")
+		})
 	})
 
 	describe("Pledge collateral", function () {
