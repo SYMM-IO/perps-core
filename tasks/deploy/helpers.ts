@@ -3,6 +3,7 @@ import { ethers as ethersLib } from "ethers"
 type NetworkConnection = {
 	ethers: any
 	upgrades?: any
+	networkName?: string
 }
 
 /**
