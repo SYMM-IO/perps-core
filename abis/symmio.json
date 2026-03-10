@@ -7123,6 +7123,25 @@
         "type": "function"
     },
     {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
+        "name": "getLiquidationEscrow",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [],
         "name": "getLiquidationInsuranceVaultParams",
         "outputs": [
@@ -7250,6 +7269,25 @@
     {
         "inputs": [],
         "name": "getNextBridgeTransactionId",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
+        "name": "getPartyADeferredBalance",
         "outputs": [
             {
                 "internalType": "uint256",
@@ -9157,6 +9195,31 @@
             }
         ],
         "name": "LiquidationDisputed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes",
+                "name": "liquidationId",
+                "type": "bytes"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "LiquidationEscrowCreated",
         "type": "event"
     },
     {
@@ -15328,6 +15391,37 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address[]",
+                "name": "receivers",
+                "type": "address[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "address[]",
+                "name": "allocationKeys",
+                "type": "address[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "amounts",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "DistributeFromLiquidationEscrow",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "initiator",
                 "type": "address"
             },
@@ -15561,6 +15655,34 @@
             }
         ],
         "name": "distributeForClearingHouse",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address[]",
+                "name": "receivers",
+                "type": "address[]"
+            },
+            {
+                "internalType": "address[]",
+                "name": "allocationKeys",
+                "type": "address[]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "amounts",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "distributeFromLiquidationEscrow",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

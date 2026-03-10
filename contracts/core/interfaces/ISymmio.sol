@@ -59,7 +59,9 @@ interface ISymmio is
 		LF_IN,
 		LF_OUT,
 		FUNDING_FEE_IN,
-		FUNDING_FEE_OUT
+		FUNDING_FEE_OUT,
+		DEFERRED_BALANCE_IN,
+		DEFERRED_BALANCE_OUT
 	}
 
 	/// @notice Emitted when a PartyA's allocated balance changes

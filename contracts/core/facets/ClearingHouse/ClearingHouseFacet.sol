@@ -141,6 +141,22 @@ contract ClearingHouseFacet is Pausable, Accessibility, IClearingHouseFacet {
 		}
 	}
 
+	/// @notice Distributes pending fees from the liquidation escrow created during LATE/OVERDUE PartyA liquidation settlement.
+	/// @dev Supports both partyA-style addresses (allocatedBalances) and partyBs (partyBAllocatedBalances).
+	/// @param partyA The partyA whose liquidation escrow to distribute from.
+	/// @param receivers The addresses to distribute to.
+	/// @param allocationKeys The allocation keys for each receiver (used for partyB receivers).
+	/// @param amounts The amounts to distribute.
+	function distributeFromLiquidationEscrow(
+		address partyA,
+		address[] memory receivers,
+		address[] memory allocationKeys,
+		uint256[] memory amounts
+	) external onlyRole(LibAccessibility.CLEARING_HOUSE_ROLE) {
+		ClearingHouseFacetImpl.distributeFromLiquidationEscrow(partyA, receivers, allocationKeys, amounts);
+		emit DistributeFromLiquidationEscrow(partyA, receivers, allocationKeys, amounts);
+	}
+
 	/// @notice Applies a soft liquidation penalty to a Party B by deducting from their allocated and/or deposit balances.
 	/// @param partyB The address of Party B being penalized.
 	/// @param partyA The address of Party A associated with the penalty.

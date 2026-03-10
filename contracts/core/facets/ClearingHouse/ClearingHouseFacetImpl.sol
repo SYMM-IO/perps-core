@@ -418,12 +418,15 @@ library ClearingHouseFacetImpl {
 			delete accountLayout.settlementStates[partyA][settledPartyBs[i]];
 		}
 
-		// release reimbursement
+		// Release all escrowed balances back to partyA
 		uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
-		if (reimbursement > 0) {
+		uint256 deferredBalance = accountLayout.partyADeferredBalance[partyA];
+		uint256 totalRelease = reimbursement + deferredBalance;
+		if (totalRelease > 0) {
 			accountLayout.partyAReimbursement[partyA] = 0;
-			accountLayout.allocatedBalances[partyA] += reimbursement;
-			emit SharedEvents.BalanceChangePartyA(partyA, reimbursement, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			accountLayout.partyADeferredBalance[partyA] = 0;
+			accountLayout.allocatedBalances[partyA] += totalRelease;
+			emit SharedEvents.BalanceChangePartyA(partyA, totalRelease, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 
 		// Clear locked balances
@@ -528,5 +531,38 @@ library ClearingHouseFacetImpl {
 
 			accountLayout.balances[globalLayout.softLiquidationPenaltyCollector] += totalPenalty;
 		}
+	}
+
+	/// @notice Distributes pending fees from the liquidation escrow to receivers
+	/// @dev Called by clearing house after a LATE/OVERDUE PartyA liquidation settlement.
+	///      Supports both partyA-style addresses (allocatedBalances) and partyBs (partyBAllocatedBalances).
+	/// @param partyA The partyA whose liquidation escrow to distribute from
+	/// @param receivers The addresses to distribute to
+	/// @param allocationKeys The allocation keys for each receiver (used for partyB receivers)
+	/// @param amounts The amounts to distribute
+	function distributeFromLiquidationEscrow(
+		address partyA,
+		address[] memory receivers,
+		address[] memory allocationKeys,
+		uint256[] memory amounts
+	) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		require(receivers.length == allocationKeys.length && receivers.length == amounts.length, "ClearingHouseFacet: Invalid length");
+
+		uint256 totalDistributed = 0;
+		for (uint256 i = 0; i < receivers.length; i++) {
+			if (amounts[i] == 0) continue;
+			if (maLayout.partyBStatus[receivers[i]]) {
+				accountLayout.partyBAllocatedBalances[receivers[i]][allocationKeys[i]] += amounts[i];
+				emit SharedEvents.BalanceChangePartyB(receivers[i], allocationKeys[i], amounts[i], SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			} else {
+				accountLayout.allocatedBalances[receivers[i]] += amounts[i];
+				emit SharedEvents.BalanceChangePartyA(receivers[i], amounts[i], SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			}
+			totalDistributed += amounts[i];
+		}
+		require(accountLayout.liquidationEscrow[partyA] >= totalDistributed, "ClearingHouseFacet: Insufficient pool balance");
+		accountLayout.liquidationEscrow[partyA] -= totalDistributed;
 	}
 }

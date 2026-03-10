@@ -30,6 +30,10 @@ interface IClearingHouseFacetEvents {
 	event SettlePartyATakeover(address indexed partyA, bytes liquidationId);
 	event SettleCrossPartyBLiquidation(address indexed partyB);
 
+	// Liquidation escrow events
+	event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
+	event DistributeFromLiquidationEscrow(address indexed partyA, address[] receivers, address[] allocationKeys, uint256[] amounts);
+
 	// Soft liquidation event
 	event SoftPartyBLiquidation(address partyB, address partyA, uint256 penaltyFromAllocated, uint256 penaltyFromBalance);
 }

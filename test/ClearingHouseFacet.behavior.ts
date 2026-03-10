@@ -4,7 +4,7 @@ import { ethers, toUtf8Bytes, ZeroAddress } from "ethers"
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { loadFixture } from "./helpers/network-helpers.js"
-import { PositionType, QuoteStatus } from "./models/Enums.js"
+import { LiquidationType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
@@ -21,7 +21,7 @@ import {
 	SettleCrossPartyBValidator,
 	SoftPartyBLiquidationValidator,
 } from "./models/validators/ClearingHouseValidators.js"
-import { decimal, getBlockTimestamp, getPriceFetcher } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, getPriceFetcher, getTradingFeeForQuotes } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummyLiquidationSig } from "./utils/SignatureUtils.js"
 
@@ -2050,6 +2050,123 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					expect(afterLiquidatorBalance - beforeLiquidatorBalance).to.equal(ethers.parseEther("10"))
 				})
 			})
+		})
+	})
+
+	/**
+	 * DISTRIBUTE FROM LIQUIDATION ESCROW TESTS
+	 *
+	 * After a LATE/OVERDUE PartyA liquidation settles, pending fees are held in
+	 * the liquidation escrow. The clearing house can then distribute these funds
+	 * to partyA, partyB, or split between them.
+	 */
+	describe("Distribute From Liquidation Escrow", async function () {
+		let escrowAmount: bigint
+		let expectedFees: bigint
+		const CLEARING_HOUSE_ROLE = ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE"))
+
+		beforeEach(async function () {
+			// Lock and open quote 1 (SHORT at price 1, qty 100)
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1)
+			// Lock quotes 2 and 5 (pending positions that generate fees on liquidation)
+			await hedger.lockQuote(2)
+			await hedger.lockQuote(5)
+
+			// Compute expected fees before liquidation (quotes 2,3,4,5 are pending)
+			expectedFees = await getTradingFeeForQuotes(context, [2n, 3n, 4n, 5n])
+
+			// User has 2000 allocated. SHORT at price 1, qty 100.
+			// Price 22 on SHORT → UPNL=(1-22)*100=-2100 → solidly OVERDUE
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(22n)], [1n])
+			expect((await user.getLiquidatedStateOfPartyA())["liquidationType"]).to.be.equal(LiquidationType.OVERDUE)
+
+			await user.liquidatePendingPositions()
+			await user.liquidatePositions([1])
+
+			const userAddress = await context.signers.user.getAddress()
+
+			await user.settleLiquidation()
+
+			escrowAmount = await context.viewFacet.getLiquidationEscrow(userAddress)
+		})
+
+		it("should have escrow after OVERDUE settlement", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			expect(escrowAmount).to.be.equal(expectedFees)
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(expectedFees)
+		})
+
+		it("should distribute escrow to partyA", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceBefore = (await user.getBalanceInfo()).allocatedBalances
+
+			await context.clearingHouseFacet
+				.connect(context.signers.liquidator)
+				.distributeFromLiquidationEscrow(userAddress, [userAddress], [ZeroAddress], [escrowAmount])
+
+			const balanceAfter = (await user.getBalanceInfo()).allocatedBalances
+			expect(balanceAfter - balanceBefore).to.be.equal(escrowAmount)
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(0n)
+		})
+
+		it("should distribute escrow to partyB", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const hedgerAddress = await context.signers.hedger.getAddress()
+			const balanceBefore = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)
+
+			await context.clearingHouseFacet
+				.connect(context.signers.liquidator)
+				.distributeFromLiquidationEscrow(userAddress, [hedgerAddress], [userAddress], [escrowAmount])
+
+			const balanceAfter = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)
+			expect(balanceAfter - balanceBefore).to.be.equal(escrowAmount)
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(0n)
+		})
+
+		it("should distribute escrow to multiple receivers", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const hedgerAddress = await context.signers.hedger.getAddress()
+			const half = escrowAmount / 2n
+			const remainder = escrowAmount - half
+
+			const userBalanceBefore = (await user.getBalanceInfo()).allocatedBalances
+			const hedgerBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)
+
+			await context.clearingHouseFacet
+				.connect(context.signers.liquidator)
+				.distributeFromLiquidationEscrow(userAddress, [userAddress, hedgerAddress], [ZeroAddress, userAddress], [half, remainder])
+
+			expect((await user.getBalanceInfo()).allocatedBalances - userBalanceBefore).to.be.equal(half)
+			expect((await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddress, userAddress)) - hedgerBalanceBefore).to.be.equal(remainder)
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(0n)
+		})
+
+		it("should fail without CLEARING_HOUSE_ROLE", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			await expect(
+				context.clearingHouseFacet
+					.connect(context.signers.user)
+					.distributeFromLiquidationEscrow(userAddress, [userAddress], [ZeroAddress], [escrowAmount]),
+			).to.be.revertedWith("Accessibility: Must have role")
+		})
+
+		it("should fail when distributing more than escrow balance", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			await expect(
+				context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.distributeFromLiquidationEscrow(userAddress, [userAddress], [ZeroAddress], [escrowAmount + 1n]),
+			).to.be.revertedWith("ClearingHouseFacet: Insufficient pool balance")
+		})
+
+		it("should emit DistributeFromLiquidationEscrow event", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			await expect(
+				context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.distributeFromLiquidationEscrow(userAddress, [userAddress], [ZeroAddress], [escrowAmount]),
+			).to.emit(context.clearingHouseFacet, "DistributeFromLiquidationEscrow")
 		})
 	})
 }

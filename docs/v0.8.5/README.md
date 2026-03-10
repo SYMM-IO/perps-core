@@ -78,6 +78,10 @@ A separate collateral pool that PartyBs deposit as a guarantee of good behavior.
 
 Caps how much liquidators can earn per position and redirects the excess into a protocol vault. That vault is reserved to reimburse PartyBs who suffer losses from late liquidations — situations where a position should have been liquidated earlier but wasn't.
 
+### [Liquidation Escrow](liquidation-escrow.md)
+
+Prevents PartyA from recovering pending trading fees through the reimbursement path when their liquidation is `LATE` or `OVERDUE`. Particularly important in [oracle-less trading](oracle-less-trading.md) mode, where a bound PartyA can submit fabricated UPNL to drain `allocatedBalances` into fees, worsen their liquidation severity, then recover the fees at settlement. The escrow holds these fees for the ClearingHouse to distribute — typically to compensate PartyBs who suffered CVA haircuts. Also separates deferred excess balance (always returned to PartyA) from pending fee reimbursement (escrowed in LATE/OVERDUE).
+
 ---
 
 ## Funding & Positions
