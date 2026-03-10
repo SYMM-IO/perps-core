@@ -50,6 +50,8 @@ library PartyBBatchActionsFacetImpl {
 		);
 
 		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
+		bool requireMuonAndSolvencyChecks = (TradingModeStorage.layout().bindState[firstQuote.partyA].partyB != LibSigner.getSigner() ||
+			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]);
 
 		// Check symbol restrictions for all quotes
 		for (uint256 i = 0; i < quoteIds.length; i++) {
@@ -76,8 +78,10 @@ library PartyBBatchActionsFacetImpl {
 			"PartyBFacet: PartyB is in cross liquidation process"
 		);
 
-		// Verify the upnl and prices
-		LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
+		if (requireMuonAndSolvencyChecks) {
+			// Verify the upnl and prices
+			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds);
+		}
 
 		LibAccount.increaseBothNonces(firstQuote.partyB, firstQuote.partyA);
 
@@ -123,15 +127,17 @@ library PartyBBatchActionsFacetImpl {
 				}
 			}
 		}
-		LibSolvency.isSolventAfterOpenPosition(
-			quoteIds,
-			filledAmounts,
-			upnlSig.prices,
-			upnlSig.upnlPartyB,
-			upnlSig.upnlPartyA,
-			firstQuote.partyB,
-			firstQuote.partyA
-		);
+		if (requireMuonAndSolvencyChecks) {
+			LibSolvency.isSolventAfterOpenPosition(
+				quoteIds,
+				filledAmounts,
+				upnlSig.prices,
+				upnlSig.upnlPartyB,
+				upnlSig.upnlPartyA,
+				firstQuote.partyB,
+				firstQuote.partyA
+			);
+		}
 	}
 
 	/// @notice Closes multiple positions in a single transaction, supporting both normal close and ADL flows
@@ -152,25 +158,23 @@ library PartyBBatchActionsFacetImpl {
 		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
 		address firstQuotePartyA = firstQuote.partyA;
 		address firstQuotePartyB = firstQuote.partyB;
+		bool requireMuonAndSolvencyChecks = (TradingModeStorage.layout().bindState[firstQuote.partyA].partyB != LibSigner.getSigner() ||
+			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]);
 
-		if (
-			TradingModeStorage.layout().bindState[firstQuote.partyA].partyB != LibSigner.getSigner() ||
-			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
-		) {
+		if (requireMuonAndSolvencyChecks) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds);
+			LibSolvency.isSolventAfterClosePosition(
+				quoteIds,
+				filledAmounts,
+				closedPrices,
+				upnlSig.prices,
+				upnlSig.upnlPartyB,
+				upnlSig.upnlPartyA,
+				firstQuotePartyB,
+				firstQuotePartyA
+			);
 		}
-
-		LibSolvency.isSolventAfterClosePosition(
-			quoteIds,
-			filledAmounts,
-			closedPrices,
-			upnlSig.prices,
-			upnlSig.upnlPartyB,
-			upnlSig.upnlPartyA,
-			firstQuotePartyB,
-			firstQuotePartyA
-		);
 
 		// Solvency checks
 		require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
