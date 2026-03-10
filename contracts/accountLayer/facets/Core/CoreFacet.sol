@@ -186,6 +186,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	function _depositToSymmio(address account, uint256 amount, bytes4 depositSelector) private {
 		if (amount == 0) revert ZeroAmount();
+		_revertIfDeletedVirtualAccount(account);
 
 		address core = LibAccountLayerUtils.getRelatedCore(account);
 
@@ -226,6 +227,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	function _depositWithExpressSplit(address account, uint256 amount, bytes4 depositSelector, uint256 expressRate, address virtualProvider) private {
 		if (amount == 0) revert ZeroAmount();
+		_revertIfDeletedVirtualAccount(account);
 
 		address core = LibAccountLayerUtils.getRelatedCore(account);
 		address collateral = ISymmio(core).getCollateral();
@@ -268,6 +270,11 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		uint256 allocatedIncrease = usesAllocation ? allocatedAfter - allocatedBefore : 0;
 		uint256 expectedIncrease = (amount * 1e18) / (10 ** collateralDecimals);
 		if (balanceIncrease + allocatedIncrease != expectedIncrease) revert BalanceInvariantViolation();
+	}
+
+	function _revertIfDeletedVirtualAccount(address account) private view {
+		VirtualAccountData storage virtualAccount = AccountStorage.layout().virtualAccounts[account];
+		if (virtualAccount.parentAccount != address(0) && !virtualAccount.isExists) revert AccountDoesNotExist();
 	}
 
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
