@@ -28,13 +28,14 @@ library MigrationStorage {
 		///      - accountStorage.connectedPartyBs / isConnectedPartyB connection cache
 		///      Idempotent - skips already-migrated quotes.
 		mapping(uint256 => bool) quoteMigrated;
-		/// @notice Whether PartyB's per-PartyA balances have been summed into master bucket
-		/// @dev Maps partyB => migrated. migrateCrossLockedValues() aggregates:
+		/// @notice Whether a specific PartyB+PartyA pair has been migrated to the cross bucket
+		/// @dev Maps partyB => partyA => migrated. migrateCrossLockedValues() aggregates:
 		///      - partyBAllocatedBalances[partyB][partyA] → partyBAllocatedBalances[partyB][address(0)]
 		///      - partyBLockedBalances[partyB][partyA] → partyBLockedBalances[partyB][address(0)]
 		///      - partyBPendingLockedBalances[partyB][partyA] → partyBPendingLockedBalances[partyB][address(0)]
+		///      Can be called in batches - already-migrated pairs are skipped.
 		///      Must be done before enabling master account mode for that PartyB.
-		mapping(address => bool) partyBLockedValuesMigrated;
+		mapping(address => mapping(address => bool)) crossLockedValuesMigrated;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

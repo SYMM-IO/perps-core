@@ -8080,25 +8080,6 @@
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            }
-        ],
-        "name": "isCrossPartyBMigrationComplete",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [],
         "name": "isCrossPartyBModeActivated",
         "outputs": [
@@ -16306,9 +16287,14 @@
                 "internalType": "address",
                 "name": "partyB",
                 "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
             }
         ],
-        "name": "isPartyBLockedValuesMigrated",
+        "name": "isCrossLockedValuesMigrated",
         "outputs": [
             {
                 "internalType": "bool",
