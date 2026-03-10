@@ -316,6 +316,60 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 				).to.revertedWith("ClearingHouseFacet: Insufficient allocated balance")
 			})
 
+			it("should deallocate from partyA allocated balance in cross liquidation", async () => {
+				const partyAOldAllocated = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user)
+				const amountToDeallocate = 100n
+				expect(partyAOldAllocated).to.be.gte(amountToDeallocate)
+
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.hedger, [context.signers.user], [ZeroAddress], [amountToDeallocate]),
+				)
+					.to.emit(context.clearingHouseFacet, "DeallocateForClearingHouse")
+					.withArgs(context.signers.hedger.address, [context.signers.user.address], [ZeroAddress], [amountToDeallocate])
+
+				const partyANewAllocated = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user)
+				const details = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
+				expect(partyANewAllocated).to.equal(partyAOldAllocated - amountToDeallocate)
+				expect(details.deallocatedPool).to.equal(amountToDeallocate)
+			})
+
+			it("should fail when deallocating from partyA with invalid allocation key in cross liquidation", async () => {
+				await expect(
+					context.clearingHouseFacet
+						.connect(context.signers.liquidator)
+						.deallocateForClearingHouse(context.signers.hedger, [context.signers.user], [context.signers.hedger], [100n]),
+				).to.revertedWith("ClearingHouseFacet: Invalid allocation key for partyA")
+			})
+
+			it("should deallocate from partyB cross bucket and partyA allocated balance in one call", async () => {
+				const partyBOldAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
+				const partyAOldAllocated = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user)
+
+				const partyBAmount = partyBOldAllocated / 10n
+				const partyAAmount = partyAOldAllocated / 10n
+				expect(partyBAmount).to.be.gt(0)
+				expect(partyAAmount).to.be.gt(0)
+
+				await context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.deallocateForClearingHouse(
+						context.signers.hedger,
+						[context.signers.hedger, context.signers.user],
+						[ZeroAddress, ZeroAddress],
+						[partyBAmount, partyAAmount],
+					)
+
+				const partyBNewAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
+				const partyANewAllocated = await context.viewFacet.allocatedBalanceOfPartyA(context.signers.user)
+				const details = await context.viewFacet.getCrossLiquidationDetails(context.signers.hedger)
+
+				expect(partyBNewAllocated).to.equal(partyBOldAllocated - partyBAmount)
+				expect(partyANewAllocated).to.equal(partyAOldAllocated - partyAAmount)
+				expect(details.deallocatedPool).to.equal(partyBAmount + partyAAmount)
+			})
+
 			it("should deallocate amount successfully", async () => {
 				const OldAllocated = (await context.viewFacet.balanceInfoOfCrossPartyB(context.signers.hedger))[0]
 				const hedgerAddress = await hedger.getAddress()

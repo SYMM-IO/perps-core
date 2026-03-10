@@ -98,15 +98,17 @@ library ClearingHouseFacetImpl {
 
 			if (amount == 0) continue;
 
-			if (party == subject && liqType == LiquidationType.PARTY_A_TAKEOVER) {
-				// Pulling from partyA's own balances
+			// Determine whether this party is a partyA in this liquidation context:
+			//   CROSS_PARTY_B: subject is partyB, so non-subject parties are partyAs
+			//   PARTY_A_TAKEOVER: subject is partyA, so subject itself is partyA
+			bool isPartyA = (liqType == LiquidationType.CROSS_PARTY_B) ? (party != subject) : (party == subject);
+
+			if (isPartyA) {
 				if (allocationKey == address(0)) {
-					// Pull from allocatedBalances
 					require(accountLayout.allocatedBalances[party] >= amount, "ClearingHouseFacet: Insufficient allocated balance");
 					accountLayout.allocatedBalances[party] -= amount;
 					emit SharedEvents.BalanceChangePartyA(party, amount, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-				} else if (allocationKey == REIMBURSEMENT_KEY) {
-					// Pull from partyAReimbursement (special key)
+				} else if (liqType == LiquidationType.PARTY_A_TAKEOVER && allocationKey == REIMBURSEMENT_KEY) {
 					require(accountLayout.partyAReimbursement[party] >= amount, "ClearingHouseFacet: Insufficient reimbursement");
 					accountLayout.partyAReimbursement[party] -= amount;
 				} else {
