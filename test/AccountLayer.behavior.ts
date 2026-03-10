@@ -3907,11 +3907,13 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 				it("should transfer balance from virtual account to subaccount", async () => {
 					// Check initial balances
+					const subAccountBalanceBefore = await context.viewFacet.balanceOf(customSubAccount)
 					const subAccountAllocatedBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
 					const virtualAccountAllocatedBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
 
 					// Virtual account should have balance from the deposit
 					expect(virtualAccountAllocatedBalanceBefore).to.equal(BALANCES.TRANSFER_AMOUNT)
+					expect(subAccountAllocatedBalanceBefore).to.equal(0n)
 
 					// Transfer from virtual account to subaccount
 					await expect(
@@ -3924,8 +3926,32 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const virtualAccountAllocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
 					expect(virtualAccountAllocatedBalanceAfter).to.equal(0)
 
+					const subAccountBalanceAfter = await context.viewFacet.balanceOf(customSubAccount)
 					const subAccountAllocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
-					expect(subAccountAllocatedBalanceAfter).to.equal(subAccountAllocatedBalanceBefore + BALANCES.TRANSFER_AMOUNT)
+					expect(subAccountBalanceAfter).to.equal(subAccountBalanceBefore + BALANCES.TRANSFER_AMOUNT)
+					expect(subAccountAllocatedBalanceAfter).to.equal(subAccountAllocatedBalanceBefore)
+				})
+
+				it("should not be blocked by parent allocated balance limit when removing margin", async () => {
+					await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(BALANCES.TRANSFER_AMOUNT)
+
+					await context.collateral.connect(context.signers.user).approve(await context.accountFacet.getAddress(), BALANCES.TRANSFER_AMOUNT)
+					await context.accountFacet.connect(context.signers.user).depositAndAllocateFor(customSubAccount, BALANCES.TRANSFER_AMOUNT)
+
+					const subAccountAllocatedBalanceBefore = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
+					const subAccountBalanceBefore = await context.viewFacet.balanceOf(customSubAccount)
+					expect(subAccountAllocatedBalanceBefore).to.equal(BALANCES.TRANSFER_AMOUNT)
+
+					await expect(
+						context.alMarginFacet.connect(context.signers.user).removeMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT, await getDummySingleUpnlSig()),
+					)
+						.to.emit(context.alMarginFacet, "RemoveMargin")
+						.withArgs(virtualAccount, customSubAccount, BALANCES.TRANSFER_AMOUNT)
+
+					const subAccountAllocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
+					const subAccountBalanceAfter = await context.viewFacet.balanceOf(customSubAccount)
+					expect(subAccountAllocatedBalanceAfter).to.equal(subAccountAllocatedBalanceBefore)
+					expect(subAccountBalanceAfter).to.equal(subAccountBalanceBefore + BALANCES.TRANSFER_AMOUNT)
 				})
 
 				it("should revert when transferring zero amount", async () => {
@@ -3964,10 +3990,12 @@ export function shouldBehaveLikeAccountLayer(): void {
 						.removeMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT, await getDummySingleUpnlSig())
 
 					virtualAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)
+					subAccountBalance = await context.viewFacet.balanceOf(customSubAccount)
 					const subAccountAllocatedBalance = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
 
 					expect(virtualAccountAllocatedBalance).to.equal(0)
-					expect(subAccountAllocatedBalance).to.equal(BALANCES.TRANSFER_AMOUNT)
+					expect(subAccountBalance).to.equal(initialSubAccountBalance)
+					expect(subAccountAllocatedBalance).to.equal(0)
 				})
 			})
 		})

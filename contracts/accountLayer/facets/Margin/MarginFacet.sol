@@ -84,7 +84,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
 
 		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.deallocate.selector, amount, upnlSig));
-		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, parent, amount));
+		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parent, amount));
 
 		emit RemoveMargin(virtualAccount, parent, amount);
 	}
