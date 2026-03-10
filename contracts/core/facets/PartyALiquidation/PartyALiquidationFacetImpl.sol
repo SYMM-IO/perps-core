@@ -352,6 +352,10 @@ library PartyALiquidationFacetImpl {
 					settleAmounts[i] = settleAmount;
 					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 				} else {
+					// Cross-mode PartyBs must settle uPNL first via settlePartyBUpnlForLiquidation
+					// to convert unrealized profit into allocated balance before settlement.
+					// The clearing house takeover flow handles cases where settlement is not possible.
+					require(!maLayout.crossModeEnabledForPartyB[partyB], "LiquidationFacet: Settle cross partyB uPNL first");
 					settleAmounts[i] = int256(accountLayout.partyBAllocatedBalances[partyB][allocKey]);
 					accountLayout.partyBAllocatedBalances[partyB][allocKey] = 0;
 					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);

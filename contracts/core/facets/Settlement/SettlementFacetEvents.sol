@@ -25,4 +25,15 @@ interface SettlementFacetEvents is IPartiesEvents {
 		uint256[] newPartyAsAllocatedBalances,
 		uint256 newPartyBAllocatedBalance
 	);
+
+	event SettlePartyBUpnlForLiquidation(
+		address indexed liquidatedPartyA,
+		address indexed partyB,
+		bytes settlementId,
+		UnifiedQuoteSettlementData[] settlementData,
+		uint256[] updatedPrices,
+		address[] partyAs,
+		uint256[] newPartyAsAllocatedBalances,
+		uint256 newPartyBAllocatedBalance
+	);
 }

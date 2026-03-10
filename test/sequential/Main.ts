@@ -25,6 +25,7 @@ import { shouldBehaveLikePartyBBatchActionsFacet } from "../PartyBBatchActionsFa
 import { shouldBehaveLikePartyBEmergencyActionsFacet } from "../PartyBEmergencyActionsFacet.behavior.js"
 import { shouldBehaveLikeSendQuote } from "../SendQuote.behavior.js"
 import { shouldBehaveLikeSettleAndForceClosePosition } from "../SettleAndForceClosePosition.behavior.js"
+import { shouldBehaveLikeSettlePartyBUpnlForLiquidation } from "../SettlePartyBUpnlForLiquidation.behavior.js"
 import { shouldBehaveLikeSettlement } from "../Settlement.behavior.js"
 import { shouldBehaveLikeSettlementUnified } from "../SettlementUnified.behavior.js"
 import { shouldBehaveLikeSpecificScenario } from "../SpecificScenario.behavior.js"
@@ -116,6 +117,10 @@ describe("UnitTests", function () {
 
 		describe("SettlementUnified", async function () {
 			shouldBehaveLikeSettlementUnified()
+		})
+
+		describe("SettlePartyBUpnlForLiquidation", async function () {
+			shouldBehaveLikeSettlePartyBUpnlForLiquidation()
 		})
 
 		describe("FeeDistributor", async function () {

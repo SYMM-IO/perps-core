@@ -38,4 +38,31 @@ library SettlementFacetImpl {
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.Settlement);
 		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
 	}
+
+	/// @notice Settles a cross-mode PartyB's uPNL from OTHER solvent counterparties during PartyA liquidation.
+	/// @dev Called by the liquidator between liquidatePositionsPartyA and settlePartyALiquidation.
+	///      Realizes PartyB's unrealized profit into partyBAllocatedBalances so that
+	///      settlePartyALiquidation can collect the full settlement amount.
+	/// @param liquidatedPartyA The partyA currently being liquidated
+	/// @param sig Unified settlement signature for the cross-mode partyB's positions with OTHER partyAs
+	/// @param updatedPrices New opened prices for the settled quotes
+	function settlePartyBUpnlForLiquidation(
+		address liquidatedPartyA,
+		UnifiedSettlementSig memory sig,
+		uint256[] memory updatedPrices
+	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		require(maLayout.liquidationStatus[liquidatedPartyA], "SettlementFacet: PartyA not in liquidation");
+		require(maLayout.crossModeEnabledForPartyB[sig.partyB], "SettlementFacet: PartyB not cross-mode");
+		require(accountLayout.settlementStates[liquidatedPartyA][sig.partyB].pending, "SettlementFacet: No pending settlement");
+
+		for (uint256 i = 0; i < sig.partyAs.length; i++) {
+			require(sig.partyAs[i] != liquidatedPartyA, "SettlementFacet: Cannot settle with liquidated partyA");
+		}
+
+		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, true, MuonFunction.Settlement);
+		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
+	}
 }

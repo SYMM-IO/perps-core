@@ -181,7 +181,7 @@ Validates force-close conditions (quote in `CLOSE_PENDING`, cooldowns met, order
 
 **Step 2 — `settleUpnlForForceClose(quoteId, UnifiedSettlementSig, updatedPrices[])` (optional, repeatable)**
 
-Calls `settleUpnlUnified` with `isForceClose = true`, which relaxes the "caller must have a position" check. The settlement can target any PartyB — not just the one on the force-close quote. Which positions can be settled depends on the scenario:
+Calls `settleUpnlUnified` with `privilegedMode = true`, which bypasses the "caller must have a position" check and settlement cooldowns. The settlement can target any PartyB — not just the one on the force-close quote. Which positions can be settled depends on the scenario:
 
 - **PartyA lacks funds**: Settle PartyA's profitable positions with **any other PartyB** (`sig.partyB != forceCloseQuote.partyB`). This funds PartyA's `allocatedBalances` so the close can proceed. No restriction on which PartyBs or PartyAs are involved.
 

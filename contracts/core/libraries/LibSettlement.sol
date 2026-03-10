@@ -21,7 +21,7 @@ library LibSettlement {
 		SettlementSig memory settleSig,
 		uint256[] memory updatedPrices,
 		address partyA,
-		bool isForceClose
+		bool privilegedMode
 	) public returns (uint256[] memory newPartyBsAllocatedBalances) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -37,7 +37,7 @@ library LibSettlement {
 
 		address signer = LibSigner.getSigner();
 		require(
-			isForceClose || quoteLayout.partyBOpenPositions[signer][partyA].length > 0,
+			privilegedMode || quoteLayout.partyBOpenPositions[signer][partyA].length > 0,
 			"LibSettlement: Sender should have a position with partyA"
 		);
 		LibAccount.increasePartyANonce(partyA);
@@ -83,7 +83,7 @@ library LibSettlement {
 				"LibSettlement: PartyB is in cross liquidation process"
 			);
 
-			if (!isForceClose && signer != partyB) {
+			if (!privilegedMode && signer != partyB) {
 				require(
 					block.timestamp >= MAStorage.layout().lastUpnlSettlementTimestamp[signer][partyB][partyA] + MAStorage.layout().settlementCooldown,
 					"LibSettlement: Cooldown should be passed"
@@ -120,13 +120,13 @@ library LibSettlement {
 	/// @dev Settles quotes for a single partyB across one or more partyAs
 	/// @param sig The unified settlement signature containing quote data and UPNLs
 	/// @param updatedPrices Array of new prices to set as openedPrice for each quote
-	/// @param isForceClose Whether this is called in a force close context
+	/// @param privilegedMode When true, bypasses caller position checks and settlement cooldowns (used by force close and liquidation flows)
 	/// @return newPartyAsAllocatedBalances Array of new allocated balances for each partyA
 	/// @return settleAmountsPerPartyA Array of settlement amounts for each partyA (positive = partyA gains)
 	function settleUpnlUnified(
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices,
-		bool isForceClose
+		bool privilegedMode
 	) public returns (uint256[] memory newPartyAsAllocatedBalances, int256[] memory settleAmountsPerPartyA) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -148,7 +148,7 @@ library LibSettlement {
 
 		// 3. Validate caller permissions
 		address signer = LibSigner.getSigner();
-		if (!isForceClose) {
+		if (!privilegedMode) {
 			// Either caller is the partyB being settled OR caller has positions with at least one of the partyAs
 			bool hasPosition = signer == partyB;
 			if (!hasPosition) {
@@ -227,7 +227,7 @@ library LibSettlement {
 			int256 settlementAmount = settleAmountsPerPartyA[i];
 
 			// Handle cooldown for non-forceClose, non-self settlement
-			if (!isForceClose && signer != partyB) {
+			if (!privilegedMode && signer != partyB) {
 				require(
 					block.timestamp >= maLayout.lastUpnlSettlementTimestamp[signer][partyB][partyA] + maLayout.settlementCooldown,
 					"LibSettlement: Cooldown not passed"
