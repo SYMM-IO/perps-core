@@ -15,7 +15,6 @@ import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
-import { AggregatedDataStorage } from "../../storages/AggregatedDataStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { PairUpnlSig } from "../../storages/MuonStorage.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";
@@ -156,12 +155,9 @@ library FundingRateFacetImpl {
 	function setEpochDuration(uint256[] memory symbolIds, uint256[] memory durations, address partyB) internal {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
 		require(symbolIds.length == durations.length, "FundingRateFacet: Invalid length");
-		bool[] memory changedSymbols = new bool[](symbolIds.length);
-		uint256 changedSymbolCount = 0;
 
 		for (uint256 i = 0; i < symbolIds.length; i++) {
 			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][partyB];
-			uint256 previousEpochDuration = fundingFee.epochDuration;
 			uint256 timestampForEpoch = 0;
 
 			if (fundingFee.epochDuration != 0) {
@@ -195,48 +191,6 @@ library FundingRateFacetImpl {
 			// Update epoch duration
 			fundingFee.lastUpdatedEpoch = LibFundingRate.getEpochOfTimestamp(timestampForEpoch, durations[i]);
 			fundingFee.epochDuration = durations[i];
-			if (previousEpochDuration != durations[i]) {
-				changedSymbols[i] = true;
-				changedSymbolCount++;
-			}
-		}
-
-		if (changedSymbolCount == 0) {
-			return;
-		}
-
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
-		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[partyB];
-
-		bool hasGlobalImpact = false;
-		for (uint256 j = 0; j < symbolIds.length; j++) {
-			if (changedSymbols[j] && aggregatedLayout.partyBActiveSymbolsIndex[partyB][symbolIds[j]] != 0) {
-				hasGlobalImpact = true;
-				break;
-			}
-		}
-		if (!hasGlobalImpact) {
-			return;
-		}
-
-		address[] storage connectedPartyAs = accountLayout.connectedPartyAs[partyB];
-		for (uint256 i = 0; i < connectedPartyAs.length; i++) {
-			address partyA = connectedPartyAs[i];
-			bool affected = isCrossPartyB;
-
-			if (!affected) {
-				for (uint256 j = 0; j < symbolIds.length; j++) {
-					if (changedSymbols[j] && aggregatedLayout.partyBActiveSymbolsIndexPerPartyA[partyB][partyA][symbolIds[j]] != 0) {
-						affected = true;
-						break;
-					}
-				}
-			}
-
-			if (affected) {
-				LibAccount.increaseBothNonces(partyB, partyA);
-			}
 		}
 	}
 

@@ -208,13 +208,6 @@ library AccountStorage {
 		mapping(uint256 => ForceCloseDetail) forceCloseDetails;
 		/// @notice Open trading fees reserved from PartyA allocated balance for pending or locked quotes
 		mapping(address => uint256) partyAReservedOpenFees;
-		/// @notice List of PartyAs that currently have at least one active connection with a PartyB
-		/// @dev Reverse index of connectedPartyBs used when PartyB side operations need to fan out
-		///      over related PartyAs (e.g., nonce invalidation on funding config changes).
-		mapping(address => address[]) connectedPartyAs;
-		/// @notice Fast lookup for whether a PartyB has an active connection with a PartyA
-		/// @dev O(1) check to avoid duplicates in connectedPartyAs.
-		mapping(address => mapping(address => bool)) isConnectedPartyA;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
