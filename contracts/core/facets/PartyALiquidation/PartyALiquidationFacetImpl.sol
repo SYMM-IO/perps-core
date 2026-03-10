@@ -98,10 +98,9 @@ library PartyALiquidationFacetImpl {
 		uint256 pendingCount = quoteLayout.partyAPendingQuotes[partyA].length;
 		liquidatedAmounts = new uint256[](pendingCount);
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
-		uint256[] memory pendingQuoteIds = new uint256[](pendingCount);
-		for (uint256 index = 0; index < pendingCount; index++) {
-			uint256 quoteId = quoteLayout.partyAPendingQuotes[partyA][index];
-			pendingQuoteIds[index] = quoteId;
+		for (uint256 index = pendingCount; index > 0; index--) {
+			uint256 actualIndex = index - 1;
+			uint256 quoteId = quoteLayout.partyAPendingQuotes[partyA][actualIndex];
 			Quote storage quote = quoteLayout.quotes[quoteId];
 			if (
 				(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) &&
@@ -121,16 +120,11 @@ library PartyALiquidationFacetImpl {
 			emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 			quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 			quote.statusModifyTimestamp = block.timestamp;
-			liquidatedAmounts[index] = quote.quantity;
+			liquidatedAmounts[actualIndex] = quote.quantity;
+			quoteLayout.partyAPendingQuotes[partyA].pop();
 			LibHook.callCancelQuoteHooks(quote.id, quote.partyA, quote.partyB, quote.affiliate);
 		}
 		accountLayout.pendingLockedBalances[partyA].makeZero();
-		delete quoteLayout.partyAPendingQuotes[partyA];
-		// Fire hooks after pending array is deleted so core state is consistent when hooks run
-		for (uint256 i = 0; i < pendingQuoteIds.length; i++) {
-			Quote storage quote = quoteLayout.quotes[pendingQuoteIds[i]];
-			LibHook.callCancelQuoteHooks(pendingQuoteIds[i], partyA, quote.partyB, quote.affiliate);
-		}
 	}
 
 	/// @notice Liquidates open positions of Party A, settles PnL per Party B, and detects disputes

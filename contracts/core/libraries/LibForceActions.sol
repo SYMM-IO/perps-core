@@ -65,17 +65,6 @@ library LibForceActions {
 		address partyA = quote.partyA;
 		address partyB = quote.partyB;
 
-		uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
-		uint256[] memory removedQuoteIds = new uint256[](pendingQuotes.length);
-		uint256 removedCount = 0;
-		for (uint256 i = 0; i < pendingQuotes.length; i++) {
-			Quote storage pendingQuote = quoteLayout.quotes[pendingQuotes[i]];
-			if (pendingQuote.partyB == partyB) {
-				removedQuoteIds[removedCount] = pendingQuote.id;
-				removedCount++;
-			}
-		}
-
 		accountLayout.reserveVault[quote.partyB] = 0;
 		accountLayout.partyBAllocatedBalances[partyB][partyA] += reservedBalance;
 		emit SharedEvents.BalanceChangePartyB(partyB, partyA, reservedBalance, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
@@ -87,12 +76,6 @@ library LibForceActions {
 		}
 		upnlPartyB = sigUpnlPartyB + diff;
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlPartyB, block.timestamp);
-		for (uint256 i = 0; i < removedCount; i++) {
-			Quote storage removedQuote = quoteLayout.quotes[removedQuoteIds[i]];
-			if (removedQuote.quoteStatus == QuoteStatus.LIQUIDATED_PENDING) {
-				LibHook.callCancelQuoteHooks(removedQuote.id, removedQuote.partyA, removedQuote.partyB, removedQuote.affiliate);
-			}
-		}
 	}
 
 	/// @notice Validates all preconditions for a force close including signature, cooldowns, and price bounds.

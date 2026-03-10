@@ -23,31 +23,10 @@ library PartyBLiquidationFacetImpl {
 
 	/// @notice Verifies insolvency and initiates the liquidation process for Party B against a Party A
 	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-
 		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
 		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA, MuonFunction.LiquidationPartyB);
-
-		uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
-		uint256[] memory removedQuoteIds = new uint256[](pendingQuotes.length);
-		uint256 removedCount = 0;
-		for (uint256 i = 0; i < pendingQuotes.length; i++) {
-			Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
-			if (quote.partyB == partyB) {
-				removedQuoteIds[removedCount] = quote.id;
-				removedCount++;
-			}
-		}
-
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);
-
-		for (uint256 i = 0; i < removedCount; i++) {
-			Quote storage quote = quoteLayout.quotes[removedQuoteIds[i]];
-			if (quote.quoteStatus == QuoteStatus.LIQUIDATED_PENDING) {
-				LibHook.callCancelQuoteHooks(quote.id, quote.partyA, quote.partyB, quote.affiliate);
-			}
-		}
 	}
 
 	/// @notice Closes all specified positions at liquidation prices and distributes liquidation fees
