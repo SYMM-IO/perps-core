@@ -4,7 +4,7 @@ import { ZeroAddress, toUtf8Bytes } from "ethers"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture } from "./helpers/network-helpers.js"
-import { QuoteStatus } from "./models/Enums.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
@@ -518,6 +518,52 @@ export function shouldBehaveLikeMigration(): void {
 
 				expect(perPartyAAfter.totalLockedPartyB).to.equal(0n)
 				expect(crossBalanceAfter.totalLockedPartyB).to.equal(0n)
+			})
+
+			it("Should not mark liquidation as disputed when cross partyB has positive settlement", async function () {
+				const partyA = await user.getAddress()
+				const crossPartyB = await hedger.getAddress()
+				const losingPartyB = await hedger2.getAddress()
+
+				await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(true)
+				await context.controlFacet.connect(context.signers.admin).setCrossPartyB(crossPartyB, true)
+				await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(decimal(600n), ZeroAddress)
+
+				expect(await context.viewFacet.allocatedBalanceOfPartyB(crossPartyB, partyA)).to.equal(0n)
+
+				await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([crossPartyB]).build())
+				const crossQuoteId = await context.viewFacetQuote.getNextQuoteId()
+				await hedger.lockQuote(crossQuoteId)
+				const crossQuote = await context.viewFacetQuote.getQuote(crossQuoteId)
+				let upnlSig = await getDummyPairUpnlAndPricesSig([crossQuote.requestedOpenPrice], [1n])
+				await context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.openPositions([crossQuoteId], [decimal(100n)], [crossQuote.requestedOpenPrice], upnlSig)
+
+				await user.sendQuote(
+					limitQuoteRequestBuilder().partyBWhiteList([losingPartyB]).positionType(PositionType.SHORT).quantity(decimal(800n)).build(),
+				)
+				const losingQuoteId = await context.viewFacetQuote.getNextQuoteId()
+				await hedger2.lockQuote(losingQuoteId)
+				const losingQuote = await context.viewFacetQuote.getQuote(losingQuoteId)
+				upnlSig = await getDummyPairUpnlAndPricesSig([losingQuote.requestedOpenPrice], [1n])
+				await context.partyBBatchActionsFacet
+					.connect(hedger2.signer)
+					.openPositions([losingQuoteId], [decimal(800n)], [losingQuote.requestedOpenPrice], upnlSig)
+
+				await user.liquidateAndSetSymbolPrices([1n], [decimal(2n)], [crossQuoteId, losingQuoteId])
+				await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyA(partyA, [crossQuoteId, losingQuoteId])
+
+				const [crossSettlementState] = await context.viewFacet.getSettlementStates(partyA, [crossPartyB])
+				expect(crossSettlementState.expectedAmount).to.be.greaterThan(0n)
+
+				const liquidationState = await user.getLiquidatedStateOfPartyA()
+				expect(liquidationState.partyAAccumulatedUpnl).to.equal(liquidationState.upnl)
+				expect(liquidationState.disputed).to.equal(false)
+
+				await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(partyA, [crossPartyB, losingPartyB]))
+					.to.not.be.reverted
+				expect(await context.viewFacet.isPartyALiquidated(partyA)).to.equal(false)
 			})
 		})
 
