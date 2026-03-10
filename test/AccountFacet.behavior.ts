@@ -1234,11 +1234,21 @@ export function shouldBehaveLikeAccountFacet(): void {
 	})
 
 	describe("ZeroUpnlDeallocate", async function () {
+		const BALANCE_SETTLER_ROLE = ethers.keccak256(toUtf8Bytes("BALANCE_SETTLER_ROLE"))
+
 		beforeEach(async function () {
 			context = await loadFixture(initializeFixture)
 			user = new User(context, context.signers.user)
 			await user.setup()
 			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
+		})
+
+		it("Should fail when caller does not have BALANCE_SETTLER_ROLE", async function () {
+			await context.controlFacet.connect(context.signers.admin).revokeRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
+			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEPOSIT_AMOUNT)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
 		})
 
 		it("Should fail on insufficient allocated Balance", async function () {
@@ -1248,11 +1258,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 		})
 
-		it("Should fail when accounting is paused", async function () {
+		it("Should succeed even when accounting is paused", async function () {
 			await context.pauseControlFacet.pauseAccounting()
-			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEPOSIT_AMOUNT)).to.be.revertedWith(
-				"Pausable: Accounting paused",
-			)
+			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEALLOCATE_AMOUNT)).to.not.be.reverted
 		})
 
 		it("Should fail when partyA has pending quote", async function () {
@@ -1363,12 +1371,10 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.withArgs(userAddress, deallocateAmount, expectedAllocated)
 		})
 
-		it("Should fail when global pause is active", async function () {
+		it("Should succeed even when global pause is active", async function () {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
-			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEALLOCATE_AMOUNT)).to.be.revertedWith(
-				"Pausable: Global paused",
-			)
+			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEALLOCATE_AMOUNT)).to.not.be.reverted
 		})
 
 		it("Should allow multiple deallocations in sequence", async function () {
@@ -1457,7 +1463,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 	})
 
 	describe("InternalTransferToBalance", async function () {
-		const INTERNAL_TRANSFER_TO_BALANCE_ROLE = ethers.keccak256(toUtf8Bytes("INTERNAL_TRANSFER_TO_BALANCE_ROLE"))
+		const BALANCE_SETTLER_ROLE = ethers.keccak256(toUtf8Bytes("BALANCE_SETTLER_ROLE"))
 
 		beforeEach(async () => {
 			context = await loadFixture(initializeFixture)
@@ -1471,7 +1477,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await user2.setBalances(BALANCES.INITIAL_COLLATERAL)
 		})
 
-		it("Should fail when caller does not have INTERNAL_TRANSFER_TO_BALANCE_ROLE", async () => {
+		it("Should fail when caller does not have BALANCE_SETTLER_ROLE", async () => {
 			await expect(
 				context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
 			).to.be.revertedWith("Accessibility: Must have role")
@@ -1479,7 +1485,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should transfer to balance (not allocatedBalance) when caller has role", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			const user2Address = await user2.getAddress()
 			const userAddress = await user.getAddress()
@@ -1499,7 +1505,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should set withdrawCooldown on recipient", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			const user2Address = await user2.getAddress()
 
@@ -1512,7 +1518,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should emit InternalTransferToBalance event", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			const user2Address = await user2.getAddress()
 			const userAddress = await user.getAddress()
@@ -1525,7 +1531,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail when sender has insufficient balance", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			const user2Address = await user2.getAddress()
 
@@ -1534,15 +1540,14 @@ export function shouldBehaveLikeAccountFacet(): void {
 			).to.be.revertedWith("AccountFacet: Insufficient balance")
 		})
 
-		it("Should fail when internal transfers are paused", async () => {
+		it("Should succeed even when internal transfers are paused", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
 
-			await expect(
-				context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
-			).to.be.revertedWith("Pausable: Internal transfer paused")
+			await expect(context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT))
+				.to.not.be.reverted
 		})
 	})
 

@@ -150,7 +150,7 @@ The task automatically configures:
 
 ### Contract Integrations
 
-- AccountLayerDiamond receives SIGNER_ADMIN_ROLE, AFFILIATE_MANAGER_ROLE, and INTERNAL_TRANSFER_TO_BALANCE_ROLE on Diamond
+- AccountLayerDiamond receives SIGNER_ADMIN_ROLE, AFFILIATE_MANAGER_ROLE, and BALANCE_SETTLER_ROLE on Diamond
 - InstantLayer receives INSTANT_LAYER_ROLE on Diamond
 - InstantLayer receives INSTANT_LAYER_ROLE on AccountLayerDiamond
 - Symmio Core (Diamond) is whitelisted on AccountLayerDiamond

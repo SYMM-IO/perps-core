@@ -707,7 +707,7 @@ async function setupSystem(
 	await checkpointedStep(checkpoint, "setup.alRolesOnDiamond", "Granting roles to AccountLayerDiamond on Diamond", async () => {
 		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("SIGNER_ADMIN_ROLE"))
 		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("AFFILIATE_MANAGER_ROLE"))
-		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("INTERNAL_TRANSFER_TO_BALANCE_ROLE"))
+		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("BALANCE_SETTLER_ROLE"))
 	})
 
 	// Register AccountLayer as system hook on Diamond

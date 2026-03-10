@@ -317,7 +317,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			bytes calldata cd = callDatas[i];
 			bytes4 selector = bytes4(cd[:4]);
-			if (selector == ISymmio.internalTransferToBalance.selector) revert Unauthorized();
+			if (selector == ISymmio.internalTransferToBalance.selector || selector == ISymmio.zeroUpnlDeallocate.selector) revert Unauthorized();
 
 			bool isVirtualAccount = ahLayout.virtualAccounts[account].isExists;
 			bool isSubAccount = ahLayout.subAccounts[account].isExists;

@@ -292,6 +292,6 @@ address(uint160(uint256(keccak256(abi.encodePacked(
 |---|---|
 | `SIGNER_ADMIN_ROLE` | Set signer context when executing operations on behalf of SubAccounts/VAs |
 | `AFFILIATE_MANAGER_ROLE` | Register affiliates and set fee collectors on the core |
-| `INTERNAL_TRANSFER_TO_BALANCE_ROLE` | Transfer funds between VAs and parent SubAccounts during cleanup |
+| `BALANCE_SETTLER_ROLE` | Transfer funds between VAs and parent SubAccounts during cleanup |
 
 The InstantLayer requires `INSTANT_LAYER_ROLE` on the AccountLayer to bypass ownership checks during batched template execution.

@@ -81,7 +81,7 @@ if (OLD_ACCOUNT_LAYER) {
 	console.log(`\n▶ Revoking roles from old AccountLayer (${OLD_ACCOUNT_LAYER}) on Symmio Core...`)
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", SYMMIO_ADDRESS, deployer)
 
-	const rolesToRevoke = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "INTERNAL_TRANSFER_TO_BALANCE_ROLE"]
+	const rolesToRevoke = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "BALANCE_SETTLER_ROLE"]
 	for (const role of rolesToRevoke) {
 		const tx = await controlFacet.revokeRole(OLD_ACCOUNT_LAYER, roleHash(role))
 		await tx.wait()
@@ -93,7 +93,7 @@ if (OLD_ACCOUNT_LAYER) {
 console.log(`\n▶ Granting roles to AccountLayer (${accountLayerAddress}) on Symmio Core...`)
 const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", SYMMIO_ADDRESS, deployer)
 
-const rolesToGrant = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "INTERNAL_TRANSFER_TO_BALANCE_ROLE"]
+const rolesToGrant = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "BALANCE_SETTLER_ROLE"]
 for (const role of rolesToGrant) {
 	const tx = await controlFacet.grantRole(accountLayerAddress, roleHash(role))
 	await tx.wait()

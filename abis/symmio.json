@@ -17362,6 +17362,19 @@
     },
     {
         "inputs": [],
+        "name": "BALANCE_SETTLER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "BRIDGE_MANAGER_ROLE",
         "outputs": [
             {
@@ -17480,19 +17493,6 @@
     {
         "inputs": [],
         "name": "INTEGRATION_ADMIN_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "INTERNAL_TRANSFER_TO_BALANCE_ROLE",
         "outputs": [
             {
                 "internalType": "bytes32",
