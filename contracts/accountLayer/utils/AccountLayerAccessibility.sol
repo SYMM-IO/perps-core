@@ -44,11 +44,10 @@ abstract contract AccountLayerAccessibility is IAccountLayerErrors {
 		_;
 	}
 
-	/// @notice Restricts access to the account owner or callers with INSTANT_LAYER_ROLE
+	/// @notice Restricts access to the account owner (verified via getSigner)
 	modifier onlyAccountOwner(address account) {
 		address signer = LibAccountLayerUtils.getSigner();
-		if (!_isOwnerOf(account, signer) && !LibAccountLayerAccessibility.hasRole(signer, LibAccountLayerAccessibility.INSTANT_LAYER_ROLE))
-			revert NotOwner();
+		if (!_isOwnerOf(account, signer)) revert NotOwner();
 		_;
 	}
 

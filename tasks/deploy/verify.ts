@@ -776,7 +776,7 @@ async function verifyAccountLayerFull(
 	}
 
 	if (addresses.instantLayer) {
-		await checkRole(results, cat, alView, addresses.instantLayer, "INSTANT_LAYER_ROLE", ethers, { contractLabel: "AccountLayer ControlFacet" })
+		await checkRole(results, cat, alView, addresses.instantLayer, "SIGNER_SETTER_ROLE", ethers, { contractLabel: "AccountLayer ControlFacet" })
 	}
 
 	// Symmio Core whitelisted
