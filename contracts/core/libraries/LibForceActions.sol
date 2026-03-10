@@ -15,6 +15,7 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibSolvency } from "./LibSolvency.sol";
 import { LibMuonForceActions } from "./muon/LibMuonForceActions.sol";
 import { LibLiquidation } from "./LibLiquidation.sol";
+import { LibHook } from "./LibHook.sol";
 
 library LibForceActions {
 	/// @notice Verifies the high/low price signature and calculates the force-close price with penalty.
@@ -58,9 +59,21 @@ library LibForceActions {
 		uint256 sigCurrentPrice
 	) internal returns (int256 upnlPartyB) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		Quote storage quote = quoteLayout.quotes[quoteId];
 		address partyA = quote.partyA;
 		address partyB = quote.partyB;
+
+		uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
+		uint256[] memory removedQuoteIds = new uint256[](pendingQuotes.length);
+		uint256 removedCount = 0;
+		for (uint256 i = 0; i < pendingQuotes.length; i++) {
+			Quote storage pendingQuote = quoteLayout.quotes[pendingQuotes[i]];
+			if (pendingQuote.partyB == partyB) {
+				removedQuoteIds[removedCount] = pendingQuote.id;
+				removedCount++;
+			}
+		}
 
 		accountLayout.reserveVault[quote.partyB] = 0;
 		accountLayout.partyBAllocatedBalances[partyB][partyA] += reservedBalance;
@@ -73,6 +86,12 @@ library LibForceActions {
 		}
 		upnlPartyB = sigUpnlPartyB + diff;
 		LibLiquidation.liquidatePartyB(partyB, partyA, upnlPartyB, block.timestamp);
+		for (uint256 i = 0; i < removedCount; i++) {
+			Quote storage removedQuote = quoteLayout.quotes[removedQuoteIds[i]];
+			if (removedQuote.quoteStatus == QuoteStatus.LIQUIDATED_PENDING) {
+				LibHook.callCancelQuoteHooks(removedQuote.id, removedQuote.partyA, removedQuote.partyB, removedQuote.affiliate);
+			}
+		}
 	}
 
 	/// @notice Validates all preconditions for a force close including signature, cooldowns, and price bounds.

@@ -36,6 +36,12 @@ interface ISymmioHookFacet is ISymmioHookFacetEvents, IAccountLayerErrors {
 	/// @param partyB The hedger address
 	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external;
 
+	/// @notice Called when a close request expires or is force cancelled
+	/// @param quoteId The quote identifier
+	/// @param partyA The trader address
+	/// @param partyB The hedger address
+	function onCloseExpired(uint256 quoteId, address partyA, address partyB) external;
+
 	/// @notice Called when a fee is charged (no-op)
 	/// @param quoteId The quote identifier
 	/// @param amount The fee amount

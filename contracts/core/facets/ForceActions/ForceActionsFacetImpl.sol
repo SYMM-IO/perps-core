@@ -14,9 +14,9 @@ import { AccountStorage, ForceCloseDetail } from "../../storages/AccountStorage.
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { LibHook } from "../../libraries/LibHook.sol";
 import { HighLowPriceSig, SettlementSig } from "../../storages/MuonStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
-import { LibHook } from "../../libraries/LibHook.sol";
 
 library ForceActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -44,7 +44,7 @@ library ForceActionsFacetImpl {
 
 		LibQuote.removeFromPendingQuotes(quote);
 		LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
-		LibHook.callCancelQuoteHooks(quoteId, quote.partyA, quote.partyB, quote.affiliate);
+		LibHook.callCancelQuoteHooks(quote.id, quote.partyA, quote.partyB, quote.affiliate);
 	}
 
 	/// @notice Force-cancels a pending close request after the force cancel close cooldown has elapsed.
@@ -61,6 +61,7 @@ library ForceActionsFacetImpl {
 		quote.quoteStatus = QuoteStatus.OPENED;
 		quote.requestedClosePrice = 0;
 		quote.quantityToClose = 0;
+		LibHook.callCloseExpiredHooks(quote.id, quote.partyA, quote.partyB, quote.affiliate);
 	}
 
 	/// @notice Executes a force close for a non-cross partyB, using the reserve vault fallback and triggering liquidation if partyB is insolvent.

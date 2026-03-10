@@ -25,15 +25,17 @@ contract MockHook is ISymmioHook {
 	// Last captured inputs
 	CallData private _lastOpenCall;
 	CallData private _lastCloseCall;
+	CallData private _lastCancelCall;
+	CallData private _lastCloseExpiredCall;
 	FeeCallData private _lastOpenFeeCall;
 	FeeCallData private _lastCloseFeeCall;
-
 	// Call counters
 	uint256 public openCallCount;
 	uint256 public closeCallCount;
+	uint256 public cancelCallCount;
+	uint256 public closeExpiredCallCount;
 	uint256 public openFeeCallCount;
 	uint256 public closeFeeCallCount;
-
 	// Configurable behavior
 	bool public shouldRevertOnOpen;
 	bool public shouldRevertOnClose;
@@ -46,8 +48,9 @@ contract MockHook is ISymmioHook {
 
 	event OnOpenPosition(uint256 quoteId, uint256 amount, uint256 price, address partyA, address partyB);
 	event OnClosePosition(uint256 quoteId, uint256 amount, uint256 price, address partyA, address partyB);
+	event OnCancelQuote(uint256 quoteId, address partyA, address partyB);
+	event OnCloseExpired(uint256 quoteId, address partyA, address partyB);
 	event OnFeeCharged(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, TradingFeeType feeType);
-
 	function setRevertOnOpen(bool shouldRevert, string memory message) external {
 		shouldRevertOnOpen = shouldRevert;
 		revertMessageOnOpen = message;
@@ -88,8 +91,16 @@ contract MockHook is ISymmioHook {
 		emit OnClosePosition(quoteId, filledAmount, closedPrice, partyA, partyB);
 	}
 
-	function onCancelQuote(uint256 /*quoteId*/, address /*partyA*/, address /*partyB*/) external pure override {
-		return;
+	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external override {
+		cancelCallCount += 1;
+		_lastCancelCall = CallData({ quoteId: quoteId, amount: 0, price: 0, partyA: partyA, partyB: partyB });
+		emit OnCancelQuote(quoteId, partyA, partyB);
+	}
+
+	function onCloseExpired(uint256 quoteId, address partyA, address partyB) external override {
+		closeExpiredCallCount += 1;
+		_lastCloseExpiredCall = CallData({ quoteId: quoteId, amount: 0, price: 0, partyA: partyA, partyB: partyB });
+		emit OnCloseExpired(quoteId, partyA, partyB);
 	}
 
 	function onFeeCharged(
@@ -156,6 +167,16 @@ contract MockHook is ISymmioHook {
 	{
 		CallData memory c = _lastCloseCall;
 		return (c.quoteId, c.amount, c.price, c.partyA, c.partyB, closeCallCount);
+	}
+
+	function getLastCancelCall() external view returns (uint256 quoteId, address partyA, address partyB, uint256 callCount) {
+		CallData memory c = _lastCancelCall;
+		return (c.quoteId, c.partyA, c.partyB, cancelCallCount);
+	}
+
+	function getLastCloseExpiredCall() external view returns (uint256 quoteId, address partyA, address partyB, uint256 callCount) {
+		CallData memory c = _lastCloseExpiredCall;
+		return (c.quoteId, c.partyA, c.partyB, closeExpiredCallCount);
 	}
 
 	function getLastOpenFeeCall()

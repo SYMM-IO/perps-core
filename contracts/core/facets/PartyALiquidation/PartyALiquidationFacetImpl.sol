@@ -119,6 +119,7 @@ library PartyALiquidationFacetImpl {
 			quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 			quote.statusModifyTimestamp = block.timestamp;
 			liquidatedAmounts[index] = quote.quantity;
+			LibHook.callCancelQuoteHooks(quote.id, quote.partyA, quote.partyB, quote.affiliate);
 		}
 		accountLayout.pendingLockedBalances[partyA].makeZero();
 		delete quoteLayout.partyAPendingQuotes[partyA];
