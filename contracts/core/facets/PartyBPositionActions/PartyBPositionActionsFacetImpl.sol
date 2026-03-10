@@ -45,8 +45,6 @@ library PartyBPositionActionsFacetImpl {
 			"PartyBFacet: Symbol not allowed due to connection restrictions"
 		);
 
-		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
-
 		currentId = LibPartyBPositionsActions.openPosition(quoteId, filledAmount, openedPrice);
 
 		if (quote.quoteStatus == QuoteStatus.OPENED) {
@@ -74,6 +72,8 @@ library PartyBPositionActionsFacetImpl {
 				quote.partyA
 			);
 		}
+
+		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 	}
 
 	/// @notice Verifies solvency and fills a close request for a single quote

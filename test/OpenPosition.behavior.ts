@@ -291,6 +291,11 @@ export function shouldBehaveLikeOpenPosition(): void {
 			// Send a new quote targeting the bound partyB and open it with bad sig - should succeed because bound
 			await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([context.signers.hedger.address]).build())
 			await hedger.lockQuote(5)
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const beforeNonceBCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
 			await expect(
 				hedger.openPosition(
 					5,
@@ -306,6 +311,13 @@ export function shouldBehaveLikeOpenPosition(): void {
 			const openedQuote = await context.viewFacetQuote.getQuote(5)
 			expect(openedQuote.quoteStatus).to.equal(QuoteStatus.OPENED)
 			expect(openedQuote.openedPrice).to.equal(decimal(1n))
+
+			const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const afterNonceB = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const afterNonceBCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+			expect(afterNonceA).to.equal(beforeNonceA + 1n)
+			expect(afterNonceB).to.equal(beforeNonceB + 1n)
+			expect(afterNonceBCross).to.equal(beforeNonceBCross + 1n)
 		})
 
 		describe("Connections: Is Symbol Allowed For PartyA)", function () {
