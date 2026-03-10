@@ -33,14 +33,15 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	// ==================== Affiliate Registration ====================
 
 	/// @notice Submits a registration request for a new affiliate (frontend/broker)
-	/// @dev Creates a PENDING affiliate. The affiliate address is deterministic based on registrant and name.
+	/// @dev Creates a PENDING affiliate. The affiliate address is deterministic based on registrant, name, and a per-registrant nonce.
 	/// @param reg The registration data including name, admin, fee stakeholders, and Symmio cores
 	/// @return affiliateAddress The deterministic affiliate address
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		uint256 registrationNonce = ++afLayout.registrationNonces[msg.sender];
 
-		affiliateAddress = _generateAccountManagerAddress(msg.sender, reg.name, ahLayout);
+		affiliateAddress = _generateAccountManagerAddress(msg.sender, reg.name, registrationNonce, ahLayout);
 
 		if (afLayout.affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
 		if (reg.admin == address(0)) revert ZeroAddress();
@@ -58,6 +59,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		affiliate.feeDetails.stakeholders = reg.stakeholders;
 		affiliate.legacyMultiAccounts = reg.legacyMultiAccounts;
 		affiliate.registrant = msg.sender;
+		affiliate.registrationNonce = registrationNonce;
 
 		for (uint256 i = 0; i < reg.symmioCores.length; i++) {
 			if (!afLayout.whitelistedSymmioCores[reg.symmioCores[i]]) revert NoWhitelistedSymmioCore();
@@ -94,7 +96,11 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
 		// Deploy AccountManager via AffiliateFacet's internal function
-		address accountManager = _deployAccountManager(afLayout.affiliates[affiliate].registrant, afLayout.affiliates[affiliate].name);
+		address accountManager = _deployAccountManager(
+			afLayout.affiliates[affiliate].registrant,
+			afLayout.affiliates[affiliate].name,
+			afLayout.affiliates[affiliate].registrationNonce
+		);
 		if (affiliate != accountManager) revert("AffiliateFacet: Deployment mismatch");
 
 		// Grant SIGNER_SETTER_ROLE to the account manager
@@ -465,17 +471,18 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	function _generateAccountManagerAddress(
 		address registrant,
 		string memory name,
+		uint256 nonce,
 		AccountStorage.Layout storage ahLayout
 	) private view returns (address) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, registrant, name));
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, registrant, name, nonce));
 		bytes memory bytecode = abi.encodePacked(ahLayout.accountManagerImplementation, abi.encode(address(this)));
 		bytes32 initCodeHash = keccak256(bytecode);
 		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
 	}
 
-	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
+	function _deployAccountManager(address user, string memory name, uint256 nonce) private returns (address accountManager) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name, nonce));
 		bytes memory bytecode = abi.encodePacked(ahLayout.accountManagerImplementation, abi.encode(address(this)));
 
 		assembly {

@@ -85,7 +85,7 @@ interface IViewFacet {
 
 	// ==================== AccountManager ====================
 
-	/// @notice Computes the deterministic address for an AccountManager
+	/// @notice Computes the next deterministic address for an AccountManager
 	/// @param registrant The registrant address
 	/// @param name The affiliate name
 	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address);

@@ -143,13 +143,13 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 				).to.be.revertedWithCustomError(context.alAffiliateFacet, "NoWhitelistedSymmioCore")
 			})
 
-			it("enforces unique registrations per affiliate id for the same sender", async function () {
-				// register once
-				const { registration } = await requestAffiliate()
-				// repeated call by same user reverts
-				await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.be.revertedWithCustomError(
+			it("assigns a new affiliate address for repeated requests by the same sender", async function () {
+				const { affiliate: firstAffiliate, registration } = await requestAffiliate()
+				const secondAffiliate = await context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate.staticCall(registration)
+				expect(secondAffiliate).to.not.equal(firstAffiliate)
+				await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(
 					context.alAffiliateFacet,
-					"AlreadyRegistered",
+					"AffiliateRegistered",
 				)
 			})
 
@@ -267,7 +267,8 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 				let affiliate: string
 
 				beforeEach(async function () {
-					affiliate = (await requestAffiliate()).affiliate
+					const pending = await requestAffiliate()
+					affiliate = pending.affiliate
 				})
 
 				it("requires approver role and pending state", async function () {
@@ -282,6 +283,25 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWithCustomError(
 						context.alAffiliateFacet,
 						"NotPending",
+					)
+				})
+
+				it("uses a new affiliate address after cancel + re-request with same name", async function () {
+					await context.alAffiliateFacet.connect(context.signers.user).cancelRegistration(affiliate)
+
+					const updated = buildRegistration({ brandColor: "#ffffff" })
+					const newAffiliate = await context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate.staticCall(updated)
+					expect(newAffiliate).to.not.equal(affiliate)
+					await context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(updated)
+
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWithCustomError(
+						context.alAffiliateFacet,
+						"NotPending",
+					)
+
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(newAffiliate)).to.emit(
+						context.alAffiliateFacet,
+						"AffiliateApproved",
 					)
 				})
 
