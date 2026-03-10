@@ -16,6 +16,7 @@ library LibMuonForceActions {
 
 		// == SignatureCheck( ==
 		require(block.timestamp <= sig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		LibMuon.verifyNotStaleAfterEpochChange(sig.timestamp, partyA);
 		// == ) ==
 		bytes32 hash = keccak256(
 			abi.encodePacked(

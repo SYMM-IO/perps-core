@@ -7,10 +7,11 @@ import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
-import { getDummyPairUpnlSig } from "./utils/SignatureUtils.js"
+import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
+import { getDummyHighLowPriceSig, getDummyPairUpnlSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeFundingRate(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
@@ -952,6 +953,219 @@ export function shouldBehaveLikeFundingRate(): void {
 			// Verify the accumulated charge updated the quote's lastFundingPaymentTimestamp
 			const quoteAfterAccum = await context.viewFacetQuote.getQuote(4)
 			expect(quoteAfterAccum.lastFundingPaymentTimestamp).to.be.gte(quoteBeforeAccum.lastFundingPaymentTimestamp)
+		})
+	})
+
+	describe("Stale UPNL signature guard after epoch duration change", () => {
+		// Tests for the vulnerability where a partyB changes epoch duration mid-window,
+		// making existing UPNL signatures stale (funding is included in UPNL).
+		// See: issue #139
+
+		beforeEach(async () => {
+			// Set up accumulated funding system with an initial epoch duration
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+		})
+
+		it("should reject stale HighLowPriceSig in forceClosePosition after epoch duration change", async () => {
+			// Attack path from the report:
+			// 1. partyA calls forceClosePosition with a PairUpnlAndPriceSig timestamped before the change
+			// 2. The signature passes upnlValidTime but UPNL doesn't account for new funding accrual
+			// 3. partyA may appear solvent when actually insolvent
+
+			// Set up a close request so forceClose can be attempted
+			await user.requestToClosePosition(
+				1,
+				limitCloseRequestBuilder()
+					.quantityToClose(await getQuoteQuantity(context, 1))
+					.closePrice(decimal(1n))
+					.deadline((await getBlockTimestamp()) + 1000n)
+					.build(),
+			)
+
+			// Get force close cooldown times
+			const cooldowns = await context.viewFacet.forceCloseCooldowns()
+			const firstCooldown = cooldowns[0]
+			const secondCooldown = cooldowns[1]
+			const period = 10n
+
+			// Advance past cooldowns
+			await time.increase(firstCooldown + period + secondCooldown + 1n)
+			const now = await getBlockTimestamp()
+			const startTime = now - secondCooldown - period
+			const endTime = startTime + period
+
+			// Get HighLowPriceSig BEFORE epoch change
+			const staleSig = await getDummyHighLowPriceSig(startTime, endTime, decimal(1n), decimal(2n), decimal(1n), decimal(1n))
+
+			// Change epoch duration — invalidates all in-flight signatures
+			await time.increase(1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+			// Attempt force close with stale sig — must fail
+			await expect(user.forceClosePosition(1, staleSig)).to.be.revertedWith("LibMuon: Stale signature after epoch duration change")
+		})
+
+		it("should reject stale SingleUpnlSig in deallocate after epoch duration change", async () => {
+			// partyA-only signature: partyA's UPNL is aggregated across ALL partyBs.
+			// If any connected partyB changes epoch duration, partyA's UPNL is stale.
+			// With stale UPNL showing better solvency, partyA could over-deallocate.
+
+			// Record timestamp BEFORE epoch change
+			const sigTimestamp = await getBlockTimestamp()
+
+			// Change epoch duration — advances block.timestamp past sigTimestamp
+			await time.increase(2)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+			// Build a stale SingleUpnlSig with the pre-change timestamp
+			const staleSig: any = {
+				reqId: "0x",
+				timestamp: sigTimestamp,
+				upnl: 0n,
+				gatewaySignature: ethers.ZeroAddress,
+				sigs: { signature: "0", owner: ethers.ZeroAddress, nonce: ethers.ZeroAddress },
+			}
+
+			// Attempt deallocate with stale sig — must fail
+			await expect(context.accountFacet.connect(context.signers.user).deallocate(decimal(1n), staleSig)).to.be.revertedWith(
+				"LibMuon: Stale signature after epoch duration change",
+			)
+		})
+
+		it("should reject stale sig when a DIFFERENT connected partyB changes epoch duration", async () => {
+			// Key scenario: partyA has positions with hedger1 and hedger2.
+			// hedger2 changes epoch duration → partyA's total UPNL changes.
+			// A signature obtained before the change is stale for ALL operations,
+			// including those involving hedger1.
+
+			// Set up hedger2 with positions against the same partyA
+			hedger2 = new Hedger(context, context.signers.hedger2)
+			await hedger2.setBalances(decimal(5000n), decimal(5000n))
+
+			// Add a second symbol for hedger2
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("ETHUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).build())
+			await hedger2.lockQuote(quoteId)
+			await hedger2.openPosition(quoteId)
+
+			// hedger2 sets up accumulated funding on symbol 2
+			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([2], [EightHourInSec])
+			await context.fundingRateFacet
+				.connect(context.signers.hedger2)
+				.updateAccumulatedFundingFee([2], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+
+			// Get signature BEFORE hedger2's epoch change
+			const staleSig = await getDummyPairUpnlSig()
+
+			// hedger2 changes epoch duration — NOT hedger1
+			await time.increase(1)
+			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([2], [NineHourInSec])
+
+			// Attempt to use stale sig in an operation with hedger1 — must still fail
+			// because partyA's UPNL is aggregated across ALL connected partyBs
+			await expect(
+				context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], staleSig),
+			).to.be.revertedWith("LibMuon: Stale signature after epoch duration change")
+		})
+
+		it("should reject stale deallocate sig when a different partyB changes epoch duration", async () => {
+			// Same cross-partyB scenario but with a partyA-only signature (deallocate)
+			hedger2 = new Hedger(context, context.signers.hedger2)
+			await hedger2.setBalances(decimal(5000n), decimal(5000n))
+
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("ETHUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).build())
+			await hedger2.lockQuote(quoteId)
+			await hedger2.openPosition(quoteId)
+
+			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([2], [EightHourInSec])
+
+			// Record timestamp BEFORE hedger2's epoch change
+			const sigTimestamp = await getBlockTimestamp()
+
+			// hedger2 changes epoch duration
+			await time.increase(2)
+			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([2], [NineHourInSec])
+
+			// Build stale SingleUpnlSig with pre-change timestamp
+			const staleSig: any = {
+				reqId: "0x",
+				timestamp: sigTimestamp,
+				upnl: 0n,
+				gatewaySignature: ethers.ZeroAddress,
+				sigs: { signature: "0", owner: ethers.ZeroAddress, nonce: ethers.ZeroAddress },
+			}
+
+			// partyA tries to deallocate with stale sig — must fail
+			await expect(context.accountFacet.connect(context.signers.user).deallocate(decimal(1n), staleSig)).to.be.revertedWith(
+				"LibMuon: Stale signature after epoch duration change",
+			)
+		})
+
+		it("should allow operations after obtaining a fresh signature post epoch change", async () => {
+			// Verify that the guard doesn't permanently block operations —
+			// fresh signatures obtained after the epoch change should work fine
+
+			const staleSig = await getDummyPairUpnlSig()
+
+			await time.increase(1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+			// Stale sig fails
+			await expect(
+				context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], staleSig),
+			).to.be.revertedWith("LibMuon: Stale signature after epoch duration change")
+
+			// Fresh sig succeeds
+			const freshSig = await getDummyPairUpnlSig()
+			await expect(
+				context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], freshSig),
+			).to.not.reverted
+		})
+
+		it("should not invalidate signatures when epoch duration value is unchanged", async () => {
+			const sig = await getDummyPairUpnlSig()
+
+			// Set same epoch duration again — should NOT invalidate signatures
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+
+			await expect(
+				context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], sig),
+			).to.not.reverted
+		})
+
+		it("should not affect unconnected partyAs when partyB changes epoch duration", async () => {
+			// user2 has no positions with hedger — epoch change should not affect user2
+			const user2 = new User(context, context.signers.user2)
+			await user2.setup()
+			await user2.setBalances(decimal(5000n), decimal(5000n), decimal(5000n))
+
+			// Change epoch duration for hedger
+			await time.increase(1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+			// user2 should be able to deallocate since they have no connection to hedger
+			const sig = await getDummySingleUpnlSig()
+			await expect(context.accountFacet.connect(context.signers.user2).deallocate(decimal(1n), sig)).to.not.reverted
 		})
 	})
 }
