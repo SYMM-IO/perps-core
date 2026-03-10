@@ -276,7 +276,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 				expect(fundingFee.epochDuration).to.equal(NineHourInSec)
 				expect(fundingFee.lastUpdatedEpoch).to.approximately(blockTimestamp / BigInt(NineHourInSec), 1)
-				expect(fundingFee.startEpoch).to.equal(0)
+				expect(fundingFee.startEpoch).to.approximately(blockTimestamp / BigInt(NineHourInSec), 1)
 			})
 		})
 
@@ -572,7 +572,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [300])
 				const fundingRate7 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 				expect(fundingRate7.currentLongRate).to.equal(decimal(15n, 15))
-				expect(fundingRate7.accumulatedLongRate).to.equal(decimal(225n, 14))
+				expect(fundingRate7.accumulatedLongRate).to.equal(decimal(15n, 15))
 				expect(fundingRate7.startEpoch).to.equal(BigInt(fundingRate7.startEpochTimeStamp) / 300n)
 
 				//* Move to t+1700: Charge accumulated funding fee
@@ -592,7 +592,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingRate8 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 
 				expect(fundingRate8.currentLongRate).to.equal(decimal(15n, 15))
-				expect(fundingRate8.accumulatedLongRate).to.equal(decimal(21n, 15))
+				expect(fundingRate8.accumulatedLongRate).to.equal(decimal(15n, 15))
 
 				expect(quote3.accumulatedPaidFunding).to.equal(decimal(105n, 15)) //! 0.12
 				expect(quote3.lastFundingPaymentTimestamp).to.equal(await time.latest())
@@ -621,7 +621,7 @@ export function shouldBehaveLikeFundingRate(): void {
 
 				const fundingRate9 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 				expect(fundingRate9.currentLongRate).to.equal(decimal(5n, 16))
-				expect(fundingRate9.accumulatedLongRate).to.equal(decimal(21n, 15))
+				expect(fundingRate9.accumulatedLongRate).to.equal(decimal(15n, 15))
 				expect(fundingRate9.lastUpdatedEpoch).to.equal(BigInt(await time.latest()) / 300n)
 
 				//* Move to t+2100: Final charge of accumulated funding fee
@@ -641,7 +641,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingRate10 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 
 				expect(fundingRate10.currentLongRate).to.equal(decimal(5n, 16))
-				expect(fundingRate10.accumulatedLongRate).to.approximately(decimal(258n, 14), decimal(35n, 13))
+				expect(fundingRate10.accumulatedLongRate).to.equal(decimal(325n, 14))
 
 				expect(quote4.accumulatedPaidFunding).to.approximately(decimal(155n, 15), decimal(1n, 13))
 				expect(quote4.lastFundingPaymentTimestamp).to.equal(await time.latest())
@@ -770,6 +770,109 @@ export function shouldBehaveLikeFundingRate(): void {
 		// 		expect(afterBalance3 - beforeBalance3).to.equal(-1n * decimal(5n, 16))
 		// 	})
 		// })
+	})
+
+	describe("setEpochDuration snapshot fix", () => {
+		it("should preserve fee exactly when changing epoch duration via snapshot", async () => {
+			const startTime = 2000000000
+			const oldD = 400
+			const newD = 700
+
+			// Step 1: Set initial epoch duration
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [oldD])
+
+			// Step 2: Set funding fee => sets startEpochTimeStamp
+			await time.setNextBlockTimestamp(startTime + 350)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(1n, 16)], [0], [decimal(1n)])
+
+			// Step 3: Advance several epochs so epochsBefore > 0
+			await time.setNextBlockTimestamp(startTime + 1000)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+
+			const fundingBefore = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+			const oldEpochsBefore = fundingBefore.lastUpdatedEpoch - fundingBefore.startEpoch
+
+			// Record the total fee BEFORE the duration change
+			const totalFeeBefore = fundingBefore.accumulatedLongRate * oldEpochsBefore
+
+			// Step 4: Change epoch duration
+			await time.setNextBlockTimestamp(startTime + 1001)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [newD])
+
+			const fundingAfter = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+
+			// Snapshot approach: old fee is frozen in snapshotLongFee, epoch tracking resets
+			expect(fundingAfter.snapshotLongFee).to.equal(totalFeeBefore, "Snapshot should capture exact old fee")
+			expect(fundingAfter.lastUpdatedEpoch - fundingAfter.startEpoch).to.equal(0n, "Epoch tracking resets to 0")
+			expect(fundingAfter.startEpochTimeStamp).to.equal(fundingAfter.lastUpdatedTimeStamp, "Start resets to now")
+		})
+
+		it("should not inflate fees beyond old total when changing duration", async () => {
+			const startTime = 2000000000
+
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [10])
+
+			await time.setNextBlockTimestamp(startTime + 1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+
+			await time.setNextBlockTimestamp(startTime + 12)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+
+			const fundingBefore = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+			const oldEpochsBefore = fundingBefore.lastUpdatedEpoch - fundingBefore.startEpoch
+			const totalFeeBefore = fundingBefore.accumulatedLongRate * oldEpochsBefore
+
+			// Change to much smaller epoch duration
+			await time.setNextBlockTimestamp(startTime + 13)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [3])
+
+			const fundingAfter = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+
+			// Snapshot captures old fee exactly — no inflation possible
+			expect(fundingAfter.snapshotLongFee).to.equal(totalFeeBefore, "Snapshot = old fee, zero rounding error")
+			// New epoch tracking starts from 0
+			const newEpochsBefore = fundingAfter.lastUpdatedEpoch - fundingAfter.startEpoch
+			expect(newEpochsBefore).to.equal(0n)
+		})
+
+		it("should handle multiple successive duration changes correctly", async () => {
+			const startTime = 2000000000
+
+			// First duration: 400
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [400])
+
+			await time.setNextBlockTimestamp(startTime + 100)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(1n, 16)], [0], [decimal(1n)])
+
+			await time.setNextBlockTimestamp(startTime + 900)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(1n, 16)], [0], [decimal(1n)])
+
+			const f1 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+			const fee1 = f1.accumulatedLongRate * (f1.lastUpdatedEpoch - f1.startEpoch)
+
+			// First change: 400 -> 300
+			await time.setNextBlockTimestamp(startTime + 901)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [300])
+
+			await time.setNextBlockTimestamp(startTime + 1500)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+
+			const f2 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+			const fee2 = f2.accumulatedLongRate * (f2.lastUpdatedEpoch - f2.startEpoch)
+
+			// Second change: 300 -> 500
+			await time.setNextBlockTimestamp(startTime + 1501)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [500])
+
+			const f3 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+
+			// Snapshot should accumulate: first change snapshot + second change snapshot
+			expect(f3.snapshotLongFee).to.equal(fee1 + fee2, "Snapshots compose correctly across multiple changes")
+			expect(f3.lastUpdatedEpoch - f3.startEpoch).to.equal(0n, "Epoch tracking resets after each change")
+		})
 	})
 
 	describe("normal and accumulated charge funding rate integration", function () {

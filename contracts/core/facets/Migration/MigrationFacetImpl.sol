@@ -90,10 +90,11 @@ library MigrationFacetImpl {
 		// Calculate the current accumulated fee that would be used for this position type
 		int256 rate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
 
-		// Set the accumulatedPaidFunding to current rate * epochs since start
+		// Set the accumulatedPaidFunding to snapshot + current rate * epochs since start
 		// This means when funding is charged later, it will be calculated relative to this baseline
+		int256 snapshot = quote.positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
 		uint256 epochsSinceStart = LibFundingRate.getEpochsSinceStart(fundingFee);
-		quote.accumulatedPaidFunding = rate * int256(epochsSinceStart);
+		quote.accumulatedPaidFunding = snapshot + rate * int256(epochsSinceStart);
 	}
 
 	/// @notice Migrates partyB locked values to the cross bucket (address(0))

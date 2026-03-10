@@ -36,7 +36,8 @@ library LibQuoteFunding {
 
 		int256 beforeWeightedRate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
 		int256 currentRate = quote.positionType == PositionType.LONG ? fundingFee.currentLongRate : fundingFee.currentShortRate;
-		int256 currentFee = (beforeWeightedRate * int256(epochsBeforeLastUpdate)) + (currentRate * int256(epochsSinceLastUpdate));
+		int256 snapshot = quote.positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
+		int256 currentFee = snapshot + (beforeWeightedRate * int256(epochsBeforeLastUpdate)) + (currentRate * int256(epochsSinceLastUpdate));
 
 		// Subtract already paid amount
 		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (currentFee - quote.accumulatedPaidFunding)) / 1e18;
@@ -93,9 +94,11 @@ library LibQuoteFunding {
 
 		if (fundingFee.epochDuration > 0) {
 			LibFundingRate.updateAccumulatedRates(fundingFee);
+			int256 snapshot = quote.positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
 			quote.accumulatedPaidFunding =
+				snapshot +
 				(quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate) *
-				int256(LibFundingRate.getEpochsSinceStart(fundingFee));
+					int256(LibFundingRate.getEpochsSinceStart(fundingFee));
 		}
 	}
 }

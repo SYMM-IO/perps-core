@@ -20,6 +20,9 @@ struct FundingFee {
 	uint256 startEpochTimeStamp;
 	uint256 startEpoch; // Epoch when funding tracking started
 	uint256 epochDuration; // Duration of each funding period in seconds
+	// Cumulative fee snapshots frozen at each epoch duration change
+	int256 snapshotLongFee; // Accumulated long fee at last duration change
+	int256 snapshotShortFee; // Accumulated short fee at last duration change
 }
 
 /// @title FundingStorage

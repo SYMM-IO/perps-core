@@ -164,15 +164,23 @@ library FundingRateFacetImpl {
 				// Update weighted averages before changing epoch duration
 				LibFundingRate.updateAccumulatedRates(fundingFee);
 
-				// Calculate new weighted averages
-				fundingFee.startEpoch = fundingFee.startEpochTimeStamp / durations[i];
+				// Snapshot the exact cumulative fee — no re-division of old timestamps
+				uint256 oldEpochCount = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
+				fundingFee.snapshotLongFee += fundingFee.accumulatedLongRate * int256(oldEpochCount);
+				fundingFee.snapshotShortFee += fundingFee.accumulatedShortRate * int256(oldEpochCount);
 
+				// Scale only currentRate for the new epoch length
 				uint256 durationRatio = ((durations[i] * 1e18) / fundingFee.epochDuration);
-				fundingFee.accumulatedLongRate = (fundingFee.accumulatedLongRate * int256(durationRatio)) / 1e18;
-				fundingFee.accumulatedShortRate = (fundingFee.accumulatedShortRate * int256(durationRatio)) / 1e18;
-
 				fundingFee.currentLongRate = (fundingFee.currentLongRate * int256(durationRatio)) / 1e18;
 				fundingFee.currentShortRate = (fundingFee.currentShortRate * int256(durationRatio)) / 1e18;
+
+				// Reset accumulated to current (fresh weighted average from this point)
+				fundingFee.accumulatedLongRate = fundingFee.currentLongRate;
+				fundingFee.accumulatedShortRate = fundingFee.currentShortRate;
+
+				// Reset epoch tracking to start fresh from now
+				fundingFee.startEpochTimeStamp = fundingFee.lastUpdatedTimeStamp;
+				fundingFee.startEpoch = LibFundingRate.getEpochOfTimestamp(fundingFee.lastUpdatedTimeStamp, durations[i]);
 
 				timestampForEpoch = fundingFee.lastUpdatedTimeStamp;
 			} else {
