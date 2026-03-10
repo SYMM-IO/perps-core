@@ -113,6 +113,7 @@ library PartyALiquidationFacetImpl {
 				accountLayout.partyBPendingLockedBalances[quote.partyB][partyA].makeZero();
 			}
 			uint256 fee = LibQuote.getOpenTradingFee(quote.id);
+			LibAccount.releaseReservedOpenTradingFee(partyA, fee);
 			accountLayout.partyAReimbursement[partyA] += fee;
 			emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 			quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;

@@ -80,7 +80,7 @@ library AccountFacetImpl {
 	function allocate(address user, uint256 amount) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		require(
-			accountLayout.allocatedBalances[user] + amount <= GlobalAppStorage.layout().balanceLimitPerUser,
+			LibAccount.effectiveAllocatedBalance(user) + amount <= GlobalAppStorage.layout().balanceLimitPerUser,
 			"AccountFacet: Allocated balance limit reached"
 		);
 		require(accountLayout.balances[user] >= amount, "AccountFacet: Insufficient balance");
@@ -144,7 +144,7 @@ library AccountFacetImpl {
 		address signer = LibSigner.getSigner();
 
 		require(
-			accountLayout.allocatedBalances[user] + amount <= GlobalAppStorage.layout().balanceLimitPerUser,
+			LibAccount.effectiveAllocatedBalance(user) + amount <= GlobalAppStorage.layout().balanceLimitPerUser,
 			"AccountFacet: Allocated balance limit reached"
 		);
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");

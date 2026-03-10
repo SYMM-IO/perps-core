@@ -150,6 +150,7 @@ library PartyAFacetImpl {
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
 		require(accountLayout.allocatedBalances[signer] >= feeAmount, "PartyAFacet: Insufficient allocated balance for fee");
 		accountLayout.allocatedBalances[signer] -= feeAmount;
+		LibAccount.reserveOpenTradingFee(signer, feeAmount);
 		emit SharedEvents.BalanceChangePartyA(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 	}
 

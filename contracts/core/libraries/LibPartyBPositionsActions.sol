@@ -51,6 +51,8 @@ library LibPartyBPositionsActions {
 		require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBFacet: Symbol is not valid");
 		require(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
+		uint256 quoteFeeBeforeOpen = LibQuote.getOpenTradingFee(quote.id);
+		uint256 remainingQuoteFee = 0;
 
 		address feeCollector = LibAccount.getFeeCollector(quote.affiliate);
 		if (quote.orderType == OrderType.LIMIT) {
@@ -153,6 +155,7 @@ library LibPartyBPositionsActions {
 			quoteLayout.quoteIdsOf[quote.partyA].push(currentId);
 			quoteLayout.quotes[currentId] = q;
 			Quote storage newQuote = quoteLayout.quotes[currentId];
+			remainingQuoteFee = LibQuote.getOpenTradingFee(newQuote.id);
 
 			if (newStatus == QuoteStatus.CANCELED) {
 				// send trading Fee back to partyA
@@ -188,6 +191,7 @@ library LibPartyBPositionsActions {
 		uint256 openFee = quote.orderType == OrderType.LIMIT
 			? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
 			: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
+		LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);
 		{
 			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
 			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
