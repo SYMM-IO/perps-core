@@ -115,20 +115,6 @@ function grantRoleTx(diamond: string, user: string, roleName: string): SafeTrans
 	}
 }
 
-function setAdminTx(diamond: string, admin: string): SafeTransaction {
-	return {
-		to: diamond,
-		value: "0",
-		data: null,
-		contractMethod: {
-			inputs: [{ internalType: "address", name: "user", type: "address" }],
-			name: "setAdmin",
-			payable: false,
-		},
-		contractInputsValues: { user: admin },
-	}
-}
-
 function pauseGlobalTx(diamond: string): SafeTransaction {
 	return {
 		to: diamond,
@@ -260,10 +246,7 @@ async function main() {
 	const breakdown: string[] = []
 	let txIdx = 1
 
-	// Phase 1: Pre-upgrade admin setup + pause
-	transactions.push(setAdminTx(DIAMOND_ADDRESS, SAFE_ADDRESS))
-	breakdown.push(`${txIdx++}. setAdmin(${SAFE_ADDRESS})`)
-
+	// Phase 1: Pre-upgrade pause
 	transactions.push(grantRoleTx(DIAMOND_ADDRESS, SAFE_ADDRESS, "PAUSER_ROLE"))
 	breakdown.push(`${txIdx++}. grantRole(PAUSER_ROLE) -> ${SAFE_ADDRESS}`)
 
