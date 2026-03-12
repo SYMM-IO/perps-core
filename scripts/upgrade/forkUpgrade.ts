@@ -19,8 +19,8 @@ const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm
  *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
  *
  * Config:
- *   cp scripts/upgrade/config/forkUpgrade.sample.json scripts/upgrade/config/forkUpgrade.json
- *   # edit scripts/upgrade/config/forkUpgrade.json
+ *   cp scripts/upgrade/config/upgrade.sample.json scripts/upgrade/config/upgrade.json
+ *   # edit scripts/upgrade/config/upgrade.json
  */
 
 type ForkUpgradeConfig = {
@@ -54,7 +54,7 @@ type ForkUpgradeReport = {
 	error?: string
 }
 
-const CONFIG_FILE = process.env.FORK_UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/forkUpgrade.json"
+const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 
 function loadConfig(): ForkUpgradeConfig {
 	if (!fs.existsSync(CONFIG_FILE)) return {}

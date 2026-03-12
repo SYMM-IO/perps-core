@@ -23,7 +23,7 @@ import { deployFacets, buildDiamondCut, type FacetInfo } from "./utils/upgradeHe
  *   DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... MIGRATION_RUNNER=0x... \
  *     npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
  *
- * Config: scripts/upgrade/config/forkUpgrade.json (reuses diamondAddress, diamondCutChunkSize, newV085Parameters)
+ * Config: scripts/upgrade/config/upgrade.json (diamondAddress, safeAddress, migrationRunner, diamondCutChunkSize, newV085Parameters)
  *
  * Output:
  *   scripts/upgrade/output/safe-batch.json          — Safe Transaction Builder JSON
@@ -66,6 +66,8 @@ type SafeBatch = {
 
 type Config = {
 	diamondAddress?: string
+	safeAddress?: string
+	migrationRunner?: string
 	diamondCutChunkSize?: number
 	newV085Parameters?: {
 		maxPartyAConnectionLimit?: number
@@ -79,7 +81,7 @@ type DeployedFacets = {
 	selectorSignatures: Record<string, string>
 }
 
-const CONFIG_FILE = process.env.FORK_UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/forkUpgrade.json"
+const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 function loadConfig(): Config {
@@ -193,8 +195,8 @@ async function main() {
 	const config = loadConfig()
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
-	const SAFE_ADDRESS = process.env.SAFE_ADDRESS
-	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? SAFE_ADDRESS
+	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? config.safeAddress
+	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? config.migrationRunner ?? SAFE_ADDRESS
 	const FACETS_FILE = process.env.FACETS_FILE
 	const CHAIN_ID = process.env.CHAIN_ID ?? String(Number((await ethers.provider.getNetwork()).chainId))
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)

@@ -55,7 +55,7 @@ type MigrationOnDemandReport = {
  *     npx hardhat run ./scripts/upgrade/migrateOnDemand.ts --network localhost
  *
  * Config:
- *   cp scripts/upgrade/config/migrateOnDemand.sample.json scripts/upgrade/config/migrateOnDemand.json
+ *   cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.json
  *
  * Resume:
  *   Re-run the command; migration progress is stored in the progress file.
@@ -63,15 +63,15 @@ type MigrationOnDemandReport = {
 type MigrationConfigFile = {
 	diamondAddress?: string
 	migrationInputFile?: string
-	migrateChunkSize?: number
+	chunkSize?: number
 	dryRun?: boolean
-	migrateProgressFile?: string
-	migrateReportFile?: string
+	progressFile?: string
+	reportFile?: string
 	outputDir?: string
-	migrateStrict?: boolean
+	strict?: boolean
 }
 
-const MIGRATION_CONFIG_FILE = process.env.MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/migrateOnDemand.json"
+const MIGRATION_CONFIG_FILE = process.env.MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/migrate.json"
 
 function loadMigrationConfigFile(): MigrationConfigFile {
 	const configPath = MIGRATION_CONFIG_FILE
@@ -271,11 +271,11 @@ export async function verifyMigration(
 }
 
 const configFile = loadMigrationConfigFile()
-if (configFile.migrateProgressFile && typeof configFile.migrateProgressFile !== "string") {
-	throw new Error("migrateProgressFile must be a string path.")
+if (configFile.progressFile && typeof configFile.progressFile !== "string") {
+	throw new Error("progressFile must be a string path.")
 }
-if (configFile.migrateReportFile && typeof configFile.migrateReportFile !== "string") {
-	throw new Error("migrateReportFile must be a string path.")
+if (configFile.reportFile && typeof configFile.reportFile !== "string") {
+	throw new Error("reportFile must be a string path.")
 }
 if (configFile.outputDir && typeof configFile.outputDir !== "string") {
 	throw new Error("outputDir must be a string path.")
@@ -287,9 +287,9 @@ const MIGRATION_INPUT_FILE = process.env.MIGRATION_INPUT_FILE ?? configFile.migr
 const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"
 const outputDir = process.env.MIGRATION_OUTPUT_DIR ?? configFile.outputDir ?? DEFAULT_OUTPUT_DIR
 const DEFAULT_PROGRESS_FILE = `${outputDir}/migration-progress.json`
-let migrateProgressFile = process.env.MIGRATE_PROGRESS_FILE ?? configFile.migrateProgressFile ?? DEFAULT_PROGRESS_FILE
+let migrateProgressFile = process.env.MIGRATE_PROGRESS_FILE ?? configFile.progressFile ?? DEFAULT_PROGRESS_FILE
 const DEFAULT_REPORT_FILE = `${outputDir}/migrateOnDemand-report.json`
-let migrateReportFile = process.env.MIGRATE_REPORT_FILE ?? configFile.migrateReportFile ?? DEFAULT_REPORT_FILE
+let migrateReportFile = process.env.MIGRATE_REPORT_FILE ?? configFile.reportFile ?? DEFAULT_REPORT_FILE
 
 if (path.resolve(migrateProgressFile) === path.resolve(MIGRATION_CONFIG_FILE)) {
 	console.warn("migrateProgressFile matches migration config file; falling back to default progress file.")
@@ -305,10 +305,10 @@ if (path.resolve(migrateReportFile) === path.resolve(migrateProgressFile)) {
 }
 
 const MIGRATION_CONFIG: MigrationConfig = {
-	chunkSize: Number(process.env.MIGRATE_CHUNK_SIZE ?? configFile.migrateChunkSize ?? "50"),
+	chunkSize: Number(process.env.MIGRATE_CHUNK_SIZE ?? configFile.chunkSize ?? "50"),
 	dryRun: parseBool(process.env.DRY_RUN, configFile.dryRun ?? false),
 	progressFile: migrateProgressFile,
-	strict: parseBool(process.env.MIGRATE_STRICT, configFile.migrateStrict ?? false),
+	strict: parseBool(process.env.MIGRATE_STRICT, configFile.strict ?? false),
 }
 
 async function main() {
@@ -346,7 +346,7 @@ async function main() {
 			throw new Error(`Migration input file not found: ${MIGRATION_INPUT_FILE}`)
 		}
 		if (!Number.isInteger(MIGRATION_CONFIG.chunkSize) || (MIGRATION_CONFIG.chunkSize ?? 0) <= 0) {
-			throw new Error(`Invalid migrateChunkSize: ${MIGRATION_CONFIG.chunkSize}`)
+			throw new Error(`Invalid chunkSize: ${MIGRATION_CONFIG.chunkSize}`)
 		}
 		report.diamondAddress = DIAMOND_ADDRESS
 		report.steps.push({

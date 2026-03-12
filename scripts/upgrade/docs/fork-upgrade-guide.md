@@ -116,22 +116,26 @@ Override with `SUBGRAPH_ENDPOINT` env var.
 
 ## Configuration
 
-Copy and edit the sample config:
+Copy and edit the sample configs:
 
 ```bash
-cp scripts/config/forkUpgrade.sample.json scripts/config/forkUpgrade.json
+cp scripts/upgrade/config/upgrade.sample.json scripts/upgrade/config/upgrade.json
+cp scripts/upgrade/config/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
+cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.json
 ```
 
-### Upgrade config fields
+### Upgrade config (`upgrade.json`)
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `diamondAddress` | string | -- | Diamond proxy address on the target network |
 | `adminAddress` | string | `""` | Override for admin (if `owner()` returns a multisig) |
+| `safeAddress` | string | `""` | Gnosis Safe address (used by `generateSafeBatch.ts`) |
+| `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to safeAddress) |
 | `diamondCutChunkSize` | number | `6` | Max facet cuts per transaction |
-| `quoteScanLimit` | number | `500` | Max quote IDs to scan for party discovery |
+| `subgraphEndpoint` | string | Goldsky stage | GraphQL endpoint |
+| `spotCheckCount` | number | `20` | Pre/post upgrade integrity samples |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
-| `verbose` | boolean | `false` | Enable verbose logging |
 
 ### Upgrade env var overrides
 
@@ -139,28 +143,54 @@ cp scripts/config/forkUpgrade.sample.json scripts/config/forkUpgrade.json
 |---------|-----------|
 | `DIAMOND_ADDRESS` | `diamondAddress` |
 | `ADMIN_ADDRESS` | `adminAddress` |
+| `SAFE_ADDRESS` | `safeAddress` |
+| `MIGRATION_RUNNER` | `migrationRunner` |
 | `DIAMOND_CUT_CHUNK_SIZE` | `diamondCutChunkSize` |
-| `QUOTE_SCAN_LIMIT` | `quoteScanLimit` |
-| `VERBOSE` | `verbose` |
-| `FORK_UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/config/forkUpgrade.json`) |
+| `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
+| `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade.json`) |
 
-### Prepare migration input env vars
+### Prepare migration config (`prepareMigration.json`)
 
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `DIAMOND_ADDRESS` | -- | Diamond proxy address |
-| `SUBGRAPH_ENDPOINT` | Goldsky stage | Subgraph GraphQL endpoint |
-| `SPOT_CHECK_COUNT` | `20` | Number of quotes/balances to spot-check |
-| `PREPARE_OUTPUT_FILE` | `scripts/output/migration-input.json` | Output file path |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `diamondAddress` | string | -- | Diamond proxy address |
+| `subgraphEndpoint` | string | Goldsky stage | Subgraph GraphQL endpoint |
+| `spotCheckCount` | number | `20` | Number of quotes/balances to spot-check |
+| `outputDir` | string | `scripts/upgrade/output` | Output directory |
+| `outputFile` | string | `scripts/upgrade/output/migration-input.json` | Output file path |
 
-### Migration env vars
+### Prepare migration env var overrides
 
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `DIAMOND_ADDRESS` | -- | Diamond proxy address |
-| `MIGRATION_INPUT_FILE` | -- | Path to validated input JSON (required) |
-| `MIGRATE_CHUNK_SIZE` | `50` | Quotes per migration transaction |
-| `DRY_RUN` | `false` | Log operations without executing |
+| Env var | Overrides |
+|---------|-----------|
+| `DIAMOND_ADDRESS` | `diamondAddress` |
+| `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
+| `SPOT_CHECK_COUNT` | `spotCheckCount` |
+| `PREPARE_OUTPUT_FILE` | `outputFile` |
+| `PREPARE_MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/prepareMigration.json`) |
+
+### Migration config (`migrate.json`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `diamondAddress` | string | -- | Diamond proxy address |
+| `migrationInputFile` | string | -- | Path to validated input JSON (required) |
+| `chunkSize` | number | `50` | Quotes per migration transaction |
+| `dryRun` | boolean | `false` | Log operations without executing |
+| `strict` | boolean | `false` | Stop on any failure |
+| `progressFile` | string | `scripts/upgrade/output/migration-progress.json` | Resume file path |
+| `reportFile` | string | `scripts/upgrade/output/migrate-report.json` | Report file path |
+
+### Migration env var overrides
+
+| Env var | Overrides |
+|---------|-----------|
+| `DIAMOND_ADDRESS` | `diamondAddress` |
+| `MIGRATION_INPUT_FILE` | `migrationInputFile` |
+| `MIGRATE_CHUNK_SIZE` | `chunkSize` |
+| `DRY_RUN` | `dryRun` |
+| `MIGRATE_STRICT` | `strict` |
+| `MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/migrate.json`) |
 
 ## newV085Parameters
 

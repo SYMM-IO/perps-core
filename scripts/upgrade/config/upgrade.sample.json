@@ -1,0 +1,14 @@
+{
+	"diamondAddress": "0x...",
+	"adminAddress": "",
+	"safeAddress": "",
+	"migrationRunner": "",
+	"diamondCutChunkSize": 6,
+	"subgraphEndpoint": "",
+	"spotCheckCount": 20,
+	"newV085Parameters": {
+		"maxPartyAConnectionLimit": 5,
+		"settlementCooldown": 300,
+		"deallocateDebounceTime": 120
+	}
+}

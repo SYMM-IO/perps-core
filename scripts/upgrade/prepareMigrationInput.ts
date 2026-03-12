@@ -14,7 +14,7 @@ import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js
  *   DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
  *
  * Config:
- *   Set in scripts/upgrade/config/forkUpgrade.json or env vars.
+ *   cp scripts/upgrade/config/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
  *
  * Output:
  *   scripts/upgrade/output/migration-input.json
@@ -47,7 +47,7 @@ type PrepareReport = {
 	error?: string
 }
 
-const CONFIG_FILE = process.env.PREPARE_CONFIG_FILE ?? "./scripts/upgrade/config/forkUpgrade.json"
+const CONFIG_FILE = process.env.PREPARE_MIGRATION_CONFIG_FILE ?? "./scripts/upgrade/config/prepareMigration.json"
 
 function loadConfig(): PrepareConfig {
 	if (!fs.existsSync(CONFIG_FILE)) return {}

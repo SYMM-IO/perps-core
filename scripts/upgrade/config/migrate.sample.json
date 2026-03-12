@@ -1,0 +1,10 @@
+{
+	"diamondAddress": "0x...",
+	"migrationInputFile": "./scripts/upgrade/output/migration-input.json",
+	"chunkSize": 50,
+	"dryRun": false,
+	"strict": false,
+	"outputDir": "./scripts/upgrade/output",
+	"progressFile": "./scripts/upgrade/output/migration-progress.json",
+	"reportFile": "./scripts/upgrade/output/migrate-report.json"
+}

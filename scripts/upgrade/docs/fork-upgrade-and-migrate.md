@@ -16,7 +16,10 @@ The upgrade is rehearsed against real mainnet state by forking the live chain. T
 
 - Running Hardhat fork node (Terminal 1)
 - Subgraph endpoint (defaults to Goldsky Arbitrum stage)
-- Config file: `cp scripts/config/forkUpgrade.sample.json scripts/config/forkUpgrade.json`
+- Config files:
+  - Upgrade: `cp scripts/upgrade/config/upgrade.sample.json scripts/upgrade/config/upgrade.json`
+  - Prepare migration: `cp scripts/upgrade/config/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json`
+  - Migrate: `cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.json`
 
 ## 1) Start Fork Node
 
@@ -82,7 +85,9 @@ Output: `scripts/output/migrateOnDemand-report.json`
 
 ## Configuration
 
-### `scripts/config/forkUpgrade.json`
+Each step has its own config file under `scripts/upgrade/config/`.
+
+### `upgrade.json` (Step 2: Upgrade)
 
 | Field | Default | Description |
 |-------|---------|-------------|
@@ -90,19 +95,32 @@ Output: `scripts/output/migrateOnDemand-report.json`
 | `adminAddress` | auto-resolved | Override for diamond owner |
 | `diamondCutChunkSize` | `6` | Facet cuts per transaction |
 | `subgraphEndpoint` | Goldsky stage | GraphQL endpoint |
+| `spotCheckCount` | `20` | Pre/post upgrade integrity samples |
 | `newV085Parameters.maxPartyAConnectionLimit` | -- | Required for migration |
 | `newV085Parameters.settlementCooldown` | -- | Settlement cooldown seconds |
 | `newV085Parameters.deallocateDebounceTime` | -- | Deallocation debounce seconds |
 
-### `scripts/config/migrateOnDemand.json`
+### `prepareMigration.json` (Step 3: Prepare Migration Input)
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `diamondAddress` | -- | Diamond proxy address |
+| `subgraphEndpoint` | Goldsky stage | GraphQL endpoint |
+| `spotCheckCount` | `20` | Quote/balance spot-check samples |
+| `outputDir` | `scripts/upgrade/output` | Output directory |
+| `outputFile` | `scripts/upgrade/output/migration-input.json` | Output file path |
+
+### `migrate.json` (Step 4: Migrate)
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `diamondAddress` | -- | Diamond proxy address |
 | `migrationInputFile` | -- | Path to validated input JSON |
-| `migrateChunkSize` | `50` | Quotes per migration transaction |
+| `chunkSize` | `50` | Quotes per migration transaction |
 | `dryRun` | `false` | Log without executing |
-| `migrateStrict` | `false` | Stop on any failure |
+| `strict` | `false` | Stop on any failure |
+| `progressFile` | `scripts/upgrade/output/migration-progress.json` | Resume file path |
+| `reportFile` | `scripts/upgrade/output/migrate-report.json` | Report file path |
 
 ## Verification
 

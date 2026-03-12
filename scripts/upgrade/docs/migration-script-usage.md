@@ -72,19 +72,19 @@ Output: `scripts/output/migrateOnDemand-report.json`
 Copy and edit the sample config:
 
 ```bash
-cp scripts/config/migrateOnDemand.sample.json scripts/config/migrateOnDemand.json
+cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.json
 ```
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `diamondAddress` | -- | Diamond proxy address |
 | `migrationInputFile` | -- | Path to validated input JSON (required) |
-| `migrateChunkSize` | `50` | Quotes per migration transaction |
+| `chunkSize` | `50` | Quotes per migration transaction |
 | `dryRun` | `false` | Log operations without executing |
-| `migrateProgressFile` | `scripts/output/migration-progress.json` | Resume file path |
-| `migrateReportFile` | `scripts/output/migrateOnDemand-report.json` | Report file path |
-| `outputDir` | `scripts/output` | Output directory |
-| `migrateStrict` | `false` | Stop immediately on any failure |
+| `progressFile` | `scripts/upgrade/output/migration-progress.json` | Resume file path |
+| `reportFile` | `scripts/upgrade/output/migrate-report.json` | Report file path |
+| `outputDir` | `scripts/upgrade/output` | Output directory |
+| `strict` | `false` | Stop immediately on any failure |
 
 ### Env var overrides
 
@@ -92,12 +92,12 @@ cp scripts/config/migrateOnDemand.sample.json scripts/config/migrateOnDemand.jso
 |---------|-----------|
 | `DIAMOND_ADDRESS` | `diamondAddress` |
 | `MIGRATION_INPUT_FILE` | `migrationInputFile` |
-| `MIGRATE_CHUNK_SIZE` | `migrateChunkSize` |
+| `MIGRATE_CHUNK_SIZE` | `chunkSize` |
 | `DRY_RUN` | `dryRun` |
-| `MIGRATE_PROGRESS_FILE` | `migrateProgressFile` |
-| `MIGRATE_REPORT_FILE` | `migrateReportFile` |
+| `MIGRATE_PROGRESS_FILE` | `progressFile` |
+| `MIGRATE_REPORT_FILE` | `reportFile` |
 | `MIGRATION_OUTPUT_DIR` | `outputDir` |
-| `MIGRATE_STRICT` | `migrateStrict` |
+| `MIGRATE_STRICT` | `strict` |
 
 ## Low-Level API (`scripts/upgrade/migrate.ts`)
 
@@ -213,7 +213,7 @@ Quote migration calls `addConnection()` which checks `maxPartyAConnectionLimit`.
 Delete the progress file (`scripts/output/migration-progress.json`) to start fresh. Already-migrated items will be skipped via on-chain checks.
 
 ### Strict mode
-Use `migrateStrict: true` (or `MIGRATE_STRICT=true`) to stop immediately on any failure instead of continuing.
+Use `strict: true` in config (or `MIGRATE_STRICT=true` env var) to stop immediately on any failure instead of continuing.
 
 ### Subgraph validation fails
 The subgraph may not be synced to the current block. Check the spot-check error message -- it tells you which field mismatched and whether the subgraph is stale.
