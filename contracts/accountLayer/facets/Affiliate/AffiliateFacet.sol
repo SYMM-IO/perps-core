@@ -33,14 +33,15 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	// ==================== Affiliate Registration ====================
 
 	/// @notice Submits a registration request for a new affiliate (frontend/broker)
-	/// @dev Creates a PENDING affiliate. The affiliate address is deterministic based on registrant and name.
+	/// @dev Creates a PENDING affiliate. The affiliate address is deterministic based on registrant, name, and a per-registrant nonce.
 	/// @param reg The registration data including name, admin, fee stakeholders, and Symmio cores
 	/// @return affiliateAddress The deterministic affiliate address
 	function requestToRegisterAffiliate(AffiliateRegistration memory reg) external whenNotPaused returns (address affiliateAddress) {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		uint256 registrationNonce = ++afLayout.registrationNonces[msg.sender];
 
-		affiliateAddress = _generateAccountManagerAddress(msg.sender, reg.name, ahLayout);
+		affiliateAddress = _generateAccountManagerAddress(msg.sender, reg.name, registrationNonce, ahLayout);
 
 		if (afLayout.affiliates[affiliateAddress].state != AffiliateState.NONE) revert AlreadyRegistered();
 		if (reg.admin == address(0)) revert ZeroAddress();
@@ -58,6 +59,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		affiliate.feeDetails.stakeholders = reg.stakeholders;
 		affiliate.legacyMultiAccounts = reg.legacyMultiAccounts;
 		affiliate.registrant = msg.sender;
+		affiliate.registrationNonce = registrationNonce;
 
 		for (uint256 i = 0; i < reg.symmioCores.length; i++) {
 			if (!afLayout.whitelistedSymmioCores[reg.symmioCores[i]]) revert NoWhitelistedSymmioCore();
@@ -94,7 +96,11 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		if (afLayout.affiliates[affiliate].state != AffiliateState.PENDING) revert NotPending();
 
 		// Deploy AccountManager via AffiliateFacet's internal function
-		address accountManager = _deployAccountManager(afLayout.affiliates[affiliate].registrant, afLayout.affiliates[affiliate].name);
+		address accountManager = _deployAccountManager(
+			afLayout.affiliates[affiliate].registrant,
+			afLayout.affiliates[affiliate].name,
+			afLayout.affiliates[affiliate].registrationNonce
+		);
 		if (affiliate != accountManager) revert("AffiliateFacet: Deployment mismatch");
 
 		// Grant SIGNER_SETTER_ROLE to the account manager
@@ -186,6 +192,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	}
 
 	/// @notice Unpauses a previously paused affiliate (UNPAUSER_ROLE only)
+	/// @dev Intentionally callable during global AccountLayer pause so affiliate state can be prepared before global unpause
 	/// @param affiliate The affiliate address to unpause
 	function unpauseAffiliate(address affiliate) external onlyRole(LibAccountLayerAccessibility.UNPAUSER_ROLE) {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
@@ -230,9 +237,18 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	/// @notice Approves a pending fee configuration update (APPROVER_ROLE only)
 	/// @param affiliate The affiliate address whose fee update to approve
-	function approveFeeUpdate(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused {
+	function approveFeeUpdate(address affiliate) external onlyRole(LibAccountLayerAccessibility.APPROVER_ROLE) whenNotPaused nonReentrant {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		if (!afLayout.pendingFeeUpdates[affiliate].exists) revert NoPendingUpdate();
+
+		EnumerableSet.AddressSet storage cores = afLayout.affiliates[affiliate].symmioCores;
+		for (uint256 i = 0; i < cores.length(); i++) {
+			address core = cores.at(i);
+			uint256 claimable = LibAccountLayerUtils.getClaimableFee(affiliate, core);
+			if (claimable > 0) {
+				_claimFees(affiliate, core, claimable, address(0), false);
+			}
+		}
 
 		delete afLayout.affiliates[affiliate].feeDetails.stakeholders;
 		afLayout.affiliates[affiliate].feeDetails.symmioShare = afLayout.pendingFeeUpdates[affiliate].symmioShare;
@@ -246,7 +262,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @param affiliate The affiliate address
 	/// @param symmio The Symmio core to claim fees from
 	function claimAllFees(address affiliate, address symmio) external whenNotPaused nonReentrant {
-		_claimFees(affiliate, symmio, LibAccountLayerUtils.getClaimableFee(affiliate, symmio), msg.sender);
+		_claimFees(affiliate, symmio, LibAccountLayerUtils.getClaimableFee(affiliate, symmio), msg.sender, true);
 	}
 
 	/// @notice Claims a specific amount of fees for an affiliate and distributes to stakeholders
@@ -254,7 +270,7 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	/// @param symmio The Symmio core to claim fees from
 	/// @param amount The amount of fees to claim
 	function claimFees(address affiliate, address symmio, uint256 amount) external whenNotPaused nonReentrant {
-		_claimFees(affiliate, symmio, amount, msg.sender);
+		_claimFees(affiliate, symmio, amount, msg.sender, true);
 	}
 
 	// ==================== Hook Management ====================
@@ -401,20 +417,22 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 		}
 	}
 
-	function _claimFees(address affiliate, address symmio, uint256 amount, address caller) private {
+	function _claimFees(address affiliate, address symmio, uint256 amount, address caller, bool checkAuthorization) private {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		address collateral = ISymmio(symmio).getCollateral();
 		Stakeholder[] memory stakeholders = afLayout.affiliates[affiliate].feeDetails.stakeholders;
 
-		bool auth = false;
-		for (uint256 i = 0; i < stakeholders.length; i++) {
-			if (caller == stakeholders[i].receiver) {
-				auth = true;
-				break;
+		if (checkAuthorization) {
+			bool auth = false;
+			for (uint256 i = 0; i < stakeholders.length; i++) {
+				if (caller == stakeholders[i].receiver) {
+					auth = true;
+					break;
+				}
 			}
-		}
 
-		if (!auth && !LibAccountLayerAccessibility.hasRole(caller, LibAccountLayerAccessibility.DISTRIBUTOR_ROLE)) revert Unauthorized();
+			if (!auth && !LibAccountLayerAccessibility.hasRole(caller, LibAccountLayerAccessibility.DISTRIBUTOR_ROLE)) revert Unauthorized();
+		}
 
 		if (amount == 0) {
 			emit FeesClaimed(affiliate, symmio, 0);
@@ -465,17 +483,18 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 	function _generateAccountManagerAddress(
 		address registrant,
 		string memory name,
+		uint256 nonce,
 		AccountStorage.Layout storage ahLayout
 	) private view returns (address) {
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, registrant, name));
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, registrant, name, nonce));
 		bytes memory bytecode = abi.encodePacked(ahLayout.accountManagerImplementation, abi.encode(address(this)));
 		bytes32 initCodeHash = keccak256(bytecode);
 		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
 	}
 
-	function _deployAccountManager(address user, string memory name) private returns (address accountManager) {
+	function _deployAccountManager(address user, string memory name, uint256 nonce) private returns (address accountManager) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name));
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, user, name, nonce));
 		bytes memory bytecode = abi.encodePacked(ahLayout.accountManagerImplementation, abi.encode(address(this)));
 
 		assembly {

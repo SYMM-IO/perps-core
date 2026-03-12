@@ -222,6 +222,11 @@ interface ISymmio {
 	/// @return The array of pending quote IDs
 	function getPartyAPendingQuotes(address partyA) external view returns (uint256[] memory);
 
+	/// @notice Returns the number of pending quotes for a partyA (cheaper than getPartyAPendingQuotes)
+	/// @param partyA The partyA address
+	/// @return The number of pending quotes
+	function partyAPendingQuotesCount(address partyA) external view returns (uint256);
+
 	/// @notice Checks if the current call originates from the InstantLayer
 	/// @return Whether the call is from InstantLayer
 	function isCallFromInstantLayer() external view returns (bool);
@@ -255,4 +260,19 @@ interface ISymmio {
 	/// @param user The user address
 	/// @return The bind state struct
 	function getBindState(address user) external view returns (BindState memory);
+
+	/// @notice Checks if a party A is in liquidation
+	/// @param partyA The partyA address
+	/// @return True if party A is liquidated, false otherwise
+	function isPartyALiquidated(address partyA) external view returns (bool);
+
+	/// @notice Checks if a PartyA takeover liquidation is in progress
+	/// @param partyA The partyA address
+	/// @return True if a takeover is in progress, false otherwise
+	function isPartyATakeoverInProgress(address partyA) external view returns (bool);
+
+	/// @notice Checks if a party B is in cross liquidation
+	/// @param partyB The partyB address
+	/// @return True if cross liquidation is in progress, false otherwise
+	function getPartyBCrossLiquidationStatus(address partyB) external view returns (bool);
 }

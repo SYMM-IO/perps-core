@@ -9,7 +9,7 @@ import { CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/Cle
 import { BindState } from "../../storages/TradingModeStorage.sol";
 import { VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
 import { BridgeTransaction } from "../../storages/BridgeStorage.sol";
-import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { WithdrawRequest } from "../../storages/WithdrawStorage.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
@@ -43,8 +43,6 @@ interface IViewFacet {
 	function isCrossPartyB(address partyB) external view returns (bool);
 
 	function isLegacyDeallocateDeprecated() external view returns (bool);
-
-	function isCrossPartyBMigrationComplete(address partyB) external view returns (bool);
 
 	function allocatedBalanceOfPartyBs(address partyA, address[] memory partyBs) external view returns (uint256[] memory);
 
@@ -212,5 +210,11 @@ interface IViewFacet {
 
 	function partyAReimbursement(address partyA) external view returns (uint256);
 
+	function getPartyADeferredBalance(address partyA) external view returns (uint256);
+
+	function getLiquidationEscrow(address partyA) external view returns (uint256);
+
 	function getPartyATakeoverDetails(address partyA) external view returns (PartyATakeoverDetail memory);
+
+	function isPartyATakeoverInProgress(address partyA) external view returns (bool);
 }

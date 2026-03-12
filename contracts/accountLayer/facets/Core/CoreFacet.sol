@@ -186,6 +186,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	function _depositToSymmio(address account, uint256 amount, bytes4 depositSelector) private {
 		if (amount == 0) revert ZeroAmount();
+		_revertIfDeletedVirtualAccount(account);
 
 		address core = LibAccountLayerUtils.getRelatedCore(account);
 
@@ -226,6 +227,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	function _depositWithExpressSplit(address account, uint256 amount, bytes4 depositSelector, uint256 expressRate, address virtualProvider) private {
 		if (amount == 0) revert ZeroAmount();
+		_revertIfDeletedVirtualAccount(account);
 
 		address core = LibAccountLayerUtils.getRelatedCore(account);
 		address collateral = ISymmio(core).getCollateral();
@@ -270,6 +272,11 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		if (balanceIncrease + allocatedIncrease != expectedIncrease) revert BalanceInvariantViolation();
 	}
 
+	function _revertIfDeletedVirtualAccount(address account) private view {
+		VirtualAccountData storage virtualAccount = AccountStorage.layout().virtualAccounts[account];
+		if (virtualAccount.parentAccount != address(0) && !virtualAccount.isExists) revert AccountDoesNotExist();
+	}
+
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		address previousSigner = ahLayout.globalSigner;
@@ -310,7 +317,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			bytes calldata cd = callDatas[i];
 			bytes4 selector = bytes4(cd[:4]);
-			if (selector == ISymmio.internalTransferToBalance.selector) revert Unauthorized();
+			if (selector == ISymmio.internalTransferToBalance.selector || selector == ISymmio.zeroUpnlDeallocate.selector) revert Unauthorized();
 
 			bool isVirtualAccount = ahLayout.virtualAccounts[account].isExists;
 			bool isSubAccount = ahLayout.subAccounts[account].isExists;
@@ -367,6 +374,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		HookContext memory ctx = afLayout.hookContext;
 
 		if (!ctx.isActive) revert NoActiveHookContext();
+		if (msg.sender != ctx.activeHook) revert UnauthorizedHookCaller();
 
 		// Validate selector is whitelisted for this affiliate
 		bytes4 selector = bytes4(callData[:4]);

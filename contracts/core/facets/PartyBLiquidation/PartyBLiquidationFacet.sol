@@ -25,7 +25,6 @@ contract PartyBLiquidationFacet is Pausable, Accessibility, IPartyBLiquidationFa
 		external
 		whenNotLiquidationPaused
 		notLiquidatedPartyB(partyB, partyA)
-		notCrossLiquidatedPartyB(partyB)
 		notLiquidatedPartyA(partyA)
 		onlyRole(LibAccessibility.PARTYB_LIQUIDATOR_ROLE)
 	{

@@ -509,6 +509,7 @@ export type SettlePartyATakeoverBeforeOutput = {
 	isLiquidated: boolean
 	partyANonce: bigint
 	reimbursement: bigint
+	deferredBalance: bigint
 	balanceInfoPartyA: BalanceInfo
 	takeoverDetails: any
 }
@@ -527,6 +528,7 @@ export class SettlePartyATakeoverValidator implements TransactionValidator {
 			isLiquidated: await context.viewFacet.isPartyALiquidated(userAddress),
 			partyANonce: await context.viewFacet.nonceOfPartyA(userAddress),
 			reimbursement: await context.viewFacet.partyAReimbursement(userAddress),
+			deferredBalance: await context.viewFacet.getPartyADeferredBalance(userAddress),
 			balanceInfoPartyA: await arg.user.getBalanceInfo(),
 			takeoverDetails: await context.viewFacet.getPartyATakeoverDetails(userAddress),
 		}
@@ -543,15 +545,17 @@ export class SettlePartyATakeoverValidator implements TransactionValidator {
 		const newNonce = await context.viewFacet.nonceOfPartyA(userAddress)
 		expect(newNonce).to.equal(arg.beforeOutput.partyANonce + 1n)
 
-		// Reimbursement should be zeroed
+		// All escrowed balances should be zeroed
 		expect(await context.viewFacet.partyAReimbursement(userAddress)).to.equal(0)
+		expect(await context.viewFacet.getPartyADeferredBalance(userAddress)).to.equal(0)
 
 		// Locked balances should be zeroed
 		const newBalanceInfo = await arg.user.getBalanceInfo()
 		expect(newBalanceInfo.totalLockedPartyA).to.equal(0n)
 
-		// settlement should not zero reimbursement
-		expect(newBalanceInfo.allocatedBalances).to.equal(arg.beforeOutput.balanceInfoPartyA.allocatedBalances + arg.beforeOutput.reimbursement)
+		// All escrowed balances released to partyA
+		const totalReleased = arg.beforeOutput.reimbursement + arg.beforeOutput.deferredBalance
+		expect(newBalanceInfo.allocatedBalances).to.equal(arg.beforeOutput.balanceInfoPartyA.allocatedBalances + totalReleased)
 
 		// Takeover details should be deleted (inProgress = false)
 		const takeoverDetails = await context.viewFacet.getPartyATakeoverDetails(userAddress)

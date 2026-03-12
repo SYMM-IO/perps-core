@@ -172,6 +172,42 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 			await context.controlFacet.connect(provider).setSigner(ZeroAddress)
 		})
+
+		it("Should virtual deposit and allocate for non-liquidated user", async function () {
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(context.signers.admin.address)
+
+			const userAddress = await user.getAddress()
+			const allocateAmount = decimal(2n)
+			const balanceBefore = await context.viewFacet.balanceOf(userAddress)
+			const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+
+			await context.accountFacet.connect(context.signers.admin).virtualDepositAndAllocateFor(userAddress, allocateAmount)
+
+			const balanceAfter = await context.viewFacet.balanceOf(userAddress)
+			const allocatedAfter = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			expect(balanceAfter).to.equal(balanceBefore)
+			expect(allocatedAfter).to.equal(allocatedBefore + allocateAmount)
+		})
+
+		it("Should fail virtualDepositAndAllocateFor when partyA is liquidated", async function () {
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(context.signers.admin.address)
+			await user.setBalances(decimal(2000n), decimal(1000n), decimal(500n))
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(decimal(2000n), decimal(2000n))
+
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(25n)], [quoteId])
+			expect(await context.viewFacet.isPartyALiquidated(await user.getAddress())).to.equal(true)
+
+			await expect(
+				context.accountFacet.connect(context.signers.admin).virtualDepositAndAllocateFor(await user.getAddress(), decimal(1n)),
+			).to.be.revertedWith("Accessibility: PartyA isn't solvent")
+		})
 	})
 
 	describe("Pledge collateral", function () {
@@ -650,6 +686,241 @@ export function shouldBehaveLikeAccountFacet(): void {
 			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(BALANCES.ALLOCATE_AMOUNT)
 		})
 
+		it("Should not bypass balance limit via sendQuote and cancel fee refund cycle", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			expect(allocatedAfterSend).to.be.lt(balanceLimit)
+
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId)
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should enforce balance limit for internalTransfer when fee is reserved", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).internalTransfer(userAddress, freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+		})
+
+		it("Should allow reallocation up to cap after open fee is realized", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const feeAmount = balanceLimit - allocatedAfterSend
+			expect(feeAmount).to.be.gt(0)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(feeAmount)).to.not.be.reverted
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should not leave reserved fee dust after partial open and cancel", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.quantity(decimal(101n) + 150n)
+					.build(),
+			)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(
+				quoteId,
+				limitOpenRequestBuilder()
+					.filledAmount(decimal(50n) + 75n)
+					.build(),
+			)
+
+			const splitQuoteId = BigInt(quoteId) + 1n
+			await user.requestToCancelQuote(splitQuoteId)
+
+			const allocatedBeforeRefill = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const refillAmount = balanceLimit - allocatedBeforeRefill
+			expect(refillAmount).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(refillAmount)).to.not.be.reverted
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should enforce limit through locked cancel flow and restore after cancel acceptance", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId)
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await hedger.acceptCancelRequest(quoteId)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should keep cap enforced across multiple pending quotes and partial fee release", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(250n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId1 = await user.sendQuote()
+			const quoteId2 = await user.sendQuote()
+
+			const allocatedAfterTwoQuotes = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByTwoReservedFees = balanceLimit - allocatedAfterTwoQuotes
+			expect(freedByTwoReservedFees).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByTwoReservedFees)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId1)
+
+			const allocatedAfterFirstCancel = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const stillFreedByRemainingReservedFee = balanceLimit - allocatedAfterFirstCancel
+			expect(stillFreedByRemainingReservedFee).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(stillFreedByRemainingReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId2)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should release reserved fee on quote expiry and restore allocation cap state", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([quoteId])
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should release reserved fee on force-cancel and restore allocation cap state", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+			await user.requestToCancelQuote(quoteId)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await time.increase(300)
+			await user.forceCancelQuote(quoteId)
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
+		it("Should keep cap enforced after unlocking a quote back to pending", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const balanceLimit = decimal(120n)
+
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(balanceLimit)
+			await context.accountFacet.connect(context.signers.user).allocate(balanceLimit)
+
+			const quoteId = await user.sendQuote()
+			const allocatedAfterSend = await context.viewFacet.allocatedBalanceOfPartyA(userAddress)
+			const freedByReservedFee = balanceLimit - allocatedAfterSend
+			expect(freedByReservedFee).to.be.gt(0)
+
+			hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(BALANCES.LARGE_AMOUNT, BALANCES.LARGE_AMOUNT)
+			await hedger.lockQuote(quoteId)
+			await hedger.unlockQuote(quoteId)
+
+			await expect(context.accountFacet.connect(context.signers.user).allocate(freedByReservedFee)).to.be.revertedWith(
+				"AccountFacet: Allocated balance limit reached",
+			)
+
+			await user.requestToCancelQuote(quoteId)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(userAddress)).to.equal(balanceLimit)
+		})
+
 		it("Should deposit and allocate collateral", async function () {
 			const userAddress = await context.signers.user.getAddress()
 			const additionalDeposit = BALANCES.WITHDRAW_AMOUNT
@@ -963,11 +1234,21 @@ export function shouldBehaveLikeAccountFacet(): void {
 	})
 
 	describe("ZeroUpnlDeallocate", async function () {
+		const BALANCE_SETTLER_ROLE = ethers.keccak256(toUtf8Bytes("BALANCE_SETTLER_ROLE"))
+
 		beforeEach(async function () {
 			context = await loadFixture(initializeFixture)
 			user = new User(context, context.signers.user)
 			await user.setup()
 			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL, BALANCES.INITIAL_COLLATERAL)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
+		})
+
+		it("Should fail when caller does not have BALANCE_SETTLER_ROLE", async function () {
+			await context.controlFacet.connect(context.signers.admin).revokeRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
+			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEPOSIT_AMOUNT)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
 		})
 
 		it("Should fail on insufficient allocated Balance", async function () {
@@ -977,11 +1258,9 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 		})
 
-		it("Should fail when accounting is paused", async function () {
+		it("Should succeed even when accounting is paused", async function () {
 			await context.pauseControlFacet.pauseAccounting()
-			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEPOSIT_AMOUNT)).to.be.revertedWith(
-				"Pausable: Accounting paused",
-			)
+			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEALLOCATE_AMOUNT)).to.not.be.reverted
 		})
 
 		it("Should fail when partyA has pending quote", async function () {
@@ -1092,12 +1371,10 @@ export function shouldBehaveLikeAccountFacet(): void {
 				.withArgs(userAddress, deallocateAmount, expectedAllocated)
 		})
 
-		it("Should fail when global pause is active", async function () {
+		it("Should succeed even when global pause is active", async function () {
 			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 
-			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEALLOCATE_AMOUNT)).to.be.revertedWith(
-				"Pausable: Global paused",
-			)
+			await expect(context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(BALANCES.DEALLOCATE_AMOUNT)).to.not.be.reverted
 		})
 
 		it("Should allow multiple deallocations in sequence", async function () {
@@ -1186,7 +1463,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 	})
 
 	describe("InternalTransferToBalance", async function () {
-		const INTERNAL_TRANSFER_TO_BALANCE_ROLE = ethers.keccak256(toUtf8Bytes("INTERNAL_TRANSFER_TO_BALANCE_ROLE"))
+		const BALANCE_SETTLER_ROLE = ethers.keccak256(toUtf8Bytes("BALANCE_SETTLER_ROLE"))
 
 		beforeEach(async () => {
 			context = await loadFixture(initializeFixture)
@@ -1200,7 +1477,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await user2.setBalances(BALANCES.INITIAL_COLLATERAL)
 		})
 
-		it("Should fail when caller does not have INTERNAL_TRANSFER_TO_BALANCE_ROLE", async () => {
+		it("Should fail when caller does not have BALANCE_SETTLER_ROLE", async () => {
 			await expect(
 				context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
 			).to.be.revertedWith("Accessibility: Must have role")
@@ -1208,7 +1485,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should transfer to balance (not allocatedBalance) when caller has role", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			const user2Address = await user2.getAddress()
 			const userAddress = await user.getAddress()
@@ -1228,7 +1505,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should set withdrawCooldown on recipient", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			const user2Address = await user2.getAddress()
 
@@ -1241,7 +1518,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should emit InternalTransferToBalance event", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			const user2Address = await user2.getAddress()
 			const userAddress = await user.getAddress()
@@ -1254,7 +1531,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should fail when sender has insufficient balance", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			const user2Address = await user2.getAddress()
 
@@ -1263,15 +1540,14 @@ export function shouldBehaveLikeAccountFacet(): void {
 			).to.be.revertedWith("AccountFacet: Insufficient balance")
 		})
 
-		it("Should fail when internal transfers are paused", async () => {
+		it("Should succeed even when internal transfers are paused", async () => {
 			// Grant role to user
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), INTERNAL_TRANSFER_TO_BALANCE_ROLE)
+			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
 
 			await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
 
-			await expect(
-				context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
-			).to.be.revertedWith("Pausable: Internal transfer paused")
+			await expect(context.accountFacet.connect(context.signers.user).internalTransferToBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT))
+				.to.not.be.reverted
 		})
 	})
 
@@ -1861,6 +2137,13 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 		})
 
+		it("Should fail when partyA actions are paused", async () => {
+			await context.pauseControlFacet.pausePartyAActions()
+			await expect(context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
+				"Pausable: PartyA actions paused",
+			)
+		})
+
 		it("Should fail when user is not partyA", async () => {
 			await expect(context.bindingFacet.connect(context.signers.hedger).bindToPartyB(context.signers.hedger.address)).to.be.revertedWith(
 				"Accessibility: Shouldn't be partyB",
@@ -2016,6 +2299,13 @@ export function shouldBehaveLikeAccountFacet(): void {
 			)
 		})
 
+		it("Should fail when partyA actions are paused", async () => {
+			await context.pauseControlFacet.pausePartyAActions()
+			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith(
+				"Pausable: PartyA actions paused",
+			)
+		})
+
 		it("Should fail when not bound", async () => {
 			await expect(context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()).to.be.revertedWith("AccountFacet: Invalid state")
 		})
@@ -2092,10 +2382,17 @@ export function shouldBehaveLikeAccountFacet(): void {
 			await context.controlFacet.connect(context.signers.admin).setUnbindCooldown(LIMITS.UNBIND_COOLDOWN)
 		})
 
-		it("Should fail when user suspended", async () => {
+		it("Should allow suspended bound partyB to complete unbind request", async () => {
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.hedger.address)
+			await expect(context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.not.be.reverted
+		})
+
+		it("Should fail when partyA actions are paused", async () => {
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+			await context.pauseControlFacet.pausePartyAActions()
 			await expect(context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(context.signers.user.address)).to.be.revertedWith(
-				"Accessibility: Sender is Suspended",
+				"Pausable: PartyA actions paused",
 			)
 		})
 
@@ -2133,6 +2430,16 @@ export function shouldBehaveLikeAccountFacet(): void {
 			const bindState = await context.viewFacet.getBindState(context.signers.user.address)
 			expect(bindState.status).to.equal(BIND_STATUS.UNBOUND)
 			expect(bindState.partyB).to.equal(ZeroAddress)
+		})
+
+		it("Should allow suspended third party to complete unbind after cooldown", async () => {
+			await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.user2.address)
+
+			const unbindCooldown = await context.viewFacet.unbindCooldown()
+			await time.increase(unbindCooldown + 1n)
+
+			await expect(context.bindingFacet.connect(context.signers.user2).completeUnbindRequest(context.signers.user.address)).to.not.be.reverted
 		})
 	})
 

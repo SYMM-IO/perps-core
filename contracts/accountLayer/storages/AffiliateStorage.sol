@@ -43,6 +43,7 @@ struct AffiliateData {
 	address registrant;
 	uint256 expressRate;
 	address virtualProvider;
+	uint256 registrationNonce;
 }
 
 /// @notice Input parameters for registering a new affiliate
@@ -71,6 +72,7 @@ struct HookContext {
 	address affiliate;
 	address symmioCore;
 	bool isActive;
+	address activeHook;
 }
 
 /// @title AffiliateStorage
@@ -85,7 +87,7 @@ library AffiliateStorage {
 	struct Layout {
 		/// @notice All registered affiliate configurations
 		/// @dev Maps affiliate address (= AccountManager address) => full config.
-		///      Affiliate address is deterministic: generateAccountManagerAddress(registrant, name).
+		///      Affiliate address is deterministic: generateAccountManagerAddress(registrant, name, nonce).
 		mapping(address => AffiliateData) affiliates;
 		/// @notice Pending fee configuration changes awaiting approval
 		/// @dev Fee updates are two-step: requestFeeUpdate (admin) → approveFeeUpdate (APPROVER_ROLE).
@@ -120,6 +122,9 @@ library AffiliateStorage {
 		/// @dev Maps affiliate => selector => allowed. callAsAffiliate executes with
 		///      setSigner(affiliate) on the target Symmio core.
 		mapping(address => mapping(bytes4 => bool)) callAllowedSelectors;
+		/// @notice Monotonic nonce per registrant for affiliate address generation
+		/// @dev Ensures every request gets a unique affiliate address, even with the same name/registrant pair.
+		mapping(address => uint256) registrationNonces;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

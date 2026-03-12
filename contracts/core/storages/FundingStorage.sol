@@ -20,6 +20,9 @@ struct FundingFee {
 	uint256 startEpochTimeStamp;
 	uint256 startEpoch; // Epoch when funding tracking started
 	uint256 epochDuration; // Duration of each funding period in seconds
+	// Cumulative fee snapshots frozen at each epoch duration change
+	int256 snapshotLongFee; // Accumulated long fee at last duration change
+	int256 snapshotShortFee; // Accumulated short fee at last duration change
 }
 
 /// @title FundingStorage
@@ -43,6 +46,11 @@ library FundingStorage {
 		///      rates for each symbol. Contains current rates, accumulated averages,
 		///      and epoch tracking for the weighted average funding system.
 		mapping(uint256 => mapping(address => FundingFee)) fundingFees;
+		/// @notice Timestamp of last epoch duration change per PartyB
+		/// @dev Used to invalidate stale UPNL signatures after epoch duration updates.
+		///      Signatures with timestamp before this are rejected, since funding is
+		///      included in UPNL and changing the epoch alters accrued funding.
+		mapping(address => uint256) lastEpochDurationChangeTimestamp;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

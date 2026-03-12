@@ -707,7 +707,7 @@ async function setupSystem(
 	await checkpointedStep(checkpoint, "setup.alRolesOnDiamond", "Granting roles to AccountLayerDiamond on Diamond", async () => {
 		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("SIGNER_ADMIN_ROLE"))
 		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("AFFILIATE_MANAGER_ROLE"))
-		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("INTERNAL_TRANSFER_TO_BALANCE_ROLE"))
+		await controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("BALANCE_SETTLER_ROLE"))
 	})
 
 	// Register AccountLayer as system hook on Diamond
@@ -732,9 +732,9 @@ async function setupSystem(
 		await alControlFacet.connect(deployer).grantRole(config.admin, roleHash("UNPAUSER_ROLE"))
 	})
 
-	// InstantLayer role on AccountLayerDiamond
-	await checkpointedStep(checkpoint, "setup.ilRoleOnAL", "Granting INSTANT_LAYER_ROLE on AccountLayerDiamond", async () => {
-		await alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("INSTANT_LAYER_ROLE"))
+	// InstantLayer SIGNER_SETTER_ROLE on AccountLayerDiamond (allows InstantLayer to call setSigner)
+	await checkpointedStep(checkpoint, "setup.ilRoleOnAL", "Granting SIGNER_SETTER_ROLE on AccountLayerDiamond", async () => {
+		await alControlFacet.connect(deployer).grantRole(deployedContracts.instantLayer!, roleHash("SIGNER_SETTER_ROLE"))
 	})
 
 	// Whitelist Symmio Core

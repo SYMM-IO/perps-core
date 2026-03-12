@@ -124,13 +124,16 @@ library BridgeFacetImpl {
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
 		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 
 		require(bridgeTransaction.status == BridgeTransactionStatus.SUSPENDED, "BridgeFacet: Invalid status");
 		require(bridgeLayout.invalidBridgedAmountsPool != address(0), "BridgeFacet: Zero address");
 		require(validAmount <= bridgeTransaction.amount, "BridgeFacet: High valid amount");
 
+		uint256 invalidAmount = bridgeTransaction.amount - validAmount;
 		AccountStorage.layout().balances[bridgeLayout.invalidBridgedAmountsPool] +=
-			((bridgeTransaction.amount - validAmount) * (10 ** 18)) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+			(invalidAmount * (10 ** 18)) / (10 ** IERC20Metadata(appLayout.collateral).decimals());
+		withdrawLayout.withdrawLockedBalance -= invalidAmount;
 		bridgeTransaction.status = BridgeTransactionStatus.RECEIVED;
 		bridgeTransaction.amount = validAmount;
 	}

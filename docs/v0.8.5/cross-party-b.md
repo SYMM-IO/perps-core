@@ -32,7 +32,7 @@ Activating cross mode for a PartyB is a multi-step process:
 
 3. **Activation (one of two paths):**
    - **Admin path**: An admin with `MIGRATION_ROLE` calls `setCrossPartyB(partyB, true)` on the `ControlFacet`. Requires the global flag to be on and the PartyB to be registered. Does not check migration status on-chain.
-   - **Self-activation path**: The PartyB itself calls `activateCrossPartyB()` on the `PartyBAccountFacet`. Requires the global flag AND the locked-values migration to be complete (`partyBLockedValuesMigrated[partyB]` must be true).
+   - **Self-activation path**: The PartyB itself calls `activateCrossPartyB()` on the `PartyBAccountFacet`. Requires the global flag to be on and cross mode to not already be active.
 
 After activation, `address(0)` becomes the PartyB's allocation key. The solver only needs to allocate to `address(0)` — no need to allocate/deallocate per PartyA. The helper `LibAccount.partyBAllocationKey(partyB, partyA)` returns `address(0)` when cross mode is active, and `partyA` otherwise. All balance functions (available balance, locked balance calculations) use this key transparently.
 
@@ -134,6 +134,18 @@ quotesSettlementsData[] — per-quote data with partyAIndex mapping each quote t
 
 The legacy `settleUpnl` is kept for backward compatibility with integrations that have not migrated.
 
+### Quote Subset Constraints
+
+Solvency is validated using aggregate UPNL -- which includes unrealized gains from positions not being settled -- but each party's `uint256` balance must independently absorb the realized settlement amount. If a party is solvent in aggregate but the settlement loss from the chosen quote subset exceeds their raw allocated balance, the transaction will revert.
+
+Callers must select quote subsets where each individual party's allocated balance can cover the realized settlement:
+
+- **PartyA**: The net settlement loss from quotes with this specific PartyB must not exceed `allocatedBalances[partyA]`.
+- **Non-cross PartyB**: The net settlement loss from quotes with a specific PartyA must not exceed `partyBAllocatedBalances[partyB][partyA]`.
+- **Cross PartyB**: The **net** settlement loss across all PartyAs must not exceed `partyBAllocatedBalances[partyB][address(0)]`. The ordering of PartyAs in the signature does not matter -- the contract accumulates a signed delta and applies it once.
+
+If a desired settlement would violate these constraints, callers should either include offsetting (winning) quotes in the batch, split the settlement into multiple transactions, or wait for the party to deposit/allocate additional funds.
+
 ### Settlement Examples
 
 **Scenario 1: PartyA lacks money, PartyB settles to charge PartyA.**
@@ -169,7 +181,7 @@ Validates force-close conditions (quote in `CLOSE_PENDING`, cooldowns met, order
 
 **Step 2 — `settleUpnlForForceClose(quoteId, UnifiedSettlementSig, updatedPrices[])` (optional, repeatable)**
 
-Calls `settleUpnlUnified` with `isForceClose = true`, which relaxes the "caller must have a position" check. The settlement can target any PartyB — not just the one on the force-close quote. Which positions can be settled depends on the scenario:
+Calls `settleUpnlUnified` with `privilegedMode = true`, which bypasses the "caller must have a position" check and settlement cooldowns. The settlement can target any PartyB — not just the one on the force-close quote. Which positions can be settled depends on the scenario:
 
 - **PartyA lacks funds**: Settle PartyA's profitable positions with **any other PartyB** (`sig.partyB != forceCloseQuote.partyB`). This funds PartyA's `allocatedBalances` so the close can proceed. No restriction on which PartyBs or PartyAs are involved.
 

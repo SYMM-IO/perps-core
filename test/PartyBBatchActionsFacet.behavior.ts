@@ -320,6 +320,152 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		})
 	})
 
+	describe("Bind mode bypass consistency", function () {
+		async function createLockedQuoteForHedger(): Promise<bigint> {
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.build(),
+			)
+			const quoteId = await context.viewFacetQuote.getNextQuoteId()
+			await hedger.lockQuote(quoteId)
+			return quoteId
+		}
+
+		async function createOpenedPositionForHedger(): Promise<bigint> {
+			const quoteId = await createLockedQuoteForHedger()
+			await hedger.openPosition(quoteId)
+			return quoteId
+		}
+
+		async function bindUserToHedger(): Promise<void> {
+			const bindableSetterRole = ethers.keccak256(ethers.toUtf8Bytes("BINDABLE_SETTER_ROLE"))
+
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, bindableSetterRole)
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await hedger.getAddress(), true)
+			await context.bindingFacet.connect(user.signer).bindToPartyB(await hedger.getAddress())
+		}
+
+		async function bindUserToHedgerWithOpenedPosition(): Promise<bigint> {
+			const quoteId = await createOpenedPositionForHedger()
+			await bindUserToHedger()
+			return quoteId
+		}
+
+		async function createClosePendingPositionForHedger(): Promise<bigint> {
+			const quoteId = await createOpenedPositionForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(quote.quantity).closePrice(decimal(1n)).build())
+			return quoteId
+		}
+
+		it("openPositions enforces Muon verification when not bound", async function () {
+			const quoteId = await createLockedQuoteForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.requestedOpenPrice], [quote.symbolId])
+			upnlSig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([quoteId], [quote.quantity], [quote.requestedOpenPrice], upnlSig),
+			).to.be.revertedWith("LibMuon: Expired signature")
+		})
+
+		it("openPositions skips Muon and solvency checks in bind mode", async function () {
+			await bindUserToHedgerWithOpenedPosition()
+
+			const quoteId = await createLockedQuoteForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.requestedOpenPrice], [quote.symbolId], -decimal(10000n), -decimal(10000n))
+			upnlSig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([quoteId], [quote.quantity], [quote.requestedOpenPrice], upnlSig),
+			).to.not.be.reverted
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+			expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(beforeNonceA + 1n)
+			expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(beforeNonceB + 1n)
+		})
+
+		it("fillCloseRequests enforces Muon verification when not bound", async function () {
+			const quoteId = await createClosePendingPositionForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.openedPrice], [quote.symbolId])
+			upnlSig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.fillCloseRequests([quoteId], [quote.quantityToClose], [quote.requestedClosePrice], upnlSig),
+			).to.be.revertedWith("LibMuon: Expired signature")
+		})
+
+		it("fillCloseRequests enforces solvency checks when not bound", async function () {
+			const quoteId = await createClosePendingPositionForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.openedPrice], [quote.symbolId], -decimal(10000n), -decimal(10000n))
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.fillCloseRequests([quoteId], [quote.quantityToClose], [quote.requestedClosePrice], upnlSig),
+			).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
+		})
+
+		it("fillCloseRequests skips Muon verification in bind mode", async function () {
+			const quoteId = await bindUserToHedgerWithOpenedPosition()
+			let quote = await context.viewFacetQuote.getQuote(quoteId)
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(quote.quantity).closePrice(decimal(1n)).build())
+			quote = await context.viewFacetQuote.getQuote(quoteId)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.openedPrice], [quote.symbolId])
+			upnlSig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.fillCloseRequests([quoteId], [quote.quantityToClose], [quote.requestedClosePrice], upnlSig),
+			).to.not.be.reverted
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+		})
+
+		it("fillCloseRequests skips Muon and solvency checks in bind mode", async function () {
+			const quoteId = await bindUserToHedgerWithOpenedPosition()
+			let quote = await context.viewFacetQuote.getQuote(quoteId)
+
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(quote.quantity).closePrice(decimal(1n)).build())
+			quote = await context.viewFacetQuote.getQuote(quoteId)
+
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.openedPrice], [quote.symbolId], -decimal(10000n), -decimal(10000n))
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.fillCloseRequests([quoteId], [quote.quantityToClose], [quote.requestedClosePrice], upnlSig),
+			).to.not.be.reverted
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(beforeNonceA + 1n)
+			expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(beforeNonceB + 1n)
+		})
+	})
+
 	describe("Access Control and Security", async function () {
 		beforeEach(async function () {
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())

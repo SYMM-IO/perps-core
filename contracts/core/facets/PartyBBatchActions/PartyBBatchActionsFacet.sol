@@ -42,8 +42,7 @@ contract PartyBBatchActionsFacet is Accessibility, Pausable, IPartyBBatchActions
 			quoteIds,
 			filledAmounts,
 			closedPrices,
-			upnlSig,
-			false
+			upnlSig
 		);
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];

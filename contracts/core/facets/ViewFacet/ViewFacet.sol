@@ -19,7 +19,7 @@ import { MAStorage, EntityMetadata } from "../../storages/MAStorage.sol";
 import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { MuonStorage } from "../../storages/MuonStorage.sol";
-import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { BridgeStorage, BridgeTransaction } from "../../storages/BridgeStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
@@ -211,13 +211,6 @@ contract ViewFacet is IViewFacet {
 	/// @return A boolean indicating whether legacy deallocate is deprecated (true = must use safeDeallocate).
 	function isLegacyDeallocateDeprecated() external view returns (bool) {
 		return GlobalAppStorage.layout().legacyDeallocateDeprecated;
-	}
-
-	/// @notice Checks if a party B has completed cross partyB locked values migration.
-	/// @param partyB The address of Party B.
-	/// @return A boolean indicating whether the party B has completed locked values migration.
-	function isCrossPartyBMigrationComplete(address partyB) external view returns (bool) {
-		return MigrationStorage.layout().partyBLockedValuesMigrated[partyB];
 	}
 
 	/// @notice Returns the allocated balances of Party Bs for a specific Party A.
@@ -560,7 +553,7 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().balanceLimitPerUser;
 	}
 
-	/// @notice Verifies the Muon signature of the Muon TSS and gateway.
+	/// @notice Verifies the Muon signature of the Muon TSS and gateway (no per-category authorization checks).
 	/// @param hash The hash to verify.
 	/// @param sign The Schnorr signature.
 	/// @param gatewaySignature The Muon signature from the gateway.
@@ -839,11 +832,32 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().partyAReimbursement[partyA];
 	}
 
+	/// @notice Returns PartyA's deferred balance (excess from deferred liquidation, always returned to partyA).
+	/// @param partyA The address of Party A.
+	/// @return The deferred balance amount.
+	function getPartyADeferredBalance(address partyA) external view returns (uint256) {
+		return AccountStorage.layout().partyADeferredBalance[partyA];
+	}
+
+	/// @notice Returns the liquidation escrow balance for a Party A (from LATE/OVERDUE liquidations).
+	/// @param partyA The address of Party A.
+	/// @return The escrow balance awaiting CH distribution.
+	function getLiquidationEscrow(address partyA) external view returns (uint256) {
+		return AccountStorage.layout().liquidationEscrow[partyA];
+	}
+
 	/// @notice Returns the takeover details for a Party A liquidation.
 	/// @param partyA The address of Party A.
 	/// @return The PartyATakeoverDetail struct.
 	function getPartyATakeoverDetails(address partyA) external view returns (PartyATakeoverDetail memory) {
 		return ClearingHouseStorage.layout().partyATakeoverDetails[partyA];
+	}
+
+	/// @notice Checks if a PartyA takeover liquidation is in progress.
+	/// @param partyA The address of Party A.
+	/// @return True if a takeover is in progress, false otherwise.
+	function isPartyATakeoverInProgress(address partyA) external view returns (bool) {
+		return ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress;
 	}
 
 	/// @notice Calculates the maximum close amount that keeps PartyA at the liquidation threshold.

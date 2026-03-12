@@ -243,7 +243,7 @@ contract ViewFacet is IViewFacet {
 	}
 
 	/// @notice Predicts the address of the next virtual account for a given isolation key
-	/// @dev Checks the reuse pool first, then singleVAMode, then generates from next nonce
+	/// @dev Mirrors CoreFacet order: singleVAMode active VA, then reuse pool, then next nonce
 	/// @param subAccount The parent sub-account address
 	/// @param isolationType The isolation type
 	/// @param symbolId The symbol identifier
@@ -255,12 +255,6 @@ contract ViewFacet is IViewFacet {
 	) external view returns (address) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 
-		// First check if a deleted virtual account exists for this combination
-		uint256 poolLength = ahLayout.deletedVirtualAccountsPool[subAccount][isolationType][symbolId].length;
-		if (poolLength > 0) {
-			return ahLayout.deletedVirtualAccountsPool[subAccount][isolationType][symbolId][poolLength - 1];
-		}
-
 		// If singleVAMode is enabled, check if there's already an active VA for this key
 		if (ahLayout.subAccounts[subAccount].singleVAMode) {
 			address existingVA = ahLayout.activeVAByKey[subAccount][isolationType][symbolId];
@@ -269,20 +263,27 @@ contract ViewFacet is IViewFacet {
 			}
 		}
 
-		// If no deleted account exists, generate and return a new virtual account address
+		// Then check if a deleted virtual account exists for this combination
+		uint256 poolLength = ahLayout.deletedVirtualAccountsPool[subAccount][isolationType][symbolId].length;
+		if (poolLength > 0) {
+			return ahLayout.deletedVirtualAccountsPool[subAccount][isolationType][symbolId][poolLength - 1];
+		}
+
+		// If neither active nor reusable account exists, generate and return a new virtual account address
 		uint256 nextNonce = ahLayout.subAccountVirtualNonces[subAccount] + 1;
 		return LibAccountLayerUtils.generateVirtualAccountAddress(subAccount, nextNonce);
 	}
 
 	// ==================== AccountManager ====================
 
-	/// @notice Computes the deterministic address for an AccountManager given registrant and name
+	/// @notice Computes the next deterministic AccountManager address for a registrant and affiliate name
 	/// @param registrant The registrant address
 	/// @param name The affiliate name
-	/// @return The deterministic AccountManager address
+	/// @return The next deterministic AccountManager address
 	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, registrant, name));
+		uint256 nextRegistrationNonce = AffiliateStorage.layout().registrationNonces[registrant] + 1;
+		bytes32 salt = keccak256(abi.encodePacked(ACCOUNT_MANAGER_CODE_HASH, registrant, name, nextRegistrationNonce));
 		bytes memory bytecode = abi.encodePacked(ahLayout.accountManagerImplementation, abi.encode(address(this)));
 		bytes32 initCodeHash = keccak256(bytecode);
 		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));

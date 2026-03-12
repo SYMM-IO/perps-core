@@ -13,6 +13,8 @@ import { LiquidationType, LiquidationDetail, Price, AccountStorage } from "../..
 import { DeferredLiquidationSig } from "../../storages/MuonStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
+import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library DeferredLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -23,7 +25,7 @@ library DeferredLiquidationFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
-		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA);
+		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
 
 		int256 liquidationAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			liquidationSig.upnl,
@@ -39,7 +41,8 @@ library DeferredLiquidationFacetImpl {
 		);
 		if (availableBalance > 0) {
 			accountLayout.allocatedBalances[partyA] -= uint256(availableBalance);
-			accountLayout.partyAReimbursement[partyA] += uint256(availableBalance);
+			accountLayout.partyADeferredBalance[partyA] += uint256(availableBalance);
+			emit SharedEvents.BalanceChangePartyA(partyA, uint256(availableBalance), SharedEvents.BalanceChangeType.DEFERRED_BALANCE_OUT);
 		}
 
 		maLayout.liquidationStatus[partyA] = true;
@@ -66,7 +69,7 @@ library DeferredLiquidationFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
-		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA);
+		LibMuonLiquidation.verifyDeferredLiquidationSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 
 		LiquidationDetail storage detail = accountLayout.liquidationDetails[partyA];

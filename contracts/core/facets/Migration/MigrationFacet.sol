@@ -36,10 +36,11 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 		return MigrationStorage.layout().quoteMigrated[quoteId];
 	}
 
-	/// @notice Check if partyB locked values have been migrated
-	/// @param partyB The partyB address to check
-	/// @return True if the partyB locked values have been migrated
-	function isPartyBLockedValuesMigrated(address partyB) external view returns (bool) {
-		return MigrationStorage.layout().partyBLockedValuesMigrated[partyB];
+	/// @notice Check if a partyB+partyA pair's locked values have been migrated to the cross bucket
+	/// @param partyB The partyB address
+	/// @param partyA The partyA address
+	/// @return True if this pair has been migrated
+	function isCrossLockedValuesMigrated(address partyB, address partyA) external view returns (bool) {
+		return MigrationStorage.layout().crossLockedValuesMigrated[partyB][partyA];
 	}
 }

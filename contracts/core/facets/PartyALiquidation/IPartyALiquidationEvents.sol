@@ -41,4 +41,5 @@ interface IPartyALiquidationEvents {
 	event FullyLiquidatedPartyA(address partyA, bytes liquidationId);
 	event SetSymbolsPrices(address liquidator, address partyA, uint256[] symbolIds, uint256[] prices, bytes liquidationId);
 	event DisputeForLiquidation(address liquidator, address partyA, bytes liquidationId);
+	event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
 }

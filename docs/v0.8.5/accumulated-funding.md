@@ -31,6 +31,8 @@ struct FundingFee {
     uint256 lastUpdatedEpoch;    // When we last updated
     uint256 startEpoch;          // When tracking began
     uint256 epochDuration;       // How long each epoch is
+    int256 snapshotLongFee;     // Frozen cumulative long fee from previous durations
+    int256 snapshotShortFee;    // Frozen cumulative short fee from previous durations
 }
 ```
 
@@ -68,11 +70,43 @@ When charging funding, we calculate the total accumulated funding since the posi
 
 ## Handling Dynamic Epoch Durations
 
-Markets evolve, and sometimes a market maker might want to change their funding frequency from, say, 8-hour epochs to 1-hour epochs. Our system handles this gracefully.
+Markets evolve, and sometimes a market maker might want to change their funding frequency from, say, 8-hour epochs to 1-hour epochs. Our system handles this using a **snapshot approach** that preserves fee accuracy across duration changes.
 
-When changing epoch duration, we first finalize the current weighted average under the old duration. Then we compute a ratio between the new and old durations and scale all stored rates accordingly. A 0.04% rate per 8 hours becomes 0.005% per hour. The economic impact remains identical, just measured on a different timescale.
+### The Problem with Re-dividing Timestamps
+
+The total accumulated fee at any point is: `accumulatedRate × epochCount`, where `epochCount = floor(lastUpdatedTimestamp / duration) - floor(startTimestamp / duration)`.
+
+A naive approach to changing duration would re-divide the old timestamps by the new duration to get a new epoch count, then scale the rate to compensate. But floor division doesn't distribute cleanly -- `floor(a/d₁)` and `floor(a/d₂)` can round independently, so the re-divided epoch count can be off by up to 1 on each end. This means parties could be overcharged or undercharged by up to 2 epochs of fees.
+
+### The Snapshot Solution
+
+Instead of re-measuring old history with a new ruler, we **freeze the old total and start fresh**:
+
+1. **Read the odometer.** Calculate the exact cumulative fee under the old duration: `snapshot = accumulatedRate × (lastUpdatedEpoch - startEpoch)`. This is a single scalar -- no division, no rounding error.
+
+2. **Store it.** Add this value to `snapshotLongFee` / `snapshotShortFee` in the `FundingFee` struct. These fields accumulate across multiple duration changes.
+
+3. **Reset the odometer.** Set `startEpoch` and `startEpochTimeStamp` to the current time. The weighted average (`accumulatedRate`) resets to `currentRate`. Epoch tracking begins from zero under the new duration.
+
+4. **Scale only the current rate.** The `currentRate` is scaled by `newDuration / oldDuration` so the per-second economic impact stays the same. A 0.04% rate per 8 hours becomes 0.005% per hour.
+
+From this point on, the total fee is always:
+
+```
+totalFee = snapshotFee + accumulatedRate × epochsSinceStart + currentRate × epochsSinceLastUpdate
+```
+
+The snapshot captures all history as an exact number. The new tracking runs cleanly under the new duration. The two pieces simply add together. If the duration changes again, the current tracking gets folded into the snapshot and the process repeats -- snapshots compose without compounding any error.
 
 This flexibility is crucial for market makers who need to adapt to changing market conditions. During volatile periods, they might want more frequent funding updates. During stable periods, less frequent updates save on gas costs.
+
+### Signature Staleness Guard
+
+When a market maker changes epoch duration, the accumulated funding accrual changes, which affects UPNL values. Any UPNL signature obtained before the change becomes stale -- it reflects funding under the old epoch duration.
+
+To prevent stale signatures from being used, the system records a `lastEpochDurationChangeTimestamp` per market maker. All Muon UPNL signature verifications check that the signature's timestamp is not older than any connected market maker's last epoch change. This is an O(k) check where k is the number of partyBs connected to the trader, bounded by `maxPartyAConnectionLimit`.
+
+This means that after an epoch duration change, all in-flight signatures for any trader connected to that market maker are invalidated. Fresh signatures must be obtained post-change.
 
 ## Aggregate Funding Tracking for Efficient UPNL Calculations
 

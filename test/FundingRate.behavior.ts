@@ -7,10 +7,11 @@ import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal, getBlockTimestamp, unDecimal } from "./utils/Common.js"
-import { getDummyPairUpnlSig } from "./utils/SignatureUtils.js"
+import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
+import { getDummyHighLowPriceSig, getDummyPairUpnlSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeFundingRate(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
@@ -276,7 +277,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 				expect(fundingFee.epochDuration).to.equal(NineHourInSec)
 				expect(fundingFee.lastUpdatedEpoch).to.approximately(blockTimestamp / BigInt(NineHourInSec), 1)
-				expect(fundingFee.startEpoch).to.equal(0)
+				expect(fundingFee.startEpoch).to.approximately(blockTimestamp / BigInt(NineHourInSec), 1)
 			})
 		})
 
@@ -572,7 +573,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [300])
 				const fundingRate7 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 				expect(fundingRate7.currentLongRate).to.equal(decimal(15n, 15))
-				expect(fundingRate7.accumulatedLongRate).to.equal(decimal(225n, 14))
+				expect(fundingRate7.accumulatedLongRate).to.equal(decimal(15n, 15))
 				expect(fundingRate7.startEpoch).to.equal(BigInt(fundingRate7.startEpochTimeStamp) / 300n)
 
 				//* Move to t+1700: Charge accumulated funding fee
@@ -592,7 +593,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingRate8 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 
 				expect(fundingRate8.currentLongRate).to.equal(decimal(15n, 15))
-				expect(fundingRate8.accumulatedLongRate).to.equal(decimal(21n, 15))
+				expect(fundingRate8.accumulatedLongRate).to.equal(decimal(15n, 15))
 
 				expect(quote3.accumulatedPaidFunding).to.equal(decimal(105n, 15)) //! 0.12
 				expect(quote3.lastFundingPaymentTimestamp).to.equal(await time.latest())
@@ -621,7 +622,7 @@ export function shouldBehaveLikeFundingRate(): void {
 
 				const fundingRate9 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 				expect(fundingRate9.currentLongRate).to.equal(decimal(5n, 16))
-				expect(fundingRate9.accumulatedLongRate).to.equal(decimal(21n, 15))
+				expect(fundingRate9.accumulatedLongRate).to.equal(decimal(15n, 15))
 				expect(fundingRate9.lastUpdatedEpoch).to.equal(BigInt(await time.latest()) / 300n)
 
 				//* Move to t+2100: Final charge of accumulated funding fee
@@ -641,7 +642,7 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingRate10 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 
 				expect(fundingRate10.currentLongRate).to.equal(decimal(5n, 16))
-				expect(fundingRate10.accumulatedLongRate).to.approximately(decimal(258n, 14), decimal(35n, 13))
+				expect(fundingRate10.accumulatedLongRate).to.equal(decimal(325n, 14))
 
 				expect(quote4.accumulatedPaidFunding).to.approximately(decimal(155n, 15), decimal(1n, 13))
 				expect(quote4.lastFundingPaymentTimestamp).to.equal(await time.latest())
@@ -772,6 +773,109 @@ export function shouldBehaveLikeFundingRate(): void {
 		// })
 	})
 
+	describe("setEpochDuration snapshot fix", () => {
+		it("should preserve fee exactly when changing epoch duration via snapshot", async () => {
+			const startTime = 2000000000
+			const oldD = 400
+			const newD = 700
+
+			// Step 1: Set initial epoch duration
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [oldD])
+
+			// Step 2: Set funding fee => sets startEpochTimeStamp
+			await time.setNextBlockTimestamp(startTime + 350)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(1n, 16)], [0], [decimal(1n)])
+
+			// Step 3: Advance several epochs so epochsBefore > 0
+			await time.setNextBlockTimestamp(startTime + 1000)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+
+			const fundingBefore = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+			const oldEpochsBefore = fundingBefore.lastUpdatedEpoch - fundingBefore.startEpoch
+
+			// Record the total fee BEFORE the duration change
+			const totalFeeBefore = fundingBefore.accumulatedLongRate * oldEpochsBefore
+
+			// Step 4: Change epoch duration
+			await time.setNextBlockTimestamp(startTime + 1001)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [newD])
+
+			const fundingAfter = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+
+			// Snapshot approach: old fee is frozen in snapshotLongFee, epoch tracking resets
+			expect(fundingAfter.snapshotLongFee).to.equal(totalFeeBefore, "Snapshot should capture exact old fee")
+			expect(fundingAfter.lastUpdatedEpoch - fundingAfter.startEpoch).to.equal(0n, "Epoch tracking resets to 0")
+			expect(fundingAfter.startEpochTimeStamp).to.equal(fundingAfter.lastUpdatedTimeStamp, "Start resets to now")
+		})
+
+		it("should not inflate fees beyond old total when changing duration", async () => {
+			const startTime = 2000000000
+
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [10])
+
+			await time.setNextBlockTimestamp(startTime + 1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+
+			await time.setNextBlockTimestamp(startTime + 12)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+
+			const fundingBefore = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+			const oldEpochsBefore = fundingBefore.lastUpdatedEpoch - fundingBefore.startEpoch
+			const totalFeeBefore = fundingBefore.accumulatedLongRate * oldEpochsBefore
+
+			// Change to much smaller epoch duration
+			await time.setNextBlockTimestamp(startTime + 13)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [3])
+
+			const fundingAfter = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+
+			// Snapshot captures old fee exactly — no inflation possible
+			expect(fundingAfter.snapshotLongFee).to.equal(totalFeeBefore, "Snapshot = old fee, zero rounding error")
+			// New epoch tracking starts from 0
+			const newEpochsBefore = fundingAfter.lastUpdatedEpoch - fundingAfter.startEpoch
+			expect(newEpochsBefore).to.equal(0n)
+		})
+
+		it("should handle multiple successive duration changes correctly", async () => {
+			const startTime = 2000000000
+
+			// First duration: 400
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [400])
+
+			await time.setNextBlockTimestamp(startTime + 100)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(1n, 16)], [0], [decimal(1n)])
+
+			await time.setNextBlockTimestamp(startTime + 900)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(1n, 16)], [0], [decimal(1n)])
+
+			const f1 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+			const fee1 = f1.accumulatedLongRate * (f1.lastUpdatedEpoch - f1.startEpoch)
+
+			// First change: 400 -> 300
+			await time.setNextBlockTimestamp(startTime + 901)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [300])
+
+			await time.setNextBlockTimestamp(startTime + 1500)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+
+			const f2 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+			const fee2 = f2.accumulatedLongRate * (f2.lastUpdatedEpoch - f2.startEpoch)
+
+			// Second change: 300 -> 500
+			await time.setNextBlockTimestamp(startTime + 1501)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [500])
+
+			const f3 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
+
+			// Snapshot should accumulate: first change snapshot + second change snapshot
+			expect(f3.snapshotLongFee).to.equal(fee1 + fee2, "Snapshots compose correctly across multiple changes")
+			expect(f3.lastUpdatedEpoch - f3.startEpoch).to.equal(0n, "Epoch tracking resets after each change")
+		})
+	})
+
 	describe("normal and accumulated charge funding rate integration", function () {
 		it("should not be able to charge normal when epoch duration set", async () => {
 			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
@@ -849,6 +953,219 @@ export function shouldBehaveLikeFundingRate(): void {
 			// Verify the accumulated charge updated the quote's lastFundingPaymentTimestamp
 			const quoteAfterAccum = await context.viewFacetQuote.getQuote(4)
 			expect(quoteAfterAccum.lastFundingPaymentTimestamp).to.be.gte(quoteBeforeAccum.lastFundingPaymentTimestamp)
+		})
+	})
+
+	describe("Stale UPNL signature guard after epoch duration change", () => {
+		// Tests for the vulnerability where a partyB changes epoch duration mid-window,
+		// making existing UPNL signatures stale (funding is included in UPNL).
+		// See: issue #139
+
+		beforeEach(async () => {
+			// Set up accumulated funding system with an initial epoch duration
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.updateAccumulatedFundingFee([1], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+		})
+
+		it("should reject stale HighLowPriceSig in forceClosePosition after epoch duration change", async () => {
+			// Attack path from the report:
+			// 1. partyA calls forceClosePosition with a PairUpnlAndPriceSig timestamped before the change
+			// 2. The signature passes upnlValidTime but UPNL doesn't account for new funding accrual
+			// 3. partyA may appear solvent when actually insolvent
+
+			// Set up a close request so forceClose can be attempted
+			await user.requestToClosePosition(
+				1,
+				limitCloseRequestBuilder()
+					.quantityToClose(await getQuoteQuantity(context, 1))
+					.closePrice(decimal(1n))
+					.deadline((await getBlockTimestamp()) + 1000n)
+					.build(),
+			)
+
+			// Get force close cooldown times
+			const cooldowns = await context.viewFacet.forceCloseCooldowns()
+			const firstCooldown = cooldowns[0]
+			const secondCooldown = cooldowns[1]
+			const period = 10n
+
+			// Advance past cooldowns
+			await time.increase(firstCooldown + period + secondCooldown + 1n)
+			const now = await getBlockTimestamp()
+			const startTime = now - secondCooldown - period
+			const endTime = startTime + period
+
+			// Get HighLowPriceSig BEFORE epoch change
+			const staleSig = await getDummyHighLowPriceSig(startTime, endTime, decimal(1n), decimal(2n), decimal(1n), decimal(1n))
+
+			// Change epoch duration — invalidates all in-flight signatures
+			await time.increase(1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+			// Attempt force close with stale sig — must fail
+			await expect(user.forceClosePosition(1, staleSig)).to.be.revertedWith("LibMuon: Stale signature after epoch duration change")
+		})
+
+		it("should reject stale SingleUpnlSig in deallocate after epoch duration change", async () => {
+			// partyA-only signature: partyA's UPNL is aggregated across ALL partyBs.
+			// If any connected partyB changes epoch duration, partyA's UPNL is stale.
+			// With stale UPNL showing better solvency, partyA could over-deallocate.
+
+			// Record timestamp BEFORE epoch change
+			const sigTimestamp = await getBlockTimestamp()
+
+			// Change epoch duration — advances block.timestamp past sigTimestamp
+			await time.increase(2)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+			// Build a stale SingleUpnlSig with the pre-change timestamp
+			const staleSig: any = {
+				reqId: "0x",
+				timestamp: sigTimestamp,
+				upnl: 0n,
+				gatewaySignature: ethers.ZeroAddress,
+				sigs: { signature: "0", owner: ethers.ZeroAddress, nonce: ethers.ZeroAddress },
+			}
+
+			// Attempt deallocate with stale sig — must fail
+			await expect(context.accountFacet.connect(context.signers.user).deallocate(decimal(1n), staleSig)).to.be.revertedWith(
+				"LibMuon: Stale signature after epoch duration change",
+			)
+		})
+
+		it("should reject stale sig when a DIFFERENT connected partyB changes epoch duration", async () => {
+			// Key scenario: partyA has positions with hedger1 and hedger2.
+			// hedger2 changes epoch duration → partyA's total UPNL changes.
+			// A signature obtained before the change is stale for ALL operations,
+			// including those involving hedger1.
+
+			// Set up hedger2 with positions against the same partyA
+			hedger2 = new Hedger(context, context.signers.hedger2)
+			await hedger2.setBalances(decimal(5000n), decimal(5000n))
+
+			// Add a second symbol for hedger2
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("ETHUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).build())
+			await hedger2.lockQuote(quoteId)
+			await hedger2.openPosition(quoteId)
+
+			// hedger2 sets up accumulated funding on symbol 2
+			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([2], [EightHourInSec])
+			await context.fundingRateFacet
+				.connect(context.signers.hedger2)
+				.updateAccumulatedFundingFee([2], [decimal(1n, 14)], [-decimal(1n, 14)], [decimal(1n)])
+
+			// Get signature BEFORE hedger2's epoch change
+			const staleSig = await getDummyPairUpnlSig()
+
+			// hedger2 changes epoch duration — NOT hedger1
+			await time.increase(1)
+			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([2], [NineHourInSec])
+
+			// Attempt to use stale sig in an operation with hedger1 — must still fail
+			// because partyA's UPNL is aggregated across ALL connected partyBs
+			await expect(
+				context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], staleSig),
+			).to.be.revertedWith("LibMuon: Stale signature after epoch duration change")
+		})
+
+		it("should reject stale deallocate sig when a different partyB changes epoch duration", async () => {
+			// Same cross-partyB scenario but with a partyA-only signature (deallocate)
+			hedger2 = new Hedger(context, context.signers.hedger2)
+			await hedger2.setBalances(decimal(5000n), decimal(5000n))
+
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("ETHUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [1])
+
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).build())
+			await hedger2.lockQuote(quoteId)
+			await hedger2.openPosition(quoteId)
+
+			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([2], [EightHourInSec])
+
+			// Record timestamp BEFORE hedger2's epoch change
+			const sigTimestamp = await getBlockTimestamp()
+
+			// hedger2 changes epoch duration
+			await time.increase(2)
+			await context.fundingRateFacet.connect(context.signers.hedger2).setEpochDurations([2], [NineHourInSec])
+
+			// Build stale SingleUpnlSig with pre-change timestamp
+			const staleSig: any = {
+				reqId: "0x",
+				timestamp: sigTimestamp,
+				upnl: 0n,
+				gatewaySignature: ethers.ZeroAddress,
+				sigs: { signature: "0", owner: ethers.ZeroAddress, nonce: ethers.ZeroAddress },
+			}
+
+			// partyA tries to deallocate with stale sig — must fail
+			await expect(context.accountFacet.connect(context.signers.user).deallocate(decimal(1n), staleSig)).to.be.revertedWith(
+				"LibMuon: Stale signature after epoch duration change",
+			)
+		})
+
+		it("should allow operations after obtaining a fresh signature post epoch change", async () => {
+			// Verify that the guard doesn't permanently block operations —
+			// fresh signatures obtained after the epoch change should work fine
+
+			const staleSig = await getDummyPairUpnlSig()
+
+			await time.increase(1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+			// Stale sig fails
+			await expect(
+				context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], staleSig),
+			).to.be.revertedWith("LibMuon: Stale signature after epoch duration change")
+
+			// Fresh sig succeeds
+			const freshSig = await getDummyPairUpnlSig()
+			await expect(
+				context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], freshSig),
+			).to.not.reverted
+		})
+
+		it("should not invalidate signatures when epoch duration value is unchanged", async () => {
+			const sig = await getDummyPairUpnlSig()
+
+			// Set same epoch duration again — should NOT invalidate signatures
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [EightHourInSec])
+
+			await expect(
+				context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(await user.getAddress(), await hedger.getAddress(), [1], sig),
+			).to.not.reverted
+		})
+
+		it("should not affect unconnected partyAs when partyB changes epoch duration", async () => {
+			// user2 has no positions with hedger — epoch change should not affect user2
+			const user2 = new User(context, context.signers.user2)
+			await user2.setup()
+			await user2.setBalances(decimal(5000n), decimal(5000n), decimal(5000n))
+
+			// Change epoch duration for hedger
+			await time.increase(1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+			// user2 should be able to deallocate since they have no connection to hedger
+			const sig = await getDummySingleUpnlSig()
+			await expect(context.accountFacet.connect(context.signers.user2).deallocate(decimal(1n), sig)).to.not.reverted
 		})
 	})
 }

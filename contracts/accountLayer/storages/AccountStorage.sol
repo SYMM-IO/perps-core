@@ -139,6 +139,11 @@ library AccountStorage {
 		/// @notice Expected code hash after AccountManager initialization
 		/// @dev Used to verify AccountManagers deployed correctly.
 		bytes32 initAccountManagerCodeHash;
+		/// @notice PartyBs that closed positions with a VA while in cross liquidation.
+		/// @dev Maps VA address => set of partyBs with pending cross liq distributions.
+		/// Used to defer VA deletion until distributeForClearingHouse has credited the VA's share,
+		/// even when the final hook fires with a different partyB.
+		mapping(address => EnumerableSet.AddressSet) vaPendingCrossLiqPartyBs;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

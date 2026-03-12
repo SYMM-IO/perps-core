@@ -63,7 +63,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	/// @notice Allows a registered virtual provider to deposit collateral on behalf of another user without actual fund transfer and allocate them.
 	/// @param user The recipient address for the deposit.
 	/// @param amount The amount of collateral to be deposited, specified in 18 decimals.
-	function virtualDepositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused {
+	function virtualDepositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(user) {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
@@ -181,7 +181,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 	/// @notice Deallocates collateral without requiring a Muon UPNL signature, only when the user has no open or pending positions.
 	/// @param amount The amount of collateral to deallocate, specified in 18 decimals.
-	function zeroUpnlDeallocate(uint256 amount) external whenNotAccountingPaused notLiquidatedPartyA(LibSigner.getSigner()) {
+	function zeroUpnlDeallocate(uint256 amount) external onlyRoleAllowProxy(LibAccessibility.BALANCE_SETTLER_ROLE) {
 		address signer = LibSigner.getSigner();
 
 		AccountFacetImpl.zeroUpnlDeallocate(amount, signer);
@@ -208,14 +208,11 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 	}
 
 	/// @notice Transfers the sender's deposited balance to the user's balance (not allocated balance).
-	/// @dev This function is restricted to INTERNAL_TRANSFER_TO_BALANCE_ROLE to prevent cooldown manipulation attacks.
+	/// @dev This function is restricted to BALANCE_SETTLER_ROLE to prevent cooldown manipulation attacks.
 	/// @dev Used by AccountLayer when returning funds from virtual accounts to parent accounts.
 	/// @param user The address of the user to whom the balance will be transferred.
 	/// @param amount The amount to transfer in 18 decimals.
-	function internalTransferToBalance(
-		address user,
-		uint256 amount
-	) external whenNotInternalTransferPaused onlyRoleAllowProxy(LibAccessibility.INTERNAL_TRANSFER_TO_BALANCE_ROLE) {
+	function internalTransferToBalance(address user, uint256 amount) external onlyRoleAllowProxy(LibAccessibility.BALANCE_SETTLER_ROLE) {
 		address signer = LibSigner.getSigner();
 
 		AccountFacetImpl.internalTransferToBalance(user, amount);

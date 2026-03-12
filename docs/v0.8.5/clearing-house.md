@@ -169,7 +169,7 @@ Same routing logic as the cross partyB flow.
 Finalizes the takeover. The `settledPartyBs` parameter is important: if the normal liquidation flow had already processed some partyBs before the takeover (creating settlement states), those states need to be cleaned up explicitly since the connections may already be removed.
 
 Settlement:
-- Releases `partyAReimbursement` back to `allocatedBalances[partyA]` (these are escrowed fees and credits that accumulated during liquidation — see the escrow routing in `distributeForClearingHouse` and fee refunds in `liquidatePendingPositionsForClearingHouse`).
+- Releases both `partyAReimbursement` and `partyADeferredBalance` back to `allocatedBalances[partyA]`. The reimbursement contains pending fee refunds and credits from the liquidation process; the deferred balance contains excess funds from deferred liquidation (see [Liquidation Escrow](liquidation-escrow.md)). In the takeover flow, both are returned to the PartyA because the ClearingHouse already has full control over distribution via `deallocateForClearingHouse` and `distributeForClearingHouse`.
 - Zeros out locked balances.
 - Increments partyA nonce.
 - Sets `liquidationStatus[partyA] = false`.
@@ -305,3 +305,22 @@ Key observations:
 - Funds distributed to the liquidated partyA during cross partyB processing go to `partyAReimbursement` (escrow), not `allocatedBalances`.
 - After cross partyB settles, the ClearingHouse completes the partyA takeover separately.
 - The partyA may have remaining pending quotes (SENT status, no partyB assigned) that weren't handled by the cross partyB flow — these are processed via the takeover's `liquidatePendingPositionsForClearingHouse(partyA, [])`.
+
+---
+
+## Liquidation Escrow Distribution
+
+After a normal (non-takeover) PartyA liquidation settles as `LATE` or `OVERDUE`, the pending fee reimbursement is not returned to the PartyA. Instead, it is held in `liquidationEscrow[partyA]` for the ClearingHouse to distribute. See [Liquidation Escrow](liquidation-escrow.md) for the full motivation and mechanics.
+
+The ClearingHouse distributes escrowed funds via:
+
+```solidity
+function distributeFromLiquidationEscrow(
+    address partyA,
+    address[] memory receivers,
+    address[] memory allocationKeys,
+    uint256[] memory amounts
+) external onlyRole(CLEARING_HOUSE_ROLE)
+```
+
+This function is independent of the takeover and cross partyB liquidation flows -- it operates on the escrow pool that was created during `settlePartyALiquidation`, not during a ClearingHouse lifecycle. The ClearingHouse operator calls it after the normal liquidation has fully settled to compensate PartyBs for haircut losses or return funds to the PartyA if the fees were legitimate.

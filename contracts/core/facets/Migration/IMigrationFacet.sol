@@ -21,8 +21,9 @@ interface IMigrationFacet is IMigrationEvents {
 	/// @return True if the quote has been migrated
 	function isQuoteMigrated(uint256 quoteId) external view returns (bool);
 
-	/// @notice Check if partyB locked values have been migrated
-	/// @param partyB The partyB address to check
-	/// @return True if the partyB locked values have been migrated
-	function isPartyBLockedValuesMigrated(address partyB) external view returns (bool);
+	/// @notice Check if a partyB+partyA pair's locked values have been migrated to the cross bucket
+	/// @param partyB The partyB address
+	/// @param partyA The partyA address
+	/// @return True if this pair has been migrated
+	function isCrossLockedValuesMigrated(address partyB, address partyA) external view returns (bool);
 }

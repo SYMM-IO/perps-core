@@ -2,15 +2,18 @@ import { expect } from "chai"
 
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
-import { loadFixture } from "./helpers/network-helpers.js"
-import { PositionType } from "./models/Enums.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal, getQuoteQuantity } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, getQuoteQuantity } from "./utils/Common.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
+import { getDummyHighLowPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeHooks(): void {
 	let user: User, hedger: Hedger
@@ -173,6 +176,354 @@ export function shouldBehaveLikeHooks(): void {
 			//
 			// const [, , , , , systemCloseCalls] = await systemHook.getLastCloseCall()
 			// expect(systemCloseCalls).to.equal(0n)
+		})
+	})
+
+	describe("onCancelQuote callback", () => {
+		it("Should call hooks on forceCancelQuote", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(1)
+			await user.requestToCancelQuote(1)
+
+			const [, forceCancelCooldown] = await context.viewFacet.coolDownsOfMA()
+			await time.increase(Number(forceCancelCooldown + 1n))
+			await user.forceCancelQuote(1)
+
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.CANCELED)
+
+			const [affiliateQuoteId, affiliatePartyA, affiliatePartyB, affiliateCalls] = await affiliateHook.getLastCancelCall()
+			expect(affiliateQuoteId).to.equal(1n)
+			expect(affiliatePartyA).to.equal(await user.getAddress())
+			expect(affiliatePartyB).to.equal(await hedger.getAddress())
+			expect(affiliateCalls).to.equal(1n)
+
+			const [systemQuoteId, systemPartyA, systemPartyB, systemCalls] = await systemHook.getLastCancelCall()
+			expect(systemQuoteId).to.equal(1n)
+			expect(systemPartyA).to.equal(await user.getAddress())
+			expect(systemPartyB).to.equal(await hedger.getAddress())
+			expect(systemCalls).to.equal(1n)
+		})
+
+		it("Should call hooks on liquidatePendingPositionsPartyA", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1, limitOpenRequestBuilder().build())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(2)
+
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])
+			await user.liquidatePendingPositions()
+
+			const quote = await context.viewFacetQuote.getQuote(2)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+
+			const [affiliateQuoteId, affiliatePartyA, affiliatePartyB, affiliateCalls] = await affiliateHook.getLastCancelCall()
+			expect(affiliateQuoteId).to.equal(2n)
+			expect(affiliatePartyA).to.equal(await user.getAddress())
+			expect(affiliatePartyB).to.equal(await hedger.getAddress())
+			expect(affiliateCalls).to.equal(1n)
+
+			const [systemQuoteId, systemPartyA, systemPartyB, systemCalls] = await systemHook.getLastCancelCall()
+			expect(systemQuoteId).to.equal(2n)
+			expect(systemPartyA).to.equal(await user.getAddress())
+			expect(systemPartyB).to.equal(await hedger.getAddress())
+			expect(systemCalls).to.equal(1n)
+		})
+
+		it("Should call hooks for each pending quote on liquidatePendingPositionsPartyA", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1, limitOpenRequestBuilder().build())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(2)
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(3)
+
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(8n)], [1n])
+			await user.liquidatePendingPositions()
+
+			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect((await context.viewFacetQuote.getQuote(3)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect(await affiliateHook.cancelCallCount()).to.equal(2n)
+			expect(await systemHook.cancelCallCount()).to.equal(2n)
+		})
+
+		it("Should call hooks on liquidatePartyB when pending quotes are liquidated", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(1)
+
+			await context.partyBLiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePartyB(await hedger.getAddress(), await user.getAddress(), await getDummySingleUpnlSig(decimal(-1000n)))
+
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+
+			const [affiliateQuoteId, affiliatePartyA, affiliatePartyB, affiliateCalls] = await affiliateHook.getLastCancelCall()
+			expect(affiliateQuoteId).to.equal(1n)
+			expect(affiliatePartyA).to.equal(await user.getAddress())
+			expect(affiliatePartyB).to.equal(await hedger.getAddress())
+			expect(affiliateCalls).to.equal(1n)
+
+			const [systemQuoteId, systemPartyA, systemPartyB, systemCalls] = await systemHook.getLastCancelCall()
+			expect(systemQuoteId).to.equal(1n)
+			expect(systemPartyA).to.equal(await user.getAddress())
+			expect(systemPartyB).to.equal(await hedger.getAddress())
+			expect(systemCalls).to.equal(1n)
+		})
+
+		it("Should call hooks for LOCKED and CANCEL_PENDING quotes on liquidatePartyB", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(1)
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(2)
+			await user.requestToCancelQuote(2)
+
+			await context.partyBLiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePartyB(await hedger.getAddress(), await user.getAddress(), await getDummySingleUpnlSig(decimal(-1000n)))
+
+			expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect(await affiliateHook.cancelCallCount()).to.equal(2n)
+			expect(await systemHook.cancelCallCount()).to.equal(2n)
+		})
+
+		it("Should call hooks on liquidatePartyB when triggered by forceClose insolvency path", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(await context.signers.admin.getAddress(), ethers.keccak256(ethers.toUtf8Bytes("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setForceCloseMinSigPeriod(10)
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1, limitOpenRequestBuilder().build())
+
+			const quote1 = await context.viewFacetQuote.getQuote(1)
+			await context.controlFacet.connect(context.signers.admin).setForceCloseGapRatio(quote1.symbolId, decimal(1n, 17))
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(2)
+
+			await user.requestToClosePosition(
+				1,
+				limitCloseRequestBuilder()
+					.quantityToClose(await getQuoteQuantity(context, 1n))
+					.closePrice(decimal(1n))
+					.deadline((await getBlockTimestamp()) + 1000n)
+					.build(),
+			)
+
+			const [firstCooldown, secondCooldown] = await context.viewFacet.forceCloseCooldowns()
+			const startTime = (await getBlockTimestamp()) + firstCooldown
+			const endTime = startTime + 10n
+			await time.increase(firstCooldown + 10n + secondCooldown + 1n)
+
+			await user.forceClosePosition(1, await getDummyHighLowPriceSig(startTime, endTime, 0n, decimal(10n), decimal(7n), decimal(8n), 0n, 0n, 0n))
+
+			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect(await affiliateHook.cancelCallCount()).to.equal(1n)
+			expect(await systemHook.cancelCallCount()).to.equal(1n)
+		})
+
+		it("Should call hooks for each pending quote when forceClose triggers partyB liquidation", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(await context.signers.admin.getAddress(), ethers.keccak256(ethers.toUtf8Bytes("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE")))
+			await context.controlFacet.connect(context.signers.admin).setForceCloseMinSigPeriod(10)
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(1)
+			await hedger.openPosition(1, limitOpenRequestBuilder().build())
+
+			const quote1 = await context.viewFacetQuote.getQuote(1)
+			await context.controlFacet.connect(context.signers.admin).setForceCloseGapRatio(quote1.symbolId, decimal(1n, 17))
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(2)
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(3)
+			await user.requestToCancelQuote(3)
+
+			await user.requestToClosePosition(
+				1,
+				limitCloseRequestBuilder()
+					.quantityToClose(await getQuoteQuantity(context, 1n))
+					.closePrice(decimal(1n))
+					.deadline((await getBlockTimestamp()) + 1000n)
+					.build(),
+			)
+
+			const [firstCooldown, secondCooldown] = await context.viewFacet.forceCloseCooldowns()
+			const startTime = (await getBlockTimestamp()) + firstCooldown
+			const endTime = startTime + 10n
+			await time.increase(firstCooldown + 10n + secondCooldown + 1n)
+
+			await user.forceClosePosition(1, await getDummyHighLowPriceSig(startTime, endTime, 0n, decimal(10n), decimal(7n), decimal(8n), 0n, 0n, 0n))
+
+			expect((await context.viewFacetQuote.getQuote(2)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect((await context.viewFacetQuote.getQuote(3)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED_PENDING)
+			expect(await affiliateHook.cancelCallCount()).to.equal(2n)
+			expect(await systemHook.cancelCallCount()).to.equal(2n)
+		})
+	})
+
+	describe("onCloseExpired callback", () => {
+		it("Should call hooks on forceCancelCloseRequest", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(1)
+			const filledAmount = await getQuoteQuantity(context, 1n)
+			await hedger.openPosition(1, limitOpenRequestBuilder().filledAmount(filledAmount).openPrice(decimal(1n)).price(decimal(1n)).build())
+
+			await user.requestToClosePosition(1)
+			await user.requestToCancelCloseRequest(1)
+
+			const [, , forceCancelCloseCooldown] = await context.viewFacet.coolDownsOfMA()
+			await time.increase(Number(forceCancelCloseCooldown + 1n))
+			await user.forceCancelCloseRequest(1)
+
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.OPENED)
+
+			const [affiliateQuoteId, affiliatePartyA, affiliatePartyB, affiliateCalls] = await affiliateHook.getLastCloseExpiredCall()
+			expect(affiliateQuoteId).to.equal(1n)
+			expect(affiliatePartyA).to.equal(await user.getAddress())
+			expect(affiliatePartyB).to.equal(await hedger.getAddress())
+			expect(affiliateCalls).to.equal(1n)
+
+			const [systemQuoteId, systemPartyA, systemPartyB, systemCalls] = await systemHook.getLastCloseExpiredCall()
+			expect(systemQuoteId).to.equal(1n)
+			expect(systemPartyA).to.equal(await user.getAddress())
+			expect(systemPartyB).to.equal(await hedger.getAddress())
+			expect(systemCalls).to.equal(1n)
+		})
+
+		it("Should call hooks when CLOSE_PENDING quote expires", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(1)
+			const filledAmount = await getQuoteQuantity(context, 1n)
+			await hedger.openPosition(1, limitOpenRequestBuilder().filledAmount(filledAmount).openPrice(decimal(1n)).price(decimal(1n)).build())
+
+			const nearDeadline = BigInt(await time.latest()) + 10n
+			await user.requestToClosePosition(1, limitCloseRequestBuilder().deadline(nearDeadline).build())
+			await time.increase(11)
+			await context.partyAFacet.connect(user.signer).expireQuote([1])
+
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.OPENED)
+			expect(await affiliateHook.closeExpiredCallCount()).to.equal(1n)
+			expect(await systemHook.closeExpiredCallCount()).to.equal(1n)
+		})
+
+		it("Should call hooks when CANCEL_CLOSE_PENDING quote expires", async function () {
+			const MockHook = await ethers.getContractFactory("MockHook")
+			const affiliateHook = await MockHook.deploy()
+			await affiliateHook.waitForDeployment()
+			const systemHook = await MockHook.deploy()
+			await systemHook.waitForDeployment()
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(context.accountManager, await affiliateHook.getAddress())
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await systemHook.getAddress())
+
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(1)
+			const filledAmount = await getQuoteQuantity(context, 1n)
+			await hedger.openPosition(1, limitOpenRequestBuilder().filledAmount(filledAmount).openPrice(decimal(1n)).price(decimal(1n)).build())
+
+			const nearDeadline = BigInt(await time.latest()) + 10n
+			await user.requestToClosePosition(1, limitCloseRequestBuilder().deadline(nearDeadline).build())
+			await user.requestToCancelCloseRequest(1)
+			await time.increase(11)
+			await context.partyAFacet.connect(user.signer).expireQuote([1])
+
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.OPENED)
+			expect(await affiliateHook.closeExpiredCallCount()).to.equal(1n)
+			expect(await systemHook.closeExpiredCallCount()).to.equal(1n)
 		})
 	})
 

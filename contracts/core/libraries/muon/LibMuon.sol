@@ -8,7 +8,8 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { MuonStorage, SingleUpnlSig } from "../../storages/MuonStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { IMuonSignatureVerifier } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { FundingStorage } from "../../storages/FundingStorage.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { LibAccount } from "../LibAccount.sol";
 
 library LibMuon {
@@ -28,23 +29,47 @@ library LibMuon {
 	// Essentially, during testing, we temporarily disable the code sections responsible for validating these signatures. The sections I'm referring to are located within the LibMuon file. Specifically, the body of the 'verifyTSSAndGateway' method is a prime candidate for temporary disablement. In addition, several 'require' statements within other functions of this file, which examine the signatures' expiration status, also need to be temporarily disabled.
 	// However, it is crucial to note that these lines should not be disabled in the production deployed version.
 	// We emphasize this because they are only disabled for testing purposes.
-	/// @notice Verifies the TSS signature and gateway signature through the MuonSignatureVerifier.
+	/// @notice Verifies the TSS signature and gateway signature through the MuonSignatureVerifier with per-category authorization.
+	function verifyTSSAndGateway(
+		bytes32 hash,
+		IMuonSignatureVerifier.SchnorrSign memory sign,
+		bytes memory gatewaySignature,
+		MuonFunction func
+	) internal view {
+		// == SignatureCheck( ==
+		IMuonSignatureVerifier(GlobalAppStorage.layout().signatureVerifier).verify(hash, sign, gatewaySignature, func);
+		// == ) ==
+	}
+
+	/// @notice Verifies the TSS signature and gateway signature without per-category authorization checks.
 	function verifyTSSAndGateway(bytes32 hash, IMuonSignatureVerifier.SchnorrSign memory sign, bytes memory gatewaySignature) internal view {
 		// == SignatureCheck( ==
 		IMuonSignatureVerifier(GlobalAppStorage.layout().signatureVerifier).verify(hash, sign, gatewaySignature);
 		// == ) ==
 	}
 
+	/// @notice Rejects UPNL signatures that predate an epoch duration change for any of partyA's connected partyBs.
+	/// @dev Funding is included in UPNL, so changing epoch duration alters accrued funding and makes
+	///      pre-change signatures stale. Iterates connectedPartyBs which is bounded by maxPartyAConnectionLimit.
+	function verifyNotStaleAfterEpochChange(uint256 sigTimestamp, address partyA) internal view {
+		address[] storage partyBs = AccountStorage.layout().connectedPartyBs[partyA];
+		mapping(address => uint256) storage timestamps = FundingStorage.layout().lastEpochDurationChangeTimestamp;
+		for (uint256 i = 0; i < partyBs.length; i++) {
+			require(sigTimestamp >= timestamps[partyBs[i]], "LibMuon: Stale signature after epoch duration change");
+		}
+	}
+
 	/// @notice Verifies Party B UPNL signature (uses per-partyA nonce in normal mode, zero in cross mode).
-	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA) internal view {
-		verifyPartyBUpnl(upnlSig, partyB, partyA, false);
+	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, MuonFunction func) internal view {
+		verifyPartyBUpnl(upnlSig, partyB, partyA, false, func);
 	}
 
 	/// @notice Verifies Party B UPNL signature with configurable cross partyB nonce usage.
-	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, bool useCrossNonce) internal view {
+	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, bool useCrossNonce, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		verifyNotStaleAfterEpochChange(upnlSig.timestamp, partyA);
 		// == ) ==
 		bytes32 hash = keccak256(
 			abi.encodePacked(
@@ -59,6 +84,6 @@ library LibMuon {
 				getChainId()
 			)
 		);
-		verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature);
+		verifyTSSAndGateway(hash, upnlSig.sigs, upnlSig.gatewaySignature, func);
 	}
 }

@@ -216,6 +216,7 @@ library LibQuoteClose {
 			quote.quantityToClose = 0;
 			quote.quoteStatus = QuoteStatus.OPENED;
 			result = QuoteStatus.OPENED;
+			LibHook.callCloseExpiredHooks(quoteId, quote.partyA, quote.partyB, quote.affiliate);
 		}
 	}
 }

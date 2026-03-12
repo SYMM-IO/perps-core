@@ -264,6 +264,11 @@
     },
     {
         "inputs": [],
+        "name": "UnauthorizedHookCaller",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "VirtualProviderRequired",
         "type": "error"
     },
@@ -872,6 +877,29 @@
                 "type": "uint256"
             },
             {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            }
+        ],
+        "name": "onCloseExpired",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
                 "internalType": "uint256",
                 "name": "filledAmount",
                 "type": "uint256"
@@ -936,6 +964,19 @@
             }
         ],
         "name": "onFeeCharged",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            }
+        ],
+        "name": "onLiquidationSettled",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
