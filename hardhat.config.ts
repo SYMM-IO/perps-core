@@ -163,7 +163,18 @@ export default defineConfig({
 			allowUnlimitedContractSize: true,
 			hardfork: "cancun",
 			forking: {
-				url: process.env.FORK_RPC_URL || "https://arbitrum.drpc.org",
+				url: (configVariable("RPC_ARBITRUM") as any) || "https://arbitrum.drpc.org",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
+		},
+		"fork-base": {
+			type: "edr-simulated",
+			chainId: 8453,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: (configVariable("RPC_BASE") as any) || "https://base.drpc.org",
 				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
 			},
 		},

@@ -1,16 +1,7 @@
 {
-	"// diamondAddress": "Diamond proxy address on the target network (required)",
 	"diamondAddress": "0x...",
-
-	"// subgraphEndpoint": "Subgraph GraphQL endpoint for fetching open quotes and PartyB balances (optional, defaults to Goldsky stage)",
 	"subgraphEndpoint": "",
-
-	"// spotCheckCount": "Number of quotes/balances to spot-check against on-chain state (default: 20)",
 	"spotCheckCount": 20,
-
-	"// outputDir": "Directory for output files (default: ./scripts/upgrade/output)",
 	"outputDir": "./scripts/upgrade/output",
-
-	"// outputFile": "Path to write the validated migration input JSON (default: ./scripts/upgrade/output/migration-input.json)",
 	"outputFile": "./scripts/upgrade/output/migration-input.json"
 }
