@@ -8,7 +8,7 @@ The production upgrade has five steps:
 2. **Execute upgrade** -- submit the calldata from any wallet, multisig, or script
 3. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
 4. **Run migration** (`runMigration.ts`) -- execute migration + verify
-5. **Post-migration** -- unpause, enable cross-PartyB mode
+5. **Generate post-migration transactions** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
 
 ## Prerequisites
 
@@ -17,9 +17,10 @@ The production upgrade has five steps:
 - Subgraph endpoint synced to current chain state
 - Config files:
   ```bash
-  cp scripts/upgrade/config/upgrade.sample.json scripts/upgrade/config/upgrade.json
-  cp scripts/upgrade/config/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
-  cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.json
+  cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json
+  cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
+  cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
+  cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration.json
   ```
 
 ## Step 1: Generate Upgrade Transactions
@@ -131,11 +132,30 @@ DRY_RUN=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output
 
 ## Step 5: Post-Migration
 
-After `migration-report.json` shows `"status": "success"`:
+After `migration-report.json` shows `"status": "success"`, generate and execute post-migration transactions.
 
-1. **Unpause the system** -- call `unpauseGlobal()` via admin
-2. **Enable cross-PartyB mode** -- for each PartyB, call `setCrossPartyB(partyB, true)` via admin
-3. **Clean up** -- delete `migration-progress.json` if present
+```bash
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationTxs.ts --network arbitrum
+
+# With Safe batch output
+DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationTxs.ts --network arbitrum
+```
+
+PartyB addresses are read from `postMigration.json` config (`partyBs` array).
+
+The generated transactions, in order:
+
+| # | Transaction | Purpose |
+|---|------------|---------|
+| 1 | `unpauseGlobal()` | Resume system operations |
+| 2 | `setCrossPartyBModeActivated(true)` | Enable cross-PartyB feature flag |
+| 3+ | `setCrossPartyB(partyB, true)` | Enable cross mode per PartyB |
+
+Output:
+- `scripts/upgrade/output/post-migration-transactions.json` -- raw calldata (always)
+- `scripts/upgrade/output/post-migration-safe-batch.json` -- Safe batch (if SAFE_ADDRESS set)
+
+After execution, clean up `migration-progress.json` if present.
 
 ## Verification
 
@@ -157,6 +177,7 @@ See [fork-rehearsal.md](fork-rehearsal.md) for full config reference tables. Sum
 | `upgrade.json` | `generateUpgradeTxs.ts` | `diamondAddress`, `adminAddress`, `newV085Parameters` |
 | `prepareMigration.json` | `prepareMigrationInput.ts` | `diamondAddress`, `subgraphEndpoint` |
 | `migrate.json` | `runMigration.ts` | `diamondAddress`, `migrationInputFile`, `chunkSize` |
+| `postMigration.json` | `generatePostMigrationTxs.ts` | `diamondAddress`, `partyBs` |
 
 ## Troubleshooting
 

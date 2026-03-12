@@ -55,7 +55,7 @@ type MigrationOnDemandReport = {
  *     npx hardhat run ./scripts/upgrade/runMigration.ts --network localhost
  *
  * Config:
- *   cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.json
+ *   cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
  *
  * Resume:
  *   Re-run the command; migration progress is stored in the progress file.

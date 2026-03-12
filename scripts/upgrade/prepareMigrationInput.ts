@@ -14,7 +14,7 @@ import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js
  *   DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
  *
  * Config:
- *   cp scripts/upgrade/config/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
+ *   cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
  *
  * Output:
  *   scripts/upgrade/output/migration-input.json

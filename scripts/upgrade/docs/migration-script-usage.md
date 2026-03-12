@@ -72,7 +72,7 @@ Output: `scripts/output/migration-report.json`
 Copy and edit the sample config:
 
 ```bash
-cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.json
+cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
 ```
 
 | Field | Default | Description |

@@ -38,6 +38,7 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	ViewFacetQuote: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
 	PartyALiquidationFacet: ["LibQuoteFunding"],
+	ClearingHouseFacet: ["LibQuoteFunding"],
 	SettlementFacet: ["LibSettlement"],
 }
 

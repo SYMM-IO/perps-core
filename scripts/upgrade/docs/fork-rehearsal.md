@@ -119,9 +119,9 @@ Override with `SUBGRAPH_ENDPOINT` env var.
 Copy and edit the sample configs:
 
 ```bash
-cp scripts/upgrade/config/upgrade.sample.json scripts/upgrade/config/upgrade.json
-cp scripts/upgrade/config/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
-cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.json
+cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json
+cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
+cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
 ```
 
 ### Upgrade config (`upgrade.json`)

@@ -19,7 +19,7 @@ const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm
  *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
  *
  * Config:
- *   cp scripts/upgrade/config/upgrade.sample.json scripts/upgrade/config/upgrade.json
+ *   cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json
  *   # edit scripts/upgrade/config/upgrade.json
  */
 
