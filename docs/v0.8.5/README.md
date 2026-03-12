@@ -74,9 +74,17 @@ Allows solvers to unilaterally close positions to reduce risk exposure without n
 
 A separate collateral pool that PartyBs deposit as a guarantee of good behavior. Independent of trading collateral, pledge serves as "skin in the game" -- if a PartyB acts maliciously (e.g., abuses ADL), their pledge can be slashed by an admin. Supports any ERC20 token with a two-step request-approval withdrawal flow to prevent rug-pulls.
 
+### [Cross-Mode Settlement During Liquidation](cross-mode-liquidation-settlement.md)
+
+In cross mode, a PartyB's solvency includes unrealized profit from all counterparties, so its raw allocated balance can be much lower than what it actually controls. During PartyA liquidation, the settlement draws from that raw balance. `settlePartyBUpnlForLiquidation` lets liquidators realize the PartyB's uPNL from other solvent counterparties before settlement, converting unrealized profit into allocated balance. Cross-mode PartyBs with insufficient balance revert until this step is performed, while isolated PartyBs retain the existing capped-payment behavior.
+
 ### [Liquidation Insurance Vault](liquidation-insurance.md)
 
 Caps how much liquidators can earn per position and redirects the excess into a protocol vault. That vault is reserved to reimburse PartyBs who suffer losses from late liquidations — situations where a position should have been liquidated earlier but wasn't.
+
+### [Liquidation Escrow](liquidation-escrow.md)
+
+Prevents PartyA from recovering pending trading fees through the reimbursement path when their liquidation is `LATE` or `OVERDUE`. Particularly important in [oracle-less trading](oracle-less-trading.md) mode, where a bound PartyA can submit fabricated UPNL to drain `allocatedBalances` into fees, worsen their liquidation severity, then recover the fees at settlement. The escrow holds these fees for the ClearingHouse to distribute — typically to compensate PartyBs who suffered CVA haircuts. Also separates deferred excess balance (always returned to PartyA) from pending fee reimbursement (escrowed in LATE/OVERDUE).
 
 ---
 

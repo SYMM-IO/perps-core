@@ -8,11 +8,9 @@ pragma solidity >=0.8.18;
 /// @dev Pledge is PartyB's skin-in-the-game. Withdrawing requires approval.
 ///      NONE = no pending request
 ///      PENDING = waiting for admin approval
-///      APPROVED = can execute withdrawal
 enum PledgeWithdrawStatus {
 	NONE,
-	PENDING,
-	APPROVED
+	PENDING
 }
 
 /// @notice Request to withdraw PartyB pledge

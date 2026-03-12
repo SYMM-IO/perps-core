@@ -240,8 +240,9 @@ library LibAggregateFunding {
 
 		int256 accumulatedRate = positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
 		int256 currentRate = positionType == PositionType.LONG ? fundingFee.currentLongRate : fundingFee.currentShortRate;
+		int256 snapshot = positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
 
-		// Calculate current fee = weighted average rate × total epochs
-		return (accumulatedRate * int256(epochsBeforeLastUpdate)) + (currentRate * int256(epochsSinceLastUpdate));
+		// Calculate current fee = snapshot + weighted average rate × total epochs
+		return snapshot + (accumulatedRate * int256(epochsBeforeLastUpdate)) + (currentRate * int256(epochsSinceLastUpdate));
 	}
 }

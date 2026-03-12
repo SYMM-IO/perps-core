@@ -12,6 +12,7 @@ import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyG
 import { AccountStorage, VirtualAccountData } from "../../storages/AccountStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { IAccountLayerHook } from "../../interfaces/IAccountLayerHook.sol";
+import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 /// @notice Hook facet called by Symmio core on position lifecycle events to manage virtual account state
 contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
@@ -39,17 +40,21 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		uint256 /* filledAmount */,
 		uint256 /* closedPrice */,
 		address partyA,
-		address /* partyB */
+		address partyB
 	) external onlySymmio nonReentrant whenNotPaused {
-		_removeQuoteFromAccount(quoteId, partyA);
+		_removeQuoteFromAccount(quoteId, partyA, partyB);
 	}
 
 	/// @notice Called by Symmio core when a quote is cancelled; removes quoteId from the virtual account
 	/// @param quoteId The cancelled quote identifier
 	/// @param partyA The trader address (may be a virtual account)
-	function onCancelQuote(uint256 quoteId, address partyA, address /* partyB */) external onlySymmio whenNotPaused {
-		_removeQuoteFromAccount(quoteId, partyA);
+	/// @param partyB The counterparty address
+	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external onlySymmio whenNotPaused {
+		_removeQuoteFromAccount(quoteId, partyA, partyB);
 	}
+
+	/// @notice Called by Symmio core when a close request expires or is force cancelled
+	function onCloseExpired(uint256 /* quoteId */, address /* partyA */, address /* partyB */) external onlySymmio whenNotPaused {}
 
 	/// @notice Called by Symmio core when a fee is charged (no-op in AccountLayer)
 	function onFeeCharged(
@@ -65,18 +70,77 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		// This function exists to prevent hook reverts when fees are charged
 	}
 
+	/// @notice Called by Symmio core after a partyA's liquidation is fully settled
+	/// @dev Attempts deferred VA cleanup now that liquidation state has been cleared
+	/// @param partyA The trader address whose liquidation was settled
+	function onLiquidationSettled(address partyA) external onlySymmio nonReentrant whenNotPaused {
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		// Settlement means this VA's share has been credited — clear pending cross-liq deferrals
+		// so _tryDeleteVirtualAccount can proceed regardless of overall cross-liq status.
+		EnumerableSet.AddressSet storage crossPartyBs = ahLayout.vaPendingCrossLiqPartyBs[partyA];
+		address[] memory pending = crossPartyBs.values();
+		for (uint256 i = 0; i < pending.length; i++) {
+			crossPartyBs.remove(pending[i]);
+		}
+		_tryDeleteVirtualAccount(partyA, address(0));
+	}
+
 	// ==================== Internal Functions ====================
 
-	function _removeQuoteFromAccount(uint256 quoteId, address partyA) private {
+	/// @param partyB The counterparty from the hook call (used to check cross partyB liquidation deferral)
+	function _removeQuoteFromAccount(uint256 quoteId, address partyA, address partyB) private {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		VirtualAccountData storage vData = ahLayout.virtualAccounts[partyA];
+		if (!vData.isExists) return;
 
-		if (vData.isExists) {
-			vData.quoteIds.remove(quoteId);
-			if (vData.quoteIds.length() == 0) {
-				_deleteVirtualAccount(partyA);
-			}
+		address core = LibAccountLayerUtils.getRelatedCore(vData.parentAccount);
+		uint256 coreTotal = ISymmio(core).partyAPositionsCount(partyA) + ISymmio(core).partyAPendingQuotesCount(partyA);
+
+		if (coreTotal < vData.quoteIds.length()) {
+			vData.quoteIds.remove(quoteId); // full close/cancel/liquidation
 		}
+		// else: partial close — keep tracking
+
+		// If this partyB is currently in cross liquidation, record it so _tryDeleteVirtualAccount
+		// can defer even when a later hook fires with a different partyB. This prevents fund stranding
+		// when a VA has positions with multiple partyBs and the cross-liq distributeForClearingHouse
+		// has not yet credited the VA's share.
+		if (partyB != address(0) && ISymmio(core).getPartyBCrossLiquidationStatus(partyB)) {
+			ahLayout.vaPendingCrossLiqPartyBs[partyA].add(partyB);
+		}
+
+		_tryDeleteVirtualAccount(partyA, partyB);
+	}
+
+	/// @param partyB The counterparty address; address(0) skips the per-hook cross partyB check
+	///               (used by onLiquidationSettled after settlement is already complete)
+	function _tryDeleteVirtualAccount(address partyA, address partyB) private {
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		VirtualAccountData storage vData = ahLayout.virtualAccounts[partyA];
+		if (!vData.isExists) return;
+		if (vData.quoteIds.length() != 0) return;
+
+		address core = LibAccountLayerUtils.getRelatedCore(vData.parentAccount);
+
+		// Defer if partyA is in any liquidation flow
+		if (ISymmio(core).isPartyALiquidated(partyA)) return;
+		if (ISymmio(core).isPartyATakeoverInProgress(partyA)) return;
+
+		// Check the partyB from the current hook call
+		if (partyB != address(0) && ISymmio(core).getPartyBCrossLiquidationStatus(partyB)) return;
+
+		// Check any previously-recorded cross-liq partyBs (multi-partyB VA protection).
+		// Clean up entries whose cross liquidation has since completed.
+		EnumerableSet.AddressSet storage crossPartyBs = ahLayout.vaPendingCrossLiqPartyBs[partyA];
+		address[] memory pending = crossPartyBs.values();
+		for (uint256 i = 0; i < pending.length; i++) {
+			if (ISymmio(core).getPartyBCrossLiquidationStatus(pending[i])) {
+				return; // still in cross liq — defer
+			}
+			crossPartyBs.remove(pending[i]); // cross liq done — clean up
+		}
+
+		_deleteVirtualAccount(partyA);
 	}
 
 	function _deleteVirtualAccount(address account) private {

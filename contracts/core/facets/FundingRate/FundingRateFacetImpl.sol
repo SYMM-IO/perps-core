@@ -19,6 +19,7 @@ import { LibSigner } from "../../libraries/LibSigner.sol";
 import { PairUpnlSig } from "../../storages/MuonStorage.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 /// @title FundingRateFacetImpl
 /// @notice Implements funding rate mechanisms for perpetual futures trading
@@ -137,7 +138,7 @@ library FundingRateFacetImpl {
 
 		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
 		if (tradingLayout.bindState[partyA].partyB != signer || !tradingLayout.isPartyBBindable[signer]) {
-			LibMuonFundingRate.verifyPairUpnl(upnlSig, signer, partyA);
+			LibMuonFundingRate.verifyPairUpnl(upnlSig, signer, partyA, MuonFunction.Funding);
 			// Ensure neither party becomes insolvent after funding payments
 			require(partyAAvailableBalance >= 0, "ChargeFundingFacet: PartyA will be insolvent");
 			require(partyBAvailableBalance >= 0, "ChargeFundingFacet: PartyB will be insolvent");
@@ -156,23 +157,33 @@ library FundingRateFacetImpl {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
 		require(symbolIds.length == durations.length, "FundingRateFacet: Invalid length");
 
+		bool durationChanged = false;
 		for (uint256 i = 0; i < symbolIds.length; i++) {
 			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][partyB];
+			uint256 previousEpochDuration = fundingFee.epochDuration;
 			uint256 timestampForEpoch = 0;
 
 			if (fundingFee.epochDuration != 0) {
 				// Update weighted averages before changing epoch duration
 				LibFundingRate.updateAccumulatedRates(fundingFee);
 
-				// Calculate new weighted averages
-				fundingFee.startEpoch = fundingFee.startEpochTimeStamp / durations[i];
+				// Snapshot the exact cumulative fee — no re-division of old timestamps
+				uint256 oldEpochCount = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
+				fundingFee.snapshotLongFee += fundingFee.accumulatedLongRate * int256(oldEpochCount);
+				fundingFee.snapshotShortFee += fundingFee.accumulatedShortRate * int256(oldEpochCount);
 
+				// Scale only currentRate for the new epoch length
 				uint256 durationRatio = ((durations[i] * 1e18) / fundingFee.epochDuration);
-				fundingFee.accumulatedLongRate = (fundingFee.accumulatedLongRate * int256(durationRatio)) / 1e18;
-				fundingFee.accumulatedShortRate = (fundingFee.accumulatedShortRate * int256(durationRatio)) / 1e18;
-
 				fundingFee.currentLongRate = (fundingFee.currentLongRate * int256(durationRatio)) / 1e18;
 				fundingFee.currentShortRate = (fundingFee.currentShortRate * int256(durationRatio)) / 1e18;
+
+				// Reset accumulated to current (fresh weighted average from this point)
+				fundingFee.accumulatedLongRate = fundingFee.currentLongRate;
+				fundingFee.accumulatedShortRate = fundingFee.currentShortRate;
+
+				// Reset epoch tracking to start fresh from now
+				fundingFee.startEpochTimeStamp = fundingFee.lastUpdatedTimeStamp;
+				fundingFee.startEpoch = LibFundingRate.getEpochOfTimestamp(fundingFee.lastUpdatedTimeStamp, durations[i]);
 
 				timestampForEpoch = fundingFee.lastUpdatedTimeStamp;
 			} else {
@@ -183,6 +194,16 @@ library FundingRateFacetImpl {
 			// Update epoch duration
 			fundingFee.lastUpdatedEpoch = LibFundingRate.getEpochOfTimestamp(timestampForEpoch, durations[i]);
 			fundingFee.epochDuration = durations[i];
+
+			if (previousEpochDuration != durations[i]) {
+				durationChanged = true;
+			}
+		}
+
+		// Invalidate stale UPNL signatures by recording the change timestamp.
+		// Signature verification checks this to reject pre-change signatures.
+		if (durationChanged) {
+			FundingStorage.layout().lastEpochDurationChangeTimestamp[partyB] = block.timestamp;
 		}
 	}
 
@@ -273,7 +294,7 @@ library FundingRateFacetImpl {
 	/// @param upnlSig Unrealized PnL signature for solvency checks
 	function chargeAccumulatedFundingFee(address partyA, address partyB, uint256[] memory quoteIds, PairUpnlSig memory upnlSig) internal {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
-		LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA);
+		LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA, MuonFunction.Funding);
 
 		// Apply accumulated funding to each position
 		for (uint256 i = 0; i < quoteIds.length; i++) {

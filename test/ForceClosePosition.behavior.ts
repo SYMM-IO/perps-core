@@ -315,6 +315,111 @@ export function shouldBehaveLikeForceClosePosition(): void {
 			})
 		})
 
+		it("increments partyA and partyB nonces on solvent forceClosePosition", async function () {
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+
+			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const beforeNonceBPerPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const beforeNonceBCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const dummySig = await getDummyHighLowPriceSig(
+				sigTimes[0],
+				sigTimes[1],
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n),
+				decimal(3n),
+				decimal(2n),
+				decimal(2n),
+				quote2ShortOpened.symbolId,
+				0n,
+				0n,
+			)
+
+			await user.forceClosePosition(quote2ShortOpened.id, dummySig)
+
+			const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const afterNonceBPerPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const afterNonceBCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+			expect(afterNonceA).to.equal(beforeNonceA + 1n)
+			expect(afterNonceBPerPartyA).to.equal(beforeNonceBPerPartyA + 1n)
+			expect(afterNonceBCross).to.equal(beforeNonceBCross + 1n)
+		})
+
+		it("increments partyA and partyB nonces on finalizeForceClose in normal mode", async function () {
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+
+			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const beforeNonceBPerPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const beforeNonceBCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const forceCloseSig = await getDummyHighLowPriceSig(
+				sigTimes[0],
+				sigTimes[1],
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n),
+				decimal(3n),
+				decimal(2n),
+				decimal(2n),
+				quote2ShortOpened.symbolId,
+				0n,
+				0n,
+			)
+
+			await context.forceCloseStepsFacet.initializeForceClose(quote2ShortOpened.id, forceCloseSig)
+			await context.forceCloseStepsFacet.finalizeForceClose(quote2ShortOpened.id, await getDummyPairUpnlAndPriceSig(decimal(2n), 0n, 0n))
+
+			const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const afterNonceBPerPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const afterNonceBCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+			expect(afterNonceA).to.equal(beforeNonceA + 1n)
+			expect(afterNonceBPerPartyA).to.equal(beforeNonceBPerPartyA + 1n)
+			expect(afterNonceBCross).to.equal(beforeNonceBCross + 1n)
+		})
+
+		it("increments partyA and partyB nonces in normal mode when settlement is skipped", async function () {
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+
+			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const beforeNonceBPerPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const beforeNonceBCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const forceCloseSig = await getDummyHighLowPriceSig(
+				sigTimes[0],
+				sigTimes[1],
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n),
+				decimal(3n),
+				decimal(2n),
+				decimal(2n),
+				quote2ShortOpened.symbolId,
+				0n,
+				0n,
+			)
+
+			await context.forceCloseStepsFacet.forceCloseAndSettlePositionsUnified(
+				quote2ShortOpened.id,
+				forceCloseSig,
+				await getDummyUnifiedSettlementSig(await hedger.getAddress(), 0n, [0n], [partyA], [0n], []),
+				[],
+			)
+
+			const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const afterNonceBPerPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const afterNonceBCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+			expect(afterNonceA).to.equal(beforeNonceA + 1n)
+			expect(afterNonceBPerPartyA).to.equal(beforeNonceBPerPartyA + 1n)
+			expect(afterNonceBCross).to.equal(beforeNonceBCross + 1n)
+		})
+
 		describe("should calculate closePrice correctly when position is LONG", async function () {
 			it("closePrice is higher than avg price", async function () {
 				const sigTimes = await prepareSigTimes()
@@ -463,6 +568,9 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				const sigTimes = await prepareSigTimes(100n)
 				const hedgerAddress = await hedger.getAddress()
 				const partyAAddress = await user.getAddress()
+				const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyAAddress)
+				const beforeNonceBPerPartyA = await context.viewFacet.nonceOfPartyB(hedgerAddress, partyAAddress)
+				const beforeNonceBCross = await context.viewFacet.nonceOfPartyB(hedgerAddress, ethers.ZeroAddress)
 
 				await context.partyBAccountFacet.connect(hedger.signer).depositToReserveVault(decimal(1000n), hedgerAddress)
 				{
@@ -498,6 +606,14 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				expect(quoteAfter.closedAmount).to.equal(quoteBefore.quantity)
 				// Verify avgClosedPrice is set (non-zero)
 				expect(quoteAfter.avgClosedPrice).to.be.gt(0n)
+
+				const afterNonceA = await context.viewFacet.nonceOfPartyA(partyAAddress)
+				const afterNonceBPerPartyA = await context.viewFacet.nonceOfPartyB(hedgerAddress, partyAAddress)
+				const afterNonceBCross = await context.viewFacet.nonceOfPartyB(hedgerAddress, ethers.ZeroAddress)
+
+				expect(afterNonceA).to.equal(beforeNonceA + 1n)
+				expect(afterNonceBPerPartyA).to.equal(beforeNonceBPerPartyA + 1n)
+				expect(afterNonceBCross).to.equal(beforeNonceBCross + 1n)
 			})
 		})
 	})
@@ -730,6 +846,37 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
 						})
 
+						it("increments partyA and partyB nonces on finalizeForceClose in 3-step flow", async function () {
+							const partyA = await user.getAddress()
+							const partyB = await hedger.getAddress()
+
+							const targetAllocated = decimal(20000n)
+							const crossBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
+							if (crossBalanceBefore.allocatedBalances < targetAllocated) {
+								const topUp = targetAllocated - crossBalanceBefore.allocatedBalances
+								await hedger.setBalances(topUp, topUp)
+								await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+							}
+
+							const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+							const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+							const beforeNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+							await context.forceCloseStepsFacet.finalizeForceClose(
+								quote1LongOpened.id,
+								await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, BigInt(highLowSig.upnlPartyB)),
+							)
+
+							const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+							const afterNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+							const afterNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+							expect(afterNonceA).to.equal(beforeNonceA + 1n)
+							expect(afterNonceB).to.equal(beforeNonceB + 1n)
+							expect(afterNonceBPartyA).to.equal(beforeNonceBPartyA + 1n)
+						})
+
 						it("finalizeForceClose(quoteId, sig) refreshes snapshot and uses it for cross-partyB solvency", async function () {
 							const targetAllocated = decimal(20000n)
 							const crossBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
@@ -798,6 +945,33 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							const crossBalance = await hedger.getBalanceInfoCrossPartyB()
 							const minRequired = crossBalance.lockedCva + crossBalance.lockedLf
 							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
+						})
+
+						it("increments partyA and partyB nonces when settlement is skipped", async function () {
+							const partyA = await user.getAddress()
+							const partyB = await hedger.getAddress()
+
+							const targetAllocated = decimal(20000n)
+							const crossBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
+							if (crossBalanceBefore.allocatedBalances < targetAllocated) {
+								const topUp = targetAllocated - crossBalanceBefore.allocatedBalances
+								await hedger.setBalances(topUp, topUp)
+								await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+							}
+
+							const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+							const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+							const beforeNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+							await context.forceCloseStepsFacet.forceCloseAndSettlePositionsUnified(quote1LongOpened.id, highLowSig, settlementSig, [])
+
+							const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+							const afterNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+							const afterNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+							expect(afterNonceA).to.equal(beforeNonceA + 1n)
+							expect(afterNonceB).to.equal(beforeNonceB + 1n)
+							expect(afterNonceBPartyA).to.equal(beforeNonceBPartyA + 1n)
 						})
 
 						it("marks partyBState as INSOLVENT when cross partyB is not solvent but can pay from allocation", async function () {
@@ -912,6 +1086,39 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							expect(detailAfter.inProgress).to.equal(false)
 							expect(detailAfter.partyBState).to.equal(PartyBForceCloseState.CLOSED_INSOLVENT)
 							expect(detailAfter.partyBAvailableAfterClose).to.be.gte(minRequired)
+						})
+
+						it("increments partyA and partyB nonces when cross close uses ignoring-UPNL fallback", async function () {
+							const targetAllocated = decimal(20000n)
+							const crossBalanceBefore = await hedger.getBalanceInfoCrossPartyB()
+							if (crossBalanceBefore.allocatedBalances < targetAllocated) {
+								const topUp = targetAllocated - crossBalanceBefore.allocatedBalances
+								await hedger.setBalances(topUp, topUp)
+								await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(topUp, ethers.ZeroAddress)
+							}
+
+							highLowSig.upnlPartyB = -decimal(1_000_000n)
+							highLowSig.currentPrice = decimal(1n)
+
+							const partyA = await user.getAddress()
+							const partyB = await hedger.getAddress()
+							const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+							const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+							const beforeNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+							await context.forceCloseStepsFacet.finalizeForceClose(
+								quote1LongOpened.id,
+								await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, BigInt(highLowSig.upnlPartyB)),
+							)
+
+							const afterNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+							const afterNonceB = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+							const afterNonceBPartyA = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+
+							expect(afterNonceA).to.equal(beforeNonceA + 1n)
+							expect(afterNonceB).to.equal(beforeNonceB + 1n)
+							expect(afterNonceBPartyA).to.equal(beforeNonceBPartyA + 1n)
 						})
 					})
 				})

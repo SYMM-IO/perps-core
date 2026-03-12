@@ -57,10 +57,12 @@ library LibAccountLayerUtils {
 
 		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
 		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address owner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (owner != address(0)) {
-				return IMultiAccount(legacyAccounts[i]).symmioAddress();
-			}
+			if (legacyAccounts[i].code.length == 0) continue;
+			try IMultiAccount(legacyAccounts[i]).owners(account) returns (address owner) {
+				if (owner != address(0)) {
+					return IMultiAccount(legacyAccounts[i]).symmioAddress();
+				}
+			} catch {}
 		}
 
 		revert IAccountLayerErrors.CoreNotFound();
@@ -86,10 +88,12 @@ library LibAccountLayerUtils {
 
 		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
 		for (uint256 i = 0; i < legacyAccounts.length; i++) {
-			address legacyOwner = IMultiAccount(legacyAccounts[i]).owners(account);
-			if (legacyOwner != address(0)) {
-				return legacyOwner;
-			}
+			if (legacyAccounts[i].code.length == 0) continue;
+			try IMultiAccount(legacyAccounts[i]).owners(account) returns (address legacyOwner) {
+				if (legacyOwner != address(0)) {
+					return legacyOwner;
+				}
+			} catch {}
 		}
 
 		return address(0);
@@ -149,7 +153,7 @@ library LibAccountLayerUtils {
 		ahLayout.globalSigner = address(0);
 
 		// Set hook context before calling
-		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true });
+		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true, activeHook: hook });
 
 		(bool success, bytes memory result) = hook.call(data);
 

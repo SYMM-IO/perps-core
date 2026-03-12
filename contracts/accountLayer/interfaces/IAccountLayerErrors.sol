@@ -47,6 +47,7 @@ interface IAccountLayerErrors {
 	error PositionTypeNotAllowedForThisAccount();
 	error SymbolNotAllowedForThisAccount();
 	error SelectorNotAllowed(bytes4 selector);
+	error UnauthorizedHookCaller();
 	error HookFailed(bytes reason);
 	error HookActionFailed(bytes reason);
 	error VirtualProviderRequired();

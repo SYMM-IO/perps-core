@@ -143,13 +143,13 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 				).to.be.revertedWithCustomError(context.alAffiliateFacet, "NoWhitelistedSymmioCore")
 			})
 
-			it("enforces unique registrations per affiliate id for the same sender", async function () {
-				// register once
-				const { registration } = await requestAffiliate()
-				// repeated call by same user reverts
-				await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.be.revertedWithCustomError(
+			it("assigns a new affiliate address for repeated requests by the same sender", async function () {
+				const { affiliate: firstAffiliate, registration } = await requestAffiliate()
+				const secondAffiliate = await context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate.staticCall(registration)
+				expect(secondAffiliate).to.not.equal(firstAffiliate)
+				await expect(context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(registration)).to.emit(
 					context.alAffiliateFacet,
-					"AlreadyRegistered",
+					"AffiliateRegistered",
 				)
 			})
 
@@ -267,7 +267,8 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 				let affiliate: string
 
 				beforeEach(async function () {
-					affiliate = (await requestAffiliate()).affiliate
+					const pending = await requestAffiliate()
+					affiliate = pending.affiliate
 				})
 
 				it("requires approver role and pending state", async function () {
@@ -282,6 +283,25 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWithCustomError(
 						context.alAffiliateFacet,
 						"NotPending",
+					)
+				})
+
+				it("uses a new affiliate address after cancel + re-request with same name", async function () {
+					await context.alAffiliateFacet.connect(context.signers.user).cancelRegistration(affiliate)
+
+					const updated = buildRegistration({ brandColor: "#ffffff" })
+					const newAffiliate = await context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate.staticCall(updated)
+					expect(newAffiliate).to.not.equal(affiliate)
+					await context.alAffiliateFacet.connect(context.signers.user).requestToRegisterAffiliate(updated)
+
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate)).to.be.revertedWithCustomError(
+						context.alAffiliateFacet,
+						"NotPending",
+					)
+
+					await expect(context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(newAffiliate)).to.emit(
+						context.alAffiliateFacet,
+						"AffiliateApproved",
 					)
 				})
 
@@ -487,6 +507,16 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 						.withArgs(affiliate)
 					expect(await context.alViewFacet.getAffiliateState(affiliate)).to.equal(AffiliateState.ACTIVE)
 				})
+
+				it("allows unpausing an affiliate while the hub is globally paused", async function () {
+					await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("PAUSER_ROLE"))
+					await context.alControlFacet.connect(context.signers.admin).pause()
+
+					await expect(context.alAffiliateFacet.connect(context.signers.hedger).unpauseAffiliate(affiliate))
+						.to.emit(context.alAffiliateFacet, "AffiliateUnpaused")
+						.withArgs(affiliate)
+					expect(await context.alViewFacet.getAffiliateState(affiliate)).to.equal(AffiliateState.ACTIVE)
+				})
 			})
 
 			describe("contract pause state", function () {
@@ -660,6 +690,42 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 
 					// After update, feeCollector share is 80% (was 40%)
 					expect(after - before).to.equal((feeAmount * ethers.parseEther("0.8")) / ethers.parseEther("1"))
+				})
+
+				it("claims accrued fees with the old split before applying the new split", async function () {
+					const feeAmount = ethers.parseEther("100")
+					const oldStakeholder1 = context.signers.feeCollector
+					const oldStakeholder2 = context.signers.feeCollector2
+					const newStakeholder = context.signers.user2
+					const symmioReceiver = context.signers.symmioFeeReceiver
+
+					await depositFeesForAffiliate(affiliate, feeAmount, coreAddress)
+
+					await context.alAffiliateFacet
+						.connect(context.signers.user)
+						.requestFeeUpdate(affiliate, [{ receiver: newStakeholder.address, share: ethers.parseEther("0.8") }], ethers.parseEther("0.2"))
+
+					const oldStakeholder1Before = await context.collateral.balanceOf(oldStakeholder1.address)
+					const oldStakeholder2Before = await context.collateral.balanceOf(oldStakeholder2.address)
+					const newStakeholderBefore = await context.collateral.balanceOf(newStakeholder.address)
+					const symmioBefore = await context.collateral.balanceOf(symmioReceiver.address)
+
+					await context.alAffiliateFacet.connect(context.signers.admin).approveFeeUpdate(affiliate)
+
+					const oldStakeholder1After = await context.collateral.balanceOf(oldStakeholder1.address)
+					const oldStakeholder2After = await context.collateral.balanceOf(oldStakeholder2.address)
+					const newStakeholderAfter = await context.collateral.balanceOf(newStakeholder.address)
+					const symmioAfter = await context.collateral.balanceOf(symmioReceiver.address)
+
+					expect(oldStakeholder1After - oldStakeholder1Before).to.equal((feeAmount * ethers.parseEther("0.4")) / ethers.parseEther("1"))
+					expect(oldStakeholder2After - oldStakeholder2Before).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
+					expect(symmioAfter - symmioBefore).to.equal((feeAmount * ethers.parseEther("0.3")) / ethers.parseEther("1"))
+					expect(newStakeholderAfter - newStakeholderBefore).to.equal(0n)
+					expect(await context.collateral.balanceOf(context.accountLayerDiamond)).to.equal(0n)
+
+					const [holders, shares] = await context.alViewFacet.dryClaimAllFees(affiliate, coreAddress)
+					expect(holders).to.deep.equal([newStakeholder.address])
+					expect(shares).to.deep.equal([0n])
 				})
 
 				it("requires the approver role", async function () {

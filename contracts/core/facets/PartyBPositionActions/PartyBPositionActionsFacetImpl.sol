@@ -18,6 +18,7 @@ import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBPositionActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -45,8 +46,6 @@ library PartyBPositionActionsFacetImpl {
 			"PartyBFacet: Symbol not allowed due to connection restrictions"
 		);
 
-		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
-
 		currentId = LibPartyBPositionsActions.openPosition(quoteId, filledAmount, openedPrice);
 
 		if (quote.quoteStatus == QuoteStatus.OPENED) {
@@ -56,7 +55,7 @@ library PartyBPositionActionsFacetImpl {
 		if (
 			TradingModeStorage.layout().bindState[quote.partyA].partyB != quote.partyB || !TradingModeStorage.layout().isPartyBBindable[quote.partyB]
 		) {
-			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
+			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
 
 			uint256[] memory quoteIds = new uint256[](1);
 			uint256[] memory filledAmounts = new uint256[](1);
@@ -74,6 +73,8 @@ library PartyBPositionActionsFacetImpl {
 				quote.partyA
 			);
 		}
+
+		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 	}
 
 	/// @notice Verifies solvency and fills a close request for a single quote
@@ -83,7 +84,7 @@ library PartyBPositionActionsFacetImpl {
 			TradingModeStorage.layout().bindState[quote.partyA].partyB != LibSigner.getSigner() ||
 			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
 		) {
-			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
+			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
 			uint256[] memory quoteIds = new uint256[](1);
 			uint256[] memory filledAmounts = new uint256[](1);
 			uint256[] memory closedPrices = new uint256[](1);
@@ -149,7 +150,7 @@ library PartyBPositionActionsFacetImpl {
 			TradingModeStorage.layout().bindState[quote.partyA].partyB != LibSigner.getSigner() ||
 			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]
 		) {
-			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId);
+			LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
 		}
 
 		// Calculate max close amount that keeps PartyA at liquidation threshold

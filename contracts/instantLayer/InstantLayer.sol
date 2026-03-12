@@ -41,6 +41,7 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { VirtualAccountDetail } from "../accountLayer/storages/AccountStorage.sol";
 import { IViewFacet } from "../accountLayer/facets/View/IViewFacet.sol";
 import { ICoreFacet } from "../accountLayer/facets/Core/ICoreFacet.sol";
+import { IAccountLayerDiamond } from "../accountLayer/interfaces/IAccountLayerDiamond.sol";
 
 /* ════════════════════════════ EXTERNAL INTERFACES ════════════════════════════ */
 
@@ -465,7 +466,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 		if (info.account.isPartyB) revert InvalidDelegation();
 
-		address delegator = info.account.addr;
+		address delegator = _canonicalDelegator(info.account.addr);
 		address owner = _getAccountOwner(delegator);
 		address delegate = info.delegatedSigner;
 		uint256 expiry = info.expiryTimestamp;
@@ -518,7 +519,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (info.delegatedSigner == msg.sender) revert SelfDelegation();
 		if (info.expiryTimestamp <= block.timestamp) revert DelegationExpired(info.expiryTimestamp);
 
-		address delegator = info.account.addr;
+		address delegator = _canonicalDelegator(info.account.addr);
 		address delegate = info.delegatedSigner;
 
 		// Grant each selector permission
@@ -633,7 +634,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @dev    Who may schedule: account owner (delegator), the delegate themselves, or REVOKER_ROLE.
 	///         No-ops for selectors not currently active.
 	function initiateRevokeDelegation(Account calldata account, address delegate, bytes4[] calldata selectors) external {
-		bool callerIsOwner = _isAccountOwner(account);
+		address delegator = _canonicalDelegator(account.addr);
+		bool callerIsOwner = _getAccountOwner(delegator) == msg.sender;
 		bool callerIsDelegate = (msg.sender == delegate);
 		bool callerIsAdmin = hasRole(REVOKER_ROLE, msg.sender);
 		if (!(callerIsOwner || callerIsDelegate || callerIsAdmin)) {
@@ -644,29 +646,30 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			bytes4 sel = selectors[i];
 
 			// only schedule if currently active
-			uint256 currentExpiry = delegations[account.addr][delegate][sel];
+			uint256 currentExpiry = delegations[delegator][delegate][sel];
 			if (currentExpiry <= block.timestamp) continue;
 
 			uint256 eta = block.timestamp + revocationCooldown;
-			pendingRevocationEta[account.addr][delegate][sel] = eta;
-			emit RevocationScheduled(account.addr, delegate, sel, eta);
+			pendingRevocationEta[delegator][delegate][sel] = eta;
+			emit RevocationScheduled(delegator, delegate, sel, eta);
 		}
 	}
 
 	/// @notice Finalize after cooldown; actually deletes the delegation.
 	/// @dev    Anyone may call once ETA has passed.
 	function finalizeRevokeDelegation(Account calldata account, address delegate, bytes4[] calldata selectors) external {
+		address delegator = _canonicalDelegator(account.addr);
 		for (uint256 i = 0; i < selectors.length; ++i) {
 			bytes4 sel = selectors[i];
-			uint256 eta = pendingRevocationEta[account.addr][delegate][sel];
+			uint256 eta = pendingRevocationEta[delegator][delegate][sel];
 			if (eta == 0) continue; // not scheduled
 			if (block.timestamp < eta) revert RevocationCooldownNotOver(eta); // still cooling
 
 			// delete pending & active delegation
-			delete pendingRevocationEta[account.addr][delegate][sel];
-			delete delegations[account.addr][delegate][sel];
+			delete pendingRevocationEta[delegator][delegate][sel];
+			delete delegations[delegator][delegate][sel];
 
-			emit DelegationSelectorRevoked(account.addr, delegate, sel);
+			emit DelegationSelectorRevoked(delegator, delegate, sel);
 		}
 	}
 
@@ -807,9 +810,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				assembly ("memory-safe") {
 					selector := calldataload(callData.offset) // Extract first 4 bytes
 				}
-				VirtualAccountDetail memory virtualAccount = IViewFacet(accountLayer).getVirtualAccount(signedOp.signerAccount.addr);
-				address delegator = signedOp.signerAccount.addr;
-				if (virtualAccount.isExists) delegator = virtualAccount.parentAccount;
+				address delegator = _canonicalDelegator(signedOp.signerAccount.addr);
 				if (!isDelegationActive(delegator, signedOp.signer, selector)) {
 					revert InvalidDelegation();
 				}
@@ -854,11 +855,18 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (signedOp.signerAccount.isPartyB) {
 			// Route to PartyB
 			(success, result) = signedOp.signer.call(abi.encodeWithSelector(ISymmioPartyB._call.selector, callDatas));
-		} else if (signedOp.target == address(symmio)) {
-			// Route to AccountLayer
+		} else if (signedOp.target == address(symmio) || signedOp.target == accountLayer) {
+			// Route to AccountLayer (wrapping Symmio calls via _call, or direct AL calls)
 			if (accountLayer == address(0)) revert AccountLayerNotSet();
-			(success, result) = accountLayer.call(abi.encodeWithSelector(ICoreFacet._call.selector, signedOp.signerAccount.addr, callDatas));
-			decodeNestedResult = true;
+			address owner = _getAccountOwner(signedOp.signerAccount.addr);
+			IAccountLayerDiamond(accountLayer).setSigner(owner);
+			if (signedOp.target == address(symmio)) {
+				(success, result) = accountLayer.call(abi.encodeWithSelector(ICoreFacet._call.selector, signedOp.signerAccount.addr, callDatas));
+				decodeNestedResult = true;
+			} else {
+				(success, result) = accountLayer.call(callData);
+			}
+			IAccountLayerDiamond(accountLayer).setSigner(address(0));
 		} else {
 			// Route to a whitelisted target
 			(success, result) = signedOp.target.call(callData);
@@ -961,6 +969,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bytes4[][] calldata selectors
 	) external view returns (DelegationInfo[] memory activeDelegates) {
 		if (delegates.length != selectors.length) revert ArrayLengthMismatch();
+		address delegator = _canonicalDelegator(_delegator.addr);
 		uint256 activeCount = 0;
 
 		// Count active delegations
@@ -968,7 +977,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			bytes4[] calldata sels = selectors[i];
 			bool anyActive = false;
 			for (uint256 j = 0; j < sels.length; j++) {
-				if (isDelegationActive(_delegator.addr, delegates[i], sels[j])) {
+				if (isDelegationActive(delegator, delegates[i], sels[j])) {
 					anyActive = true;
 					break;
 				}
@@ -986,7 +995,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Count active selectors for this delegate
 			uint256 c = 0;
 			for (uint256 j = 0; j < sels.length; j++) {
-				if (isDelegationActive(_delegator.addr, delegates[i], sels[j])) {
+				if (isDelegationActive(delegator, delegates[i], sels[j])) {
 					c++;
 				}
 			}
@@ -999,9 +1008,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 			for (uint256 j = 0; j < sels.length; j++) {
 				bytes4 sel = sels[j];
-				if (isDelegationActive(_delegator.addr, delegates[i], sel)) {
+				if (isDelegationActive(delegator, delegates[i], sel)) {
 					activeSels[idx++] = sel;
-					uint256 exp = delegations[_delegator.addr][delegates[i]][sel];
+					uint256 exp = delegations[delegator][delegates[i]][sel];
 					if (exp < minExpiry) minExpiry = exp; // Track earliest expiry
 				}
 			}
@@ -1121,6 +1130,15 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @dev Hash a ReplayAttackHeader struct according to EIP-712.
 	function _hashReplay(ReplayAttackHeader memory r) internal pure returns (bytes32) {
 		return keccak256(abi.encode(REPLAY_HEADER_TYPEHASH, r.nonce, r.deadline, r.salt));
+	}
+
+	/// @notice Normalize a delegation key to the canonical delegator account
+	/// @dev Active virtual accounts are normalized to their parent sub account
+	function _canonicalDelegator(address account) private view returns (address) {
+		if (accountLayer == address(0)) revert AccountLayerNotSet();
+		VirtualAccountDetail memory virtualAccount = IViewFacet(accountLayer).getVirtualAccount(account);
+		if (virtualAccount.isExists) return virtualAccount.parentAccount;
+		return account;
 	}
 
 	/// @notice Retrieve the owner of an account via the AccountLayer.

@@ -13,6 +13,7 @@ import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { HighLowPriceSig, PairUpnlAndPriceSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { LibMuonUnifiedSettlement } from "../../libraries/muon/LibMuonUnifiedSettlement.sol";
 import { LibMuonPartyB } from "../../libraries/muon/LibMuonPartyB.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library ForceCloseStepsImpl {
 	using LockedValuesOps for LockedValues;
@@ -22,7 +23,7 @@ library ForceCloseStepsImpl {
 	/// @param sig The Muon signature to calculate the close price.
 	/// @return closePrice The calculated close price.
 	function forceCloseInit(uint256 quoteId, HighLowPriceSig memory sig) internal returns (uint256 closePrice) {
-		LibForceActions.validateForceCloseConditions(quoteId, sig);
+		LibForceActions.validateForceCloseConditions(quoteId, sig, MuonFunction.ForceClose);
 		closePrice = LibForceActions.verifyAndGetClosePrice(quoteId, sig);
 
 		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
@@ -58,7 +59,7 @@ library ForceCloseStepsImpl {
 
 		require(detail.inProgress, "ForceActionsFacet: Invalid state");
 
-		LibMuonPartyB.verifyPairUpnlAndPrice(sig, quote.partyB, quote.partyA, quote.symbolId);
+		LibMuonPartyB.verifyPairUpnlAndPrice(sig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.ForceClose);
 
 		// Ensure partyA solvency for the stored closePrice with this fresh snapshot.
 		(, int256 partyAAvailableBalance) = LibForceActions.getAvailableBalancesAfterClose(
@@ -148,9 +149,9 @@ library ForceCloseStepsImpl {
 			require(sig.partyAs.length == 1, "ForceActionsFacet: Non-cross partyB can only settle with forceClose partyA");
 			require(sig.partyAs[0] == forceCloseQuote.partyA, "ForceActionsFacet: Invalid partyA for non-cross settlement");
 		}
-		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB);
+		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.ForceClose);
 
-		// Use the unified settlement function with isForceClose=true
+		// Use the unified settlement function with privilegedMode=true
 		int256[] memory settleAmountsPerPartyA;
 		(newPartyAsAllocatedBalances, settleAmountsPerPartyA) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
 

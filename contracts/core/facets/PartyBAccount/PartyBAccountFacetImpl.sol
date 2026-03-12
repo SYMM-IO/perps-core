@@ -8,11 +8,11 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
-import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBAccountFacetImpl {
 	/// @notice Moves collateral from Party B's balance to allocated balance for a given Party A
@@ -36,7 +36,7 @@ library PartyBAccountFacetImpl {
 		address signer = LibSigner.getSigner();
 		require(!MAStorage.layout().crossModeEnabledForPartyB[signer] || partyA == address(0), "PartyBFacet: Cross partyB mode is active");
 		require(accountLayout.partyBAllocatedBalances[signer][partyA] >= amount, "AccountFacet: Insufficient allocated balance");
-		LibMuon.verifyPartyBUpnl(upnlSig, signer, partyA, true); // Here the nonce is always from cross partyB mode nonce if enabled
+		LibMuon.verifyPartyBUpnl(upnlSig, signer, partyA, true, MuonFunction.AccountManagement); // Here the nonce is always from cross partyB mode nonce if enabled
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, partyA);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: Will be liquidatable");
@@ -63,7 +63,7 @@ library PartyBAccountFacetImpl {
 
 		// deallocate from origin
 		require(accountLayout.partyBAllocatedBalances[signer][origin] >= amount, "PartyBFacet: Insufficient allocated balance");
-		LibMuon.verifyPartyBUpnl(upnlSig, signer, origin, true); // Here the nonce is always from cross partyB mode nonce if enabled
+		LibMuon.verifyPartyBUpnl(upnlSig, signer, origin, true, MuonFunction.AccountManagement); // Here the nonce is always from cross partyB mode nonce if enabled
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, origin);
 		require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "PartyBFacet: Will be liquidatable");
@@ -98,7 +98,6 @@ library PartyBAccountFacetImpl {
 		require(GlobalAppStorage.layout().crossPartyBModeActivated, "AccountFacet: Cross disabled");
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(MigrationStorage.layout().partyBLockedValuesMigrated[signer], "AccountFacet: Cross migration incomplete");
 		require(!maLayout.crossModeEnabledForPartyB[signer], "AccountFacet: Cross partyB mode is active");
 		maLayout.crossModeEnabledForPartyB[signer] = true;
 	}

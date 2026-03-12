@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { ISettlementFacet } from "./ISettlementFacet.sol";
-import { Accessibility } from "../../utils/Accessibility.sol";
+import { Accessibility, LibAccessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
 import { SettlementFacetImpl } from "./SettlementFacetImpl.sol";
 import { SettlementSig, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
@@ -51,6 +51,33 @@ contract SettlementFacet is Accessibility, Pausable, ISettlementFacet {
 			sig.quotesSettlementsData,
 			updatedPrices,
 			sig.partyB,
+			sig.partyAs,
+			newPartyAsAllocatedBalances,
+			newPartyBAllocatedBalance
+		);
+	}
+
+	/// @notice Settles a cross-mode PartyB's uPNL from other solvent counterparties during PartyA liquidation.
+	/// @dev Called by the liquidator between liquidatePositionsPartyA and settlePartyALiquidation to
+	///      realize PartyB's unrealized profit into allocated balance, preventing settlement shortfalls.
+	/// @param liquidatedPartyA The partyA currently being liquidated
+	/// @param sig Unified settlement signature for the cross-mode partyB's positions with OTHER partyAs
+	/// @param updatedPrices New opened prices for the settled quotes
+	function settlePartyBUpnlForLiquidation(
+		address liquidatedPartyA,
+		UnifiedSettlementSig memory sig,
+		uint256[] memory updatedPrices
+	) external whenNotLiquidationPaused onlyRole(LibAccessibility.LIQUIDATOR_ROLE) {
+		uint256[] memory newPartyAsAllocatedBalances = SettlementFacetImpl.settlePartyBUpnlForLiquidation(liquidatedPartyA, sig, updatedPrices);
+
+		uint256 newPartyBAllocatedBalance = AccountStorage.layout().partyBAllocatedBalances[sig.partyB][address(0)];
+
+		emit SettlePartyBUpnlForLiquidation(
+			liquidatedPartyA,
+			sig.partyB,
+			sig.reqId,
+			sig.quotesSettlementsData,
+			updatedPrices,
 			sig.partyAs,
 			newPartyAsAllocatedBalances,
 			newPartyBAllocatedBalance

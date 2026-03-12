@@ -81,7 +81,7 @@ if (OLD_ACCOUNT_LAYER) {
 	console.log(`\n▶ Revoking roles from old AccountLayer (${OLD_ACCOUNT_LAYER}) on Symmio Core...`)
 	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", SYMMIO_ADDRESS, deployer)
 
-	const rolesToRevoke = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "INTERNAL_TRANSFER_TO_BALANCE_ROLE"]
+	const rolesToRevoke = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "BALANCE_SETTLER_ROLE"]
 	for (const role of rolesToRevoke) {
 		const tx = await controlFacet.revokeRole(OLD_ACCOUNT_LAYER, roleHash(role))
 		await tx.wait()
@@ -93,7 +93,7 @@ if (OLD_ACCOUNT_LAYER) {
 console.log(`\n▶ Granting roles to AccountLayer (${accountLayerAddress}) on Symmio Core...`)
 const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", SYMMIO_ADDRESS, deployer)
 
-const rolesToGrant = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "INTERNAL_TRANSFER_TO_BALANCE_ROLE"]
+const rolesToGrant = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "BALANCE_SETTLER_ROLE"]
 for (const role of rolesToGrant) {
 	const tx = await controlFacet.grantRole(accountLayerAddress, roleHash(role))
 	await tx.wait()
@@ -112,11 +112,11 @@ let tx = await alControlFacet.setWhitelistedSymmioCore(SYMMIO_ADDRESS, true)
 await tx.wait()
 console.log(`  ✓ Whitelisted`)
 
-// ── Step 5: Grant INSTANT_LAYER_ROLE on AccountLayer ────────
-console.log(`\n▶ Granting INSTANT_LAYER_ROLE to InstantLayer (${INSTANT_LAYER_ADDRESS}) on AccountLayer...`)
-tx = await alControlFacet.grantRole(INSTANT_LAYER_ADDRESS, roleHash("INSTANT_LAYER_ROLE"))
+// ── Step 5: Grant SIGNER_SETTER_ROLE on AccountLayer (allows InstantLayer to call setSigner) ────────
+console.log(`\n▶ Granting SIGNER_SETTER_ROLE to InstantLayer (${INSTANT_LAYER_ADDRESS}) on AccountLayer...`)
+tx = await alControlFacet.grantRole(INSTANT_LAYER_ADDRESS, roleHash("SIGNER_SETTER_ROLE"))
 await tx.wait()
-console.log(`  ✓ Granted INSTANT_LAYER_ROLE`)
+console.log(`  ✓ Granted SIGNER_SETTER_ROLE`)
 
 // ── Step 6: Set AccountLayer on InstantLayer + whitelist ────
 console.log(`\n▶ Setting AccountLayer on InstantLayer (${INSTANT_LAYER_ADDRESS})...`)

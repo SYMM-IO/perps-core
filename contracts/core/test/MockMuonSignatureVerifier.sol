@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { IMuonSignatureVerifier } from "../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../interfaces/IMuonSignatureVerifier.sol";
 
 /// @title MockMuonSignatureVerifier
 /// @notice A mock implementation of IMuonSignatureVerifier for testing purposes.
@@ -16,6 +16,11 @@ contract MockMuonSignatureVerifier is IMuonSignatureVerifier {
 
 	/// @notice Accepts any signature without verification
 	/// @dev This is intentionally a no-op for testing purposes
+	function verify(bytes32, SchnorrSign memory, bytes calldata, MuonFunction) external pure override {
+		// Intentionally empty - accepts all signatures for testing
+	}
+
+	/// @notice Accepts any signature without verification (permissionless overload)
 	function verify(bytes32, SchnorrSign memory, bytes calldata) external pure override {
 		// Intentionally empty - accepts all signatures for testing
 	}
@@ -54,5 +59,21 @@ contract MockMuonSignatureVerifier is IMuonSignatureVerifier {
 
 	function getAllGatewaySigners() external view override returns (address[] memory) {
 		return _gatewaySigners;
+	}
+
+	function setPublicKeyPermissions(PublicKey memory, MuonFunction[] calldata, bool) external override {
+		// No-op for testing
+	}
+
+	function setGatewaySignerPermissions(address, MuonFunction[] calldata, bool) external override {
+		// No-op for testing
+	}
+
+	function isPublicKeyAuthorized(PublicKey memory, MuonFunction) external pure override returns (bool) {
+		return true;
+	}
+
+	function isGatewaySignerAuthorized(address, MuonFunction) external pure override returns (bool) {
+		return true;
 	}
 }

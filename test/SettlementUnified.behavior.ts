@@ -426,4 +426,96 @@ export function shouldBehaveLikeSettlementUnified(): void {
 			await expect(hedger.settleUpnlUnified([decimal(5n, 17)], sig)).to.be.revertedWith("LibSettlement: PartyB is insolvent")
 		})
 	})
+
+	describe("Cross PartyB Settlement Ordering", function () {
+		// Scenario: cross partyB has balance 240, settles with two partyAs.
+		// Settlement with partyA1 (LONG): partyB loses 300 (> balance of 240)
+		// Settlement with partyA2 (SHORT): partyB gains 200
+		// Net: partyB loses 100 — solvent, but intermediate underflow if losses processed first.
+		let crossCtx: RunContext, partyA1: User, partyA2: User, crossHedger: Hedger
+		let longQuoteId: bigint, shortQuoteId: bigint
+
+		beforeEach(async function () {
+			crossCtx = await loadFixture(initializeFixture)
+
+			partyA1 = new User(crossCtx, crossCtx.signers.user)
+			await partyA1.setup()
+			await partyA1.setBalances(decimal(2000n), decimal(1000n), decimal(700n))
+
+			partyA2 = new User(crossCtx, crossCtx.signers.user2)
+			await partyA2.setup()
+			await partyA2.setBalances(decimal(2000n), decimal(1000n), decimal(700n))
+
+			crossHedger = new Hedger(crossCtx, crossCtx.signers.hedger)
+			await crossHedger.setup()
+			await crossHedger.setBalances(decimal(500n), decimal(500n))
+
+			// LONG position with partyA1 (openedPrice=1e18, qty=100e18)
+			longQuoteId = await partyA1.sendQuote()
+			await crossHedger.lockQuote(longQuoteId)
+			await crossHedger.openPosition(longQuoteId)
+
+			// SHORT position with partyA2
+			shortQuoteId = await partyA2.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await crossHedger.lockQuote(shortQuoteId)
+			await crossHedger.openPosition(shortQuoteId)
+
+			// Migrate hedger to cross mode — cross balance = 240 (120 per partyA from lockQuote allocations)
+			await migratePartyBToCross(crossCtx, crossHedger, [longQuoteId, shortQuoteId])
+		})
+
+		it("Should settle cross partyB with favorable ordering (gains first)", async function () {
+			const addr1 = await partyA1.getAddress()
+			const addr2 = await partyA2.getAddress()
+			const partyBAddr = await crossHedger.getAddress()
+
+			const balanceBefore = await crossHedger.getBalanceInfoCrossPartyB()
+
+			// Order: [partyA2, partyA1] — partyB gains 200 from partyA2 first, then loses 300 to partyA1
+			const sig = await getDummyUnifiedSettlementSig(
+				partyBAddr,
+				0n,
+				[],
+				[addr2, addr1],
+				[0n, 0n],
+				[
+					{ quoteId: shortQuoteId, currentPrice: decimal(3n), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct,
+					{ quoteId: longQuoteId, currentPrice: decimal(4n), partyAIndex: 1n } as UnifiedQuoteSettlementDataStruct,
+				],
+			)
+
+			await crossHedger.settleUpnlUnified([decimal(3n), decimal(4n)], sig)
+
+			// Net: partyB loses 100
+			const balanceAfter = await crossHedger.getBalanceInfoCrossPartyB()
+			expect(balanceBefore.allocatedBalances - balanceAfter.allocatedBalances).to.eq(decimal(100n))
+		})
+
+		it("Should settle cross partyB with unfavorable ordering (losses first)", async function () {
+			const addr1 = await partyA1.getAddress()
+			const addr2 = await partyA2.getAddress()
+			const partyBAddr = await crossHedger.getAddress()
+
+			const balanceBefore = await crossHedger.getBalanceInfoCrossPartyB()
+
+			// Order: [partyA1, partyA2] — partyB loses 300 to partyA1 first (300 > cross balance of 240)
+			const sig = await getDummyUnifiedSettlementSig(
+				partyBAddr,
+				0n,
+				[],
+				[addr1, addr2],
+				[0n, 0n],
+				[
+					{ quoteId: longQuoteId, currentPrice: decimal(4n), partyAIndex: 0n } as UnifiedQuoteSettlementDataStruct,
+					{ quoteId: shortQuoteId, currentPrice: decimal(3n), partyAIndex: 1n } as UnifiedQuoteSettlementDataStruct,
+				],
+			)
+
+			await crossHedger.settleUpnlUnified([decimal(4n), decimal(3n)], sig)
+
+			// Same net result: partyB loses 100
+			const balanceAfter = await crossHedger.getBalanceInfoCrossPartyB()
+			expect(balanceBefore.allocatedBalances - balanceAfter.allocatedBalances).to.eq(decimal(100n))
+		})
+	})
 }

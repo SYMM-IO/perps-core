@@ -14,14 +14,16 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 	/// @notice Allows Party A to bind to Party B
 	/// @dev Can only be called by Party A when not suspended
 	/// @param partyB The address of Party B
-	function bindToPartyB(address partyB) external notSuspended(LibSigner.getSigner()) userNotPartyB(LibSigner.getSigner()) {
+	function bindToPartyB(
+		address partyB
+	) external whenNotPartyAActionsPaused notSuspended(LibSigner.getSigner()) userNotPartyB(LibSigner.getSigner()) {
 		BindingFacetImpl.bindToPartyB(partyB);
 		emit BindToPartyB(partyB, LibSigner.getSigner());
 	}
 
 	/// @notice Allows Party A to request to unbind from Party B
 	/// @dev Can only be called by Party A when not suspended
-	function requestToUnbindFromPartyB() external notSuspended(LibSigner.getSigner()) {
+	function requestToUnbindFromPartyB() external whenNotPartyAActionsPaused notSuspended(LibSigner.getSigner()) {
 		BindingFacetImpl.requestToUnbindFromPartyB();
 		emit RequestToUnbindFromPartyB(LibSigner.getSigner());
 	}
@@ -36,7 +38,7 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 	/// @notice Allows Party B (immediately) or Party A (after cooldown) to complete the unbind request
 	/// @dev Can be called by PartyA after cooldown or partyB right away
 	/// @param partyA The address of Party A
-	function completeUnbindRequest(address partyA) external notSuspended(LibSigner.getSigner()) {
+	function completeUnbindRequest(address partyA) external whenNotPartyAActionsPaused {
 		BindingFacetImpl.completeUnbindRequest(partyA);
 		emit CompleteUnbindRequest(partyA, LibSigner.getSigner());
 	}

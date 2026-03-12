@@ -15,6 +15,8 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibSolvency } from "./LibSolvency.sol";
 import { LibMuonForceActions } from "./muon/LibMuonForceActions.sol";
 import { LibLiquidation } from "./LibLiquidation.sol";
+import { LibHook } from "./LibHook.sol";
+import { MuonFunction } from "../interfaces/IMuonSignatureVerifier.sol";
 
 library LibForceActions {
 	/// @notice Verifies the high/low price signature and calculates the force-close price with penalty.
@@ -58,7 +60,8 @@ library LibForceActions {
 		uint256 sigCurrentPrice
 	) internal returns (int256 upnlPartyB) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		Quote storage quote = quoteLayout.quotes[quoteId];
 		address partyA = quote.partyA;
 		address partyB = quote.partyB;
 
@@ -76,11 +79,11 @@ library LibForceActions {
 	}
 
 	/// @notice Validates all preconditions for a force close including signature, cooldowns, and price bounds.
-	function validateForceCloseConditions(uint256 quoteId, HighLowPriceSig memory highLowPrice) internal view {
+	function validateForceCloseConditions(uint256 quoteId, HighLowPriceSig memory highLowPrice, MuonFunction func) internal view {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
-		LibMuonForceActions.verifyHighLowPrice(highLowPrice, quote.partyB, quote.partyA, quote.symbolId);
+		LibMuonForceActions.verifyHighLowPrice(highLowPrice, quote.partyB, quote.partyA, quote.symbolId, func);
 
 		require(quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyAFacet: Invalid state");
 
@@ -150,6 +153,7 @@ library LibForceActions {
 		(partyBAvailableBalance, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
 
 		if (partyBAvailableBalance >= 0) {
+			LibAccount.increaseBothNonces(partyB, quote.partyA);
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			return (true, partyBAvailableBalance);
 		}
@@ -165,7 +169,7 @@ library LibForceActions {
 			accountLayout.partyBAllocatedBalances[partyB][allocationKey] += available;
 			emit SharedEvents.BalanceChangePartyB(partyB, quote.partyA, available, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 
-			LibAccount.increasePartyBNonce(partyB, quote.partyA);
+			LibAccount.increaseBothNonces(partyB, quote.partyA);
 
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			return (true, partyBAvailableBalance);
@@ -192,6 +196,7 @@ library LibForceActions {
 		// Close using UPNL
 		(partyBAvailableBalance, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, upnlPartyB, closePrice);
 		if (partyBAvailableBalance >= 0) {
+			LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 			LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 			return (true, partyBAvailableBalance);
 		}
@@ -199,6 +204,7 @@ library LibForceActions {
 		// Close ignoring UPNL
 		(partyBAvailableBalance, ) = getAvailableBalancesAfterClose(quoteId, currentPrice, 0, 0, closePrice);
 		require(partyBAvailableBalance >= 0, "ForceActionsFacet: Insufficient balance");
+		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
 		LibQuoteClose.closeQuote(quoteId, quote.quantityToClose, closePrice);
 
 		return (false, partyBAvailableBalance);

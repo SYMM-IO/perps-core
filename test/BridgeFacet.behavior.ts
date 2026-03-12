@@ -183,6 +183,7 @@ export function shouldBehaveLikeBridgeFacet(): void {
 			const originalTransaction = await context.viewFacet.getBridgeTransaction(1)
 			const validAmount = originalTransaction.amount / 2n
 			const invalidAmount = originalTransaction.amount - validAmount
+			const withdrawLockedBalanceBefore = await context.viewFacet.getWithdrawLockedBalance()
 
 			// invalidBridgedAmountsPool is set to feeCollector in the fixture
 			const poolBalanceBefore = await context.viewFacet.balanceOf(context.signers.feeCollector.address)
@@ -197,6 +198,9 @@ export function shouldBehaveLikeBridgeFacet(): void {
 			// BridgeTransaction.amount is in collateral decimals (18 for FakeStablecoin), same as balanceOf
 			const poolBalanceAfter = await context.viewFacet.balanceOf(context.signers.feeCollector.address)
 			expect(poolBalanceAfter - poolBalanceBefore).to.equal(invalidAmount)
+
+			const withdrawLockedBalanceAfter = await context.viewFacet.getWithdrawLockedBalance()
+			expect(withdrawLockedBalanceAfter).to.equal(withdrawLockedBalanceBefore - invalidAmount)
 		})
 	})
 
@@ -348,12 +352,16 @@ export function shouldBehaveLikeBridgeFacet(): void {
 
 		it("Should restore with full valid amount (no invalid portion)", async function () {
 			const originalTransaction = await context.viewFacet.getBridgeTransaction(1)
+			const withdrawLockedBalanceBefore = await context.viewFacet.getWithdrawLockedBalance()
 
 			await expect(context.bridgeFacet.connect(context.signers.admin).restoreBridgeTransaction(1, originalTransaction.amount)).to.not.reverted
 
 			const restoredTransaction = await context.viewFacet.getBridgeTransaction(1)
 			expect(restoredTransaction.status).to.equal(BridgeTransactionStatus.RECEIVED)
 			expect(restoredTransaction.amount).to.equal(originalTransaction.amount)
+
+			const withdrawLockedBalanceAfter = await context.viewFacet.getWithdrawLockedBalance()
+			expect(withdrawLockedBalanceAfter).to.equal(withdrawLockedBalanceBefore)
 		})
 
 		it("Should allow bridge to withdraw after restore", async function () {
@@ -373,6 +381,40 @@ export function shouldBehaveLikeBridgeFacet(): void {
 
 			const transaction = await context.viewFacet.getBridgeTransaction(1)
 			expect(transaction.status).to.equal(BridgeTransactionStatus.WITHDRAWN)
+		})
+
+		it("Should reduce lock by full amount when restored valid amount is zero", async function () {
+			const originalTransaction = await context.viewFacet.getBridgeTransaction(1)
+			const withdrawLockedBalanceBefore = await context.viewFacet.getWithdrawLockedBalance()
+
+			await expect(context.bridgeFacet.connect(context.signers.admin).restoreBridgeTransaction(1, 0)).to.not.reverted
+
+			const restoredTransaction = await context.viewFacet.getBridgeTransaction(1)
+			expect(restoredTransaction.status).to.equal(BridgeTransactionStatus.RECEIVED)
+			expect(restoredTransaction.amount).to.equal(0)
+
+			const withdrawLockedBalanceAfterRestore = await context.viewFacet.getWithdrawLockedBalance()
+			expect(withdrawLockedBalanceAfterRestore).to.equal(withdrawLockedBalanceBefore - originalTransaction.amount)
+
+			await time.increase(43250) // 12h cooldown
+			await expect(context.bridgeFacet.connect(context.signers.bridge).withdrawReceivedBridgeValue(1)).to.not.reverted
+
+			const withdrawLockedBalanceAfterWithdraw = await context.viewFacet.getWithdrawLockedBalance()
+			expect(withdrawLockedBalanceAfterWithdraw).to.equal(withdrawLockedBalanceAfterRestore)
+		})
+
+		it("Should keep global withdraw lock equal to sum of received transaction amounts after partial restore", async function () {
+			await context.bridgeFacet.connect(context.signers.user).transferToBridge(decimal(200n), await bridge.getAddress())
+
+			await context.bridgeFacet.connect(context.signers.admin).restoreBridgeTransaction(1, decimal(40n))
+
+			const tx1 = await context.viewFacet.getBridgeTransaction(1)
+			const tx2 = await context.viewFacet.getBridgeTransaction(2)
+			const withdrawLockedBalance = await context.viewFacet.getWithdrawLockedBalance()
+
+			expect(tx1.status).to.equal(BridgeTransactionStatus.RECEIVED)
+			expect(tx2.status).to.equal(BridgeTransactionStatus.RECEIVED)
+			expect(withdrawLockedBalance).to.equal(tx1.amount + tx2.amount)
 		})
 
 		it("Should fail to restore a non-suspended transaction", async function () {

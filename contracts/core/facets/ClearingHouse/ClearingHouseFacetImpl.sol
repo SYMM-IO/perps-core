@@ -9,9 +9,12 @@ import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
+import { FundingStorage } from "../../storages/FundingStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { LibAggregateFunding } from "../../libraries/LibAggregateFunding.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
@@ -98,15 +101,17 @@ library ClearingHouseFacetImpl {
 
 			if (amount == 0) continue;
 
-			if (party == subject && liqType == LiquidationType.PARTY_A_TAKEOVER) {
-				// Pulling from partyA's own balances
+			// Determine whether this party is a partyA in this liquidation context:
+			//   CROSS_PARTY_B: subject is partyB, so non-subject parties are partyAs
+			//   PARTY_A_TAKEOVER: subject is partyA, so subject itself is partyA
+			bool isPartyA = (liqType == LiquidationType.CROSS_PARTY_B) ? (party != subject) : (party == subject);
+
+			if (isPartyA) {
 				if (allocationKey == address(0)) {
-					// Pull from allocatedBalances
 					require(accountLayout.allocatedBalances[party] >= amount, "ClearingHouseFacet: Insufficient allocated balance");
 					accountLayout.allocatedBalances[party] -= amount;
 					emit SharedEvents.BalanceChangePartyA(party, amount, SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-				} else if (allocationKey == REIMBURSEMENT_KEY) {
-					// Pull from partyAReimbursement (special key)
+				} else if (liqType == LiquidationType.PARTY_A_TAKEOVER && allocationKey == REIMBURSEMENT_KEY) {
 					require(accountLayout.partyAReimbursement[party] >= amount, "ClearingHouseFacet: Insufficient reimbursement");
 					accountLayout.partyAReimbursement[party] -= amount;
 				} else {
@@ -131,6 +136,10 @@ library ClearingHouseFacetImpl {
 	}
 
 	/// @notice Distributes funds to receivers during clearing house liquidation
+	/// @dev IMPORTANT: The clearing house operator is responsible for computing distribution amounts off-chain.
+	///      These amounts must account for BOTH realized PnL AND accrued funding fees for each position.
+	///      During liquidation, funding fees are not transferred on-chain (only aggregate state is synced).
+	///      The operator must include any unpaid funding obligations when determining each receiver's share.
 	/// @param subject The party being liquidated (partyB for cross, partyA for takeover)
 	/// @param receivers The addresses to distribute to
 	/// @param allocationKeys The allocation keys for each receiver (for partyB: address(0) for cross mode, partyA for isolated)
@@ -184,13 +193,6 @@ library ClearingHouseFacetImpl {
 		}
 	}
 
-	/// @notice Calls cancel quote hooks and marks the quote as liquidated pending.
-	function _callCancelQuoteHooksAndUpdateStatus(Quote storage quote, address partyA, address partyB) private {
-		LibHook.callCancelQuoteHooks(quote.id, partyA, partyB, quote.affiliate);
-		quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
-		quote.statusModifyTimestamp = block.timestamp;
-	}
-
 	/// @notice Clears all pending quotes between a partyB and partyA and zeroes out the associated locked balances.
 	function _clearPartyBPendingQuotes(address partyB, address partyA) private {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -222,9 +224,15 @@ library ClearingHouseFacetImpl {
 				address partyA = counterparties[j];
 				_autoTakeoverPartyALiquidation(partyA);
 				uint256[] storage pendingQuotes = quoteLayout.partyAPendingQuotes[partyA];
+
+				// Collect cancelled quoteIds for hook calls after state changes
+				uint256[] memory cancelledIds = new uint256[](pendingQuotes.length);
+				uint256 cancelledCount = 0;
+
 				for (uint256 i = 0; i < pendingQuotes.length; ) {
 					Quote storage quote = quoteLayout.quotes[pendingQuotes[i]];
 					if (quote.partyB == partyB) {
+						cancelledIds[cancelledCount++] = pendingQuotes[i];
 						accountLayout.pendingLockedBalances[partyA].subQuote(quote);
 						if (MAStorage.layout().liquidationStatus[partyA]) {
 							uint256 fee = LibQuote.getOpenTradingFee(quote.id);
@@ -233,7 +241,8 @@ library ClearingHouseFacetImpl {
 						} else {
 							LibAccount.refundOpenTradingFee(quote.id, partyA);
 						}
-						_callCancelQuoteHooksAndUpdateStatus(quote, partyA, partyB);
+						quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
+						quote.statusModifyTimestamp = block.timestamp;
 						pendingQuotes[i] = pendingQuotes[pendingQuotes.length - 1];
 						pendingQuotes.pop();
 					} else {
@@ -242,15 +251,25 @@ library ClearingHouseFacetImpl {
 				}
 				_clearPartyBPendingQuotes(partyB, partyA);
 				LibConnections.removeConnectionIfNoPositions(partyA, partyB);
+
+				// Fire hooks after state changes so core state is consistent when hooks run
+				for (uint256 k = 0; k < cancelledCount; k++) {
+					Quote storage quote = quoteLayout.quotes[cancelledIds[k]];
+					LibHook.callCancelQuoteHooks(cancelledIds[k], partyA, partyB, quote.affiliate);
+				}
 			}
 			liquidatedAmounts = new uint256[](0); // Not tracked for cross partyB
 		} else {
 			// PartyA takeover - process all of partyA's pending quotes
 			address partyA = subject;
-			liquidatedAmounts = new uint256[](quoteLayout.partyAPendingQuotes[partyA].length);
+			uint256 pendingCount = quoteLayout.partyAPendingQuotes[partyA].length;
+			liquidatedAmounts = new uint256[](pendingCount);
+			uint256[] memory pendingQuoteIds = new uint256[](pendingCount);
 
-			for (uint256 index = 0; index < quoteLayout.partyAPendingQuotes[partyA].length; index++) {
-				Quote storage quote = quoteLayout.quotes[quoteLayout.partyAPendingQuotes[partyA][index]];
+			for (uint256 index = 0; index < pendingCount; index++) {
+				uint256 quoteId = quoteLayout.partyAPendingQuotes[partyA][index];
+				pendingQuoteIds[index] = quoteId;
+				Quote storage quote = quoteLayout.quotes[quoteId];
 				if (quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) {
 					_clearPartyBPendingQuotes(quote.partyB, partyA);
 					LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
@@ -260,11 +279,18 @@ library ClearingHouseFacetImpl {
 				accountLayout.partyAReimbursement[partyA] += fee;
 				// No BalanceChangePartyA event: reimbursement is escrow during takeover.
 				// settlePartyATakeover handles final fund distribution.
-				_callCancelQuoteHooksAndUpdateStatus(quote, partyA, quote.partyB);
+				quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
+				quote.statusModifyTimestamp = block.timestamp;
 				liquidatedAmounts[index] = quote.quantity;
 			}
 			accountLayout.pendingLockedBalances[partyA].makeZero();
 			delete quoteLayout.partyAPendingQuotes[partyA];
+
+			// Fire hooks after pending array is deleted so core state is consistent when hooks run
+			for (uint256 i = 0; i < pendingQuoteIds.length; i++) {
+				Quote storage quote = quoteLayout.quotes[pendingQuoteIds[i]];
+				LibHook.callCancelQuoteHooks(pendingQuoteIds[i], partyA, quote.partyB, quote.affiliate);
+			}
 		}
 	}
 
@@ -325,13 +351,30 @@ library ClearingHouseFacetImpl {
 			accountLayout.lockedBalances[partyA].subQuote(quote);
 			LibAccount.subFromPartyBLockedBalances(quote);
 
+			if (FundingStorage.layout().fundingFees[quote.symbolId][partyB].epochDuration > 0) {
+				// Sync funding state for aggregate accounting so subFromPartiesAggregateFunding
+				// (called inside closePositionFully) uses an up-to-date accumulatedPaidFunding.
+				// Balance transfers are intentionally skipped to keep liquidation non-reverting;
+				// the clearing house operator must account for accrued funding fees when calling
+				// distributeForClearingHouse.
+				int256 oldAccumulatedPaidFunding = quote.accumulatedPaidFunding;
+				uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+				quote.lastFundingPaymentTimestamp = block.timestamp;
+				LibQuoteFunding.updateAccumulatedPaidFunding(quote.id);
+				LibAggregateFunding.updatePartiesAggregateFunding(quote, oldAccumulatedPaidFunding, openAmount);
+			}
+
 			uint256 liquidationPrice = prices[i];
 			uint256 closedAmount = LibQuote.closePositionFully(quote.id, liquidationPrice);
 			liquidatedAmounts[i] = closedAmount;
 
 			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[i], liquidationPrice, partyA, partyB, quote.affiliate);
 
-			LibAccount.increasePartyBNonce(partyB, partyA);
+			if (liqType == LiquidationType.CROSS_PARTY_B) {
+				LibAccount.increaseBothNonces(partyB, partyA);
+			} else {
+				LibAccount.increasePartyBNonce(partyB, partyA);
+			}
 
 			// Emit TradeVolumeRecorded for both liquidation types
 			emit SharedEvents.TradeVolumeRecorded(
@@ -399,12 +442,15 @@ library ClearingHouseFacetImpl {
 			delete accountLayout.settlementStates[partyA][settledPartyBs[i]];
 		}
 
-		// release reimbursement
+		// Release all escrowed balances back to partyA
 		uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
-		if (reimbursement > 0) {
+		uint256 deferredBalance = accountLayout.partyADeferredBalance[partyA];
+		uint256 totalRelease = reimbursement + deferredBalance;
+		if (totalRelease > 0) {
 			accountLayout.partyAReimbursement[partyA] = 0;
-			accountLayout.allocatedBalances[partyA] += reimbursement;
-			emit SharedEvents.BalanceChangePartyA(partyA, reimbursement, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			accountLayout.partyADeferredBalance[partyA] = 0;
+			accountLayout.allocatedBalances[partyA] += totalRelease;
+			emit SharedEvents.BalanceChangePartyA(partyA, totalRelease, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
 		}
 
 		// Clear locked balances
@@ -425,21 +471,35 @@ library ClearingHouseFacetImpl {
 	}
 
 	/// @notice Settles the clearing house liquidation for a cross partyB
+	/// @dev Supports pagination: call with finalize=false to fire hooks for batches of settled partyAs,
+	///      then call with finalize=true on the last batch to complete the settlement.
 	/// @param partyB The cross partyB being settled
-	function settleCrossPartyBLiquidation(address partyB) internal {
-		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+	/// @param settledPartyAs The partyAs whose liquidation hooks should be called in this batch
+	/// @param finalize Whether to finalize the settlement (checks all positions closed and funds distributed)
+	function settleCrossPartyBLiquidation(address partyB, address[] memory settledPartyAs, bool finalize) internal {
 		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 		CrossLiquidationDetail storage detail = chLayout.crossLiquidationDetails[partyB];
 
 		require(detail.inProgress, "ClearingHouseFacet: Cross liquidation not in progress");
-		require(quoteLayout.partyBPositionsCount[partyB][address(0)] == 0, "ClearingHouseFacet: PartyB has still open positions");
-		// NOTE: Using partyBPendingLockedBalances as a proxy for pending quotes; it can be zero even with pending quotes in edge cases.
-		require(accountLayout.partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0, "ClearingHouseFacet: PartyB has pending quotes");
-		require(detail.deallocatedPool == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
 
-		detail.inProgress = false;
-		detail.timestamp = 0;
+		if (finalize) {
+			require(QuoteStorage.layout().partyBPositionsCount[partyB][address(0)] == 0, "ClearingHouseFacet: PartyB has still open positions");
+			// NOTE: Using partyBPendingLockedBalances as a proxy for pending quotes; it can be zero even with pending quotes in edge cases.
+			require(
+				AccountStorage.layout().partyBPendingLockedBalances[partyB][address(0)].totalForPartyB() == 0,
+				"ClearingHouseFacet: PartyB has pending quotes"
+			);
+			require(detail.deallocatedPool == 0, "ClearingHouseFacet: Undistributed funds in deallocated pool");
+
+			detail.inProgress = false;
+			detail.timestamp = 0;
+		}
+
+		// Fire hooks AFTER finalize clears inProgress, so bound VAs can be deleted
+		// For non-finalize calls, hooks still fire but bound VAs will be deferred (expected behavior)
+		for (uint256 i = 0; i < settledPartyAs.length; i++) {
+			LibHook.callLiquidationSettledHooks(settledPartyAs[i]);
+		}
 	}
 
 	event AutoTakeoverPartyALiquidation(address indexed partyA, bytes liquidationId);
@@ -495,5 +555,38 @@ library ClearingHouseFacetImpl {
 
 			accountLayout.balances[globalLayout.softLiquidationPenaltyCollector] += totalPenalty;
 		}
+	}
+
+	/// @notice Distributes pending fees from the liquidation escrow to receivers
+	/// @dev Called by clearing house after a LATE/OVERDUE PartyA liquidation settlement.
+	///      Supports both partyA-style addresses (allocatedBalances) and partyBs (partyBAllocatedBalances).
+	/// @param partyA The partyA whose liquidation escrow to distribute from
+	/// @param receivers The addresses to distribute to
+	/// @param allocationKeys The allocation keys for each receiver (used for partyB receivers)
+	/// @param amounts The amounts to distribute
+	function distributeFromLiquidationEscrow(
+		address partyA,
+		address[] memory receivers,
+		address[] memory allocationKeys,
+		uint256[] memory amounts
+	) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		require(receivers.length == allocationKeys.length && receivers.length == amounts.length, "ClearingHouseFacet: Invalid length");
+
+		uint256 totalDistributed = 0;
+		for (uint256 i = 0; i < receivers.length; i++) {
+			if (amounts[i] == 0) continue;
+			if (maLayout.partyBStatus[receivers[i]]) {
+				accountLayout.partyBAllocatedBalances[receivers[i]][allocationKeys[i]] += amounts[i];
+				emit SharedEvents.BalanceChangePartyB(receivers[i], allocationKeys[i], amounts[i], SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			} else {
+				accountLayout.allocatedBalances[receivers[i]] += amounts[i];
+				emit SharedEvents.BalanceChangePartyA(receivers[i], amounts[i], SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			}
+			totalDistributed += amounts[i];
+		}
+		require(accountLayout.liquidationEscrow[partyA] >= totalDistributed, "ClearingHouseFacet: Insufficient pool balance");
+		accountLayout.liquidationEscrow[partyA] -= totalDistributed;
 	}
 }

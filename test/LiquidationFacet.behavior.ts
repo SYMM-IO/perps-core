@@ -9,7 +9,7 @@ import { User } from "./models/User.js"
 import type { BalanceInfo } from "./models/User.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getPriceFetcher, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common.js"
-import { getDummyLiquidationSig, getDummyPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { getDummyLiquidationSig, getDummyPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 /**
  * ========================================
@@ -658,7 +658,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 					const diff = userBalance.lockedLf - -available // Remaining LF for liquidator
 					const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
 
-					// Get reimbursement before settlement (trading fees refunded for liquidated pending quotes)
+					// Get reimbursement before settlement
 					const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
 
 					await user.settleLiquidation()
@@ -667,7 +667,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 					expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(diff)
 					await expectConnected(userAddress, hedgerAddress, false)
 
-					// After full settlement, partyA allocated balance should equal the reimbursement
+					// After full settlement (NORMAL), partyA gets reimbursement (pending fees) + deferred balance
 					const userBalanceAfter = await user.getBalanceInfo()
 					expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
 
@@ -729,9 +729,12 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				// Liquidation status should be cleared after full settlement
 				expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
 
-				// PartyA allocated balance should be set to reimbursement
+				// In LATE, reimbursement (pending fees) goes to clearing pool, partyA gets only deferred balance (0 for non-deferred)
 				const userBalanceAfter = await user.getBalanceInfo()
-				expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
+				expect(userBalanceAfter.allocatedBalances).to.be.equal(0n)
+				// Reimbursement should be in the clearing pool
+				const escrow = await context.viewFacet.getLiquidationEscrow(userAddress)
+				expect(escrow).to.be.equal(reimbursement)
 			})
 
 			/**
@@ -770,9 +773,11 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				// Liquidation status should be cleared after full settlement
 				expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
 
-				// PartyA allocated balance should be set to reimbursement
+				// In OVERDUE, reimbursement (pending fees) goes to clearing pool, partyA gets only deferred balance (0 for non-deferred)
 				const userBalanceAfter = await user.getBalanceInfo()
-				expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
+				expect(userBalanceAfter.allocatedBalances).to.be.equal(0n)
+				const escrow = await context.viewFacet.getLiquidationEscrow(userAddress)
+				expect(escrow).to.be.equal(reimbursement)
 			})
 		})
 	})
@@ -840,6 +845,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				const diff = userBalance.lockedLf - -available
 				const partyBAfter = hedgerBalance.allocatedBalances - upnl + userBalance.lockedCva
 
+				const deferredBalance = await context.viewFacet.getPartyADeferredBalance(userAddress)
 				const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
 
 				await user.settleLiquidation()
@@ -847,9 +853,9 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				let balanceInfoOfLiquidator = await liquidator.getBalanceInfo()
 				expect(balanceInfoOfLiquidator.allocatedBalances).to.be.equal(diff)
 
-				// After full settlement, partyA allocated balance should equal the reimbursement
+				// After full settlement (NORMAL), partyA gets deferred balance + reimbursement (pending fees)
 				const userBalanceAfter = await user.getBalanceInfo()
-				expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
+				expect(userBalanceAfter.allocatedBalances).to.be.equal(deferredBalance + reimbursement)
 
 				// Liquidation status should be cleared
 				expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
@@ -890,7 +896,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await user.liquidatePositions([1])
 
 			const userAddress = await context.signers.user.getAddress()
-			const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
+			const deferredBalance = await context.viewFacet.getPartyADeferredBalance(userAddress)
 
 			await user.settleLiquidation()
 			expect((await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances).to.be.equal(partyBAfter)
@@ -900,9 +906,9 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			// Liquidation status should be cleared
 			expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
 
-			// PartyA allocated balance should be set to reimbursement
+			// PartyA allocated balance should be set to deferred balance (pending fees go to clearing pool in LATE)
 			const userBalanceAfter = await user.getBalanceInfo()
-			expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
+			expect(userBalanceAfter.allocatedBalances).to.be.equal(deferredBalance)
 		})
 
 		it("Overdue liquidation deferred", async function () {
@@ -930,9 +936,182 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			// Liquidation status should be cleared
 			expect(await context.viewFacet.isPartyALiquidated(userAddress)).to.be.equal(false)
 
-			// PartyA allocated balance should be set to reimbursement
+			// In OVERDUE, reimbursement (pending fees) goes to clearing pool, partyA gets only deferred balance (0 for non-deferred)
 			const userBalanceAfter = await user.getBalanceInfo()
-			expect(userBalanceAfter.allocatedBalances).to.be.equal(reimbursement)
+			expect(userBalanceAfter.allocatedBalances).to.be.equal(0n)
+			const escrow = await context.viewFacet.getLiquidationEscrow(userAddress)
+			expect(escrow).to.be.equal(reimbursement)
+		})
+	})
+
+	/**
+	 * LIQUIDATION ESCROW TESTS
+	 *
+	 * When a LATE/OVERDUE liquidation occurs, pending trading fees are not returned
+	 * to partyA. Instead they go to a liquidation escrow for the clearing house to
+	 * distribute. This mitigates an attack where a bound-mode (oracle-less) partyA
+	 * inflates fake UPNL via sendQuote to drain allocatedBalances into pending fees,
+	 * then gets liquidated as LATE/OVERDUE and recovers the fees.
+	 *
+	 * The deferred balance (excess from deferred liquidation) is always returned to
+	 * partyA regardless of liquidation type — it represents legitimate funds.
+	 */
+	describe("Liquidation Escrow", async function () {
+		it("NORMAL: pending fees return to partyA, escrow stays zero", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			// Compute expected pending fees before liquidation (quotes 2, 3, 5 are pending)
+			const expectedFees = await getTradingFeeForQuotes(context, [2n, 3n, 5n])
+
+			const price = decimal(572n, 16) // triggers NORMAL
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
+			expect((await user.getLiquidatedStateOfPartyA())["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
+
+			await user.liquidatePendingPositions()
+			await user.liquidatePositions([1])
+
+			const reimbursement = await context.viewFacet.partyAReimbursement(userAddress)
+			expect(reimbursement).to.be.equal(expectedFees)
+
+			await user.settleLiquidation()
+
+			// Escrow should be empty — fees returned to partyA in NORMAL
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(0n)
+			// partyA gets the fees back
+			expect((await user.getBalanceInfo()).allocatedBalances).to.be.equal(expectedFees)
+		})
+
+		it("LATE: pending fees go to escrow, partyA gets nothing", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const expectedFees = await getTradingFeeForQuotes(context, [2n, 3n, 5n])
+
+			const price = decimal(594n, 16) // triggers LATE
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
+			expect((await user.getLiquidatedStateOfPartyA())["liquidationType"]).to.be.equal(LiquidationType.LATE)
+
+			await user.liquidatePendingPositions()
+			await user.liquidatePositions([1])
+
+			expect(await context.viewFacet.partyAReimbursement(userAddress)).to.be.equal(expectedFees)
+
+			await user.settleLiquidation()
+
+			// Fees should be in escrow, not returned to partyA
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(expectedFees)
+			expect((await user.getBalanceInfo()).allocatedBalances).to.be.equal(0n)
+		})
+
+		it("OVERDUE: pending fees go to escrow, partyA gets nothing", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const expectedFees = await getTradingFeeForQuotes(context, [2n, 3n, 5n])
+
+			const price = decimal(599n, 16) // triggers OVERDUE
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
+			expect((await user.getLiquidatedStateOfPartyA())["liquidationType"]).to.be.equal(LiquidationType.OVERDUE)
+
+			await user.liquidatePendingPositions()
+			await user.liquidatePositions([1])
+
+			expect(await context.viewFacet.partyAReimbursement(userAddress)).to.be.equal(expectedFees)
+
+			await user.settleLiquidation()
+
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(expectedFees)
+			expect((await user.getBalanceInfo()).allocatedBalances).to.be.equal(0n)
+		})
+
+		it("Deferred with excess: deferred balance and fees return to partyA (always NORMAL)", async function () {
+			// When deferred liquidation produces excess, it zeroes the available balance,
+			// so determineLiquidationType always gives NORMAL. Both deferred balance and
+			// pending fees return to partyA.
+
+			const userAddress = await context.signers.user.getAddress()
+			const expectedFees = await getTradingFeeForQuotes(context, [2n, 3n, 5n])
+			const balanceInfo = await user.getBalanceInfo()
+			const currentAllocated = balanceInfo.allocatedBalances
+
+			// Compute UPNL at a price where historical balance makes user insolvent
+			// but current balance leaves them with positive available
+			const price = decimal(4n) // SHORT at price 1 → UPNL = (1-4)*100 = -300
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - (await context.viewFacetQuote.getSumQuoteFundingDebts([1n]))
+			const totalUnrealizedLoss =
+				(await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - (await context.viewFacetQuote.getSumQuoteFundingDebts([1n]))
+
+			// Expected deferred excess = currentAllocated - lockedCva - lockedLf + upnl
+			const expectedDeferredBalance = currentAllocated - balanceInfo.lockedCva - balanceInfo.lockedLf + BigInt(upnl)
+
+			// Set liquidationAllocatedBalance to a LOW value (historical snapshot)
+			// so the user was insolvent at that time: 200 - 25 + (-300) = -125 < 0
+			const historicalBalance = decimal(200n)
+			const sign = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, historicalBalance)
+
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).deferredLiquidatePartyA(userAddress, sign)
+			await context.partyALiquidationFacet.connect(context.signers.liquidator).deferredSetSymbolsPrice(userAddress, sign)
+
+			expect(await context.viewFacet.getPartyADeferredBalance(userAddress)).to.be.equal(expectedDeferredBalance)
+
+			// Deferred extraction zeroes available → always NORMAL
+			expect((await user.getLiquidatedStateOfPartyA())["liquidationType"]).to.be.equal(LiquidationType.NORMAL)
+
+			await user.liquidatePendingPositions()
+			await user.liquidatePositions([1])
+
+			expect(await context.viewFacet.partyAReimbursement(userAddress)).to.be.equal(expectedFees)
+
+			await user.settleLiquidation()
+
+			// Both return to partyA in NORMAL
+			expect((await user.getBalanceInfo()).allocatedBalances).to.be.equal(expectedDeferredBalance + expectedFees)
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(0n)
+			expect(await context.viewFacet.getPartyADeferredBalance(userAddress)).to.be.equal(0n)
+			expect(await context.viewFacet.partyAReimbursement(userAddress)).to.be.equal(0n)
+		})
+
+		it("Deferred LATE path (no excess): fees go to escrow", async function () {
+			// Deferred liquidation at current allocatedBalance (no excess).
+			// Same behavior as non-deferred LATE but validates the deferred code path.
+			const userAddress = await context.signers.user.getAddress()
+			const expectedFees = await getTradingFeeForQuotes(context, [2n, 3n, 5n])
+
+			const price = decimal(594n, 16) // triggers LATE
+			await user.deferredLiquidateAndSetSymbolPrices([1n], [price], [1n])
+			expect((await user.getLiquidatedStateOfPartyA())["liquidationType"]).to.be.equal(LiquidationType.LATE)
+
+			// No excess because liquidationAllocatedBalance == current allocatedBalance
+			expect(await context.viewFacet.getPartyADeferredBalance(userAddress)).to.be.equal(0n)
+
+			await user.liquidatePendingPositions()
+			await user.liquidatePositions([1])
+
+			expect(await context.viewFacet.partyAReimbursement(userAddress)).to.be.equal(expectedFees)
+
+			await user.settleLiquidation()
+
+			// Fees go to escrow, nothing to partyA
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(expectedFees)
+			expect((await user.getBalanceInfo()).allocatedBalances).to.be.equal(0n)
+		})
+
+		it("Escrow accumulates across multiple liquidations", async function () {
+			const userAddress = await context.signers.user.getAddress()
+			const expectedFees = await getTradingFeeForQuotes(context, [2n, 3n, 5n])
+
+			// First LATE liquidation
+			const price = decimal(594n, 16)
+			await user.liquidateAndSetSymbolPrices([1n], [price], [1n])
+			expect((await user.getLiquidatedStateOfPartyA())["liquidationType"]).to.be.equal(LiquidationType.LATE)
+
+			await user.liquidatePendingPositions()
+			await user.liquidatePositions([1])
+
+			expect(await context.viewFacet.partyAReimbursement(userAddress)).to.be.equal(expectedFees)
+
+			await user.settleLiquidation()
+
+			// Escrow should equal the pending fees
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(expectedFees)
+
+			// Escrow persists until CH distributes it
+			expect(await context.viewFacet.getLiquidationEscrow(userAddress)).to.be.equal(expectedFees)
 		})
 	})
 

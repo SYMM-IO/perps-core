@@ -93,6 +93,20 @@ export function shouldBehaveLikeSendQuote(): void {
 		).to.be.revertedWith("PartyAFacet: insufficient available balance")
 	})
 
+	it("Should fail with explicit reason when allocated balance is insufficient to deduct fee", async function () {
+		const lowAllocatedUser = new User(context, context.signers.user2)
+		await lowAllocatedUser.setup()
+		await lowAllocatedUser.setBalances(decimal(2000n), decimal(1500n), decimal(5n, 17))
+
+		await expect(
+			lowAllocatedUser.sendQuote(
+				limitQuoteRequestBuilder()
+					.upnlSig(getDummySingleUpnlAndPriceSig(decimal(1n), decimal(101n)))
+					.build(),
+			),
+		).to.be.revertedWith("PartyAFacet: Insufficient allocated balance for fee")
+	})
+
 	it("Should expire", async function () {
 		const userAddress = await user.getAddress()
 		const pendingBefore = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)

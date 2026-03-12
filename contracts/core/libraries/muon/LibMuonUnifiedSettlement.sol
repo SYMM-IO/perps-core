@@ -7,15 +7,19 @@ pragma solidity >=0.8.18;
 import { MuonStorage, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonUnifiedSettlement {
 	/// @notice Verifies a unified settlement signature for both cross and normal partyB modes.
-	function verifyUnifiedSettlement(UnifiedSettlementSig memory settleSig, bool isCrossPartyB) internal view {
+	function verifyUnifiedSettlement(UnifiedSettlementSig memory settleSig, bool isCrossPartyB, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		// == SignatureCheck( ==
 		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		for (uint256 i = 0; i < settleSig.partyAs.length; i++) {
+			LibMuon.verifyNotStaleAfterEpochChange(settleSig.timestamp, settleSig.partyAs[i]);
+		}
 		// == ) ==
 
 		// Encode quote data
@@ -83,6 +87,6 @@ library LibMuonUnifiedSettlement {
 			);
 		}
 
-		LibMuon.verifyTSSAndGateway(hash, settleSig.sigs, settleSig.gatewaySignature);
+		LibMuon.verifyTSSAndGateway(hash, settleSig.sigs, settleSig.gatewaySignature, func);
 	}
 }

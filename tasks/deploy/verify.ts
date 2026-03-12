@@ -702,7 +702,7 @@ async function verifyCoreRoles(
 	if (addresses.accountLayer) {
 		console.log("")
 		console.log(`   ${c.dim}-- AccountLayer Roles on Diamond --${c.reset}`)
-		const alRolesOnDiamond = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "INTERNAL_TRANSFER_TO_BALANCE_ROLE"]
+		const alRolesOnDiamond = ["SIGNER_ADMIN_ROLE", "AFFILIATE_MANAGER_ROLE", "BALANCE_SETTLER_ROLE"]
 		for (const role of alRolesOnDiamond) {
 			await checkRole(results, cat, view, addresses.accountLayer, role, ethers, { contractLabel: "Diamond ControlFacet" })
 		}
@@ -776,7 +776,7 @@ async function verifyAccountLayerFull(
 	}
 
 	if (addresses.instantLayer) {
-		await checkRole(results, cat, alView, addresses.instantLayer, "INSTANT_LAYER_ROLE", ethers, { contractLabel: "AccountLayer ControlFacet" })
+		await checkRole(results, cat, alView, addresses.instantLayer, "SIGNER_SETTER_ROLE", ethers, { contractLabel: "AccountLayer ControlFacet" })
 	}
 
 	// Symmio Core whitelisted

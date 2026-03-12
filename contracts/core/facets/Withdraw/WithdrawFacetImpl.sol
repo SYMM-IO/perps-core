@@ -240,8 +240,8 @@ library WithdrawFacetImpl {
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
 		require(withdrawRequest.status == WithdrawStatus.PENDING, "WithdrawFacet : Invalid withdraw request status");
-		require(withdrawRequest.provider != address(0), "WithdrawFacet : Only Virtual or Express withdraw needs to accept");
-		require(msg.sender == withdrawRequest.provider, "WithdrawFacet : Not allowed to accept withdrawal");
+		require(withdrawRequest.provider != address(0), "WithdrawFacet : Only Virtual or Express withdraw needs to reject");
+		require(msg.sender == withdrawRequest.provider, "WithdrawFacet : Not allowed to reject withdrawal");
 
 		_unlockAndRefund(withdrawRequest);
 

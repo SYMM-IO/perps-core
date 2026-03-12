@@ -22,6 +22,7 @@ import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyAFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -75,7 +76,7 @@ library PartyAFacetImpl {
 			require(tradingLayout.isPartyBBindable[boundedPartyB], "PartyAFacet: Bound Party B is not Bindable");
 			require(partyBsWhiteList.length == 1 && partyBsWhiteList[0] == boundedPartyB, "PartyAFacet: PartyA is bound to a different PartyB");
 		} else {
-			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId);
+			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId, MuonFunction.Trading);
 		}
 
 		Fee memory fee;
@@ -148,6 +149,7 @@ library PartyAFacetImpl {
 		quoteLayout.quotes[currentId] = quote;
 
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
+		require(accountLayout.allocatedBalances[signer] >= feeAmount, "PartyAFacet: Insufficient allocated balance for fee");
 		accountLayout.allocatedBalances[signer] -= feeAmount;
 		LibAccount.reserveOpenTradingFee(signer, feeAmount);
 		emit SharedEvents.BalanceChangePartyA(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);

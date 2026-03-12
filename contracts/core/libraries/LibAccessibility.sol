@@ -36,7 +36,7 @@ library LibAccessibility {
 	bytes32 public constant VIRTUAL_DEPOSITOR_ROLE = keccak256("VIRTUAL_DEPOSITOR_ROLE");
 	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
 	bytes32 public constant MIGRATION_ROLE = keccak256("MIGRATION_ROLE");
-	bytes32 public constant INTERNAL_TRANSFER_TO_BALANCE_ROLE = keccak256("INTERNAL_TRANSFER_TO_BALANCE_ROLE");
+	bytes32 public constant BALANCE_SETTLER_ROLE = keccak256("BALANCE_SETTLER_ROLE");
 
 	/// @notice Checks if a user has a specific role.
 	/// @param user The address of the user.

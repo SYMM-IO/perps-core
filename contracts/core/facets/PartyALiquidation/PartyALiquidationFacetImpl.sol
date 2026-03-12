@@ -16,13 +16,14 @@ import { LockedValues, QuoteStatus, Quote, QuoteStorage } from "../../storages/Q
 import { LiquidationSig, MuonStorage } from "../../storages/MuonStorage.sol";
 import { LiquidationType, LiquidationDetail, LiquidationSettlementState, Price, AccountStorage } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
-import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
-import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyALiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
+
+	event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
 
 	/// @notice Verifies insolvency and initiates the liquidation process for Party A
 	function liquidatePartyA(address partyA, LiquidationSig memory liquidationSig) internal {
@@ -31,7 +32,7 @@ library PartyALiquidationFacetImpl {
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		require(QuoteStorage.layout().partyAPositionsCount[partyA] > 0, "LiquidationFacet: PartyA has no open positions");
-		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA);
+		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
 		require(block.timestamp <= liquidationSig.timestamp + MuonStorage.layout().upnlValidTime, "LiquidationFacet: Expired signature");
 		int256 availableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			liquidationSig.upnl,
@@ -63,7 +64,7 @@ library PartyALiquidationFacetImpl {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
-		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA);
+		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 		require(
 			keccak256(accountLayout.liquidationDetails[partyA].liquidationId) == keccak256(liquidationSig.liquidationId),
@@ -94,10 +95,13 @@ library PartyALiquidationFacetImpl {
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
 		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
-		liquidatedAmounts = new uint256[](quoteLayout.partyAPendingQuotes[partyA].length);
+		uint256 pendingCount = quoteLayout.partyAPendingQuotes[partyA].length;
+		liquidatedAmounts = new uint256[](pendingCount);
 		liquidationId = accountLayout.liquidationDetails[partyA].liquidationId;
-		for (uint256 index = 0; index < quoteLayout.partyAPendingQuotes[partyA].length; index++) {
-			Quote storage quote = quoteLayout.quotes[quoteLayout.partyAPendingQuotes[partyA][index]];
+		for (uint256 index = pendingCount; index > 0; index--) {
+			uint256 actualIndex = index - 1;
+			uint256 quoteId = quoteLayout.partyAPendingQuotes[partyA][actualIndex];
+			Quote storage quote = quoteLayout.quotes[quoteId];
 			if (
 				(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING) &&
 				quoteLayout.partyBPendingQuotes[quote.partyB][partyA].length > 0
@@ -116,10 +120,11 @@ library PartyALiquidationFacetImpl {
 			emit SharedEvents.BalanceChangePartyA(partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 			quote.quoteStatus = QuoteStatus.LIQUIDATED_PENDING;
 			quote.statusModifyTimestamp = block.timestamp;
-			liquidatedAmounts[index] = quote.quantity;
+			liquidatedAmounts[actualIndex] = quote.quantity;
+			quoteLayout.partyAPendingQuotes[partyA].pop();
+			LibHook.callCancelQuoteHooks(quote.id, quote.partyA, quote.partyB, quote.affiliate);
 		}
 		accountLayout.pendingLockedBalances[partyA].makeZero();
-		delete quoteLayout.partyAPendingQuotes[partyA];
 	}
 
 	/// @notice Liquidates open positions of Party A, settles PnL per Party B, and detects disputes
@@ -221,14 +226,15 @@ library PartyALiquidationFacetImpl {
 
 			if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
 				int256 settleAmount = accountLayout.settlementStates[partyA][quote.partyB].expectedAmount;
+				address allocKey = LibAccount.partyBAllocationKey(quote.partyB, partyA);
 				if (settleAmount < 0) {
 					accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += settleAmount;
 				} else {
-					if (accountLayout.partyBAllocatedBalances[quote.partyB][partyA] >= uint256(settleAmount)) {
+					if (accountLayout.partyBAllocatedBalances[quote.partyB][allocKey] >= uint256(settleAmount)) {
 						accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += settleAmount;
 					} else {
 						accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl += int256(
-							accountLayout.partyBAllocatedBalances[quote.partyB][partyA]
+							accountLayout.partyBAllocatedBalances[quote.partyB][allocKey]
 						);
 					}
 				}
@@ -296,7 +302,7 @@ library PartyALiquidationFacetImpl {
 	function settlePartyALiquidation(
 		address partyA,
 		address[] memory partyBs
-	) internal returns (int256[] memory settleAmounts, bytes memory liquidationId) {
+	) internal returns (int256[] memory settleAmounts, bytes memory liquidationId, bool fullySettled) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
@@ -340,6 +346,10 @@ library PartyALiquidationFacetImpl {
 					settleAmounts[i] = settleAmount;
 					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 				} else {
+					// Cross-mode PartyBs must settle uPNL first via settlePartyBUpnlForLiquidation
+					// to convert unrealized profit into allocated balance before settlement.
+					// The clearing house takeover flow handles cases where settlement is not possible.
+					require(!maLayout.crossModeEnabledForPartyB[partyB], "LiquidationFacet: Settle cross partyB uPNL first");
 					settleAmounts[i] = int256(accountLayout.partyBAllocatedBalances[partyB][allocKey]);
 					accountLayout.partyBAllocatedBalances[partyB][allocKey] = 0;
 					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
@@ -349,11 +359,28 @@ library PartyALiquidationFacetImpl {
 		}
 		if (accountLayout.liquidationDetails[partyA].involvedPartyBCounts == 0) {
 			emit SharedEvents.BalanceChangePartyA(partyA, accountLayout.allocatedBalances[partyA], SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			uint256 deferredBalance = accountLayout.partyADeferredBalance[partyA];
 			uint256 reimbursement = accountLayout.partyAReimbursement[partyA];
-			accountLayout.allocatedBalances[partyA] = reimbursement;
+
+			LiquidationType liqType = accountLayout.liquidationDetails[partyA].liquidationType;
+			if (liqType == LiquidationType.LATE || liqType == LiquidationType.OVERDUE) {
+				// Deferred balance always goes back to partyA; reimbursement (pending fees) goes to clearing pool for CH distribution
+				accountLayout.allocatedBalances[partyA] = deferredBalance;
+				if (reimbursement > 0) {
+					accountLayout.liquidationEscrow[partyA] += reimbursement;
+					emit LiquidationEscrowCreated(partyA, accountLayout.liquidationDetails[partyA].liquidationId, reimbursement);
+				}
+			} else {
+				// NORMAL: everything goes back to partyA
+				accountLayout.allocatedBalances[partyA] = deferredBalance + reimbursement;
+			}
+			accountLayout.partyADeferredBalance[partyA] = 0;
 			accountLayout.partyAReimbursement[partyA] = 0;
-			if (reimbursement > 0) {
-				emit SharedEvents.BalanceChangePartyA(partyA, reimbursement, SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			if (deferredBalance > 0) {
+				emit SharedEvents.BalanceChangePartyA(partyA, deferredBalance, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_IN);
+			}
+			if (liqType != LiquidationType.LATE && liqType != LiquidationType.OVERDUE && reimbursement > 0) {
+				emit SharedEvents.BalanceChangePartyA(partyA, reimbursement, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
 			}
 			accountLayout.lockedBalances[partyA].makeZero();
 
@@ -369,6 +396,8 @@ library PartyALiquidationFacetImpl {
 			maLayout.liquidationStatus[partyA] = false;
 			maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;
 			LibAccount.increasePartyANonce(partyA);
+			LibHook.callLiquidationSettledHooks(partyA);
+			fullySettled = true;
 		}
 	}
 }
