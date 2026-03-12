@@ -7,7 +7,7 @@ This document explains how to use the migration scripts for upgrading SYMMIO fro
 Migration is a two-step process:
 
 1. **Prepare input** (`prepareMigrationInput.ts`) -- fetches open quotes and partyB balances from the subgraph, validates against on-chain state, writes a validated JSON file
-2. **Run migration** (`migrateOnDemand.ts`) -- executes migration using the validated input, then verifies results on-chain
+2. **Run migration** (`runMigration.ts`) -- executes migration using the validated input, then verifies results on-chain
 
 The low-level migration logic lives in `scripts/upgrade/migrate.ts`, which handles:
 - Migrating quotes to populate aggregated positions
@@ -62,10 +62,10 @@ Takes the validated input file and runs migration + verification.
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
+  npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
-Output: `scripts/output/migrateOnDemand-report.json`
+Output: `scripts/output/migration-report.json`
 
 ### Configuration
 
@@ -141,12 +141,12 @@ The script automatically saves progress after each successful operation. If it f
 ```bash
 # First run - fails at chunk 5
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
+  npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: error at chunk 5
 
 # Second run - automatically resumes from chunk 5
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
+  npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: Resuming migration from quotes phase
 ```
 
@@ -158,12 +158,12 @@ Test the migration without executing transactions:
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  DRY_RUN=true npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
+  DRY_RUN=true npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
 ## Migration Report
 
-`migrateOnDemand-report.json` contains:
+`migration-report.json` contains:
 
 ```json
 {
@@ -190,7 +190,7 @@ DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json
 
 ## Post-Migration Verification
 
-`migrateOnDemand.ts` automatically verifies after migration:
+`runMigration.ts` automatically verifies after migration:
 - **Quote migration**: checks `isQuoteMigrated()` for every quote ID
 - **PartyB migration**: checks `isPartyBLockedValuesMigrated()` and verifies master balance equals sum of per-partyA allocated balances
 - **Aggregated positions**: if `expectedAggregates` are present in the input file, verifies `getPartyBAggregatedPositionBySymbolPerPartyA()` matches expected long/short amounts

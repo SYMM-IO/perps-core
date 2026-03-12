@@ -52,7 +52,7 @@ type MigrationOnDemandReport = {
  *
  * Run:
  *   DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
- *     npx hardhat run ./scripts/upgrade/migrateOnDemand.ts --network localhost
+ *     npx hardhat run ./scripts/upgrade/runMigration.ts --network localhost
  *
  * Config:
  *   cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.json
@@ -288,7 +288,7 @@ const DEFAULT_OUTPUT_DIR = "./scripts/upgrade/output"
 const outputDir = process.env.MIGRATION_OUTPUT_DIR ?? configFile.outputDir ?? DEFAULT_OUTPUT_DIR
 const DEFAULT_PROGRESS_FILE = `${outputDir}/migration-progress.json`
 let migrateProgressFile = process.env.MIGRATE_PROGRESS_FILE ?? configFile.progressFile ?? DEFAULT_PROGRESS_FILE
-const DEFAULT_REPORT_FILE = `${outputDir}/migrateOnDemand-report.json`
+const DEFAULT_REPORT_FILE = `${outputDir}/migration-report.json`
 let migrateReportFile = process.env.MIGRATE_REPORT_FILE ?? configFile.reportFile ?? DEFAULT_REPORT_FILE
 
 if (path.resolve(migrateProgressFile) === path.resolve(MIGRATION_CONFIG_FILE)) {

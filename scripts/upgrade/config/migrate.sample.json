@@ -6,5 +6,5 @@
 	"strict": false,
 	"outputDir": "./scripts/upgrade/output",
 	"progressFile": "./scripts/upgrade/output/migration-progress.json",
-	"reportFile": "./scripts/upgrade/output/migrate-report.json"
+	"reportFile": "./scripts/upgrade/output/migration-report.json"
 }

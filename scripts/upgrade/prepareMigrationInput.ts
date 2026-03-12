@@ -8,7 +8,7 @@ import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js
  * Prepare and validate migration input from subgraph data.
  *
  * Fetches open quotes and partyB balances from the subgraph, validates
- * against on-chain state, and writes a validated JSON file for migrateOnDemand.ts.
+ * against on-chain state, and writes a validated JSON file for runMigration.ts.
  *
  * Usage:
  *   DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost

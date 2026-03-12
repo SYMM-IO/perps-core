@@ -150,7 +150,11 @@ Backfills the new aggregated position structures and master account buckets from
 
 Practical guide for running the migration scripts against a live deployment.
 
-### [Fork Upgrade And Migration](../../scripts/upgrade/docs/fork-upgrade-and-migrate.md)
+### [Production Upgrade](../../scripts/upgrade/docs/production-upgrade.md)
+
+Step-by-step production upgrade flow: deploy facets, generate upgrade calldata, execute, prepare migration input, run migration, unpause.
+
+### [Fork Rehearsal](../../scripts/upgrade/docs/fork-rehearsal.md)
 
 Fork-based upgrade and migration rehearsal workflow. Three-step pipeline (upgrade -> prepare migration input -> migrate) tested against real mainnet state via Hardhat fork.
 

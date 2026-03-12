@@ -1,4 +1,4 @@
-# Fork Upgrade Guide
+# Fork Rehearsal
 
 Rehearse the full v0.8.4 -> v0.8.5 upgrade + migration on a fork of a live network without touching the real chain.
 
@@ -8,7 +8,7 @@ The fork rehearsal mirrors the production flow with three separate steps:
 
 1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, diamondCut, set params
 2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch from subgraph, validate against on-chain
-3. **Migrate** (`migrateOnDemand.ts`) -- run migration + verify using the validated input
+3. **Migrate** (`runMigration.ts`) -- run migration + verify using the validated input
 
 In production, step 1 is done by the multisig, followed by a delay for the subgraph to sync, then steps 2 and 3.
 
@@ -84,10 +84,10 @@ Runs migration using the validated input file, then verifies results on-chain.
 
 ```bash
 DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
-  npx hardhat run scripts/upgrade/migrateOnDemand.ts --network localhost
+  npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
-Output: `scripts/output/migrateOnDemand-report.json`
+Output: `scripts/upgrade/output/migration-report.json`
 
 ## How Impersonation Works
 
@@ -129,9 +129,9 @@ cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.jso
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `diamondAddress` | string | -- | Diamond proxy address on the target network |
-| `adminAddress` | string | `""` | Override for admin (if `owner()` returns a multisig) |
-| `safeAddress` | string | `""` | Gnosis Safe address (used by `generateSafeBatch.ts`) |
-| `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to safeAddress) |
+| `adminAddress` | string | `""` | Address that executes upgrade transactions (EOA or multisig) |
+| `safeAddress` | string | `""` | Gnosis Safe address (optional, enables Safe batch output) |
+| `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
 | `diamondCutChunkSize` | number | `6` | Max facet cuts per transaction |
 | `subgraphEndpoint` | string | Goldsky stage | GraphQL endpoint |
 | `spotCheckCount` | number | `20` | Pre/post upgrade integrity samples |
@@ -179,7 +179,7 @@ cp scripts/upgrade/config/migrate.sample.json scripts/upgrade/config/migrate.jso
 | `dryRun` | boolean | `false` | Log operations without executing |
 | `strict` | boolean | `false` | Stop on any failure |
 | `progressFile` | string | `scripts/upgrade/output/migration-progress.json` | Resume file path |
-| `reportFile` | string | `scripts/upgrade/output/migrate-report.json` | Report file path |
+| `reportFile` | string | `scripts/upgrade/output/migration-report.json` | Report file path |
 
 ### Migration env var overrides
 

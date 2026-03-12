@@ -13,7 +13,7 @@ const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm
  *
  * Impersonates the on-chain diamond owner and runs the v0.8.4 -> v0.8.5
  * upgrade on a forked network. Migration is a separate step -- run
- * prepareMigrationInput.ts then migrateOnDemand.ts after this completes.
+ * prepareMigrationInput.ts then runMigration.ts after this completes.
  *
  * Usage:
  *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
@@ -386,7 +386,7 @@ async function main() {
 		console.log("\nMigration role granted. System remains paused.")
 		console.log("Next steps:")
 		console.log("  1. Run prepareMigrationInput.ts to fetch + validate migration data from subgraph")
-		console.log("  2. Run migrateOnDemand.ts with the validated input file")
+		console.log("  2. Run runMigration.ts with the validated input file")
 		report.steps.push({ name: "grant_migration_role", status: "ok" })
 		currentStep = null
 		tryWriteReport(reportFile, report)
