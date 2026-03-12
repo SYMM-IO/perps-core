@@ -34,9 +34,8 @@ library PartyBAccountFacetImpl {
 	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(!MAStorage.layout().crossModeEnabledForPartyB[signer] || partyA == address(0), "PartyBFacet: Cross partyB mode is active");
 		require(accountLayout.partyBAllocatedBalances[signer][partyA] >= amount, "AccountFacet: Insufficient allocated balance");
-		LibMuon.verifyPartyBUpnl(upnlSig, signer, partyA, true, MuonFunction.AccountManagement); // Here the nonce is always from cross partyB mode nonce if enabled
+		LibMuon.verifyPartyBUpnl(upnlSig, signer, partyA, true, MuonFunction.AccountManagement);
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, partyA);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "AccountFacet: Will be liquidatable");

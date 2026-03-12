@@ -33,7 +33,7 @@ Activating cross mode for a PartyB is a multi-step process:
    - **Admin path**: An admin with `MIGRATION_ROLE` calls `setCrossPartyB(partyB, true)` on the `ControlFacet`. Requires the global flag to be on and the PartyB to be registered. Does not check migration status on-chain.
    - **Self-activation path**: The PartyB itself calls `activateCrossPartyB()` on the `PartyBAccountFacet`. Requires the global flag to be on and cross mode to not already be active.
 
-After activation, `address(0)` becomes the PartyB's allocation key. The solver only needs to allocate to `address(0)` — no need to allocate/deallocate per PartyA. The helper `LibAccount.partyBAllocationKey(partyB, partyA)` returns `address(0)` when cross mode is active, and `partyA` otherwise. All balance functions (available balance, locked balance calculations) use this key transparently.
+After activation, `address(0)` becomes the PartyB's allocation key. The solver only needs to allocate to `address(0)` — no need to allocate per PartyA. The helper `LibAccount.partyBAllocationKey(partyB, partyA)` returns `address(0)` when cross mode is active, and `partyA` otherwise. All balance functions (available balance, locked balance calculations) use this key transparently.
 
 ### Deactivation
 
@@ -41,7 +41,7 @@ An admin with `MIGRATION_ROLE` can call `setCrossPartyB(partyB, false)` to disab
 
 ### Allocation in Cross Mode
 
-When cross mode is active, `allocateForPartyB` and `deallocateForPartyB` require `partyA == address(0)`. Calling with any other `partyA` address reverts with `"Cross partyB mode is active"`. Similarly, `transferAllocation` (which moves funds between per-PartyA buckets) reverts entirely in cross mode since it is meaningless when everything is pooled.
+When cross mode is active, `allocateForPartyB` requires `partyA == address(0)`. Calling with any other `partyA` address reverts with `"Cross partyB mode is active"`. However, `deallocateForPartyB` is allowed for any `partyA` -- this lets the solver withdraw existing per-PartyA allocated funds after enabling cross mode. The solvency check follows the same pattern as other operations (e.g. `lockQuote`): `partyA` is passed directly and `partyBAvailableForQuote` routes to the cross bucket transparently via `partyBAllocationKey`. `transferAllocation` (which moves funds between per-PartyA buckets) reverts entirely in cross mode since it is meaningless when everything is pooled.
 
 ### Dual-Tracking of Locked Balances
 

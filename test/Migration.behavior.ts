@@ -303,6 +303,53 @@ export function shouldBehaveLikeMigration(): void {
 			// Allocating to cross bucket (address(0)) should succeed
 			await expect(context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateAmount, ZeroAddress)).to.not.be.reverted
 		})
+
+		it("Should allow per-partyA deallocation after cross mode is enabled", async function () {
+			const partyB = await hedger.getAddress()
+			const partyA = context.signers.user.address
+			const allocateAmount = decimal(200n)
+
+			// Allocate per partyA before cross mode
+			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateAmount, partyA)
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA)).to.equal(allocateAmount)
+
+			// Enable cross partyB mode
+			await context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)
+
+			// Deallocating per partyA should succeed (partyB can withdraw existing per-partyA funds)
+			const deallocateAmount = decimal(100n)
+			await expect(
+				context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.deallocateForPartyB(deallocateAmount, partyA, await getDummySingleUpnlSig(decimal(500n))),
+			).to.not.be.reverted
+
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA)).to.equal(allocateAmount - deallocateAmount)
+		})
+
+		it("Should reject per-partyA deallocation in cross mode when cross bucket is insolvent", async function () {
+			const partyB = await hedger.getAddress()
+			const partyA = context.signers.user.address
+			const allocateAmount = decimal(200n)
+
+			// Allocate per partyA before cross mode
+			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateAmount, partyA)
+
+			// Enable cross partyB mode — cross bucket has 0 allocated balance
+			await context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)
+
+			// Deallocating with negative upnl should fail (cross bucket available balance < 0)
+			await expect(
+				context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.deallocateForPartyB(decimal(50n), partyA, await getDummySingleUpnlSig(decimal(-100n))),
+			).to.be.revertedWith("AccountFacet: Available balance is lower than zero")
+
+			// Deallocating with zero upnl should fail (cross bucket available = 0 < amount)
+			await expect(
+				context.partyBAccountFacet.connect(context.signers.hedger).deallocateForPartyB(decimal(50n), partyA, await getDummySingleUpnlSig(0n)),
+			).to.be.revertedWith("AccountFacet: Will be liquidatable")
+		})
 	})
 
 	describe("Full migration flow", function () {
@@ -349,6 +396,13 @@ export function shouldBehaveLikeMigration(): void {
 			// Per-partyA allocated balances remain in their isolated buckets (not aggregated)
 			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA1)).to.equal(allocateA1)
 			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA2)).to.equal(allocateA2)
+
+			// PartyB can deallocate existing per-partyA funds even in cross mode
+			const deallocateA1 = decimal(50n)
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.deallocateForPartyB(deallocateA1, partyA1, await getDummySingleUpnlSig(decimal(500n)))
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA1)).to.equal(allocateA1 - deallocateA1)
 		})
 	})
 
