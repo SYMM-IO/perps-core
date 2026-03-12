@@ -1,10 +1,25 @@
 {
+	"// diamondAddress": "Diamond proxy address on the target network (required)",
 	"diamondAddress": "0x...",
+
+	"// migrationInputFile": "Path to validated migration input JSON from prepareMigrationInput.ts (required)",
 	"migrationInputFile": "./scripts/upgrade/output/migration-input.json",
+
+	"// chunkSize": "Number of quotes per migration transaction (default: 50)",
 	"chunkSize": 50,
+
+	"// dryRun": "Log operations without executing transactions (default: false)",
 	"dryRun": false,
+
+	"// strict": "Stop immediately on any failure instead of continuing (default: false)",
 	"strict": false,
+
+	"// outputDir": "Directory for output files (default: ./scripts/upgrade/output)",
 	"outputDir": "./scripts/upgrade/output",
+
+	"// progressFile": "Resume file path -- re-run the script to continue from last successful operation (default: ./scripts/upgrade/output/migration-progress.json)",
 	"progressFile": "./scripts/upgrade/output/migration-progress.json",
+
+	"// reportFile": "Migration report output path (default: ./scripts/upgrade/output/migration-report.json)",
 	"reportFile": "./scripts/upgrade/output/migration-report.json"
 }

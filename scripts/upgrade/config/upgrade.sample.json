@@ -1,14 +1,32 @@
 {
+	"// diamondAddress": "Diamond proxy address on the target network (required)",
 	"diamondAddress": "0x...",
+
+	"// adminAddress": "Address that executes upgrade transactions -- EOA or multisig (required for production, auto-resolved for fork)",
 	"adminAddress": "",
+
+	"// safeAddress": "Gnosis Safe address(Proposer Address) -- set to enable Safe Transaction Builder batch output (optional)",
 	"safeAddress": "",
+
+	"// migrationRunner": "Address granted MIGRATION_ROLE -- defaults to adminAddress if empty (optional)",
 	"migrationRunner": "",
+
+	"// diamondCutChunkSize": "Max facet cuts per diamondCut transaction (default: 6)",
 	"diamondCutChunkSize": 6,
+
+	"// subgraphEndpoint": "Subgraph GraphQL endpoint for pre/post upgrade integrity checks -- fork only (optional)",
 	"subgraphEndpoint": "",
+
+	"// spotCheckCount": "Number of quotes/balances to spot-check against on-chain state -- fork only (default: 20)",
 	"spotCheckCount": 20,
+
+	"// newV085Parameters": "New v0.8.5 parameters to initialize after diamondCut -- default to 0 in storage and must be set",
 	"newV085Parameters": {
+		"// maxPartyAConnectionLimit": "Max PartyB connections per PartyA -- must be > 0 or migration will fail",
 		"maxPartyAConnectionLimit": 5,
+		"// settlementCooldown": "Cross-mode settlement cooldown in seconds",
 		"settlementCooldown": 300,
+		"// deallocateDebounceTime": "Safe-deallocate debounce period in seconds",
 		"deallocateDebounceTime": 120
 	}
 }
