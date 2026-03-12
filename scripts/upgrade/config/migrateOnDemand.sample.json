@@ -1,7 +1,7 @@
 {
-  "diamondAddress": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+  "diamondAddress": "0x...",
   "migrationInputFile": "./scripts/output/migration-input.json",
-  "migrateChunkSize": 50,
+  "migrateChunkSize": 5,
   "dryRun": false,
   "outputDir": "./scripts/output",
   "migrateProgressFile": "./scripts/output/migration-progress.json",

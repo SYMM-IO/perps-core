@@ -3,6 +3,7 @@ import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
+import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 
 export type PartyBTask = { partyB: string; partyAs: string[] }
 
@@ -359,10 +360,17 @@ async function main() {
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
 
-		// Resolve signer
+		// Resolve signer — fork: impersonate diamond owner, production: use deployer (must have MIGRATION_ROLE)
 		currentStep = "resolve_signer"
-		const signers = await ethers.getSigners()
-		const admin = signers[0]
+		const chainId = (await ethers.provider.getNetwork()).chainId
+		const isFork = chainId === 31337n || chainId === 1337n
+		let admin
+		if (isFork) {
+			admin = await getImpersonatedAdmin(DIAMOND_ADDRESS)
+		} else {
+			const signers = await ethers.getSigners()
+			admin = signers[0]
+		}
 		const adminAddress = await admin.getAddress()
 		report.adminAddress = adminAddress
 		report.steps.push({
