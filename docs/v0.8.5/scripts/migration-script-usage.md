@@ -7,7 +7,7 @@ This document explains how to use the migration script for upgrading SYMMIO from
 The migration script (`scripts/migrate.ts`) handles:
 - Migrating quotes to populate aggregated positions
 - Backfilling PartyA ↔ PartyB connections for active positions (`connectedPartyBs` / `isConnectedPartyB`)
-- Migrating partyB balances to the master bucket
+- Migrating partyB locked/pending locked balances to the cross bucket
 
 Key features:
 - **Automatic resume** - If interrupted, continues from where it left off

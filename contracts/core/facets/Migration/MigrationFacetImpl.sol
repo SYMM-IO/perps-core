@@ -113,9 +113,10 @@ library MigrationFacetImpl {
 		quote.accumulatedPaidFunding = snapshot + rate * int256(epochsSinceStart);
 	}
 
-	/// @notice Migrates partyB locked values to the cross bucket (address(0))
-	/// @dev This aggregates all per-partyA balances into the cross bucket for cross partyB mode.
+	/// @notice Migrates partyB locked/pending locked values to the cross bucket (address(0))
+	/// @dev This aggregates per-partyA locked and pending locked balances into the cross bucket.
 	///      Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
+	///      Allocated balances are NOT aggregated — the cross bucket is an independent pool.
 	///      This function is idempotent - already migrated partyA pairs are skipped.
 	///      Can be called in multiple batches if the partyAs array is too large for a single transaction.
 	/// @param partyB The partyB to migrate
@@ -130,9 +131,6 @@ library MigrationFacetImpl {
 
 			// Skip if already migrated
 			if (migrationLayout.crossLockedValuesMigrated[partyB][partyA]) continue;
-
-			// Aggregate allocated balances to cross bucket
-			accountLayout.partyBAllocatedBalances[partyB][address(0)] += accountLayout.partyBAllocatedBalances[partyB][partyA];
 
 			// Aggregate locked balances to cross bucket (only for pre-v8.5 data)
 			accountLayout.partyBLockedBalances[partyB][address(0)].add(accountLayout.partyBLockedBalances[partyB][partyA]);

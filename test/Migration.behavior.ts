@@ -163,54 +163,43 @@ export function shouldBehaveLikeMigration(): void {
 			const partyB = await hedger.getAddress()
 			const partyA1 = context.signers.user.address
 			const partyA2 = context.signers.user2.address
-			const allocateA1 = decimal(200n)
-			const allocateA2 = decimal(150n)
-
-			// Set up allocations
-			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA1, partyA1)
-			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA2, partyA2)
 
 			// Migrate first partyA only
 			await expect(context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [partyA1]))
 				.to.emit(context.migrationFacet, "CrossLockedValuesMigrated")
 				.withArgs(partyB, 1)
 
-			const crossBalanceAfterFirst = await context.viewFacet.balanceInfoOfCrossPartyB(partyB)
-			expect(crossBalanceAfterFirst[0]).to.equal(allocateA1)
+			// Verify migration status
+			expect(await context.migrationFacet.isCrossLockedValuesMigrated(partyB, partyA1)).to.equal(true)
+			expect(await context.migrationFacet.isCrossLockedValuesMigrated(partyB, partyA2)).to.equal(false)
 
 			// Calling again with same partyA should skip it (0 processed), and migrate the new one
 			await expect(context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [partyA1, partyA2]))
 				.to.emit(context.migrationFacet, "CrossLockedValuesMigrated")
 				.withArgs(partyB, 1) // Only partyA2 is new
 
-			// Cross bucket should now have both, with partyA1 NOT double-counted
-			const crossBalanceAfterSecond = await context.viewFacet.balanceInfoOfCrossPartyB(partyB)
-			expect(crossBalanceAfterSecond[0]).to.equal(allocateA1 + allocateA2)
+			// Both should now be marked as migrated
+			expect(await context.migrationFacet.isCrossLockedValuesMigrated(partyB, partyA1)).to.equal(true)
+			expect(await context.migrationFacet.isCrossLockedValuesMigrated(partyB, partyA2)).to.equal(true)
 		})
 
 		it("Should support batched migration across multiple calls", async function () {
 			const partyB = await hedger.getAddress()
 			const partyA1 = context.signers.user.address
 			const partyA2 = context.signers.user2.address
-			const allocateA1 = decimal(200n)
-			const allocateA2 = decimal(150n)
-
-			// Set up allocations
-			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA1, partyA1)
-			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA2, partyA2)
 
 			// Batch 1
 			await context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [partyA1])
 
-			// Batch 2 (would have reverted with old per-partyB tracking)
+			// Batch 2
 			await context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [partyA2])
 
-			// Cross bucket should have both
-			const crossBalance = await context.viewFacet.balanceInfoOfCrossPartyB(partyB)
-			expect(crossBalance[0]).to.equal(allocateA1 + allocateA2)
+			// Both pairs should be marked as migrated
+			expect(await context.migrationFacet.isCrossLockedValuesMigrated(partyB, partyA1)).to.equal(true)
+			expect(await context.migrationFacet.isCrossLockedValuesMigrated(partyB, partyA2)).to.equal(true)
 		})
 
-		it("Should aggregate partyA balances to cross bucket", async function () {
+		it("Should aggregate locked/pending locked (not allocated) to cross bucket", async function () {
 			const partyB = await hedger.getAddress()
 			const partyA1 = context.signers.user.address
 			const partyA2 = context.signers.user2.address
@@ -228,9 +217,14 @@ export function shouldBehaveLikeMigration(): void {
 			// Migrate
 			await context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [partyA1, partyA2])
 
-			// Verify cross bucket has aggregated balances
+			// Cross bucket allocated balance should NOT be aggregated — it's an independent pool
+			// The solver must explicitly fund the cross bucket by allocating to address(0)
 			const crossBalance = await context.viewFacet.balanceInfoOfCrossPartyB(partyB)
-			expect(crossBalance[0]).to.equal(allocateA1 + allocateA2)
+			expect(crossBalance[0]).to.equal(0n) // allocated balance in cross bucket is 0
+
+			// Per-partyA allocated balances should remain unchanged
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA1)).to.equal(allocateA1)
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA2)).to.equal(allocateA2)
 		})
 
 		it("Should correctly track per-pair migration status", async function () {
@@ -312,7 +306,7 @@ export function shouldBehaveLikeMigration(): void {
 	})
 
 	describe("Full migration flow", function () {
-		it("Should complete full migration flow: migrate -> enable cross mode", async function () {
+		it("Should complete full migration flow: migrate -> enable cross mode -> fund cross bucket", async function () {
 			const partyB = await hedger.getAddress()
 			const partyA1 = context.signers.user.address
 			const partyA2 = context.signers.user2.address
@@ -322,16 +316,16 @@ export function shouldBehaveLikeMigration(): void {
 			// Enable cross partyB feature globally
 			await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(true)
 
-			// Set up allocations
+			// Set up allocations (isolated mode — per-partyA buckets)
 			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA1, partyA1)
 			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(allocateA2, partyA2)
 
-			// Migrate locked values to cross bucket
+			// Migrate locked/pending locked values to cross bucket (not allocated balances)
 			await context.migrationFacet.connect(context.signers.admin).migrateCrossLockedValues(partyB, [partyA1, partyA2])
 
-			// Verify cross bucket has aggregated balances
+			// Cross bucket allocated balance should be 0 — migration does not aggregate allocated balances
 			const crossBalance = await context.viewFacet.balanceInfoOfCrossPartyB(partyB)
-			expect(crossBalance[0]).to.equal(allocateA1 + allocateA2)
+			expect(crossBalance[0]).to.equal(0n)
 
 			// Enable cross partyB mode
 			await context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)
@@ -344,8 +338,17 @@ export function shouldBehaveLikeMigration(): void {
 				"PartyBFacet: Cross partyB mode is active",
 			)
 
-			// Cross bucket allocations should work
-			await expect(context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(decimal(100n), ZeroAddress)).to.not.be.reverted
+			// Solver must explicitly fund the cross bucket by allocating to address(0)
+			const crossFundAmount = decimal(200n)
+			await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB(crossFundAmount, ZeroAddress)
+
+			// Verify cross bucket now has the explicitly funded amount
+			const crossBalanceAfterFund = await context.viewFacet.balanceInfoOfCrossPartyB(partyB)
+			expect(crossBalanceAfterFund[0]).to.equal(crossFundAmount)
+
+			// Per-partyA allocated balances remain in their isolated buckets (not aggregated)
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA1)).to.equal(allocateA1)
+			expect(await context.viewFacet.allocatedBalanceOfPartyB(partyB, partyA2)).to.equal(allocateA2)
 		})
 	})
 

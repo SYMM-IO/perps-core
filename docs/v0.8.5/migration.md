@@ -2,36 +2,40 @@
 
 When upgrading from v0.8.4 to v0.8.5, existing data must be migrated to populate new storage structures. Two major features require this migration:
 
-1. **Master Account Mode** - Unified balance management for partyBs across all partyAs
+1. **Cross Mode** - Unified balance management for partyBs across all partyAs
 2. **Aggregated Positions** - O(symbols) UPNL and funding calculations instead of O(quotes)
 
 ## Why Migration is Needed
 
-### Feature 1: Master Account Mode
+### Feature 1: Cross Mode
 
-In v0.8.4, partyB balances are tracked separately per partyA:
+In v0.8.4, partyB locked balances are tracked separately per partyA:
 
 ```solidity
-// v0.8.4: Separate balances per partyA
-partyBAllocatedBalances[partyB][partyA1] = 1000
-partyBAllocatedBalances[partyB][partyA2] = 2000
+// v0.8.4: Separate locked balances per partyA
 partyBLockedBalances[partyB][partyA1] = {...}
 partyBLockedBalances[partyB][partyA2] = {...}
+partyBPendingLockedBalances[partyB][partyA1] = {...}
+partyBPendingLockedBalances[partyB][partyA2] = {...}
 ```
 
-This creates fragmentation - partyB cannot use excess balance from one partyA relationship to cover margin requirements for another.
+This creates fragmentation -- partyB cannot use excess balance from one partyA relationship to cover margin requirements for another.
 
-**V0.8.5 Master Account Mode** introduces a unified "master bucket" keyed by `address(0)`:
+**V0.8.5 Cross Mode** introduces a cross bucket keyed by `address(0)` that aggregates locked and pending locked values:
 
 ```solidity
-// v0.8.5: Master bucket aggregates all balances
-partyBAllocatedBalances[partyB][address(0)] = 3000  // Total across all partyAs
-partyBLockedBalances[partyB][address(0)] = {...}    // Total locked across all
+// v0.8.5: Cross bucket aggregates locked/pending locked
+partyBLockedBalances[partyB][address(0)] = {...}          // Total locked across all partyAs
+partyBPendingLockedBalances[partyB][address(0)] = {...}   // Total pending locked across all
 ```
 
-When master account mode is enabled for a partyB, solvency checks use the master bucket, allowing unified capital management across all partyA relationships.
+Locked and pending locked balances are **dual-tracked** -- every write updates both `[partyB][partyA]` and `[partyB][address(0)]`. This keeps the cross bucket always in sync.
 
-**Migration needed**: Sum existing per-partyA balances into the master bucket.
+Allocated balances (`partyBAllocatedBalances`) are **not** aggregated. The cross bucket `[partyB][address(0)]` is an independent pool that the solver explicitly funds by allocating to `address(0)` after enabling cross mode. The `partyBAllocationKey(partyB, partyA)` helper routes balance reads/writes to `address(0)` in cross mode or `partyA` in isolated mode.
+
+When cross mode is enabled for a partyB, solvency checks use the cross bucket, allowing unified capital management across all partyA relationships.
+
+**Migration needed**: Sum existing per-partyA locked and pending locked balances into the cross bucket.
 
 ### Feature 2: Aggregated Positions for O(symbols) Calculations
 
@@ -102,14 +106,11 @@ quote.closeFee                // Remains 0 for existing quotes
 quote.data                    // Remains empty for existing quotes
 ```
 
-### 5. Master Account Locked Values
+### 5. Cross Bucket Locked Values
 
-For partyBs that will operate in master account mode, balances must be aggregated into the master bucket (keyed by `address(0)`):
+For the cross bucket to be accurate at upgrade time, existing per-partyA locked and pending locked balances must be aggregated into `address(0)`:
 
 ```solidity
-// Allocated balances summed across all partyAs
-partyBAllocatedBalances[partyB][address(0)] = sum of all partyA balances
-
 // Locked balances summed across all partyAs
 partyBLockedBalances[partyB][address(0)] = sum of all partyA locked values
 
@@ -144,11 +145,10 @@ Populates aggregated position and funding structures for existing quotes and bac
 
 ### `migrateCrossLockedValues(address partyB, address[] partyAs)`
 
-Aggregates per-partyA balances into the master bucket for a partyB.
+Aggregates per-partyA locked and pending locked balances into the cross bucket for a partyB.
 
 **What it does:**
 
-- Sums `partyBAllocatedBalances[partyB][partyA]` → `partyBAllocatedBalances[partyB][address(0)]`
 - Sums `partyBLockedBalances[partyB][partyA]` → `partyBLockedBalances[partyB][address(0)]`
 - Sums `partyBPendingLockedBalances[partyB][partyA]` → `partyBPendingLockedBalances[partyB][address(0)]`
 - Tracks migration per partyB+partyA pair -- already-migrated pairs are skipped
@@ -166,18 +166,18 @@ function isQuoteMigrated(uint256 quoteId) external view returns (bool);
 function isCrossLockedValuesMigrated(address partyB, address partyA) external view returns (bool);
 ```
 
-### 3. Master Account Mode Activation
+### 3. Cross Mode Activation
 
-After migration, master account mode can be enabled for any partyB:
+After migration, cross mode can be enabled for any partyB:
 
 ```solidity
 // In ControlFacet
-function setPartyBMasterAccountMode(address partyB, bool enabled) external;
+function setCrossPartyB(address partyB, bool enabled) external;
 ```
 
 **Requirements:**
 
-- Global `masterAccountEnabled` must be true
+- Global cross mode flag must be enabled (`setCrossPartyBModeActivated(true)`)
 - Caller must have `MIGRATION_ROLE`
 - Address must be a registered partyB
 
@@ -218,9 +218,9 @@ for (let i = 0; i < allQuoteIds.length; i += BATCH_SIZE) {
 - Status: `PENDING`, `LOCKED`, or `CANCEL_PENDING` -- backfills reserved open fee tracking to prevent `balanceLimitPerUser` bypass
 - Status: `OPENED`, `CLOSE_PENDING`, or `CANCEL_CLOSE_PENDING` -- populates aggregated positions and funding structures
 
-### Step 4: Migrate PartyB Balances
+### Step 4: Migrate PartyB Locked Values
 
-For each partyB, migrate their per-partyA balances to the master bucket. This can be done in batches if the partyAs array is too large for a single transaction:
+For each partyB, migrate their per-partyA locked and pending locked balances to the cross bucket. This can be done in batches if the partyAs array is too large for a single transaction:
 
 ```tsx
 const BATCH_SIZE = 100;
@@ -247,33 +247,33 @@ controlFacet.setGlobalPaused(false);
 
 The upgrade is now complete. The system operates normally with the new aggregated position structures.
 
-## Enabling Master Account Mode (Later)
+## Enabling Cross Mode (Later)
 
-Master account mode is a separate feature that can be enabled at any time after the upgrade.
+Cross mode is a separate feature that can be enabled at any time after the upgrade.
 
 ### Enable Global Feature Flag
 
-First, enable the master account feature globally:
+First, enable the cross mode feature globally:
 
 ```solidity
-controlFacet.setMasterAccountEnabled(true);
+controlFacet.setCrossPartyBModeActivated(true);
 ```
 
 ### Enable Per PartyB
 
-Individual partyBs can then opt-in to master account mode:
+Individual partyBs can then opt-in to cross mode:
 
 ```solidity
-controlFacet.setPartyBMasterAccountMode(partyB, true);
+controlFacet.setCrossPartyB(partyB, true);
 ```
 
 Once enabled for a partyB:
 
-- Solvency checks use the master bucket instead of per-partyA values
+- Solvency checks use the cross bucket (`address(0)`) for locked/pending locked values and allocated balance
 - Allocations must go to `address(0)` instead of specific partyAs
 - PartyB has unified capital across all partyA relationships
 
-This can be done immediately after upgrade or months later - the migration ensures the master bucket data is ready whenever a partyB decides to enable it.
+This can be done immediately after upgrade or months later -- the migration ensures the cross bucket locked/pending locked data is ready. The solver must also fund the cross bucket by allocating to `address(0)`.
 
 ## Verification
 
@@ -288,7 +288,7 @@ for (const quoteId of migratedQuoteIds) {
 }
 ```
 
-### 2. PartyB Balance Migration
+### 2. PartyB Locked Values Migration
 
 ```tsx
 for (const partyB of allPartyBs) {
@@ -300,20 +300,27 @@ for (const partyB of allPartyBs) {
 }
 ```
 
-### 3. Master Bucket Correctness
+### 3. Cross Bucket Locked Values Correctness
 
 ```tsx
 for (const partyB of allPartyBs) {
+    const crossBucket = await viewFacet.balanceInfoOfCrossPartyB(partyB);
     const partyAs = await getPartyAsForPartyB(partyB);
 
-    // Sum per-partyA values
-    let expectedAllocated = 0n;
+    // Sum per-partyA locked values
+    let expectedLockedCva = 0n;
+    let expectedLockedLf = 0n;
+    let expectedLockedMm = 0n;
     for (const partyA of partyAs) {
-        expectedAllocated += await viewFacet.allocatedBalanceOfPartyB(partyB, partyA);
+        const info = await viewFacet.balanceInfoOfPartyB(partyB, partyA);
+        expectedLockedCva += info.lockedCva;
+        expectedLockedLf += info.lockedLf;
+        expectedLockedMm += info.lockedMmPartyB;
     }
 
-    // Compare to master bucket
-    const masterBucket = await viewFacet.balanceInfoOfPartyBMasterAccount(partyB);
-    assert(masterBucket.allocated === expectedAllocated);
+    // Cross bucket locked should equal the sum of per-partyA locked
+    assert(crossBucket.lockedCva === expectedLockedCva);
+    assert(crossBucket.lockedLf === expectedLockedLf);
+    assert(crossBucket.lockedMmPartyB === expectedLockedMm);
 }
 ```

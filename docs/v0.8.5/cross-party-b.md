@@ -20,13 +20,12 @@ Activating cross mode for a PartyB is a multi-step process:
 
    - `migrateQuotes(quoteIds[])` on the `MigrationFacet` — backfills v0.8.5 derived state for all active positions: aggregated positions, funding baselines, the `partyBPositionsCount[partyB][address(0)]` total positions counter, and connection tracking.
 
-   - `migrateCrossLockedValues(partyB, partyAs[])` on the `MigrationFacet` — aggregates all per-PartyA allocated balances, locked balances, and pending locked balances into the cross bucket (`address(0)`):
+   - `migrateCrossLockedValues(partyB, partyAs[])` on the `MigrationFacet` — aggregates all per-PartyA locked balances and pending locked balances into the cross bucket (`address(0)`):
      ```
-     partyBAllocatedBalances[partyB][address(0)] += partyBAllocatedBalances[partyB][partyA]  (for each partyA)
-     partyBLockedBalances[partyB][address(0)]    += partyBLockedBalances[partyB][partyA]
+     partyBLockedBalances[partyB][address(0)]        += partyBLockedBalances[partyB][partyA]
      partyBPendingLockedBalances[partyB][address(0)] += partyBPendingLockedBalances[partyB][partyA]
      ```
-     This function reverts if called twice for the same PartyB.
+     Allocated balances are **not** aggregated -- the cross bucket `[address(0)]` for allocated balances is an independent pool that the solver funds explicitly after enabling cross mode. This function is idempotent per partyB+partyA pair -- already-migrated pairs are skipped.
 
 2. **Global feature flag.** After migration is complete, an admin with `MIGRATION_ROLE` calls `setCrossPartyBModeActivated(true)` on the `ControlFacet`. This enables the feature protocol-wide.
 

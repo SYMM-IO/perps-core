@@ -144,7 +144,7 @@ Complete changelog of every event change from v0.8.4 to v0.8.5 — removed backw
 
 ### [Migration Process](migration.md)
 
-Backfills the new aggregated position structures and master account buckets from existing v0.8.4 data. Run during a global pause after the diamond cut — migrates quote-level data into symbol-level aggregates and sums per-PartyA balances into the cross-margin bucket.
+Backfills the new aggregated position structures and cross bucket locked values from existing v0.8.4 data. Run during a global pause after the diamond cut -- migrates quote-level data into symbol-level aggregates and sums per-PartyA locked/pending locked balances into the cross bucket. Allocated balances are not aggregated -- solvers fund the cross bucket independently after enabling cross mode.
 
 ### [Migration Script Usage](scripts/migration-script-usage.md)
 

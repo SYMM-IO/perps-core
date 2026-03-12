@@ -93,7 +93,7 @@ library PartyBAccountFacetImpl {
 		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}
 
-	/// @notice Enables cross partyB mode by setting a flag (balance consolidation is handled by the migration function)
+	/// @notice Enables cross partyB mode. The solver must fund the cross bucket by allocating to address(0).
 	function activateCrossPartyB() internal {
 		require(GlobalAppStorage.layout().crossPartyBModeActivated, "AccountFacet: Cross disabled");
 		MAStorage.Layout storage maLayout = MAStorage.layout();

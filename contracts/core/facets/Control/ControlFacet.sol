@@ -629,7 +629,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Enables or disables cross partyB mode for a specific Party B.
 	/// @dev Cross partyB mode allows Party B to manage all partyA positions from a single aggregated balance.
-	///      This should be called AFTER migrating locked values using MigrationFacet.migrateCrossLockedValues.
+	///      The solver must fund the cross bucket by allocating to address(0) after enabling.
 	/// @param partyB The address of the Party B to configure.
 	/// @param enabled True to enable cross partyB mode, false to disable.
 	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
