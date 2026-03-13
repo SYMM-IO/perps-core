@@ -30,15 +30,28 @@ library PartyBAccountFacetImpl {
 		accountLayout.partyBAllocatedBalances[signer][partyA] += amount;
 	}
 
-	/// @notice Moves collateral from Party B's allocated balance back to free balance after solvency check
+	/// @notice Moves collateral from Party B's allocated balance back to free balance after solvency check.
+	/// In cross mode, the signature and solvency check always use the cross bucket (address(0)).
+	/// For legacy per-partyA drains (cross mode + partyA != address(0)), only cross solvency (>= 0)
+	/// is required — these funds are stranded and don't back cross-pool positions.
 	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
+		bool isCrossMode = MAStorage.layout().crossModeEnabledForPartyB[signer];
+
 		require(accountLayout.partyBAllocatedBalances[signer][partyA] >= amount, "AccountFacet: Insufficient allocated balance");
-		LibMuon.verifyPartyBUpnl(upnlSig, signer, partyA, true, MuonFunction.AccountManagement);
-		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, partyA);
+
+		// In cross mode, always verify solvency against the cross bucket (address(0))
+		address verifyPartyA = isCrossMode ? address(0) : partyA;
+		LibMuon.verifyPartyBUpnl(upnlSig, signer, verifyPartyA, true, MuonFunction.AccountManagement);
+		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, verifyPartyA);
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
-		require(uint256(availableBalance) >= amount, "AccountFacet: Will be liquidatable");
+
+		// Legacy per-partyA drain only requires cross solvency (>= 0).
+		// Normal deallocation (isolated mode or cross bucket) requires availableBalance >= amount.
+		if (!isCrossMode || partyA == address(0)) {
+			require(uint256(availableBalance) >= amount, "AccountFacet: Will be liquidatable");
+		}
 
 		accountLayout.partyBAllocatedBalances[signer][partyA] -= amount;
 		accountLayout.balances[signer] += amount;

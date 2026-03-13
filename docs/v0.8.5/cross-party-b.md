@@ -39,9 +39,22 @@ After activation, `address(0)` becomes the PartyB's allocation key. The solver o
 
 An admin with `MIGRATION_ROLE` can call `setCrossPartyB(partyB, false)` to disable cross mode. There is no on-chain guard that checks for zero open positions at the contract level for admin deactivation — the operational constraint is enforced off-chain.
 
-### Allocation in Cross Mode
+### Post-Activation Workflow
 
-When cross mode is active, `allocateForPartyB` requires `partyA == address(0)`. Calling with any other `partyA` address reverts with `"Cross partyB mode is active"`. However, `deallocateForPartyB` is allowed for any `partyA` -- this lets the solver withdraw existing per-PartyA allocated funds after enabling cross mode. The solvency check follows the same pattern as other operations (e.g. `lockQuote`): `partyA` is passed directly and `partyBAvailableForQuote` routes to the cross bucket transparently via `partyBAllocationKey`. `transferAllocation` (which moves funds between per-PartyA buckets) reverts entirely in cross mode since it is meaningless when everything is pooled.
+After cross mode is activated, PartyB is expected to:
+
+1. **Fund the cross bucket** by calling `allocateForPartyB(amount, address(0))`. This is the pool that backs all cross-mode positions.
+2. **Drain legacy per-PartyA allocations** by calling `deallocateForPartyB(amount, partyA, upnlSig)` for each PartyA that had funds allocated before cross mode. These funds move from the per-PartyA bucket to PartyB's free balance, from where they can be re-allocated to the cross bucket or withdrawn.
+3. **Continue normal operations** using only `address(0)` for both allocation and deallocation.
+
+### Allocation and Deallocation in Cross Mode
+
+When cross mode is active, `allocateForPartyB` requires `partyA == address(0)`. Calling with any other `partyA` address reverts with `"Cross partyB mode is active"`. `transferAllocation` (which moves funds between per-PartyA buckets) reverts entirely in cross mode since it is meaningless when everything is pooled.
+
+`deallocateForPartyB` supports two modes in cross:
+
+- **Cross bucket deallocation** (`partyA == address(0)`): Standard deallocation from the cross pool. Requires `crossAvailableBalance >= amount` -- the same solvency check as isolated mode.
+- **Legacy per-PartyA drain** (`partyA != address(0)`): Withdraws stranded funds from pre-cross per-PartyA buckets. Only requires `crossAvailableBalance >= 0` (cross solvency), not `>= amount`, because these funds are not backing any cross-pool positions. The Muon signature and solvency check always use `address(0)` as the PartyA -- consistent with all other cross-mode signatures.
 
 ### Dual-Tracking of Locked Balances
 
