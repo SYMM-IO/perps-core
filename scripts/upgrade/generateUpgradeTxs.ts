@@ -3,6 +3,7 @@ import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 import { deployFacets, buildDiamondCut, type FacetInfo } from "./utils/upgradeHelpers.js"
 
 /**
@@ -185,6 +186,7 @@ function toSafeTx(tx: CalldataTransaction): SafeTransaction {
 // =============================================================================
 
 async function main() {
+	await verifyRpc()
 	const config = loadConfig()
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress

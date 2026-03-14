@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 
 /**
@@ -92,6 +93,7 @@ function toBigInt(value: unknown): bigint {
 }
 
 async function main() {
+	await verifyRpc()
 	const startedAtMs = Date.now()
 	const config = loadConfig()
 

@@ -3,6 +3,7 @@ import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut } from "./utils/upgradeHelpers.js"
 
@@ -101,6 +102,7 @@ function tryWriteReport(filePath: string, report: ForkUpgradeReport): void {
 }
 
 async function main() {
+	await verifyRpc()
 	const startedAtMs = Date.now()
 	const config = loadConfig()
 

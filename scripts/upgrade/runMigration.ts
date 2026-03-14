@@ -4,6 +4,7 @@ import path from "path"
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 
 export type PartyBTask = { partyB: string; partyAs: string[] }
 
@@ -315,6 +316,7 @@ const MIGRATION_CONFIG: MigrationConfig = {
 }
 
 async function main() {
+	await verifyRpc()
 	const startedAtMs = Date.now()
 	const report: MigrationOnDemandReport = {
 		status: "running",

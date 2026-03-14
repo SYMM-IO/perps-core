@@ -1,5 +1,6 @@
 import { FacetCutAction, getSelectors } from "../../tasks/utils/diamondCut.js"
 import { ethers } from "../../test/helpers/hardhat-connection.js"
+import { verifyRpc } from "./utils/rpcCheck.js"
 
 /**
  * Replace a facet on the diamond.
@@ -77,6 +78,7 @@ async function getFacetFactory(name: string): Promise<any> {
 }
 
 async function main() {
+	await verifyRpc()
 	const diamondAddress = validateAddress("DIAMOND_ADDRESS", DIAMOND_ADDRESS)
 	if (FACET_ADDRESS && (!ethers.isAddress(FACET_ADDRESS) || FACET_ADDRESS === ethers.ZeroAddress)) {
 		throw new Error(`FACET_ADDRESS is invalid: ${FACET_ADDRESS}`)
