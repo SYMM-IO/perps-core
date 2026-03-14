@@ -65,6 +65,7 @@ type MigrationConfigFile = {
 	migrationInputFile?: string
 	chunkSize?: number
 	dryRun?: boolean
+	fork?: boolean
 	progressFile?: string
 	reportFile?: string
 	outputDir?: string
@@ -231,9 +232,11 @@ export async function verifyMigration(
 	}
 
 	for (const task of partyBTasks) {
-		const migrated = await migrationFacet.isPartyBLockedValuesMigrated(task.partyB)
-		if (!migrated) {
-			throw new Error(`PartyB ${task.partyB} not migrated`)
+		if (task.partyAs.length > 0) {
+			const migrated = await migrationFacet.isCrossLockedValuesMigrated(task.partyB, task.partyAs[0])
+			if (!migrated) {
+				throw new Error(`PartyB ${task.partyB} not migrated`)
+			}
 		}
 
 		let expectedAllocated = 0n
@@ -362,8 +365,7 @@ async function main() {
 
 		// Resolve signer — fork: impersonate diamond owner, production: use deployer (must have MIGRATION_ROLE)
 		currentStep = "resolve_signer"
-		const chainId = (await ethers.provider.getNetwork()).chainId
-		const isFork = chainId === 31337n || chainId === 1337n
+		const isFork = parseBool(process.env.FORK, configFile.fork ?? false)
 		let admin
 		if (isFork) {
 			admin = await getImpersonatedAdmin(DIAMOND_ADDRESS)

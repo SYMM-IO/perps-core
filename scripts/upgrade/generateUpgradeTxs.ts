@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
+import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { deployFacets, buildDiamondCut, type FacetInfo } from "./utils/upgradeHelpers.js"
 
 /**
@@ -18,6 +19,10 @@ import { deployFacets, buildDiamondCut, type FacetInfo } from "./utils/upgradeHe
  *
  *   # Raw calldata + Safe batch
  *   DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network arbitrum
+ *
+ *   # Deploy + generate + execute on a fork (local testing)
+ *   DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... EXECUTE=true \
+ *     npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network localhost
  *
  *   # Load pre-deployed facets (skip deployment)
  *   DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... FACETS_FILE=./scripts/upgrade/output/deployed-facets.json \
@@ -82,16 +87,34 @@ type Config = {
 	safeAddress?: string
 	migrationRunner?: string
 	diamondCutChunkSize?: number
+	execute?: boolean
 	newV085Parameters?: {
 		maxPartyAConnectionLimit?: number
 		settlementCooldown?: number
 		deallocateDebounceTime?: number
+		signatureVerifierAddress?: string
+		liquidationInsuranceVault?: string
+		maxLiquidationProfitPerPosition?: string
+		softLiquidationPenaltyCollector?: string
+		minAffiliateFee?: string
+		unbindCooldown?: number
+		maxWithdrawParts?: number
+		minWithdrawCooldown?: number
 	}
 }
 
 type DeployedFacets = {
 	facets: Record<string, FacetInfo>
 	selectorSignatures: Record<string, string>
+}
+
+function parseBool(value: string | boolean | undefined, fallback: boolean): boolean {
+	if (value === undefined || value === null || value === "") return fallback
+	if (typeof value === "boolean") return value
+	const normalized = String(value).toLowerCase()
+	if (normalized === "true" || normalized === "1") return true
+	if (normalized === "false" || normalized === "0") return false
+	throw new Error(`Invalid boolean value: ${value}`)
 }
 
 const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
@@ -117,6 +140,13 @@ const DIAMOND_ABI = [
 	"function setMaxPartyAConnectionLimit(uint256 maxLimit)",
 	"function setSettlementCooldown(uint256 settlementCooldown)",
 	"function setDeallocateDebounceTime(uint256 deallocateDebounceTime)",
+	"function setSignatureVerifierAddress(address signatureVerifier)",
+	"function setLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit)",
+	"function setSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector)",
+	"function setMinAffiliateFee(uint256 minAffiliateFee)",
+	"function setUnbindCooldown(uint256 unbindCooldown)",
+	"function setMaxWithdrawParts(uint256 _maxWithdrawParts)",
+	"function setMinWithdrawCooldown(uint256 cooldown)",
 ]
 
 const diamondIface = new ethers.Interface(DIAMOND_ABI)
@@ -168,6 +198,7 @@ async function main() {
 	const FACETS_FILE = process.env.FACETS_FILE
 	const CHAIN_ID = process.env.CHAIN_ID ?? String(Number((await ethers.provider.getNetwork()).chainId))
 	const DIAMOND_CUT_CHUNK_SIZE = Number(process.env.DIAMOND_CUT_CHUNK_SIZE ?? config.diamondCutChunkSize ?? 6)
+	const EXECUTE = parseBool(process.env.EXECUTE, config.execute ?? false)
 	const newParams = config.newV085Parameters ?? {}
 
 	if (!DIAMOND_ADDRESS || !ethers.isAddress(DIAMOND_ADDRESS)) {
@@ -187,6 +218,7 @@ async function main() {
 	}
 	console.log(`Migration runner: ${MIGRATION_RUNNER}`)
 	console.log(`Chain ID:         ${CHAIN_ID}`)
+	console.log(`Execute:          ${EXECUTE}`)
 	console.log()
 
 	// Step 1: Get facet data (deploy or load pre-deployed)
@@ -269,7 +301,7 @@ async function main() {
 		breakdown.push(`${txIdx++}. ${desc}`)
 	}
 
-	// Phase 3: Post-upgrade parameter config
+	// Phase 3: Post-upgrade parameter config -- grant required roles
 	transactions.push({
 		to: DIAMOND_ADDRESS,
 		value: "0",
@@ -286,6 +318,22 @@ async function main() {
 	})
 	breakdown.push(`${txIdx++}. grantRole(COOLDOWN_ADMIN_ROLE) -> ${ADMIN_ADDRESS}`)
 
+	const needsFeeAdminRole =
+		(newParams.liquidationInsuranceVault && newParams.maxLiquidationProfitPerPosition) ||
+		newParams.softLiquidationPenaltyCollector ||
+		newParams.minAffiliateFee
+
+	if (needsFeeAdminRole) {
+		transactions.push({
+			to: DIAMOND_ADDRESS,
+			value: "0",
+			calldata: encodeGrantRole(ADMIN_ADDRESS, "FEE_ADMIN_ROLE"),
+			description: `grantRole(FEE_ADMIN_ROLE) -> ${ADMIN_ADDRESS}`,
+		})
+		breakdown.push(`${txIdx++}. grantRole(FEE_ADMIN_ROLE) -> ${ADMIN_ADDRESS}`)
+	}
+
+	// Phase 3a: Existing v0.8.5 parameters
 	if (newParams.maxPartyAConnectionLimit && newParams.maxPartyAConnectionLimit > 0) {
 		transactions.push({
 			to: DIAMOND_ADDRESS,
@@ -312,6 +360,88 @@ async function main() {
 			description: `setDeallocateDebounceTime(${newParams.deallocateDebounceTime})`,
 		})
 		breakdown.push(`${txIdx++}. setDeallocateDebounceTime(${newParams.deallocateDebounceTime})`)
+	}
+
+	// Phase 3b: Signature verifier (DEFAULT_ADMIN_ROLE -- admin already has this)
+	if (newParams.signatureVerifierAddress && ethers.isAddress(newParams.signatureVerifierAddress)) {
+		transactions.push({
+			to: DIAMOND_ADDRESS,
+			value: "0",
+			calldata: diamondIface.encodeFunctionData("setSignatureVerifierAddress", [newParams.signatureVerifierAddress]),
+			description: `setSignatureVerifierAddress(${newParams.signatureVerifierAddress})`,
+		})
+		breakdown.push(`${txIdx++}. setSignatureVerifierAddress(${newParams.signatureVerifierAddress})`)
+	}
+
+	// Phase 3c: Liquidation insurance (FEE_ADMIN_ROLE)
+	if (newParams.liquidationInsuranceVault && newParams.maxLiquidationProfitPerPosition) {
+		if (!ethers.isAddress(newParams.liquidationInsuranceVault)) {
+			throw new Error(`Invalid liquidationInsuranceVault address: ${newParams.liquidationInsuranceVault}`)
+		}
+		const desc = `setLiquidationInsuranceVaultParams(${newParams.liquidationInsuranceVault}, ${newParams.maxLiquidationProfitPerPosition})`
+		transactions.push({
+			to: DIAMOND_ADDRESS,
+			value: "0",
+			calldata: diamondIface.encodeFunctionData("setLiquidationInsuranceVaultParams", [
+				newParams.liquidationInsuranceVault,
+				newParams.maxLiquidationProfitPerPosition,
+			]),
+			description: desc,
+		})
+		breakdown.push(`${txIdx++}. ${desc}`)
+	}
+
+	// Phase 3d: Soft liquidation penalty collector (FEE_ADMIN_ROLE)
+	if (newParams.softLiquidationPenaltyCollector && ethers.isAddress(newParams.softLiquidationPenaltyCollector)) {
+		transactions.push({
+			to: DIAMOND_ADDRESS,
+			value: "0",
+			calldata: diamondIface.encodeFunctionData("setSoftLiquidationPenaltyCollector", [newParams.softLiquidationPenaltyCollector]),
+			description: `setSoftLiquidationPenaltyCollector(${newParams.softLiquidationPenaltyCollector})`,
+		})
+		breakdown.push(`${txIdx++}. setSoftLiquidationPenaltyCollector(${newParams.softLiquidationPenaltyCollector})`)
+	}
+
+	// Phase 3e: Min affiliate fee (FEE_ADMIN_ROLE)
+	if (newParams.minAffiliateFee) {
+		transactions.push({
+			to: DIAMOND_ADDRESS,
+			value: "0",
+			calldata: diamondIface.encodeFunctionData("setMinAffiliateFee", [newParams.minAffiliateFee]),
+			description: `setMinAffiliateFee(${newParams.minAffiliateFee})`,
+		})
+		breakdown.push(`${txIdx++}. setMinAffiliateFee(${newParams.minAffiliateFee})`)
+	}
+
+	// Phase 3f: Cooldown params (COOLDOWN_ADMIN_ROLE -- already granted)
+	if (newParams.unbindCooldown !== undefined && newParams.unbindCooldown > 0) {
+		transactions.push({
+			to: DIAMOND_ADDRESS,
+			value: "0",
+			calldata: encodeSetParam("setUnbindCooldown", newParams.unbindCooldown),
+			description: `setUnbindCooldown(${newParams.unbindCooldown})`,
+		})
+		breakdown.push(`${txIdx++}. setUnbindCooldown(${newParams.unbindCooldown})`)
+	}
+	if (newParams.minWithdrawCooldown !== undefined && newParams.minWithdrawCooldown > 0) {
+		transactions.push({
+			to: DIAMOND_ADDRESS,
+			value: "0",
+			calldata: encodeSetParam("setMinWithdrawCooldown", newParams.minWithdrawCooldown),
+			description: `setMinWithdrawCooldown(${newParams.minWithdrawCooldown})`,
+		})
+		breakdown.push(`${txIdx++}. setMinWithdrawCooldown(${newParams.minWithdrawCooldown})`)
+	}
+
+	// Phase 3g: Withdraw params (PROTOCOL_CONFIG_ROLE -- already granted)
+	if (newParams.maxWithdrawParts !== undefined && newParams.maxWithdrawParts > 0) {
+		transactions.push({
+			to: DIAMOND_ADDRESS,
+			value: "0",
+			calldata: encodeSetParam("setMaxWithdrawParts", newParams.maxWithdrawParts),
+			description: `setMaxWithdrawParts(${newParams.maxWithdrawParts})`,
+		})
+		breakdown.push(`${txIdx++}. setMaxWithdrawParts(${newParams.maxWithdrawParts})`)
 	}
 
 	// Phase 4: Migration role grant
@@ -397,6 +527,45 @@ async function main() {
 		console.log("\nImport safe-batch.json into Safe Transaction Builder to review and execute.")
 	} else {
 		console.log("\nUse upgrade-transactions.json calldata to execute from any wallet or multisig.")
+	}
+
+	// Optionally execute transactions on-chain (for local/fork testing)
+	if (EXECUTE) {
+		console.log("\n" + "=".repeat(70))
+		console.log(" Executing transactions on-chain")
+		console.log("=".repeat(70))
+
+		// Impersonate the actual diamond owner (may differ from ADMIN_ADDRESS)
+		const admin = await getImpersonatedAdmin(DIAMOND_ADDRESS)
+		const ownerAddress = await admin.getAddress()
+
+		// In production, the Safe already has DEFAULT_ADMIN_ROLE and all needed roles.
+		// On a fork, the diamond owner has neither — bootstrap them before executing.
+		console.log(`\nBootstrapping roles for diamond owner...`)
+		const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS, admin)
+		await (await controlFacet.setAdmin(ownerAddress)).wait()
+		console.log(`  DEFAULT_ADMIN_ROLE granted via setAdmin()`)
+
+		const bootstrapRoles = ["PAUSER_ROLE", "UNPAUSER_ROLE", "PROTOCOL_CONFIG_ROLE", "COOLDOWN_ADMIN_ROLE", "FEE_ADMIN_ROLE", "MIGRATION_ROLE"]
+		for (const role of bootstrapRoles) {
+			await (await controlFacet.grantRole(ownerAddress, ethers.id(role))).wait()
+			console.log(`  ${role} granted`)
+		}
+		console.log(`  Done.`)
+
+		for (let i = 0; i < transactions.length; i++) {
+			const tx = transactions[i]
+			console.log(`\n[${i + 1}/${transactions.length}] ${tx.description}`)
+			const response = await admin.sendTransaction({
+				to: tx.to,
+				value: tx.value,
+				data: tx.calldata,
+			})
+			const receipt = await response.wait(1)
+			console.log(`  tx: ${receipt.hash} (gas: ${receipt.gasUsed.toString()})`)
+		}
+
+		console.log(`\nAll ${transactions.length} transactions executed successfully.`)
 	}
 }
 

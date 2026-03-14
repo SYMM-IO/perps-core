@@ -51,17 +51,18 @@ FORK_BLOCK_NUMBER=250000000 npx hardhat node --network fork-arbitrum
 
 ### Step 1: Upgrade
 
-Impersonates the diamond owner, pauses, deploys v0.8.5 facets, applies diamondCut, sets new parameters.
+Deploys v0.8.5 facets, generates upgrade calldata, and executes all transactions on the fork (impersonates diamond owner).
 
 ```bash
 # Terminal 2
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
+DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... EXECUTE=true \
+  npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network localhost
 
-# With admin override (if owner() returns a multisig)
-DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
+# Or using forkUpgrade.ts (legacy)
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
-Output: `scripts/output/forkUpgrade-report.json`
+Output: `scripts/upgrade/output/upgrade-transactions.json`, `deployed-facets.json`, `upgrade-details.json`
 
 ### Step 2: Prepare migration input
 
@@ -133,6 +134,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `safeAddress` | string | `""` | Gnosis Safe address (optional, enables Safe batch output) |
 | `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
 | `diamondCutChunkSize` | number | `6` | Max facet cuts per transaction |
+| `execute` | boolean | `false` | Execute transactions on-chain after generating (for fork testing) |
 | `subgraphEndpoint` | string | Goldsky stage | GraphQL endpoint |
 | `spotCheckCount` | number | `20` | Pre/post upgrade integrity samples |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
@@ -146,6 +148,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `SAFE_ADDRESS` | `safeAddress` |
 | `MIGRATION_RUNNER` | `migrationRunner` |
 | `DIAMOND_CUT_CHUNK_SIZE` | `diamondCutChunkSize` |
+| `EXECUTE` | `execute` |
 | `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
 | `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade.json`) |
 
@@ -175,8 +178,9 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 |-------|------|---------|-------------|
 | `diamondAddress` | string | -- | Diamond proxy address |
 | `migrationInputFile` | string | -- | Path to validated input JSON (required) |
-| `chunkSize` | number | `50` | Quotes per migration transaction |
+| `chunkSize` | number | `50` | Items per migration transaction (quotes and partyAs) |
 | `dryRun` | boolean | `false` | Log operations without executing |
+| `fork` | boolean | `false` | Impersonate diamond owner instead of using deployer signer |
 | `strict` | boolean | `false` | Stop on any failure |
 | `progressFile` | string | `scripts/upgrade/output/migration-progress.json` | Resume file path |
 | `reportFile` | string | `scripts/upgrade/output/migration-report.json` | Report file path |
@@ -189,6 +193,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `MIGRATION_INPUT_FILE` | `migrationInputFile` |
 | `MIGRATE_CHUNK_SIZE` | `chunkSize` |
 | `DRY_RUN` | `dryRun` |
+| `FORK` | `fork` |
 | `MIGRATE_STRICT` | `strict` |
 | `MIGRATION_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/migrate.json`) |
 

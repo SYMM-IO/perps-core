@@ -79,8 +79,9 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 |-------|---------|-------------|
 | `diamondAddress` | -- | Diamond proxy address |
 | `migrationInputFile` | -- | Path to validated input JSON (required) |
-| `chunkSize` | `50` | Quotes per migration transaction |
+| `chunkSize` | `50` | Items per migration transaction (quotes and partyAs) |
 | `dryRun` | `false` | Log operations without executing |
+| `fork` | `false` | Impersonate diamond owner instead of using deployer signer |
 | `progressFile` | `scripts/upgrade/output/migration-progress.json` | Resume file path |
 | `reportFile` | `scripts/upgrade/output/migrate-report.json` | Report file path |
 | `outputDir` | `scripts/upgrade/output` | Output directory |
@@ -94,6 +95,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `MIGRATION_INPUT_FILE` | `migrationInputFile` |
 | `MIGRATE_CHUNK_SIZE` | `chunkSize` |
 | `DRY_RUN` | `dryRun` |
+| `FORK` | `fork` |
 | `MIGRATE_PROGRESS_FILE` | `progressFile` |
 | `MIGRATE_REPORT_FILE` | `reportFile` |
 | `MIGRATION_OUTPUT_DIR` | `outputDir` |
@@ -192,7 +194,7 @@ DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json
 
 `runMigration.ts` automatically verifies after migration:
 - **Quote migration**: checks `isQuoteMigrated()` for every quote ID
-- **PartyB migration**: checks `isPartyBLockedValuesMigrated()` and verifies master balance equals sum of per-partyA allocated balances
+- **PartyB migration**: checks `isCrossLockedValuesMigrated()` and verifies master balance equals sum of per-partyA allocated balances
 - **Aggregated positions**: if `expectedAggregates` are present in the input file, verifies `getPartyBAggregatedPositionBySymbolPerPartyA()` matches expected long/short amounts
 
 ## Troubleshooting

@@ -40,6 +40,19 @@ DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... FACETS_FILE=./scripts/upgrade/output/d
   npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network arbitrum
 ```
 
+**Test on a fork first:**
+
+```bash
+# Start fork
+npx hardhat node --network fork-arbitrum
+
+# Deploy + generate + execute on fork
+DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... EXECUTE=true \
+  npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network localhost
+```
+
+This deploys facets to the fork, generates the same calldata, and executes all transactions via impersonation. Verify the upgrade works before deploying to production.
+
 Output:
 - `scripts/upgrade/output/upgrade-transactions.json` -- raw calldata (always)
 - `scripts/upgrade/output/safe-batch.json` -- Safe Transaction Builder JSON (if SAFE_ADDRESS set)
@@ -58,9 +71,17 @@ The generated transactions, in order:
 | Upgrade | `diamondCut(chunk 1)` ... `diamondCut(chunk N)` | Apply code upgrade |
 | Params | `grantRole(PROTOCOL_CONFIG_ROLE)` | Allow param setting |
 | Params | `grantRole(COOLDOWN_ADMIN_ROLE)` | Allow cooldown setting |
+| Params | `grantRole(FEE_ADMIN_ROLE)` | Allow fee/insurance config (conditional) |
 | Params | `setMaxPartyAConnectionLimit(value)` | Required for migration |
 | Params | `setSettlementCooldown(value)` | New v0.8.5 param |
 | Params | `setDeallocateDebounceTime(value)` | New v0.8.5 param |
+| Params | `setSignatureVerifierAddress(address)` | Muon signature verifier contract |
+| Params | `setLiquidationInsuranceVaultParams(address, uint256)` | Insurance vault + max liquidation profit |
+| Params | `setSoftLiquidationPenaltyCollector(address)` | Soft liquidation penalty receiver |
+| Params | `setMinAffiliateFee(value)` | Minimum affiliate fee floor |
+| Params | `setUnbindCooldown(value)` | Binding cooldown |
+| Params | `setMinWithdrawCooldown(value)` | Withdrawal cooldown |
+| Params | `setMaxWithdrawParts(value)` | Max parts per withdrawal request |
 | Migration | `grantRole(MIGRATION_ROLE)` | Allow migration runner |
 
 ### Using the calldata
@@ -114,7 +135,7 @@ DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-in
 
 What it does:
 - **Phase 1: Quote migration** -- calls `migrateQuotes()` in chunks (populates aggregated positions, connections, funding baselines)
-- **Phase 2: PartyB balance migration** -- calls `migrateCrossLockedValues()` per PartyB (aggregates per-PartyA balances into cross bucket)
+- **Phase 2: PartyB balance migration** -- calls `migrateCrossLockedValues()` in chunks per PartyB (aggregates per-PartyA balances into cross bucket)
 - **Verification** -- checks every quote is migrated, master balances match, aggregated positions correct
 
 Output: `scripts/upgrade/output/migration-report.json`
