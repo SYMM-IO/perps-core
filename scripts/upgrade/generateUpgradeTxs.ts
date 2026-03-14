@@ -90,8 +90,6 @@ type Config = {
 	execute?: boolean
 	newV085Parameters?: {
 		maxPartyAConnectionLimit?: number
-		settlementCooldown?: number
-		deallocateDebounceTime?: number
 		signatureVerifierAddress?: string
 		liquidationInsuranceVault?: string
 		maxLiquidationProfitPerPosition?: string
@@ -138,8 +136,6 @@ const DIAMOND_ABI = [
 	"function pauseGlobal()",
 	"function diamondCut(tuple(address facetAddress, uint8 action, bytes4[] functionSelectors)[] _diamondCut, address _init, bytes _calldata)",
 	"function setMaxPartyAConnectionLimit(uint256 maxLimit)",
-	"function setSettlementCooldown(uint256 settlementCooldown)",
-	"function setDeallocateDebounceTime(uint256 deallocateDebounceTime)",
 	"function setSignatureVerifierAddress(address signatureVerifier)",
 	"function setLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit)",
 	"function setSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector)",
@@ -342,24 +338,6 @@ async function main() {
 			description: `setMaxPartyAConnectionLimit(${newParams.maxPartyAConnectionLimit})`,
 		})
 		breakdown.push(`${txIdx++}. setMaxPartyAConnectionLimit(${newParams.maxPartyAConnectionLimit})`)
-	}
-	if (newParams.settlementCooldown !== undefined && newParams.settlementCooldown > 0) {
-		transactions.push({
-			to: DIAMOND_ADDRESS,
-			value: "0",
-			calldata: encodeSetParam("setSettlementCooldown", newParams.settlementCooldown),
-			description: `setSettlementCooldown(${newParams.settlementCooldown})`,
-		})
-		breakdown.push(`${txIdx++}. setSettlementCooldown(${newParams.settlementCooldown})`)
-	}
-	if (newParams.deallocateDebounceTime !== undefined && newParams.deallocateDebounceTime > 0) {
-		transactions.push({
-			to: DIAMOND_ADDRESS,
-			value: "0",
-			calldata: encodeSetParam("setDeallocateDebounceTime", newParams.deallocateDebounceTime),
-			description: `setDeallocateDebounceTime(${newParams.deallocateDebounceTime})`,
-		})
-		breakdown.push(`${txIdx++}. setDeallocateDebounceTime(${newParams.deallocateDebounceTime})`)
 	}
 
 	// Phase 3b: Signature verifier (DEFAULT_ADMIN_ROLE -- admin already has this)

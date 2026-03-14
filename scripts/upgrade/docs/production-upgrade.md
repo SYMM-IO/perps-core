@@ -73,8 +73,6 @@ The generated transactions, in order:
 | Params | `grantRole(COOLDOWN_ADMIN_ROLE)` | Allow cooldown setting |
 | Params | `grantRole(FEE_ADMIN_ROLE)` | Allow fee/insurance config (conditional) |
 | Params | `setMaxPartyAConnectionLimit(value)` | Required for migration |
-| Params | `setSettlementCooldown(value)` | New v0.8.5 param |
-| Params | `setDeallocateDebounceTime(value)` | New v0.8.5 param |
 | Params | `setSignatureVerifierAddress(address)` | Muon signature verifier contract |
 | Params | `setLiquidationInsuranceVaultParams(address, uint256)` | Insurance vault + max liquidation profit |
 | Params | `setSoftLiquidationPenaltyCollector(address)` | Soft liquidation penalty receiver |
