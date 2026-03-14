@@ -35,8 +35,8 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBEmergencyActionsFacet: ["LibQuoteClose"],
 	PartyBQuoteActionsFacet: ["LibQuoteClose"],
-	ForceActionsFacet: ["LibQuoteClose", "LibSettlement"],
-	ForceCloseStepsFacet: ["LibQuoteClose", "LibSettlement"],
+	ForceActionsFacet: ["LibForceActions", "LibSettlement"],
+	ForceCloseStepsFacet: ["LibForceActions", "LibSettlement"],
 	ViewFacetQuote: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
 	PartyALiquidationFacet: ["LibQuoteFunding"],
@@ -60,6 +60,15 @@ export async function deployLibraries(): Promise<Record<string, string>> {
 	const libQuoteClose = await LibQuoteCloseFactory.deploy()
 	await libQuoteClose.waitForDeployment()
 	libraries.LibQuoteClose = await libQuoteClose.getAddress()
+
+	const LibForceActionsFactory = await ethers.getContractFactory("LibForceActions", {
+		libraries: {
+			"project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose": libraries.LibQuoteClose,
+		},
+	})
+	const libForceActions = await LibForceActionsFactory.deploy()
+	await libForceActions.waitForDeployment()
+	libraries.LibForceActions = await libForceActions.getAddress()
 
 	const LibSettlementFactory = await ethers.getContractFactory("LibSettlement")
 	const libSettlement = await LibSettlementFactory.deploy()
@@ -96,9 +105,9 @@ export async function deployFacets(outputFile?: string): Promise<{ facets: Recor
 	}
 
 	// Deploy or reuse libraries
-	if (libraries.LibQuoteFunding && libraries.LibQuoteClose && libraries.LibSettlement) {
+	if (libraries.LibQuoteFunding && libraries.LibQuoteClose && libraries.LibForceActions && libraries.LibSettlement) {
 		console.log(
-			`Libraries already deployed (LibQuoteFunding: ${libraries.LibQuoteFunding}, LibQuoteClose: ${libraries.LibQuoteClose}, LibSettlement: ${libraries.LibSettlement})`,
+			`Libraries already deployed (LibQuoteFunding: ${libraries.LibQuoteFunding}, LibQuoteClose: ${libraries.LibQuoteClose}, LibForceActions: ${libraries.LibForceActions}, LibSettlement: ${libraries.LibSettlement})`,
 		)
 	} else {
 		libraries = await deployLibraries()
