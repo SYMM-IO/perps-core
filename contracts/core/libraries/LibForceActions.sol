@@ -20,7 +20,7 @@ import { MuonFunction } from "../interfaces/IMuonSignatureVerifier.sol";
 
 library LibForceActions {
 	/// @notice Verifies the high/low price signature and calculates the force-close price with penalty.
-	function verifyAndGetClosePrice(uint256 quoteId, HighLowPriceSig memory sig) internal view returns (uint256 closePrice) {
+	function verifyAndGetClosePrice(uint256 quoteId, HighLowPriceSig memory sig) public view returns (uint256 closePrice) {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
 		PositionType positionType = quote.positionType;
@@ -58,7 +58,7 @@ library LibForceActions {
 		uint256 reservedBalance,
 		int256 sigUpnlPartyB,
 		uint256 sigCurrentPrice
-	) internal returns (int256 upnlPartyB) {
+	) public returns (int256 upnlPartyB) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
@@ -79,7 +79,7 @@ library LibForceActions {
 	}
 
 	/// @notice Validates all preconditions for a force close including signature, cooldowns, and price bounds.
-	function validateForceCloseConditions(uint256 quoteId, HighLowPriceSig memory highLowPrice, MuonFunction func) internal view {
+	function validateForceCloseConditions(uint256 quoteId, HighLowPriceSig memory highLowPrice, MuonFunction func) public view {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
@@ -108,7 +108,7 @@ library LibForceActions {
 		int256 sigUpnlPartyA,
 		int256 sigUpnlPartyB,
 		uint256 closePrice
-	) internal view returns (int256 partyBAvailableBalance, int256 partyAAvailableBalance) {
+	) public view returns (int256 partyBAvailableBalance, int256 partyAAvailableBalance) {
 		Quote memory quote = QuoteStorage.layout().quotes[quoteId];
 
 		uint256[] memory quoteIds = new uint256[](1);
@@ -145,7 +145,7 @@ library LibForceActions {
 		uint256 currentPrice,
 		int256 upnlPartyB,
 		uint256 closePrice
-	) internal returns (bool isPartyBSolvent, int256 partyBAvailableBalance) {
+	) public returns (bool isPartyBSolvent, int256 partyBAvailableBalance) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		address partyB = quote.partyB;
@@ -190,7 +190,7 @@ library LibForceActions {
 		uint256 currentPrice,
 		int256 upnlPartyB,
 		uint256 closePrice
-	) internal returns (bool isPartyBSolvent, int256 partyBAvailableBalance) {
+	) public returns (bool isPartyBSolvent, int256 partyBAvailableBalance) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
 		// Close using UPNL

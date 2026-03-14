@@ -400,6 +400,13 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		TradingModeStorage.layout().unbindCooldown = unbindCooldown;
 	}
 
+	/// @notice Sets the waiting period before Party A can finalize deactivation of instant actions mode.
+	/// @param cooldown The time in seconds Party A must wait before completing deactivation.
+	function setDeactiveInstantActionModeCooldown(uint256 cooldown) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
+		emit SetDeactiveInstantActionModeCooldown(TradingModeStorage.layout().deactiveInstantActionModeCooldown, cooldown);
+		TradingModeStorage.layout().deactiveInstantActionModeCooldown = cooldown;
+	}
+
 	/// @notice Sets the maximum number of Party B connections a single Party A can have simultaneously.
 	/// @param maxLimit The maximum number of Party Bs a Party A can be connected to at once.
 	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
@@ -629,7 +636,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Enables or disables cross partyB mode for a specific Party B.
 	/// @dev Cross partyB mode allows Party B to manage all partyA positions from a single aggregated balance.
-	///      This should be called AFTER migrating locked values using MigrationFacet.migrateCrossLockedValues.
+	///      The solver must fund the cross bucket by allocating to address(0) after enabling.
 	/// @param partyB The address of the Party B to configure.
 	/// @param enabled True to enable cross partyB mode, false to disable.
 	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {

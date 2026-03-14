@@ -198,6 +198,9 @@ library PartyALiquidationFacetImpl {
 				settlementState.pending = true;
 				liquidationDetail.involvedPartyBCounts += 1;
 			}
+			// Capture old actualAmount before update — needed for settlement reserve delta
+			int256 oldActualAmount = settlementState.actualAmount;
+
 			if (liquidationDetail.liquidationType == LiquidationType.NORMAL) {
 				settlementState.cva += quote.lockedValues.cva;
 
@@ -220,6 +223,20 @@ library PartyALiquidationFacetImpl {
 					settlementState.expectedAmount -= int256(lossAmount);
 				}
 			}
+
+			// Update settlement reserve for cross-mode PartyBs.
+			// Reserve = sum of max(0, actualAmount) across pending settlements.
+			// This prevents PartyB from deallocating funds owed to pending liquidation settlements.
+			if (maLayout.crossModeEnabledForPartyB[quote.partyB]) {
+				uint256 oldContrib = oldActualAmount > 0 ? uint256(oldActualAmount) : 0;
+				uint256 newContrib = settlementState.actualAmount > 0 ? uint256(settlementState.actualAmount) : 0;
+				if (newContrib > oldContrib) {
+					accountLayout.partyBLiquidationSettlementReserve[quote.partyB] += (newContrib - oldContrib);
+				} else if (oldContrib > newContrib) {
+					accountLayout.partyBLiquidationSettlementReserve[quote.partyB] -= (oldContrib - newContrib);
+				}
+			}
+
 			LibAccount.subFromPartyBLockedBalances(quote);
 			uint256 liquidationPrice = accountLayout.symbolsPrices[partyA][quote.symbolId].price;
 			LibQuote.closePositionFully(quote.id, liquidationPrice);
@@ -293,6 +310,17 @@ library PartyALiquidationFacetImpl {
 		accountLayout.liquidationDetails[partyA].disputed = disputed;
 		require(partyBs.length == amounts.length, "LiquidationFacet: Invalid length");
 		for (uint256 i = 0; i < partyBs.length; i++) {
+			// Update settlement reserve for cross-mode PartyBs when dispute overrides actualAmount
+			if (maLayout.crossModeEnabledForPartyB[partyBs[i]]) {
+				int256 oldAmount = accountLayout.settlementStates[partyA][partyBs[i]].actualAmount;
+				uint256 oldContrib = oldAmount > 0 ? uint256(oldAmount) : 0;
+				uint256 newContrib = amounts[i] > 0 ? uint256(amounts[i]) : 0;
+				if (newContrib > oldContrib) {
+					accountLayout.partyBLiquidationSettlementReserve[partyBs[i]] += (newContrib - oldContrib);
+				} else if (oldContrib > newContrib) {
+					accountLayout.partyBLiquidationSettlementReserve[partyBs[i]] -= (oldContrib - newContrib);
+				}
+			}
 			accountLayout.settlementStates[partyA][partyBs[i]].actualAmount = amounts[i];
 		}
 		return accountLayout.liquidationDetails[partyA].liquidationId;
@@ -355,6 +383,11 @@ library PartyALiquidationFacetImpl {
 					emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settleAmounts[i]), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
 				}
 			}
+			// Clear settlement reserve contribution for cross-mode PartyBs
+			if (maLayout.crossModeEnabledForPartyB[partyB] && settleAmount > 0) {
+				accountLayout.partyBLiquidationSettlementReserve[partyB] -= uint256(settleAmount);
+			}
+
 			delete accountLayout.settlementStates[partyA][partyB];
 		}
 		if (accountLayout.liquidationDetails[partyA].involvedPartyBCounts == 0) {

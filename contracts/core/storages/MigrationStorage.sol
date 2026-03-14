@@ -7,12 +7,12 @@ pragma solidity >=0.8.18;
 /// @title MigrationStorage
 /// @notice Tracks migration progress when upgrading from v0.8.4 to v0.8.5
 /// @dev V0.8.5 introduces two major features requiring data migration:
-///      1. Master Account Mode - Unified PartyB balance management via address(0) bucket
+///      1. Cross Mode - Unified PartyB locked/pending locked balance tracking via address(0) bucket
 ///      2. Aggregated Positions - O(symbols) UPNL/funding calculations instead of O(quotes)
 ///
 ///      Migration is performed via MigrationFacet with MIGRATION_ROLE:
 ///      - migrateQuotes(): Backfills aggregated positions/funding and other derived state for existing open positions
-///      - migrateCrossLockedValues(): Sums per-PartyA balances into master bucket
+///      - migrateCrossLockedValues(): Sums per-PartyA locked/pending locked balances into cross bucket
 library MigrationStorage {
 	bytes32 internal constant MIGRATION_STORAGE_SLOT = keccak256("diamond.standard.storage.migration");
 
@@ -30,11 +30,10 @@ library MigrationStorage {
 		mapping(uint256 => bool) quoteMigrated;
 		/// @notice Whether a specific PartyB+PartyA pair has been migrated to the cross bucket
 		/// @dev Maps partyB => partyA => migrated. migrateCrossLockedValues() aggregates:
-		///      - partyBAllocatedBalances[partyB][partyA] → partyBAllocatedBalances[partyB][address(0)]
 		///      - partyBLockedBalances[partyB][partyA] → partyBLockedBalances[partyB][address(0)]
 		///      - partyBPendingLockedBalances[partyB][partyA] → partyBPendingLockedBalances[partyB][address(0)]
-		///      Can be called in batches - already-migrated pairs are skipped.
-		///      Must be done before enabling master account mode for that PartyB.
+		///      Allocated balances are NOT aggregated — the cross bucket is an independent pool.
+		///      Can be called in batches — already-migrated pairs are skipped.
 		mapping(address => mapping(address => bool)) crossLockedValuesMigrated;
 	}
 

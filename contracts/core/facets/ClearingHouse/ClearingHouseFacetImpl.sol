@@ -439,6 +439,13 @@ library ClearingHouseFacetImpl {
 		// This is needed because the normal liquidation flow may have set settlement states
 		// for partyBs whose connections were already removed from connectedPartyBs.
 		for (uint256 i = 0; i < settledPartyBs.length; i++) {
+			// Clear settlement reserve for cross-mode PartyBs before deleting state
+			if (accountLayout.settlementStates[partyA][settledPartyBs[i]].pending && maLayout.crossModeEnabledForPartyB[settledPartyBs[i]]) {
+				int256 amount = accountLayout.settlementStates[partyA][settledPartyBs[i]].actualAmount;
+				if (amount > 0) {
+					accountLayout.partyBLiquidationSettlementReserve[settledPartyBs[i]] -= uint256(amount);
+				}
+			}
 			delete accountLayout.settlementStates[partyA][settledPartyBs[i]];
 		}
 
