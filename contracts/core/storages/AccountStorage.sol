@@ -216,6 +216,12 @@ library AccountStorage {
 		/// @notice PartyA's excess balance from deferred liquidation (current balance minus historical insolvency point)
 		/// @dev Always returned to partyA at settlement regardless of liquidation type. Not accessible by clearing house.
 		mapping(address => uint256) partyADeferredBalance;
+		/// @notice Conservative reserve of funds a cross-mode PartyB owes to pending PartyA liquidation settlements.
+		/// @dev Equals the sum of max(0, actualAmount) across all pending settlementStates for this PartyB.
+		///      Prevents cross-mode PartyB from extracting funds between liquidatePositionsPartyA and
+		///      settlePartyALiquidation by subtracting this reserve from effective available balance
+		///      during deallocateForPartyB.
+		mapping(address => uint256) partyBLiquidationSettlementReserve;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -846,6 +846,13 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().liquidationEscrow[partyA];
 	}
 
+	/// @notice Returns the settlement reserve for a cross-mode PartyB.
+	/// @param partyB The address of Party B.
+	/// @return The reserved amount from pending PartyA liquidation settlements.
+	function getPartyBLiquidationSettlementReserve(address partyB) external view returns (uint256) {
+		return AccountStorage.layout().partyBLiquidationSettlementReserve[partyB];
+	}
+
 	/// @notice Returns the takeover details for a Party A liquidation.
 	/// @param partyA The address of Party A.
 	/// @return The PartyATakeoverDetail struct.

@@ -45,6 +45,14 @@ library PartyBAccountFacetImpl {
 		address verifyPartyA = isCrossMode ? address(0) : partyA;
 		LibMuon.verifyPartyBUpnl(upnlSig, signer, verifyPartyA, true, MuonFunction.AccountManagement);
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, verifyPartyA);
+
+		// For cross-mode PartyB, subtract settlement reserve from effective available balance.
+		// This prevents extracting funds owed to pending PartyA liquidation settlements
+		// (locked balances drop immediately in liquidatePositionsPartyA but PnL settlement is deferred).
+		if (isCrossMode) {
+			availableBalance -= int256(accountLayout.partyBLiquidationSettlementReserve[signer]);
+		}
+
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 
 		// Legacy per-partyA drain only requires cross solvency (>= 0).

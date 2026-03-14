@@ -214,6 +214,8 @@ interface IViewFacet {
 
 	function getLiquidationEscrow(address partyA) external view returns (uint256);
 
+	function getPartyBLiquidationSettlementReserve(address partyB) external view returns (uint256);
+
 	function getPartyATakeoverDetails(address partyA) external view returns (PartyATakeoverDetail memory);
 
 	function isPartyATakeoverInProgress(address partyA) external view returns (bool);

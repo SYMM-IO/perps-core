@@ -56,6 +56,32 @@ When cross mode is active, `allocateForPartyB` requires `partyA == address(0)`. 
 - **Cross bucket deallocation** (`partyA == address(0)`): Standard deallocation from the cross pool. Requires `crossAvailableBalance >= amount` -- the same solvency check as isolated mode.
 - **Legacy per-PartyA drain** (`partyA != address(0)`): Withdraws stranded funds from pre-cross per-PartyA buckets. Only requires `crossAvailableBalance >= 0` (cross solvency), not `>= amount`, because these funds are not backing any cross-pool positions. The Muon signature and solvency check always use `address(0)` as the PartyA -- consistent with all other cross-mode signatures.
 
+### Settlement Reserve During PartyA Liquidation
+
+When a PartyA is liquidated, `liquidatePositionsPartyA` closes positions and records a deferred PnL settlement amount (`actualAmount` in `settlementStates[partyA][partyB]`). For cross-mode PartyBs, the locked balances drop immediately (freeing up available balance), but the actual PnL transfer doesn't happen until `settlePartyALiquidation` runs later.
+
+This creates a window where a cross-mode PartyB's available balance is artificially inflated -- the locked balance reduction already happened, but the settlement debit hasn't been applied yet. Without protection, PartyB could deallocate funds it owes to pending liquidation settlements.
+
+**The fix: `partyBLiquidationSettlementReserve`**
+
+The contract tracks a conservative reserve equal to `sum(max(0, actualAmount))` across all pending liquidation settlements for each cross-mode PartyB. This reserve is:
+
+- **Incremented** in `liquidatePositionsPartyA` as `actualAmount` accumulates for each batch of liquidated positions
+- **Adjusted** in `resolveLiquidationDispute` if an admin overrides the settlement amount
+- **Cleared** in `settlePartyALiquidation` (or `settlePartyATakeover`) when the settlement is finalized
+
+During `deallocateForPartyB`, the reserve is subtracted from the effective available balance before the solvency check:
+
+```solidity
+if (isCrossMode) {
+    availableBalance -= int256(accountLayout.partyBLiquidationSettlementReserve[signer]);
+}
+```
+
+This allows PartyB to continue operating (opening/closing/settling positions) and even partially deallocate -- as long as it keeps enough in the cross pool to cover the pending settlement. The reserve is intentionally conservative: it does not subtract CVA (which is returned to PartyB at settlement time), so PartyB may have slightly less available balance than strictly necessary until the settlement completes.
+
+The reserve only applies to cross bucket deallocation (`partyA == address(0)`). Legacy per-PartyA drains are already protected by the `notLiquidatedPartyA` modifier on `deallocateForPartyB`.
+
 ### Dual-Tracking of Locked Balances
 
 Even though the allocation key is `address(0)` in cross mode, the contract always maintains **both** per-PartyA and cross locked balances. Every call to `addToPartyBLockedBalances`, `subFromPartyBLockedBalances`, `addToPartyBPendingLockedBalances`, and `subFromPartyBPendingLockedBalances` updates both `[partyB][partyA]` and `[partyB][address(0)]`. This allows the system to compute per-PartyA solvency in isolated mode or aggregate solvency in cross mode using the same storage.
