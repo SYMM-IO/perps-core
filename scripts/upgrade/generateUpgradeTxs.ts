@@ -86,6 +86,7 @@ type Config = {
 	diamondAddress?: string
 	adminAddress?: string
 	safeAddress?: string
+	timelockAddress?: string
 	migrationRunner?: string
 	diamondCutChunkSize?: number
 	execute?: boolean
@@ -191,7 +192,10 @@ async function main() {
 
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	const ADMIN_ADDRESS = process.env.ADMIN_ADDRESS ?? config.adminAddress
-	const SAFE_ADDRESS = process.env.SAFE_ADDRESS ?? config.safeAddress
+	const safeRaw = process.env.SAFE_ADDRESS ?? config.safeAddress
+	const SAFE_ADDRESS = safeRaw ? ethers.getAddress(safeRaw) : undefined
+	const timelockRaw = process.env.TIMELOCK_ADDRESS ?? config.timelockAddress
+	const TIMELOCK_ADDRESS = timelockRaw ? ethers.getAddress(timelockRaw) : undefined
 	const MIGRATION_RUNNER = process.env.MIGRATION_RUNNER ?? config.migrationRunner ?? ADMIN_ADDRESS
 	const FACETS_FILE = process.env.FACETS_FILE
 	const CHAIN_ID = process.env.CHAIN_ID ?? String(Number((await ethers.provider.getNetwork()).chainId))
@@ -213,6 +217,9 @@ async function main() {
 	console.log(`Admin:            ${ADMIN_ADDRESS}`)
 	if (SAFE_ADDRESS) {
 		console.log(`Safe:             ${SAFE_ADDRESS}`)
+	}
+	if (TIMELOCK_ADDRESS) {
+		console.log(`Timelock:         ${TIMELOCK_ADDRESS}`)
 	}
 	console.log(`Migration runner: ${MIGRATION_RUNNER}`)
 	console.log(`Chain ID:         ${CHAIN_ID}`)
@@ -453,8 +460,8 @@ async function main() {
 	)
 	console.log(`\nRaw calldata transactions: ${txFile}`)
 
-	// Optionally write Safe batch JSON
-	if (SAFE_ADDRESS && ethers.isAddress(SAFE_ADDRESS)) {
+	// Optionally write Safe batch JSON (direct — no timelock)
+	if (SAFE_ADDRESS && !TIMELOCK_ADDRESS) {
 		const batchFile = path.join(OUTPUT_DIR, "safe-batch.json")
 		const batch: SafeBatch = {
 			version: "1.0",
@@ -471,6 +478,98 @@ async function main() {
 		}
 		fs.writeFileSync(batchFile, JSON.stringify(batch, null, 2))
 		console.log(`Safe batch:               ${batchFile}`)
+	}
+
+	// Optionally write Safe batch JSONs for timelock (scheduleBatch + executeBatch)
+	if (SAFE_ADDRESS && TIMELOCK_ADDRESS) {
+		const timelockIface = new ethers.Interface([
+			"function scheduleBatch(address[] calldata targets, uint256[] calldata values, bytes[] calldata payloads, bytes32 predecessor, bytes32 salt, uint256 delay)",
+			"function executeBatch(address[] calldata targets, uint256[] calldata values, bytes[] calldata payloads, bytes32 predecessor, bytes32 salt)",
+			"function getMinDelay() view returns (uint256)",
+		])
+
+		// Read the timelock's minDelay from on-chain
+		const timelockContract = await ethers.getContractAt(["function getMinDelay() view returns (uint256)"], TIMELOCK_ADDRESS)
+		const minDelay = await timelockContract.getMinDelay()
+		console.log(`\nTimelock min delay:       ${minDelay}s (${Number(minDelay) / 86400} days)`)
+
+		const targets = transactions.map(tx => tx.to)
+		const values = transactions.map(tx => BigInt(tx.value))
+		const payloads = transactions.map(tx => tx.calldata)
+		const predecessor = ethers.ZeroHash
+		const salt = ethers.id(`symmio-v0.8.5-upgrade-${Date.now()}`)
+
+		const scheduleCalldata = timelockIface.encodeFunctionData("scheduleBatch", [targets, values, payloads, predecessor, salt, minDelay])
+		const executeCalldata = timelockIface.encodeFunctionData("executeBatch", [targets, values, payloads, predecessor, salt])
+
+		// Schedule batch — Safe calls timelock.scheduleBatch(...)
+		const scheduleBatchFile = path.join(OUTPUT_DIR, "safe-timelock-schedule.json")
+		const scheduleBatch: SafeBatch = {
+			version: "1.0",
+			chainId: CHAIN_ID,
+			createdAt: Date.now(),
+			meta: {
+				name: "Symmio v0.8.5 Upgrade — Schedule",
+				description: `scheduleBatch via timelock ${TIMELOCK_ADDRESS} (delay: ${minDelay}s)`,
+				txBuilderVersion: "1.18.0",
+				createdFromSafeAddress: SAFE_ADDRESS,
+				createdFromOwnerAddress: "",
+			},
+			transactions: [
+				{
+					to: TIMELOCK_ADDRESS,
+					value: "0",
+					data: scheduleCalldata,
+				},
+			],
+		}
+		fs.writeFileSync(scheduleBatchFile, JSON.stringify(scheduleBatch, null, 2))
+		console.log(`Safe timelock schedule:   ${scheduleBatchFile}`)
+
+		// Execute batch — Safe calls timelock.executeBatch(...) after delay
+		const executeBatchFile = path.join(OUTPUT_DIR, "safe-timelock-execute.json")
+		const executeBatchJson: SafeBatch = {
+			version: "1.0",
+			chainId: CHAIN_ID,
+			createdAt: Date.now(),
+			meta: {
+				name: "Symmio v0.8.5 Upgrade — Execute",
+				description: `executeBatch via timelock ${TIMELOCK_ADDRESS}`,
+				txBuilderVersion: "1.18.0",
+				createdFromSafeAddress: SAFE_ADDRESS,
+				createdFromOwnerAddress: "",
+			},
+			transactions: [
+				{
+					to: TIMELOCK_ADDRESS,
+					value: "0",
+					data: executeCalldata,
+				},
+			],
+		}
+		fs.writeFileSync(executeBatchFile, JSON.stringify(executeBatchJson, null, 2))
+		console.log(`Safe timelock execute:    ${executeBatchFile}`)
+
+		// Write the salt and params for reference
+		const timelockDetailsFile = path.join(OUTPUT_DIR, "timelock-details.json")
+		fs.writeFileSync(
+			timelockDetailsFile,
+			JSON.stringify(
+				{
+					timelockAddress: TIMELOCK_ADDRESS,
+					safeAddress: SAFE_ADDRESS,
+					minDelay: minDelay.toString(),
+					predecessor,
+					salt,
+					transactionCount: transactions.length,
+					targets,
+					values: values.map(v => v.toString()),
+				},
+				null,
+				2,
+			),
+		)
+		console.log(`Timelock details:         ${timelockDetailsFile}`)
 	}
 
 	// Write details file
@@ -501,7 +600,12 @@ async function main() {
 		console.log(`  ${line}`)
 	}
 
-	if (SAFE_ADDRESS) {
+	if (SAFE_ADDRESS && TIMELOCK_ADDRESS) {
+		console.log("\nTimelock flow:")
+		console.log("  1. Import safe-timelock-schedule.json into Safe Transaction Builder → sign & execute")
+		console.log(`  2. Wait for timelock delay (${TIMELOCK_ADDRESS})`)
+		console.log("  3. Import safe-timelock-execute.json into Safe Transaction Builder → sign & execute")
+	} else if (SAFE_ADDRESS) {
 		console.log("\nImport safe-batch.json into Safe Transaction Builder to review and execute.")
 	} else {
 		console.log("\nUse upgrade-transactions.json calldata to execute from any wallet or multisig.")

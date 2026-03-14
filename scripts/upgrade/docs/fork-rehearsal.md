@@ -130,8 +130,9 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `diamondAddress` | string | -- | Diamond proxy address on the target network |
-| `adminAddress` | string | `""` | Address that executes upgrade transactions (EOA or multisig) |
+| `adminAddress` | string | `""` | Address that receives role grants (EOA or multisig) |
 | `safeAddress` | string | `""` | Gnosis Safe address (optional, enables Safe batch output) |
+| `timelockAddress` | string | `""` | TimelockController address (optional, enables scheduleBatch/executeBatch output) |
 | `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
 | `diamondCutChunkSize` | number | `6` | Max facet cuts per transaction |
 | `execute` | boolean | `false` | Execute transactions on-chain after generating (for fork testing) |
@@ -146,6 +147,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `DIAMOND_ADDRESS` | `diamondAddress` |
 | `ADMIN_ADDRESS` | `adminAddress` |
 | `SAFE_ADDRESS` | `safeAddress` |
+| `TIMELOCK_ADDRESS` | `timelockAddress` |
 | `MIGRATION_RUNNER` | `migrationRunner` |
 | `DIAMOND_CUT_CHUNK_SIZE` | `diamondCutChunkSize` |
 | `EXECUTE` | `execute` |
@@ -205,11 +207,16 @@ These are parameters that **only exist in v0.8.5** (not in v0.8.4 storage). Afte
 - `maxPartyAConnectionLimit` -- migration calls `addConnection()` which checks this limit
 
 **Should-set (needed for v0.8.5 features to work):**
-- `settlementCooldown` -- cross-mode settlement cooldown
-- `deallocateDebounceTime` -- safe-deallocate debounce
+- `signatureVerifierAddress` -- Muon signature verifier contract
+- `liquidationInsuranceVault` + `maxLiquidationProfitPerPosition` -- insurance vault config
+- `softLiquidationPenaltyCollector` -- soft liquidation penalty receiver
+- `minAffiliateFee` -- minimum affiliate fee floor
+- `unbindCooldown` -- binding cooldown
+- `maxWithdrawParts` -- max parts per withdrawal request
+- `minWithdrawCooldown` -- withdrawal cooldown
 
 **Not set here (optional, admin configures post-migration):**
-- `signatureVerifierAddress`, `crossPartyBMode`, `ADLEnabled`, `liquidationInsuranceVault`, withdraw params, `unbindCooldown`, etc.
+- `crossPartyBMode`, `ADLEnabled`, etc.
 
 Existing v0.8.4 parameters (cooldowns, limits, fee shares, etc.) are preserved in storage and NOT overwritten by this script.
 

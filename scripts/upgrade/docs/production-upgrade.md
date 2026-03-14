@@ -13,7 +13,8 @@ The production upgrade has five steps:
 ## Prerequisites
 
 - Diamond address on the target network
-- Admin account (EOA, multisig, or any contract that can call `diamondCut`)
+- Admin account (EOA or multisig that will receive role grants)
+- If using a Gnosis Safe + TimelockController: Safe address and timelock address
 - Subgraph endpoint synced to current chain state
 - Config files:
   ```bash
@@ -31,8 +32,12 @@ Deploys v0.8.5 facets to the target network and generates raw calldata for all u
 DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... \
   npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network arbitrum
 
-# With Safe batch output (optional)
+# With Safe batch output (direct -- no timelock)
 DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... SAFE_ADDRESS=0x... \
+  npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network arbitrum
+
+# With Safe + TimelockController (generates scheduleBatch/executeBatch)
+DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... SAFE_ADDRESS=0x... TIMELOCK_ADDRESS=0x... \
   npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network arbitrum
 
 # Load pre-deployed facets (skip deployment)
@@ -55,7 +60,10 @@ This deploys facets to the fork, generates the same calldata, and executes all t
 
 Output:
 - `scripts/upgrade/output/upgrade-transactions.json` -- raw calldata (always)
-- `scripts/upgrade/output/safe-batch.json` -- Safe Transaction Builder JSON (if SAFE_ADDRESS set)
+- `scripts/upgrade/output/safe-batch.json` -- Safe Transaction Builder JSON (if SAFE_ADDRESS set, no timelock)
+- `scripts/upgrade/output/safe-timelock-schedule.json` -- Safe batch for `scheduleBatch()` (if SAFE_ADDRESS + TIMELOCK_ADDRESS set)
+- `scripts/upgrade/output/safe-timelock-execute.json` -- Safe batch for `executeBatch()` (if SAFE_ADDRESS + TIMELOCK_ADDRESS set)
+- `scripts/upgrade/output/timelock-details.json` -- salt, predecessor, targets (if timelock)
 - `scripts/upgrade/output/deployed-facets.json` -- deployed contract addresses
 - `scripts/upgrade/output/upgrade-details.json` -- selector changes + breakdown
 
@@ -92,8 +100,16 @@ for (const tx of transactions) {
 }
 ```
 
-**From Gnosis Safe:**
-Import `safe-batch.json` into the Safe Transaction Builder UI.
+**From Gnosis Safe (direct):**
+Import `safe-batch.json` into the Safe Transaction Builder UI. Use this when the Safe is the diamond owner directly.
+
+**From Gnosis Safe + TimelockController:**
+When the diamond is owned by a TimelockController (Safe -> Timelock -> Diamond):
+1. Import `safe-timelock-schedule.json` into Safe Transaction Builder -- sign & execute to schedule the batch
+2. Wait for the timelock delay (e.g. 3 days)
+3. Import `safe-timelock-execute.json` into Safe Transaction Builder -- sign & execute to apply the upgrade
+
+The `timelock-details.json` file contains the salt and predecessor values for reference.
 
 **From another multisig:**
 Use the raw calldata from `upgrade-transactions.json` with your multisig's interface.
@@ -193,7 +209,7 @@ See [fork-rehearsal.md](fork-rehearsal.md) for full config reference tables. Sum
 
 | Config file | Script | Key fields |
 |-------------|--------|------------|
-| `upgrade.json` | `generateUpgradeTxs.ts` | `diamondAddress`, `adminAddress`, `newV085Parameters` |
+| `upgrade.json` | `generateUpgradeTxs.ts` | `diamondAddress`, `adminAddress`, `timelockAddress`, `newV085Parameters` |
 | `prepareMigration.json` | `prepareMigrationInput.ts` | `diamondAddress`, `subgraphEndpoint` |
 | `migrate.json` | `runMigration.ts` | `diamondAddress`, `migrationInputFile`, `chunkSize` |
 | `postMigration.json` | `generatePostMigrationTxs.ts` | `diamondAddress`, `partyBs` |

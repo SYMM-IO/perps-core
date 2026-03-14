@@ -2,6 +2,7 @@
 	"diamondAddress": "0x...",
 	"adminAddress": "0x...",
 	"safeAddress": "0x...",
+	"timelockAddress": "0x...",
 	"migrationRunner": "0x...",
 	"diamondCutChunkSize": 6,
 	"execute": false,
