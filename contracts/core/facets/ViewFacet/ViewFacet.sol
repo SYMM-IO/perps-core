@@ -472,6 +472,12 @@ contract ViewFacet is IViewFacet {
 		return TradingModeStorage.layout().unbindCooldown;
 	}
 
+	/// @notice Returns the deactivate instant action mode cooldown.
+	/// @return The cooldown duration in seconds.
+	function deactiveInstantActionModeCooldown() external view returns (uint256) {
+		return TradingModeStorage.layout().deactiveInstantActionModeCooldown;
+	}
+
 	/// @notice Returns the last UPNL settlement timestamp.
 	/// @param senderPartyB Address of sender partyB.
 	/// @param targetPartyB Address of target partyB.
@@ -865,6 +871,30 @@ contract ViewFacet is IViewFacet {
 	/// @return True if a takeover is in progress, false otherwise.
 	function isPartyATakeoverInProgress(address partyA) external view returns (bool) {
 		return ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress;
+	}
+
+	/// @notice Returns the maximum number of parts a single withdrawal can be divided into.
+	/// @return The maximum withdraw parts.
+	function getMaxWithdrawParts() external view returns (uint256) {
+		return WithdrawStorage.layout().maxWithdrawParts;
+	}
+
+	/// @notice Returns the minimum cooldown that can be set for a withdrawal request.
+	/// @return The minimum withdraw cooldown in seconds.
+	function getMinWithdrawCooldown() external view returns (uint256) {
+		return WithdrawStorage.layout().minWithdrawCooldown;
+	}
+
+	/// @notice Returns the blackout period during which pure virtual withdrawals cannot be cancelled.
+	/// @return The blackout duration in seconds.
+	function getPureVirtualCancelBlackout() external view returns (uint256) {
+		return WithdrawStorage.layout().pureVirtualCancelBlackout;
+	}
+
+	/// @notice Returns the last assigned external transfer ID.
+	/// @return The last external transfer ID.
+	function getLastExternalTransferId() external view returns (uint256) {
+		return ExternalTransferStorage.layout().lastExternalTransferId;
 	}
 
 	/// @notice Calculates the maximum close amount that keeps PartyA at the liquidation threshold.

@@ -61,6 +61,7 @@ interface IControlEvents {
 	event SetForceCancelCloseCooldown(uint256 oldForceCancelCloseCooldown, uint256 newForceCancelCloseCooldown);
 	event SetSettlementCooldown(uint256 oldSettlementCooldown, uint256 newSettlementCooldown);
 	event SetUnbindCooldown(uint256 oldUnbindCooldown, uint256 newUnbindCooldown);
+	event SetDeactiveInstantActionModeCooldown(uint256 oldCooldown, uint256 newCooldown);
 	event SetLiquidatorShare(uint256 oldLiquidatorShare, uint256 newLiquidatorShare);
 	event SetForceCloseGapRatio(uint256 symbolId, uint256 oldForceCloseGapRatio, uint256 newForceCloseGapRatio);
 	event SetPendingQuotesValidLength(uint256 oldPendingQuotesValidLength, uint256 newPendingQuotesValidLength);

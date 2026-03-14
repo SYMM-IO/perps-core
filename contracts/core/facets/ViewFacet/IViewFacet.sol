@@ -110,6 +110,8 @@ interface IViewFacet {
 
 	function unbindCooldown() external view returns (uint256);
 
+	function deactiveInstantActionModeCooldown() external view returns (uint256);
+
 	function lastUpnlSettlementTimestamp(address senderPartyB, address targetPartyB, address partyA) external view returns (uint256);
 
 	function maxConnectedCounterParty() external view returns (uint256);
@@ -219,4 +221,12 @@ interface IViewFacet {
 	function getPartyATakeoverDetails(address partyA) external view returns (PartyATakeoverDetail memory);
 
 	function isPartyATakeoverInProgress(address partyA) external view returns (bool);
+
+	function getMaxWithdrawParts() external view returns (uint256);
+
+	function getMinWithdrawCooldown() external view returns (uint256);
+
+	function getPureVirtualCancelBlackout() external view returns (uint256);
+
+	function getLastExternalTransferId() external view returns (uint256);
 }
