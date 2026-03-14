@@ -230,13 +230,11 @@ async function main() {
 		facetData = JSON.parse(fs.readFileSync(FACETS_FILE, "utf-8")) as DeployedFacets
 		console.log(`Loaded ${Object.keys(facetData.facets).length} facets.`)
 	} else {
-		console.log("Deploying v0.8.5 facets + libraries...")
-		facetData = await deployFacets()
-		console.log(`\nDeployed ${Object.keys(facetData.facets).length} facets.`)
-
 		ensureDir(OUTPUT_DIR)
 		const facetsOutFile = path.join(OUTPUT_DIR, "deployed-facets.json")
-		fs.writeFileSync(facetsOutFile, JSON.stringify(facetData, null, 2))
+		console.log("Deploying v0.8.5 facets + libraries...")
+		facetData = await deployFacets(facetsOutFile)
+		console.log(`\nDeployed ${Object.keys(facetData.facets).length} facets.`)
 		console.log(`Facet addresses saved to ${facetsOutFile}`)
 	}
 	console.log()

@@ -2,6 +2,8 @@
  * Diamond upgrade utilities — deploy facets, build diamondCut, apply it.
  * Extracted from upgradeTest.ts for use by forkUpgrade.ts.
  */
+import fs from "fs"
+
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
@@ -67,13 +69,50 @@ export async function deployLibraries(): Promise<Record<string, string>> {
 	return libraries
 }
 
-export async function deployFacets(): Promise<{ facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
-	const libraries = await deployLibraries()
-	const facets: Record<string, FacetInfo> = {}
-	const selectorSignatures: Record<string, string> = {}
+export async function deployFacets(outputFile?: string): Promise<{ facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
+	// Load previously deployed facets/libraries to resume after failures
+	let partial: { libraries?: Record<string, string>; facets?: Record<string, FacetInfo>; selectorSignatures?: Record<string, string> } = {}
+	if (outputFile && fs.existsSync(outputFile)) {
+		try {
+			partial = JSON.parse(fs.readFileSync(outputFile, "utf-8"))
+			const deployed = Object.keys(partial.facets ?? {})
+			if (deployed.length > 0) {
+				console.log(`Resuming deployment: ${deployed.length} facets already deployed from ${outputFile}`)
+			}
+		} catch {
+			partial = {}
+		}
+	}
+
+	let libraries: Record<string, string> = partial.libraries ?? {}
+	const facets: Record<string, FacetInfo> = partial.facets ?? {}
+	const selectorSignatures: Record<string, string> = partial.selectorSignatures ?? {}
+
+	const save = () => {
+		if (!outputFile) return
+		const dir = outputFile.substring(0, outputFile.lastIndexOf("/"))
+		if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+		fs.writeFileSync(outputFile, JSON.stringify({ libraries, facets, selectorSignatures }, null, 2))
+	}
+
+	// Deploy or reuse libraries
+	if (libraries.LibQuoteFunding && libraries.LibQuoteClose && libraries.LibSettlement) {
+		console.log(
+			`Libraries already deployed (LibQuoteFunding: ${libraries.LibQuoteFunding}, LibQuoteClose: ${libraries.LibQuoteClose}, LibSettlement: ${libraries.LibSettlement})`,
+		)
+	} else {
+		libraries = await deployLibraries()
+		save()
+	}
 
 	for (const facetName of FacetNames) {
 		const shortName = facetName.includes(":") ? facetName.split(":").pop()! : facetName
+
+		if (facets[shortName]) {
+			console.log(`Skipping ${shortName}: already deployed at ${facets[shortName].address}`)
+			continue
+		}
+
 		const requiredLibraries = FacetLibraryDependencies[shortName]
 		let facetFactory
 
@@ -103,6 +142,7 @@ export async function deployFacets(): Promise<{ facets: Record<string, FacetInfo
 			}
 		}
 		console.log(`Deployed ${shortName}: ${address}`)
+		save()
 	}
 
 	return { facets, selectorSignatures }
