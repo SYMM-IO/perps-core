@@ -17,8 +17,8 @@ const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBEmergencyActionsFacet: ["LibQuoteClose"],
 	PartyBQuoteActionsFacet: ["LibQuoteClose"],
-	ForceActionsFacet: ["LibQuoteClose", "LibSettlement"],
-	ForceCloseStepsFacet: ["LibQuoteClose", "LibSettlement"],
+	ForceActionsFacet: ["LibForceActions", "LibSettlement"],
+	ForceCloseStepsFacet: ["LibForceActions", "LibSettlement"],
 	ViewFacetQuote: ["LibQuoteFunding"],
 	FundingRateFacet: ["LibQuoteFunding"],
 	PartyALiquidationFacet: ["LibQuoteFunding"],
@@ -167,6 +167,30 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 		// Save checkpoint
 		if (checkpoint) {
 			diamondCheckpoint.libraries!["LibQuoteClose"] = createDeployedContract(libraryAddresses["LibQuoteClose"])
+			checkpoint.contracts.diamond = diamondCheckpoint
+			saveCheckpoint(checkpoint)
+		}
+	}
+
+	// Deploy LibForceActions (depends on LibQuoteClose)
+	if (libraryAddresses["LibForceActions"]) {
+		logger.info(`  ⏭ LibForceActions already deployed at ${libraryAddresses["LibForceActions"]}`)
+	} else {
+		const LibForceActionsFactory = await ethers.getContractFactory("LibForceActions", {
+			libraries: {
+				"project/contracts/core/libraries/LibQuoteClose.sol:LibQuoteClose": libraryAddresses["LibQuoteClose"],
+			},
+		})
+		const libForceActions = await LibForceActionsFactory.deploy()
+		await libForceActions.waitForDeployment()
+		receipt = (await libForceActions.deploymentTransaction()!.wait())!
+		totalGasUsed = totalGasUsed + BigInt(receipt.gasUsed.toString())
+		libraryAddresses["LibForceActions"] = await libForceActions.getAddress()
+		logger.deployed("LibForceActions", libraryAddresses["LibForceActions"])
+
+		// Save checkpoint
+		if (checkpoint) {
+			diamondCheckpoint.libraries!["LibForceActions"] = createDeployedContract(libraryAddresses["LibForceActions"])
 			checkpoint.contracts.diamond = diamondCheckpoint
 			saveCheckpoint(checkpoint)
 		}
@@ -354,6 +378,11 @@ export async function deployDiamond(hre: any, { logData = true, genABI = false, 
 			{
 				name: "LibQuoteFunding",
 				address: libraryAddresses["LibQuoteFunding"],
+				constructorArguments: [],
+			},
+			{
+				name: "LibForceActions",
+				address: libraryAddresses["LibForceActions"],
 				constructorArguments: [],
 			},
 			{
