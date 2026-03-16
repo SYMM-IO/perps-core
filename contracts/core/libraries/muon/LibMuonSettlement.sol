@@ -17,7 +17,6 @@ library LibMuonSettlement {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
-		LibMuon.verifyNotStaleAfterEpochChange(settleSig.timestamp, partyA);
 		// == ) ==
 		bytes memory encodedData;
 		uint256[] memory nonces = new uint256[](settleSig.quotesSettlementsData.length);
