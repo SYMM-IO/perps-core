@@ -116,6 +116,14 @@ library GlobalAppStorage {
 		///      Once activated, turning this off doesn't affect existing
 		///      cross PartyBs.
 		bool crossPartyBModeActivated;
+		/// @notice Per-PartyB flag that prevents a specific PartyB from locking or opening new positions
+		/// @dev When true for a PartyB, blocks lockQuote and openPosition (both single and batch).
+		///      Unlike deregisterPartyB, this keeps partyBStatus=true so the PartyB can still:
+		///      - Close existing positions (fillCloseRequest, emergencyClosePosition)
+		///      - Deallocate funds (deallocateForPartyB)
+		///      - Receive correct routing in distributeFromLiquidationEscrow / distributeForClearingHouse
+		///      Use this instead of deregisterPartyB when winding down a PartyB.
+		mapping(address => bool) partyBOpenPositionsPausedPerPartyB;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

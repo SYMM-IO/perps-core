@@ -35,6 +35,7 @@ library PartyBPositionActionsFacetImpl {
 
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
+		require(!appLayout.partyBOpenPositionsPausedPerPartyB[quote.partyB], "PartyBFacet: PartyB open positions paused");
 		require(accountLayout.suspendedAddresses[quote.partyA] == false, "PartyBFacet: PartyA is suspended");
 		require(!accountLayout.suspendedAddresses[LibSigner.getSigner()], "PartyBFacet: Sender is Suspended");
 		require(!appLayout.partyBEmergencyStatus[quote.partyB], "PartyBFacet: PartyB is in emergency mode");

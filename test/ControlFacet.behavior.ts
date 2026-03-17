@@ -497,6 +497,25 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("setPartyBOpenPositionsPaused", () => {
+		it("Should set and unset per-PartyB open positions pause", async function () {
+			const hedgerAddress = context.signers.hedger.address
+			expect(await context.viewFacet.isPartyBOpenPositionsPaused(hedgerAddress)).to.be.equal(false)
+
+			await expect(context.pauseControlFacet.connect(owner).setPartyBOpenPositionsPaused(hedgerAddress, true)).to.not.reverted
+			expect(await context.viewFacet.isPartyBOpenPositionsPaused(hedgerAddress)).to.be.equal(true)
+
+			await expect(context.pauseControlFacet.connect(owner).setPartyBOpenPositionsPaused(hedgerAddress, false)).to.not.reverted
+			expect(await context.viewFacet.isPartyBOpenPositionsPaused(hedgerAddress)).to.be.equal(false)
+		})
+
+		it("Should revert on zero address", async function () {
+			await expect(context.pauseControlFacet.connect(owner).setPartyBOpenPositionsPaused(ZeroAddress, true)).to.be.revertedWith(
+				"PauseControlFacet: Zero address",
+			)
+		})
+	})
+
 	describe("ExternalTransfer methods", function () {
 		it("Should allow admin to add external transfer targets", async function () {
 			await expect(

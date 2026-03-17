@@ -130,4 +130,5 @@ interface IControlEvents {
 	event LegacyFundingDeprecated();
 	event AccumulatedFundingActivated();
 	event SetCrossPartyB(address indexed partyB, bool enabled);
+	event SetPartyBOpenPositionsPausedForPartyB(address indexed partyB, bool status);
 }

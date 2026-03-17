@@ -63,6 +63,9 @@ library PartyBBatchActionsFacetImpl {
 			);
 		}
 
+		// PartyB open positions not paused for this specific PartyB
+		require(!appLayout.partyBOpenPositionsPausedPerPartyB[firstQuote.partyB], "PartyBFacet: PartyB open positions paused");
+
 		// PartyA and PartyB are not suspended
 		require(!accountLayout.suspendedAddresses[firstQuote.partyA], "PartyBFacet: PartyA is Suspended");
 		require(!accountLayout.suspendedAddresses[firstQuote.partyB], "PartyBFacet: Sender is Suspended");
