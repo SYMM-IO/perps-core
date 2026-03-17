@@ -25,13 +25,23 @@ interface SignedOperation {
     addr: string;           // PartyB contract address (must match signer)
     isPartyB: boolean;      // Must be true for PartyB
   };
+  flexFields: FlexField[];  // Modifiable calldata regions (empty for standard ops)
+  maxUses: number;           // Max execution count (1 for standard ops)
   replayAttackHeader: {
     nonce: bigint;          // Sequential nonce (0 for salt-only mode)
     deadline: bigint;       // Unix timestamp expiry (0 for no deadline)
     salt: string;           // Unique 32-byte hex string
   };
 }
+
+interface FlexField {
+  offset: number;            // Byte offset after 4-byte selector
+  length: number;            // Number of bytes (typically 32)
+  authorizedFlexFiller: string; // Address authorized to fill this field
+}
 ```
+
+For standard PartyB operations, `flexFields` is always `[]` and `maxUses` is `1`. See the [InstantLayer Overview](./instant-layer-overview.md#flex-fields) for flex field details.
 
 ## EIP-712 Configuration
 
@@ -54,6 +64,11 @@ const types = {
     { name: "addr", type: "address" },
     { name: "isPartyB", type: "bool" },
   ],
+  FlexField: [
+    { name: "offset", type: "uint256" },
+    { name: "length", type: "uint256" },
+    { name: "authorizedFlexFiller", type: "address" },
+  ],
   ReplayAttackHeader: [
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint256" },
@@ -64,6 +79,8 @@ const types = {
     { name: "target", type: "address" },
     { name: "callData", type: "bytes" },
     { name: "signerAccount", type: "Account" },
+    { name: "flexFields", type: "FlexField[]" },
+    { name: "maxUses", type: "uint256" },
     { name: "replayAttackHeader", type: "ReplayAttackHeader" },
   ],
 };
@@ -99,6 +116,11 @@ const types = {
     { name: "addr", type: "address" },
     { name: "isPartyB", type: "bool" },
   ],
+  FlexField: [
+    { name: "offset", type: "uint256" },
+    { name: "length", type: "uint256" },
+    { name: "authorizedFlexFiller", type: "address" },
+  ],
   ReplayAttackHeader: [
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint256" },
@@ -109,6 +131,8 @@ const types = {
     { name: "target", type: "address" },
     { name: "callData", type: "bytes" },
     { name: "signerAccount", type: "Account" },
+    { name: "flexFields", type: "FlexField[]" },
+    { name: "maxUses", type: "uint256" },
     { name: "replayAttackHeader", type: "ReplayAttackHeader" },
   ],
 };
@@ -141,6 +165,8 @@ async function signPartyBOperation(
       addr: PARTY_B_ADDRESS,
       isPartyB: true,
     },
+    flexFields: [],
+    maxUses: 1,
     replayAttackHeader: {
       nonce: nonce,
       deadline: deadline,
@@ -179,7 +205,7 @@ const { operation, signature } = await signPartyBOperation(
 );
 
 // Submit to InstantLayer (can be done by anyone)
-await instantLayer.executeBatch([operation], [signature]);
+await instantLayer.executeBatch([operation], [signature], [{ values: [] }], [[]]);
 ```
 
 ### Example: Sign an openPosition Operation
@@ -215,7 +241,9 @@ const openOp = await signPartyBOperation(hedgerSigner, openPositionCallData, 2n,
 // Execute as batch
 await instantLayer.executeBatch(
   [lockOp.operation, openOp.operation],
-  [lockOp.signature, openOp.signature]
+  [lockOp.signature, openOp.signature],
+  [{ values: [] }, { values: [] }],
+  [[], []]
 );
 ```
 
@@ -243,6 +271,8 @@ function createSelfOperation(callData: string): SignedOperation {
       addr: PARTY_B_ADDRESS,
       isPartyB: true,
     },
+    flexFields: [],
+    maxUses: 1,
     replayAttackHeader: {
       nonce: 0n,
       deadline: 0n,                  // No deadline needed
@@ -253,7 +283,7 @@ function createSelfOperation(callData: string): SignedOperation {
 
 // Execute directly as PartyB - empty signature
 const operation = createSelfOperation(lockQuoteCallData);
-await instantLayer.executeBatch([operation], ["0x"]);
+await instantLayer.executeBatch([operation], ["0x"], [{ values: [] }], [[]]);
 ```
 
 ### Example: Mixed Batch (User Signed + PartyB Self-Execution)
@@ -267,6 +297,8 @@ const userOperation = {
   target: SYMMIO_ADDRESS,
   callData: encodedSendQuote,
   signerAccount: { addr: userAccountAddress, isPartyB: false },
+  flexFields: [],
+  maxUses: 1,
   replayAttackHeader: { nonce: 0n, deadline: deadline, salt: generateSalt() }
 };
 const userSignature = await userSigner.signTypedData(domain, types, userOperation);
@@ -277,13 +309,17 @@ const partyBOperation = {
   target: SYMMIO_ADDRESS,
   callData: encodedLockQuote,
   signerAccount: { addr: PARTY_B_ADDRESS, isPartyB: true },
+  flexFields: [],
+  maxUses: 1,
   replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
 };
 
 // PartyB calls executeBatch directly
 await instantLayer.executeBatch(
   [userOperation, partyBOperation],
-  [userSignature, "0x"]  // User signature + empty for PartyB
+  [userSignature, "0x"],               // User signature + empty for PartyB
+  [{ values: [] }, { values: [] }],    // No flex fills
+  [[], []]                             // No modifier signatures
 );
 ```
 
@@ -379,10 +415,14 @@ const operation = {
   target: SYMMIO_ADDRESS,
   callData: encodedFunctionCall,
   signerAccount: { addr: PARTY_B_ADDRESS, isPartyB: true },
+  flexFields: [],
+  maxUses: 1,
   replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
 };
 const signature = await signer.signTypedData(domain, types, operation);
-await instantLayer.connect(operator).executeBatch([operation], [signature]);
+await instantLayer.connect(operator).executeBatch(
+  [operation], [signature], [{ values: [] }], [[]]
+);
 
 // Option 2: Self-execution (when PartyB calls directly)
 const operation = {
@@ -390,9 +430,13 @@ const operation = {
   target: SYMMIO_ADDRESS,
   callData: encodedFunctionCall,
   signerAccount: { addr: PARTY_B_ADDRESS, isPartyB: true },
+  flexFields: [],
+  maxUses: 1,
   replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
 };
-await instantLayer.connect(partyB).executeBatch([operation], ["0x"]); // Empty signature
+await instantLayer.connect(partyB).executeBatch(
+  [operation], ["0x"], [{ values: [] }], [[]]
+); // Empty signature
 ```
 
 ---

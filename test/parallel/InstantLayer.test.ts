@@ -1,4 +1,4 @@
-import { shouldBehaveLikeInstantLayer } from "../helpers/instant-layer.behavior.js"
+import { shouldBehaveLikeInstantLayer } from "../InstantLayer.behavior.js"
 
 describe("InstantLayer", async function () {
 	shouldBehaveLikeInstantLayer()
