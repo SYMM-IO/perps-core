@@ -287,3 +287,403 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 		console.log(`Diamond cut chunk ${i + 1}/${chunks.length} applied`)
 	}
 }
+
+// =============================================================================
+// Types for upgrade transaction generation
+// =============================================================================
+
+export type AbiInput = {
+	internalType: string
+	name: string
+	type: string
+	components?: AbiInput[]
+}
+
+export type CalldataTransaction = {
+	to: string
+	value: string
+	calldata: string
+	description: string
+}
+
+export type SafeTransaction = {
+	to: string
+	value: string
+	data: string | null
+	contractMethod?: {
+		inputs: AbiInput[]
+		name: string
+		payable: boolean
+	}
+	contractInputsValues?: Record<string, string>
+}
+
+export type SafeBatch = {
+	version: string
+	chainId: string
+	createdAt: number
+	meta: {
+		name: string
+		description: string
+		txBuilderVersion: string
+		createdFromSafeAddress: string
+		createdFromOwnerAddress: string
+	}
+	transactions: SafeTransaction[]
+}
+
+export type DiamondCutCalldata = {
+	calldata: string
+	description: string
+}
+
+export type NewV085Parameters = {
+	maxPartyAConnectionLimit?: number
+	signatureVerifierAddress?: string
+	liquidationInsuranceVault?: string
+	maxLiquidationProfitPerPosition?: string
+	softLiquidationPenaltyCollector?: string
+	minAffiliateFee?: string
+	unbindCooldown?: number
+	maxWithdrawParts?: number
+	minWithdrawCooldown?: number
+}
+
+export type DeployedFacets = {
+	facets: Record<string, FacetInfo>
+	selectorSignatures: Record<string, string>
+}
+
+export type UpgradeTransactionResult = {
+	safeTxs: SafeTransaction[]
+	calldataTxs: CalldataTransaction[]
+	diamondCutCalldataChunks: DiamondCutCalldata[]
+	diamondCutInsertionIndex: number
+	breakdown: string[]
+	selectorChanges: SelectorChange[]
+}
+
+// =============================================================================
+// ABI + Interface for upgrade transactions
+// =============================================================================
+
+const DIAMOND_ABI = [
+	"function grantRole(address user, bytes32 role)",
+	"function pauseGlobal()",
+	"function diamondCut(tuple(address facetAddress, uint8 action, bytes4[] functionSelectors)[] _diamondCut, address _init, bytes _calldata)",
+	"function setMaxPartyAConnectionLimit(uint256 maxLimit)",
+	"function setSignatureVerifierAddress(address signatureVerifier)",
+	"function setLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit)",
+	"function setSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector)",
+	"function setMinAffiliateFee(uint256 minAffiliateFee)",
+	"function setUnbindCooldown(uint256 unbindCooldown)",
+	"function setMaxWithdrawParts(uint256 _maxWithdrawParts)",
+	"function setMinWithdrawCooldown(uint256 cooldown)",
+]
+
+const diamondIface = new ethers.Interface(DIAMOND_ABI)
+
+// =============================================================================
+// Transaction builders
+// =============================================================================
+
+function paramTypeToAbiInput(param: any): AbiInput {
+	const result: AbiInput = {
+		internalType: param.type,
+		name: param.name,
+		type: param.type,
+	}
+	if (param.components) {
+		result.components = param.components.map(paramTypeToAbiInput)
+	}
+	return result
+}
+
+function argToString(value: any): string {
+	if (typeof value === "bigint") return value.toString()
+	if (typeof value === "number") return value.toString()
+	return String(value)
+}
+
+export function toHumanReadableSafeTx(to: string, methodName: string, args: any[]): SafeTransaction {
+	const fragment = diamondIface.getFunction(methodName)
+	if (!fragment) throw new Error(`Unknown method: ${methodName}`)
+
+	const inputs = fragment.inputs.map(paramTypeToAbiInput)
+	const contractInputsValues: Record<string, string> = {}
+	for (let i = 0; i < fragment.inputs.length; i++) {
+		contractInputsValues[fragment.inputs[i].name] = argToString(args[i])
+	}
+
+	return {
+		to,
+		value: "0",
+		data: null,
+		contractMethod: {
+			inputs,
+			name: methodName,
+			payable: false,
+		},
+		contractInputsValues,
+	}
+}
+
+function addTx(
+	safeTxs: SafeTransaction[],
+	calldataTxs: CalldataTransaction[],
+	breakdown: string[],
+	txIdx: { value: number },
+	to: string,
+	methodName: string,
+	args: any[],
+	description: string,
+): void {
+	safeTxs.push(toHumanReadableSafeTx(to, methodName, args))
+	calldataTxs.push({
+		to,
+		value: "0",
+		calldata: diamondIface.encodeFunctionData(methodName, args),
+		description,
+	})
+	breakdown.push(`${txIdx.value++}. ${description}`)
+}
+
+export function buildUpgradeTransactions(
+	diamondAddress: string,
+	adminAddress: string,
+	migrationRunner: string,
+	diamondCut: any[],
+	selectorChanges: SelectorChange[],
+	chunkSize: number,
+	newParams: NewV085Parameters,
+): UpgradeTransactionResult {
+	const safeTxs: SafeTransaction[] = []
+	const calldataTxs: CalldataTransaction[] = []
+	const breakdown: string[] = []
+	const txIdx = { value: 1 }
+
+	// Phase 1: Pre-upgrade pause
+	addTx(
+		safeTxs,
+		calldataTxs,
+		breakdown,
+		txIdx,
+		diamondAddress,
+		"grantRole",
+		[adminAddress, ethers.id("PAUSER_ROLE")],
+		`grantRole(PAUSER_ROLE) -> ${adminAddress}`,
+	)
+
+	addTx(
+		safeTxs,
+		calldataTxs,
+		breakdown,
+		txIdx,
+		diamondAddress,
+		"grantRole",
+		[adminAddress, ethers.id("UNPAUSER_ROLE")],
+		`grantRole(UNPAUSER_ROLE) -> ${adminAddress}`,
+	)
+
+	addTx(safeTxs, calldataTxs, breakdown, txIdx, diamondAddress, "pauseGlobal", [], "pauseGlobal()")
+
+	// Record insertion index — diamondCut goes here during execution
+	const diamondCutInsertionIndex = calldataTxs.length
+
+	// Build diamond cut chunks
+	const chunks: any[][] = []
+	for (let i = 0; i < diamondCut.length; i += chunkSize) {
+		chunks.push(diamondCut.slice(i, i + chunkSize))
+	}
+
+	const diamondCutCalldataChunks: DiamondCutCalldata[] = chunks.map((chunk, i) => {
+		const selectorCount = chunk.reduce((sum: number, cut: any) => sum + cut.functionSelectors.length, 0)
+		const cutTuples = chunk.map((cut: any) => [cut.facetAddress, cut.action, cut.functionSelectors])
+		return {
+			calldata: diamondIface.encodeFunctionData("diamondCut", [cutTuples, ethers.ZeroAddress, "0x"]),
+			description: `diamondCut chunk ${i + 1}/${chunks.length} (${chunk.length} cuts, ${selectorCount} selectors)`,
+		}
+	})
+
+	// Add diamond cut entries to breakdown (in correct position)
+	for (const chunk of diamondCutCalldataChunks) {
+		breakdown.push(`${txIdx.value++}. [diamondCut - separate] ${chunk.description}`)
+	}
+
+	// Phase 2: Post-upgrade roles and parameters
+	addTx(
+		safeTxs,
+		calldataTxs,
+		breakdown,
+		txIdx,
+		diamondAddress,
+		"grantRole",
+		[adminAddress, ethers.id("PROTOCOL_CONFIG_ROLE")],
+		`grantRole(PROTOCOL_CONFIG_ROLE) -> ${adminAddress}`,
+	)
+
+	addTx(
+		safeTxs,
+		calldataTxs,
+		breakdown,
+		txIdx,
+		diamondAddress,
+		"grantRole",
+		[adminAddress, ethers.id("COOLDOWN_ADMIN_ROLE")],
+		`grantRole(COOLDOWN_ADMIN_ROLE) -> ${adminAddress}`,
+	)
+
+	const needsFeeAdminRole =
+		(newParams.liquidationInsuranceVault && newParams.maxLiquidationProfitPerPosition) ||
+		newParams.softLiquidationPenaltyCollector ||
+		newParams.minAffiliateFee
+
+	if (needsFeeAdminRole) {
+		addTx(
+			safeTxs,
+			calldataTxs,
+			breakdown,
+			txIdx,
+			diamondAddress,
+			"grantRole",
+			[adminAddress, ethers.id("FEE_ADMIN_ROLE")],
+			`grantRole(FEE_ADMIN_ROLE) -> ${adminAddress}`,
+		)
+	}
+
+	// Parameters (conditional)
+	if (newParams.maxPartyAConnectionLimit && newParams.maxPartyAConnectionLimit > 0) {
+		addTx(
+			safeTxs,
+			calldataTxs,
+			breakdown,
+			txIdx,
+			diamondAddress,
+			"setMaxPartyAConnectionLimit",
+			[newParams.maxPartyAConnectionLimit],
+			`setMaxPartyAConnectionLimit(${newParams.maxPartyAConnectionLimit})`,
+		)
+	}
+
+	if (newParams.signatureVerifierAddress && ethers.isAddress(newParams.signatureVerifierAddress)) {
+		addTx(
+			safeTxs,
+			calldataTxs,
+			breakdown,
+			txIdx,
+			diamondAddress,
+			"setSignatureVerifierAddress",
+			[newParams.signatureVerifierAddress],
+			`setSignatureVerifierAddress(${newParams.signatureVerifierAddress})`,
+		)
+	}
+
+	if (newParams.liquidationInsuranceVault && newParams.maxLiquidationProfitPerPosition) {
+		if (!ethers.isAddress(newParams.liquidationInsuranceVault)) {
+			throw new Error(`Invalid liquidationInsuranceVault address: ${newParams.liquidationInsuranceVault}`)
+		}
+		const desc = `setLiquidationInsuranceVaultParams(${newParams.liquidationInsuranceVault}, ${newParams.maxLiquidationProfitPerPosition})`
+		addTx(
+			safeTxs,
+			calldataTxs,
+			breakdown,
+			txIdx,
+			diamondAddress,
+			"setLiquidationInsuranceVaultParams",
+			[newParams.liquidationInsuranceVault, newParams.maxLiquidationProfitPerPosition],
+			desc,
+		)
+	}
+
+	if (newParams.softLiquidationPenaltyCollector && ethers.isAddress(newParams.softLiquidationPenaltyCollector)) {
+		addTx(
+			safeTxs,
+			calldataTxs,
+			breakdown,
+			txIdx,
+			diamondAddress,
+			"setSoftLiquidationPenaltyCollector",
+			[newParams.softLiquidationPenaltyCollector],
+			`setSoftLiquidationPenaltyCollector(${newParams.softLiquidationPenaltyCollector})`,
+		)
+	}
+
+	if (newParams.minAffiliateFee) {
+		addTx(
+			safeTxs,
+			calldataTxs,
+			breakdown,
+			txIdx,
+			diamondAddress,
+			"setMinAffiliateFee",
+			[newParams.minAffiliateFee],
+			`setMinAffiliateFee(${newParams.minAffiliateFee})`,
+		)
+	}
+
+	if (newParams.unbindCooldown !== undefined && newParams.unbindCooldown > 0) {
+		addTx(
+			safeTxs,
+			calldataTxs,
+			breakdown,
+			txIdx,
+			diamondAddress,
+			"setUnbindCooldown",
+			[newParams.unbindCooldown],
+			`setUnbindCooldown(${newParams.unbindCooldown})`,
+		)
+	}
+
+	if (newParams.minWithdrawCooldown !== undefined && newParams.minWithdrawCooldown > 0) {
+		addTx(
+			safeTxs,
+			calldataTxs,
+			breakdown,
+			txIdx,
+			diamondAddress,
+			"setMinWithdrawCooldown",
+			[newParams.minWithdrawCooldown],
+			`setMinWithdrawCooldown(${newParams.minWithdrawCooldown})`,
+		)
+	}
+
+	if (newParams.maxWithdrawParts !== undefined && newParams.maxWithdrawParts > 0) {
+		addTx(
+			safeTxs,
+			calldataTxs,
+			breakdown,
+			txIdx,
+			diamondAddress,
+			"setMaxWithdrawParts",
+			[newParams.maxWithdrawParts],
+			`setMaxWithdrawParts(${newParams.maxWithdrawParts})`,
+		)
+	}
+
+	// Phase 3: Migration role
+	addTx(
+		safeTxs,
+		calldataTxs,
+		breakdown,
+		txIdx,
+		diamondAddress,
+		"grantRole",
+		[migrationRunner, ethers.id("MIGRATION_ROLE")],
+		`grantRole(MIGRATION_ROLE) -> ${migrationRunner}`,
+	)
+
+	return { safeTxs, calldataTxs, diamondCutCalldataChunks, diamondCutInsertionIndex, breakdown, selectorChanges }
+}
+
+// =============================================================================
+// Facet loading
+// =============================================================================
+
+export function loadDeployedFacets(filePath: string): DeployedFacets {
+	if (!fs.existsSync(filePath)) {
+		throw new Error(`Deployed facets file not found: ${filePath}\nRun deployFacets.ts first, or set FACETS_FILE to a valid path.`)
+	}
+	const data = JSON.parse(fs.readFileSync(filePath, "utf-8")) as DeployedFacets
+	console.log(`Loaded ${Object.keys(data.facets).length} facets from ${filePath}`)
+	return data
+}
