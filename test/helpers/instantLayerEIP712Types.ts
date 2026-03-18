@@ -35,20 +35,36 @@ export const BASE_TYPES = Object.freeze({
 		{ name: "deadline", type: "uint256" },
 		{ name: "salt", type: "bytes32" },
 	]),
+	FlexField: Object.freeze([
+		{ name: "offset", type: "uint256" },
+		{ name: "length", type: "uint256" },
+		{ name: "authorizedFlexFiller", type: "address" },
+	]),
 	SignedOperation: Object.freeze([
 		{ name: "signer", type: "address" },
 		{ name: "target", type: "address" },
 		{ name: "callData", type: "bytes" },
 		{ name: "signerAccount", type: "Account" },
+		{ name: "flexFields", type: "FlexField[]" },
+		{ name: "maxUses", type: "uint256" },
 		{ name: "replayAttackHeader", type: "ReplayAttackHeader" },
 	]),
 })
 
-/** Per-test deep clone so modifications don’t bleed across tests. */
+export const FLEX_FILLER_AUTH_TYPES = {
+	FlexFillAuth: [
+		{ name: "opHash", type: "bytes32" },
+		{ name: "fieldIndex", type: "uint256" },
+		{ name: "value", type: "bytes" },
+	],
+}
+
+/** Per-test deep clone so modifications don't bleed across tests. */
 export function cloneTypes(): TypedDataTypes {
 	return {
 		Account: [...BASE_TYPES.Account],
 		ReplayAttackHeader: [...BASE_TYPES.ReplayAttackHeader],
+		FlexField: [...BASE_TYPES.FlexField],
 		SignedOperation: [...BASE_TYPES.SignedOperation],
 	}
 }

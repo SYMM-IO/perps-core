@@ -16,6 +16,7 @@ import { shouldBehaveLikeForceClosePosition } from "../ForceClosePosition.behavi
 import { shouldBehaveLikeFundingRate } from "../FundingRate.behavior.js"
 import { shouldBehaveLikeFuzzTest } from "../FuzzTest.behavior.js"
 import { shouldBehaveLikeHooks } from "../Hooks.behavior.js"
+import { shouldBehaveLikeInstantLayer } from "../InstantLayer.behavior.js"
 import { shouldBehaveLikeLiquidationFacet } from "../LiquidationFacet.behavior.js"
 import { shouldBehaveLikeLockQuote } from "../LockQuote.behavior.js"
 import { shouldBehaveLikeMigration } from "../Migration.behavior.js"
@@ -31,7 +32,6 @@ import { shouldBehaveLikeSettlementUnified } from "../SettlementUnified.behavior
 import { shouldBehaveLikeSpecificScenario } from "../SpecificScenario.behavior.js"
 import { shouldBehaveLikeSymmioPartyB } from "../SymmioPartyB.behavior.js"
 import { shouldBehaveLikeWithdrawFacet } from "../WithdrawFacet.behavior.js"
-import { shouldBehaveLikeInstantLayer } from "../helpers/instant-layer.behavior.js"
 
 describe("UnitTests", function () {
 	if (process.env.TEST_MODE == "static" || process.env.TEST_MODE == null) {

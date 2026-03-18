@@ -2,19 +2,19 @@ import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs
 import { expect } from "chai"
 import { ZeroAddress, toUtf8Bytes, TypedDataDomain } from "ethers"
 
-import type { InstantLayer } from "../../src/types/index.js"
-import { initializeFixture } from "../Initialize.fixture.js"
-import { QuoteStatus } from "../models/Enums.js"
-import { Hedger } from "../models/Hedger.js"
-import { RunContext } from "../models/RunContext.js"
-import { User } from "../models/User.js"
-import { limitOpenRequestBuilder, OpenRequest } from "../models/requestModels/OpenRequest.js"
-import { limitQuoteRequestBuilder, QuoteRequest } from "../models/requestModels/QuoteRequest.js"
-import { decimal, getBlockTimestamp } from "../utils/Common.js"
-import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils.js"
-import { ethers } from "./hardhat-connection.js"
-import { cloneTypes, DELEGATE_TYPES } from "./instantLayerEIP712Types.js"
-import { loadFixture, time } from "./network-helpers.js"
+import type { InstantLayer } from "../src/types/index.js"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { ethers } from "./helpers/hardhat-connection.js"
+import { cloneTypes, DELEGATE_TYPES, FLEX_FILLER_AUTH_TYPES } from "./helpers/instantLayerEIP712Types.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitOpenRequestBuilder, OpenRequest } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
+import { decimal, getBlockTimestamp } from "./utils/Common.js"
+import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 // ════════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -100,6 +100,8 @@ function createSignedOperation(
 		target,
 		callData,
 		signerAccount,
+		flexFields: [],
+		maxUses: 1,
 		replayAttackHeader: { nonce, deadline, salt: generateSalt() },
 	}
 }
@@ -723,22 +725,25 @@ export function shouldBehaveLikeInstantLayer(): void {
 			it("reverts when caller lacks OPERATOR_ROLE", async function () {
 				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
-				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).executeBatch([op], [sig])).to.be.reverted
+				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).executeBatch([op], [sig], [[]], [[]])).to.be.reverted
 			})
 		})
 
 		describe("executeBatch - Input Validation", function () {
 			it("reverts with empty batch", async function () {
-				await expect(ctx.context.instantLayer.executeBatch([], [])).to.be.revertedWithCustomError(ctx.context.instantLayer, "EmptyBatch")
+				await expect(ctx.context.instantLayer.executeBatch([], [], [], [])).to.be.revertedWithCustomError(ctx.context.instantLayer, "EmptyBatch")
 			})
 
 			it("reverts when ops and signatures length mismatch", async function () {
 				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [])).to.be.revertedWithCustomError(ctx.context.instantLayer, "ArrayLengthMismatch")
+				await expect(ctx.context.instantLayer.executeBatch([op], [], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"ArrayLengthMismatch",
+				)
 
-				await expect(ctx.context.instantLayer.executeBatch([op, op], [sig])).to.be.revertedWithCustomError(
+				await expect(ctx.context.instantLayer.executeBatch([op, op], [sig], [[], []], [[], []])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
 					"ArrayLengthMismatch",
 				)
@@ -752,7 +757,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
 				// Operation should succeed before deadline
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
 
@@ -763,7 +768,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const op2 = { ...op, replayAttackHeader: { ...op.replayAttackHeader, salt: generateSalt() } }
 				const sig2 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op2)
 
-				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2])).to.be.revertedWithCustomError(ctx.context.instantLayer, "DeadlineExpired")
+				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"DeadlineExpired",
+				)
 			})
 		})
 
@@ -772,14 +780,20 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const op = await createPartyBLockOp(1n, execCtx.deadline)
 				const sig = await signOperation(execCtx.context.signers.hedger2, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidSignature")
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidSignature",
+				)
 			})
 
 			it("reverts when delegate lacks selector grant for partyA", async function () {
 				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.user2.address, 1n, execCtx.deadline)
 				const sig = await signOperation(execCtx.context.signers.user2, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidDelegation")
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidDelegation",
+				)
 			})
 
 			it("accepts EIP-1271 contract signatures", async function () {
@@ -809,7 +823,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, await mock.getAddress(), 1n, deadline)
 				const sig = await signOperation(execCtx.context.signers.user2, execCtx.domain, execCtx.types, op)
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 
 				// Verify EIP-1271 signature acceptance resulted in a valid quote
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
@@ -823,10 +837,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
-					"OperationAlreadyExecuted",
+					"MaxUsesExceeded",
 				)
 			})
 
@@ -834,12 +848,15 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 				// Nonce should be 2, not 3
 				const op2 = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 3n, execCtx.deadline)
 				const sig2 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op2)
 
-				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2])).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidNonce")
+				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidNonce",
+				)
 			})
 
 			it("allows unordered batch execution with nonce=0", async function () {
@@ -852,7 +869,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig3 = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, op3)
 
 				// Execute with mixed nonces (1, 0, 2)
-				await expect(ctx.context.instantLayer.executeBatch([op1, op2, op3], [sig1, sig2, sig3])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op1, op2, op3], [sig1, sig2, sig3], [[], [], []], [[], [], []])).not.to.be.reverted
 
 				// Verify all three quotes were created
 				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
@@ -877,9 +894,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig3 = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, op3)
 
 				// Execute individually with mixed nonces (1, 0, 2) - nonce=0 is salt-only, can be out of order
-				await expect(ctx.context.instantLayer.executeBatch([op1], [sig1])).not.to.be.reverted
-				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2])).not.to.be.reverted
-				await expect(ctx.context.instantLayer.executeBatch([op3], [sig3])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op1], [sig1], [[]], [[]])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2], [[]], [[]])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op3], [sig3], [[]], [[]])).not.to.be.reverted
 
 				// Verify all three quotes were created
 				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
@@ -898,11 +915,16 @@ export function shouldBehaveLikeInstantLayer(): void {
 					target: execCtx.symmioAddress,
 					callData: execCtx.lockQuoteCallData,
 					signerAccount: { addr: execCtx.partyB2.address, isPartyB: true },
+					flexFields: [],
+					maxUses: 1,
 					replayAttackHeader: { nonce: 1n, deadline: execCtx.deadline, salt: generateSalt() },
 				}
 				const sig = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "UnregisteredPartyB")
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"UnregisteredPartyB",
+				)
 			})
 
 			it("reverts when signer and account mismatch for PartyB", async function () {
@@ -911,11 +933,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 					target: execCtx.symmioAddress,
 					callData: execCtx.lockQuoteCallData,
 					signerAccount: { addr: execCtx.partyB2.address, isPartyB: true },
+					flexFields: [],
+					maxUses: 1,
 					replayAttackHeader: { nonce: 1n, deadline: execCtx.deadline, salt: generateSalt() },
 				}
 				const sig = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig]))
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]]))
 					.to.be.revertedWithCustomError(ctx.context.instantLayer, "MismatchSignerAndAccount")
 					.withArgs(await execCtx.context.symmioPartyB.getAddress(), execCtx.partyB2.address)
 			})
@@ -924,7 +948,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				// First create a quote so PartyB has something to lock
 				const sendQuoteOp = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
 				const sendQuoteSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
-				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig])
+				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig], [[]], [[]])
 
 				// Verify quote was created
 				const quoteBefore = await ctx.context.viewFacetQuote.getQuote(1)
@@ -942,11 +966,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 					target: execCtx.symmioAddress,
 					callData: execCtx.lockQuoteCallData,
 					signerAccount: { addr: partyBAddress, isPartyB: true },
+					flexFields: [],
+					maxUses: 1,
 					replayAttackHeader: { nonce: 1n, deadline: execCtx.deadline, salt: generateSalt() },
 				}
 
 				// Encode executeBatch call with empty signature
-				const executeBatchCallData = ctx.context.instantLayer.interface.encodeFunctionData("executeBatch", [[lockOp], ["0x"]])
+				const executeBatchCallData = ctx.context.instantLayer.interface.encodeFunctionData("executeBatch", [[lockOp], ["0x"], [[]], [[]]])
 
 				// PartyB calls InstantLayer.executeBatch via _multicastCall (msg.sender = PartyB contract)
 				// This should succeed because PartyB is executing their own operation, so signature is skipped
@@ -965,7 +991,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				// Admin calls executeBatch with empty signature for their own operation
 				// This should succeed because signer == msg.sender
-				await expect(ctx.context.instantLayer.executeBatch([op], ["0x"])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], ["0x"], [[]], [[]])).not.to.be.reverted
 
 				// Verify the quote was created
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
@@ -990,7 +1016,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				// User2 calls executeBatch with empty signature for their delegated operation
 				// This should succeed because signer == msg.sender and delegation is valid
-				await expect(ctx.context.instantLayer.connect(ctx.context.signers.user2).executeBatch([op], ["0x"])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.connect(ctx.context.signers.user2).executeBatch([op], ["0x"], [[]], [[]])).not.to.be.reverted
 
 				// Verify the quote was created
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
@@ -1001,7 +1027,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				// First create a quote so PartyB has something to lock
 				const sendQuoteOp = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
 				const sendQuoteSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
-				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig])
+				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig], [[]], [[]])
 
 				// Create PartyB lock operation with empty signature
 				const partyBAddress = await ctx.context.symmioPartyB.getAddress()
@@ -1010,12 +1036,14 @@ export function shouldBehaveLikeInstantLayer(): void {
 					target: execCtx.symmioAddress,
 					callData: execCtx.lockQuoteCallData,
 					signerAccount: { addr: partyBAddress, isPartyB: true },
+					flexFields: [],
+					maxUses: 1,
 					replayAttackHeader: { nonce: 1n, deadline: execCtx.deadline, salt: generateSalt() },
 				}
 
 				// Admin (not PartyB) calls executeBatch with empty signature - should fail
 				// Because msg.sender != signer, signature verification is required
-				await expect(ctx.context.instantLayer.executeBatch([lockOp], ["0x"])).to.be.revertedWithCustomError(
+				await expect(ctx.context.instantLayer.executeBatch([lockOp], ["0x"], [[]], [[]])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
 					"InvalidSignature",
 				)
@@ -1027,7 +1055,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				// Admin calls executeBatch with empty signature for partyA1's operation - should fail
 				// Because msg.sender (admin) != signer (partyA1), signature verification is required
-				await expect(ctx.context.instantLayer.executeBatch([op], ["0x"])).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidSignature")
+				await expect(ctx.context.instantLayer.executeBatch([op], ["0x"], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidSignature",
+				)
 			})
 		})
 
@@ -1036,7 +1067,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const op = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quote.requestedOpenPrice).to.equal(execCtx.requestSendQuote.price)
@@ -1088,7 +1119,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 
 				// Verify all decoded parameters are correct
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
@@ -1111,7 +1142,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig1 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op1)
 				const sig2 = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, op2)
 
-				await expect(ctx.context.instantLayer.executeBatch([op1, op2], [sig1, sig2])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op1, op2], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
 
 				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
 				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
@@ -1131,28 +1162,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig1 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op1)
 				const sig2 = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, op2)
 
-				await expect(ctx.context.instantLayer.executeBatch([op1, op2], [sig1, sig2]))
-					.to.emit(ctx.context.instantLayer, "BatchExecuted")
-					.withArgs(execCtx.context.signers.admin.address, 2)
+				await expect(ctx.context.instantLayer.executeBatch([op1, op2], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
 
 				// Verify quote was created (by PartyA) and locked (by PartyB) in same batch
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
 				expect(quote.quantity).to.equal(execCtx.requestSendQuote.quantity)
-			})
-
-			it("emits BatchExecuted event", async function () {
-				const op1 = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.context.signers.admin.address, 1n, execCtx.deadline)
-				const op2 = createPartyASendQuoteOp(execCtx.accounts[0].accountAddress, execCtx.partyA1.address, 2n, execCtx.deadline)
-				const op3 = await createPartyBLockOp(1n, execCtx.deadline)
-
-				const sig1 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op1)
-				const sig2 = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, op2)
-				const sig3 = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, op3)
-
-				await expect(ctx.context.instantLayer.executeBatch([op1, op2, op3], [sig1, sig2, sig3]))
-					.to.emit(ctx.context.instantLayer, "BatchExecuted")
-					.withArgs(execCtx.context.signers.admin.address, 3)
 			})
 		})
 
@@ -1162,7 +1177,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const op = await createPartyBLockOp(1n, execCtx.deadline)
 				const sig = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "OperationFailed")
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"OperationFailed",
+				)
 			})
 
 			it("short-circuits on first failure", async function () {
@@ -1173,10 +1191,1452 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sigFail = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, opFail)
 				const sigSuccess = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, opSuccess)
 
-				await expect(ctx.context.instantLayer.executeBatch([opFail, opSuccess], [sigFail, sigSuccess])).to.be.revertedWithCustomError(
+				await expect(
+					ctx.context.instantLayer.executeBatch([opFail, opSuccess], [sigFail, sigSuccess], [[], []], [[], []]),
+				).to.be.revertedWithCustomError(ctx.context.instantLayer, "OperationFailed")
+			})
+		})
+	})
+
+	// ════════════════════════════════════════════════════════════════════════════
+	// FLEX FIELDS
+	// ════════════════════════════════════════════════════════════════════════════
+
+	describe("Flex Fields", function () {
+		let execCtx: ExecutionTestContext
+
+		async function setupFlexContext(): Promise<ExecutionTestContext> {
+			const deadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+			const symmioAddress = ctx.context.diamond
+
+			await ctx.context.instantLayer.registerPartyBs([ctx.context.symmioPartyB])
+			await ctx.context.symmioPartyB.grantRole(ROLES.SETTER_ROLE, await ctx.context.signers.admin.getAddress())
+			await ctx.context.symmioPartyB.setSigner(ctx.partyB1.signer)
+
+			await ctx.context.accountManager.connect(ctx.partyA1.signer).addAccount("testAccount")
+			const accounts = await ctx.context.accountManager.getAccounts(ctx.partyA1.address, 0, 100)
+
+			await ctx.context.collateral.connect(ctx.partyA1.signer).approve(ctx.context.diamond, ethers.MaxUint256)
+			await ctx.context.collateral.connect(ctx.partyA1.signer).mint(accounts[0].accountAddress, decimal(30n))
+			await ctx.context.accountFacet.connect(ctx.partyA1.signer).internalTransfer(accounts[0].accountAddress, decimal(1000n))
+
+			const selectorQuote = ctx.quoteCallData.slice(0, 10)
+			await ctx.context.instantLayer.connect(ctx.partyA1.signer).grantDelegation({
+				account: { addr: accounts[0].accountAddress, isPartyB: false },
+				delegatedSigner: ctx.context.signers.admin.address,
+				selectors: [selectorQuote],
+				expiryTimestamp: await getBlockTimestamp(100n),
+			})
+
+			await ctx.context.accountManager.connect(ctx.partyA1.signer)._call(accounts[0].accountAddress, [ctx.bindToPartyBCallData])
+			await ctx.context.symbolControlFacet.whitelistSymbolType(ctx.context.symmioPartyB.getAddress(), 1)
+
+			return { ...ctx, accounts, symmioAddress, deadline }
+		}
+
+		beforeEach(async function () {
+			execCtx = await setupFlexContext()
+		})
+
+		describe("modifier == msg.sender", function () {
+			it("should execute operation with flex field filled by operator (msg.sender) and apply the new value", async function () {
+				// The sendQuoteWithAffiliate calldata has a `quantity` parameter.
+				// We'll mark it as a flex field and have the operator (admin, who is msg.sender) fill it
+				// with a DIFFERENT value to prove the fill actually modifies the calldata.
+				// Params: partyBWhiteList(dynamic), symbolId, positionType, orderType, price, quantity, ...
+				// partyBWhiteList is dynamic so it's a pointer at offset 0.
+				// symbolId at offset 32, positionType at 64, orderType at 96, price at 128, quantity at 160.
+				const quantityOffset = 160 // byte offset of quantity param (after selector)
+				const newQuantity = decimal(77n) // different from requestSendQuote.quantity
+
+				// Create operation with a flex field on the quantity parameter
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Fill the quantity field with a DIFFERENT value from the original calldata
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [newQuantity])
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])).not.to.be.reverted
+
+				// Verify the NEW fill value was applied — not the original calldata value
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quantity).to.equal(newQuantity)
+				expect(quote.quantity).to.not.equal(execCtx.requestSendQuote.quantity)
+			})
+		})
+
+		describe("modifier != msg.sender (signature required)", function () {
+			it("should execute when filler signs the fill value and apply the new value", async function () {
+				const quantityOffset = 160
+				const newQuantity = decimal(88n) // different from requestSendQuote.quantity
+
+				// modifier is user2 (not the operator/admin who calls executeBatch)
+				const modifierSigner = execCtx.context.signers.user2
+				const modifierAddress = await modifierSigner.getAddress()
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: modifierAddress }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [newQuantity])
+
+				// Compute the operation hash to sign the fill
+				const opHash = await ctx.context.instantLayer.getOperationHash(op)
+
+				// Modifier signs the fill authorization
+				const modifierSig = await modifierSigner.signTypedData(execCtx.domain, FLEX_FILLER_AUTH_TYPES, {
+					opHash,
+					fieldIndex: 0,
+					value: quantityValue,
+				})
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [[modifierSig]])).not.to.be.reverted
+
+				// Verify the filler's new value was applied — not the original calldata value
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quantity).to.equal(newQuantity)
+				expect(quote.quantity).to.not.equal(execCtx.requestSendQuote.quantity)
+			})
+
+			it("should revert when filler signature is invalid", async function () {
+				const quantityOffset = 160
+				const modifierAddress = await execCtx.context.signers.user2.getAddress()
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: modifierAddress }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// Use a wrong signer for the modifier signature (hedger instead of user2)
+				const opHash = await ctx.context.instantLayer.getOperationHash(op)
+				const wrongModifierSig = await execCtx.context.signers.hedger.signTypedData(execCtx.domain, FLEX_FILLER_AUTH_TYPES, {
+					opHash,
+					fieldIndex: 0,
+					value: quantityValue,
+				})
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [[wrongModifierSig]])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
-					"OperationFailed",
+					"InvalidFlexFillerSignature",
 				)
+			})
+		})
+
+		describe("Multi-use operations", function () {
+			it("should allow executing the same flex operation multiple times with correct state", async function () {
+				const quantityOffset = 160
+				const fillQuantity = decimal(42n)
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 0, // unlimited
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [fillQuantity])
+
+				// Execute twice with the same operation
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])).not.to.be.reverted
+
+				// Verify both quotes were created with the flex-filled quantity
+				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
+				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
+				expect(quote1.quantity).to.equal(fillQuantity)
+				expect(quote2.quantity).to.equal(fillQuantity)
+			})
+
+			it("should respect maxUses limit", async function () {
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 2,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// First two succeed
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])).not.to.be.reverted
+
+				// Third fails
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"MaxUsesExceeded",
+				)
+			})
+		})
+
+		describe("Multiple fields with different modifiers", function () {
+			it("should allow different fillers for different fields and apply both values", async function () {
+				const quantityOffset = 160 // quantity param
+				const priceOffset = 128 // price param
+
+				const modifier1 = execCtx.context.signers.admin // msg.sender, no sig needed
+				const modifier2 = execCtx.context.signers.user2
+
+				const newPrice = decimal(777n)
+				const newQuantity = decimal(33n)
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [
+						{ offset: priceOffset, length: 32, authorizedFlexFiller: modifier1.address },
+						{ offset: quantityOffset, length: 32, authorizedFlexFiller: await modifier2.getAddress() },
+					],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				const priceValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [newPrice])
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [newQuantity])
+
+				// modifier2 signs their field
+				const opHash = await ctx.context.instantLayer.getOperationHash(op)
+				const modifier2Sig = await modifier2.signTypedData(execCtx.domain, FLEX_FILLER_AUTH_TYPES, {
+					opHash,
+					fieldIndex: 1,
+					value: quantityValue,
+				})
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[priceValue, quantityValue]], [["0x", modifier2Sig]])).not.to.be.reverted
+
+				// Verify both fillers' values were applied
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.requestedOpenPrice).to.equal(newPrice)
+				expect(quote.quantity).to.equal(newQuantity)
+			})
+		})
+
+		describe("Validation", function () {
+			it("should revert when fill values length mismatches flex fields", async function () {
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: 160, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Provide no fill values for 1 flex field
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidFlexFillLength",
+				)
+			})
+
+			it("should revert when fill value byte length mismatches field length", async function () {
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: 160, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Provide a 64-byte value for a 32-byte field
+				const wrongLengthValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [1, 2])
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[wrongLengthValue]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidFlexFillValueLength",
+				)
+			})
+
+			it("should revert when flex field offset is out of calldata bounds", async function () {
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: 99999, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const value = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1])
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[value]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"FlexFieldOutOfBounds",
+				)
+			})
+
+			it("should revert when filler sigs length mismatches flex fields", async function () {
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [
+						{ offset: 128, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address },
+						{ offset: 160, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address },
+					],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const value = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1])
+
+				// Provide 2 fill values but only 1 modifier sig
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[value, value]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"ArrayLengthMismatch",
+				)
+			})
+		})
+
+		describe("Zero-length flex field edge case", function () {
+			it("should succeed with length:0 flex field when fill is empty (no-op field)", async function () {
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: 160, length: 0, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Empty fill for zero-length field — should be a no-op
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [["0x"]], [["0x"]])).not.to.be.reverted
+
+				// Verify original calldata was used unchanged
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quantity).to.equal(execCtx.requestSendQuote.quantity)
+				expect(quote.requestedOpenPrice).to.equal(execCtx.requestSendQuote.price)
+			})
+		})
+
+		describe("Optional fill (filler keeps user value)", function () {
+			it("should skip flex field injection when fill value is empty bytes", async function () {
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Pass empty bytes "0x" as fill value — filler accepts the user's original value
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [["0x"]], [["0x"]])).not.to.be.reverted
+
+				// Verify quote was created with the original quantity from the user's calldata
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quantity).to.equal(execCtx.requestSendQuote.quantity)
+			})
+
+			it("should allow mixing filled and skipped flex fields in same operation", async function () {
+				const priceOffset = 128
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [
+						{ offset: priceOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address },
+						{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address },
+					],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Fill price (field 0) but skip quantity (field 1 = empty bytes)
+				const priceValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.price])
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[priceValue, "0x"]], [["0x", "0x"]])).not.to.be.reverted
+
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.requestedOpenPrice).to.equal(execCtx.requestSendQuote.price)
+				expect(quote.quantity).to.equal(execCtx.requestSendQuote.quantity)
+			})
+		})
+
+		describe("Filler signature reuse on multi-use ops", function () {
+			it("should allow reusing the same filler signature on multi-use operations with correct state", async function () {
+				const quantityOffset = 160
+				const fillerSigner = execCtx.context.signers.user2
+				const fillerAddress = await fillerSigner.getAddress()
+				const fillQuantity = decimal(55n)
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: fillerAddress }],
+					maxUses: 0,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [fillQuantity])
+				const opHash = await ctx.context.instantLayer.getOperationHash(op)
+
+				// Filler signs once (no nonce needed)
+				const fillerSig = await fillerSigner.signTypedData(execCtx.domain, FLEX_FILLER_AUTH_TYPES, {
+					opHash,
+					fieldIndex: 0,
+					value: quantityValue,
+				})
+
+				// Same signature works on both executions
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [[fillerSig]])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [[fillerSig]])).not.to.be.reverted
+
+				// Verify both quotes got the filler's value
+				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
+				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
+				expect(quote1.quantity).to.equal(fillQuantity)
+				expect(quote2.quantity).to.equal(fillQuantity)
+			})
+		})
+
+		describe("maxUses edge cases", function () {
+			it("should allow unlimited replay when maxUses=0 without flex fields", async function () {
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [],
+					maxUses: 0,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Execute twice — both should succeed
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
+
+				// Verify both quotes were created
+				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
+				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
+				expect(quote1.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(quote2.quoteStatus).to.equal(QuoteStatus.PENDING)
+			})
+
+			it("should accept different fill values each time with maxUses=0", async function () {
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 0,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// First execution with quantity A
+				const quantityA = decimal(50n)
+				const quantityValueA = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [quantityA])
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValueA]], [["0x"]])).not.to.be.reverted
+
+				// Second execution with quantity B (different)
+				const quantityB = decimal(75n)
+				const quantityValueB = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [quantityB])
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValueB]], [["0x"]])).not.to.be.reverted
+
+				// Verify the two quotes have different quantities
+				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
+				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
+				expect(quote1.quantity).to.equal(quantityA)
+				expect(quote2.quantity).to.equal(quantityB)
+				expect(quote1.quantity).to.not.equal(quote2.quantity)
+			})
+
+			it("should prevent second execution with maxUses=1 even with different fill", async function () {
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// First execution succeeds
+				const quantityValueA = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValueA]], [["0x"]])).not.to.be.reverted
+
+				// Second execution with a different fill value should revert
+				const quantityValueB = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [decimal(99n)])
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValueB]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"MaxUsesExceeded",
+				)
+			})
+
+			it("should increment operationUsageCount correctly", async function () {
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 3,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// Execute twice
+				await ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])
+				await ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])
+
+				// Read operationUsageCount and verify it equals 2
+				const opHash = await ctx.context.instantLayer.getOperationHash(op)
+				const usageCount = await ctx.context.instantLayer.operationUsageCount(opHash)
+				expect(usageCount).to.equal(2n)
+			})
+		})
+
+		describe("Nonce interaction", function () {
+			it("should work with sequential nonce and flex fields", async function () {
+				const quantityOffset = 160
+
+				// First operation with nonce=1
+				const op1: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 1n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig1 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op1)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				await expect(ctx.context.instantLayer.executeBatch([op1], [sig1], [[quantityValue]], [["0x"]])).not.to.be.reverted
+
+				// Verify nonce incremented to 1
+				const nonceAfterFirst = await ctx.context.instantLayer.nonces(execCtx.accounts[0].accountAddress)
+				expect(nonceAfterFirst).to.equal(1n)
+
+				// Second operation with nonce=2
+				const op2: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 2n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig2 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op2)
+
+				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2], [[quantityValue]], [["0x"]])).not.to.be.reverted
+
+				// Verify nonce incremented to 2
+				const nonceAfterSecond = await ctx.context.instantLayer.nonces(execCtx.accounts[0].accountAddress)
+				expect(nonceAfterSecond).to.equal(2n)
+			})
+
+			it("should fail nonce check on second execution when nonce>0 with maxUses=0", async function () {
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 0, // unlimited uses
+					replayAttackHeader: { nonce: 1n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// First execution succeeds — nonce goes from 0 to 1
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])).not.to.be.reverted
+
+				// Second execution of the SAME operation fails because nonce in op is 1 but expected nonce is now 2
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidNonce",
+				)
+			})
+		})
+
+		describe("Deadline interaction", function () {
+			it("should revert with expired deadline before flex fills are processed", async function () {
+				const quantityOffset = 160
+
+				// Create a deadline that's only 10 seconds ahead
+				const shortDeadline = await getBlockTimestamp(10n)
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: shortDeadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// Advance time past the deadline
+				await time.increase(20)
+
+				// Execution should revert with DeadlineExpired, not any flex-related error
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"DeadlineExpired",
+				)
+			})
+		})
+
+		describe("Batch array length validation", function () {
+			it("should revert when fills array length mismatches signedOps", async function () {
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// 1 operation but 0 fills — should revert with ArrayLengthMismatch
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"ArrayLengthMismatch",
+				)
+			})
+
+			it("should revert when flexFillerSignatures array length mismatches signedOps", async function () {
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// 1 operation, 1 fill, but 0 flexFillerSignatures — should revert with ArrayLengthMismatch
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[quantityValue]], [])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"ArrayLengthMismatch",
+				)
+			})
+		})
+
+		describe("Hash integrity", function () {
+			it("should revert with InvalidSignature when flexFields are tampered after signing", async function () {
+				const quantityOffset = 160
+				// Use partyA1 (account owner) as signer — NOT admin (msg.sender) — so signature is actually verified
+				const signer = execCtx.partyA1.signer
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.partyA1.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(signer, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// Tamper with the flex field offset after signing
+				const tamperedOp = {
+					...op,
+					flexFields: [{ offset: 128, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+				}
+
+				await expect(ctx.context.instantLayer.executeBatch([tamperedOp], [sig], [[quantityValue]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidSignature",
+				)
+			})
+
+			it("should revert with InvalidSignature when authorizedFlexFiller is tampered after signing", async function () {
+				const quantityOffset = 160
+				const signer = execCtx.partyA1.signer
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.partyA1.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.user2.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(signer, execCtx.domain, execCtx.types, op)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// Tamper: change authorizedFlexFiller to msg.sender (admin) to bypass filler sig check
+				const tamperedOp = {
+					...op,
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+				}
+
+				await expect(ctx.context.instantLayer.executeBatch([tamperedOp], [sig], [[quantityValue]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidSignature",
+				)
+			})
+
+			it("should revert with InvalidSignature when flexFields are removed after signing", async function () {
+				const quantityOffset = 160
+				const signer = execCtx.partyA1.signer
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.partyA1.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(signer, execCtx.domain, execCtx.types, op)
+
+				// Tamper: remove all flex fields
+				const tamperedOp = { ...op, flexFields: [] }
+
+				await expect(ctx.context.instantLayer.executeBatch([tamperedOp], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidSignature",
+				)
+			})
+
+			it("should produce different hashes for different flexFields", async function () {
+				const baseOp = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				// Operation with no flex fields
+				const opNoFlex: InstantLayer.SignedOperationStruct = {
+					...baseOp,
+					flexFields: [],
+				}
+
+				// Operation with a flex field (same base params, same salt)
+				const opWithFlex: InstantLayer.SignedOperationStruct = {
+					...baseOp,
+					flexFields: [{ offset: 160, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+				}
+
+				const hashNoFlex = await ctx.context.instantLayer.getOperationHash(opNoFlex)
+				const hashWithFlex = await ctx.context.instantLayer.getOperationHash(opWithFlex)
+
+				expect(hashNoFlex).to.not.equal(hashWithFlex)
+			})
+
+			it("should produce different hashes for different maxUses", async function () {
+				const salt = generateSalt()
+
+				const op1: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: 160, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt },
+				}
+
+				const op5: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: 160, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 5,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt },
+				}
+
+				const hash1 = await ctx.context.instantLayer.getOperationHash(op1)
+				const hash5 = await ctx.context.instantLayer.getOperationHash(op5)
+
+				expect(hash1).to.not.equal(hash5)
+			})
+		})
+
+		describe("Filler signature binding", function () {
+			it("should revert when filler signs with wrong opHash", async function () {
+				const quantityOffset = 160
+				const fillerSigner = execCtx.context.signers.user2
+				const fillerAddress = await fillerSigner.getAddress()
+
+				// Create two operations with different salts (different opHashes)
+				const op1: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: fillerAddress }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const op2: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: fillerAddress }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig2 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op2)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// Filler signs for op1's hash
+				const op1Hash = await ctx.context.instantLayer.getOperationHash(op1)
+				const fillerSig = await fillerSigner.signTypedData(execCtx.domain, FLEX_FILLER_AUTH_TYPES, {
+					opHash: op1Hash,
+					fieldIndex: 0,
+					value: quantityValue,
+				})
+
+				// Try to use op1's filler signature for op2 — should revert
+				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2], [[quantityValue]], [[fillerSig]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidFlexFillerSignature",
+				)
+			})
+
+			it("should revert when filler signs with wrong fieldIndex", async function () {
+				const priceOffset = 128
+				const quantityOffset = 160
+				const fillerSigner = execCtx.context.signers.user2
+				const fillerAddress = await fillerSigner.getAddress()
+
+				// Operation with 2 flex fields, both for the same filler
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [
+						{ offset: priceOffset, length: 32, authorizedFlexFiller: fillerAddress },
+						{ offset: quantityOffset, length: 32, authorizedFlexFiller: fillerAddress },
+					],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const priceValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.price])
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				const opHash = await ctx.context.instantLayer.getOperationHash(op)
+
+				// Filler signs for fieldIndex=1 but we provide that signature at fieldIndex=0
+				const fillerSigForField1 = await fillerSigner.signTypedData(execCtx.domain, FLEX_FILLER_AUTH_TYPES, {
+					opHash,
+					fieldIndex: 1,
+					value: quantityValue,
+				})
+
+				// Correct sig for field 1
+				const fillerSigForField1Correct = await fillerSigner.signTypedData(execCtx.domain, FLEX_FILLER_AUTH_TYPES, {
+					opHash,
+					fieldIndex: 1,
+					value: quantityValue,
+				})
+
+				// Use field1's signature at field0 position — should revert
+				await expect(
+					ctx.context.instantLayer.executeBatch([op], [sig], [[priceValue, quantityValue]], [[fillerSigForField1, fillerSigForField1Correct]]),
+				).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidFlexFillerSignature")
+			})
+
+			it("should revert when filler signs with wrong value", async function () {
+				const quantityOffset = 160
+				const fillerSigner = execCtx.context.signers.user2
+				const fillerAddress = await fillerSigner.getAddress()
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: fillerAddress }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const opHash = await ctx.context.instantLayer.getOperationHash(op)
+
+				// Filler signs for value X
+				const valueX = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [decimal(100n)])
+				const fillerSig = await fillerSigner.signTypedData(execCtx.domain, FLEX_FILLER_AUTH_TYPES, {
+					opHash,
+					fieldIndex: 0,
+					value: valueX,
+				})
+
+				// Operator provides value Y (different from what filler signed)
+				const valueY = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [decimal(200n)])
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[valueY]], [[fillerSig]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidFlexFillerSignature",
+				)
+			})
+
+			it("should not allow filler signature reuse across different operations", async function () {
+				const quantityOffset = 160
+				const fillerSigner = execCtx.context.signers.user2
+				const fillerAddress = await fillerSigner.getAddress()
+
+				// Two operations with identical params but different salts
+				const salt1 = generateSalt()
+				const salt2 = generateSalt()
+
+				const op1: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: fillerAddress }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: salt1 },
+				}
+
+				const op2: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: fillerAddress }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: salt2 },
+				}
+
+				const sig2 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op2)
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [execCtx.requestSendQuote.quantity])
+
+				// Filler signs fill for op1
+				const op1Hash = await ctx.context.instantLayer.getOperationHash(op1)
+				const fillerSig = await fillerSigner.signTypedData(execCtx.domain, FLEX_FILLER_AUTH_TYPES, {
+					opHash: op1Hash,
+					fieldIndex: 0,
+					value: quantityValue,
+				})
+
+				// Try to use op1's filler signature on op2 — should revert because opHash differs
+				await expect(ctx.context.instantLayer.executeBatch([op2], [sig2], [[quantityValue]], [[fillerSig]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidFlexFillerSignature",
+				)
+			})
+		})
+
+		describe("Overlapping and adjacent fields", function () {
+			it("should apply adjacent flex fields correctly without corruption", async function () {
+				const priceOffset = 128 // price param
+				const quantityOffset = 160 // quantity param
+
+				const newPrice = decimal(500n)
+				const newQuantity = decimal(50n)
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [
+						{ offset: priceOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address },
+						{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address },
+					],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				const priceValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [newPrice])
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [newQuantity])
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[priceValue, quantityValue]], [["0x", "0x"]])).not.to.be.reverted
+
+				// Verify both values were correctly applied
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.requestedOpenPrice).to.equal(newPrice)
+				expect(quote.quantity).to.equal(newQuantity)
+			})
+
+			it("should apply last write wins for overlapping flex fields", async function () {
+				// First field covers 64 bytes starting at offset 128 (covers price + quantity)
+				// Second field covers 32 bytes at offset 160 (just quantity)
+				// Both filled by msg.sender. Second field overwrites the quantity region.
+				const wideOffset = 128
+				const narrowOffset = 160
+
+				const widePrice = decimal(500n)
+				const wideQuantity = decimal(50n)
+				const narrowQuantity = decimal(99n)
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [
+						{ offset: wideOffset, length: 64, authorizedFlexFiller: execCtx.context.signers.admin.address },
+						{ offset: narrowOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address },
+					],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Wide fill covers price (128) + quantity (160)
+				const wideValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [widePrice, wideQuantity])
+				// Narrow fill overwrites just quantity (160)
+				const narrowValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [narrowQuantity])
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[wideValue, narrowValue]], [["0x", "0x"]])).not.to.be.reverted
+
+				// Price should be from the wide field, quantity from the narrow (last write wins)
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.requestedOpenPrice).to.equal(widePrice)
+				expect(quote.quantity).to.equal(narrowQuantity)
+			})
+		})
+
+		describe("Boundary offsets", function () {
+			it("should succeed with flex field at offset 0 (first parameter)", async function () {
+				// The first parameter (partyBWhiteList dynamic pointer) is at offset 0
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: 0, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Fill with the same value that's already there (the dynamic pointer)
+				// Extract the original 32 bytes at offset 0 (after selector) from calldata
+				const originalValue = "0x" + execCtx.quoteCallData.slice(10, 10 + 64)
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[originalValue]], [["0x"]])).not.to.be.reverted
+			})
+
+			it("should succeed with flex field at exact end boundary", async function () {
+				// calldata length in bytes = (hex length - 2) / 2 for "0x" prefix
+				// After selector, the available region is calldataLength - 4 bytes
+				// offset + length must be <= calldataLength - 4
+				const calldataBytes = ethers.getBytes(execCtx.quoteCallData)
+				const availableAfterSelector = calldataBytes.length - 4
+				// Place a 32-byte field at the very end
+				const endOffset = availableAfterSelector - 32
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: endOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Fill with original bytes at that offset
+				const hexOffset = 10 + endOffset * 2 // 10 = "0x" + 4-byte selector in hex
+				const originalValue = "0x" + execCtx.quoteCallData.slice(hexOffset, hexOffset + 64)
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[originalValue]], [["0x"]])).not.to.be.reverted
+			})
+
+			it("should revert with flex field one byte past end", async function () {
+				const calldataBytes = ethers.getBytes(execCtx.quoteCallData)
+				const availableAfterSelector = calldataBytes.length - 4
+				// offset + length = availableAfterSelector + 1 — one byte past end
+				const pastEndOffset = availableAfterSelector - 31
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: pastEndOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const value = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1])
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[value]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"FlexFieldOutOfBounds",
+				)
+			})
+
+			it("should revert for out-of-bounds flex field even with empty fill", async function () {
+				// Even with empty fill "0x", bounds check should still trigger
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: 999999, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [["0x"]], [["0x"]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"FlexFieldOutOfBounds",
+				)
+			})
+		})
+
+		describe("All fills skipped", function () {
+			it("should execute with original calldata unchanged when all fills are empty", async function () {
+				const priceOffset = 128
+				const quantityOffset = 160
+
+				const op: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [
+						{ offset: priceOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address },
+						{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address },
+					],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+
+				// Both fills are empty — original calldata should be used as-is
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [["0x", "0x"]], [["0x", "0x"]])).not.to.be.reverted
+
+				// Verify quote was created with original values
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.requestedOpenPrice).to.equal(execCtx.requestSendQuote.price)
+				expect(quote.quantity).to.equal(execCtx.requestSendQuote.quantity)
+			})
+		})
+
+		describe("TPSL scenario (requestToClosePosition)", function () {
+			it("should allow TPSL bot to fill quantityToClose via flex field on an open position", async function () {
+				// Step 1: Open a position via template (sendQuote → lockQuote → openPosition)
+				const lockQuoteCallDataTemplate = ctx.context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [
+					0,
+					await getDummySingleUpnlSig(10n),
+				])
+				const openQuoteCallDataTemplate = ctx.context.partyBPositionActionsFacet.interface.encodeFunctionData("openPosition", [
+					0,
+					execCtx.requestOpenQuote.filledAmount,
+					execCtx.requestOpenQuote.openPrice,
+					await getDummyPairUpnlAndPriceSig(10n),
+				])
+
+				await ctx.context.instantLayer.addTemplate("sendLockOpen", [
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+					{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] },
+					{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] },
+				])
+				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
+
+				const sendOp = createSignedOperation(
+					execCtx.context.signers.admin.address,
+					execCtx.symmioAddress,
+					execCtx.quoteCallData,
+					{ addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					1n,
+					execCtx.deadline,
+				)
+				const lockOp = createSignedOperation(
+					await execCtx.context.symmioPartyB.getAddress(),
+					execCtx.symmioAddress,
+					lockQuoteCallDataTemplate,
+					{ addr: await execCtx.context.symmioPartyB.getAddress(), isPartyB: true },
+					1n,
+					execCtx.deadline,
+				)
+				const openOp = createSignedOperation(
+					await execCtx.context.symmioPartyB.getAddress(),
+					execCtx.symmioAddress,
+					openQuoteCallDataTemplate,
+					{ addr: await execCtx.context.symmioPartyB.getAddress(), isPartyB: true },
+					2n,
+					execCtx.deadline,
+				)
+
+				const sendSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendOp)
+				const lockSig = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, lockOp)
+				const openSig = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, openOp)
+
+				await ctx.context.instantLayer.executeTemplate(templateId, [sendOp, lockOp, openOp], [sendSig, lockSig, openSig], [[], [], []], [[], [], []])
+
+				// Verify position is open
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.OPENED)
+
+				// Step 2: USER signs a close request with flex field on quantityToClose.
+				// The TPSL bot (admin) is only the flex filler — no delegation needed.
+				// requestToClosePosition(uint256 quoteId, uint256 closePrice, uint256 quantityToClose, OrderType orderType, uint256 deadline)
+				// Offsets: quoteId=0, closePrice=32, quantityToClose=64, orderType=96, deadline=128
+				const closeDeadline = await getBlockTimestamp(DEFAULT_DEADLINE_OFFSET)
+				const closeCallData = ctx.context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
+					1, // quoteId
+					execCtx.requestOpenQuote.openPrice, // closePrice
+					0, // quantityToClose placeholder — flex filler will provide
+					1, // OrderType.MARKET
+					closeDeadline,
+				])
+
+				// User signs the flex op; TPSL bot (admin) is the authorizedFlexFiller
+				const closeOp: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.partyA1.address, // USER is the signer
+					target: execCtx.symmioAddress,
+					callData: closeCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: 64, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 0, // unlimited — bot can trigger multiple times until deadline
+					replayAttackHeader: { nonce: 0n, deadline: closeDeadline, salt: generateSalt() },
+				}
+
+				const closeSig = await signOperation(execCtx.partyA1.signer, execCtx.domain, execCtx.types, closeOp)
+
+				// Bot fills quantityToClose with the full position quantity
+				const quantityToClose = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [quote.quantity])
+
+				await expect(ctx.context.instantLayer.executeBatch([closeOp], [closeSig], [[quantityToClose]], [["0x"]])).not.to.be.reverted
+
+				// Verify close was requested
+				const quoteAfter = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+				expect(quoteAfter.quantityToClose).to.equal(quote.quantity)
+			})
+		})
+
+		describe("Muon signature replacement in sendQuote", function () {
+			it("should store market price from replacement sig when solver replaces upnlSig via flex field", async function () {
+				// sendQuoteWithAffiliate has 14 params. The upnlSig (param index 13) is a dynamic struct.
+				// Head layout: 14 slots × 32 bytes = 448 bytes
+				// Slot 13 (offset 416) holds the offset pointer to the upnlSig data in the tail.
+				//
+				// The contract stores upnlSig.price as quote.marketPrice (PartyAFacetImpl.sol:124):
+				//   Quote memory quote = Quote({ ..., marketPrice: upnlSig.price, ... })
+				//
+				// Strategy:
+				// 1. Send quote with sigA (price=100e18) directly → verify quote.marketPrice == 100e18
+				// 2. Send quote with sigB_placeholder (price=200e18) in calldata, but solver replaces
+				//    with sigC (price=300e18) via flex fill → verify quote.marketPrice == 300e18
+				// This proves the replacement sig's price is what ends up in the quote.
+
+				const { partyAFacet } = execCtx.context
+				const solverSigner = execCtx.context.signers.admin
+				const priceA = decimal(100n)
+				const priceB = decimal(200n) // placeholder — will be replaced
+				const priceC = decimal(300n) // the replacement
+
+				const encodeQuoteCallData = async (upnlSig: any) =>
+					partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+						execCtx.requestSendQuote.partyBWhiteList,
+						execCtx.requestSendQuote.symbolId,
+						execCtx.requestSendQuote.positionType,
+						execCtx.requestSendQuote.orderType,
+						execCtx.requestSendQuote.price,
+						execCtx.requestSendQuote.quantity,
+						execCtx.requestSendQuote.cva,
+						execCtx.requestSendQuote.lf,
+						execCtx.requestSendQuote.partyAmm,
+						execCtx.requestSendQuote.partyBmm,
+						execCtx.requestSendQuote.maxFundingRate,
+						await execCtx.requestSendQuote.deadline,
+						execCtx.requestSendQuote.affiliate,
+						upnlSig,
+					])
+
+				// Helper: calculate upnlSig byte region from encoded calldata
+				function getUpnlSigRegion(callData: string) {
+					const paramsHex = callData.slice(10) // strip "0x" + 4-byte selector
+					const dataStart = Number(BigInt("0x" + paramsHex.slice(416 * 2, (416 + 32) * 2)))
+					const dataLength = paramsHex.length / 2 - dataStart
+					return { dataStart, dataLength }
+				}
+
+				// Helper: extract upnlSig bytes from encoded calldata
+				function extractUpnlSigBytes(callData: string, dataStart: number) {
+					return "0x" + callData.slice(10).slice(dataStart * 2)
+				}
+
+				// ── Step 1: Send quote directly with sigA (price=100e18) ──
+				const sigA = await getDummySingleUpnlAndPriceSig(priceA)
+				const callDataA = await encodeQuoteCallData(sigA)
+
+				const opA = createSignedOperation(
+					solverSigner.address,
+					execCtx.symmioAddress,
+					callDataA,
+					{ addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const eipSigA = await signOperation(solverSigner, execCtx.domain, execCtx.types, opA)
+
+				await expect(ctx.context.instantLayer.executeBatch([opA], [eipSigA], [[]], [[]])).not.to.be.reverted
+
+				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote1.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(quote1.marketPrice).to.equal(priceA) // sigA's price stored
+
+				// ── Step 2: Send quote with sigB placeholder, solver replaces with sigC via flex fill ──
+				const sigB = await getDummySingleUpnlAndPriceSig(priceB)
+				const sigC = await getDummySingleUpnlAndPriceSig(priceC)
+
+				const callDataB = await encodeQuoteCallData(sigB)
+				const callDataC = await encodeQuoteCallData(sigC)
+
+				// Verify encodings are the same length (same dynamic field structure)
+				expect(callDataB.length).to.equal(callDataC.length)
+
+				const { dataStart, dataLength } = getUpnlSigRegion(callDataB)
+				const fillValueC = extractUpnlSigBytes(callDataC, dataStart)
+				expect(ethers.getBytes(fillValueC).length).to.equal(dataLength)
+
+				const flexOp: InstantLayer.SignedOperationStruct = {
+					signer: solverSigner.address,
+					target: execCtx.symmioAddress,
+					callData: callDataB, // contains sigB (price=200e18)
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [
+						{
+							offset: dataStart,
+							length: dataLength,
+							authorizedFlexFiller: solverSigner.address,
+						},
+					],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 0n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const eipSigFlex = await signOperation(solverSigner, execCtx.domain, execCtx.types, flexOp)
+
+				// Execute: calldata has sigB but flex fill replaces with sigC
+				await expect(ctx.context.instantLayer.executeBatch([flexOp], [eipSigFlex], [[fillValueC]], [["0x"]])).not.to.be.reverted
+
+				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
+				expect(quote2.quoteStatus).to.equal(QuoteStatus.PENDING)
+				expect(quote2.marketPrice).to.equal(priceC) // sigC's price stored, NOT sigB's
+				expect(quote2.marketPrice).to.not.equal(priceB) // proves replacement happened
 			})
 		})
 	})
@@ -1246,14 +2706,14 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 		describe("executeTemplate - Access Control", function () {
 			it("reverts when caller lacks OPERATOR_ROLE", async function () {
-				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).executeTemplate(0, [], [])).to.be.reverted
+				await expect(ctx.context.instantLayer.connect(ctx.partyA1.signer).executeTemplate(0, [], [], [], [])).to.be.reverted
 			})
 		})
 
 		describe("executeTemplate - Template Validation", function () {
 			it("reverts with InvalidTemplate for unknown template ID", async function () {
 				const bogusId = (await ctx.context.instantLayer.getNextTemplateId()) + 123n
-				await expect(ctx.context.instantLayer.executeTemplate(bogusId, [], []))
+				await expect(ctx.context.instantLayer.executeTemplate(bogusId, [], [], [], []))
 					.to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidTemplate")
 					.withArgs(bogusId)
 			})
@@ -1272,7 +2732,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op], [sig])).to.be.revertedWithCustomError(
+				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
 					"TemplateNotActive",
 				)
@@ -1282,7 +2742,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				await ctx.context.instantLayer.addTemplate("singleOp", [{ sourceIndices: [], insertionPoints: [1], sourceOffsets: [] }])
 				const templateId = (await ctx.context.instantLayer.getNextTemplateId()) - 1n
 
-				await expect(ctx.context.instantLayer.executeTemplate(templateId, [], [])).to.be.revertedWithCustomError(
+				await expect(ctx.context.instantLayer.executeTemplate(templateId, [], [], [], [])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
 					"TemplateOperationLengthMismatch",
 				)
@@ -1299,7 +2759,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeTemplate(0, [op, op], [sig])).to.be.revertedWithCustomError(
+				await expect(ctx.context.instantLayer.executeTemplate(0, [op, op], [sig], [[], []], [[], []])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
 					"ArrayLengthMismatch",
 				)
@@ -1321,7 +2781,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op], [sig])).to.be.revertedWithCustomError(
+				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
 					"MissingSourceResult",
 				)
@@ -1341,7 +2801,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
 
-				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op], [sig]))
+				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op], [sig], [[]], [[]]))
 					.to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidSourceIndex")
 					.withArgs(1)
 			})
@@ -1374,10 +2834,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig1 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op1)
 				const sig2 = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, op2)
 
-				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op1, op2], [sig1, sig2])).to.be.revertedWithCustomError(
-					ctx.context.instantLayer,
-					"InsertionPointOutOfBounds",
-				)
+				await expect(
+					ctx.context.instantLayer.executeTemplate(templateId, [op1, op2], [sig1, sig2], [[], []], [[], []]),
+				).to.be.revertedWithCustomError(ctx.context.instantLayer, "InsertionPointOutOfBounds")
 			})
 		})
 
@@ -1435,7 +2894,13 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const allocateSig = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, allocateOp)
 
 				await expect(
-					ctx.context.instantLayer.executeTemplate(templateId, [sendQuoteOp, getSignerOp, allocateOp], [sendQuoteSig, getSignerSig, allocateSig]),
+					ctx.context.instantLayer.executeTemplate(
+						templateId,
+						[sendQuoteOp, getSignerOp, allocateOp],
+						[sendQuoteSig, getSignerSig, allocateSig],
+						[[], [], []],
+						[[], [], []],
+					),
 				).not.to.be.reverted
 
 				// Verify the quote was created by the first operation
@@ -1446,7 +2911,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				expect(await ctx.context.viewFacet.allocatedBalanceOfPartyB(partyBAddress, partyAAccount)).to.equal(allocateAmount)
 			})
 
-			it("executes basic template and emits OperationsExecuted", async function () {
+			it("executes basic template successfully", async function () {
 				const op1 = createSignedOperation(
 					execCtx.context.signers.admin.address,
 					execCtx.symmioAddress,
@@ -1468,9 +2933,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig2 = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, op2)
 
 				const templateId = 1n // basicTemplate
-				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op1, op2], [sig1, sig2]))
-					.to.emit(ctx.context.instantLayer, "OperationsExecuted")
-					.withArgs(templateId, execCtx.context.signers.admin.address)
+				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op1, op2], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
 
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
@@ -1515,13 +2978,64 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig3 = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, op3)
 				const sig4 = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, op4)
 
-				await expect(ctx.context.instantLayer.executeTemplate(0, [op1, op2, op3, op4], [sig1, sig2, sig3, sig4])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeTemplate(0, [op1, op2, op3, op4], [sig1, sig2, sig3, sig4], [[], [], [], []], [[], [], [], []]))
+					.not.to.be.reverted
 
 				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
 				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
 
 				expect(quote1.quoteStatus).to.equal(QuoteStatus.OPENED)
 				expect(quote2.quoteStatus).to.equal(QuoteStatus.PENDING)
+			})
+		})
+
+		describe("executeTemplate - Flex Fields with Templates", function () {
+			it("should apply flex field fills within template execution and verify state", async function () {
+				// Use basicTemplate (index 1): sendQuote → lockQuote with result injection
+				// The sendQuote op uses a flex field on the quantity parameter
+				const quantityOffset = 160
+				const newQuantity = decimal(66n)
+
+				const sendQuoteOp: InstantLayer.SignedOperationStruct = {
+					signer: execCtx.context.signers.admin.address,
+					target: execCtx.symmioAddress,
+					callData: execCtx.quoteCallData,
+					signerAccount: { addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					flexFields: [{ offset: quantityOffset, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+					maxUses: 1,
+					replayAttackHeader: { nonce: 1n, deadline: execCtx.deadline, salt: generateSalt() },
+				}
+
+				const lockQuoteOp = createSignedOperation(
+					await execCtx.context.symmioPartyB.getAddress(),
+					execCtx.symmioAddress,
+					lockQuoteCallDataTemplate,
+					{ addr: await execCtx.context.symmioPartyB.getAddress(), isPartyB: true },
+					1n,
+					execCtx.deadline,
+				)
+
+				const sendSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
+				const lockSig = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, lockQuoteOp)
+
+				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [newQuantity])
+
+				const templateId = 1n // basicTemplate
+				await expect(
+					ctx.context.instantLayer.executeTemplate(
+						templateId,
+						[sendQuoteOp, lockQuoteOp],
+						[sendSig, lockSig],
+						[[quantityValue], []], // flex fills for op0, empty for op1
+						[["0x"], []], // filler sigs (msg.sender for op0, none for op1)
+					),
+				).not.to.be.reverted
+
+				// Verify the quote was created with the flex-filled quantity AND locked via template injection
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quantity).to.equal(newQuantity)
+				expect(quote.quantity).to.not.equal(execCtx.requestSendQuote.quantity)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
 			})
 		})
 
@@ -1575,7 +3089,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				const partyANonceBefore = await ctx.context.instantLayer.nonces(op1.signerAccount.addr)
 				const partyBNonceBefore = await ctx.context.instantLayer.nonces(op4.signerAccount.addr)
-				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op1, op2, op3, op4], [sig1, sig2, sig3, sig4])).not.to.be.reverted
+				await expect(
+					ctx.context.instantLayer.executeTemplate(templateId, [op1, op2, op3, op4], [sig1, sig2, sig3, sig4], [[], [], [], []], [[], [], [], []]),
+				).not.to.be.reverted
 				const partyANonceAfter = await ctx.context.instantLayer.nonces(op1.signerAccount.addr)
 				const partyBNonceAfter = await ctx.context.instantLayer.nonces(op4.signerAccount.addr)
 
@@ -1872,7 +3388,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					deadline,
 				)
 				const sendQuoteSig = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, sendQuoteOp)
-				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig])
+				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig], [[]], [[]])
 
 				// Now try to execute PartyB operation (lockQuote) with isPartyB=false
 				// This would attempt to route through AccountLayer which won't work for PartyB
@@ -1891,7 +3407,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				// 1. AccountLayer.ownerOf(partyBAddress) returns address(0)
 				// 2. Since signer != owner (neither is the actual owner), it checks delegation
 				// 3. No delegation exists for partyBAddress as delegator
-				await expect(ctx.context.instantLayer.executeBatch([lockOp], [lockSig])).to.be.revertedWithCustomError(
+				await expect(ctx.context.instantLayer.executeBatch([lockOp], [lockSig], [[]], [[]])).to.be.revertedWithCustomError(
 					ctx.context.instantLayer,
 					"InvalidDelegation",
 				)
@@ -1927,7 +3443,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					deadline,
 				)
 				const sendQuoteSig = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, sendQuoteOp)
-				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig])
+				await ctx.context.instantLayer.executeBatch([sendQuoteOp], [sendQuoteSig], [[]], [[]])
 
 				// Now execute PartyB operation with isPartyB=true (correct way)
 				const partyBAddress = await ctx.context.symmioPartyB.getAddress()
@@ -1942,9 +3458,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const lockSig = await signOperation(ctx.partyB1.signer, ctx.domain, ctx.types, lockOp)
 
 				// This should succeed
-				await expect(ctx.context.instantLayer.executeBatch([lockOp], [lockSig]))
-					.to.emit(ctx.context.instantLayer, "BatchExecuted")
-					.withArgs(ctx.context.signers.admin.address, 1)
+				await expect(ctx.context.instantLayer.executeBatch([lockOp], [lockSig], [[]], [[]])).not.to.be.reverted
 
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
@@ -2232,7 +3746,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			const sig = await signOperation(ctx.context.signers.admin, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 
 			const quoteIds = await ctx.context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 			expect(quoteIds.length).to.equal(2)
@@ -2270,7 +3784,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 			const sig = await signOperation(ctx.context.signers.user2, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 
 			const quoteIds = await ctx.context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
 			expect(quoteIds.length).to.equal(2)
@@ -2316,7 +3830,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 			const sig = await signOperation(ctx.context.signers.user2, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 		})
 
 		it("decodes sendQuoteWithAffiliateAndData params correctly via _handleSubAccountSendQuote", async function () {
@@ -2412,7 +3926,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			const sig = await signOperation(ctx.context.signers.user2, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidDelegation")
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+				ctx.context.instantLayer,
+				"InvalidDelegation",
+			)
 		})
 
 		it("allows owner to execute on virtual account without delegation", async function () {
@@ -2436,7 +3953,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			const sig = await signOperation(ctx.context.signers.user, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 
 			// Verify the quote was created on the virtual account
 			const quoteIds = await ctx.context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
@@ -2496,7 +4013,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			const sig = await signOperation(ctx.context.signers.admin, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidDelegation")
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+				ctx.context.instantLayer,
+				"InvalidDelegation",
+			)
 		})
 
 		it("normalizes VA revocation input to parent key", async function () {
@@ -2572,7 +4092,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const op = buildTargetOp(targetAddress, ctx.partyA1.address)
 			const sig = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 			expect(await mockTarget.lastValue()).to.equal(123n)
 		})
 
@@ -2583,7 +4103,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const op = buildTargetOp(await unlisted.getAddress(), ctx.partyA1.address)
 			const sig = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig]))
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]]))
 				.to.be.revertedWithCustomError(ctx.context.instantLayer, "TargetNotWhitelisted")
 				.withArgs(await unlisted.getAddress())
 		})
@@ -2593,7 +4113,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const op = buildTargetOp(targetAddress, ctx.partyA1.address)
 			const sig = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig]))
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]]))
 				.to.be.revertedWithCustomError(ctx.context.instantLayer, "OperationFailed")
 				.withArgs(0, anyValue)
 		})
@@ -2610,7 +4130,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const op = buildTargetOp(targetAddress, ctx.context.signers.admin.address)
 			const sig = await signOperation(ctx.context.signers.admin, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 			expect(await mockTarget.lastValue()).to.equal(123n)
 		})
 
@@ -2625,7 +4145,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const op = buildTargetOp(targetAddress, ctx.context.signers.admin.address)
 			const sig = await signOperation(ctx.context.signers.admin, ctx.domain, ctx.types, op)
 
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "InvalidDelegation")
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+				ctx.context.instantLayer,
+				"InvalidDelegation",
+			)
 		})
 	})
 
@@ -2690,7 +4213,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, externalOp)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, symmioOp)
 
-			await expect(ctx.context.instantLayer.executeBatch([externalOp, symmioOp], [sig1, sig2])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([externalOp, symmioOp], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
 
 			expect(await mockTarget.lastValue()).to.equal(456n)
 			const quote = await ctx.context.viewFacetQuote.getQuote(1)
@@ -2723,7 +4246,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, externalOp)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, symmioOp)
 
-			await expect(ctx.context.instantLayer.executeBatch([externalOp, symmioOp], [sig1, sig2]))
+			await expect(ctx.context.instantLayer.executeBatch([externalOp, symmioOp], [sig1, sig2], [[], []], [[], []]))
 				.to.be.revertedWithCustomError(ctx.context.instantLayer, "OperationFailed")
 				.withArgs(0, anyValue)
 		})
@@ -2795,9 +4318,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, op1)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, op2)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [op1, op2], [sig1, sig2]))
-				.to.emit(ctx.context.instantLayer, "OperationsExecuted")
-				.withArgs(templateId, ctx.context.signers.admin.address)
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [op1, op2], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
 
 			expect(await mockTarget.lastValue()).to.equal(222n)
 		})
@@ -2831,7 +4352,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, externalOp)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, symmioOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, symmioOp], [sig1, sig2])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, symmioOp], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
 
 			expect(await mockTarget.lastValue()).to.equal(333n)
 			const quote = await ctx.context.viewFacetQuote.getQuote(1)
@@ -2869,9 +4390,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, externalOp)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, secondExternalOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, secondExternalOp], [sig1, sig2]))
-				.to.emit(ctx.context.instantLayer, "OperationsExecuted")
-				.withArgs(templateId, ctx.context.signers.admin.address)
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, secondExternalOp], [sig1, sig2], [[], []], [[], []])).not.to.be
+				.reverted
 
 			// The second operation should have received 444 as its value (injected from first op's result)
 			expect(await mockTarget.lastValue()).to.equal(444n)
@@ -2907,7 +4427,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTupleOp)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
 
 			// Should have stored 100 (first value from tuple)
 			expect(await mockTarget.lastValue()).to.equal(100n)
@@ -2943,7 +4463,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTupleOp)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
 
 			// Should have stored 200 (second value from tuple)
 			expect(await mockTarget.lastValue()).to.equal(200n)
@@ -2989,8 +4509,15 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeFirstOp)
 			const sig3 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeSecondOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeFirstOp, storeSecondOp], [sig1, sig2, sig3])).not.to.be
-				.reverted
+			await expect(
+				ctx.context.instantLayer.executeTemplate(
+					templateId,
+					[getTupleOp, storeFirstOp, storeSecondOp],
+					[sig1, sig2, sig3],
+					[[], [], []],
+					[[], [], []],
+				),
+			).not.to.be.reverted
 
 			// Last store was second value (222)
 			expect(await mockTarget.lastValue()).to.equal(222n)
@@ -3027,7 +4554,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTripleOp)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTripleOp, storeOp], [sig1, sig2])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTripleOp, storeOp], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
 
 			// Address is stored as uint256 representation
 			expect(await mockTarget.lastValue()).to.equal(BigInt(testAddress))
@@ -3063,10 +4590,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp1)
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp2)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [storeOp1, storeOp2], [sig1, sig2])).to.be.revertedWithCustomError(
-				ctx.context.instantLayer,
-				"BadSourceResultLength",
-			)
+			await expect(
+				ctx.context.instantLayer.executeTemplate(templateId, [storeOp1, storeOp2], [sig1, sig2], [[], []], [[], []]),
+			).to.be.revertedWithCustomError(ctx.context.instantLayer, "BadSourceResultLength")
 		})
 	})
 
@@ -3129,7 +4655,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const subAccountBalanceBefore = await ctx.context.viewFacet.balanceOf(subAccountAddress)
 
 				// Execute via InstantLayer and capture the transaction
-				const tx = await ctx.context.instantLayer.executeBatch([op], [sig])
+				const tx = await ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])
 				const receipt = await tx.wait()
 
 				// Parse AddMargin event to get the predicted VA address
@@ -3227,7 +4753,10 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// 2. _call(victimSubAccount, ...) checks onlyAccountOwner(victimSubAccount)
 			// 3. getSigner() returns attacker's EOA, which is NOT the owner of victimSubAccount
 			// 4. Reverts with NotOwner
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.revertedWithCustomError(ctx.context.instantLayer, "OperationFailed")
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+				ctx.context.instantLayer,
+				"OperationFailed",
+			)
 
 			// Verify victim's balance is unchanged
 			const victimBalance = await ctx.context.viewFacet.balanceOf(victimSubAccount)
@@ -3260,7 +4789,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// This should fail because _validatePartyASignature checks that the signer (attacker)
 			// is either the account owner or has a valid delegation for the victim's account
 			// Attacker is not the owner of victimSubAccount and has no delegation
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.reverted
 
 			// Verify victim's balance unchanged
 			const victimBalance = await ctx.context.viewFacet.balanceOf(victimSubAccount)
@@ -3297,7 +4826,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 			// 1. setSigner sets attacker's EOA (owner of attackerSubAccount) as globalSigner
 			// 2. _call(attackerSubAccount, ...) checks onlyAccountOwner(attackerSubAccount)
 			// 3. getSigner() returns attacker's EOA, which IS the owner of attackerSubAccount
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 
 			// Verify funds were withdrawn
 			const balanceAfter = await ctx.context.viewFacet.balanceOf(attackerSubAccount)
@@ -3337,7 +4866,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 			// This should succeed because setSigner sets the owner as globalSigner,
 			// and onlyAccountOwner confirms ownership
-			await expect(ctx.context.instantLayer.executeBatch([op], [sig])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).not.to.be.reverted
 
 			// Verify sub-account balance decreased
 			const balanceAfter = await ctx.context.viewFacet.balanceOf(attackerSubAccount)

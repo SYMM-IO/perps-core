@@ -81,6 +81,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice EIP-712 type hash for ReplayAttackHeader struct
 	bytes32 public constant REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
 
+	/// @notice EIP-712 type hash for FlexField struct
+	bytes32 public constant FLEX_FIELD_TYPEHASH = keccak256("FlexField(uint256 offset,uint256 length,address authorizedFlexFiller)");
+
+	/// @notice EIP-712 type hash for FlexFillAuth (flex filler signing fill values)
+	bytes32 public constant FLEX_FILL_AUTH_TYPEHASH = keccak256("FlexFillAuth(bytes32 opHash,uint256 fieldIndex,bytes value)");
+
 	/// @notice EIP-712 type hash for SignedOperation struct (includes nested type definitions)
 	bytes32 internal constant SIGNED_OPERATION_TYPEHASH =
 		keccak256(
@@ -90,9 +96,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 				"address target,",
 				"bytes callData,",
 				"Account signerAccount,",
+				"FlexField[] flexFields,",
+				"uint256 maxUses,",
 				"ReplayAttackHeader replayAttackHeader",
 				")",
 				"Account(address addr,bool isPartyB)",
+				"FlexField(uint256 offset,uint256 length,address authorizedFlexFiller)",
 				"ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"
 			)
 		);
@@ -135,9 +144,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Configured AccountLayer contract
 	address public accountLayer;
 
-	/// @notice Tracking of executed operation hashes to prevent replay attacks
-	/// @dev    Each operation can only be executed once
-	mapping(bytes32 => bool) public usedOperationHashes;
+	/// @notice Tracking of operation usage counts for replay protection
+	/// @dev    Must be < maxUses to execute (or unlimited if maxUses=0).
+	mapping(bytes32 => uint256) public operationUsageCount;
 
 	/// @notice Tracking of executed delegation hashes to prevent replay attacks
 	/// @dev    Each delegation can only be executed once
@@ -181,18 +190,33 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bytes32 salt;
 	}
 
+	/// @notice Defines a modifiable region within operation calldata.
+	/// @dev    Each flex field allows an authorized flex filler to replace bytes at a specific offset.
+	/// @param offset   Byte offset in calldata (after 4-byte selector) where replacement starts
+	/// @param length   Number of bytes to replace (typically 32)
+	/// @param authorizedFlexFiller Address authorized to provide the replacement value for this field
+	struct FlexField {
+		uint256 offset;
+		uint256 length;
+		address authorizedFlexFiller;
+	}
+
 	/// @notice Represents a signed operation ready for execution.
 	/// @dev    This structure is signed via EIP-712 for secure off-chain authorization.
 	/// @param signer             Address that signed this operation (may be delegated)
 	/// @param target             Contract to execute the call against
 	/// @param callData           Encoded function call to execute
 	/// @param signerAccount      Account context for the operation
+	/// @param flexFields         Modifiable regions in calldata (empty for standard operations)
+	/// @param maxUses            Maximum execution count (1=single-use, 0=unlimited)
 	/// @param replayAttackHeader Anti-replay protection parameters
 	struct SignedOperation {
 		address signer;
 		address target;
 		bytes callData;
 		Account signerAccount;
+		FlexField[] flexFields;
+		uint256 maxUses;
 		ReplayAttackHeader replayAttackHeader;
 	}
 
@@ -251,16 +275,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param templateId Template that was modified
 	/// @param active New active status of the template
 	event TemplateUpdated(uint256 indexed templateId, bool active);
-
-	/// @notice Emitted when a template is successfully executed
-	/// @param templateId Template that was executed
-	/// @param executor Address that triggered the execution
-	event OperationsExecuted(uint256 indexed templateId, address indexed executor);
-
-	/// @notice Emitted when a batch of operations completes successfully
-	/// @param executor Address that triggered the batch execution
-	/// @param operationCount Number of operations in the batch
-	event BatchExecuted(address indexed executor, uint256 operationCount);
 
 	/// @notice Emitted when a user's nonce is incremented after operation execution
 	/// @param user Address whose nonce was incremented
@@ -363,10 +377,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param partyB The unregistered PartyB address
 	error UnregisteredPartyB(address partyB);
 
-	/// @notice Operation hash has already been executed
-	/// @param hash The operation hash that was already used
-	error OperationAlreadyExecuted(bytes32 hash);
-
 	/// @notice Target contract is not whitelisted
 	/// @param target The target address
 	error TargetNotWhitelisted(address target);
@@ -431,6 +441,32 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/// @notice PartyB contract is not in the registry
 	error PartyBNotRegistered(address partyB);
+
+	/// @notice Operation has exceeded its maximum allowed executions
+	/// @param hash The operation hash
+	/// @param maxUses The maximum allowed executions
+	error MaxUsesExceeded(bytes32 hash, uint256 maxUses);
+
+	/// @notice Flex fill values array length does not match flex fields count
+	/// @param expected Expected number of fill values
+	/// @param provided Provided number of fill values
+	error InvalidFlexFillLength(uint256 expected, uint256 provided);
+
+	/// @notice Flex fill value length does not match the field length
+	/// @param fieldIndex Index of the flex field
+	/// @param expected Expected value byte length
+	/// @param provided Provided value byte length
+	error InvalidFlexFillValueLength(uint256 fieldIndex, uint256 expected, uint256 provided);
+
+	/// @notice Flex field offset+length exceeds calldata bounds
+	/// @param offset Field byte offset
+	/// @param length Field byte length
+	/// @param callDataLength Total calldata length
+	error FlexFieldOutOfBounds(uint256 offset, uint256 length, uint256 callDataLength);
+
+	/// @notice Flex filler signature verification failed for a flex field fill
+	/// @param fieldIndex Index of the flex field with bad flex filler signature
+	error InvalidFlexFillerSignature(uint256 fieldIndex);
 
 	/* ════════════════════════════ CONSTRUCTOR ════════════════════════════ */
 
@@ -695,10 +731,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	function executeTemplate(
 		uint256 templateId,
 		SignedOperation[] calldata signedOps,
-		bytes[] calldata signatures
-	) external nonReentrant onlyRole(OPERATOR_ROLE) {
+		bytes[] calldata signatures,
+		bytes[][] calldata fills,
+		bytes[][] calldata flexFillerSignatures
+	) external nonReentrant onlyRole(OPERATOR_ROLE) returns (bytes[] memory results) {
 		if (templateId >= nextTemplateId) revert InvalidTemplate(templateId);
 		if (signedOps.length != signatures.length) revert ArrayLengthMismatch();
+		if (signedOps.length != fills.length) revert ArrayLengthMismatch();
+		if (signedOps.length != flexFillerSignatures.length) revert ArrayLengthMismatch();
 
 		Template storage template = templates[templateId];
 		if (!template.active) revert TemplateNotActive(templateId);
@@ -707,7 +747,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Enable instant mode for optimized execution
 		symmio.setCallFromInstantLayer(true);
 
-		bytes[] memory results = new bytes[](signedOps.length);
+		results = new bytes[](signedOps.length);
 
 		bool success = true;
 		for (uint256 i = 0; i < signedOps.length && success; i++) {
@@ -715,10 +755,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			SignedOperation calldata signedOp = signedOps[i];
 
 			// Verify operation signature and parameters
-			_verifyOperation(signedOp, signatures[i]);
+			bytes32 opHash = _verifyOperation(signedOp, signatures[i]);
 
-			// Inject results from previous operations into calldata
-			bytes memory finalCallData = _insertResults(signedOp.callData, op.insertionPoints, op.sourceIndices, op.sourceOffsets, results);
+			// Apply flex field fills first, then inject template results
+			bytes memory finalCallData = _applyFlexFills(signedOp, fills[i], flexFillerSignatures[i], opHash);
+			finalCallData = _insertResults(finalCallData, op.insertionPoints, op.sourceIndices, op.sourceOffsets, results);
 
 			// Execute the operation and capture result
 			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData);
@@ -730,7 +771,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 		// Disable instant mode
 		symmio.setCallFromInstantLayer(false);
-		emit OperationsExecuted(templateId, msg.sender);
 	}
 
 	/// @notice Execute a batch of independent operations.
@@ -741,21 +781,31 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @param signatures Array of signatures for the operations
 	///
 	/// @custom:security Operations are independent - no data flows between them
-	function executeBatch(SignedOperation[] calldata signedOps, bytes[] calldata signatures) external nonReentrant onlyRole(OPERATOR_ROLE) {
+	function executeBatch(
+		SignedOperation[] calldata signedOps,
+		bytes[] calldata signatures,
+		bytes[][] calldata fills,
+		bytes[][] calldata flexFillerSignatures
+	) external nonReentrant onlyRole(OPERATOR_ROLE) returns (bytes[] memory results) {
 		if (signedOps.length == 0) revert EmptyBatch();
 		if (signedOps.length != signatures.length) revert ArrayLengthMismatch();
+		if (signedOps.length != fills.length) revert ArrayLengthMismatch();
+		if (signedOps.length != flexFillerSignatures.length) revert ArrayLengthMismatch();
 
 		symmio.setCallFromInstantLayer(true);
 
-		bytes[] memory results = new bytes[](signedOps.length);
+		results = new bytes[](signedOps.length);
 
 		bool success = true;
 		for (uint256 i = 0; i < signedOps.length && success; i++) {
 			// Verify each operation independently
-			_verifyOperation(signedOps[i], signatures[i]);
+			bytes32 opHash = _verifyOperation(signedOps[i], signatures[i]);
 
-			// Execute with original calldata (no injection)
-			(success, results[i]) = _executeOperationSafe(signedOps[i], signedOps[i].callData);
+			// Apply flex field fills
+			bytes memory callData = _applyFlexFills(signedOps[i], fills[i], flexFillerSignatures[i], opHash);
+
+			// Execute with (potentially modified) calldata
+			(success, results[i]) = _executeOperationSafe(signedOps[i], callData);
 
 			if (!success) {
 				revert OperationFailed(i, results[i]);
@@ -763,7 +813,6 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 
 		symmio.setCallFromInstantLayer(false);
-		emit BatchExecuted(msg.sender, signedOps.length);
 	}
 
 	/* ═════════════════════════ INTERNAL HELPERS ═════════════════════════ */
@@ -781,7 +830,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	///
 	/// @param signedOp   Operation to verify
 	/// @param sigCallData Signature data for verification
-	function _verifyOperation(SignedOperation calldata signedOp, bytes calldata sigCallData) private {
+	function _verifyOperation(SignedOperation calldata signedOp, bytes calldata sigCallData) private returns (bytes32) {
 		// Check expiry
 		if (signedOp.replayAttackHeader.deadline != 0 && signedOp.replayAttackHeader.deadline < block.timestamp)
 			revert DeadlineExpired(signedOp.replayAttackHeader.deadline);
@@ -825,9 +874,12 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			}
 		}
 
-		// Check for replay attacks
-		if (usedOperationHashes[hash]) revert OperationAlreadyExecuted(hash);
-		usedOperationHashes[hash] = true;
+		// Replay protection: unified for all operations via maxUses
+		uint256 currentUsage = operationUsageCount[hash];
+		if (signedOp.maxUses > 0 && currentUsage >= signedOp.maxUses) {
+			revert MaxUsesExceeded(hash, signedOp.maxUses);
+		}
+		operationUsageCount[hash] = currentUsage + 1;
 
 		// Handle nonce if enabled (non-zero)
 		if (signedOp.replayAttackHeader.nonce != 0) {
@@ -838,6 +890,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			nonces[signedOp.signerAccount.addr]++;
 			emit NonceIncremented(signedOp.signerAccount.addr, nonces[signedOp.signerAccount.addr]);
 		}
+
+		return hash;
 	}
 
 	/// @dev Execute an operation with proper routing and error handling.
@@ -897,7 +951,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// And operation 1 has insertionPoint=[36], sourceIndex=[0], sourceOffset=[32]
 	/// Then bytes 36-67 of operation 1's calldata will be replaced with 200 (the second uint256)
 	function _insertResults(
-		bytes calldata callData,
+		bytes memory callData,
 		uint256[] memory insertionPoints,
 		uint256[] memory sourceIndices,
 		uint256[] memory sourceOffsets,
@@ -905,7 +959,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	) private pure returns (bytes memory) {
 		if (insertionPoints.length == 0) return callData;
 
-		// Create mutable copy
+		// Work directly on the memory buffer (already mutable)
 		bytes memory modifiedCallData = callData;
 
 		// Insert each result at its designated position
@@ -1082,10 +1136,21 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 					signedOp.target,
 					keccak256(signedOp.callData),
 					_hashAccount(signedOp.signerAccount),
+					_hashFlexFields(signedOp.flexFields),
+					signedOp.maxUses,
 					_hashReplay(signedOp.replayAttackHeader)
 				)
 			)
 		);
+	}
+
+	/// @notice Calculate the EIP-712 hash for a flex fill authorization.
+	/// @param opHash     Hash of the flex operation being filled
+	/// @param fieldIndex Index of the flex field being filled
+	/// @param value      The fill value bytes
+	/// @return msgDigest EIP-712 compliant hash
+	function getFlexFillAuthHash(bytes32 opHash, uint256 fieldIndex, bytes memory value) public view returns (bytes32 msgDigest) {
+		msgDigest = _hashTypedDataV4(keccak256(abi.encode(FLEX_FILL_AUTH_TYPEHASH, opHash, fieldIndex, keccak256(value))));
 	}
 
 	/// @notice Calculate the EIP-712 hash for a signed delegation.
@@ -1130,6 +1195,69 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @dev Hash a ReplayAttackHeader struct according to EIP-712.
 	function _hashReplay(ReplayAttackHeader memory r) internal pure returns (bytes32) {
 		return keccak256(abi.encode(REPLAY_HEADER_TYPEHASH, r.nonce, r.deadline, r.salt));
+	}
+
+	/// @dev Hash a FlexField array according to EIP-712 array encoding rules.
+	function _hashFlexFields(FlexField[] memory fields) internal pure returns (bytes32) {
+		bytes32[] memory fieldHashes = new bytes32[](fields.length);
+		for (uint256 i = 0; i < fields.length; i++) {
+			fieldHashes[i] = keccak256(abi.encode(FLEX_FIELD_TYPEHASH, fields[i].offset, fields[i].length, fields[i].authorizedFlexFiller));
+		}
+		return keccak256(abi.encodePacked(fieldHashes));
+	}
+
+	/// @dev Apply flex field fill values to operation calldata.
+	/// @param signedOp       The signed operation with flex field definitions
+	/// @param fill           Fill values from flex fillers (one per flex field; empty bytes to skip)
+	/// @param flexFillerSigs Per-field flex filler signatures (empty if filler == msg.sender)
+	/// @param opHash         The operation hash (for flex filler auth verification)
+	/// @return callData      Modified calldata with fill values injected
+	function _applyFlexFills(
+		SignedOperation calldata signedOp,
+		bytes[] calldata fill,
+		bytes[] calldata flexFillerSigs,
+		bytes32 opHash
+	) private view returns (bytes memory callData) {
+		callData = signedOp.callData; // copy to memory
+
+		if (signedOp.flexFields.length == 0) return callData;
+
+		if (fill.length != signedOp.flexFields.length) {
+			revert InvalidFlexFillLength(signedOp.flexFields.length, fill.length);
+		}
+		if (flexFillerSigs.length != signedOp.flexFields.length) revert ArrayLengthMismatch();
+
+		for (uint256 i = 0; i < signedOp.flexFields.length; i++) {
+			FlexField calldata field = signedOp.flexFields[i];
+			bytes calldata value = fill[i];
+
+			// Validate field bounds within calldata (always, even for empty fills)
+			if (field.offset + field.length + 4 > callData.length) {
+				revert FlexFieldOutOfBounds(field.offset, field.length, callData.length);
+			}
+
+			// Empty fill value = keep original calldata bytes (filler accepts user's value)
+			if (value.length == 0) continue;
+
+			// Validate fill value length matches field length
+			if (value.length != field.length) {
+				revert InvalidFlexFillValueLength(i, field.length, value.length);
+			}
+
+			// Verify flex filler authorization
+			if (field.authorizedFlexFiller != msg.sender) {
+				bytes32 fillHash = getFlexFillAuthHash(opHash, i, value);
+				if (!SignatureChecker.isValidSignatureNow(field.authorizedFlexFiller, fillHash, flexFillerSigs[i])) {
+					revert InvalidFlexFillerSignature(i);
+				}
+			}
+
+			// Inject fill value at the specified offset (after 4-byte selector)
+			uint256 insertPos = 4 + field.offset;
+			for (uint256 j = 0; j < value.length; j++) {
+				callData[insertPos + j] = value[j];
+			}
+		}
 	}
 
 	/// @notice Normalize a delegation key to the canonical delegator account
