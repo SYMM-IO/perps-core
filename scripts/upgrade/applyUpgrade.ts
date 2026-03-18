@@ -11,9 +11,9 @@
  *   DIAMOND_ADDRESS   -- override config diamondAddress
  *   FACETS_FILE       -- override default deployed-facets.json path
  */
-
 import fs from "fs"
 
+import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { buildDiamondCut, applyDiamondCut, loadDeployedFacets } from "./utils/upgradeHelpers.js"
 
 const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
@@ -25,8 +25,6 @@ function loadConfig(): { diamondAddress?: string } {
 }
 
 async function main() {
-	const { ethers } = await import("../../test/helpers/hardhat-connection.js")
-
 	const config = loadConfig()
 	const DIAMOND_ADDRESS = process.env.DIAMOND_ADDRESS ?? config.diamondAddress
 	if (!DIAMOND_ADDRESS) throw new Error("DIAMOND_ADDRESS required (env or config)")
@@ -47,13 +45,13 @@ async function main() {
 	console.log(`Selector changes: ${selectorChanges.length} (add=${counts.add}, replace=${counts.replace}, remove=${counts.remove})`)
 
 	if (diamondCut.length === 0) {
-		console.log("Nothing to cut — diamond is already up to date.")
+		console.log("Nothing to cut -- diamond is already up to date.")
 		return
 	}
 
 	// Write details for review
-	const detailsFile = `${OUTPUT_DIR}/upgrade-details.json`
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
+	const detailsFile = `${OUTPUT_DIR}/upgrade-details.json`
 	fs.writeFileSync(detailsFile, JSON.stringify({ diamondAddress: DIAMOND_ADDRESS, selectorChanges }, null, 2))
 	console.log(`Details written to ${detailsFile}`)
 

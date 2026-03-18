@@ -2,123 +2,83 @@
 
 ## Overview
 
-The production upgrade has five steps:
+The production upgrade flow depends on whether the diamond is owned by an EOA or a multisig (Gnosis Safe).
 
-1. **Generate upgrade transactions** (`generateUpgradeTxs.ts`) -- deploy facets, build diamondCut calldata
-2. **Execute upgrade** -- submit the calldata from any wallet, multisig, or script
+**EOA path:**
+
+1. **Deploy facets** (`deployFacets.ts`) -- deploy v0.8.5 facets + libraries to the target network
+2. **Apply upgrade** (`applyUpgrade.ts`) -- build and execute a single diamondCut transaction
 3. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
 4. **Run migration** (`runMigration.ts`) -- execute migration + verify
-5. **Generate post-migration transactions** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
+5. **Post-migration** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
+
+**Safe path:**
+
+1. **Deploy facets** (`deployFacets.ts`) -- deploy v0.8.5 facets + libraries to the target network
+2. **Generate Safe transactions** (`generateSafeUpgradeTxs.ts`) -- build Safe Transaction Builder JSON
+3. **Execute upgrade** -- submit via Safe UI
+4. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
+5. **Run migration** (`runMigration.ts`) -- execute migration + verify
+6. **Post-migration** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
 
 ## Prerequisites
 
 - Diamond address on the target network
-- Admin account (EOA or multisig that will receive role grants)
-- If using a Gnosis Safe + TimelockController: Safe address and timelock address
-- Subgraph endpoint synced to current chain state
-- Config files:
+- Admin account (EOA with diamond ownership, or Safe multisig)
+- Subgraph endpoint synced to current chain state (for migration)
+- Config file:
   ```bash
   cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json
-  cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
-  cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
-  cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration.json
+  # edit scripts/upgrade/config/upgrade.json
   ```
 
-## Step 1: Generate Upgrade Transactions
+## Step 1: Deploy Facets
 
-Deploys v0.8.5 facets to the target network and generates raw calldata for all upgrade transactions.
-
-```bash
-DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... \
-  npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network arbitrum
-
-# With Safe batch output (direct -- no timelock)
-DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... SAFE_ADDRESS=0x... \
-  npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network arbitrum
-
-# With Safe + TimelockController (generates scheduleBatch/executeBatch)
-DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... SAFE_ADDRESS=0x... TIMELOCK_ADDRESS=0x... \
-  npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network arbitrum
-
-# Load pre-deployed facets (skip deployment)
-DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... FACETS_FILE=./scripts/upgrade/output/deployed-facets.json \
-  npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network arbitrum
-```
-
-**Test on a fork first:**
+Deploys all v0.8.5 libraries and facets. Supports resume -- if `deployed-facets.json` already exists, previously deployed contracts are skipped.
 
 ```bash
-# Start fork
-npx hardhat node --network fork-arbitrum
-
-# Deploy + generate + execute on fork
-DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... EXECUTE=true \
-  npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network localhost
+npx hardhat run scripts/upgrade/deployFacets.ts --network arbitrum
 ```
 
-This deploys facets to the fork, generates the same calldata, and executes all transactions via impersonation. Verify the upgrade works before deploying to production.
+Output: `scripts/upgrade/output/deployed-facets.json`
+
+## Step 2: Apply Upgrade
+
+### EOA path
+
+Reads `deployed-facets.json`, diffs selectors against the live diamond, and executes a single `diamondCut` transaction from the connected signer (via Hardhat keystore).
+
+```bash
+npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
+
+# Override diamond address
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
+
+# Custom facets file
+FACETS_FILE=./path/to/deployed-facets.json npx hardhat run scripts/upgrade/applyUpgrade.ts --network arbitrum
+```
 
 Output:
-- `scripts/upgrade/output/upgrade-transactions.json` -- raw calldata (always)
-- `scripts/upgrade/output/safe-batch.json` -- Safe Transaction Builder JSON (if SAFE_ADDRESS set, no timelock)
-- `scripts/upgrade/output/safe-timelock-schedule.json` -- Safe batch for `scheduleBatch()` (if SAFE_ADDRESS + TIMELOCK_ADDRESS set)
-- `scripts/upgrade/output/safe-timelock-execute.json` -- Safe batch for `executeBatch()` (if SAFE_ADDRESS + TIMELOCK_ADDRESS set)
-- `scripts/upgrade/output/timelock-details.json` -- salt, predecessor, targets (if timelock)
-- `scripts/upgrade/output/deployed-facets.json` -- deployed contract addresses
-- `scripts/upgrade/output/upgrade-details.json` -- selector changes + breakdown
+- `scripts/upgrade/output/upgrade-details.json` -- selector changes (add/replace/remove)
 
-### Transaction breakdown
+The script applies all facet cuts in a **single transaction** (no chunking needed for EOA).
 
-The generated transactions, in order:
+### Safe path
 
-| Phase | Transaction | Purpose |
-|-------|------------|---------|
-| Pause | `grantRole(PAUSER_ROLE)` | Allow admin to pause |
-| Pause | `grantRole(UNPAUSER_ROLE)` | Allow admin to unpause later |
-| Pause | `pauseGlobal()` | Pause the system |
-| Upgrade | `diamondCut(chunk 1)` ... `diamondCut(chunk N)` | Apply code upgrade |
-| Params | `grantRole(PROTOCOL_CONFIG_ROLE)` | Allow param setting |
-| Params | `grantRole(COOLDOWN_ADMIN_ROLE)` | Allow cooldown setting |
-| Params | `grantRole(FEE_ADMIN_ROLE)` | Allow fee/insurance config (conditional) |
-| Params | `setMaxPartyAConnectionLimit(value)` | Required for migration |
-| Params | `setSignatureVerifierAddress(address)` | Muon signature verifier contract |
-| Params | `setLiquidationInsuranceVaultParams(address, uint256)` | Insurance vault + max liquidation profit |
-| Params | `setSoftLiquidationPenaltyCollector(address)` | Soft liquidation penalty receiver |
-| Params | `setMinAffiliateFee(value)` | Minimum affiliate fee floor |
-| Params | `setUnbindCooldown(value)` | Binding cooldown |
-| Params | `setMinWithdrawCooldown(value)` | Withdrawal cooldown |
-| Params | `setMaxWithdrawParts(value)` | Max parts per withdrawal request |
-| Migration | `grantRole(MIGRATION_ROLE)` | Allow migration runner |
+Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role) plus separate diamondCut calldata.
 
-### Using the calldata
-
-**From any wallet/script:**
-Each entry in `upgrade-transactions.json` has `to`, `value`, and `calldata` fields. Submit each as a regular transaction:
-```typescript
-for (const tx of transactions) {
-    await signer.sendTransaction({ to: tx.to, value: tx.value, data: tx.calldata })
-}
+```bash
+npx hardhat run scripts/upgrade/generateSafeUpgradeTxs.ts --network arbitrum
 ```
 
-**From Gnosis Safe (direct):**
-Import `safe-batch.json` into the Safe Transaction Builder UI. Use this when the Safe is the diamond owner directly.
+Output:
+- `scripts/upgrade/output/safe-batch.json` -- Safe Transaction Builder JSON (non-diamondCut txs)
+- `scripts/upgrade/output/diamondcut-calldata.json` -- raw diamondCut calldata chunks
+- `scripts/upgrade/output/upgrade-details.json` -- selector changes + breakdown
 
-**From Gnosis Safe + TimelockController:**
-When the diamond is owned by a TimelockController (Safe -> Timelock -> Diamond):
-1. Import `safe-timelock-schedule.json` into Safe Transaction Builder -- sign & execute to schedule the batch
-2. Wait for the timelock delay (e.g. 3 days)
-3. Import `safe-timelock-execute.json` into Safe Transaction Builder -- sign & execute to apply the upgrade
-
-The `timelock-details.json` file contains the salt and predecessor values for reference.
-
-**From another multisig:**
-Use the raw calldata from `upgrade-transactions.json` with your multisig's interface.
-
-## Step 2: Execute Upgrade
-
-Submit the generated transactions using your preferred method. All transactions must execute in order.
-
-After execution, the system is **paused and upgraded** but data is **not yet migrated**.
+Execute in Safe UI:
+1. Execute the diamondCut calldata from `diamondcut-calldata.json`
+2. Import `safe-batch.json` into the Safe Transaction Builder to execute role grants, pause, params
 
 ## Step 3: Prepare Migration Input
 
@@ -190,10 +150,14 @@ Output:
 - `scripts/upgrade/output/post-migration-transactions.json` -- raw calldata (always)
 - `scripts/upgrade/output/post-migration-safe-batch.json` -- Safe batch (if SAFE_ADDRESS set)
 
-After execution, clean up `migration-progress.json` if present.
-
 ## Verification
 
+After the diamondCut:
+- Review `upgrade-details.json` for the full selector diff (added, replaced, removed selectors with function signatures)
+- Call `DiamondLoupeFacet.facets()` to confirm all v0.8.5 facet addresses are registered
+- Call a v0.8.5-only function (e.g. `setCrossPartyBModeActivated`) to confirm it responds
+
+After migration:
 ```bash
 jq '{status, error}' scripts/upgrade/output/migration-report.json
 ```
@@ -205,14 +169,52 @@ The migration report includes:
 
 ## Configuration
 
-See [fork-rehearsal.md](fork-rehearsal.md) for full config reference tables. Summary:
+### Upgrade config (`upgrade.json`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `diamondAddress` | string | -- | Diamond proxy address on the target network |
+| `adminAddress` | string | `""` | Address that receives role grants (for Safe path) |
+| `safeAddress` | string | `""` | Gnosis Safe address (Safe path only) |
+| `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
+| `diamondCutChunkSize` | number | `1000` | Max facet cuts per diamondCut transaction |
+| `execute` | boolean | `false` | Execute transactions on-chain after generating (for fork testing) |
+| `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
+
+### Env var overrides
+
+| Env var | Overrides |
+|---------|-----------|
+| `DIAMOND_ADDRESS` | `diamondAddress` |
+| `FACETS_FILE` | Path to `deployed-facets.json` |
+| `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade.json`) |
+
+### Config files by script
 
 | Config file | Script | Key fields |
 |-------------|--------|------------|
-| `upgrade.json` | `generateUpgradeTxs.ts` | `diamondAddress`, `adminAddress`, `timelockAddress`, `newV085Parameters` |
+| `upgrade.json` | `applyUpgrade.ts`, `generateSafeUpgradeTxs.ts` | `diamondAddress`, `adminAddress`, `newV085Parameters` |
 | `prepareMigration.json` | `prepareMigrationInput.ts` | `diamondAddress`, `subgraphEndpoint` |
 | `migrate.json` | `runMigration.ts` | `diamondAddress`, `migrationInputFile`, `chunkSize` |
 | `postMigration.json` | `generatePostMigrationTxs.ts` | `diamondAddress`, `partyBs` |
+
+## newV085Parameters
+
+These are parameters that **only exist in v0.8.5** (not in v0.8.4 storage). After `diamondCut`, they default to 0 and must be initialized.
+
+**Must-set (blocks migration if 0):**
+- `maxPartyAConnectionLimit` -- migration calls `addConnection()` which checks this limit
+
+**Should-set (needed for v0.8.5 features to work):**
+- `signatureVerifierAddress` -- Muon signature verifier contract
+- `liquidationInsuranceVault` + `maxLiquidationProfitPerPosition` -- insurance vault config
+- `softLiquidationPenaltyCollector` -- soft liquidation penalty receiver
+- `minAffiliateFee` -- minimum affiliate fee floor
+- `unbindCooldown` -- binding cooldown
+- `maxWithdrawParts` -- max parts per withdrawal request
+- `minWithdrawCooldown` -- withdrawal cooldown
+
+Existing v0.8.4 parameters (cooldowns, limits, fee shares, etc.) are preserved in storage and NOT overwritten.
 
 ## Troubleshooting
 

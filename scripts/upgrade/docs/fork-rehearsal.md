@@ -6,11 +6,11 @@ Rehearse the full v0.8.4 -> v0.8.5 upgrade + migration on a fork of a live netwo
 
 The fork rehearsal mirrors the production flow with three separate steps:
 
-1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, diamondCut, set params
+1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, deploy facets, diamondCut, set params
 2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch from subgraph, validate against on-chain
 3. **Migrate** (`runMigration.ts`) -- run migration + verify using the validated input
 
-In production, step 1 is done by the multisig, followed by a delay for the subgraph to sync, then steps 2 and 3.
+In production, step 1 is done by the admin (EOA via `applyUpgrade.ts`) or multisig (via `generateSafeUpgradeTxs.ts`), followed by a delay for the subgraph to sync, then steps 2 and 3.
 
 ## Prerequisites
 
@@ -51,18 +51,14 @@ FORK_BLOCK_NUMBER=250000000 npx hardhat node --network fork-arbitrum
 
 ### Step 1: Upgrade
 
-Deploys v0.8.5 facets, generates upgrade calldata, and executes all transactions on the fork (impersonates diamond owner).
+Deploys v0.8.5 facets, applies diamondCut, and sets parameters on the fork (impersonates diamond owner).
 
 ```bash
 # Terminal 2
-DIAMOND_ADDRESS=0x... ADMIN_ADDRESS=0x... EXECUTE=true \
-  npx hardhat run scripts/upgrade/generateUpgradeTxs.ts --network localhost
-
-# Or using forkUpgrade.ts (legacy)
 DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
-Output: `scripts/upgrade/output/upgrade-transactions.json`, `deployed-facets.json`, `upgrade-details.json`
+Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`
 
 ### Step 2: Prepare migration input
 
@@ -75,7 +71,7 @@ DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/prepareMigrationInput.ts -
 DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 ```
 
-Output: `scripts/output/migration-input.json`
+Output: `scripts/upgrade/output/migration-input.json`
 
 For fork rehearsal, the subgraph data from mainnet is valid because the fork starts from the same state and the system is paused (no state drift).
 
@@ -84,7 +80,7 @@ For fork rehearsal, the subgraph data from mainnet is valid because the fork sta
 Runs migration using the validated input file, then verifies results on-chain.
 
 ```bash
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
+DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
@@ -130,14 +126,10 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `diamondAddress` | string | -- | Diamond proxy address on the target network |
-| `adminAddress` | string | `""` | Address that receives role grants (EOA or multisig) |
-| `safeAddress` | string | `""` | Gnosis Safe address (optional, enables Safe batch output) |
-| `timelockAddress` | string | `""` | TimelockController address (optional, enables scheduleBatch/executeBatch output) |
+| `adminAddress` | string | `""` | Address that receives role grants |
+| `safeAddress` | string | `""` | Gnosis Safe address (optional, for Safe path) |
 | `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
-| `diamondCutChunkSize` | number | `6` | Max facet cuts per transaction |
-| `execute` | boolean | `false` | Execute transactions on-chain after generating (for fork testing) |
-| `subgraphEndpoint` | string | Goldsky stage | GraphQL endpoint |
-| `spotCheckCount` | number | `20` | Pre/post upgrade integrity samples |
+| `diamondCutChunkSize` | number | `1000` | Max facet cuts per transaction |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
 
 ### Upgrade env var overrides
@@ -146,11 +138,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 |---------|-----------|
 | `DIAMOND_ADDRESS` | `diamondAddress` |
 | `ADMIN_ADDRESS` | `adminAddress` |
-| `SAFE_ADDRESS` | `safeAddress` |
-| `TIMELOCK_ADDRESS` | `timelockAddress` |
-| `MIGRATION_RUNNER` | `migrationRunner` |
 | `DIAMOND_CUT_CHUNK_SIZE` | `diamondCutChunkSize` |
-| `EXECUTE` | `execute` |
 | `SUBGRAPH_ENDPOINT` | `subgraphEndpoint` |
 | `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade.json`) |
 
@@ -214,9 +202,6 @@ These are parameters that **only exist in v0.8.5** (not in v0.8.4 storage). Afte
 - `unbindCooldown` -- binding cooldown
 - `maxWithdrawParts` -- max parts per withdrawal request
 - `minWithdrawCooldown` -- withdrawal cooldown
-
-**Not set here (optional, admin configures post-migration):**
-- `crossPartyBMode`, `ADLEnabled`, etc.
 
 Existing v0.8.4 parameters (cooldowns, limits, fee shares, etc.) are preserved in storage and NOT overwritten by this script.
 
