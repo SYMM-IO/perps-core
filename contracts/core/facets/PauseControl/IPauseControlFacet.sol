@@ -51,6 +51,8 @@ interface IPauseControlFacet is IControlEvents {
 
 	function unsuspendedAddress(address user) external;
 
+	function setPartyBOpenPositionsPaused(address partyB, bool status) external;
+
 	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external;
 
 	function deprecateLegacyWithdrawal() external;

@@ -100,14 +100,6 @@ The snapshot captures all history as an exact number. The new tracking runs clea
 
 This flexibility is crucial for market makers who need to adapt to changing market conditions. During volatile periods, they might want more frequent funding updates. During stable periods, less frequent updates save on gas costs.
 
-### Signature Staleness Guard
-
-When a market maker changes epoch duration, the accumulated funding accrual changes, which affects UPNL values. Any UPNL signature obtained before the change becomes stale -- it reflects funding under the old epoch duration.
-
-To prevent stale signatures from being used, the system records a `lastEpochDurationChangeTimestamp` per market maker. All Muon UPNL signature verifications check that the signature's timestamp is not older than any connected market maker's last epoch change. This is an O(k) check where k is the number of partyBs connected to the trader, bounded by `maxPartyAConnectionLimit`.
-
-This means that after an epoch duration change, all in-flight signatures for any trader connected to that market maker are invalidated. Fresh signatures must be obtained post-change.
-
 ## Aggregate Funding Tracking for Efficient UPNL Calculations
 
 As positions accumulate, calculating total funding debt becomes expensive. A naive approach would iterate through every open quote - O(quotes) complexity. With thousands of positions, this becomes prohibitively expensive for on-chain computation, especially when calculating unrealized PnL for solvency checks.

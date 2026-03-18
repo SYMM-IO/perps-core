@@ -22,7 +22,6 @@ library LibMuonPartyB {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		require(block.timestamp <= upnlSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
-		LibMuon.verifyNotStaleAfterEpochChange(upnlSig.timestamp, partyA);
 		// == ) ==
 		bytes32 hash = keccak256(
 			abi.encodePacked(

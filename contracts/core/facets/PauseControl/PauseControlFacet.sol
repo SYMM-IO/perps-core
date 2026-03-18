@@ -150,6 +150,17 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		AccountStorage.layout().suspendedAddresses[user] = false;
 	}
 
+	/// @notice Pauses or unpauses a specific Party B from opening new positions (lockQuote + openPosition).
+	/// @dev Unlike deregisterPartyB, this keeps partyBStatus=true so the PartyB can still close positions,
+	///      deallocate funds, and receive correct fund routing in ClearingHouse distributions.
+	/// @param partyB The address of the Party B to pause/unpause.
+	/// @param status True to block new position opening, false to allow.
+	function setPartyBOpenPositionsPaused(address partyB, bool status) external onlyRole(LibAccessibility.PAUSER_ROLE) {
+		require(partyB != address(0), "PauseControlFacet: Zero address");
+		GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB] = status;
+		emit SetPartyBOpenPositionsPausedForPartyB(partyB, status);
+	}
+
 	/// @notice Sets the emergency status for multiple Party B addresses, enabling or disabling their emergency mode operations.
 	/// @param partyBs Array of Party B addresses to update emergency status for.
 	/// @param status True to enable emergency status, false to disable.

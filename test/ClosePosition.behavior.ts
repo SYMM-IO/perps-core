@@ -185,6 +185,31 @@ export function shouldBehaveLikeClosePosition(): void {
 		expect(closedQuote.closedAmount).to.equal(closedQuote.quantity)
 	})
 
+	it("Should restrict a specific PartyB from opening positions via per-PartyB pause", async function () {
+		const hedgerAddress = await hedger.getAddress()
+
+		// Pause only this specific PartyB
+		await context.pauseControlFacet.connect(context.signers.admin).setPartyBOpenPositionsPaused(hedgerAddress, true)
+
+		// lockQuote should fail for the paused PartyB
+		await expect(hedger.lockQuote(quote3JustSent.id)).to.be.revertedWith("PartyBFacet: PartyB open positions paused")
+
+		// But closing positions should still work
+		await user.requestToClosePosition(quote1LongOpened.id, limitCloseRequestBuilder().build())
+		await expect(hedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().build())).to.not.be.reverted
+
+		const closedQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+		expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
+
+		// A different PartyB should NOT be affected
+		await expect(hedger2.lockQuote(quote3JustSent.id)).to.not.be.reverted
+
+		// Unpause and verify the original PartyB can lock quotes again
+		await context.pauseControlFacet.connect(context.signers.admin).setPartyBOpenPositionsPaused(hedgerAddress, false)
+		const newQuote = await context.viewFacetQuote.getQuote(await user.sendQuote())
+		await expect(hedger.lockQuote(newQuote.id)).to.not.be.reverted
+	})
+
 	it("Should fail on invalid quoteId", async function () {
 		await expect(user.requestToClosePosition(50)).to.be.revertedWith("Accessibility: Should be partyA of quote")
 	})

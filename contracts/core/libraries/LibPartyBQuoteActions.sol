@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { ClearingHouseStorage } from "../storages/ClearingHouseStorage.sol";
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { LibConnections } from "./LibConnections.sol";
@@ -19,6 +20,8 @@ library LibPartyBQuoteActions {
 	function lockQuote(uint256 quoteId) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		address signer = LibSigner.getSigner();
+
+		require(!GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[signer], "PartyBFacet: PartyB open positions paused");
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(quote.quoteStatus == QuoteStatus.PENDING, "PartyBFacet: Invalid state");

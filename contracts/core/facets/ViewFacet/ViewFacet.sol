@@ -553,6 +553,13 @@ contract ViewFacet is IViewFacet {
 		return GlobalAppStorage.layout().partyBEmergencyStatus[partyB];
 	}
 
+	/// @notice Returns whether a specific Party B is paused from opening new positions.
+	/// @param partyB The address of the Party B.
+	/// @return isPaused True if the Party B is paused from opening new positions.
+	function isPartyBOpenPositionsPaused(address partyB) external view returns (bool isPaused) {
+		return GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB];
+	}
+
 	/// @notice Retrieves the balance limit per user.
 	/// @return The balance limit per user.
 	function getBalanceLimitPerUser() external view returns (uint256) {

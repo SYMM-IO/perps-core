@@ -105,6 +105,15 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Deregisters a Party B from the system, preventing them from responding to new quotes.
 	/// @param partyB The address of the Party B to deregister.
 	/// @param index The index of the Party B in the partyBList array (used for gas-efficient removal).
+	/// @dev WARNING: Use with extreme caution. This should almost never be called in production.
+	///      Setting partyBStatus to false has serious side effects:
+	///      - distributeFromLiquidationEscrow and distributeForClearingHouse will misroute funds
+	///        to allocatedBalances instead of partyBAllocatedBalances
+	///      - deallocateForPartyB becomes inaccessible (onlyPartyB modifier fails), locking funds
+	///      Only use this if a PartyB address was registered by mistake and needs immediate removal
+	///      (e.g., within minutes, before any positions or balances exist).
+	///      To prevent a PartyB from opening new positions while preserving correct fund routing,
+	///      use setPartyBOpenPositionsPaused() in PauseControlFacet instead.
 	function deregisterPartyB(address partyB, uint256 index) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		checkZeroAddress(partyB);
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");

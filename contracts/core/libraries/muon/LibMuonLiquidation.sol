@@ -19,7 +19,6 @@ library LibMuonLiquidation {
 	function verifyLiquidationSig(LiquidationSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
-		LibMuon.verifyNotStaleAfterEpochChange(liquidationSig.timestamp, partyA);
 		bytes32 hash = keccak256(
 			abi.encodePacked(
 				muonLayout.muonAppId,
@@ -44,7 +43,6 @@ library LibMuonLiquidation {
 	function verifyDeferredLiquidationSig(DeferredLiquidationSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
-		LibMuon.verifyNotStaleAfterEpochChange(liquidationSig.timestamp, partyA);
 		bytes32 hash = keccak256(
 			abi.encodePacked(
 				muonLayout.muonAppId,

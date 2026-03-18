@@ -17,9 +17,6 @@ library LibMuonUnifiedSettlement {
 
 		// == SignatureCheck( ==
 		require(block.timestamp <= settleSig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
-		for (uint256 i = 0; i < settleSig.partyAs.length; i++) {
-			LibMuon.verifyNotStaleAfterEpochChange(settleSig.timestamp, settleSig.partyAs[i]);
-		}
 		// == ) ==
 
 		// Encode quote data
