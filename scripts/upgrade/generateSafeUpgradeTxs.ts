@@ -1,9 +1,3 @@
-import fs from "fs"
-import path from "path"
-
-import { ethers } from "../../test/helpers/hardhat-connection.js"
-import { buildDiamondCut, buildUpgradeTransactions, loadDeployedFacets, type SafeBatch } from "./utils/upgradeHelpers.js"
-
 /**
  * Generate upgrade transactions for Safe multisig networks.
  *
@@ -22,6 +16,11 @@ import { buildDiamondCut, buildUpgradeTransactions, loadDeployedFacets, type Saf
  *
  * Config: scripts/upgrade/config/upgrade.json
  */
+import fs from "fs"
+import path from "path"
+
+import { ethers } from "../../test/helpers/hardhat-connection.js"
+import { buildDiamondCut, buildUpgradeTransactions, loadDeployedFacets, type NewV085Parameters, type SafeBatch } from "./utils/upgradeHelpers.js"
 
 type Config = {
 	diamondAddress?: string
@@ -29,17 +28,7 @@ type Config = {
 	safeAddress?: string
 	migrationRunner?: string
 	diamondCutChunkSize?: number
-	newV085Parameters?: {
-		maxPartyAConnectionLimit?: number
-		signatureVerifierAddress?: string
-		liquidationInsuranceVault?: string
-		maxLiquidationProfitPerPosition?: string
-		softLiquidationPenaltyCollector?: string
-		minAffiliateFee?: string
-		unbindCooldown?: number
-		maxWithdrawParts?: number
-		minWithdrawCooldown?: number
-	}
+	newV085Parameters?: NewV085Parameters
 }
 
 const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"

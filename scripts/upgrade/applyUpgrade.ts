@@ -13,7 +13,6 @@
  */
 import fs from "fs"
 
-import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { buildDiamondCut, applyDiamondCut, loadDeployedFacets } from "./utils/upgradeHelpers.js"
 
 const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
@@ -49,16 +48,16 @@ async function main() {
 		return
 	}
 
-	// Write details for review
+	// Write details
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 	const detailsFile = `${OUTPUT_DIR}/upgrade-details.json`
 	fs.writeFileSync(detailsFile, JSON.stringify({ diamondAddress: DIAMOND_ADDRESS, selectorChanges }, null, 2))
 	console.log(`Details written to ${detailsFile}`)
 
-	// Apply in a single transaction (all cuts in one chunk)
+	// Apply in a single transaction
 	console.log(`\nApplying diamond cut (${diamondCut.length} cuts in 1 transaction)...`)
 	await applyDiamondCut(DIAMOND_ADDRESS, diamondCut, undefined, diamondCut.length)
-	console.log("Diamond cut applied successfully.")
+	console.log("Diamond cut applied.")
 }
 
 main().catch(error => {

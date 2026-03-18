@@ -29,7 +29,7 @@ const IGNORE_REMOVE_SELECTORS = new Set<string>([
 ])
 
 // Facet => required libraries for linking
-const FacetLibraryDependencies: Record<string, string[]> = {
+export const FacetLibraryDependencies: Record<string, string[]> = {
 	PartyAFacet: ["LibQuoteClose"],
 	PartyBPositionActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
 	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
@@ -284,7 +284,79 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 		if (!receipt?.status) {
 			throw new Error(`Diamond cut failed in chunk ${i + 1}/${chunks.length}: ${tx.hash}`)
 		}
-		console.log(`Diamond cut chunk ${i + 1}/${chunks.length} applied`)
+		console.log(`Diamond cut chunk ${i + 1}/${chunks.length} applied (tx: ${tx.hash})`)
+	}
+}
+
+// =============================================================================
+// EOA parameter setter
+// =============================================================================
+
+export type NewV085Parameters = {
+	maxPartyAConnectionLimit?: number
+	signatureVerifierAddress?: string
+	liquidationInsuranceVault?: string
+	maxLiquidationProfitPerPosition?: string
+	softLiquidationPenaltyCollector?: string
+	minAffiliateFee?: string
+	unbindCooldown?: number
+	maxWithdrawParts?: number
+	minWithdrawCooldown?: number
+}
+
+export async function setV085Parameters(diamondAddress: string, params: NewV085Parameters): Promise<void> {
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress)
+
+	const signer = await ethers.provider.getSigner()
+	const signerAddress = await signer.getAddress()
+	await (await controlFacet.grantRole(signerAddress, ethers.id("PROTOCOL_CONFIG_ROLE"))).wait()
+	await (await controlFacet.grantRole(signerAddress, ethers.id("COOLDOWN_ADMIN_ROLE"))).wait()
+
+	const needsFeeAdminRole =
+		(params.liquidationInsuranceVault && params.maxLiquidationProfitPerPosition) || params.softLiquidationPenaltyCollector || params.minAffiliateFee
+	if (needsFeeAdminRole) {
+		await (await controlFacet.grantRole(signerAddress, ethers.id("FEE_ADMIN_ROLE"))).wait()
+	}
+
+	if (params.maxPartyAConnectionLimit && params.maxPartyAConnectionLimit > 0) {
+		await (await controlFacet.setMaxPartyAConnectionLimit(params.maxPartyAConnectionLimit)).wait()
+		console.log(`  maxPartyAConnectionLimit = ${params.maxPartyAConnectionLimit}`)
+	}
+
+	if (params.signatureVerifierAddress && ethers.isAddress(params.signatureVerifierAddress)) {
+		await (await controlFacet.setSignatureVerifierAddress(params.signatureVerifierAddress)).wait()
+		console.log(`  signatureVerifierAddress = ${params.signatureVerifierAddress}`)
+	}
+
+	if (params.liquidationInsuranceVault && params.maxLiquidationProfitPerPosition) {
+		await (await controlFacet.setLiquidationInsuranceVaultParams(params.liquidationInsuranceVault, params.maxLiquidationProfitPerPosition)).wait()
+		console.log(`  liquidationInsuranceVault = ${params.liquidationInsuranceVault}`)
+		console.log(`  maxLiquidationProfitPerPosition = ${params.maxLiquidationProfitPerPosition}`)
+	}
+
+	if (params.softLiquidationPenaltyCollector && ethers.isAddress(params.softLiquidationPenaltyCollector)) {
+		await (await controlFacet.setSoftLiquidationPenaltyCollector(params.softLiquidationPenaltyCollector)).wait()
+		console.log(`  softLiquidationPenaltyCollector = ${params.softLiquidationPenaltyCollector}`)
+	}
+
+	if (params.minAffiliateFee) {
+		await (await controlFacet.setMinAffiliateFee(params.minAffiliateFee)).wait()
+		console.log(`  minAffiliateFee = ${params.minAffiliateFee}`)
+	}
+
+	if (params.unbindCooldown !== undefined && params.unbindCooldown > 0) {
+		await (await controlFacet.setUnbindCooldown(params.unbindCooldown)).wait()
+		console.log(`  unbindCooldown = ${params.unbindCooldown}`)
+	}
+
+	if (params.minWithdrawCooldown !== undefined && params.minWithdrawCooldown > 0) {
+		await (await controlFacet.setMinWithdrawCooldown(params.minWithdrawCooldown)).wait()
+		console.log(`  minWithdrawCooldown = ${params.minWithdrawCooldown}`)
+	}
+
+	if (params.maxWithdrawParts !== undefined && params.maxWithdrawParts > 0) {
+		await (await controlFacet.setMaxWithdrawParts(params.maxWithdrawParts)).wait()
+		console.log(`  maxWithdrawParts = ${params.maxWithdrawParts}`)
 	}
 }
 
@@ -335,18 +407,6 @@ export type SafeBatch = {
 export type DiamondCutCalldata = {
 	calldata: string
 	description: string
-}
-
-export type NewV085Parameters = {
-	maxPartyAConnectionLimit?: number
-	signatureVerifierAddress?: string
-	liquidationInsuranceVault?: string
-	maxLiquidationProfitPerPosition?: string
-	softLiquidationPenaltyCollector?: string
-	minAffiliateFee?: string
-	unbindCooldown?: number
-	maxWithdrawParts?: number
-	minWithdrawCooldown?: number
 }
 
 export type DeployedFacets = {

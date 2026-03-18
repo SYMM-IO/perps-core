@@ -269,7 +269,8 @@ async function main() {
 		// Step 6: Deploy v0.8.5 facets (uses signers[0], no admin needed)
 		currentStep = "deploy_facets"
 		console.log("\nDeploying v0.8.5 facets...")
-		const { facets: newFacets, selectorSignatures } = await deployFacets()
+		const facetsOutFile = `${outputDir}/deployed-facets.json`
+		const { facets: newFacets, selectorSignatures } = await deployFacets(facetsOutFile)
 		console.log(`Deployed ${Object.keys(newFacets).length} facets.`)
 		report.steps.push({
 			name: "deploy_facets",

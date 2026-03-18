@@ -4,7 +4,14 @@
 
 The production upgrade flow depends on whether the diamond is owned by an EOA or a multisig (Gnosis Safe).
 
-**EOA path:**
+**EOA path (single script):**
+
+1. **Upgrade** (`eoaUpgrade.ts`) -- deploy facets, pause, diamondCut, set v0.8.5 parameters, grant migration role
+2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
+3. **Run migration** (`runMigration.ts`) -- execute migration + verify
+4. **Post-migration** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
+
+**EOA path (step-by-step):**
 
 1. **Deploy facets** (`deployFacets.ts`) -- deploy v0.8.5 facets + libraries to the target network
 2. **Apply upgrade** (`applyUpgrade.ts`) -- build and execute a single diamondCut transaction
@@ -31,6 +38,56 @@ The production upgrade flow depends on whether the diamond is owned by an EOA or
   cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json
   # edit scripts/upgrade/config/upgrade.json
   ```
+
+## Testing
+
+Before running the upgrade in production, test the full flow on localhost:
+
+1. Deploy v0.8.4 from the previous codebase to a local Hardhat node
+2. Run `eoaUpgrade.ts --network localhost` against it
+3. Run `verifyUpgrade.ts --network localhost` to confirm on-chain state matches `deployed-facets.json`
+
+```bash
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network localhost
+
+# Verify on-chain diamond state matches deployed-facets.json (localhost only)
+npx hardhat run scripts/upgrade/verifyUpgrade.ts --network localhost
+```
+
+`verifyUpgrade.ts` is a localhost testing tool -- it is not part of the production upgrade flow. Use it to validate the diamond cut before going to production.
+
+## EOA: Single Script Upgrade
+
+For EOA-owned diamonds, `eoaUpgrade.ts` runs the full upgrade in one command: deploys facets, pauses the system, applies the diamond cut, sets v0.8.5 parameters, and grants the migration role.
+
+```bash
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+
+# Override diamond address
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
+```
+
+What it does (in order):
+
+| Step | Action |
+|------|--------|
+| 1 | Deploy v0.8.5 libraries + facets (resume-safe via `deployed-facets.json`) |
+| 2 | Build diamond cut (diff current vs new selectors) |
+| 3 | `setAdmin` + grant `PAUSER_ROLE`/`UNPAUSER_ROLE` + `pauseGlobal()` |
+| 4 | Apply diamond cut (single transaction) |
+| 5 | Set new v0.8.5 parameters from config (`newV085Parameters`) |
+| 6 | Grant `MIGRATION_ROLE` to configured `migrationRunner` |
+
+After completion, the system is paused and ready for migration. Continue with [Step 3: Prepare Migration Input](#step-3-prepare-migration-input).
+
+Output:
+- `scripts/upgrade/output/deployed-facets.json` -- deployed facet addresses
+
+---
+
+## Step-by-Step Scripts
+
+The steps below can be used individually (e.g. for Safe path, or if you need more control over the EOA upgrade process).
 
 ## Step 1: Deploy Facets
 
@@ -150,11 +207,11 @@ Output:
 - `scripts/upgrade/output/post-migration-transactions.json` -- raw calldata (always)
 - `scripts/upgrade/output/post-migration-safe-batch.json` -- Safe batch (if SAFE_ADDRESS set)
 
-## Verification
+## Production Verification
 
 After the diamondCut:
 - Review `upgrade-details.json` for the full selector diff (added, replaced, removed selectors with function signatures)
-- Call `DiamondLoupeFacet.facets()` to confirm all v0.8.5 facet addresses are registered
+- Call `DiamondLoupeFacet.facets()` on-chain to confirm all v0.8.5 facet addresses are registered
 - Call a v0.8.5-only function (e.g. `setCrossPartyBModeActivated`) to confirm it responds
 
 After migration:
@@ -193,7 +250,7 @@ The migration report includes:
 
 | Config file | Script | Key fields |
 |-------------|--------|------------|
-| `upgrade.json` | `applyUpgrade.ts`, `generateSafeUpgradeTxs.ts` | `diamondAddress`, `adminAddress`, `newV085Parameters` |
+| `upgrade.json` | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeUpgradeTxs.ts` | `diamondAddress`, `adminAddress`, `newV085Parameters` |
 | `prepareMigration.json` | `prepareMigrationInput.ts` | `diamondAddress`, `subgraphEndpoint` |
 | `migrate.json` | `runMigration.ts` | `diamondAddress`, `migrationInputFile`, `chunkSize` |
 | `postMigration.json` | `generatePostMigrationTxs.ts` | `diamondAddress`, `partyBs` |
