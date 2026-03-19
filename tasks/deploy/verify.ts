@@ -951,25 +951,13 @@ async function verifyInstantLayerFull(
 				templateNames.push(template.name)
 			}
 
-			const hasOpenPosition = templateNames.includes("OpenPosition")
-			const hasClosePosition = templateNames.includes("ClosePosition")
-
-			if (hasOpenPosition) {
-				pushAndLog(results, { category: cat, check: "OpenPosition template", status: "pass", actual: "configured" })
-			} else {
-				pushAndLog(results, { category: cat, check: "OpenPosition template", status: "fail", message: "Template not found", hint: templateHint })
-			}
-
-			if (hasClosePosition) {
-				pushAndLog(results, { category: cat, check: "ClosePosition template", status: "pass", actual: "configured" })
-			} else {
-				pushAndLog(results, {
-					category: cat,
-					check: "ClosePosition template",
-					status: "fail",
-					message: "Template not found",
-					hint: templateHint,
-				})
+			const expectedTemplates = ["InstantOpen", "InstantClose", "InstantCloseWithAllocation"]
+			for (const name of expectedTemplates) {
+				if (templateNames.includes(name)) {
+					pushAndLog(results, { category: cat, check: `${name} template`, status: "pass", actual: "configured" })
+				} else {
+					pushAndLog(results, { category: cat, check: `${name} template`, status: "fail", message: "Template not found", hint: templateHint })
+				}
 			}
 
 			console.log(`   ${c.dim}[INFO] Total templates: ${templateCount} (${templateNames.join(", ")})${c.reset}`)
