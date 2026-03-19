@@ -293,8 +293,11 @@ async function main() {
 			.sort((a, b) => a.partyB.localeCompare(b.partyB))
 
 		// Expected aggregates for verification
+		// Only OPENED(4), CLOSE_PENDING(5), CANCEL_CLOSE_PENDING(6) get aggregated positions.
+		// PENDING(0), LOCKED(1), CANCEL_PENDING(2) only get fee reservation — no aggregated positions.
 		const expectedAggregates: Record<string, { long: string; short: string }> = {}
 		for (const q of quotesResult.quotes) {
+			if (q.quoteStatus !== 4 && q.quoteStatus !== 5 && q.quoteStatus !== 6) continue
 			const openAmount = BigInt(q.quantity) - BigInt(q.closedAmount)
 			if (openAmount <= 0n) continue
 			const key = `${q.partyB}-${q.partyA}-${q.symbolId}`

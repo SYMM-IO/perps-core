@@ -285,7 +285,9 @@ export async function verifyMigration(
 	if (!expectedAggregates) return
 
 	for (const [key, expected] of expectedAggregates.entries()) {
-		const [partyB, partyA, symbolIdRaw] = key.split("-")
+		const [partyBRaw, partyARaw, symbolIdRaw] = key.split("-")
+		const partyB = ethers.getAddress(partyBRaw)
+		const partyA = ethers.getAddress(partyARaw)
 		const symbolId = BigInt(symbolIdRaw)
 		const [longPos, shortPos] = await viewFacetAggregate.getPartyBAggregatedPositionBySymbolPerPartyA(partyB, partyA, symbolId)
 

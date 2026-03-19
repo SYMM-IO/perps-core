@@ -60,14 +60,13 @@ export async function fetchOpenQuotes(endpoint: string, pageSize: number = DEFAU
 	const allQuotes: SubgraphQuote[] = []
 	const partyASet = new Set<string>()
 	const partyBSet = new Set<string>()
-	let skip = 0
+	let lastQuoteId = "0"
 
 	while (true) {
 		const query = `{
 			quotes(
 				first: ${pageSize}
-				skip: ${skip}
-				where: { quoteStatus_in: [0, 1, 2, 4, 5, 6] }
+				where: { quoteStatus_in: [0, 1, 2, 4, 5, 6], quoteId_gt: "${lastQuoteId}" }
 				orderBy: quoteId
 				orderDirection: asc
 			) {
@@ -92,7 +91,7 @@ export async function fetchOpenQuotes(endpoint: string, pageSize: number = DEFAU
 		}
 
 		if (quotes.length < pageSize) break
-		skip += pageSize
+		lastQuoteId = quotes[quotes.length - 1].quoteId
 	}
 
 	return {
@@ -108,17 +107,20 @@ export async function fetchOpenQuotes(endpoint: string, pageSize: number = DEFAU
 export async function fetchPartyBBalances(endpoint: string, pageSize: number = DEFAULT_PAGE_SIZE): Promise<SubgraphPartyBBalancesResult> {
 	const allEntries: PartyBBalanceEntry[] = []
 	const partyBSet = new Set<string>()
-	let skip = 0
+	let lastId = ""
 
 	while (true) {
+		const whereClause = lastId
+			? `{ accountType: "PARTY_B", counterParty_not: null, id_gt: "${lastId}" }`
+			: `{ accountType: "PARTY_B", counterParty_not: null }`
 		const query = `{
 			latestAccountBalances(
 				first: ${pageSize}
-				skip: ${skip}
-				where: { accountType: "PARTY_B", counterParty_not: null }
+				where: ${whereClause}
 				orderBy: id
 				orderDirection: asc
 			) {
+				id
 				account
 				counterParty
 				allocatedBalance
@@ -126,15 +128,15 @@ export async function fetchPartyBBalances(endpoint: string, pageSize: number = D
 		}`
 
 		const data = await fetchGraphQL(endpoint, query)
-		const entries: PartyBBalanceEntry[] = data.latestAccountBalances
+		const entries = data.latestAccountBalances
 
 		for (const entry of entries) {
-			allEntries.push(entry)
+			allEntries.push({ account: entry.account, counterParty: entry.counterParty, allocatedBalance: entry.allocatedBalance })
 			partyBSet.add(entry.account)
 		}
 
 		if (entries.length < pageSize) break
-		skip += pageSize
+		lastId = entries[entries.length - 1].id
 	}
 
 	return {
