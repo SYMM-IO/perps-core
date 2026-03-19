@@ -48,7 +48,7 @@ Opens or closes multiple positions in a single transaction with one Muon signatu
 
 ### [Instant Layer Overview](instant-layer-overview.md)
 
-Replaces the old broad `delegateAccess` with a safer model: users sign a specific operation (EIP-712) and hand it to PartyB, who submits both signatures together. Supports delegation to session keys (e.g., a browser-generated keypair rotated daily), template operations that chain results across steps (sendQuote → lockQuote → openPosition in one tx), and flexible replay protection with salt-only or sequential nonce modes.
+Replaces the old broad `delegateAccess` with a safer model: users sign a specific operation (EIP-712) and hand it to PartyB, who submits both signatures together. Supports delegation to session keys (e.g., a browser-generated keypair rotated daily), template operations that chain results across steps (sendQuote → lockQuote → openPosition in one tx), flexible replay protection with salt-only or sequential nonce modes, and **flex fields** -- users can mark specific calldata parameters as modifiable by authorized parties (e.g., letting a TPSL service choose the close amount, or a solver update the Muon signature), with per-field modifier authorization and multi-use support.
 
 ### [Instant Layer PartyB Integration](instant-layer-partyb-integration.md)
 

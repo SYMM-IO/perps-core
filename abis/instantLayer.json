@@ -105,6 +105,27 @@
                 "internalType": "uint256",
                 "name": "length",
                 "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "callDataLength",
+                "type": "uint256"
+            }
+        ],
+        "name": "FlexFieldOutOfBounds",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "length",
+                "type": "uint256"
             }
         ],
         "name": "InsertionPointOutOfBounds",
@@ -118,6 +139,54 @@
     {
         "inputs": [],
         "name": "InvalidDelegation",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "expected",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "provided",
+                "type": "uint256"
+            }
+        ],
+        "name": "InvalidFlexFillLength",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "fieldIndex",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "expected",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "provided",
+                "type": "uint256"
+            }
+        ],
+        "name": "InvalidFlexFillValueLength",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "fieldIndex",
+                "type": "uint256"
+            }
+        ],
+        "name": "InvalidFlexFillerSignature",
         "type": "error"
     },
     {
@@ -176,6 +245,22 @@
     {
         "inputs": [
             {
+                "internalType": "bytes32",
+                "name": "hash",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maxUses",
+                "type": "uint256"
+            }
+        ],
+        "name": "MaxUsesExceeded",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "signer",
                 "type": "address"
@@ -208,17 +293,6 @@
             }
         ],
         "name": "NotOwnerOfAccount",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "bytes32",
-                "name": "hash",
-                "type": "bytes32"
-            }
-        ],
-        "name": "OperationAlreadyExecuted",
         "type": "error"
     },
     {
@@ -360,25 +434,6 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "executor",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "operationCount",
-                "type": "uint256"
-            }
-        ],
-        "name": "BatchExecuted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
                 "name": "delegator",
                 "type": "address"
             },
@@ -471,25 +526,6 @@
             }
         ],
         "name": "NonceIncremented",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "templateId",
-                "type": "uint256"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "executor",
-                "type": "address"
-            }
-        ],
-        "name": "OperationsExecuted",
         "type": "event"
     },
     {
@@ -729,6 +765,32 @@
     {
         "inputs": [],
         "name": "DELEGATION_INFO_TYPEHASH",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "FLEX_FIELD_TYPEHASH",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "FLEX_FILL_AUTH_TYPEHASH",
         "outputs": [
             {
                 "internalType": "bytes32",
@@ -996,6 +1058,33 @@
                         "components": [
                             {
                                 "internalType": "uint256",
+                                "name": "offset",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "length",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "authorizedFlexFiller",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct InstantLayer.FlexField[]",
+                        "name": "flexFields",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "maxUses",
+                        "type": "uint256"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
                                 "name": "nonce",
                                 "type": "uint256"
                             },
@@ -1023,10 +1112,26 @@
                 "internalType": "bytes[]",
                 "name": "signatures",
                 "type": "bytes[]"
+            },
+            {
+                "internalType": "bytes[][]",
+                "name": "fills",
+                "type": "bytes[][]"
+            },
+            {
+                "internalType": "bytes[][]",
+                "name": "flexFillerSignatures",
+                "type": "bytes[][]"
             }
         ],
         "name": "executeBatch",
-        "outputs": [],
+        "outputs": [
+            {
+                "internalType": "bytes[]",
+                "name": "results",
+                "type": "bytes[]"
+            }
+        ],
         "stateMutability": "nonpayable",
         "type": "function"
     },
@@ -1075,6 +1180,33 @@
                         "components": [
                             {
                                 "internalType": "uint256",
+                                "name": "offset",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "length",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "authorizedFlexFiller",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct InstantLayer.FlexField[]",
+                        "name": "flexFields",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "maxUses",
+                        "type": "uint256"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
                                 "name": "nonce",
                                 "type": "uint256"
                             },
@@ -1102,10 +1234,26 @@
                 "internalType": "bytes[]",
                 "name": "signatures",
                 "type": "bytes[]"
+            },
+            {
+                "internalType": "bytes[][]",
+                "name": "fills",
+                "type": "bytes[][]"
+            },
+            {
+                "internalType": "bytes[][]",
+                "name": "flexFillerSignatures",
+                "type": "bytes[][]"
             }
         ],
         "name": "executeTemplate",
-        "outputs": [],
+        "outputs": [
+            {
+                "internalType": "bytes[]",
+                "name": "results",
+                "type": "bytes[]"
+            }
+        ],
         "stateMutability": "nonpayable",
         "type": "function"
     },
@@ -1302,6 +1450,35 @@
         "type": "function"
     },
     {
+        "inputs": [
+            {
+                "internalType": "bytes32",
+                "name": "opHash",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint256",
+                "name": "fieldIndex",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes",
+                "name": "value",
+                "type": "bytes"
+            }
+        ],
+        "name": "getFlexFillAuthHash",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "msgDigest",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [],
         "name": "getNextTemplateId",
         "outputs": [
@@ -1349,6 +1526,33 @@
                         "internalType": "struct InstantLayer.Account",
                         "name": "signerAccount",
                         "type": "tuple"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "offset",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "length",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "authorizedFlexFiller",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct InstantLayer.FlexField[]",
+                        "name": "flexFields",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "maxUses",
+                        "type": "uint256"
                     },
                     {
                         "components": [
@@ -1886,6 +2090,25 @@
     {
         "inputs": [
             {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "name": "operationUsageCount",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "",
                 "type": "address"
@@ -2133,25 +2356,6 @@
             }
         ],
         "name": "usedDelegationHashes",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "name": "usedOperationHashes",
         "outputs": [
             {
                 "internalType": "bool",

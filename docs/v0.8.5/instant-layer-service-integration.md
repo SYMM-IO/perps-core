@@ -383,6 +383,11 @@ const operationTypes = {
     { name: "addr", type: "address" },
     { name: "isPartyB", type: "bool" },
   ],
+  FlexField: [
+    { name: "offset", type: "uint256" },
+    { name: "length", type: "uint256" },
+    { name: "authorizedFlexFiller", type: "address" },
+  ],
   ReplayAttackHeader: [
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint256" },
@@ -393,6 +398,8 @@ const operationTypes = {
     { name: "target", type: "address" },
     { name: "callData", type: "bytes" },
     { name: "signerAccount", type: "Account" },
+    { name: "flexFields", type: "FlexField[]" },
+    { name: "maxUses", type: "uint256" },
     { name: "replayAttackHeader", type: "ReplayAttackHeader" },
   ],
 }
@@ -483,6 +490,8 @@ async function triggerClose(entry: TPSLEntry, triggerPrice: bigint) {
     target: symmioCoreAddress,
     callData: callData,
     signerAccount: { addr: entry.userAccount, isPartyB: false },
+    flexFields: [],
+    maxUses: 1,
     replayAttackHeader: {
       nonce: 0n,
       deadline: BigInt(deadline),
@@ -496,7 +505,10 @@ async function triggerClose(entry: TPSLEntry, triggerPrice: bigint) {
     operation,
   )
 
-  await instantLayer.executeBatch([operation], [signature])
+  await instantLayer.executeBatch(
+    [operation], [signature],
+    [{ values: [] }], [[]]
+  )
 }
 ```
 
@@ -578,6 +590,8 @@ async function triggerSendQuote(order: TriggerOrder) {
     target: accountLayerAddress,  // AccountLayer, not Symmio core
     callData: marginCallData,
     signerAccount: { addr: order.subAccount, isPartyB: false },
+    flexFields: [],
+    maxUses: 1,
     replayAttackHeader: {
       nonce: 0n,
       deadline: BigInt(deadline),
@@ -611,6 +625,8 @@ async function triggerSendQuote(order: TriggerOrder) {
     target: symmioCoreAddress,
     callData: sendQuoteCallData,
     signerAccount: { addr: order.virtualAccount, isPartyB: false },
+    flexFields: [],
+    maxUses: 1,
     replayAttackHeader: {
       nonce: 0n,
       deadline: BigInt(deadline),
@@ -630,6 +646,8 @@ async function triggerSendQuote(order: TriggerOrder) {
   await instantLayer.executeBatch(
     [marginOp, sendQuoteOp],
     [marginSig, sendQuoteSig],
+    [{ values: [] }, { values: [] }],
+    [[], []],
   )
 }
 ```

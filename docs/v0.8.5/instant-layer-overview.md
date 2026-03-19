@@ -82,9 +82,13 @@ struct SignedOperation {
     address target;                     // Contract to call (must be whitelisted)
     bytes callData;                     // Encoded function call to execute
     Account signerAccount;              // Account context
+    FlexField[] flexFields;             // Modifiable regions in calldata (empty for standard ops)
+    uint256 maxUses;                    // Max execution count (1=single-use, 0=unlimited)
     ReplayAttackHeader replayAttackHeader;
 }
 ```
+
+For standard operations, `flexFields` is empty and `maxUses` is `1`. See the [Flex Fields](#flex-fields) section for details on partial calldata modification.
 
 ### Self-Execution (Signature Skip)
 
@@ -115,6 +119,8 @@ const partyBOperation = {
     target: symmioCoreAddress,
     callData: encodedLockQuote,
     signerAccount: { addr: partyBAddress, isPartyB: true },
+    flexFields: [],
+    maxUses: 1,
     replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
 };
 
@@ -124,13 +130,17 @@ const userOperation = {
     target: symmioCoreAddress,
     callData: encodedSendQuote,
     signerAccount: { addr: userAccountAddress, isPartyB: false },
+    flexFields: [],
+    maxUses: 1,
     replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
 };
 
 // PartyB (as msg.sender) calls executeBatch
 await instantLayer.executeBatch(
     [userOperation, partyBOperation],
-    [userSignature, "0x"]  // Empty signature for PartyB's own operation
+    [userSignature, "0x"],       // Empty signature for PartyB's own operation
+    [{ values: [] }, { values: [] }],  // No flex fills
+    [[], []]                     // No flex filler signatures
 );
 ```
 
@@ -173,11 +183,18 @@ const types = {
         { name: "target", type: "address" },
         { name: "callData", type: "bytes" },
         { name: "signerAccount", type: "Account" },
+        { name: "flexFields", type: "FlexField[]" },
+        { name: "maxUses", type: "uint256" },
         { name: "replayAttackHeader", type: "ReplayAttackHeader" }
     ],
     Account: [
         { name: "addr", type: "address" },
         { name: "isPartyB", type: "bool" }
+    ],
+    FlexField: [
+        { name: "offset", type: "uint256" },
+        { name: "length", type: "uint256" },
+        { name: "authorizedFlexFiller", type: "address" }
     ],
     ReplayAttackHeader: [
         { name: "nonce", type: "uint256" },
@@ -194,6 +211,8 @@ const userOperation = {
         addr: userAccountAddress,   // sub-account / virtual-account / legacy account
         isPartyB: false
     },
+    flexFields: [],                 // empty for standard operations
+    maxUses: 1,                     // single-use
     replayAttackHeader: {
         nonce: 0,  // or current nonce + 1 for sequential
         deadline: Math.floor(Date.now() / 1000) + 3600,  // 1 hour expiry
@@ -213,9 +232,16 @@ Executes multiple operations from different signers in a single transaction.
 ```solidity
 function executeBatch(
     SignedOperation[] calldata signedOps,
-    bytes[] calldata signatures
+    bytes[] calldata signatures,
+    FlexFill[] calldata fills,
+    bytes[][] calldata flexFillerSignatures
 ) external nonReentrant onlyRole(OPERATOR_ROLE);
 ```
+
+**Parameters:**
+- `signedOps` / `signatures` -- operations and their EIP-712 signatures (as before)
+- `fills` -- one `FlexFill` per operation. For standard operations (no flex fields), pass `{ values: [] }`
+- `flexFillerSignatures` -- one `bytes[]` per operation, with one signature per flex field. Pass `[]` for standard operations or `"0x"` for fields where the flex filler is `msg.sender`
 
 **Signature Requirements:**
 - Each operation requires a corresponding entry in the `signatures` array
@@ -230,9 +256,13 @@ Executes a predefined template with dynamic parameter replacement.
 function executeTemplate(
     uint256 templateId,
     SignedOperation[] calldata signedOps,
-    bytes[] calldata signatures
+    bytes[] calldata signatures,
+    FlexFill[] calldata fills,
+    bytes[][] calldata flexFillerSignatures
 ) external nonReentrant onlyRole(OPERATOR_ROLE);
 ```
+
+The `fills` and `flexFillerSignatures` parameters work the same as in `executeBatch`. When a template step has both flex fields and result injection, flex fills are applied first, then template result injection overwrites.
 
 **Template Structure:**
 
@@ -333,7 +363,205 @@ For delegations, a time-delayed revocation system is implemented:
 
 ---
 
+## Flex Fields
+
+Flex fields allow a user to sign an operation while designating specific byte ranges of the calldata as **modifiable** by authorized parties. This enables use cases like:
+
+- A **TPSL service** modifying the `amount` or `closePrice` parameter in a close request
+- A **solver** updating the Muon signature in a `sendQuote` before execution
+- A **service** choosing the exact parameters at execution time while the user constrains which function is called and which parameters are fixed
+
+### How It Works
+
+The user signs a `SignedOperation` where certain calldata regions are marked as flex fields. Each flex field specifies a byte offset, length, and an `authorizedFlexFiller` address -- the party allowed to fill in that region. The user's EIP-712 signature covers the calldata as-is (the placeholder values in flex regions don't matter) plus the flex field definitions, so the user explicitly commits to **which** parts are modifiable and **who** can modify them.
+
+At execution time, the operator provides `FlexFill` values for each flex field. The contract verifies flex filler authorization and injects the fill values before executing the call.
+
+### Data Structures
+
+```solidity
+struct FlexField {
+    uint256 offset;              // Byte offset after 4-byte selector
+    uint256 length;              // Bytes to replace (typically 32)
+    address authorizedFlexFiller;  // Who can provide the fill value
+}
+
+struct FlexFill {
+    bytes[] values;  // One entry per FlexField, each must match field.length
+}
+```
+
+### Flex Filler Authorization
+
+Each flex field has its own `authorizedFlexFiller`. Different fields can have different flex fillers, allowing multiple parties to control different parameters of the same operation.
+
+**When flex filler == msg.sender:** No additional signature is needed. Pass `"0x"` as the flex filler signature for that field.
+
+**When flex filler != msg.sender:** The flex filler must sign a `FlexFillAuth` message authorizing the specific fill value:
+
+```solidity
+// What the flex filler signs (EIP-712)
+struct FlexFillAuth {
+    bytes32 opHash;       // Hash of the SignedOperation
+    uint256 fieldIndex;   // Which flex field this fill is for
+    bytes value;          // The actual fill value
+}
+```
+
+The flex filler's signature authorizes a specific value for a specific field of a specific operation. For multi-use operations, the same signature can be reused across executions (since the value and operation are the same). The `maxUses` cap and `deadline` provide the usage controls.
+
+### Multi-Use Operations
+
+All operations use the `maxUses` field uniformly for replay protection:
+
+- `maxUses = 1` -- single-use (default for standard operations)
+- `maxUses = N` (N > 1) -- can be executed up to N times
+- `maxUses = 0` -- unlimited executions until deadline expires
+
+Once signed, an operation is valid until its `maxUses` count is reached or the `deadline` passes. There is no cancellation mechanism -- if you signed it, the flex filler can use it within the agreed bounds. This ensures trust: a flex filler (e.g., a solver) can rely on the authorization without risk of it being pulled out from under them.
+
+### Example: TPSL Service with Flex Fields
+
+Instead of delegating the entire `requestToClosePosition` selector to a TPSL bot, the user can sign a specific close operation with the amount as a flex field:
+
+The `requestToClosePosition` signature is:
+```solidity
+function requestToClosePosition(
+    uint256 quoteId,            // offset 0
+    uint256 closePrice,         // offset 32
+    uint256 quantityToClose,    // offset 64
+    OrderType orderType,        // offset 96
+    uint256 deadline            // offset 128
+)
+```
+
+All parameters are static, so the ABI encoding is straightforward -- each is a 32-byte slot at a fixed offset.
+
+```javascript
+// User signs: "close quote 42, but let the TPSL bot choose the amount"
+const closeCallData = symmio.interface.encodeFunctionData(
+    "requestToClosePosition",
+    [42, triggerPrice, 0, 1, deadline]  // quantityToClose=0 is a placeholder
+);
+
+const operation = {
+    signer: userAddress,
+    target: symmioCoreAddress,
+    callData: closeCallData,
+    signerAccount: { addr: userAccount, isPartyB: false },
+    flexFields: [{
+        offset: 64,              // quantityToClose is the 3rd param = 2 * 32
+        length: 32,
+        authorizedFlexFiller: tpslBotAddress
+    }],
+    maxUses: 0,                  // unlimited until deadline
+    replayAttackHeader: {
+        nonce: 0n,
+        deadline: BigInt(Math.floor(Date.now() / 1000) + 86400), // 24h
+        salt: generateSalt()
+    }
+};
+
+const userSig = await userSigner.signTypedData(domain, types, operation);
+```
+
+When the TP/SL threshold is hit, the bot provides the fill value and its flex filler signature:
+
+```javascript
+// Bot determines the close amount
+const closeAmount = ethers.AbiCoder.defaultAbiCoder().encode(
+    ["uint256"], [quantityToClose]
+);
+
+// Bot signs the fill authorization
+const opHash = await instantLayer.getOperationHash(operation);
+
+const fillAuthSig = await botSigner.signTypedData(domain, {
+    FlexFillAuth: [
+        { name: "opHash", type: "bytes32" },
+        { name: "fieldIndex", type: "uint256" },
+        { name: "value", type: "bytes" },
+    ]
+}, { opHash, fieldIndex: 0, value: closeAmount });
+
+// Operator submits
+await instantLayer.executeBatch(
+    [operation],
+    [userSig],
+    [{ values: [closeAmount] }],
+    [[fillAuthSig]]
+);
+```
+
+### Example: Solver Updating Muon Signature in sendQuote
+
+The `sendQuoteWithAffiliate` signature is:
+```solidity
+function sendQuoteWithAffiliate(
+    address[] memory partyBsWhiteList,      // offset 0   (dynamic -- offset pointer)
+    uint256 symbolId,                       // offset 32
+    PositionType positionType,              // offset 64
+    OrderType orderType,                    // offset 96
+    uint256 price,                          // offset 128
+    uint256 quantity,                       // offset 160
+    uint256 cva,                            // offset 192
+    uint256 lf,                             // offset 224
+    uint256 partyAmm,                       // offset 256
+    uint256 partyBmm,                       // offset 288
+    uint256 maxFundingRate,                 // offset 320
+    uint256 deadline,                       // offset 352
+    address affiliate,                      // offset 384
+    SingleUpnlAndPriceSig memory upnlSig    // offset 416 (dynamic -- offset pointer)
+)
+```
+
+The `upnlSig` is a dynamic struct (contains `bytes` fields), so offset 416 holds an **offset pointer** to the struct's actual data in the ABI tail. The struct's exact byte position and length depend on the preceding dynamic parameters (e.g., `partyBsWhiteList` array length).
+
+For flex fields on dynamic parameters, the integrator must calculate the exact byte range of the encoded struct data in the specific calldata being signed. Since both the user and solver see the full calldata, this is straightforward to compute off-chain:
+
+```javascript
+// Encode the full sendQuote calldata with a placeholder Muon sig
+const callData = partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+    partyBsWhiteList, symbolId, positionType, orderType,
+    price, quantity, cva, lf, partyAmm, partyBmm,
+    maxFundingRate, deadline, affiliate, placeholderUpnlSig
+]);
+
+// Calculate where the upnlSig data actually starts in the encoded calldata.
+// The offset pointer at byte 416 (after selector) contains the start position.
+// Read it from the encoded calldata:
+const upnlSigOffsetPointer = 416;
+const upnlSigDataStart = Number(
+    ethers.AbiCoder.defaultAbiCoder().decode(
+        ["uint256"],
+        "0x" + callData.slice(2 + 8 + upnlSigOffsetPointer * 2, 2 + 8 + (upnlSigOffsetPointer + 32) * 2)
+    )[0]
+);
+const upnlSigDataLength = callData.length / 2 - 4 - upnlSigDataStart; // rest of calldata
+
+const operation = {
+    signer: userAddress,
+    target: symmioCoreAddress,
+    callData: callData,
+    signerAccount: { addr: userAccount, isPartyB: false },
+    flexFields: [{
+        offset: upnlSigDataStart,
+        length: upnlSigDataLength,
+        authorizedFlexFiller: solverAddress
+    }],
+    maxUses: 1,
+    replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
+};
+```
+
+The solver encodes a fresh Muon signature with the **same byte length** and provides it as the fill value. All other quote parameters remain exactly as the user signed them.
+
+> **Important:** The replacement value must have the exact same byte length as the original. For `SingleUpnlAndPriceSig`, this means the fresh Muon sig must produce the same ABI-encoded length (same `reqId` and `gatewaySignature` byte lengths).
+
+---
+
 ## Related Documentation
 
 For practical integration examples, see:
-- [InstantLayer PartyB Integration Guide](./InstantLayer-PartyB-Integration.md) - Detailed code examples for PartyB integrators
+- [InstantLayer PartyB Integration Guide](./InstantLayer-PartyB-Integration.md) -- Detailed code examples for PartyB integrators
+- [InstantLayer Service Integration Guide](./instant-layer-service-integration.md) -- TPSL, Trigger Market, and Session Key integration
