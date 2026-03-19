@@ -240,13 +240,45 @@ export async function verifyMigration(
 			}
 		}
 
-		let expectedAllocated = 0n
+		// Verify cross locked values were correctly aggregated
+		// Note: allocated balances are NOT aggregated by migration — only locked and pending locked values are
+		const expectedLocked = { cva: 0n, lf: 0n, partyAmm: 0n, partyBmm: 0n }
+		const expectedPendingLocked = { cva: 0n, lf: 0n, partyAmm: 0n, partyBmm: 0n }
 		for (const partyA of task.partyAs) {
-			expectedAllocated += toBigInt(await viewFacet.allocatedBalanceOfPartyB(task.partyB, partyA))
+			const info = await viewFacet.balanceInfoOfPartyB(task.partyB, partyA)
+			expectedLocked.cva += toBigInt(info[1])
+			expectedLocked.lf += toBigInt(info[2])
+			expectedLocked.partyAmm += toBigInt(info[3])
+			expectedLocked.partyBmm += toBigInt(info[4])
+			expectedPendingLocked.cva += toBigInt(info[5])
+			expectedPendingLocked.lf += toBigInt(info[6])
+			expectedPendingLocked.partyAmm += toBigInt(info[7])
+			expectedPendingLocked.partyBmm += toBigInt(info[8])
 		}
-		const masterBalance = toBigInt(await viewFacet.balanceOfCrossPartyB(task.partyB))
-		if (expectedAllocated !== masterBalance) {
-			throw new Error(`PartyB ${task.partyB} master balance mismatch: expected=${expectedAllocated.toString()} got=${masterBalance.toString()}`)
+		const crossInfo = await viewFacet.balanceInfoOfCrossPartyB(task.partyB)
+		const crossLocked = {
+			cva: toBigInt(crossInfo[1]),
+			lf: toBigInt(crossInfo[2]),
+			partyAmm: toBigInt(crossInfo[3]),
+			partyBmm: toBigInt(crossInfo[4]),
+		}
+		const crossPendingLocked = {
+			cva: toBigInt(crossInfo[5]),
+			lf: toBigInt(crossInfo[6]),
+			partyAmm: toBigInt(crossInfo[7]),
+			partyBmm: toBigInt(crossInfo[8]),
+		}
+		for (const field of ["cva", "lf", "partyAmm", "partyBmm"] as const) {
+			if (expectedLocked[field] !== crossLocked[field]) {
+				throw new Error(
+					`PartyB ${task.partyB} cross locked ${field} mismatch: expected=${expectedLocked[field].toString()} got=${crossLocked[field].toString()}`,
+				)
+			}
+			if (expectedPendingLocked[field] !== crossPendingLocked[field]) {
+				throw new Error(
+					`PartyB ${task.partyB} cross pending locked ${field} mismatch: expected=${expectedPendingLocked[field].toString()} got=${crossPendingLocked[field].toString()}`,
+				)
+			}
 		}
 	}
 
