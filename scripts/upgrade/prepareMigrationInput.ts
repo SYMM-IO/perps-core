@@ -220,7 +220,7 @@ async function main() {
 			if (onChainPartyA !== subgraphQuote.partyA.toLowerCase()) {
 				throw new Error(`Quote ${quoteId}: partyA mismatch. On-chain=${onChainPartyA}, subgraph=${subgraphQuote.partyA}`)
 			}
-			if (onChainPartyB !== subgraphQuote.partyB.toLowerCase()) {
+			if (subgraphQuote.partyB && onChainPartyB !== subgraphQuote.partyB.toLowerCase()) {
 				throw new Error(`Quote ${quoteId}: partyB mismatch. On-chain=${onChainPartyB}, subgraph=${subgraphQuote.partyB}`)
 			}
 			if (onChainSymbolId !== subgraphQuote.symbolId) {
