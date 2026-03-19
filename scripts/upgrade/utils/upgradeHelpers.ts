@@ -304,10 +304,10 @@ export type NewV085Parameters = {
 	minWithdrawCooldown?: number
 }
 
-export async function setV085Parameters(diamondAddress: string, params: NewV085Parameters): Promise<void> {
-	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress)
+export async function setV085Parameters(diamondAddress: string, params: NewV085Parameters, signerOverride?: any): Promise<void> {
+	const signer = signerOverride ?? (await ethers.provider.getSigner())
+	const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", diamondAddress, signer)
 
-	const signer = await ethers.provider.getSigner()
 	const signerAddress = await signer.getAddress()
 	await (await controlFacet.grantRole(signerAddress, ethers.id("PROTOCOL_CONFIG_ROLE"))).wait()
 	await (await controlFacet.grantRole(signerAddress, ethers.id("COOLDOWN_ADMIN_ROLE"))).wait()

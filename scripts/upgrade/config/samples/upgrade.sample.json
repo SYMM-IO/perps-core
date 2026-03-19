@@ -7,6 +7,10 @@
 	"execute": false,
 	"subgraphEndpoint": "",
 	"spotCheckCount": 20,
+	"symmioFeeReceiver": "0x...",
+	"setupInstantLayerTemplates": true,
+	"accountLayerDiamondAddress": "",
+	"instantLayerAddress": "",
 	"newV085Parameters": {
 		"maxPartyAConnectionLimit": 5,
 

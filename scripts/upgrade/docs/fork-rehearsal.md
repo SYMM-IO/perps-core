@@ -6,7 +6,7 @@ Rehearse the full v0.8.4 -> v0.8.5 upgrade + migration on a fork of a live netwo
 
 The fork rehearsal mirrors the production flow with three separate steps:
 
-1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, deploy facets, diamondCut, set params
+1. **Upgrade** (`forkUpgrade.ts`) -- impersonate admin, pause, deploy facets, diamondCut, set params, deploy AccountLayer + InstantLayer, wire integrations
 2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch from subgraph, validate against on-chain
 3. **Migrate** (`runMigration.ts`) -- run migration + verify using the validated input
 
@@ -51,14 +51,22 @@ FORK_BLOCK_NUMBER=250000000 npx hardhat node --network fork-arbitrum
 
 ### Step 1: Upgrade
 
-Deploys v0.8.5 facets, applies diamondCut, and sets parameters on the fork (impersonates diamond owner).
+Deploys v0.8.5 facets, applies diamondCut, sets parameters, deploys AccountLayer Diamond + InstantLayer, and wires all integrations on the fork (impersonates diamond owner).
 
 ```bash
 # Terminal 2
 DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
-Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`
+Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`, `deployed-accountlayer-instantlayer.json`
+
+The script deploys the AccountLayer Diamond (7 facets) and InstantLayer contract, then wires them to the core Diamond:
+- Grants `SIGNER_ADMIN_ROLE`, `AFFILIATE_MANAGER_ROLE`, `BALANCE_SETTLER_ROLE` to AccountLayer on Diamond
+- Grants `INSTANT_LAYER_ROLE` to InstantLayer on Diamond
+- Registers AccountLayer as system hook on Diamond
+- Grants `SIGNER_SETTER_ROLE` to InstantLayer on AccountLayer
+- Whitelists Diamond on AccountLayer and both Diamond + AccountLayer on InstantLayer
+- Sets up OpenPosition and ClosePosition templates on InstantLayer (unless `setupInstantLayerTemplates: false`)
 
 ### Step 2: Prepare migration input
 
@@ -130,6 +138,10 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `safeAddress` | string | `""` | Gnosis Safe address (optional, for Safe path) |
 | `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
 | `diamondCutChunkSize` | number | `1000` | Max facet cuts per transaction |
+| `symmioFeeReceiver` | string | `""` | Fee receiver for AccountLayer Init (defaults to admin) |
+| `setupInstantLayerTemplates` | boolean | `true` | Setup OpenPosition/ClosePosition templates on InstantLayer |
+| `accountLayerDiamondAddress` | string | `""` | Pre-deployed AccountLayer address (Safe path only) |
+| `instantLayerAddress` | string | `""` | Pre-deployed InstantLayer address (Safe path only) |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
 
 ### Upgrade env var overrides

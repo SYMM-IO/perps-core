@@ -20,6 +20,7 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
+import { buildWiringTransactions } from "./utils/deployAccountLayerInstantLayer.js"
 import { buildDiamondCut, buildUpgradeTransactions, loadDeployedFacets, type NewV085Parameters, type SafeBatch } from "./utils/upgradeHelpers.js"
 
 type Config = {
@@ -28,6 +29,8 @@ type Config = {
 	safeAddress?: string
 	migrationRunner?: string
 	diamondCutChunkSize?: number
+	accountLayerDiamondAddress?: string
+	instantLayerAddress?: string
 	newV085Parameters?: NewV085Parameters
 }
 
@@ -96,6 +99,27 @@ async function main() {
 		DIAMOND_CUT_CHUNK_SIZE,
 		newParams,
 	)
+
+	// Append AccountLayer + InstantLayer wiring transactions (if addresses provided)
+	const AL_ADDRESS = process.env.ACCOUNT_LAYER_ADDRESS ?? config.accountLayerDiamondAddress
+	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? config.instantLayerAddress
+
+	if (AL_ADDRESS && IL_ADDRESS && ethers.isAddress(AL_ADDRESS) && ethers.isAddress(IL_ADDRESS)) {
+		console.log("\nBuilding AccountLayer + InstantLayer wiring transactions...")
+		console.log(`  AccountLayerDiamond: ${AL_ADDRESS}`)
+		console.log(`  InstantLayer:        ${IL_ADDRESS}`)
+		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, ADMIN_ADDRESS)
+		for (const tx of wiringTxs) {
+			result.safeTxs.push({ to: tx.to, value: tx.value, data: tx.calldata })
+			result.breakdown.push(`${result.breakdown.length + 1}. [wiring] ${tx.description}`)
+		}
+		console.log(`  Added ${wiringTxs.length} wiring transactions`)
+	} else if (AL_ADDRESS || IL_ADDRESS) {
+		console.log("\nWARN: Both accountLayerDiamondAddress and instantLayerAddress must be set for wiring. Skipping.")
+	} else {
+		console.log("\nNo AccountLayer/InstantLayer addresses provided. Wiring transactions will not be generated.")
+		console.log("  Set accountLayerDiamondAddress and instantLayerAddress in config after deploying them.")
+	}
 
 	// Write output files
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })

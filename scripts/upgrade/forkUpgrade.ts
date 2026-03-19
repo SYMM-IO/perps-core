@@ -2,10 +2,16 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
+import {
+	deployAccountLayerDiamond,
+	deployInstantLayer,
+	wireAccountLayerInstantLayer,
+	setupInstantLayerTemplates,
+} from "./utils/deployAccountLayerInstantLayer.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
-import { deployFacets, buildDiamondCut, applyDiamondCut } from "./utils/upgradeHelpers.js"
+import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
 const DEFAULT_SUBGRAPH_ENDPOINT = "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/stage/gn"
 
@@ -30,11 +36,9 @@ type ForkUpgradeConfig = {
 	diamondCutChunkSize?: number
 	subgraphEndpoint?: string
 	spotCheckCount?: number
-	newV085Parameters?: {
-		maxPartyAConnectionLimit?: number
-		settlementCooldown?: number
-		deallocateDebounceTime?: number
-	}
+	symmioFeeReceiver?: string
+	setupInstantLayerTemplates?: boolean
+	newV085Parameters?: NewV085Parameters
 	verbose?: boolean
 }
 
@@ -310,32 +314,36 @@ async function main() {
 		// Step 8: Set new v0.8.5 parameters
 		currentStep = "set_v085_parameters"
 		console.log("\nSetting new v0.8.5 parameters...")
-		const paramsSet: Record<string, unknown> = {}
+		await (await controlFacet.setAdmin(adminAddress)).wait()
+		await setV085Parameters(DIAMOND_ADDRESS, newParams, admin)
+		report.steps.push({ name: "set_v085_parameters", status: "ok", details: { ...newParams } })
+		currentStep = null
+		tryWriteReport(reportFile, report)
 
-		// Grant roles needed for parameter setting
-		await (await controlFacet.grantRole(adminAddress, ethers.id("PROTOCOL_CONFIG_ROLE"))).wait()
-		await (await controlFacet.grantRole(adminAddress, ethers.id("COOLDOWN_ADMIN_ROLE"))).wait()
+		// Step 9: Deploy AccountLayer + InstantLayer and wire them
+		currentStep = "deploy_account_instant_layer"
+		console.log("\nDeploying AccountLayer + InstantLayer...")
+		const symmioFeeReceiver = config.symmioFeeReceiver || adminAddress
+		const alilStateFile = `${outputDir}/deployed-accountlayer-instantlayer.json`
 
-		if (newParams.maxPartyAConnectionLimit && newParams.maxPartyAConnectionLimit > 0) {
-			await (await controlFacet.setMaxPartyAConnectionLimit(newParams.maxPartyAConnectionLimit)).wait()
-			paramsSet.maxPartyAConnectionLimit = newParams.maxPartyAConnectionLimit
-			console.log(`  maxPartyAConnectionLimit = ${newParams.maxPartyAConnectionLimit}`)
-		}
-		if (newParams.settlementCooldown !== undefined && newParams.settlementCooldown > 0) {
-			await (await controlFacet.setSettlementCooldown(newParams.settlementCooldown)).wait()
-			paramsSet.settlementCooldown = newParams.settlementCooldown
-			console.log(`  settlementCooldown = ${newParams.settlementCooldown}`)
-		}
-		if (newParams.deallocateDebounceTime !== undefined && newParams.deallocateDebounceTime > 0) {
-			await (await controlFacet.setDeallocateDebounceTime(newParams.deallocateDebounceTime)).wait()
-			paramsSet.deallocateDebounceTime = newParams.deallocateDebounceTime
-			console.log(`  deallocateDebounceTime = ${newParams.deallocateDebounceTime}`)
+		const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, alilStateFile)
+		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, adminAddress, alilStateFile)
+
+		console.log("\nWiring contracts together...")
+		await wireAccountLayerInstantLayer(DIAMOND_ADDRESS, alResult.diamondAddress, ilResult.address, admin)
+
+		if (config.setupInstantLayerTemplates !== false) {
+			await setupInstantLayerTemplates(ilResult.address, admin)
 		}
 
-		if (Object.keys(paramsSet).length === 0) {
-			console.log("  (no parameters configured)")
-		}
-		report.steps.push({ name: "set_v085_parameters", status: "ok", details: paramsSet })
+		report.steps.push({
+			name: "deploy_account_instant_layer",
+			status: "ok",
+			details: {
+				accountLayerDiamond: alResult.diamondAddress,
+				instantLayer: ilResult.address,
+			},
+		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
 

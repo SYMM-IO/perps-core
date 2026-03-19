@@ -6,7 +6,7 @@ The production upgrade flow depends on whether the diamond is owned by an EOA or
 
 **EOA path (single script):**
 
-1. **Upgrade** (`eoaUpgrade.ts`) -- deploy facets, pause, diamondCut, set v0.8.5 parameters, grant migration role
+1. **Upgrade** (`eoaUpgrade.ts`) -- deploy facets, pause, diamondCut, set v0.8.5 parameters, deploy AccountLayer + InstantLayer, wire integrations, grant migration role
 2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
 3. **Run migration** (`runMigration.ts`) -- execute migration + verify
 4. **Post-migration** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
@@ -22,11 +22,12 @@ The production upgrade flow depends on whether the diamond is owned by an EOA or
 **Safe path:**
 
 1. **Deploy facets** (`deployFacets.ts`) -- deploy v0.8.5 facets + libraries to the target network
-2. **Generate Safe transactions** (`generateSafeUpgradeTxs.ts`) -- build Safe Transaction Builder JSON
-3. **Execute upgrade** -- submit via Safe UI
-4. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
-5. **Run migration** (`runMigration.ts`) -- execute migration + verify
-6. **Post-migration** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
+2. **Deploy AccountLayer + InstantLayer** -- deploy separately, provide addresses in config
+3. **Generate Safe transactions** (`generateSafeUpgradeTxs.ts`) -- build Safe Transaction Builder JSON (includes AL/IL wiring)
+4. **Execute upgrade** -- submit via Safe UI
+5. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
+6. **Run migration** (`runMigration.ts`) -- execute migration + verify
+7. **Post-migration** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
 
 ## Prerequisites
 
@@ -58,7 +59,7 @@ npx hardhat run scripts/upgrade/verifyUpgrade.ts --network localhost
 
 ## EOA: Single Script Upgrade
 
-For EOA-owned diamonds, `eoaUpgrade.ts` runs the full upgrade in one command: deploys facets, pauses the system, applies the diamond cut, sets v0.8.5 parameters, and grants the migration role.
+For EOA-owned diamonds, `eoaUpgrade.ts` runs the full upgrade in one command: deploys facets, pauses the system, applies the diamond cut, sets v0.8.5 parameters, deploys AccountLayer + InstantLayer, wires integrations, and grants the migration role.
 
 ```bash
 npx hardhat run scripts/upgrade/eoaUpgrade.ts --network arbitrum
@@ -76,12 +77,14 @@ What it does (in order):
 | 3 | `setAdmin` + grant `PAUSER_ROLE`/`UNPAUSER_ROLE` + `pauseGlobal()` |
 | 4 | Apply diamond cut (single transaction) |
 | 5 | Set new v0.8.5 parameters from config (`newV085Parameters`) |
-| 6 | Grant `MIGRATION_ROLE` to configured `migrationRunner` |
+| 6 | Deploy AccountLayer Diamond + InstantLayer, wire integrations, setup templates |
+| 7 | Grant `MIGRATION_ROLE` to configured `migrationRunner` |
 
 After completion, the system is paused and ready for migration. Continue with [Step 3: Prepare Migration Input](#step-3-prepare-migration-input).
 
 Output:
 - `scripts/upgrade/output/deployed-facets.json` -- deployed facet addresses
+- `scripts/upgrade/output/deployed-accountlayer-instantlayer.json` -- AccountLayer + InstantLayer addresses
 
 ---
 
@@ -122,20 +125,22 @@ The script applies all facet cuts in a **single transaction** (no chunking neede
 
 ### Safe path
 
-Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role) plus separate diamondCut calldata.
+Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role, AccountLayer/InstantLayer wiring) plus separate diamondCut calldata.
+
+**Prerequisites:** Deploy AccountLayer Diamond and InstantLayer separately before running this script, then set `accountLayerDiamondAddress` and `instantLayerAddress` in `upgrade.json`. If these addresses are provided, wiring transactions (role grants, hook registration, whitelisting) are included in the Safe batch.
 
 ```bash
 npx hardhat run scripts/upgrade/generateSafeUpgradeTxs.ts --network arbitrum
 ```
 
 Output:
-- `scripts/upgrade/output/safe-batch.json` -- Safe Transaction Builder JSON (non-diamondCut txs)
+- `scripts/upgrade/output/safe-batch.json` -- Safe Transaction Builder JSON (non-diamondCut txs, includes AL/IL wiring if addresses set)
 - `scripts/upgrade/output/diamondcut-calldata.json` -- raw diamondCut calldata chunks
 - `scripts/upgrade/output/upgrade-details.json` -- selector changes + breakdown
 
 Execute in Safe UI:
-1. Execute the diamondCut calldata from `diamondcut-calldata.json`
-2. Import `safe-batch.json` into the Safe Transaction Builder to execute role grants, pause, params
+1. Execute the diamondCut calldata from `diamondcut-calldata.json` (via timelock or direct)
+2. Import `safe-batch.json` into the Safe Transaction Builder to execute role grants, pause, params, and AL/IL wiring
 
 ## Step 3: Prepare Migration Input
 
@@ -236,6 +241,10 @@ The migration report includes:
 | `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
 | `diamondCutChunkSize` | number | `1000` | Max facet cuts per diamondCut transaction |
 | `execute` | boolean | `false` | Execute transactions on-chain after generating (for fork testing) |
+| `symmioFeeReceiver` | string | `""` | Fee receiver for AccountLayer Init (defaults to admin) |
+| `setupInstantLayerTemplates` | boolean | `true` | Setup OpenPosition/ClosePosition templates on InstantLayer |
+| `accountLayerDiamondAddress` | string | `""` | Pre-deployed AccountLayer address (Safe path -- wiring only) |
+| `instantLayerAddress` | string | `""` | Pre-deployed InstantLayer address (Safe path -- wiring only) |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
 
 ### Env var overrides

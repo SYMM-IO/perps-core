@@ -11,7 +11,8 @@
  *   3. Pause system
  *   4. Apply diamond cut
  *   5. Set new v0.8.5 parameters
- *   6. Grant migration role
+ *   6. Deploy AccountLayer + InstantLayer and wire them
+ *   7. Grant migration role
  *
  * Usage:
  *   npx hardhat run scripts/upgrade/eoaUpgrade.ts --network localhost
@@ -23,12 +24,20 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
+import {
+	deployAccountLayerDiamond,
+	deployInstantLayer,
+	wireAccountLayerInstantLayer,
+	setupInstantLayerTemplates,
+} from "./utils/deployAccountLayerInstantLayer.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
 type Config = {
 	diamondAddress?: string
 	adminAddress?: string
 	migrationRunner?: string
+	symmioFeeReceiver?: string
+	setupInstantLayerTemplates?: boolean
 	newV085Parameters?: NewV085Parameters
 }
 
@@ -110,8 +119,25 @@ async function main() {
 	}
 	console.log()
 
-	// Step 6: Grant migration role
-	console.log("=== Step 6: Grant migration role ===")
+	// Step 6: Deploy AccountLayer + InstantLayer
+	console.log("=== Step 6: Deploy AccountLayer + InstantLayer ===")
+	const symmioFeeReceiver = config.symmioFeeReceiver || signerAddress
+	const alilStateFile = path.join(OUTPUT_DIR, "deployed-accountlayer-instantlayer.json")
+
+	const alResult = await deployAccountLayerDiamond(signerAddress, symmioFeeReceiver, alilStateFile)
+	const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, signerAddress, alilStateFile)
+
+	console.log("\nWiring contracts together...")
+	await wireAccountLayerInstantLayer(DIAMOND_ADDRESS, alResult.diamondAddress, ilResult.address, signer)
+
+	if (config.setupInstantLayerTemplates !== false) {
+		await setupInstantLayerTemplates(ilResult.address, signer)
+	}
+	console.log(`AccountLayer Diamond: ${alResult.diamondAddress}`)
+	console.log(`InstantLayer: ${ilResult.address}\n`)
+
+	// Step 7: Grant migration role
+	console.log("=== Step 7: Grant migration role ===")
 	if (MIGRATION_RUNNER) {
 		await (await controlFacet.grantRole(MIGRATION_RUNNER, ethers.id("MIGRATION_ROLE"))).wait()
 		console.log(`Migration role granted to ${MIGRATION_RUNNER}`)
