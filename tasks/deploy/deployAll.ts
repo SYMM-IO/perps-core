@@ -1078,28 +1078,34 @@ async function setupInstantLayerTemplates(hre: any, deployedContracts: DeployedC
 
 	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
 
-	// OpenPosition Template
-	await checkpointedStep(checkpoint, "templates.openPosition", "Adding OpenPosition template", async () => {
-		const openPositionOps = [
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: predictNextVirtualAccountAddress
-			{ sourceIndices: [0], insertionPoints: [0], sourceOffsets: [0] }, // op 1: addMargin - first param from op 0
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: sendQuoteWithAffiliateAndData
-			{ sourceIndices: [0], insertionPoints: [32], sourceOffsets: [0] }, // op 3: allocateForPartyB - second param from op 0
-			{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 4: lockQuote - first param from op 2
-			{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 5: openPosition - first param from op 2
+	// InstantOpen Template (4 ops)
+	await checkpointedStep(checkpoint, "templates.instantOpen", "Adding InstantOpen template", async () => {
+		const instantOpenOps = [
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: addMarginToNextVA
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: sendQuote
+			{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 2: lockQuote - quoteId from op 1
+			{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 3: openPosition - quoteId from op 1
 		]
-		await instantLayer.connect(deployer).addTemplate("OpenPosition", openPositionOps)
+		await instantLayer.connect(deployer).addTemplate("InstantOpen", instantOpenOps)
 	})
 
-	// ClosePosition Template
-	await checkpointedStep(checkpoint, "templates.closePosition", "Adding ClosePosition template", async () => {
-		const closePositionOps = [
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: predictNextVirtualAccountAddress
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: requestToClosePosition
-			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: fillCloseRequest
-			{ sourceIndices: [0], insertionPoints: [32], sourceOffsets: [0] }, // op 3: deallocateForPartyB - second param from op 0
+	// InstantClose Template (2 ops)
+	await checkpointedStep(checkpoint, "templates.instantClose", "Adding InstantClose template", async () => {
+		const instantCloseOps = [
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: requestToClosePosition
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: fillCloseRequest
 		]
-		await instantLayer.connect(deployer).addTemplate("ClosePosition", closePositionOps)
+		await instantLayer.connect(deployer).addTemplate("InstantClose", instantCloseOps)
+	})
+
+	// InstantCloseWithAllocation Template (3 ops)
+	await checkpointedStep(checkpoint, "templates.instantCloseWithAllocation", "Adding InstantCloseWithAllocation template", async () => {
+		const instantCloseWithAllocationOps = [
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1
+			{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2
+		]
+		await instantLayer.connect(deployer).addTemplate("InstantCloseWithAllocation", instantCloseWithAllocationOps)
 	})
 
 	console.log("  InstantLayer templates setup complete!")
