@@ -8,7 +8,7 @@
 	"subgraphEndpoint": "",
 	"spotCheckCount": 20,
 	"symmioFeeReceiver": "0x...",
-	"setupInstantLayerTemplates": true,
+	"setupInstantLayerTemplates": false,
 	"accountLayerDiamondAddress": "",
 	"instantLayerAddress": "",
 	"newV085Parameters": {
