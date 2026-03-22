@@ -2,13 +2,8 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
-import {
-	deployAccountLayerDiamond,
-	deployInstantLayer,
-	wireAccountLayerInstantLayer,
-	setupInstantLayerTemplates,
-} from "./utils/deployAccountLayerInstantLayer.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"

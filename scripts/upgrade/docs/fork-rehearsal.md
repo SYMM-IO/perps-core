@@ -10,7 +10,7 @@ The fork rehearsal mirrors the production flow with three separate steps:
 2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch from subgraph, validate against on-chain
 3. **Migrate** (`runMigration.ts`) -- run migration + verify using the validated input
 
-In production, step 1 is done by the admin (EOA via `applyUpgrade.ts`) or multisig (via `generateSafeUpgradeTxs.ts`), followed by a delay for the subgraph to sync, then steps 2 and 3.
+In production, step 1 is done by the admin (EOA via `applyUpgrade.ts`) or multisig (via `generateSafeBatch.ts`), followed by a delay for the subgraph to sync, then steps 2 and 3.
 
 ## Prerequisites
 

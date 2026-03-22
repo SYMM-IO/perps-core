@@ -10,13 +10,13 @@
  *   6. InstantLayer templates exist (if any)
  *
  * Usage:
- *   npx hardhat run scripts/upgrade/verifyAccountLayerInstantLayer.ts --network arbitrum
+ *   npx hardhat run scripts/upgrade/verifyPeripherals.ts --network arbitrum
  *
  *   # Custom config
- *   VERIFY_AL_IL_CONFIG=./path/to/config.json \
- *     npx hardhat run scripts/upgrade/verifyAccountLayerInstantLayer.ts --network arbitrum
+ *   VERIFY_PERIPHERALS_CONFIG=./path/to/config.json \
+ *     npx hardhat run scripts/upgrade/verifyPeripherals.ts --network arbitrum
  *
- * Config: scripts/upgrade/config/verifyAccountLayerInstantLayer.json
+ * Config: scripts/upgrade/config/verifyPeripherals.json
  */
 import fs from "fs"
 
@@ -29,7 +29,7 @@ type Config = {
 	adminAddress: string
 }
 
-const CONFIG_FILE = process.env.VERIFY_AL_IL_CONFIG ?? "./scripts/upgrade/config/verifyAccountLayerInstantLayer.json"
+const CONFIG_FILE = process.env.VERIFY_PERIPHERALS_CONFIG ?? "./scripts/upgrade/config/verifyPeripherals.json"
 
 const ROLES = {
 	SIGNER_ADMIN_ROLE: ethers.id("SIGNER_ADMIN_ROLE"),
@@ -42,7 +42,7 @@ const ROLES = {
 
 function loadConfig(): Config {
 	if (!fs.existsSync(CONFIG_FILE)) {
-		throw new Error(`Config file not found: ${CONFIG_FILE}\nCopy config/samples/verifyAccountLayerInstantLayer.sample.json and fill in the values.`)
+		throw new Error(`Config file not found: ${CONFIG_FILE}\nCopy config/samples/verifyPeripherals.sample.json and fill in the values.`)
 	}
 	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
 }

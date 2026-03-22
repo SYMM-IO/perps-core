@@ -9,7 +9,7 @@ The production upgrade flow depends on whether the diamond is owned by an EOA or
 1. **Upgrade** (`eoaUpgrade.ts`) -- deploy facets, pause, diamondCut, set v0.8.5 parameters, deploy AccountLayer + InstantLayer, wire integrations, grant migration role
 2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
 3. **Run migration** (`runMigration.ts`) -- execute migration + verify
-4. **Post-migration** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
+4. **Post-migration** (`generatePostMigrationBatch.ts`) -- unpause, enable cross-PartyB mode
 
 **EOA path (step-by-step):**
 
@@ -17,17 +17,17 @@ The production upgrade flow depends on whether the diamond is owned by an EOA or
 2. **Apply upgrade** (`applyUpgrade.ts`) -- build and execute a single diamondCut transaction
 3. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
 4. **Run migration** (`runMigration.ts`) -- execute migration + verify
-5. **Post-migration** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
+5. **Post-migration** (`generatePostMigrationBatch.ts`) -- unpause, enable cross-PartyB mode
 
 **Safe path:**
 
 1. **Deploy facets** (`deployFacets.ts`) -- deploy v0.8.5 facets + libraries to the target network
 2. **Deploy AccountLayer + InstantLayer** -- deploy separately, provide addresses in config
-3. **Generate Safe transactions** (`generateSafeUpgradeTxs.ts`) -- build Safe Transaction Builder JSON (includes AL/IL wiring)
+3. **Generate Safe transactions** (`generateSafeBatch.ts`) -- build Safe Transaction Builder JSON (includes AL/IL wiring)
 4. **Execute upgrade** -- submit via Safe UI
 5. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
 6. **Run migration** (`runMigration.ts`) -- execute migration + verify
-7. **Post-migration** (`generatePostMigrationTxs.ts`) -- unpause, enable cross-PartyB mode
+7. **Post-migration** (`generatePostMigrationBatch.ts`) -- unpause, enable cross-PartyB mode
 
 ## Prerequisites
 
@@ -130,7 +130,7 @@ Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, para
 **Prerequisites:** Deploy AccountLayer Diamond and InstantLayer separately before running this script, then set `accountLayerDiamondAddress` and `instantLayerAddress` in `upgrade.json`. If these addresses are provided, wiring transactions (role grants, hook registration, whitelisting) are included in the Safe batch.
 
 ```bash
-npx hardhat run scripts/upgrade/generateSafeUpgradeTxs.ts --network arbitrum
+npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
 ```
 
 Output:
@@ -192,10 +192,10 @@ DRY_RUN=true DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output
 After `migration-report.json` shows `"status": "success"`, generate and execute post-migration transactions.
 
 ```bash
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationTxs.ts --network arbitrum
+DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
 
 # With Safe batch output
-DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationTxs.ts --network arbitrum
+DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
 ```
 
 PartyB addresses are read from `postMigration.json` config (`partyBs` array).
@@ -259,10 +259,10 @@ The migration report includes:
 
 | Config file | Script | Key fields |
 |-------------|--------|------------|
-| `upgrade.json` | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeUpgradeTxs.ts` | `diamondAddress`, `adminAddress`, `newV085Parameters` |
+| `upgrade.json` | `eoaUpgrade.ts`, `applyUpgrade.ts`, `generateSafeBatch.ts` | `diamondAddress`, `adminAddress`, `newV085Parameters` |
 | `prepareMigration.json` | `prepareMigrationInput.ts` | `diamondAddress`, `subgraphEndpoint` |
 | `migrate.json` | `runMigration.ts` | `diamondAddress`, `migrationInputFile`, `chunkSize` |
-| `postMigration.json` | `generatePostMigrationTxs.ts` | `diamondAddress`, `partyBs` |
+| `postMigration.json` | `generatePostMigrationBatch.ts` | `diamondAddress`, `partyBs` |
 
 ## newV085Parameters
 

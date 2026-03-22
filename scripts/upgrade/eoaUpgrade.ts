@@ -24,12 +24,7 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
-import {
-	deployAccountLayerDiamond,
-	deployInstantLayer,
-	wireAccountLayerInstantLayer,
-	setupInstantLayerTemplates,
-} from "./utils/deployAccountLayerInstantLayer.js"
+import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
 import { deployFacets, buildDiamondCut, applyDiamondCut, setV085Parameters, type NewV085Parameters } from "./utils/upgradeHelpers.js"
 
 type Config = {

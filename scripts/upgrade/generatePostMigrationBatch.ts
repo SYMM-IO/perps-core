@@ -10,10 +10,10 @@ import { verifyRpc } from "./utils/rpcCheck.js"
  * Run after migration-report.json shows "status": "success".
  *
  * Usage:
- *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationTxs.ts --network arbitrum
+ *   DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
  *
  *   # With Safe batch output
- *   DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationTxs.ts --network arbitrum
+ *   DIAMOND_ADDRESS=0x... SAFE_ADDRESS=0x... npx hardhat run scripts/upgrade/generatePostMigrationBatch.ts --network arbitrum
  *
  * Config: scripts/upgrade/config/postMigration.json
  *
