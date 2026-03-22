@@ -23,15 +23,13 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumer
 	bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
-
-	/// @notice Role for updating contract configuration and signer settings.
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 
-	mapping(bytes4 => bool) public restrictedSelectors; // selector -> isRestricted
-	mapping(address => bool) public multicastWhitelist; // contractAddress -> isAllowedForMulticast
-
-	address public symmioAddress;
-	address public signer;
+	// Storage layout matches v0.8.4 SymmioPartyB for upgrade compatibility
+	address public symmioAddress; // slot N+0
+	mapping(bytes4 => bool) public restrictedSelectors; // slot N+1
+	mapping(address => bool) public multicastWhitelist; // slot N+2
+	address public signer; // slot N+3 (was _guardCounter in v0.8.4, always 0 after tx)
 
 	/// @custom:oz-upgrades-unsafe-allow constructor
 	constructor() {
