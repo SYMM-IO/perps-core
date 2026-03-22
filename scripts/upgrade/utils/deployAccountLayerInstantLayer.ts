@@ -365,27 +365,32 @@ export async function setupInstantLayerTemplates(instantLayerAddress: string, ad
 
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
-	// OpenPosition Template (6 operations)
-	const openPositionOps = [
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: predictNextVirtualAccountAddress
-		{ sourceIndices: [0], insertionPoints: [0], sourceOffsets: [0] }, // op 1: addMargin - first param from op 0
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: sendQuoteWithAffiliateAndData
-		{ sourceIndices: [0], insertionPoints: [32], sourceOffsets: [0] }, // op 3: allocateForPartyB - second param from op 0
-		{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 4: lockQuote - first param from op 2
-		{ sourceIndices: [2], insertionPoints: [0], sourceOffsets: [0] }, // op 5: openPosition - first param from op 2
+	// InstantOpen Template (4 operations)
+	const instantOpenOps = [
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: addMarginToNextVA
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: sendQuote
+		{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 2: lockQuote - quoteId from op 1
+		{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 3: openPosition - quoteId from op 1
 	]
-	await (await instantLayer.addTemplate("OpenPosition", openPositionOps)).wait()
-	console.log("    OpenPosition template added")
+	await (await instantLayer.addTemplate("InstantOpen", instantOpenOps)).wait()
+	console.log("    InstantOpen template added")
 
-	// ClosePosition Template (4 operations)
-	const closePositionOps = [
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: predictNextVirtualAccountAddress
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: requestToClosePosition
-		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2: fillCloseRequest
-		{ sourceIndices: [0], insertionPoints: [32], sourceOffsets: [0] }, // op 3: deallocateForPartyB - second param from op 0
+	// InstantClose Template (2 operations)
+	const instantCloseOps = [
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0: requestToClosePosition
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: fillCloseRequest
 	]
-	await (await instantLayer.addTemplate("ClosePosition", closePositionOps)).wait()
-	console.log("    ClosePosition template added")
+	await (await instantLayer.addTemplate("InstantClose", instantCloseOps)).wait()
+	console.log("    InstantClose template added")
+
+	// InstantCloseWithAllocation Template (3 operations)
+	const instantCloseWithAllocationOps = [
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 0
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1
+		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2
+	]
+	await (await instantLayer.addTemplate("InstantCloseWithAllocation", instantCloseWithAllocationOps)).wait()
+	console.log("    InstantCloseWithAllocation template added")
 
 	console.log("  Templates setup complete.")
 }
