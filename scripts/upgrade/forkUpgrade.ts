@@ -409,7 +409,7 @@ async function main() {
 			const hasRole = await partyBContract.hasRole(DEFAULT_ADMIN_ROLE, adminAddress)
 			if (!hasRole) {
 				// Find current admin via AccessControlEnumerable and grant role to diamond admin
-				const enumerable = new ethers.Contract(PARTYB_ADDRESS, ["function getRoleMember(bytes32 role, uint256 index) view returns (address)"])
+				const enumerable = new ethers.Contract(PARTYB_ADDRESS, ["function getRoleMember(bytes32 role, uint256 index) view returns (address)"], admin)
 				const currentAdmin = await enumerable.getRoleMember(DEFAULT_ADMIN_ROLE, 0)
 				log.kv("Current PartyB admin", log.addr(currentAdmin))
 
