@@ -288,6 +288,7 @@ async function main() {
 		symmioPartyB = await ethers.getContractAt("SymmioPartyB", symmioPartyBAddress, admin)
 
 		// Ensure PartyB is bindable (new v0.8.5 mapping, defaults to false for existing PartyBs)
+		await (await controlFacet.grantRole(adminAddress, roleHash("PARTY_B_MANAGER_ROLE"))).wait()
 		await (await controlFacet.setPartyBBindable(symmioPartyBAddress, true)).wait()
 		console.log("  Set bindable")
 
