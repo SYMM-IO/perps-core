@@ -4,16 +4,11 @@
 	"safeAddress": "0x...",
 	"migrationRunner": "0x...",
 	"diamondCutChunkSize": 1000,
-	"execute": false,
 	"subgraphEndpoint": "",
 	"spotCheckCount": 20,
 	"symmioFeeReceiver": "0x...",
 	"setupInstantLayerTemplates": false,
-	"accountLayerDiamondAddress": "",
-	"instantLayerAddress": "",
 	"symmioPartyBAddress": "",
-	"symmioPartyBImplementation": "",
-	"symmioPartyBProxyAdmin": "",
 	"newV085Parameters": {
 		"maxPartyAConnectionLimit": 5,
 

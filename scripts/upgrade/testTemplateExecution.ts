@@ -22,8 +22,8 @@
  *   FORK=true DIAMOND_ADDRESS=0x... ACCOUNT_LAYER_ADDRESS=0x... INSTANT_LAYER_ADDRESS=0x... \
  *     npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
  *
- *   # With existing SymmioPartyB proxy upgrade instead of fresh deploy:
- *   FORK=true SYMMIO_PARTYB_ADDRESS=0x... SYMMIO_PARTYB_PROXY_ADMIN=0x... \
+ *   # With existing SymmioPartyB proxy upgrade (UUPS) instead of fresh deploy:
+ *   FORK=true SYMMIO_PARTYB_ADDRESS=0x... \
  *     DIAMOND_ADDRESS=0x... ACCOUNT_LAYER_ADDRESS=0x... INSTANT_LAYER_ADDRESS=0x... \
  *     npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
  *
@@ -45,7 +45,6 @@ type Config = {
 	collateralAddress?: string
 	fork?: boolean
 	symmioPartyBAddress?: string
-	symmioPartyBProxyAdmin?: string
 }
 
 const CONFIG_FILE = process.env.TEST_TEMPLATE_CONFIG ?? "./scripts/upgrade/config/testTemplateExecution.json"
@@ -168,7 +167,6 @@ async function main() {
 	const COLLATERAL = process.env.COLLATERAL_ADDRESS ?? config.collateralAddress
 	const isFork = (process.env.FORK ?? String(config.fork ?? "")).toLowerCase() === "true"
 	const EXISTING_PARTYB = process.env.SYMMIO_PARTYB_ADDRESS ?? config.symmioPartyBAddress
-	const EXISTING_PARTYB_PROXY_ADMIN = process.env.SYMMIO_PARTYB_PROXY_ADMIN ?? config.symmioPartyBProxyAdmin
 
 	if (!DIAMOND) throw new Error("DIAMOND_ADDRESS required")
 	if (!AL_ADDRESS) throw new Error("ACCOUNT_LAYER_ADDRESS required")
@@ -258,22 +256,10 @@ async function main() {
 		const newImplAddress = await newImpl.getAddress()
 		console.log(`  New implementation deployed: ${newImplAddress}`)
 
-		if (EXISTING_PARTYB_PROXY_ADMIN) {
-			// TransparentProxy: impersonate ProxyAdmin and call upgrade
-			const proxyAdmin = await impersonateAndFund(EXISTING_PARTYB_PROXY_ADMIN)
-			const proxyAdminContract = new ethers.Contract(
-				EXISTING_PARTYB_PROXY_ADMIN,
-				["function upgrade(address proxy, address implementation)"],
-				proxyAdmin,
-			)
-			await (await proxyAdminContract.upgrade(symmioPartyBAddress, newImplAddress)).wait()
-			console.log(`  Proxy upgraded via ProxyAdmin`)
-		} else {
-			// Try UUPS: call upgradeTo on the proxy directly
-			const proxyContract = new ethers.Contract(symmioPartyBAddress, ["function upgradeTo(address newImplementation)"], admin)
-			await (await proxyContract.upgradeTo(newImplAddress)).wait()
-			console.log(`  Proxy upgraded via UUPS`)
-		}
+		// UUPS: call upgradeTo on the proxy directly
+		const proxyContract = new ethers.Contract(symmioPartyBAddress, ["function upgradeTo(address newImplementation)"], admin)
+		await (await proxyContract.upgradeTo(newImplAddress)).wait()
+		console.log(`  Proxy upgraded via UUPS`)
 
 		symmioPartyB = await ethers.getContractAt("SymmioPartyB", symmioPartyBAddress, admin)
 

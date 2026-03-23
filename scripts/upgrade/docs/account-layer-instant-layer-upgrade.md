@@ -186,7 +186,7 @@ The full fork rehearsal flow is now:
 The v0.8.5 SymmioPartyB adds ERC-1271 (`isValidSignature`) support required by InstantLayer. The storage layout is compatible with v0.8.4 for in-place proxy upgrades.
 
 - `deployPeripherals.ts` deploys the new SymmioPartyB implementation (not the proxy)
-- `generateSafeBatch.ts` generates proxy upgrade + InstantLayer registration transactions when `symmioPartyBAddress`, `symmioPartyBImplementation`, and `symmioPartyBProxyAdmin` are set in config
+- `generateSafeBatch.ts` generates UUPS proxy upgrade + InstantLayer registration transactions when `symmioPartyBAddress` and `symmioPartyBImplementation` are set in config
 - `testTemplateExecution.ts` verifies the full flow end-to-end (deploy PartyB, register, fund, execute InstantOpen template)
 
 ## Things NOT Handled

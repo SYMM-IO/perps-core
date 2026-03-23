@@ -33,8 +33,14 @@ type Config = {
 	instantLayerAddress?: string
 	symmioPartyBAddress?: string
 	symmioPartyBImplementation?: string
-	symmioPartyBProxyAdmin?: string
 	newV085Parameters?: NewV085Parameters
+}
+
+// Matches output of deployPeripherals.ts
+type DeployedPeripherals = {
+	accountLayer?: { diamond?: string }
+	instantLayer?: { address?: string }
+	symmioPartyBImplementation?: string
 }
 
 const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
@@ -103,13 +109,20 @@ async function main() {
 		newParams,
 	)
 
-	// Append AccountLayer + InstantLayer wiring transactions (if addresses provided)
-	const AL_ADDRESS = process.env.ACCOUNT_LAYER_ADDRESS ?? config.accountLayerDiamondAddress
-	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? config.instantLayerAddress
+	// Load deployed peripherals (written by deployPeripherals.ts)
+	const PERIPHERALS_FILE = process.env.PERIPHERALS_FILE ?? path.join(OUTPUT_DIR, "deployed-peripherals.json")
+	let peripherals: DeployedPeripherals = {}
+	if (fs.existsSync(PERIPHERALS_FILE)) {
+		peripherals = JSON.parse(fs.readFileSync(PERIPHERALS_FILE, "utf-8"))
+		console.log(`Loaded peripherals from ${PERIPHERALS_FILE}`)
+	}
+
+	// Resolve addresses: env > config > deployed-peripherals.json
+	const AL_ADDRESS = process.env.ACCOUNT_LAYER_ADDRESS ?? (config.accountLayerDiamondAddress || peripherals.accountLayer?.diamond)
+	const IL_ADDRESS = process.env.INSTANT_LAYER_ADDRESS ?? (config.instantLayerAddress || peripherals.instantLayer?.address)
 
 	const PARTYB_ADDRESS = process.env.SYMMIO_PARTYB_ADDRESS ?? config.symmioPartyBAddress
-	const PARTYB_IMPL = process.env.SYMMIO_PARTYB_IMPLEMENTATION ?? config.symmioPartyBImplementation
-	const PARTYB_PROXY_ADMIN = process.env.SYMMIO_PARTYB_PROXY_ADMIN ?? config.symmioPartyBProxyAdmin
+	const PARTYB_IMPL = process.env.SYMMIO_PARTYB_IMPLEMENTATION ?? (config.symmioPartyBImplementation || peripherals.symmioPartyBImplementation)
 
 	if (AL_ADDRESS && IL_ADDRESS && ethers.isAddress(AL_ADDRESS) && ethers.isAddress(IL_ADDRESS)) {
 		console.log("\nBuilding peripheral wiring transactions...")
@@ -118,14 +131,14 @@ async function main() {
 		if (PARTYB_ADDRESS) console.log(`  SymmioPartyB:        ${PARTYB_ADDRESS}`)
 		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, ADMIN_ADDRESS, PARTYB_ADDRESS, PARTYB_IMPL)
 
-		// SymmioPartyB proxy upgrade (if both proxy admin and new implementation provided)
-		if (PARTYB_PROXY_ADMIN && PARTYB_ADDRESS && PARTYB_IMPL) {
-			const proxyAdminIface = new ethers.Interface(["function upgrade(address proxy, address implementation)"])
+		// SymmioPartyB UUPS proxy upgrade (if address and new implementation provided)
+		if (PARTYB_ADDRESS && PARTYB_IMPL) {
+			const uupsIface = new ethers.Interface(["function upgradeTo(address newImplementation)"])
 			wiringTxs.unshift({
-				to: PARTYB_PROXY_ADMIN,
+				to: PARTYB_ADDRESS,
 				value: "0",
-				calldata: proxyAdminIface.encodeFunctionData("upgrade", [PARTYB_ADDRESS, PARTYB_IMPL]),
-				description: `upgrade(SymmioPartyB proxy, new implementation)`,
+				calldata: uupsIface.encodeFunctionData("upgradeTo", [PARTYB_IMPL]),
+				description: `upgradeTo(new SymmioPartyB implementation)`,
 			})
 		}
 

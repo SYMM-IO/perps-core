@@ -2,32 +2,90 @@
 
 ## Overview
 
-The production upgrade flow depends on whether the diamond is owned by an EOA or a multisig (Gnosis Safe).
+The production upgrade flow depends on whether the diamond is owned by an EOA or a multisig (Gnosis Safe). In both paths, all contract deployments happen **before** the system is paused to minimize downtime.
 
-**EOA path (single script):**
+## Safe Path (Production)
 
-1. **Upgrade** (`eoaUpgrade.ts`) -- deploy facets, pause, diamondCut, set v0.8.5 parameters, deploy AccountLayer + InstantLayer, wire integrations, grant migration role
-2. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
-3. **Run migration** (`runMigration.ts`) -- execute migration + verify
+```
+BEFORE PAUSE (no downtime)
+══════════════════════════
+
+ deployFacets.ts                deployPeripherals.ts
+ (deploy libs + facets)         (deploy AL + IL + PartyB impl)
+        │                              │
+        ▼                              ▼
+ deployed-facets.json          deployed-peripherals.json
+        │                              │
+        └──────────┬───────────────────┘
+                   ▼
+         generateSafeBatch.ts
+         (reads both, no on-chain actions)
+                   │
+         ┌─────────┴──────────┐
+         ▼                    ▼
+  safe-batch.json    diamondcut-calldata.json
+
+
+PAUSE STARTS (execute via Safe UI)
+══════════════════════════════════
+  safe-batch.json contains:
+    1. grantRole(PAUSER_ROLE)
+    2. grantRole(UNPAUSER_ROLE)
+    3. pauseGlobal()              <-- PAUSE
+    4. grantRole(PROTOCOL_CONFIG / COOLDOWN_ADMIN / FEE_ADMIN)
+    5. set v0.8.5 parameters
+    6. grantRole(MIGRATION_ROLE)
+    7. [wiring] AL/IL roles + hooks + whitelist
+    8. [wiring] upgradeTo(PartyB impl)  <-- UUPS
+    9. [wiring] registerPartyBs on IL
+
+  diamondcut-calldata.json:
+    diamondCut (chunked, executed separately)
+
+
+MIGRATION (system still paused)
+═══════════════════════════════
+
+ prepareMigrationInput.ts       (read-only: subgraph + on-chain)
+        │
+        ▼
+ migration-input.json
+        │
+        ▼
+ runMigration.ts                (migrateQuotes + migrateCrossLocked + verify)
+        │
+        ▼
+ migration-report.json
+
+
+UNPAUSE
+═══════
+
+ generatePostMigrationBatch.ts  (generates calldata, no on-chain)
+        │
+        ▼
+  Execute via Safe UI:
+    1. unpauseGlobal()            <-- UNPAUSE
+    2. setCrossPartyBModeActivated(true)
+    3. setCrossPartyB(partyB, true) x N
+```
+
+## EOA Path
+
+**Single script:**
+
+1. **Upgrade** (`eoaUpgrade.ts`) -- deploy facets, pause, diamondCut, set params, deploy AL + IL, wire, grant migration role
+2. **Prepare migration input** (`prepareMigrationInput.ts`)
+3. **Run migration** (`runMigration.ts`)
 4. **Post-migration** (`generatePostMigrationBatch.ts`) -- unpause, enable cross-PartyB mode
 
-**EOA path (step-by-step):**
+**Step-by-step:**
 
-1. **Deploy facets** (`deployFacets.ts`) -- deploy v0.8.5 facets + libraries to the target network
-2. **Apply upgrade** (`applyUpgrade.ts`) -- build and execute a single diamondCut transaction
-3. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
-4. **Run migration** (`runMigration.ts`) -- execute migration + verify
-5. **Post-migration** (`generatePostMigrationBatch.ts`) -- unpause, enable cross-PartyB mode
-
-**Safe path:**
-
-1. **Deploy facets** (`deployFacets.ts`) -- deploy v0.8.5 facets + libraries to the target network
-2. **Deploy peripherals** (`deployPeripherals.ts`) -- deploy AccountLayer, InstantLayer, and SymmioPartyB implementation
-3. **Generate Safe transactions** (`generateSafeBatch.ts`) -- build Safe Transaction Builder JSON (includes AL/IL wiring + PartyB upgrade)
-4. **Execute upgrade** -- submit via Safe UI
-5. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
-6. **Run migration** (`runMigration.ts`) -- execute migration + verify
-7. **Post-migration** (`generatePostMigrationBatch.ts`) -- unpause, enable cross-PartyB mode
+1. **Deploy facets** (`deployFacets.ts`) -- before pause
+2. **Apply upgrade** (`applyUpgrade.ts`) -- diamondCut only (pause manually first)
+3. **Prepare migration input** (`prepareMigrationInput.ts`)
+4. **Run migration** (`runMigration.ts`)
+5. **Post-migration** (`generatePostMigrationBatch.ts`)
 
 ## Prerequisites
 
@@ -134,7 +192,7 @@ The script applies all facet cuts in a **single transaction** (no chunking neede
 
 Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role, AccountLayer/InstantLayer wiring) plus separate diamondCut calldata.
 
-**Prerequisites:** Deploy peripherals before running this script via `deployPeripherals.ts`, then set `accountLayerDiamondAddress`, `instantLayerAddress`, and optionally `symmioPartyBAddress`/`symmioPartyBImplementation`/`symmioPartyBProxyAdmin` in `upgrade.json`. If these addresses are provided, wiring transactions (role grants, hook registration, whitelisting, PartyB proxy upgrade + InstantLayer registration) are included in the Safe batch.
+**Prerequisites:** Run `deployFacets.ts` and `deployPeripherals.ts` first. The script auto-loads `deployed-facets.json` and `deployed-peripherals.json` from the output directory -- no manual address copy needed. Set `symmioPartyBAddress` in `upgrade.json` to include PartyB UUPS upgrade + InstantLayer registration in the Safe batch. Config and env vars override auto-loaded values if set.
 
 ```bash
 npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
@@ -146,8 +204,9 @@ Output:
 - `scripts/upgrade/output/upgrade-details.json` -- selector changes + breakdown
 
 Execute in Safe UI:
-1. Execute the diamondCut calldata from `diamondcut-calldata.json` (via timelock or direct)
-2. Import `safe-batch.json` into the Safe Transaction Builder to execute role grants, pause, params, and AL/IL wiring
+1. Import `safe-batch.json` into the Safe Transaction Builder (includes pause, role grants, params, wiring)
+2. Execute the diamondCut calldata from `diamondcut-calldata.json` (via timelock or direct)
+3. The batch pauses the system first, then applies params and wiring after diamondCut
 
 ## Step 3: Prepare Migration Input
 
@@ -247,15 +306,12 @@ The migration report includes:
 | `safeAddress` | string | `""` | Gnosis Safe address (Safe path only) |
 | `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
 | `diamondCutChunkSize` | number | `1000` | Max facet cuts per diamondCut transaction |
-| `execute` | boolean | `false` | Execute transactions on-chain after generating (for fork testing) |
 | `symmioFeeReceiver` | string | `""` | Fee receiver for AccountLayer Init (defaults to admin) |
 | `setupInstantLayerTemplates` | boolean | `true` | Setup OpenPosition/ClosePosition templates on InstantLayer |
-| `accountLayerDiamondAddress` | string | `""` | Pre-deployed AccountLayer address (Safe path -- wiring only) |
-| `instantLayerAddress` | string | `""` | Pre-deployed InstantLayer address (Safe path -- wiring only) |
-| `symmioPartyBAddress` | string | `""` | Existing SymmioPartyB proxy address (for InstantLayer registration) |
-| `symmioPartyBImplementation` | string | `""` | New SymmioPartyB implementation address (for proxy upgrade) |
-| `symmioPartyBProxyAdmin` | string | `""` | SymmioPartyB TransparentProxy admin (for proxy upgrade tx) |
+| `symmioPartyBAddress` | string | `""` | Existing SymmioPartyB proxy address (for UUPS upgrade + InstantLayer registration) |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
+
+`accountLayerDiamondAddress`, `instantLayerAddress`, and `symmioPartyBImplementation` are auto-loaded from `deployed-peripherals.json`. They can still be set in config or env vars as overrides.
 
 ### Env var overrides
 
@@ -263,6 +319,7 @@ The migration report includes:
 |---------|-----------|
 | `DIAMOND_ADDRESS` | `diamondAddress` |
 | `FACETS_FILE` | Path to `deployed-facets.json` |
+| `PERIPHERALS_FILE` | Path to `deployed-peripherals.json` |
 | `UPGRADE_CONFIG_FILE` | Config file path (default: `scripts/upgrade/config/upgrade.json`) |
 
 ### Config files by script
