@@ -408,16 +408,25 @@ async function main() {
 
 			const hasRole = await partyBContract.hasRole(DEFAULT_ADMIN_ROLE, adminAddress)
 			if (!hasRole) {
-				// Find current admin via AccessControlEnumerable and grant role to diamond admin
-				const enumerable = new ethers.Contract(PARTYB_ADDRESS, ["function getRoleMember(bytes32 role, uint256 index) view returns (address)"], admin)
-				const currentAdmin = await enumerable.getRoleMember(DEFAULT_ADMIN_ROLE, 0)
-				log.kv("Current PartyB admin", log.addr(currentAdmin))
-
-				const { impersonateAndFund } = await import("./utils/forkHelpers.js")
-				const currentAdminSigner = await impersonateAndFund(currentAdmin)
-				const partyBAsCurrentAdmin = new ethers.Contract(PARTYB_ADDRESS, ["function grantRole(bytes32 role, address account)"], currentAdminSigner)
-				await (await partyBAsCurrentAdmin.grantRole(DEFAULT_ADMIN_ROLE, adminAddress)).wait()
-				log.ok(`Granted DEFAULT_ADMIN_ROLE to diamond admin ${log.addr(adminAddress)}`)
+				// Grant DEFAULT_ADMIN_ROLE to diamond admin via direct storage write (fork only).
+				// AccessControlUpgradeable stores _roles[role].members[addr] as a bool in a nested mapping.
+				// Slot = keccak256(addr . keccak256(role . _roles_base_slot))
+				// The base slot varies by OZ version / inheritance, so we try common values.
+				const candidateSlots = [151, 101, 201, 251]
+				let granted = false
+				for (const baseSlot of candidateSlots) {
+					const roleSlot = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["bytes32", "uint256"], [DEFAULT_ADMIN_ROLE, baseSlot]))
+					const memberSlot = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes32"], [adminAddress, roleSlot]))
+					await ethers.provider.send("hardhat_setStorageAt", [PARTYB_ADDRESS, memberSlot, ethers.zeroPadValue("0x01", 32)])
+					if (await partyBContract.hasRole(DEFAULT_ADMIN_ROLE, adminAddress)) {
+						granted = true
+						break
+					}
+				}
+				if (!granted) {
+					throw new Error("Failed to grant DEFAULT_ADMIN_ROLE on SymmioPartyB via storage — unknown storage layout")
+				}
+				log.ok(`Granted DEFAULT_ADMIN_ROLE to diamond admin ${log.addr(adminAddress)} (via fork storage write)`)
 			}
 
 			await (await partyBContract.upgradeTo(newImplAddress)).wait()
