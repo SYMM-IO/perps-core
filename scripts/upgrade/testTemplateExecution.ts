@@ -15,19 +15,13 @@
  *   - AccountLayer + InstantLayer deployed and wired
  *
  * Usage (local):
- *   DIAMOND_ADDRESS=0x... ACCOUNT_LAYER_ADDRESS=0x... INSTANT_LAYER_ADDRESS=0x... \
- *     npx hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
+ *   npx hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
  *
- * Usage (fork):
- *   FORK=true DIAMOND_ADDRESS=0x... ACCOUNT_LAYER_ADDRESS=0x... INSTANT_LAYER_ADDRESS=0x... \
- *     npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
+ * Usage (fork, after forkUpgrade.ts):
+ *   FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
  *
- *   # With existing SymmioPartyB proxy upgrade (UUPS) instead of fresh deploy:
- *   FORK=true SYMMIO_PARTYB_ADDRESS=0x... \
- *     DIAMOND_ADDRESS=0x... ACCOUNT_LAYER_ADDRESS=0x... INSTANT_LAYER_ADDRESS=0x... \
- *     npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
- *
- * Config: scripts/upgrade/config/testTemplateExecution.json (optional, env vars override)
+ * Auto-loads from upgrade.json + output files (deployed-accountlayer-instantlayer.json
+ * or deployed-peripherals.json). Env vars and testTemplateExecution.json override.
  */
 import fs from "fs"
 
@@ -48,10 +42,40 @@ type Config = {
 }
 
 const CONFIG_FILE = process.env.TEST_TEMPLATE_CONFIG ?? "./scripts/upgrade/config/testTemplateExecution.json"
+const UPGRADE_CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
+const OUTPUT_DIR = "./scripts/upgrade/output"
 
 function loadConfig(): Config {
 	if (fs.existsSync(CONFIG_FILE)) return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
-	return {}
+
+	// Auto-load from upgrade config + output files (no manual config needed)
+	const config: Config = {}
+
+	// Read diamondAddress and symmioPartyBAddress from upgrade.json
+	if (fs.existsSync(UPGRADE_CONFIG_FILE)) {
+		const upgrade = JSON.parse(fs.readFileSync(UPGRADE_CONFIG_FILE, "utf-8"))
+		config.diamondAddress = upgrade.diamondAddress
+		config.symmioPartyBAddress = upgrade.symmioPartyBAddress
+		console.log(`Loaded diamond + partyB from ${UPGRADE_CONFIG_FILE}`)
+	}
+
+	// Read AL + IL from deployed output (forkUpgrade or deployPeripherals)
+	const alilFile = `${OUTPUT_DIR}/deployed-accountlayer-instantlayer.json`
+	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals.json`
+
+	if (fs.existsSync(alilFile)) {
+		const alil = JSON.parse(fs.readFileSync(alilFile, "utf-8"))
+		config.accountLayerDiamondAddress = alil.accountLayer?.diamond
+		config.instantLayerAddress = alil.instantLayer?.address
+		console.log(`Loaded AL + IL from ${alilFile}`)
+	} else if (fs.existsSync(peripheralsFile)) {
+		const peripherals = JSON.parse(fs.readFileSync(peripheralsFile, "utf-8"))
+		config.accountLayerDiamondAddress = peripherals.accountLayer?.diamond
+		config.instantLayerAddress = peripherals.instantLayer?.address
+		console.log(`Loaded AL + IL from ${peripheralsFile}`)
+	}
+
+	return config
 }
 
 // ============================================================================

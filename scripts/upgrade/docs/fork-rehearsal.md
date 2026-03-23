@@ -55,18 +55,31 @@ Deploys v0.8.5 facets, applies diamondCut, sets parameters, deploys AccountLayer
 
 ```bash
 # Terminal 2
-DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
+npx hardhat run scripts/upgrade/forkUpgrade.ts --network localhost
 ```
 
 Output: `scripts/upgrade/output/forkUpgrade-report.json`, `deployed-facets.json`, `deployed-accountlayer-instantlayer.json`
 
-The script deploys the AccountLayer Diamond (7 facets) and InstantLayer contract, then wires them to the core Diamond:
-- Grants `SIGNER_ADMIN_ROLE`, `AFFILIATE_MANAGER_ROLE`, `BALANCE_SETTLER_ROLE` to AccountLayer on Diamond
-- Grants `INSTANT_LAYER_ROLE` to InstantLayer on Diamond
-- Registers AccountLayer as system hook on Diamond
-- Grants `SIGNER_SETTER_ROLE` to InstantLayer on AccountLayer
-- Whitelists Diamond on AccountLayer and both Diamond + AccountLayer on InstantLayer
-- Sets up OpenPosition and ClosePosition templates on InstantLayer (unless `setupInstantLayerTemplates: false`)
+### Step 1.5: Verify upgrade
+
+Run after forkUpgrade to confirm the upgrade is correct before migration. All scripts auto-load addresses from `upgrade.json` and output files.
+
+```bash
+# Verify all v0.8.5 facet selectors are registered
+npx hardhat run scripts/upgrade/verifyDiamond.ts --network localhost
+
+# Verify AccountLayer + InstantLayer wiring (roles, hooks, templates)
+npx hardhat run scripts/upgrade/verifyPeripherals.ts --network localhost
+
+# End-to-end: affiliate, sub-account, PartyB upgrade, EIP-712 delegation, template execution
+FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network localhost
+```
+
+| Script | What it checks |
+|--------|---------------|
+| `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
+| `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
+| `testTemplateExecution.ts` | Full trade flow via InstantLayer template (sendQuote -> lockQuote -> openPosition) with EIP-712 signatures, delegation, and result injection |
 
 ### Step 2: Prepare migration input
 
@@ -140,8 +153,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `diamondCutChunkSize` | number | `1000` | Max facet cuts per transaction |
 | `symmioFeeReceiver` | string | `""` | Fee receiver for AccountLayer Init (defaults to admin) |
 | `setupInstantLayerTemplates` | boolean | `true` | Setup OpenPosition/ClosePosition templates on InstantLayer |
-| `accountLayerDiamondAddress` | string | `""` | Pre-deployed AccountLayer address (Safe path only) |
-| `instantLayerAddress` | string | `""` | Pre-deployed InstantLayer address (Safe path only) |
+| `symmioPartyBAddress` | string | `""` | Existing SymmioPartyB proxy address (for UUPS upgrade + InstantLayer registration) |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
 
 ### Upgrade env var overrides

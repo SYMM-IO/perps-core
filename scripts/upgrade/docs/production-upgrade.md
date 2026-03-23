@@ -107,23 +107,47 @@ Before running the upgrade in production, test the full flow on localhost:
 
 1. Deploy v0.8.4 from the previous codebase to a local Hardhat node
 2. Run `eoaUpgrade.ts --network docker` against it
-3. Run `verifyDiamond.ts` to confirm core diamond selectors
-4. Run `verifyPeripherals.ts` to confirm AL/IL/PartyB wiring
-5. Run `testTemplateExecution.ts` to verify InstantLayer template execution end-to-end
+3. Run verification scripts
 
 ```bash
 npx hardhat run scripts/upgrade/eoaUpgrade.ts --network docker
-
-# Verify core diamond selectors
 npx hardhat run scripts/upgrade/verifyDiamond.ts --network docker
-
-# Verify peripheral wiring (AL + IL + PartyB)
 npx hardhat run scripts/upgrade/verifyPeripherals.ts --network docker
-
-# End-to-end template execution test
-DIAMOND_ADDRESS=0x... ACCOUNT_LAYER_ADDRESS=0x... INSTANT_LAYER_ADDRESS=0x... \
-  npx hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
+npx hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
 ```
+
+### Fork rehearsal
+
+Test against real on-chain state before production:
+
+```bash
+# 1. Run upgrade on fork
+npx hardhat run scripts/upgrade/forkUpgrade.ts --network fork-arbitrum
+
+# 2. Verify (all auto-load from upgrade.json + output files)
+npx hardhat run scripts/upgrade/verifyDiamond.ts --network fork-arbitrum
+npx hardhat run scripts/upgrade/verifyPeripherals.ts --network fork-arbitrum
+FORK=true npx hardhat run scripts/upgrade/testTemplateExecution.ts --network fork-arbitrum
+
+# 3. Run migration
+npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network fork-arbitrum
+npx hardhat run scripts/upgrade/runMigration.ts --network fork-arbitrum
+```
+
+### Verification scripts
+
+| Script | What it checks |
+|--------|---------------|
+| `verifyDiamond.ts` | All v0.8.5 facet selectors registered on diamond |
+| `verifyPeripherals.ts` | AccountLayer + InstantLayer roles, hooks, whitelist, templates |
+| `testTemplateExecution.ts` | Full end-to-end: affiliate registration, sub-account, PartyB UUPS upgrade, EIP-712 delegation, sendQuote -> lockQuote -> openPosition via InstantLayer template |
+
+`testTemplateExecution.ts` auto-loads `diamondAddress` and `symmioPartyBAddress` from `upgrade.json`, and `accountLayerDiamondAddress` + `instantLayerAddress` from the output files. No manual config needed.
+
+**What is NOT covered by these scripts** (verified elsewhere):
+- Migration correctness -- `forkUpgrade.ts` step 11 verifies pre/post upgrade snapshots; `runMigration.ts` verifies all migrated data
+- v0.8.5 parameter values -- check on-chain after batch execution
+- Cross-PartyB mode -- enabled post-migration via `generatePostMigrationBatch.ts`
 
 ## EOA: Single Script Upgrade
 
@@ -283,12 +307,20 @@ Output:
 
 ## Production Verification
 
-After the diamondCut:
-- Review `upgrade-details.json` for the full selector diff (added, replaced, removed selectors with function signatures)
-- Call `DiamondLoupeFacet.facets()` on-chain to confirm all v0.8.5 facet addresses are registered
-- Call a v0.8.5-only function (e.g. `setCrossPartyBModeActivated`) to confirm it responds
+After the diamondCut + wiring batch:
+
+```bash
+# Verify all v0.8.5 facet selectors are registered
+npx hardhat run scripts/upgrade/verifyDiamond.ts --network arbitrum
+
+# Verify AccountLayer + InstantLayer wiring (roles, hooks, templates)
+npx hardhat run scripts/upgrade/verifyPeripherals.ts --network arbitrum
+```
+
+Also review `upgrade-details.json` for the full selector diff (added, replaced, removed).
 
 After migration:
+
 ```bash
 jq '{status, error}' scripts/upgrade/output/migration-report.json
 ```
