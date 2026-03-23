@@ -358,7 +358,7 @@ async function main() {
 		const symmioFeeReceiver = config.symmioFeeReceiver || adminAddress
 		const alilStateFile = `${outputDir}/deployed-accountlayer-instantlayer.json`
 
-		const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, alilStateFile)
+		const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, alilStateFile, admin)
 		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, adminAddress, alilStateFile)
 		accountLayerAddress = alResult.diamondAddress
 		instantLayerAddress = ilResult.address

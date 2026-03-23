@@ -94,6 +94,7 @@ export async function deployAccountLayerDiamond(
 	adminAddress: string,
 	symmioFeeReceiver: string,
 	stateFile?: string,
+	adminSigner?: any,
 ): Promise<AccountLayerDeployResult> {
 	const state = loadState(stateFile ?? "")
 	if (!state.accountLayer) state.accountLayer = {}
@@ -222,7 +223,7 @@ export async function deployAccountLayerDiamond(
 		}
 
 		if (!alreadyDone) {
-			const diamondCutContract = await ethers.getContractAt("IDiamondCut", diamondAddress)
+			const diamondCutContract = await ethers.getContractAt("IDiamondCut", diamondAddress, adminSigner)
 			const init = await ethers.getContractAt("contracts/accountLayer/Init.sol:Init", initAddress)
 
 			// Get AccountManager bytecode for Init
