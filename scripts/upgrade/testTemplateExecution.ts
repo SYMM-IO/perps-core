@@ -287,6 +287,10 @@ async function main() {
 
 		symmioPartyB = await ethers.getContractAt("SymmioPartyB", symmioPartyBAddress, admin)
 
+		// Ensure PartyB is bindable (new v0.8.5 mapping, defaults to false for existing PartyBs)
+		await (await controlFacet.setPartyBBindable(symmioPartyBAddress, true)).wait()
+		console.log("  Set bindable")
+
 		// Register on InstantLayer if not already registered
 		const isRegistered = await instantLayer.registeredPartyBs(symmioPartyBAddress)
 		if (!isRegistered) {
