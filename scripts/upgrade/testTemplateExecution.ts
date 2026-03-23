@@ -366,12 +366,16 @@ async function main() {
 	// =========================================================================
 	console.log("\n=== Step 3: Unpause system ===")
 	await (await controlFacet.grantRole(adminAddress, roleHash("UNPAUSER_ROLE"))).wait()
-	try {
-		await (await pauseControlFacet.unpauseGlobal()).wait()
-		console.log("  System unpaused")
-	} catch {
-		console.log("  System already unpaused")
+	const unpauseFns = ["unpauseGlobal", "unpauseAccounting", "unpausePartyAActions", "unpausePartyBActions"] as const
+	for (const fn of unpauseFns) {
+		try {
+			await (await pauseControlFacet[fn]()).wait()
+			console.log(`  ${fn}()`)
+		} catch {
+			// Already unpaused
+		}
 	}
+	console.log("  System unpaused")
 
 	// =========================================================================
 	// Step 4: Create virtual account + bind to PartyB
