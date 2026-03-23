@@ -36,8 +36,11 @@ PAUSE STARTS (execute via Safe UI)
     5. set v0.8.5 parameters
     6. grantRole(MIGRATION_ROLE)
     7. [wiring] AL/IL roles + hooks + whitelist
-    8. [wiring] upgradeTo(PartyB impl)  <-- UUPS
+    8. [wiring] upgradeTo(PartyB impl)  <-- UUPS (*)
     9. [wiring] registerPartyBs on IL
+
+  (*) Safe must have DEFAULT_ADMIN_ROLE on SymmioPartyB
+      before executing. Grant via current PartyB admin.
 
   diamondcut-calldata.json:
     diamondCut (chunked, executed separately)

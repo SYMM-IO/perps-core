@@ -132,6 +132,8 @@ async function main() {
 		const wiringTxs = buildWiringTransactions(DIAMOND_ADDRESS, AL_ADDRESS, IL_ADDRESS, ADMIN_ADDRESS, PARTYB_ADDRESS, PARTYB_IMPL)
 
 		// SymmioPartyB UUPS proxy upgrade (if address and new implementation provided)
+		// The Safe must have DEFAULT_ADMIN_ROLE on the PartyB proxy to call upgradeTo.
+		// The current PartyB admin must grant this role to the Safe before executing the batch.
 		if (PARTYB_ADDRESS && PARTYB_IMPL) {
 			const uupsIface = new ethers.Interface(["function upgradeTo(address newImplementation)"])
 			wiringTxs.unshift({
@@ -140,6 +142,7 @@ async function main() {
 				calldata: uupsIface.encodeFunctionData("upgradeTo", [PARTYB_IMPL]),
 				description: `upgradeTo(new SymmioPartyB implementation)`,
 			})
+			console.log(`  NOTE: The Safe (${SAFE_ADDRESS}) must have DEFAULT_ADMIN_ROLE on SymmioPartyB (${PARTYB_ADDRESS}) before executing this batch.`)
 		}
 
 		for (const tx of wiringTxs) {

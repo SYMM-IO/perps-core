@@ -394,53 +394,34 @@ async function main() {
 			const newImplAddress = await newImpl.getAddress()
 			log.deployed("New implementation", newImplAddress)
 
-			// UUPS proxy upgrade: resolve DEFAULT_ADMIN_ROLE holder and call upgradeTo
-			{
-				const DEFAULT_ADMIN_ROLE = ethers.ZeroHash
-				const partyBAccess = new ethers.Contract(PARTYB_ADDRESS, [
+			// UUPS proxy upgrade: grant DEFAULT_ADMIN_ROLE to diamond admin, then upgradeTo
+			const DEFAULT_ADMIN_ROLE = ethers.ZeroHash
+			const partyBContract = new ethers.Contract(
+				PARTYB_ADDRESS,
+				[
 					"function hasRole(bytes32 role, address account) view returns (bool)",
-					"function getRoleMember(bytes32 role, uint256 index) view returns (address)",
-				])
+					"function grantRole(bytes32 role, address account)",
+					"function upgradeTo(address newImplementation)",
+				],
+				admin,
+			)
 
-				let upgradeAuthority: string | undefined
-
-				// Try AccessControlEnumerable first (works on v0.8.5 implementations)
-				try {
-					upgradeAuthority = await partyBAccess.getRoleMember(DEFAULT_ADMIN_ROLE, 0)
-				} catch {
-					// Fall back to scanning RoleGranted events (v0.8.4 non-enumerable)
-					const roleGrantedTopic = ethers.id("RoleGranted(bytes32,address,address)")
-					const eventLogs = await ethers.provider.getLogs({
-						address: PARTYB_ADDRESS,
-						topics: [roleGrantedTopic, DEFAULT_ADMIN_ROLE],
-						fromBlock: 0,
-						toBlock: "latest",
-					})
-
-					const iface = new ethers.Interface(["event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)"])
-					// Check from most recent grant backwards, verify role not revoked
-					for (let i = eventLogs.length - 1; i >= 0; i--) {
-						const parsed = iface.parseLog(eventLogs[i])!
-						const candidate = parsed.args.account
-						const stillHasRole = await partyBAccess.hasRole(DEFAULT_ADMIN_ROLE, candidate)
-						if (stillHasRole) {
-							upgradeAuthority = candidate
-							break
-						}
-					}
-				}
-
-				if (!upgradeAuthority) {
-					throw new Error("Cannot resolve DEFAULT_ADMIN_ROLE holder on SymmioPartyB proxy — unable to perform UUPS upgrade")
-				}
-				log.kv("UUPS upgrade authority", log.addr(upgradeAuthority))
+			const hasRole = await partyBContract.hasRole(DEFAULT_ADMIN_ROLE, adminAddress)
+			if (!hasRole) {
+				// Find current admin via AccessControlEnumerable and grant role to diamond admin
+				const enumerable = new ethers.Contract(PARTYB_ADDRESS, ["function getRoleMember(bytes32 role, uint256 index) view returns (address)"])
+				const currentAdmin = await enumerable.getRoleMember(DEFAULT_ADMIN_ROLE, 0)
+				log.kv("Current PartyB admin", log.addr(currentAdmin))
 
 				const { impersonateAndFund } = await import("./utils/forkHelpers.js")
-				const authoritySigner = await impersonateAndFund(upgradeAuthority)
-				const proxyAsUUPS = new ethers.Contract(PARTYB_ADDRESS, ["function upgradeTo(address newImplementation)"], authoritySigner)
-				await (await proxyAsUUPS.upgradeTo(newImplAddress)).wait()
-				log.ok("Proxy upgraded via upgradeTo (UUPS)")
+				const currentAdminSigner = await impersonateAndFund(currentAdmin)
+				const partyBAsCurrentAdmin = new ethers.Contract(PARTYB_ADDRESS, ["function grantRole(bytes32 role, address account)"], currentAdminSigner)
+				await (await partyBAsCurrentAdmin.grantRole(DEFAULT_ADMIN_ROLE, adminAddress)).wait()
+				log.ok(`Granted DEFAULT_ADMIN_ROLE to diamond admin ${log.addr(adminAddress)}`)
 			}
+
+			await (await partyBContract.upgradeTo(newImplAddress)).wait()
+			log.ok("Proxy upgraded via upgradeTo (UUPS)")
 
 			// Register on InstantLayer
 			const il = await ethers.getContractAt("InstantLayer", ilResult.address, admin)

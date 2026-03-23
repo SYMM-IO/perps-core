@@ -128,16 +128,10 @@ async function main() {
 		["State file", STATE_FILE],
 	])
 
-	log.info("Add these to your upgrade.json:")
-	const output: Record<string, string> = {
-		accountLayerDiamondAddress: alResult.diamondAddress,
-		instantLayerAddress: ilResult.address,
-		symmioPartyBImplementation: symmioPartyBImpl,
-	}
-	if (symmioPartyBAddress) {
-		output.symmioPartyBAddress = symmioPartyBAddress
-	}
-	console.log(JSON.stringify(output, null, 2))
+	log.nextSteps([
+		"Run generateSafeBatch.ts (peripheral addresses are auto-loaded from deployed-peripherals.json)",
+		`Grant DEFAULT_ADMIN_ROLE on SymmioPartyB (${symmioPartyBAddress ?? "N/A"}) to the Safe before executing the upgrade batch`,
+	])
 }
 
 main().catch(error => {
