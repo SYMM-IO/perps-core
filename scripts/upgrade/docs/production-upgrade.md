@@ -22,8 +22,8 @@ The production upgrade flow depends on whether the diamond is owned by an EOA or
 **Safe path:**
 
 1. **Deploy facets** (`deployFacets.ts`) -- deploy v0.8.5 facets + libraries to the target network
-2. **Deploy AccountLayer + InstantLayer** -- deploy separately, provide addresses in config
-3. **Generate Safe transactions** (`generateSafeBatch.ts`) -- build Safe Transaction Builder JSON (includes AL/IL wiring)
+2. **Deploy peripherals** (`deployPeripherals.ts`) -- deploy AccountLayer, InstantLayer, and SymmioPartyB implementation
+3. **Generate Safe transactions** (`generateSafeBatch.ts`) -- build Safe Transaction Builder JSON (includes AL/IL wiring + PartyB upgrade)
 4. **Execute upgrade** -- submit via Safe UI
 5. **Prepare migration input** (`prepareMigrationInput.ts`) -- fetch data from subgraph, validate against on-chain
 6. **Run migration** (`runMigration.ts`) -- execute migration + verify
@@ -45,17 +45,24 @@ The production upgrade flow depends on whether the diamond is owned by an EOA or
 Before running the upgrade in production, test the full flow on localhost:
 
 1. Deploy v0.8.4 from the previous codebase to a local Hardhat node
-2. Run `eoaUpgrade.ts --network localhost` against it
-3. Run `verifyUpgrade.ts --network localhost` to confirm on-chain state matches `deployed-facets.json`
+2. Run `eoaUpgrade.ts --network docker` against it
+3. Run `verifyDiamond.ts` to confirm core diamond selectors
+4. Run `verifyPeripherals.ts` to confirm AL/IL/PartyB wiring
+5. Run `testTemplateExecution.ts` to verify InstantLayer template execution end-to-end
 
 ```bash
-npx hardhat run scripts/upgrade/eoaUpgrade.ts --network localhost
+npx hardhat run scripts/upgrade/eoaUpgrade.ts --network docker
 
-# Verify on-chain diamond state matches deployed-facets.json (localhost only)
-npx hardhat run scripts/upgrade/verifyUpgrade.ts --network localhost
+# Verify core diamond selectors
+npx hardhat run scripts/upgrade/verifyDiamond.ts --network docker
+
+# Verify peripheral wiring (AL + IL + PartyB)
+npx hardhat run scripts/upgrade/verifyPeripherals.ts --network docker
+
+# End-to-end template execution test
+DIAMOND_ADDRESS=0x... ACCOUNT_LAYER_ADDRESS=0x... INSTANT_LAYER_ADDRESS=0x... \
+  npx hardhat run scripts/upgrade/testTemplateExecution.ts --network docker
 ```
-
-`verifyUpgrade.ts` is a localhost testing tool -- it is not part of the production upgrade flow. Use it to validate the diamond cut before going to production.
 
 ## EOA: Single Script Upgrade
 
@@ -127,7 +134,7 @@ The script applies all facet cuts in a **single transaction** (no chunking neede
 
 Generates Safe Transaction Builder JSON for the full upgrade (roles, pause, params, migration role, AccountLayer/InstantLayer wiring) plus separate diamondCut calldata.
 
-**Prerequisites:** Deploy AccountLayer Diamond and InstantLayer separately before running this script, then set `accountLayerDiamondAddress` and `instantLayerAddress` in `upgrade.json`. If these addresses are provided, wiring transactions (role grants, hook registration, whitelisting) are included in the Safe batch.
+**Prerequisites:** Deploy peripherals before running this script via `deployPeripherals.ts`, then set `accountLayerDiamondAddress`, `instantLayerAddress`, and optionally `symmioPartyBAddress`/`symmioPartyBImplementation`/`symmioPartyBProxyAdmin` in `upgrade.json`. If these addresses are provided, wiring transactions (role grants, hook registration, whitelisting, PartyB proxy upgrade + InstantLayer registration) are included in the Safe batch.
 
 ```bash
 npx hardhat run scripts/upgrade/generateSafeBatch.ts --network arbitrum
@@ -245,6 +252,9 @@ The migration report includes:
 | `setupInstantLayerTemplates` | boolean | `true` | Setup OpenPosition/ClosePosition templates on InstantLayer |
 | `accountLayerDiamondAddress` | string | `""` | Pre-deployed AccountLayer address (Safe path -- wiring only) |
 | `instantLayerAddress` | string | `""` | Pre-deployed InstantLayer address (Safe path -- wiring only) |
+| `symmioPartyBAddress` | string | `""` | Existing SymmioPartyB proxy address (for InstantLayer registration) |
+| `symmioPartyBImplementation` | string | `""` | New SymmioPartyB implementation address (for proxy upgrade) |
+| `symmioPartyBProxyAdmin` | string | `""` | SymmioPartyB TransparentProxy admin (for proxy upgrade tx) |
 | `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
 
 ### Env var overrides
