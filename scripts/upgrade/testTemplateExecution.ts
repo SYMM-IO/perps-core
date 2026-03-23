@@ -366,13 +366,24 @@ async function main() {
 	// =========================================================================
 	console.log("\n=== Step 3: Unpause system ===")
 	await (await controlFacet.grantRole(adminAddress, roleHash("UNPAUSER_ROLE"))).wait()
+	console.log("  UNPAUSER_ROLE granted")
+
+	// Check current pause state
+	const viewFacetForPause = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND, admin)
+	try {
+		const ps = await viewFacetForPause.pauseState()
+		console.log(`  Pause state: global=${ps[0]} liq=${ps[1]} accounting=${ps[2]} partyB=${ps[3]} partyA=${ps[4]} emergency=${ps[5]}`)
+	} catch {
+		console.log("  (could not read pauseState)")
+	}
+
 	const unpauseFns = ["unpauseGlobal", "unpauseAccounting", "unpausePartyAActions", "unpausePartyBActions"] as const
 	for (const fn of unpauseFns) {
 		try {
 			await (await pauseControlFacet[fn]()).wait()
-			console.log(`  ${fn}()`)
-		} catch {
-			// Already unpaused
+			console.log(`  ${fn}() done`)
+		} catch (e: any) {
+			console.log(`  ${fn}() failed: ${e.message?.slice(0, 120) ?? e}`)
 		}
 	}
 	console.log("  System unpaused")
@@ -411,6 +422,19 @@ async function main() {
 		// Approve + deposit + allocate for PartyA
 		const collateralForPartyA = new ethers.Contract(collateralAddress, ["function approve(address,uint256) returns (bool)"], partyASigner)
 		await (await collateralForPartyA.approve(DIAMOND, ethers.MaxUint256)).wait()
+		// Debug: verify balance and allowance before deposit
+		const balCheck = new ethers.Contract(
+			collateralAddress,
+			["function balanceOf(address) view returns (uint256)", "function allowance(address,address) view returns (uint256)"],
+			ethers.provider,
+		)
+		console.log(`  PartyA balance: ${await balCheck.balanceOf(partyAAddress)}, allowance: ${await balCheck.allowance(partyAAddress, DIAMOND)}`)
+		try {
+			await accountFacet.connect(partyASigner).depositAndAllocateFor.staticCall(subAccountAddress, decimal(10000n))
+		} catch (e: any) {
+			console.log(`  depositAndAllocateFor staticCall error: ${e.reason ?? e.shortMessage ?? e.message?.slice(0, 200)}`)
+			throw e
+		}
 		await (await accountFacet.connect(partyASigner).depositAndAllocateFor(subAccountAddress, decimal(10000n))).wait()
 		console.log("  PartyA: deposited and allocated 10000")
 
