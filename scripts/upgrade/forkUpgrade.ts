@@ -3,6 +3,7 @@ import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import { log } from "./utils/log.js"
 import { deployAccountLayerDiamond, deployInstantLayer, wireAccountLayerInstantLayer, setupInstantLayerTemplates } from "./utils/peripheralHelpers.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
@@ -33,6 +34,8 @@ type ForkUpgradeConfig = {
 	spotCheckCount?: number
 	symmioFeeReceiver?: string
 	setupInstantLayerTemplates?: boolean
+	symmioPartyBAddress?: string
+	symmioPartyBProxyAdmin?: string
 	newV085Parameters?: NewV085Parameters
 	verbose?: boolean
 }
@@ -96,11 +99,12 @@ function tryWriteReport(filePath: string, report: ForkUpgradeReport): void {
 	try {
 		writeJson(filePath, report)
 	} catch (error) {
-		console.error(`Failed to write report: ${formatError(error)}`)
+		log.error(`Failed to write report: ${formatError(error)}`)
 	}
 }
 
 async function main() {
+	const scriptTimer = log.timer()
 	await verifyRpc()
 	const startedAtMs = Date.now()
 	const config = loadConfig()
@@ -122,8 +126,12 @@ async function main() {
 	tryWriteReport(reportFile, report)
 	let currentStep: string | null = null
 
+	// Variables that need to survive across steps for the summary
+	let accountLayerAddress = ""
+	let instantLayerAddress = ""
+
 	try {
-		// Step 1: Validate inputs
+		// ── Validate inputs ──────────────────────────────────────────────
 		currentStep = "validate_inputs"
 		if (!DIAMOND_ADDRESS) {
 			throw new Error("DIAMOND_ADDRESS is required (env var or config file).")
@@ -136,9 +144,14 @@ async function main() {
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
-		console.log(`\nDiamond: ${DIAMOND_ADDRESS}`)
+		log.header("Symmio v0.8.5 Fork Upgrade")
+		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
+		log.kv("Subgraph", SUBGRAPH_ENDPOINT)
 
-		// Step 2: Resolve + impersonate admin
+		log.setSteps(11)
+
+		// ── Step 1: Resolve + impersonate admin ──────────────────────────
+		let t = log.step("Resolve and impersonate admin")
 		currentStep = "impersonate_admin"
 		const admin = await getImpersonatedAdmin(DIAMOND_ADDRESS, ADMIN_ADDRESS)
 		const adminAddress = await admin.getAddress()
@@ -146,8 +159,10 @@ async function main() {
 		report.steps.push({ name: "impersonate_admin", status: "ok", details: { adminAddress } })
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 3: Connect facets
+		// ── Step 2: Connect facets ───────────────────────────────────────
+		t = log.step("Connect to existing facets")
 		currentStep = "connect_facets"
 		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
 		const controlFacet = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", DIAMOND_ADDRESS, admin)
@@ -156,19 +171,24 @@ async function main() {
 			DIAMOND_ADDRESS,
 			admin,
 		)
+		log.ok("ViewFacet, ControlFacet, PauseControlFacet connected")
 		report.steps.push({ name: "connect_facets", status: "ok" })
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 4: Fetch subgraph data (pre-upgrade reference)
+		// ── Step 3: Fetch subgraph data ──────────────────────────────────
+		t = log.step("Fetch subgraph data")
 		currentStep = "fetch_subgraph"
-		console.log("\nFetching data from subgraph...")
 		const [quotesResult, balancesResult] = await Promise.all([fetchOpenQuotes(SUBGRAPH_ENDPOINT), fetchPartyBBalances(SUBGRAPH_ENDPOINT)])
 		const partyAs = quotesResult.partyAs
 		const partyBs = quotesResult.partyBs
-		console.log(
-			`Subgraph: ${quotesResult.quotes.length} open quotes, ${partyAs.length} partyAs, ${partyBs.length} partyBs, ${balancesResult.entries.length} balance entries`,
-		)
+		log.stats([
+			["Open quotes", quotesResult.quotes.length],
+			["Unique partyAs", partyAs.length],
+			["Unique partyBs", partyBs.length],
+			["Balance entries", balancesResult.entries.length],
+		])
 		report.steps.push({
 			name: "fetch_subgraph",
 			status: "ok",
@@ -181,10 +201,11 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 5: Capture pre-upgrade snapshot (on-chain, small sample for integrity check)
+		// ── Step 4: Capture pre-upgrade snapshot ─────────────────────────
+		t = log.step("Capture pre-upgrade on-chain snapshot")
 		currentStep = "capture_pre_snapshot"
-		console.log("Capturing pre-upgrade on-chain snapshot...")
 		const spotCheckCount = Number(process.env.SPOT_CHECK_COUNT ?? config.spotCheckCount ?? 20)
 
 		// Use v0.8.4-compatible ABI for getQuote (same selector, works on both versions)
@@ -208,6 +229,8 @@ async function main() {
 				? balancesResult.entries
 				: balancesResult.entries.sort(() => Math.random() - 0.5).slice(0, spotCheckCount)
 
+		log.info(`Sampling ${quotesSample.length} quotes + ${balanceSample.length} balances from on-chain...`)
+
 		// Read pre-upgrade values from the fork
 		const preQuoteSnapshots: { quoteId: string; status: number; partyA: string; partyB: string }[] = []
 		for (const sq of quotesSample) {
@@ -230,7 +253,7 @@ async function main() {
 			})
 		}
 
-		console.log(`Snapshot: ${preQuoteSnapshots.length} quotes + ${preBalanceSnapshots.length} balances`)
+		log.ok(`Snapshot captured: ${preQuoteSnapshots.length} quotes + ${preBalanceSnapshots.length} balances`)
 		report.steps.push({
 			name: "capture_pre_snapshot",
 			status: "ok",
@@ -238,13 +261,17 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 6: Pause system
+		// ── Step 5: Pause system ─────────────────────────────────────────
+		t = log.step("Pause system")
 		currentStep = "pause_system"
-		console.log("\nGranting admin roles and pausing system...")
 		await (await controlFacet.setAdmin(adminAddress)).wait()
+		log.ok("Admin set")
 		await (await controlFacet.grantRole(adminAddress, ethers.id("PAUSER_ROLE"))).wait()
+		log.ok("PAUSER_ROLE granted")
 		await (await controlFacet.grantRole(adminAddress, ethers.id("UNPAUSER_ROLE"))).wait()
+		log.ok("UNPAUSER_ROLE granted")
 
 		// Use v0.8.4-compatible ABI for pauseState (v0.8.4 returns 7 bools, v0.8.5 returns 8)
 		const pauseChecker = new ethers.Contract(
@@ -257,20 +284,21 @@ async function main() {
 		if (!pauseResult.globalPaused) {
 			await (await pauseControlFacet.pauseGlobal()).wait()
 			pausedByScript = true
-			console.log("System paused.")
+			log.ok("System paused (pauseGlobal)")
 		} else {
-			console.log("System already paused.")
+			log.ok("System already paused")
 		}
 		report.steps.push({ name: "pause_system", status: "ok", details: { pausedByScript } })
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 6: Deploy v0.8.5 facets (uses signers[0], no admin needed)
+		// ── Step 6: Deploy v0.8.5 facets ─────────────────────────────────
+		t = log.step("Deploy v0.8.5 facets")
 		currentStep = "deploy_facets"
-		console.log("\nDeploying v0.8.5 facets...")
 		const facetsOutFile = `${outputDir}/deployed-facets.json`
 		const { facets: newFacets, selectorSignatures } = await deployFacets(facetsOutFile)
-		console.log(`Deployed ${Object.keys(newFacets).length} facets.`)
+		log.ok(`${Object.keys(newFacets).length} facets ready`)
 		report.steps.push({
 			name: "deploy_facets",
 			status: "ok",
@@ -278,18 +306,23 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 7: Build + apply diamond cut (needs admin signer)
+		// ── Step 7: Build + apply diamond cut ────────────────────────────
+		t = log.step("Build and apply diamond cut")
 		currentStep = "build_diamond_cut"
-		console.log("\nBuilding diamond cut...")
 		const { diamondCut, selectorChanges } = await buildDiamondCut(DIAMOND_ADDRESS, newFacets, selectorSignatures)
 		const actionCounts = { add: 0, replace: 0, remove: 0 }
 		for (const change of selectorChanges) {
 			actionCounts[change.action] += 1
 		}
-		console.log(
-			`Diamond cut: ${selectorChanges.length} selector changes (add=${actionCounts.add}, replace=${actionCounts.replace}, remove=${actionCounts.remove})`,
-		)
+		log.info("Selector changes:")
+		log.stats([
+			["Add", actionCounts.add],
+			["Replace", actionCounts.replace],
+			["Remove", actionCounts.remove],
+			["Total", selectorChanges.length],
+		])
 		report.steps.push({
 			name: "build_diamond_cut",
 			status: "ok",
@@ -299,32 +332,37 @@ async function main() {
 		tryWriteReport(reportFile, report)
 
 		currentStep = "apply_diamond_cut"
-		console.log("Applying diamond cut...")
 		await applyDiamondCut(DIAMOND_ADDRESS, diamondCut, admin, DIAMOND_CUT_CHUNK_SIZE)
-		console.log("Diamond cut applied.")
+		log.ok("Diamond cut applied")
 		report.steps.push({ name: "apply_diamond_cut", status: "ok" })
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 8: Set new v0.8.5 parameters
+		// ── Step 8: Set new v0.8.5 parameters ───────────────────────────
+		t = log.step("Set v0.8.5 parameters")
 		currentStep = "set_v085_parameters"
-		console.log("\nSetting new v0.8.5 parameters...")
 		await (await controlFacet.setAdmin(adminAddress)).wait()
 		await setV085Parameters(DIAMOND_ADDRESS, newParams, admin)
+		if (Object.keys(newParams).length === 0) {
+			log.info("(no parameters configured)")
+		}
 		report.steps.push({ name: "set_v085_parameters", status: "ok", details: { ...newParams } })
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 9: Deploy AccountLayer + InstantLayer and wire them
+		// ── Step 9: Deploy AccountLayer + InstantLayer ───────────────────
+		t = log.step("Deploy AccountLayer + InstantLayer")
 		currentStep = "deploy_account_instant_layer"
-		console.log("\nDeploying AccountLayer + InstantLayer...")
 		const symmioFeeReceiver = config.symmioFeeReceiver || adminAddress
 		const alilStateFile = `${outputDir}/deployed-accountlayer-instantlayer.json`
 
 		const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, alilStateFile)
 		const ilResult = await deployInstantLayer(DIAMOND_ADDRESS, adminAddress, alilStateFile)
+		accountLayerAddress = alResult.diamondAddress
+		instantLayerAddress = ilResult.address
 
-		console.log("\nWiring contracts together...")
 		await wireAccountLayerInstantLayer(DIAMOND_ADDRESS, alResult.diamondAddress, ilResult.address, admin)
 
 		if (config.setupInstantLayerTemplates !== false) {
@@ -341,10 +379,60 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 10: Verify upgrade integrity (compare pre vs post on-chain snapshot)
+		// ── Step 10: SymmioPartyB upgrade ────────────────────────────────
+		t = log.step("Upgrade SymmioPartyB")
+		currentStep = "setup_symmio_partyb"
+		const PARTYB_ADDRESS = process.env.SYMMIO_PARTYB_ADDRESS ?? config.symmioPartyBAddress
+		const PARTYB_PROXY_ADMIN = process.env.SYMMIO_PARTYB_PROXY_ADMIN ?? config.symmioPartyBProxyAdmin
+
+		if (PARTYB_ADDRESS) {
+			log.kv("Existing proxy", log.addr(PARTYB_ADDRESS))
+
+			// Deploy new implementation
+			const SymmioPartyBFactory = await ethers.getContractFactory("SymmioPartyB")
+			const newImpl = await SymmioPartyBFactory.deploy()
+			await newImpl.waitForDeployment()
+			const newImplAddress = await newImpl.getAddress()
+			log.deployed("New implementation", newImplAddress)
+
+			// Upgrade proxy
+			if (PARTYB_PROXY_ADMIN) {
+				const { impersonateAndFund } = await import("./utils/forkHelpers.js")
+				const proxyAdmin = await impersonateAndFund(PARTYB_PROXY_ADMIN)
+				const proxyAdminContract = new ethers.Contract(PARTYB_PROXY_ADMIN, ["function upgrade(address proxy, address implementation)"], proxyAdmin)
+				await (await proxyAdminContract.upgrade(PARTYB_ADDRESS, newImplAddress)).wait()
+				log.ok("Proxy upgraded via ProxyAdmin")
+			}
+
+			// Register on InstantLayer
+			const il = await ethers.getContractAt("InstantLayer", ilResult.address, admin)
+			const isRegistered = await il.registeredPartyBs(PARTYB_ADDRESS)
+			if (!isRegistered) {
+				await (await il.registerPartyBs([PARTYB_ADDRESS])).wait()
+				log.ok("Registered on InstantLayer")
+			} else {
+				log.ok("Already registered on InstantLayer")
+			}
+
+			report.steps.push({
+				name: "setup_symmio_partyb",
+				status: "ok",
+				details: { proxy: PARTYB_ADDRESS, implementation: newImplAddress },
+			})
+		} else {
+			log.warn("No symmioPartyBAddress configured — skipping PartyB upgrade")
+			log.detail("Set symmioPartyBAddress in config to include PartyB in the upgrade")
+			report.steps.push({ name: "setup_symmio_partyb", status: "ok", details: { skipped: true } })
+		}
+		currentStep = null
+		tryWriteReport(reportFile, report)
+		log.stepDone(t)
+
+		// ── Step 11: Verify upgrade integrity ────────────────────────────
+		t = log.step("Verify upgrade integrity")
 		currentStep = "verify_upgrade"
-		console.log("\nVerifying upgrade integrity (pre vs post on-chain)...")
 		const verifyErrors: string[] = []
 
 		// Use v0.8.5 ViewFacetQuote ABI for getQuote (registered after diamondCut)
@@ -354,6 +442,7 @@ async function main() {
 			admin,
 		)
 
+		log.info(`Verifying ${preQuoteSnapshots.length} quotes...`)
 		for (const pre of preQuoteSnapshots) {
 			const post = await viewFacetQuote.getQuote(BigInt(pre.quoteId))
 			if (Number(post.quoteStatus) !== pre.status) {
@@ -367,6 +456,7 @@ async function main() {
 			}
 		}
 
+		log.info(`Verifying ${preBalanceSnapshots.length} balances...`)
 		for (const pre of preBalanceSnapshots) {
 			const post = await viewFacet.allocatedBalanceOfPartyB(pre.partyB, pre.partyA)
 			if (post.toString() !== pre.balance) {
@@ -377,7 +467,7 @@ async function main() {
 		if (verifyErrors.length > 0) {
 			throw new Error(`Upgrade integrity check failed:\n${verifyErrors.join("\n")}`)
 		}
-		console.log(`Verified ${preQuoteSnapshots.length} quotes + ${preBalanceSnapshots.length} balances: OK`)
+		log.ok(`${preQuoteSnapshots.length} quotes + ${preBalanceSnapshots.length} balances verified — all match`)
 		report.steps.push({
 			name: "verify_upgrade",
 			status: "ok",
@@ -385,20 +475,30 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
-		// Step 10: Grant migration role for the next step
+		// ── Grant migration role ─────────────────────────────────────────
 		currentStep = "grant_migration_role"
 		await (await controlFacet.grantRole(adminAddress, ethers.id("MIGRATION_ROLE"))).wait()
-		console.log("\nMigration role granted. System remains paused.")
-		console.log("Next steps:")
-		console.log("  1. Run prepareMigrationInput.ts to fetch + validate migration data from subgraph")
-		console.log("  2. Run runMigration.ts with the validated input file")
+		log.ok(`MIGRATION_ROLE granted to ${log.addr(adminAddress)}`)
 		report.steps.push({ name: "grant_migration_role", status: "ok" })
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
-		console.log("\nFork upgrade completed successfully.")
 		report.status = "success"
+
+		// ── Summary ──────────────────────────────────────────────────────
+		log.success("Fork upgrade completed successfully", [
+			["Diamond", DIAMOND_ADDRESS],
+			["AccountLayer", accountLayerAddress],
+			["InstantLayer", instantLayerAddress],
+			["Duration", scriptTimer.fmt()],
+		])
+		log.nextSteps([
+			"Run prepareMigrationInput.ts to fetch + validate migration data from subgraph",
+			"Run runMigration.ts with the validated input file",
+			"Unpause the system after migration is complete",
+		])
 	} catch (error) {
 		if (currentStep) {
 			report.steps.push({
@@ -410,6 +510,7 @@ async function main() {
 		report.status = "failed"
 		report.error = formatError(error)
 		tryWriteReport(reportFile, report)
+		log.failure("Fork upgrade failed", `Step: ${currentStep ?? "unknown"}\n  ${formatError(error)}`)
 		throw error
 	} finally {
 		report.finishedAt = new Date().toISOString()

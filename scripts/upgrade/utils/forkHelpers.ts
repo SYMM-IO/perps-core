@@ -1,4 +1,5 @@
 import { ethers, networkHelpers } from "../../../test/helpers/hardhat-connection.js"
+import { log } from "./log.js"
 
 /**
  * Reads the diamond owner from LibDiamond storage.
@@ -37,8 +38,9 @@ export async function impersonateAndFund(address: string, ethAmount: bigint = et
  */
 export async function getImpersonatedAdmin(diamondAddress: string, adminOverride?: string): Promise<any> {
 	const admin = adminOverride || (await resolveOwner(diamondAddress))
-	console.log(`Admin resolved: ${admin}${adminOverride ? " (override)" : " (from LibDiamond storage)"}`)
+	const source = adminOverride ? "override" : "LibDiamond storage"
+	log.ok(`Admin resolved: ${log.addr(admin)} (${source})`)
 	const signer = await impersonateAndFund(admin)
-	console.log(`Admin impersonated and funded with 100 ETH`)
+	log.ok("Impersonated and funded with 100 ETH")
 	return signer
 }

@@ -1,12 +1,11 @@
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { log } from "./log.js"
 
 /**
  * Verifies the RPC connection is healthy before running any script.
  * Checks connectivity, chain ID, and latest block freshness.
  */
 export async function verifyRpc(expectedChainId?: number): Promise<void> {
-	console.log("Verifying RPC connection...")
-
 	let network
 	try {
 		network = await ethers.provider.getNetwork()
@@ -35,11 +34,8 @@ export async function verifyRpc(expectedChainId?: number): Promise<void> {
 	const blockAge = Math.floor(Date.now() / 1000) - block.timestamp
 	const maxAge = 120 // 2 minutes
 	if (blockAge > maxAge) {
-		console.warn(`  WARNING: Latest block is ${blockAge}s old (block ${block.number}). RPC may be stale.`)
+		log.warn(`Latest block is ${blockAge}s old (block ${block.number}). RPC may be stale.`)
 	}
 
-	console.log(`  Chain ID: ${chainId}`)
-	console.log(`  Block:    ${block.number} (${blockAge}s ago)`)
-	console.log(`  RPC OK`)
-	console.log()
+	log.ok(`RPC connected — Chain ${chainId} | Block ${log.commaNumber(block.number)} (${blockAge}s ago)`)
 }

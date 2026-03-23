@@ -1,6 +1,7 @@
 import fs from "fs"
 import path from "path"
 
+import { log } from "./utils/log.js"
 import { deployFacets } from "./utils/upgradeHelpers.js"
 
 /**
@@ -19,13 +20,18 @@ import { deployFacets } from "./utils/upgradeHelpers.js"
 const OUTPUT_DIR = "./scripts/upgrade/output"
 
 async function main() {
+	const t = log.timer()
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
+	log.header("Deploy v0.8.5 Facets")
 	const facetsOutFile = path.join(OUTPUT_DIR, "deployed-facets.json")
-	console.log("Deploying v0.8.5 facets + libraries...")
 	const facetData = await deployFacets(facetsOutFile)
-	console.log(`\nDeployed ${Object.keys(facetData.facets).length} facets.`)
-	console.log(`Facet addresses saved to ${facetsOutFile}`)
+
+	log.success("Facet deployment complete", [
+		["Facets", String(Object.keys(facetData.facets).length)],
+		["Output", facetsOutFile],
+		["Duration", t.fmt()],
+	])
 }
 
 main().catch(error => {

@@ -26,6 +26,7 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
+import { log } from "./utils/log.js"
 import { deployAccountLayerDiamond, deployInstantLayer } from "./utils/peripheralHelpers.js"
 
 type Config = {
@@ -80,49 +81,54 @@ async function main() {
 		throw new Error("symmioPartyBAddress must be a valid address")
 	}
 
-	console.log(`Diamond (core):      ${diamondAddress}`)
-	console.log(`Admin:               ${adminAddress}`)
-	console.log(`Fee receiver:        ${symmioFeeReceiver}`)
-	console.log(`SymmioPartyB proxy:  ${symmioPartyBAddress || "(not set)"}`)
-	console.log()
+	log.header("Deploy v0.8.5 Peripherals")
+	log.kv("Diamond (core)", log.addr(diamondAddress))
+	log.kv("Admin", log.addr(adminAddress))
+	log.kv("Fee receiver", log.addr(symmioFeeReceiver))
+	log.kv("SymmioPartyB proxy", symmioPartyBAddress ? log.addr(symmioPartyBAddress) : "(not set)")
 
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
+	log.setSteps(3)
+
 	// Deploy AccountLayer Diamond
-	console.log("=== AccountLayer Diamond ===")
+	let t = log.step("AccountLayer Diamond")
 	const alResult = await deployAccountLayerDiamond(adminAddress, symmioFeeReceiver, STATE_FILE)
+	log.stepDone(t)
 
 	// Deploy InstantLayer
-	console.log("\n=== InstantLayer ===")
+	t = log.step("InstantLayer")
 	const ilResult = await deployInstantLayer(diamondAddress, adminAddress, STATE_FILE)
+	log.stepDone(t)
 
 	// Deploy SymmioPartyB implementation
-	console.log("\n=== SymmioPartyB Implementation ===")
+	t = log.step("SymmioPartyB Implementation")
 	const state = loadState()
 	let symmioPartyBImpl: string
 
 	if (state.symmioPartyBImplementation) {
 		symmioPartyBImpl = state.symmioPartyBImplementation
-		console.log(`  SymmioPartyB implementation: ${symmioPartyBImpl} (cached)`)
+		log.deployed("SymmioPartyB", symmioPartyBImpl, true)
 	} else {
-		console.log("  Deploying SymmioPartyB implementation...")
 		const factory = await ethers.getContractFactory("SymmioPartyB")
 		const contract = await factory.deploy()
 		await contract.waitForDeployment()
 		symmioPartyBImpl = await contract.getAddress()
 		state.symmioPartyBImplementation = symmioPartyBImpl
 		saveState(state)
-		console.log(`  SymmioPartyB implementation: ${symmioPartyBImpl}`)
+		log.deployed("SymmioPartyB", symmioPartyBImpl)
 	}
+	log.stepDone(t)
 
 	// Summary
-	console.log("\n=== Deployment Complete ===")
-	console.log(`  AccountLayer Diamond:          ${alResult.diamondAddress}`)
-	console.log(`  InstantLayer:                  ${ilResult.address}`)
-	console.log(`  SymmioPartyB implementation:   ${symmioPartyBImpl}`)
-	console.log(`  State file:                    ${STATE_FILE}`)
+	log.success("Peripheral deployment complete", [
+		["AccountLayer Diamond", alResult.diamondAddress],
+		["InstantLayer", ilResult.address],
+		["SymmioPartyB impl", symmioPartyBImpl],
+		["State file", STATE_FILE],
+	])
 
-	console.log("\nAdd these to your upgrade.json:")
+	log.info("Add these to your upgrade.json:")
 	const output: Record<string, string> = {
 		accountLayerDiamondAddress: alResult.diamondAddress,
 		instantLayerAddress: ilResult.address,

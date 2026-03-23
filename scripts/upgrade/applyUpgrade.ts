@@ -13,6 +13,7 @@
  */
 import fs from "fs"
 
+import { log } from "./utils/log.js"
 import { buildDiamondCut, applyDiamondCut, loadDeployedFacets } from "./utils/upgradeHelpers.js"
 
 const CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
@@ -31,20 +32,27 @@ async function main() {
 	const FACETS_FILE = process.env.FACETS_FILE ?? `${OUTPUT_DIR}/deployed-facets.json`
 	const facetData = loadDeployedFacets(FACETS_FILE)
 
-	console.log(`Diamond: ${DIAMOND_ADDRESS}`)
-	console.log(`Facets:  ${Object.keys(facetData.facets).length}`)
-	console.log()
+	log.header("Apply Diamond Cut")
+	log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
+	log.kv("Facets loaded", String(Object.keys(facetData.facets).length))
 
 	// Build diamond cut
-	console.log("Building diamond cut...")
+	log.setSteps(2)
+	let t = log.step("Build diamond cut")
 	const { diamondCut, selectorChanges } = await buildDiamondCut(DIAMOND_ADDRESS, facetData.facets, facetData.selectorSignatures)
 
 	const counts = { add: 0, replace: 0, remove: 0 }
 	for (const c of selectorChanges) counts[c.action]++
-	console.log(`Selector changes: ${selectorChanges.length} (add=${counts.add}, replace=${counts.replace}, remove=${counts.remove})`)
+	log.info("Selector changes:")
+	log.stats([
+		["Add", counts.add],
+		["Replace", counts.replace],
+		["Remove", counts.remove],
+		["Total", selectorChanges.length],
+	])
 
 	if (diamondCut.length === 0) {
-		console.log("Nothing to cut -- diamond is already up to date.")
+		log.ok("Nothing to cut — diamond is already up to date")
 		return
 	}
 
@@ -52,12 +60,15 @@ async function main() {
 	if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 	const detailsFile = `${OUTPUT_DIR}/upgrade-details.json`
 	fs.writeFileSync(detailsFile, JSON.stringify({ diamondAddress: DIAMOND_ADDRESS, selectorChanges }, null, 2))
-	console.log(`Details written to ${detailsFile}`)
+	log.ok(`Details written to ${detailsFile}`)
+	log.stepDone(t)
 
 	// Apply in a single transaction
-	console.log(`\nApplying diamond cut (${diamondCut.length} cuts in 1 transaction)...`)
+	t = log.step("Apply diamond cut")
+	log.info(`${diamondCut.length} cuts in 1 transaction...`)
 	await applyDiamondCut(DIAMOND_ADDRESS, diamondCut, undefined, diamondCut.length)
-	console.log("Diamond cut applied.")
+	log.ok("Diamond cut applied")
+	log.stepDone(t)
 }
 
 main().catch(error => {

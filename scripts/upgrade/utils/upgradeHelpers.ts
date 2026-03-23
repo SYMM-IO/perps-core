@@ -7,6 +7,7 @@ import fs from "fs"
 import { FacetNames } from "../../../tasks/deploy/constants.js"
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { log } from "./log.js"
 
 export type FacetInfo = {
 	address: string
@@ -86,7 +87,7 @@ export async function deployFacets(outputFile?: string): Promise<{ facets: Recor
 			partial = JSON.parse(fs.readFileSync(outputFile, "utf-8"))
 			const deployed = Object.keys(partial.facets ?? {})
 			if (deployed.length > 0) {
-				console.log(`Resuming deployment: ${deployed.length} facets already deployed from ${outputFile}`)
+				log.info(`Resuming: ${deployed.length}/${FacetNames.length} facets already deployed`)
 			}
 		} catch {
 			partial = {}
@@ -105,20 +106,28 @@ export async function deployFacets(outputFile?: string): Promise<{ facets: Recor
 	}
 
 	// Deploy or reuse libraries
+	log.info("Libraries:")
 	if (libraries.LibQuoteFunding && libraries.LibQuoteClose && libraries.LibForceActions && libraries.LibSettlement) {
-		console.log(
-			`Libraries already deployed (LibQuoteFunding: ${libraries.LibQuoteFunding}, LibQuoteClose: ${libraries.LibQuoteClose}, LibForceActions: ${libraries.LibForceActions}, LibSettlement: ${libraries.LibSettlement})`,
-		)
+		for (const [name, addr] of Object.entries(libraries)) {
+			log.deployed(name, addr, true)
+		}
 	} else {
 		libraries = await deployLibraries()
+		for (const [name, addr] of Object.entries(libraries)) {
+			log.deployed(name, addr)
+		}
 		save()
 	}
 
-	for (const facetName of FacetNames) {
+	log.info(`Facets (${FacetNames.length}):`)
+	let deployedCount = 0
+	for (let i = 0; i < FacetNames.length; i++) {
+		const facetName = FacetNames[i]
 		const shortName = facetName.includes(":") ? facetName.split(":").pop()! : facetName
 
 		if (facets[shortName]) {
-			console.log(`Skipping ${shortName}: already deployed at ${facets[shortName].address}`)
+			log.skipped(shortName, facets[shortName].address)
+			deployedCount++
 			continue
 		}
 
@@ -150,7 +159,8 @@ export async function deployFacets(outputFile?: string): Promise<{ facets: Recor
 				selectorSignatures[selector] = signature
 			}
 		}
-		console.log(`Deployed ${shortName}: ${address}`)
+		deployedCount++
+		log.progress(deployedCount, FacetNames.length, `${log.name(shortName)}  ${log.addr(address)}`)
 		save()
 	}
 
@@ -265,7 +275,7 @@ export async function buildDiamondCut(
 
 export async function applyDiamondCut(diamondAddress: string, diamondCut: any[], signer?: any, chunkSize: number = 6): Promise<void> {
 	if (diamondCut.length === 0) {
-		console.log("No diamond cut required")
+		log.info("No diamond cut required — already up to date")
 		return
 	}
 
@@ -279,12 +289,13 @@ export async function applyDiamondCut(diamondAddress: string, diamondCut: any[],
 
 	for (let i = 0; i < chunks.length; i++) {
 		const chunk = chunks[i]
+		const selectorCount = chunk.reduce((sum: number, cut: any) => sum + cut.functionSelectors.length, 0)
 		const tx = await diamondCutFacet.diamondCut(chunk, ethers.ZeroAddress, "0x")
 		const receipt = await tx.wait()
 		if (!receipt?.status) {
 			throw new Error(`Diamond cut failed in chunk ${i + 1}/${chunks.length}: ${tx.hash}`)
 		}
-		console.log(`Diamond cut chunk ${i + 1}/${chunks.length} applied (tx: ${tx.hash})`)
+		log.ok(`Chunk ${i + 1}/${chunks.length} applied — ${selectorCount} selectors (tx: ${log.addr(tx.hash)})`)
 	}
 }
 
@@ -320,43 +331,43 @@ export async function setV085Parameters(diamondAddress: string, params: NewV085P
 
 	if (params.maxPartyAConnectionLimit && params.maxPartyAConnectionLimit > 0) {
 		await (await controlFacet.setMaxPartyAConnectionLimit(params.maxPartyAConnectionLimit)).wait()
-		console.log(`  maxPartyAConnectionLimit = ${params.maxPartyAConnectionLimit}`)
+		log.ok(`maxPartyAConnectionLimit = ${params.maxPartyAConnectionLimit}`)
 	}
 
 	if (params.signatureVerifierAddress && ethers.isAddress(params.signatureVerifierAddress)) {
 		await (await controlFacet.setSignatureVerifierAddress(params.signatureVerifierAddress)).wait()
-		console.log(`  signatureVerifierAddress = ${params.signatureVerifierAddress}`)
+		log.ok(`signatureVerifierAddress = ${log.addr(params.signatureVerifierAddress)}`)
 	}
 
 	if (params.liquidationInsuranceVault && params.maxLiquidationProfitPerPosition) {
 		await (await controlFacet.setLiquidationInsuranceVaultParams(params.liquidationInsuranceVault, params.maxLiquidationProfitPerPosition)).wait()
-		console.log(`  liquidationInsuranceVault = ${params.liquidationInsuranceVault}`)
-		console.log(`  maxLiquidationProfitPerPosition = ${params.maxLiquidationProfitPerPosition}`)
+		log.ok(`liquidationInsuranceVault = ${log.addr(params.liquidationInsuranceVault)}`)
+		log.ok(`maxLiquidationProfitPerPosition = ${params.maxLiquidationProfitPerPosition}`)
 	}
 
 	if (params.softLiquidationPenaltyCollector && ethers.isAddress(params.softLiquidationPenaltyCollector)) {
 		await (await controlFacet.setSoftLiquidationPenaltyCollector(params.softLiquidationPenaltyCollector)).wait()
-		console.log(`  softLiquidationPenaltyCollector = ${params.softLiquidationPenaltyCollector}`)
+		log.ok(`softLiquidationPenaltyCollector = ${log.addr(params.softLiquidationPenaltyCollector)}`)
 	}
 
 	if (params.minAffiliateFee) {
 		await (await controlFacet.setMinAffiliateFee(params.minAffiliateFee)).wait()
-		console.log(`  minAffiliateFee = ${params.minAffiliateFee}`)
+		log.ok(`minAffiliateFee = ${params.minAffiliateFee}`)
 	}
 
 	if (params.unbindCooldown !== undefined && params.unbindCooldown > 0) {
 		await (await controlFacet.setUnbindCooldown(params.unbindCooldown)).wait()
-		console.log(`  unbindCooldown = ${params.unbindCooldown}`)
+		log.ok(`unbindCooldown = ${params.unbindCooldown}`)
 	}
 
 	if (params.minWithdrawCooldown !== undefined && params.minWithdrawCooldown > 0) {
 		await (await controlFacet.setMinWithdrawCooldown(params.minWithdrawCooldown)).wait()
-		console.log(`  minWithdrawCooldown = ${params.minWithdrawCooldown}`)
+		log.ok(`minWithdrawCooldown = ${params.minWithdrawCooldown}`)
 	}
 
 	if (params.maxWithdrawParts !== undefined && params.maxWithdrawParts > 0) {
 		await (await controlFacet.setMaxWithdrawParts(params.maxWithdrawParts)).wait()
-		console.log(`  maxWithdrawParts = ${params.maxWithdrawParts}`)
+		log.ok(`maxWithdrawParts = ${params.maxWithdrawParts}`)
 	}
 }
 
@@ -744,6 +755,6 @@ export function loadDeployedFacets(filePath: string): DeployedFacets {
 		throw new Error(`Deployed facets file not found: ${filePath}\nRun deployFacets.ts first, or set FACETS_FILE to a valid path.`)
 	}
 	const data = JSON.parse(fs.readFileSync(filePath, "utf-8")) as DeployedFacets
-	console.log(`Loaded ${Object.keys(data.facets).length} facets from ${filePath}`)
+	log.ok(`Loaded ${Object.keys(data.facets).length} facets from ${filePath}`)
 	return data
 }

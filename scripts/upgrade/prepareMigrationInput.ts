@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 
 import { ethers } from "../../test/helpers/hardhat-connection.js"
+import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 import { fetchOpenQuotes, fetchPartyBBalances } from "./utils/subgraphHelpers.js"
 
@@ -81,7 +82,7 @@ function tryWriteReport(filePath: string, report: PrepareReport): void {
 	try {
 		writeJson(filePath, report)
 	} catch (error) {
-		console.error(`Failed to write report: ${formatError(error)}`)
+		log.error(`Failed to write report: ${formatError(error)}`)
 	}
 }
 
@@ -93,6 +94,7 @@ function toBigInt(value: unknown): bigint {
 }
 
 async function main() {
+	const scriptTimer = log.timer()
 	await verifyRpc()
 	const startedAtMs = Date.now()
 	const config = loadConfig()
@@ -127,15 +129,22 @@ async function main() {
 		currentStep = null
 		tryWriteReport(reportFile, report)
 
-		console.log(`Diamond: ${DIAMOND_ADDRESS}`)
-		console.log(`Subgraph: ${SUBGRAPH_ENDPOINT}`)
-		console.log(`Spot-check count: ${SPOT_CHECK_COUNT}`)
+		log.header("Prepare Migration Input")
+		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
+		log.kv("Subgraph", SUBGRAPH_ENDPOINT)
+		log.kv("Spot-check count", String(SPOT_CHECK_COUNT))
+
+		log.setSteps(6)
 
 		// Step 1: Fetch open quotes from subgraph
+		let t = log.step("Fetch open quotes from subgraph")
 		currentStep = "fetch_open_quotes"
-		console.log("\nFetching open quotes from subgraph...")
 		const quotesResult = await fetchOpenQuotes(SUBGRAPH_ENDPOINT)
-		console.log(`  ${quotesResult.quotes.length} open quotes, ${quotesResult.partyAs.length} partyAs, ${quotesResult.partyBs.length} partyBs`)
+		log.stats([
+			["Open quotes", quotesResult.quotes.length],
+			["Unique partyAs", quotesResult.partyAs.length],
+			["Unique partyBs", quotesResult.partyBs.length],
+		])
 		report.steps.push({
 			name: "fetch_open_quotes",
 			status: "ok",
@@ -147,12 +156,16 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
 		// Step 2: Fetch partyB balances from subgraph
+		t = log.step("Fetch partyB balances from subgraph")
 		currentStep = "fetch_partyb_balances"
-		console.log("Fetching partyB balances from subgraph...")
 		const balancesResult = await fetchPartyBBalances(SUBGRAPH_ENDPOINT)
-		console.log(`  ${balancesResult.entries.length} partyB-partyA balance entries, ${balancesResult.partyBs.length} distinct partyBs`)
+		log.stats([
+			["Balance entries", balancesResult.entries.length],
+			["Distinct partyBs", balancesResult.partyBs.length],
+		])
 		report.steps.push({
 			name: "fetch_partyb_balances",
 			status: "ok",
@@ -163,10 +176,11 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
 		// Step 3: Validate against on-chain -- boundary check
+		t = log.step("Validate boundary against on-chain")
 		currentStep = "validate_boundary"
-		console.log("\nValidating against on-chain state...")
 		const viewFacetQuote = await ethers.getContractAt("contracts/core/facets/ViewFacetQuote/ViewFacetQuote.sol:ViewFacetQuote", DIAMOND_ADDRESS)
 		const onChainNextQuoteId = toBigInt(await viewFacetQuote.getNextQuoteId())
 		const maxSubgraphQuoteId = quotesResult.quotes.reduce((max, q) => {
@@ -178,9 +192,9 @@ async function main() {
 			const before = quotesResult.quotes.length
 			quotesResult.quotes = quotesResult.quotes.filter(q => BigInt(q.quoteId) < onChainNextQuoteId)
 			const dropped = before - quotesResult.quotes.length
-			console.log(`  Subgraph ahead of on-chain (max quoteId=${maxSubgraphQuoteId}, nextQuoteId=${onChainNextQuoteId}). Filtered ${dropped} quotes.`)
+			log.warn(`Subgraph ahead of on-chain (max=${maxSubgraphQuoteId}, nextQuoteId=${onChainNextQuoteId}). Filtered ${dropped} quotes.`)
 		} else {
-			console.log(`  Boundary check: on-chain nextQuoteId=${onChainNextQuoteId}, subgraph max quoteId=${maxSubgraphQuoteId} -- OK`)
+			log.ok(`Boundary check passed — on-chain nextQuoteId=${onChainNextQuoteId}, subgraph max=${maxSubgraphQuoteId}`)
 		}
 		report.steps.push({
 			name: "validate_boundary",
@@ -192,15 +206,17 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
 		// Step 4: Validate against on-chain -- spot-check quotes
+		t = log.step("Spot-check quotes against on-chain")
 		currentStep = "validate_spot_check"
 		const sampleSize = Math.min(SPOT_CHECK_COUNT, quotesResult.quotes.length)
 		const sampleIndices = new Set<number>()
 		while (sampleIndices.size < sampleSize) {
 			sampleIndices.add(Math.floor(Math.random() * quotesResult.quotes.length))
 		}
-		console.log(`  Spot-checking ${sampleSize} quotes against on-chain...`)
+		log.info(`Checking ${sampleSize} random quotes...`)
 		let spotCheckPassed = 0
 		for (const idx of sampleIndices) {
 			const subgraphQuote = quotesResult.quotes[idx]
@@ -228,7 +244,7 @@ async function main() {
 			}
 			spotCheckPassed++
 		}
-		console.log(`  Spot-check: ${spotCheckPassed}/${sampleSize} quotes verified -- OK`)
+		log.ok(`${spotCheckPassed}/${sampleSize} quotes verified`)
 		report.steps.push({
 			name: "validate_spot_check",
 			status: "ok",
@@ -236,8 +252,10 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
 		// Step 5: Validate partyB allocated balances against on-chain
+		t = log.step("Spot-check partyB balances against on-chain")
 		currentStep = "validate_partyb_balances"
 		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS)
 		const balanceSampleSize = Math.min(SPOT_CHECK_COUNT, balancesResult.entries.length)
@@ -245,7 +263,7 @@ async function main() {
 		while (balanceSampleIndices.size < balanceSampleSize) {
 			balanceSampleIndices.add(Math.floor(Math.random() * balancesResult.entries.length))
 		}
-		console.log(`  Spot-checking ${balanceSampleSize} partyB allocated balances against on-chain...`)
+		log.info(`Checking ${balanceSampleSize} random balance entries...`)
 		let balanceCheckPassed = 0
 		let balanceCheckWarnings = 0
 		for (const idx of balanceSampleIndices) {
@@ -253,15 +271,15 @@ async function main() {
 			const onChainBalance = toBigInt(await viewFacet.allocatedBalanceOfPartyB(entry.account, entry.counterParty))
 			const subgraphBalance = BigInt(entry.allocatedBalance)
 			if (onChainBalance !== subgraphBalance) {
-				console.log(
-					`  WARN: PartyB ${entry.account} / PartyA ${entry.counterParty}: balance drift (on-chain=${onChainBalance}, subgraph=${subgraphBalance})`,
+				log.detail(
+					`Drift: PartyB ${log.truncAddr(entry.account)} / PartyA ${log.truncAddr(entry.counterParty)}: on-chain=${onChainBalance}, subgraph=${subgraphBalance}`,
 				)
 				balanceCheckWarnings++
 			} else {
 				balanceCheckPassed++
 			}
 		}
-		console.log(`  Balance spot-check: ${balanceCheckPassed}/${balanceSampleSize} exact, ${balanceCheckWarnings} drifted (expected on fork)`)
+		log.ok(`${balanceCheckPassed}/${balanceSampleSize} exact match, ${balanceCheckWarnings} drifted (expected on fork)`)
 		report.steps.push({
 			name: "validate_partyb_balances",
 			status: "ok",
@@ -269,10 +287,11 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(reportFile, report)
+		log.stepDone(t)
 
 		// Step 6: Build migration input
+		t = log.step("Build migration input")
 		currentStep = "build_input"
-		console.log("\nBuilding migration input...")
 
 		// Quote IDs
 		const quoteIds = quotesResult.quotes.map(q => q.quoteId).sort((a, b) => Number(BigInt(a) - BigInt(b)))
@@ -327,10 +346,12 @@ async function main() {
 		}
 
 		writeJson(outputFile, output)
-		console.log(`\nMigration input written to: ${outputFile}`)
-		console.log(`  ${quoteIds.length} quote IDs`)
-		console.log(`  ${partyBTasks.length} partyB tasks`)
-		console.log(`  ${Object.keys(expectedAggregates).length} aggregate keys`)
+		log.ok(`Written to ${outputFile}`)
+		log.stats([
+			["Quote IDs", quoteIds.length],
+			["PartyB tasks", partyBTasks.length],
+			["Aggregate keys", Object.keys(expectedAggregates).length],
+		])
 		report.steps.push({
 			name: "build_input",
 			status: "ok",
@@ -342,9 +363,15 @@ async function main() {
 			},
 		})
 		currentStep = null
+		log.stepDone(t)
 
-		console.log("\nMigration input preparation completed successfully.")
 		report.status = "success"
+
+		log.success("Migration input preparation completed", [
+			["Output", outputFile],
+			["Duration", scriptTimer.fmt()],
+		])
+		log.nextSteps(["Review the generated migration-input.json", "Run runMigration.ts with the validated input file"])
 	} catch (error) {
 		if (currentStep) {
 			report.steps.push({
@@ -356,6 +383,7 @@ async function main() {
 		report.status = "failed"
 		report.error = formatError(error)
 		tryWriteReport(reportFile, report)
+		log.failure("Migration input preparation failed", `Step: ${currentStep ?? "unknown"}\n  ${formatError(error)}`)
 		throw error
 	} finally {
 		report.finishedAt = new Date().toISOString()

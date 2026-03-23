@@ -4,6 +4,7 @@ import path from "path"
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import { migrate, MigrationConfig, MigrationInput, MigrationReport } from "./migrate.js"
 import { getImpersonatedAdmin } from "./utils/forkHelpers.js"
+import { log } from "./utils/log.js"
 import { verifyRpc } from "./utils/rpcCheck.js"
 
 export type PartyBTask = { partyB: string; partyAs: string[] }
@@ -127,7 +128,7 @@ function tryWriteReport(filePath: string, report: MigrationOnDemandReport): void
 	try {
 		writeJson(filePath, report)
 	} catch (error) {
-		console.error(`Failed to write migration report file: ${filePath}. ${formatError(error)}`)
+		log.error(`Failed to write migration report file: ${filePath}. ${formatError(error)}`)
 	}
 }
 
@@ -350,6 +351,7 @@ const MIGRATION_CONFIG: MigrationConfig = {
 }
 
 async function main() {
+	const scriptTimer = log.timer()
 	await verifyRpc()
 	const startedAtMs = Date.now()
 	const report: MigrationOnDemandReport = {
@@ -399,6 +401,8 @@ async function main() {
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
 
+		log.header("Symmio v0.8.5 Migration")
+
 		// Resolve signer — fork: impersonate diamond owner, production: use deployer (must have MIGRATION_ROLE)
 		currentStep = "resolve_signer"
 		const isFork = parseBool(process.env.FORK, configFile.fork ?? false)
@@ -419,13 +423,17 @@ async function main() {
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
 
-		console.log(`Diamond: ${DIAMOND_ADDRESS}`)
-		console.log(`Admin:   ${adminAddress}`)
-		console.log(`Input:   ${MIGRATION_INPUT_FILE}`)
-		console.log(`Progress file: ${migrateProgressFile}`)
-		console.log(`Report file: ${migrateReportFile}`)
+		log.kv("Diamond", log.addr(DIAMOND_ADDRESS))
+		log.kv("Admin", log.addr(adminAddress))
+		log.kv("Input file", MIGRATION_INPUT_FILE!)
+		log.kv("Progress file", migrateProgressFile)
+		log.kv("Chunk size", String(MIGRATION_CONFIG.chunkSize))
+		if (MIGRATION_CONFIG.dryRun) log.kv("Mode", "DRY RUN")
+
+		log.setSteps(4)
 
 		// Connect facets
+		let t = log.step("Connect facets")
 		currentStep = "connect_facets"
 		const migrationFacet = await ethers.getContractAt("contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet", DIAMOND_ADDRESS, admin)
 		const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND_ADDRESS, admin)
@@ -434,13 +442,21 @@ async function main() {
 			DIAMOND_ADDRESS,
 			admin,
 		)
+		log.ok("MigrationFacet, ViewFacet, ViewFacetAggregate connected")
 		report.steps.push({ name: "connect_facets", status: "ok" })
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
+		log.stepDone(t)
 
 		// Load validated input
+		t = log.step("Load migration input")
 		currentStep = "load_input"
-		const { input, expectedAggregates } = loadMigrationInput(MIGRATION_INPUT_FILE)
+		const { input, expectedAggregates } = loadMigrationInput(MIGRATION_INPUT_FILE!)
+		log.stats([
+			["Quote IDs", input.quoteIds.length],
+			["PartyB tasks", input.partyBTasks.length],
+			["Aggregate keys", expectedAggregates?.size ?? 0],
+		])
 		report.input = {
 			quoteIdsTotal: input.quoteIds.length,
 			partyBTasksTotal: input.partyBTasks.length,
@@ -457,15 +473,17 @@ async function main() {
 		})
 		currentStep = null
 		tryWriteReport(migrateReportFile, report)
+		log.stepDone(t)
 
 		// Run migration
+		t = log.step("Execute migration")
 		if (input.quoteIds.length === 0 && input.partyBTasks.length === 0) {
-			console.log("No migration tasks to run.")
+			log.info("No migration tasks to run — skipping")
 			report.steps.push({ name: "migrate", status: "ok", details: { skipped: true } })
 			tryWriteReport(migrateReportFile, report)
 		} else {
 			currentStep = "migrate"
-			console.log(`Migrating ${input.quoteIds.length} quotes for ${input.partyBTasks.length} partyBs...`)
+			log.info(`Migrating ${log.commaNumber(input.quoteIds.length)} quotes across ${input.partyBTasks.length} partyBs...`)
 			const migrationReport = await migrate(migrationFacet, input, MIGRATION_CONFIG)
 			report.migrationReport = migrationReport
 			report.steps.push({
@@ -481,12 +499,17 @@ async function main() {
 			currentStep = null
 			tryWriteReport(migrateReportFile, report)
 		}
+		log.stepDone(t)
 
 		// Verify migration
+		t = log.step("Verify migration")
 		if (input.quoteIds.length > 0 || input.partyBTasks.length > 0) {
 			currentStep = "verify_migration"
-			console.log("Verifying migration results...")
+			log.info(
+				`Verifying ${log.commaNumber(input.quoteIds.length)} quotes, ${input.partyBTasks.length} partyBs, ${log.commaNumber(expectedAggregates?.size ?? 0)} aggregates...`,
+			)
 			await verifyMigration(migrationFacet, viewFacet, viewFacetAggregate, input.quoteIds, input.partyBTasks, expectedAggregates)
+			log.ok("All migration checks passed")
 			report.verification = {
 				performed: true,
 				quoteChecks: input.quoteIds.length,
@@ -501,6 +524,7 @@ async function main() {
 			currentStep = null
 			tryWriteReport(migrateReportFile, report)
 		} else {
+			log.info("No data to verify — skipping")
 			report.verification = {
 				performed: false,
 				quoteChecks: 0,
@@ -508,9 +532,16 @@ async function main() {
 				aggregateChecks: 0,
 			}
 		}
+		log.stepDone(t)
 
-		console.log("Migration completed successfully.")
 		report.status = "success"
+
+		log.success("Migration completed successfully", [
+			["Diamond", DIAMOND_ADDRESS],
+			["Duration", scriptTimer.fmt()],
+			["Report", migrateReportFile],
+		])
+		log.nextSteps(["Verify the migration report in " + migrateReportFile, "Unpause the system when ready"])
 	} catch (error) {
 		if (currentStep) {
 			report.steps.push({
@@ -523,6 +554,7 @@ async function main() {
 		report.status = "failed"
 		report.error = formatError(error)
 		tryWriteReport(migrateReportFile, report)
+		log.failure("Migration failed", formatError(error))
 		throw error
 	} finally {
 		report.finishedAt = new Date().toISOString()

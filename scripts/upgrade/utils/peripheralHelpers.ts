@@ -8,6 +8,7 @@ import path from "path"
 
 import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
 import { ethers } from "../../../test/helpers/hardhat-connection.js"
+import { log } from "./log.js"
 
 // ============================================================================
 // Constants
@@ -98,13 +99,13 @@ export async function deployAccountLayerDiamond(
 	if (!state.accountLayer) state.accountLayer = {}
 	const al = state.accountLayer
 
-	console.log("  Deploying AccountLayer Diamond...")
+	log.info("AccountLayer Diamond:")
 
 	// 1. DiamondCutFacet
 	let diamondCutFacetAddress: string
 	if (al.diamondCutFacet) {
 		diamondCutFacetAddress = al.diamondCutFacet
-		console.log(`    DiamondCutFacet: ${diamondCutFacetAddress} (cached)`)
+		log.deployed("DiamondCutFacet", diamondCutFacetAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("DiamondCutFacet")
 		const contract = await factory.deploy()
@@ -112,14 +113,14 @@ export async function deployAccountLayerDiamond(
 		diamondCutFacetAddress = await contract.getAddress()
 		al.diamondCutFacet = diamondCutFacetAddress
 		if (stateFile) saveState(stateFile, state)
-		console.log(`    DiamondCutFacet: ${diamondCutFacetAddress}`)
+		log.deployed("DiamondCutFacet", diamondCutFacetAddress)
 	}
 
 	// 2. Diamond proxy
 	let diamondAddress: string
 	if (al.diamond) {
 		diamondAddress = al.diamond
-		console.log(`    Diamond: ${diamondAddress} (cached)`)
+		log.deployed("Diamond", diamondAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("Diamond")
 		const contract = await factory.deploy(adminAddress, diamondCutFacetAddress)
@@ -127,14 +128,14 @@ export async function deployAccountLayerDiamond(
 		diamondAddress = await contract.getAddress()
 		al.diamond = diamondAddress
 		if (stateFile) saveState(stateFile, state)
-		console.log(`    Diamond: ${diamondAddress}`)
+		log.deployed("Diamond", diamondAddress)
 	}
 
 	// 3. Init contract
 	let initAddress: string
 	if (al.init) {
 		initAddress = al.init
-		console.log(`    Init: ${initAddress} (cached)`)
+		log.deployed("Init", initAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
 		const contract = await factory.deploy()
@@ -142,7 +143,7 @@ export async function deployAccountLayerDiamond(
 		initAddress = await contract.getAddress()
 		al.init = initAddress
 		if (stateFile) saveState(stateFile, state)
-		console.log(`    Init: ${initAddress}`)
+		log.deployed("Init", initAddress)
 	}
 
 	// 4. LibQuoteParams library
@@ -150,7 +151,7 @@ export async function deployAccountLayerDiamond(
 	const libraryAddresses: Record<string, string> = { ...al.libraries }
 
 	if (libraryAddresses["LibQuoteParams"]) {
-		console.log(`    LibQuoteParams: ${libraryAddresses["LibQuoteParams"]} (cached)`)
+		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"], true)
 	} else {
 		const factory = await ethers.getContractFactory("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
 		const contract = await factory.deploy()
@@ -158,7 +159,7 @@ export async function deployAccountLayerDiamond(
 		libraryAddresses["LibQuoteParams"] = await contract.getAddress()
 		al.libraries["LibQuoteParams"] = libraryAddresses["LibQuoteParams"]
 		if (stateFile) saveState(stateFile, state)
-		console.log(`    LibQuoteParams: ${libraryAddresses["LibQuoteParams"]}`)
+		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
 	}
 
 	// 5. Deploy 7 facets
@@ -174,7 +175,7 @@ export async function deployAccountLayerDiamond(
 		let facetAddress: string
 		if (facetAddresses[facetName]) {
 			facetAddress = facetAddresses[facetName]
-			console.log(`    [${i + 1}/${AccountLayerFacetNames.length}] ${facetName}: ${facetAddress} (cached)`)
+			log.skipped(facetName, facetAddress)
 		} else {
 			const requiredLibraries = AccountLayerFacetLibraryDependencies[facetName]
 			let factory
@@ -193,7 +194,7 @@ export async function deployAccountLayerDiamond(
 			facetAddresses[facetName] = facetAddress
 			al.facets[facetName] = facetAddress
 			if (stateFile) saveState(stateFile, state)
-			console.log(`    [${i + 1}/${AccountLayerFacetNames.length}] ${facetName}: ${facetAddress}`)
+			log.progress(i + 1, AccountLayerFacetNames.length, `${log.name(facetName)}  ${log.addr(facetAddress)}`)
 		}
 
 		// Get selectors for diamond cut
@@ -207,7 +208,7 @@ export async function deployAccountLayerDiamond(
 
 	// 6. Apply diamond cut with Init
 	if (al.diamondCutComplete) {
-		console.log("    Diamond cut already complete (cached)")
+		log.ok("Diamond cut already complete (cached)")
 	} else {
 		// Verify on-chain: try calling admin() from AccountLayer ControlFacet
 		let alreadyDone = false
@@ -215,7 +216,7 @@ export async function deployAccountLayerDiamond(
 			const controlFacet = await ethers.getContractAt(AccountLayerFacetPathMap["ControlFacet"], diamondAddress)
 			await controlFacet.admin()
 			alreadyDone = true
-			console.log("    Diamond cut already complete (verified on-chain)")
+			log.ok("Diamond cut already complete (verified on-chain)")
 		} catch {
 			// Not done yet
 		}
@@ -243,7 +244,7 @@ export async function deployAccountLayerDiamond(
 				if (!receipt?.status) {
 					throw new Error(`AccountLayer diamond cut failed in chunk ${chunkNum}/${totalChunks}`)
 				}
-				console.log(`    Diamond cut chunk ${chunkNum}/${totalChunks} applied`)
+				log.ok(`Diamond cut chunk ${chunkNum}/${totalChunks} applied`)
 			}
 		}
 
@@ -251,7 +252,7 @@ export async function deployAccountLayerDiamond(
 		if (stateFile) saveState(stateFile, state)
 	}
 
-	console.log(`  AccountLayer Diamond deployed: ${diamondAddress}`)
+	log.ok(`AccountLayer Diamond: ${log.addr(diamondAddress)}`)
 
 	return {
 		diamondAddress,
@@ -270,11 +271,10 @@ export async function deployInstantLayer(symmioAddress: string, adminAddress: st
 	const state = loadState(stateFile ?? "")
 
 	if (state.instantLayer?.address) {
-		console.log(`  InstantLayer: ${state.instantLayer.address} (cached)`)
+		log.deployed("InstantLayer", state.instantLayer.address, true)
 		return { address: state.instantLayer.address }
 	}
 
-	console.log("  Deploying InstantLayer...")
 	const factory = await ethers.getContractFactory("InstantLayer")
 	const contract = await factory.deploy(symmioAddress, adminAddress)
 	await contract.waitForDeployment()
@@ -284,7 +284,7 @@ export async function deployInstantLayer(symmioAddress: string, adminAddress: st
 	state.instantLayer.address = address
 	if (stateFile) saveState(stateFile, state)
 
-	console.log(`  InstantLayer deployed: ${address}`)
+	log.deployed("InstantLayer", address)
 	return { address }
 }
 
@@ -298,7 +298,7 @@ export async function wireAccountLayerInstantLayer(
 	instantLayerAddress: string,
 	adminSigner: any,
 ): Promise<void> {
-	console.log("  Wiring AccountLayer + InstantLayer...")
+	log.info("Wiring:")
 
 	const roleHash = (name: string) => ethers.id(name)
 	const adminAddress = await adminSigner.getAddress()
@@ -311,19 +311,19 @@ export async function wireAccountLayerInstantLayer(
 
 	// Grant roles to AccountLayer on Diamond
 	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("SIGNER_ADMIN_ROLE"))).wait()
-	console.log("    grantRole(AccountLayer, SIGNER_ADMIN_ROLE)")
+	log.ok("grantRole(AccountLayer, SIGNER_ADMIN_ROLE)")
 	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("AFFILIATE_MANAGER_ROLE"))).wait()
-	console.log("    grantRole(AccountLayer, AFFILIATE_MANAGER_ROLE)")
+	log.ok("grantRole(AccountLayer, AFFILIATE_MANAGER_ROLE)")
 	await (await controlFacet.grantRole(accountLayerDiamondAddress, roleHash("BALANCE_SETTLER_ROLE"))).wait()
-	console.log("    grantRole(AccountLayer, BALANCE_SETTLER_ROLE)")
+	log.ok("grantRole(AccountLayer, BALANCE_SETTLER_ROLE)")
 
 	// Grant InstantLayer role on Diamond
 	await (await controlFacet.grantRole(instantLayerAddress, roleHash("INSTANT_LAYER_ROLE"))).wait()
-	console.log("    grantRole(InstantLayer, INSTANT_LAYER_ROLE)")
+	log.ok("grantRole(InstantLayer, INSTANT_LAYER_ROLE)")
 
 	// Register AccountLayer as system hook on Diamond
 	await (await controlFacet.registerHook(ethers.ZeroAddress, accountLayerDiamondAddress)).wait()
-	console.log("    registerHook(address(0), AccountLayer)")
+	log.ok("registerHook(address(0), AccountLayer)")
 
 	// AccountLayer Diamond ControlFacet
 	const alControlFacet = await ethers.getContractAt(
@@ -334,26 +334,24 @@ export async function wireAccountLayerInstantLayer(
 
 	// Grant InstantLayer SIGNER_SETTER_ROLE on AccountLayer
 	await (await alControlFacet.grantRole(instantLayerAddress, roleHash("SIGNER_SETTER_ROLE"))).wait()
-	console.log("    grantRole(InstantLayer, SIGNER_SETTER_ROLE) on AccountLayer")
+	log.ok("grantRole(InstantLayer, SIGNER_SETTER_ROLE) on AccountLayer")
 
 	// Whitelist Symmio Core on AccountLayer
 	await (await alControlFacet.setWhitelistedSymmioCore(diamondAddress, true)).wait()
-	console.log("    setWhitelistedSymmioCore(Diamond, true)")
+	log.ok("setWhitelistedSymmioCore(Diamond, true)")
 
 	// InstantLayer configuration
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
 	// Set AccountLayer on InstantLayer
 	await (await instantLayer.setAccountLayer(accountLayerDiamondAddress)).wait()
-	console.log("    setAccountLayer(AccountLayer)")
+	log.ok("setAccountLayer(AccountLayer)")
 
 	// Whitelist Diamond and AccountLayer on InstantLayer
 	await (await instantLayer.setTargetWhitelist(diamondAddress, true)).wait()
-	console.log("    setTargetWhitelist(Diamond, true)")
+	log.ok("setTargetWhitelist(Diamond, true)")
 	await (await instantLayer.setTargetWhitelist(accountLayerDiamondAddress, true)).wait()
-	console.log("    setTargetWhitelist(AccountLayer, true)")
-
-	console.log("  Wiring complete.")
+	log.ok("setTargetWhitelist(AccountLayer, true)")
 }
 
 // ============================================================================
@@ -361,7 +359,7 @@ export async function wireAccountLayerInstantLayer(
 // ============================================================================
 
 export async function setupInstantLayerTemplates(instantLayerAddress: string, adminSigner: any): Promise<void> {
-	console.log("  Setting up InstantLayer templates...")
+	log.info("Templates:")
 
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress, adminSigner)
 
@@ -373,7 +371,7 @@ export async function setupInstantLayerTemplates(instantLayerAddress: string, ad
 		{ sourceIndices: [1], insertionPoints: [0], sourceOffsets: [0] }, // op 3: openPosition - quoteId from op 1
 	]
 	await (await instantLayer.addTemplate("InstantOpen", instantOpenOps)).wait()
-	console.log("    InstantOpen template added")
+	log.ok("InstantOpen (4 ops)")
 
 	// InstantClose Template (2 operations)
 	const instantCloseOps = [
@@ -381,7 +379,7 @@ export async function setupInstantLayerTemplates(instantLayerAddress: string, ad
 		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 1: fillCloseRequest
 	]
 	await (await instantLayer.addTemplate("InstantClose", instantCloseOps)).wait()
-	console.log("    InstantClose template added")
+	log.ok("InstantClose (2 ops)")
 
 	// InstantCloseWithAllocation Template (3 operations)
 	const instantCloseWithAllocationOps = [
@@ -390,9 +388,7 @@ export async function setupInstantLayerTemplates(instantLayerAddress: string, ad
 		{ sourceIndices: [], insertionPoints: [], sourceOffsets: [] }, // op 2
 	]
 	await (await instantLayer.addTemplate("InstantCloseWithAllocation", instantCloseWithAllocationOps)).wait()
-	console.log("    InstantCloseWithAllocation template added")
-
-	console.log("  Templates setup complete.")
+	log.ok("InstantCloseWithAllocation (3 ops)")
 }
 
 // ============================================================================
