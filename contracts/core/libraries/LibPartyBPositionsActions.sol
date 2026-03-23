@@ -51,6 +51,12 @@ library LibPartyBPositionsActions {
 		require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBFacet: Symbol is not valid");
 		require(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
+
+		bool _instantOpenMode = GlobalAppStorage.layout().instantOpenMode;
+		if (_instantOpenMode) {
+			require(quote.quantity == filledAmount, "PartyBFacet: InstantOpen requires full fill");
+		}
+
 		uint256 quoteFeeBeforeOpen = LibQuote.getOpenTradingFee(quote.id);
 		uint256 remainingQuoteFee = 0;
 
@@ -73,12 +79,16 @@ library LibPartyBPositionsActions {
 		quote.statusModifyTimestamp = block.timestamp;
 
 		LibQuoteFunding.updateAccumulatedPaidFunding(quoteId);
-		LibQuote.removeFromPendingQuotes(quote);
+		if (!_instantOpenMode) {
+			LibQuote.removeFromPendingQuotes(quote);
+		}
 		quote.lastFundingPaymentTimestamp = block.timestamp;
 
 		if (quote.quantity == filledAmount) {
-			accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
-			LibAccount.subFromPartyBPendingLockedBalances(quote);
+			if (!_instantOpenMode) {
+				accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
+				LibAccount.subFromPartyBPendingLockedBalances(quote);
+			}
 			quote.lockedValues.mul(openedPrice).div(quote.requestedOpenPrice);
 
 			// check locked values
@@ -191,7 +201,9 @@ library LibPartyBPositionsActions {
 		uint256 openFee = quote.orderType == OrderType.LIMIT
 			? (filledAmount * quote.requestedOpenPrice * quote.tradingFee) / 1e36
 			: (filledAmount * quote.marketPrice * quote.tradingFee) / 1e36;
-		LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);
+		if (!_instantOpenMode) {
+			LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);
+		}
 		{
 			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
 			address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];

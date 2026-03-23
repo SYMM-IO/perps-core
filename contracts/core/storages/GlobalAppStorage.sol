@@ -110,6 +110,11 @@ library GlobalAppStorage {
 		///      When true, instant actions mode checks pass for bound PartyAs. Checked in
 		///      Accessibility modifiers to allow/restrict certain operations.
 		bool callFromInstantLayer;
+		/// @notice Skip pending balance tracking in atomic send+lock+open flows
+		/// @dev When true, sendQuote/lockQuote skip writing to pending balances/arrays,
+		///      and openPosition skips removing them. Eliminates ~24 wasted SSTOREs.
+		///      Set via setInstantOpenMode() by the instant layer around template execution.
+		bool instantOpenMode;
 		/// @notice Master switch for cross (master account) mode
 		/// @dev When false, PartyBs cannot activate cross mode. This is the global
 		///      gate - individual PartyBs still need to activate separately.
