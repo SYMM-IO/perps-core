@@ -1276,8 +1276,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 			// Inject fill value at the specified offset (after 4-byte selector)
 			uint256 insertPos = 4 + field.offset;
-			for (uint256 j = 0; j < value.length; j++) {
-				callData[insertPos + j] = value[j];
+			assembly ("memory-safe") {
+				calldatacopy(add(add(callData, 32), insertPos), value.offset, value.length)
 			}
 		}
 	}
