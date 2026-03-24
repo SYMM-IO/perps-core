@@ -110,17 +110,18 @@ library GlobalAppStorage {
 		///      When true, instant actions mode checks pass for bound PartyAs. Checked in
 		///      Accessibility modifiers to allow/restrict certain operations.
 		bool callFromInstantLayer;
-		/// @notice Skip pending balance tracking in atomic send+lock+open flows
-		/// @dev When true, sendQuote/lockQuote skip writing to pending balances/arrays,
-		///      and openPosition skips removing them. Eliminates ~24 wasted SSTOREs.
-		///      Set via setInstantOpenMode() by the instant layer around template execution.
-		bool instantOpenMode;
 		/// @notice Master switch for cross (master account) mode
 		/// @dev When false, PartyBs cannot activate cross mode. This is the global
 		///      gate - individual PartyBs still need to activate separately.
 		///      Once activated, turning this off doesn't affect existing
 		///      cross PartyBs.
 		bool crossPartyBModeActivated;
+		/// @notice Skip pending balance tracking in atomic send+lock+open flows
+		/// @dev When true, sendQuote/lockQuote skip writing to pending balances/arrays,
+		///      and openPosition skips removing them. Eliminates ~24 wasted SSTOREs.
+		///      Set via setInstantOpenMode() by the instant layer around template execution.
+		///      IMPORTANT: Appended after crossPartyBModeActivated to preserve storage layout.
+		bool instantOpenMode;
 		/// @notice Per-PartyB flag that prevents a specific PartyB from locking or opening new positions
 		/// @dev When true for a PartyB, blocks lockQuote and openPosition (both single and batch).
 		///      Unlike deregisterPartyB, this keeps partyBStatus=true so the PartyB can still:
