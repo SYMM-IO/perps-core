@@ -51,8 +51,10 @@ library LibPartyBQuoteActions {
 		quote.quoteStatus = QuoteStatus.LOCKED;
 		quote.partyB = signer;
 
-		// lock funds for partyB
-		LibAccount.addToPartyBPendingLockedBalances(signer, quote.partyA, quote);
-		quoteLayout.partyBPendingQuotes[signer][quote.partyA].push(quote.id);
+		// lock funds for partyB — skip in instantOpenMode (will be written directly to lockedBalances)
+		if (!GlobalAppStorage.layout().instantOpenMode) {
+			LibAccount.addToPartyBPendingLockedBalances(signer, quote.partyA, quote);
+			quoteLayout.partyBPendingQuotes[signer][quote.partyA].push(quote.id);
+		}
 	}
 }

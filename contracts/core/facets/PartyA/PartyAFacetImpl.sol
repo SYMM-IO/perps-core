@@ -17,6 +17,7 @@ import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
@@ -104,8 +105,11 @@ library PartyAFacetImpl {
 		}
 		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
 
-		// lock funds the in middle of way
-		accountLayout.pendingLockedBalances[signer].add(lockedValues);
+		// lock funds the in middle of way — skip in instantOpenMode (will be written directly to lockedBalances)
+		bool _instantOpenMode = GlobalAppStorage.layout().instantOpenMode;
+		if (!_instantOpenMode) {
+			accountLayout.pendingLockedBalances[signer].add(lockedValues);
+		}
 		uint256 currentId = ++quoteLayout.lastId;
 
 		// create quote.
@@ -145,13 +149,17 @@ library PartyAFacetImpl {
 			data: data
 		});
 		quoteLayout.quoteIdsOf[signer].push(currentId);
-		quoteLayout.partyAPendingQuotes[signer].push(currentId);
+		if (!_instantOpenMode) {
+			quoteLayout.partyAPendingQuotes[signer].push(currentId);
+		}
 		quoteLayout.quotes[currentId] = quote;
 
 		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
 		require(accountLayout.allocatedBalances[signer] >= feeAmount, "PartyAFacet: Insufficient allocated balance for fee");
 		accountLayout.allocatedBalances[signer] -= feeAmount;
-		LibAccount.reserveOpenTradingFee(signer, feeAmount);
+		if (!_instantOpenMode) {
+			LibAccount.reserveOpenTradingFee(signer, feeAmount);
+		}
 		emit SharedEvents.BalanceChangePartyA(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 	}
 
