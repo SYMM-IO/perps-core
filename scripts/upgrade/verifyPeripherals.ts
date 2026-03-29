@@ -26,7 +26,7 @@ type Config = {
 	diamondAddress: string
 	accountLayerDiamondAddress: string
 	instantLayerAddress: string
-	adminAddress: string
+	adminAddress?: string
 }
 
 const CONFIG_FILE = process.env.VERIFY_PERIPHERALS_CONFIG ?? "./scripts/upgrade/config/verifyPeripherals.json"
@@ -40,11 +40,39 @@ const ROLES = {
 	SIGNER_SETTER_ROLE: ethers.id("SIGNER_SETTER_ROLE"),
 }
 
+const UPGRADE_CONFIG_FILE = process.env.UPGRADE_CONFIG_FILE ?? "./scripts/upgrade/config/upgrade.json"
+const OUTPUT_DIR = "./scripts/upgrade/output"
+
 function loadConfig(): Config {
-	if (!fs.existsSync(CONFIG_FILE)) {
-		throw new Error(`Config file not found: ${CONFIG_FILE}\nCopy config/samples/verifyPeripherals.sample.json and fill in the values.`)
+	// Try dedicated config first
+	if (fs.existsSync(CONFIG_FILE)) {
+		return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
 	}
-	return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) as Config
+
+	// Auto-load from upgrade.json + output files
+	const config: Partial<Config> = {}
+
+	if (fs.existsSync(UPGRADE_CONFIG_FILE)) {
+		const upgrade = JSON.parse(fs.readFileSync(UPGRADE_CONFIG_FILE, "utf-8"))
+		config.diamondAddress = upgrade.diamondAddress
+		console.log(`Loaded diamond from ${UPGRADE_CONFIG_FILE}`)
+	}
+
+	const alilFile = `${OUTPUT_DIR}/deployed-accountlayer-instantlayer.json`
+	const peripheralsFile = `${OUTPUT_DIR}/deployed-peripherals.json`
+	if (fs.existsSync(alilFile)) {
+		const alil = JSON.parse(fs.readFileSync(alilFile, "utf-8"))
+		config.accountLayerDiamondAddress = alil.accountLayer?.diamond
+		config.instantLayerAddress = alil.instantLayer?.address
+		console.log(`Loaded AL + IL from ${alilFile}`)
+	} else if (fs.existsSync(peripheralsFile)) {
+		const peripherals = JSON.parse(fs.readFileSync(peripheralsFile, "utf-8"))
+		config.accountLayerDiamondAddress = peripherals.accountLayer?.diamond
+		config.instantLayerAddress = peripherals.instantLayer?.address
+		console.log(`Loaded AL + IL from ${peripheralsFile}`)
+	}
+
+	return config as Config
 }
 
 type CheckResult = { name: string; pass: boolean; detail: string }
@@ -52,13 +80,17 @@ type CheckResult = { name: string; pass: boolean; detail: string }
 async function main() {
 	const config = loadConfig()
 
-	const { diamondAddress, accountLayerDiamondAddress, instantLayerAddress, adminAddress } = config
+	const { diamondAddress, accountLayerDiamondAddress, instantLayerAddress } = config
 
-	for (const [label, addr] of Object.entries({ diamondAddress, accountLayerDiamondAddress, instantLayerAddress, adminAddress })) {
+	for (const [label, addr] of Object.entries({ diamondAddress, accountLayerDiamondAddress, instantLayerAddress })) {
 		if (!addr || !ethers.isAddress(addr)) {
 			throw new Error(`${label} is required and must be a valid address`)
 		}
 	}
+
+	// Resolve admin from diamond owner
+	const { resolveOwner } = await import("./utils/forkHelpers.js")
+	const adminAddress = config.adminAddress || (await resolveOwner(diamondAddress))
 
 	console.log(`Core Diamond:        ${diamondAddress}`)
 	console.log(`AccountLayer:        ${accountLayerDiamondAddress}`)
