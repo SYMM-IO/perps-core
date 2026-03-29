@@ -210,31 +210,39 @@ async function main() {
 	let partyASigner: any
 	let partyBSigner: any
 
+	// delegateSigner: a hardhat account with a real private key for EIP-712 signing (used in delegation)
+	let delegateSigner: any
+
 	if (isFork) {
 		// Impersonate the real diamond owner
 		const ownerAddress = await resolveOwner(DIAMOND)
 		admin = await impersonateAndFund(ownerAddress)
 
-		// Use hardhat accounts as partyA/partyB signers (they have signing keys)
+		// Use hardhat accounts as partyA/partyB/delegate signers (they have signing keys)
 		const signers = await ethers.getSigners()
 		partyASigner = signers[1]
 		partyBSigner = signers[2]
+		delegateSigner = signers[3]
 		await networkHelpers.setBalance(await partyASigner.getAddress(), ethers.parseEther("100"))
 		await networkHelpers.setBalance(await partyBSigner.getAddress(), ethers.parseEther("100"))
+		await networkHelpers.setBalance(await delegateSigner.getAddress(), ethers.parseEther("100"))
 	} else {
 		const signers = await ethers.getSigners()
 		admin = signers[0]
 		partyASigner = signers[1]
 		partyBSigner = signers[2]
+		delegateSigner = signers[0] // In local mode, admin has a real key
 	}
 
 	const adminAddress = await admin.getAddress()
 	const partyAAddress = await partyASigner.getAddress()
 	const partyBSignerAddress = await partyBSigner.getAddress()
+	const delegateAddress = await delegateSigner.getAddress()
 
 	console.log(`Admin:         ${adminAddress}`)
 	console.log(`PartyA:        ${partyAAddress}`)
 	console.log(`PartyB signer: ${partyBSignerAddress}`)
+	console.log(`Delegate:      ${delegateAddress}`)
 	console.log()
 
 	// Connect to contracts
@@ -531,12 +539,12 @@ async function main() {
 	await (
 		await instantLayer.connect(partyASigner).grantDelegation({
 			account: { addr: subAccountAddress, isPartyB: false },
-			delegatedSigner: adminAddress,
+			delegatedSigner: delegateAddress,
 			selectors: [selectorQuote],
 			expiryTimestamp: await getBlockTimestamp(1000n),
 		})
 	).wait()
-	console.log("  Delegation granted: admin can sendQuote on behalf of partyA")
+	console.log(`  Delegation granted: ${delegateAddress} can sendQuote on behalf of partyA`)
 
 	// =========================================================================
 	// Step 8: Execute template
@@ -553,9 +561,9 @@ async function main() {
 		verifyingContract: IL_ADDRESS,
 	}
 
-	// Op 1: PartyA sends quote (via delegated admin signer)
+	// Op 1: PartyA sends quote (via delegated signer)
 	const op1 = {
-		signer: adminAddress,
+		signer: delegateAddress,
 		target: DIAMOND,
 		callData: quoteCallData,
 		signerAccount: { addr: subAccountAddress, isPartyB: false },
@@ -598,7 +606,7 @@ async function main() {
 	}
 
 	// Sign operations
-	const sig1 = await admin.signTypedData(domain, EIP712_TYPES, op1)
+	const sig1 = await delegateSigner.signTypedData(domain, EIP712_TYPES, op1)
 	const sig2 = await partyASigner.signTypedData(domain, EIP712_TYPES, op2)
 	const sig3 = await partyBSigner.signTypedData(domain, EIP712_TYPES, op3)
 	const sig4 = await partyBSigner.signTypedData(domain, EIP712_TYPES, op4)
