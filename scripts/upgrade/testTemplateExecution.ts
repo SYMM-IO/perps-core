@@ -366,24 +366,13 @@ async function main() {
 	// =========================================================================
 	console.log("\n=== Step 3: Unpause system ===")
 	await (await controlFacet.grantRole(adminAddress, roleHash("UNPAUSER_ROLE"))).wait()
-	console.log("  UNPAUSER_ROLE granted")
-
-	// Check current pause state
-	const viewFacetForPause = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", DIAMOND, admin)
-	try {
-		const ps = await viewFacetForPause.pauseState()
-		console.log(`  Pause state: global=${ps[0]} liq=${ps[1]} accounting=${ps[2]} partyB=${ps[3]} partyA=${ps[4]} emergency=${ps[5]}`)
-	} catch {
-		console.log("  (could not read pauseState)")
-	}
-
 	const unpauseFns = ["unpauseGlobal", "unpauseAccounting", "unpausePartyAActions", "unpausePartyBActions"] as const
 	for (const fn of unpauseFns) {
 		try {
 			await (await pauseControlFacet[fn]()).wait()
-			console.log(`  ${fn}() done`)
-		} catch (e: any) {
-			console.log(`  ${fn}() failed: ${e.message?.slice(0, 120) ?? e}`)
+			console.log(`  ${fn}()`)
+		} catch {
+			// Already unpaused
 		}
 	}
 	console.log("  System unpaused")
@@ -414,32 +403,25 @@ async function main() {
 	}
 	console.log(`  Collateral: ${collateralAddress}`)
 
+	// Read collateral decimals for correct amounts
+	const collateralMeta = new ethers.Contract(collateralAddress, ["function decimals() view returns (uint8)"], ethers.provider)
+	const collateralDecimals = Number(await collateralMeta.decimals())
+	const col = (n: bigint) => decimal(n, collateralDecimals)
+	console.log(`  Decimals: ${collateralDecimals}`)
+
 	if (isFork) {
 		// Fork mode: set ERC20 balances directly (no mint function on real tokens)
-		await setERC20Balance(collateralAddress, partyAAddress, decimal(100000n))
+		await setERC20Balance(collateralAddress, partyAAddress, col(100000n))
 		console.log("  PartyA: balance set via storage")
 
 		// Approve + deposit + allocate for PartyA
 		const collateralForPartyA = new ethers.Contract(collateralAddress, ["function approve(address,uint256) returns (bool)"], partyASigner)
 		await (await collateralForPartyA.approve(DIAMOND, ethers.MaxUint256)).wait()
-		// Debug: verify balance and allowance before deposit
-		const balCheck = new ethers.Contract(
-			collateralAddress,
-			["function balanceOf(address) view returns (uint256)", "function allowance(address,address) view returns (uint256)"],
-			ethers.provider,
-		)
-		console.log(`  PartyA balance: ${await balCheck.balanceOf(partyAAddress)}, allowance: ${await balCheck.allowance(partyAAddress, DIAMOND)}`)
-		try {
-			await accountFacet.connect(partyASigner).depositAndAllocateFor.staticCall(subAccountAddress, decimal(10000n))
-		} catch (e: any) {
-			console.log(`  depositAndAllocateFor staticCall error: ${e.reason ?? e.shortMessage ?? e.message?.slice(0, 200)}`)
-			throw e
-		}
-		await (await accountFacet.connect(partyASigner).depositAndAllocateFor(subAccountAddress, decimal(10000n))).wait()
+		await (await accountFacet.connect(partyASigner).depositAndAllocateFor(subAccountAddress, col(10000n))).wait()
 		console.log("  PartyA: deposited and allocated 10000")
 
 		// Fund PartyB
-		await setERC20Balance(collateralAddress, symmioPartyBAddress, decimal(100000n))
+		await setERC20Balance(collateralAddress, symmioPartyBAddress, col(100000n))
 		console.log("  PartyB: balance set via storage")
 
 		try {
@@ -447,15 +429,15 @@ async function main() {
 		} catch {
 			// May already have role
 		}
-		await (await symmioPartyB._approve(collateralAddress, decimal(100000n))).wait()
+		await (await symmioPartyB._approve(collateralAddress, col(100000n))).wait()
 
 		const partyBAccountFacet = await ethers.getContractAt(
 			"contracts/core/facets/PartyBAccount/PartyBAccountFacet.sol:PartyBAccountFacet",
 			DIAMOND,
 			admin,
 		)
-		const depositCallData = accountFacet.interface.encodeFunctionData("deposit", [decimal(50000n)])
-		const allocateCallData = partyBAccountFacet.interface.encodeFunctionData("allocateForPartyB", [decimal(50000n), subAccountAddress])
+		const depositCallData = accountFacet.interface.encodeFunctionData("deposit", [col(50000n)])
+		const allocateCallData = partyBAccountFacet.interface.encodeFunctionData("allocateForPartyB", [col(50000n), subAccountAddress])
 		await (await symmioPartyB._call([depositCallData, allocateCallData])).wait()
 		console.log("  PartyB: deposited and allocated 50000")
 	} else {
