@@ -287,6 +287,15 @@ async function main() {
 
 		symmioPartyB = await ethers.getContractAt("SymmioPartyB", symmioPartyBAddress, admin)
 
+		// v0.8.5 SymmioPartyB uses AccessControlEnumerableUpgradeable which shifts storage
+		// slots by 50 compared to v0.8.4's AccessControlUpgradeable. After upgrade,
+		// symmioAddress reads from the wrong slot (zero). Re-set it.
+		const currentSymmio = await symmioPartyB.symmioAddress()
+		if (currentSymmio === ethers.ZeroAddress || currentSymmio.toLowerCase() !== DIAMOND.toLowerCase()) {
+			await (await symmioPartyB.setSymmioAddress(DIAMOND)).wait()
+			console.log(`  Re-set symmioAddress to ${DIAMOND} (storage layout shift)`)
+		}
+
 		// Ensure PartyB is bindable (new v0.8.5 mapping, defaults to false for existing PartyBs)
 		await (await controlFacet.grantRole(adminAddress, roleHash("PARTY_B_MANAGER_ROLE"))).wait()
 		await (await controlFacet.setPartyBBindable(symmioPartyBAddress, true)).wait()

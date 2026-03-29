@@ -5,10 +5,25 @@
 	"symmioPartyBAddress": "0x..."
 }
 
-eth_estimateGas                                                                    
-Contract call:    Diamond#<unrecognized-selector>                                 
-From:             0x0cbf07176e67671c99222bebdb166efc58dacd95                      
-To:               0x8f06459f184553e5d04f07f868720bdacab39395                      
-Value:            0 ETH                                                          
-│ocean@dev-ai-01-hz-symm:~/dev/perps-core$ ls scripts/upgrade/config/
-Error: reverted with reason string 'LibDiamondCut: Replace facet has no code'
+eth_feeHistory                                                                      
+eth_sendTransaction                                                               
+Contract call:       <UnrecognizedContract>                                       
+Transaction:         0x41d191c2efc078ad3facfe309f6ebf4059ea0f3572805aa7ff277ac8ec2
+77a52                                                                               
+From:                0x0cbf07176e67671c99222bebdb166efc58dacd95                   
+To:                  0xd600a4f314d3f1ee8869a340d298a69ff070e574                   
+Value:               0 ETH                                                        
+Gas used:            123183 of 125107                                             
+Block #446816623:    0xe7d06a54f7bdcdc783ed79c611ec36c55797606d630cbc3a714f613de53
+4bbf2                                                                               
+│
+eth_getTransactionByHash                                                            
+eth_getTransactionReceipt                                                          
+eth_blockNumber                                                                     
+eth_estimateGas                                                                     
+Contract call:       <UnrecognizedContract>                                      
+From:                0x0cbf07176e67671c99222bebdb166efc58dacd95                   
+To:                  0xd600a4f314d3f1ee8869a340d298a69ff070e574                  
+Value:               0 ETH                                                     
+│  PartyA: deposited and allocated 10000
+Error: reverted with reason string 'ERC20: approve to the zero address'
