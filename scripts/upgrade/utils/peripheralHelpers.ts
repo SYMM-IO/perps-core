@@ -117,14 +117,19 @@ export async function deployAccountLayerDiamond(
 		log.deployed("DiamondCutFacet", diamondCutFacetAddress)
 	}
 
-	// 2. Diamond proxy
+	// 2. Diamond proxy — deployed with deployer as owner so this script can
+	//    call diamondCut directly. The Init grants DEFAULT_ADMIN_ROLE to
+	//    adminAddress for role-based governance.
+	const [deployer] = await ethers.getSigners()
+
 	let diamondAddress: string
 	if (al.diamond) {
 		diamondAddress = al.diamond
 		log.deployed("Diamond", diamondAddress, true)
 	} else {
 		const factory = await ethers.getContractFactory("Diamond")
-		const contract = await factory.deploy(adminAddress, diamondCutFacetAddress)
+		const deployOwner = adminSigner ? adminAddress : await deployer.getAddress()
+		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress)
 		await contract.waitForDeployment()
 		diamondAddress = await contract.getAddress()
 		al.diamond = diamondAddress

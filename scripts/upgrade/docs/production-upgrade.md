@@ -7,6 +7,17 @@ The production upgrade flow depends on whether the diamond is owned by an EOA or
 ## Safe Path (Production)
 
 ```
+DEPLOY SIGNATURE VERIFIER (one-time, if upgrading from v0.8.4)
+══════════════════════════════════════════════════════════════
+  v0.8.4 had signature verification inline in the diamond.
+  v0.8.5 uses an external MuonSignatureVerifier contract.
+
+  npx hardhat deploy:signatureVerifier --admin <admin> --network <network>
+
+  Then configure Muon TSS keys + gateway signers on the new contract.
+  Put the deployed address in upgrade.json → newV085Parameters.signatureVerifierAddress
+
+
 BEFORE PAUSE (no downtime)
 ══════════════════════════
 
@@ -75,6 +86,8 @@ UNPAUSE
 
 ## EOA Path
 
+**Pre-requisite (if upgrading from v0.8.4):** Deploy `MuonSignatureVerifier` first (see [Deploy SignatureVerifier](#deploy-signatureverifier)).
+
 **Single script:**
 
 1. **Upgrade** (`eoaUpgrade.ts`) -- deploy facets, pause, diamondCut, set params, deploy AL + IL, wire, grant migration role
@@ -92,14 +105,41 @@ UNPAUSE
 
 ## Prerequisites
 
-- Diamond address on the target network
-- Admin account (EOA with diamond ownership, or Safe multisig)
+- Deployment info for the target network (see [Address Mapping](#address-mapping) below)
 - Subgraph endpoint synced to current chain state (for migration)
-- Config file:
+- `.env` with deployer private key (`TEAM_DEPLOYER`) and optional RPC override (`RPC_<NETWORK>`)
+- Config files:
   ```bash
   cp scripts/upgrade/config/samples/upgrade.sample.json scripts/upgrade/config/upgrade.json
-  # edit scripts/upgrade/config/upgrade.json
+  cp scripts/upgrade/config/samples/prepareMigration.sample.json scripts/upgrade/config/prepareMigration.json
+  cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/migrate.json
+  cp scripts/upgrade/config/samples/postMigration.sample.json scripts/upgrade/config/postMigration.json
+  cp scripts/upgrade/config/samples/deployPeripherals.sample.json scripts/upgrade/config/deployPeripherals.json
+  # edit each file -- see Configuration section below
   ```
+
+## Address Mapping
+
+Every Symmio deployment has a standard set of contracts and roles. The table below maps these to the config fields used by the upgrade scripts.
+
+| Deployment name | Example | Config field | Where it goes |
+|----------------|---------|-------------|---------------|
+| **Symmio** (diamond proxy) | `0x2Ecc...38B5` | `diamondAddress` | `upgrade.json`, `prepareMigration.json`, `migrate.json`, `postMigration.json` |
+| **Main MultiSig** (Gnosis Safe that owns the diamond) | `0x0C83...AFC4` | `safeAddress` | `upgrade.json`, `postMigration.json` |
+| **Main MultiSig** (also receives role grants) | `0x0C83...AFC4` | `adminAddress` | `upgrade.json`, `deployPeripherals.json` |
+| **Fees MultiSig** (receives protocol fees) | `0x273a...3f12` | `symmioFeeReceiver` | `upgrade.json`, `deployPeripherals.json` |
+| **SignatureVerifier** (Muon signature verification contract) | `0x94eE...FC2` | `newV085Parameters.signatureVerifierAddress` | `upgrade.json` |
+| **SymmioPartyB** (existing PartyB proxy, if deployed) | `0xd600...B574` | `symmioPartyBAddress` | `upgrade.json`, `deployPeripherals.json` |
+| **TimeLock** (12H or 3D, if diamond owner is a timelock) | `0xA75F...c63` | -- | Not in config; execute diamondCut via timelock manually |
+| **Migration runner** (address that will call migration functions) | any EOA or multisig | `migrationRunner` | `upgrade.json` (defaults to `adminAddress`) |
+| **PartyB addresses** (all active PartyBs to enable cross mode) | `[0x...]` | `partyBs` | `postMigration.json` |
+| **Subgraph endpoint** (Goldsky/TheGraph for this chain) | `https://api.goldsky.com/...` | `subgraphEndpoint` | `upgrade.json`, `prepareMigration.json` |
+
+**Notes:**
+- `adminAddress` and `safeAddress` are often the same address (the Main MultiSig). Use `adminAddress` for the address that should receive role grants; use `safeAddress` for the Safe Transaction Builder target.
+- If the diamond is owned by a **TimeLock** that is itself owned by the Main MultiSig, set `safeAddress` to the Main MultiSig and `adminAddress` to the TimeLock (since the TimeLock is the actual diamond owner that executes role grants).
+- `migrationRunner` defaults to `adminAddress` if not set. This is the address granted `MIGRATION_ROLE` to execute `migrateQuotes()` and `migrateCrossLockedValues()`.
+- Contracts like Collateral, Pauser, Symbol Manager, RebalancerToMsig, CallProxy Liquidator, and Fees Manager are **not** part of the upgrade config -- they are unchanged by the v0.8.5 upgrade.
 
 ## Testing
 
@@ -183,6 +223,23 @@ Output:
 ## Step-by-Step Scripts
 
 The steps below can be used individually (e.g. for Safe path, or if you need more control over the EOA upgrade process).
+
+## Deploy SignatureVerifier
+
+**Required when upgrading from v0.8.4.** In v0.8.4, Muon signature verification was inline in the diamond via `LibMuon`. In v0.8.5, it is refactored into an external `MuonSignatureVerifier` contract (`contracts/helpers/verification/SymmioSignatureVerifier.sol`) that must be deployed separately.
+
+```bash
+# --admin: address that can manage TSS keys and gateway signers on the verifier
+# Typically the diamond owner (TimeLock or MultiSig)
+npx hardhat deploy:signatureVerifier --admin <admin-address> --network <network>
+```
+
+After deployment:
+1. Note the deployed address
+2. Configure Muon TSS public keys and gateway signers on the new contract (via the admin)
+3. Set the address in `upgrade.json` -> `newV085Parameters.signatureVerifierAddress`
+
+If upgrading a chain that already runs v0.8.5 (or where the verifier was deployed previously), skip this step and use the existing verifier address.
 
 ## Step 1: Deploy Facets
 
@@ -334,19 +391,58 @@ The migration report includes:
 
 ### Upgrade config (`upgrade.json`)
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `diamondAddress` | string | -- | Diamond proxy address on the target network |
-| `adminAddress` | string | `""` | Address that receives role grants (for Safe path) |
-| `safeAddress` | string | `""` | Gnosis Safe address (Safe path only) |
-| `migrationRunner` | string | `""` | Address granted MIGRATION_ROLE (defaults to adminAddress) |
-| `diamondCutChunkSize` | number | `1000` | Max facet cuts per diamondCut transaction |
-| `symmioFeeReceiver` | string | `""` | Fee receiver for AccountLayer Init (defaults to admin) |
-| `setupInstantLayerTemplates` | boolean | `true` | Setup OpenPosition/ClosePosition templates on InstantLayer |
-| `symmioPartyBAddress` | string | `""` | Existing SymmioPartyB proxy address (for UUPS upgrade + InstantLayer registration) |
-| `newV085Parameters` | object | -- | New v0.8.5 parameters to initialize (see below) |
+| Field | Type | Default | What to put here |
+|-------|------|---------|-----------------|
+| `diamondAddress` | string | -- | **Symmio** diamond proxy address (the main protocol contract) |
+| `adminAddress` | string | `""` | **Main MultiSig** (or TimeLock) -- the address that owns the diamond and will receive role grants |
+| `safeAddress` | string | `""` | **Main MultiSig** -- the Gnosis Safe used in Safe Transaction Builder (Safe path only) |
+| `migrationRunner` | string | `""` | Address that will run `migrateQuotes` / `migrateCrossLockedValues` (defaults to `adminAddress` if empty) |
+| `diamondCutChunkSize` | number | `1000` | Max facet selector changes per `diamondCut` transaction (increase only if hitting gas limits) |
+| `subgraphEndpoint` | string | `""` | Goldsky / TheGraph subgraph URL for this chain (used by `prepareMigrationInput.ts`) |
+| `spotCheckCount` | number | `20` | Number of random quotes/balances to verify against on-chain state during migration prep |
+| `symmioFeeReceiver` | string | `""` | **Fees MultiSig** -- receives protocol fees in AccountLayer (defaults to `adminAddress` if empty) |
+| `setupInstantLayerTemplates` | boolean | `true` | Whether to register OpenPosition + ClosePosition templates on InstantLayer |
+| `symmioPartyBAddress` | string | `""` | Existing **SymmioPartyB** proxy address -- needed for UUPS upgrade + InstantLayer PartyB registration |
+| `newV085Parameters` | object | -- | New v0.8.5 parameters (see [newV085Parameters](#newv085parameters) below) |
 
 `accountLayerDiamondAddress`, `instantLayerAddress`, and `symmioPartyBImplementation` are auto-loaded from `deployed-peripherals.json`. They can still be set in config or env vars as overrides.
+
+### Deploy peripherals config (`deployPeripherals.json`)
+
+Note: `adminAddress` here is **different** from `upgrade.json`. In `upgrade.json` it's the diamond owner (e.g. TimeLock). Here it's the admin for the **newly deployed** AccountLayer + InstantLayer contracts -- typically the **Main MultiSig** directly.
+
+| Field | Type | What to put here |
+|-------|------|-----------------|
+| `diamondAddress` | string | **Symmio** diamond proxy address |
+| `adminAddress` | string | **Main MultiSig** -- will be set as owner/admin for the new AccountLayer + InstantLayer contracts |
+| `symmioFeeReceiver` | string | **Fees MultiSig** -- fee receiver for AccountLayer initialization |
+| `symmioPartyBAddress` | string | Existing **SymmioPartyB** proxy address (for UUPS upgrade to new implementation). Leave empty if no PartyB proxy exists. |
+
+### Prepare migration config (`prepareMigration.json`)
+
+| Field | Type | What to put here |
+|-------|------|-----------------|
+| `diamondAddress` | string | **Symmio** diamond proxy address |
+| `subgraphEndpoint` | string | Goldsky / TheGraph subgraph URL for this chain |
+| `spotCheckCount` | number | Number of random entries to verify against on-chain (default 20) |
+
+### Migration config (`migrate.json`)
+
+| Field | Type | What to put here |
+|-------|------|-----------------|
+| `diamondAddress` | string | **Symmio** diamond proxy address |
+| `migrationInputFile` | string | Path to `migration-input.json` (output of previous step) |
+| `chunkSize` | number | Quotes per `migrateQuotes` transaction (default 50) |
+| `dryRun` | boolean | `true` to simulate without sending transactions |
+| `fork` | boolean | `true` if running on a fork network |
+
+### Post-migration config (`postMigration.json`)
+
+| Field | Type | What to put here |
+|-------|------|-----------------|
+| `diamondAddress` | string | **Symmio** diamond proxy address |
+| `safeAddress` | string | **Main MultiSig** -- for Safe batch output (leave empty for EOA path) |
+| `partyBs` | string[] | List of all active **PartyB** addresses to enable cross mode for |
 
 ### Env var overrides
 
@@ -368,19 +464,19 @@ The migration report includes:
 
 ## newV085Parameters
 
-These are parameters that **only exist in v0.8.5** (not in v0.8.4 storage). After `diamondCut`, they default to 0 and must be initialized.
+These parameters **only exist in v0.8.5** (not in v0.8.4 storage). After `diamondCut`, they default to 0 and must be initialized.
 
-**Must-set (blocks migration if 0):**
-- `maxPartyAConnectionLimit` -- migration calls `addConnection()` which checks this limit
-
-**Should-set (needed for v0.8.5 features to work):**
-- `signatureVerifierAddress` -- Muon signature verifier contract
-- `liquidationInsuranceVault` + `maxLiquidationProfitPerPosition` -- insurance vault config
-- `softLiquidationPenaltyCollector` -- soft liquidation penalty receiver
-- `minAffiliateFee` -- minimum affiliate fee floor
-- `unbindCooldown` -- binding cooldown
-- `maxWithdrawParts` -- max parts per withdrawal request
-- `minWithdrawCooldown` -- withdrawal cooldown
+| Parameter | Type | What to put here |
+|-----------|------|-----------------|
+| `maxPartyAConnectionLimit` | number | **REQUIRED** -- max PartyBs a PartyA can connect to. Migration fails if 0. Typical value: `5` |
+| `signatureVerifierAddress` | address | **SignatureVerifier** contract address -- the Muon oracle signature verification contract from your deployment |
+| `liquidationInsuranceVault` | address | Address that receives liquidation insurance -- typically the **Fees MultiSig** |
+| `maxLiquidationProfitPerPosition` | string (wei) | Max profit kept from liquidation per position. Example: `"1000000000000000000"` = 1 token |
+| `softLiquidationPenaltyCollector` | address | Address that receives soft liquidation penalties -- typically the **Fees MultiSig** |
+| `minAffiliateFee` | string (wei) | Minimum affiliate fee floor. Example: `"100000000000000000"` = 0.1 token |
+| `unbindCooldown` | number (seconds) | Cooldown before a PartyA can unbind from a PartyB. Example: `86400` = 1 day |
+| `maxWithdrawParts` | number | Max parts a withdrawal can be split into. Example: `5` |
+| `minWithdrawCooldown` | number (seconds) | Min time between withdrawal parts. Example: `43200` = 12 hours |
 
 Existing v0.8.4 parameters (cooldowns, limits, fee shares, etc.) are preserved in storage and NOT overwritten.
 
