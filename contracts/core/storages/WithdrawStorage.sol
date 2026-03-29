@@ -29,6 +29,7 @@ struct WithdrawRequest {
 	bytes providerData;
 	uint256 totalAmount;
 	uint256 totalVirtualAmount;
+	uint256 advancedAmount;
 }
 
 /// @notice Lifecycle status of a withdrawal request

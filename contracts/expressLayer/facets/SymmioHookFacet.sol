@@ -1,0 +1,480 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
+import { SponsorConfig, RingBuffer } from "../types/ConfigTypes.sol";
+import { CreditData } from "../types/CreditTypes.sol";
+import { DecodedOption, ComputedAmounts } from "../types/OptionTypes.sol";
+import { WithdrawReceiverPart, WithdrawRequest } from "../../core/storages/WithdrawStorage.sol";
+import { WithdrawInfo, Status, OptionType } from "../types/WithdrawTypes.sol";
+
+import { ICreditLineManager } from "../interfaces/ICreditLineManager.sol";
+import { ISymmio } from "../interfaces/ISymmio.sol";
+
+import { LibAccessControl } from "../libraries/LibAccessControl.sol";
+import { LibCreditLine } from "../libraries/LibCreditLine.sol";
+import { LibErrors } from "../libraries/LibErrors.sol";
+import { LibParts } from "../libraries/LibParts.sol";
+import { LibRingBuffer } from "../libraries/LibRingBuffer.sol";
+
+import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
+
+/// @title SymmioHookFacet
+/// @notice Handles SYMMIO callbacks for the ExpressProvider diamond.
+contract SymmioHookFacet {
+	using LibRingBuffer for RingBuffer;
+
+	event WithdrawAccepted(address indexed user, uint256 indexed requestId, uint8 optionType);
+	event WithdrawProcessed(address indexed user, uint256 indexed requestId);
+	event WithdrawFinalized(address indexed user, uint256 indexed requestId);
+	event WithdrawCancelled(address indexed user, uint256 indexed requestId);
+	event WithdrawSuspended(address indexed user, uint256 indexed requestId);
+
+	modifier nonReentrant() {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		if (s.reentrancyStatus == 1) revert LibErrors.Reentrancy();
+		s.reentrancyStatus = 1;
+		_;
+		s.reentrancyStatus = 0;
+	}
+
+	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address) external nonReentrant {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
+
+		(bytes memory optionData, bytes memory validatorData, bytes memory creditDataRaw) = abi.decode(
+			withdrawRequest.providerData,
+			(bytes, bytes, bytes)
+		);
+
+		DecodedOption memory opt = _decodeAndVerifyOption(withdrawRequest, optionData);
+		if (opt.optionType > uint8(OptionType.STANDARD)) revert LibErrors.InvalidOptionType();
+
+		OptionType optionType = OptionType(opt.optionType);
+		if (optionType == OptionType.STANDARD && opt.creditAmount > 0) revert LibErrors.CreditNotSupportedForStandard();
+
+		ComputedAmounts memory amounts = LibParts.computeAmounts(withdrawRequest.parts, opt.affiliateAmount, opt.creditAmount);
+
+		if (optionType == OptionType.IMMEDIATE && s.minValidatorSignatures == 0) {
+			revert LibErrors.ValidatorsRequiredForImmediate();
+		}
+
+		uint256 feeBasis = amounts.expressAmount;
+		if (opt.fee != (feeBasis * s.affiliateConfigs[opt.affiliate].feeRate) / 10000) revert LibErrors.FeeMismatch();
+		if (opt.operatorFee != s.affiliateConfigs[opt.affiliate].operatorFee) revert LibErrors.OperatorFeeMismatch();
+		if (opt.fee + opt.operatorFee > feeBasis) revert LibErrors.FeesExceedExpressAmount();
+
+		if (s.minValidatorSignatures > 0) {
+			_validateValidators(withdrawRequest.user, opt.nonce, amounts.expressAmount, validatorData);
+		}
+
+		if (optionType != OptionType.STANDARD) {
+			_lockFunds(optionType, opt, amounts, withdrawRequest.cooldownEndTime);
+		}
+
+		address manager = address(0);
+		if (opt.creditAmount > 0) {
+			manager = s.creditLineManagers[opt.affiliate];
+			if (manager == address(0)) revert LibErrors.CreditLineManagerNotSet();
+			ICreditLineManager(manager).reserveDebt(
+				withdrawRequest.user,
+				withdrawRequest.id,
+				opt.creditAmount,
+				abi.decode(creditDataRaw, (CreditData))
+			);
+		}
+
+		WithdrawInfo storage info = s.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
+		info.optionType = optionType;
+		info.availableAt = opt.availableAt;
+		info.expressAmount = amounts.expressAmount;
+		info.generalAmount = amounts.generalAmount;
+		info.affiliateAmount = opt.affiliateAmount;
+		info.creditAmount = opt.creditAmount;
+		info.affiliate = opt.affiliate;
+		info.creditLineManager = manager;
+		info.acceptedAt = block.timestamp;
+		info.cooldownEndTime = withdrawRequest.cooldownEndTime;
+		info.partsHash = keccak256(abi.encode(withdrawRequest.parts));
+		info.fee = opt.fee;
+
+		if (opt.operatorFee > 0) {
+			s.operatorFees[withdrawRequest.user][withdrawRequest.id] = opt.operatorFee;
+		}
+
+		_lockFee(withdrawRequest.user, withdrawRequest.id, info);
+
+		uint256 totalFee = opt.fee + opt.operatorFee;
+		uint256 actualUserFee = totalFee - info.sponsorCoverage;
+		if (actualUserFee > opt.maxUserFee) revert LibErrors.UserFeeExceedsMaximum();
+
+		ISymmio(s.symmio).acceptWithdrawRequest(withdrawRequest.user, withdrawRequest.id);
+		emit WithdrawAccepted(withdrawRequest.user, withdrawRequest.id, opt.optionType);
+
+		if (optionType == OptionType.IMMEDIATE) {
+			LibCreditLine.activate(s.symmio, withdrawRequest.user, withdrawRequest.id, info);
+			_collectAndTransfer(withdrawRequest.user, withdrawRequest.id, withdrawRequest.parts, info);
+			_unlockAndDeductPools(info);
+			info.status = Status.PROCESSED;
+			emit WithdrawProcessed(withdrawRequest.user, withdrawRequest.id);
+		} else {
+			info.status = Status.ACCEPTED;
+		}
+	}
+
+	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
+
+		WithdrawInfo storage info = s.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
+
+		if (info.optionType != OptionType.STANDARD) {
+			_removeExpectedInflows(info);
+		}
+
+		if (info.optionType == OptionType.STANDARD) {
+			if (info.status != Status.ACCEPTED && info.status != Status.LOCKED) {
+				revert LibErrors.InvalidStatusForStandard();
+			}
+
+			info.finalizedAt = block.timestamp;
+			if (info.status == Status.ACCEPTED) {
+				info.status = Status.FINALIZED;
+			}
+		} else {
+			if (info.status != Status.PROCESSED) revert LibErrors.NotProcessed();
+
+			s.generalBalance += info.generalAmount;
+			if (info.affiliateAmount > 0) {
+				s.affiliateBalances[info.affiliate] += info.affiliateAmount;
+			}
+
+			LibCreditLine.settle(withdrawRequest.user, withdrawRequest.id, info);
+			info.status = Status.FINALIZED;
+		}
+
+		emit WithdrawFinalized(withdrawRequest.user, withdrawRequest.id);
+	}
+
+	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external nonReentrant {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
+
+		WithdrawInfo storage info = s.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
+		if (info.optionType == OptionType.SCHEDULED) revert LibErrors.ScheduledNotCancellable();
+		if (info.status != Status.ACCEPTED) revert LibErrors.NotAccepted();
+		if (keccak256(abi.encode(withdrawRequest.parts)) != info.partsHash) revert LibErrors.PartsMismatch();
+
+		_releaseWithdraw(withdrawRequest.user, withdrawRequest.id, info);
+		info.status = Status.CANCELLED;
+
+		ISymmio(s.symmio).acceptWithdrawCancelRequest(withdrawRequest.user, withdrawRequest.id);
+		emit WithdrawCancelled(withdrawRequest.user, withdrawRequest.id);
+	}
+
+	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external nonReentrant {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
+
+		WithdrawInfo storage info = s.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
+		if (keccak256(abi.encode(withdrawRequest.parts)) != info.partsHash) revert LibErrors.PartsMismatch();
+
+		if (info.status == Status.PROCESSED) {
+			_handleProcessedRollback(withdrawRequest.user, withdrawRequest.id, info);
+			info.status = Status.CANCELLED;
+			emit WithdrawCancelled(withdrawRequest.user, withdrawRequest.id);
+			return;
+		}
+
+		if (info.status != Status.ACCEPTED && info.status != Status.LOCKED) {
+			revert LibErrors.InvalidStatusForForceCancel();
+		}
+		if (info.optionType == OptionType.STANDARD && info.finalizedAt != 0) {
+			revert LibErrors.InvalidStatusForForceCancel();
+		}
+
+		_releaseWithdraw(withdrawRequest.user, withdrawRequest.id, info);
+		info.status = Status.CANCELLED;
+		emit WithdrawCancelled(withdrawRequest.user, withdrawRequest.id);
+	}
+
+	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) external nonReentrant {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
+
+		WithdrawInfo storage info = s.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
+		if (keccak256(abi.encode(withdrawRequest.parts)) != info.partsHash) revert LibErrors.PartsMismatch();
+
+		if (info.status == Status.PROCESSED) {
+			_handleProcessedRollback(withdrawRequest.user, withdrawRequest.id, info);
+			info.status = Status.SUSPENDED;
+			emit WithdrawSuspended(withdrawRequest.user, withdrawRequest.id);
+			return;
+		}
+
+		if (info.status != Status.ACCEPTED && info.status != Status.LOCKED) {
+			revert LibErrors.InvalidStatusForSuspend();
+		}
+		if (info.optionType == OptionType.STANDARD && info.finalizedAt != 0) {
+			revert LibErrors.InvalidStatusForSuspend();
+		}
+
+		_releaseWithdraw(withdrawRequest.user, withdrawRequest.id, info);
+		info.status = Status.SUSPENDED;
+		emit WithdrawSuspended(withdrawRequest.user, withdrawRequest.id);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	//                     INTERNAL: OPTION VERIFICATION
+	// ═══════════════════════════════════════════════════════════════════
+
+	function _decodeAndVerifyOption(WithdrawRequest memory withdrawRequest, bytes memory optionData) internal returns (DecodedOption memory opt) {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+
+		(
+			opt.nonce,
+			opt.optionType,
+			opt.availableAt,
+			opt.affiliate,
+			opt.affiliateAmount,
+			opt.creditAmount,
+			opt.fee,
+			opt.operatorFee,
+			opt.maxUserFee,
+			opt.deadline,
+			opt.signature
+		) = abi.decode(optionData, (uint256, uint8, uint256, address, uint256, uint256, uint256, uint256, uint256, uint256, bytes));
+
+		if (block.timestamp > opt.deadline) revert LibErrors.OptionExpired();
+		if (s.nonces[withdrawRequest.user] != opt.nonce) revert LibErrors.InvalidNonce();
+
+		_verifyOptionSignature(withdrawRequest, opt);
+		s.nonces[withdrawRequest.user]++;
+	}
+
+	function _verifyOptionSignature(WithdrawRequest memory withdrawRequest, DecodedOption memory opt) internal view {
+		bytes32 partsHash = keccak256(abi.encode(withdrawRequest.parts));
+		bytes32 structHash = keccak256(
+			abi.encode(
+				LibAccessControl.WITHDRAW_OPTION_TYPEHASH,
+				withdrawRequest.user,
+				opt.nonce,
+				opt.optionType,
+				opt.availableAt,
+				opt.affiliate,
+				opt.affiliateAmount,
+				opt.creditAmount,
+				opt.fee,
+				opt.operatorFee,
+				opt.maxUserFee,
+				partsHash,
+				opt.deadline
+			)
+		);
+
+		address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), opt.signature);
+		if (!LibAccessControl.hasRole(LibAccessControl.SIGNER_ROLE, signer)) revert LibErrors.InvalidSigner();
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	//                     INTERNAL: FUND LOCKING
+	// ═══════════════════════════════════════════════════════════════════
+
+	function _lockFunds(OptionType optionType, DecodedOption memory opt, ComputedAmounts memory amounts, uint256 cooldownEndTime) internal {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		uint256 numBuckets = LibRingBuffer.numBuckets(s.schedulingWindow, s.bucketDuration);
+
+		if (optionType == OptionType.INSTANT || optionType == OptionType.IMMEDIATE) {
+			if (s.generalBalance - s.lockedGeneralBalance < amounts.generalAmount) revert LibErrors.InsufficientGeneralBalance();
+			if (s.affiliateBalances[opt.affiliate] - s.lockedAffiliateBalances[opt.affiliate] < opt.affiliateAmount) {
+				revert LibErrors.InsufficientAffiliateBalance();
+			}
+
+			s.lockedGeneralBalance += amounts.generalAmount;
+			s.lockedAffiliateBalances[opt.affiliate] += opt.affiliateAmount;
+
+			s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
+			s.generalRing.addExpectedInflow(cooldownEndTime, amounts.generalAmount, s.bucketDuration, numBuckets);
+
+			if (opt.affiliateAmount > 0) {
+				s.affiliateRings[opt.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
+				s.affiliateRings[opt.affiliate].addExpectedInflow(cooldownEndTime, opt.affiliateAmount, s.bucketDuration, numBuckets);
+			}
+			return;
+		}
+
+		s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
+
+		uint256 availableOffset = s.generalRing.getBucketOffset(opt.availableAt, s.bucketDuration, numBuckets);
+		uint256 generalFree = s.generalBalance - s.lockedGeneralBalance;
+		if (!s.generalRing.isLiquidityAvailableBy(generalFree, amounts.generalAmount, availableOffset, numBuckets)) {
+			revert LibErrors.InsufficientScheduledLiquidity();
+		}
+
+		s.generalRing.addReservedOutflow(opt.availableAt, amounts.generalAmount, s.bucketDuration, numBuckets);
+		s.generalRing.addExpectedInflow(cooldownEndTime, amounts.generalAmount, s.bucketDuration, numBuckets);
+
+		if (opt.affiliateAmount > 0) {
+			s.affiliateRings[opt.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
+
+			uint256 affiliateOffset = s.affiliateRings[opt.affiliate].getBucketOffset(opt.availableAt, s.bucketDuration, numBuckets);
+			uint256 affiliateFree = s.affiliateBalances[opt.affiliate] - s.lockedAffiliateBalances[opt.affiliate];
+			if (!s.affiliateRings[opt.affiliate].isLiquidityAvailableBy(affiliateFree, opt.affiliateAmount, affiliateOffset, numBuckets)) {
+				revert LibErrors.InsufficientScheduledAffiliateLiquidity();
+			}
+
+			s.affiliateRings[opt.affiliate].addReservedOutflow(opt.availableAt, opt.affiliateAmount, s.bucketDuration, numBuckets);
+			s.affiliateRings[opt.affiliate].addExpectedInflow(cooldownEndTime, opt.affiliateAmount, s.bucketDuration, numBuckets);
+		}
+	}
+
+	function _lockFee(address user, uint256 requestId, WithdrawInfo storage info) internal {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+
+		uint256 totalFee = info.fee + s.operatorFees[user][requestId];
+		if (totalFee == 0) return;
+
+		uint256 sponsorBal = s.sponsorBalances[info.affiliate];
+		if (sponsorBal == 0) return;
+
+		SponsorConfig storage config = s.sponsorConfigs[info.affiliate];
+		uint256 feeBearingAmount = info.expressAmount;
+		if (config.maxWithdrawAmount > 0 && feeBearingAmount > config.maxWithdrawAmount) return;
+
+		uint256 maxCoverage = totalFee;
+		if (config.maxFeePerWithdraw > 0 && maxCoverage > config.maxFeePerWithdraw) {
+			maxCoverage = config.maxFeePerWithdraw;
+		}
+
+		uint256 sponsorCoverage = sponsorBal < maxCoverage ? sponsorBal : maxCoverage;
+		if (sponsorCoverage > 0) {
+			s.sponsorBalances[info.affiliate] -= sponsorCoverage;
+			info.sponsorCoverage = sponsorCoverage;
+		}
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	//                     INTERNAL: VALIDATORS
+	// ═══════════════════════════════════════════════════════════════════
+
+	function _validateValidators(address user, uint256 nonce, uint256 amount, bytes memory validatorData) internal view {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		(bytes[] memory signatures, uint256[] memory timestamps, uint256 symmioNonce) = abi.decode(validatorData, (bytes[], uint256[], uint256));
+
+		if (signatures.length != timestamps.length) revert LibErrors.ArrayLengthMismatch();
+		if (signatures.length < s.minValidatorSignatures) revert LibErrors.InsufficientValidatorSignatures();
+		if (ISymmio(s.symmio).getUserNonce(user) != symmioNonce) revert LibErrors.InvalidNonce();
+
+		address lastSigner = address(0);
+		for (uint256 i = 0; i < signatures.length; i++) {
+			if (timestamps[i] > block.timestamp || block.timestamp - timestamps[i] > s.validatorApprovalTimeout) {
+				revert LibErrors.ValidatorApprovalExpired();
+			}
+
+			bytes32 structHash = keccak256(abi.encode(LibAccessControl.VALIDATOR_APPROVAL_TYPEHASH, user, nonce, amount, timestamps[i], symmioNonce));
+			address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), signatures[i]);
+
+			if (!LibAccessControl.hasRole(LibAccessControl.VALIDATOR_ROLE, signer)) revert LibErrors.InvalidValidator();
+			if (signer <= lastSigner) revert LibErrors.DuplicateValidator();
+			lastSigner = signer;
+		}
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	//                  INTERNAL: COLLECT, TRANSFER, RELEASE
+	// ═══════════════════════════════════════════════════════════════════
+
+	function _collectAndTransfer(address user, uint256 requestId, WithdrawReceiverPart[] memory parts, WithdrawInfo storage info) internal {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+
+		uint256 operatorFee = s.operatorFees[user][requestId];
+		uint256 totalFee = info.fee + operatorFee;
+		uint256 userFee = totalFee - info.sponsorCoverage;
+
+		if (info.fee > 0) {
+			s.collectedFees[info.affiliate] += info.fee;
+		}
+		if (operatorFee > 0) {
+			s.collectedOperatorFees[info.affiliate] += operatorFee;
+		}
+
+		LibParts.transferToReceivers(parts, userFee);
+	}
+
+	function _unlockAndDeductPools(WithdrawInfo storage info) internal {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+
+		if (info.optionType == OptionType.INSTANT || info.optionType == OptionType.IMMEDIATE) {
+			s.lockedGeneralBalance -= info.generalAmount;
+			if (info.affiliateAmount > 0) {
+				s.lockedAffiliateBalances[info.affiliate] -= info.affiliateAmount;
+			}
+		}
+
+		s.generalBalance -= info.generalAmount;
+		if (info.affiliateAmount > 0) {
+			s.affiliateBalances[info.affiliate] -= info.affiliateAmount;
+		}
+	}
+
+	function _releaseWithdraw(address user, uint256 requestId, WithdrawInfo storage info) internal {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+
+		if (info.sponsorCoverage > 0) {
+			s.sponsorBalances[info.affiliate] += info.sponsorCoverage;
+			info.sponsorCoverage = 0;
+		}
+
+		if (info.optionType == OptionType.INSTANT || info.optionType == OptionType.IMMEDIATE) {
+			s.lockedGeneralBalance -= info.generalAmount;
+			if (info.affiliateAmount > 0) {
+				s.lockedAffiliateBalances[info.affiliate] -= info.affiliateAmount;
+			}
+		}
+
+		LibCreditLine.releaseReservation(user, requestId, info);
+
+		if (info.optionType != OptionType.STANDARD) {
+			uint256 numBuckets = LibRingBuffer.numBuckets(s.schedulingWindow, s.bucketDuration);
+
+			s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
+			s.generalRing.removeExpectedInflow(info.cooldownEndTime, info.generalAmount, s.bucketDuration, numBuckets);
+			if (info.optionType == OptionType.SCHEDULED) {
+				s.generalRing.removeReservedOutflow(info.availableAt, info.generalAmount, s.bucketDuration, numBuckets);
+			}
+
+			if (info.affiliateAmount > 0) {
+				s.affiliateRings[info.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
+				s.affiliateRings[info.affiliate].removeExpectedInflow(info.cooldownEndTime, info.affiliateAmount, s.bucketDuration, numBuckets);
+				if (info.optionType == OptionType.SCHEDULED) {
+					s.affiliateRings[info.affiliate].removeReservedOutflow(info.availableAt, info.affiliateAmount, s.bucketDuration, numBuckets);
+				}
+			}
+		}
+	}
+
+	function _handleProcessedRollback(address user, uint256 requestId, WithdrawInfo storage info) internal {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		if (info.optionType == OptionType.STANDARD) revert LibErrors.InvalidPostPayoutRollback();
+
+		LibCreditLine.coverLoss(s.collateral, s.symmio, user, requestId, info);
+		_removeExpectedInflows(info);
+	}
+
+	function _removeExpectedInflows(WithdrawInfo storage info) internal {
+		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		uint256 numBuckets = LibRingBuffer.numBuckets(s.schedulingWindow, s.bucketDuration);
+
+		s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
+		s.generalRing.removeExpectedInflow(info.cooldownEndTime, info.generalAmount, s.bucketDuration, numBuckets);
+
+		if (info.affiliateAmount > 0) {
+			s.affiliateRings[info.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
+			s.affiliateRings[info.affiliate].removeExpectedInflow(info.cooldownEndTime, info.affiliateAmount, s.bucketDuration, numBuckets);
+		}
+	}
+}

@@ -86,7 +86,8 @@ library WithdrawFacetImpl {
 			isPureVirtual: isPureVirtual,
 			providerData: data,
 			totalAmount: locals.totalAmount,
-			totalVirtualAmount: locals.totalVirtualAmount
+			totalVirtualAmount: locals.totalVirtualAmount,
+			advancedAmount: 0
 		});
 
 		withdrawLayout.withdrawRequests[signer][currentId] = withdrawRequest;
@@ -207,9 +208,10 @@ library WithdrawFacetImpl {
 		}
 
 		if (hasExpressPart) {
-			if (totalExpressAmount > 0) {
-				LibSafeERC20.safeTransfer(collateral, withdrawRequest.provider, totalExpressAmount);
-				withdrawLayout.withdrawLockedBalance -= totalExpressAmount;
+			uint256 remainingExpress = totalExpressAmount - withdrawRequest.advancedAmount;
+			if (remainingExpress > 0) {
+				LibSafeERC20.safeTransfer(collateral, withdrawRequest.provider, remainingExpress);
+				withdrawLayout.withdrawLockedBalance -= remainingExpress;
 			}
 			LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onWithdrawComplete, (withdrawRequest)));
 		}
@@ -233,6 +235,25 @@ library WithdrawFacetImpl {
 		require(msg.sender == withdrawRequest.provider, "WithdrawFacet : Not allowed to accept withdrawal");
 
 		withdrawRequest.status = WithdrawStatus.PROVIDER_ACCEPTED;
+	}
+
+	/// @notice Provider advances locked collateral early, before cooldown expires.
+	///         Used by express providers with credit lines to front funds to users.
+	function advanceWithdraw(address user, uint256 requestId, uint256 amount) internal {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+
+		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
+
+		require(withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "WithdrawFacet : Invalid withdraw request status");
+		require(msg.sender == withdrawRequest.provider, "WithdrawFacet : Not allowed to advance withdrawal");
+
+		uint256 expressAmount = withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount;
+		require(withdrawRequest.advancedAmount + amount <= expressAmount, "WithdrawFacet : Advance exceeds express amount");
+
+		withdrawRequest.advancedAmount += amount;
+		LibSafeERC20.safeTransfer(appLayout.collateral, msg.sender, amount);
+		withdrawLayout.withdrawLockedBalance -= amount;
 	}
 
 	/// @notice Provider rejects a pending withdrawal request, refunding the user's balance

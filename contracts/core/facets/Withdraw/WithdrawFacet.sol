@@ -65,6 +65,16 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 		emit WithdrawRejected(requestId, user);
 	}
 
+	/// @notice Provider advances locked collateral to itself before cooldown expires.
+	/// @dev Used by express providers with credit lines to front funds to users.
+	/// @param user The owner of the withdrawal request.
+	/// @param requestId ID of the withdrawal request.
+	/// @param amount Amount of collateral to advance.
+	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external notSuspended(user) nonReentrant {
+		WithdrawFacetImpl.advanceWithdraw(user, requestId, amount);
+		emit WithdrawAdvanced(requestId, user, amount);
+	}
+
 	/// @notice Finalizes an existing withdrawal request after cooldown expiry.
 	/// @dev
 	/// - Classic withdrawal parts transfer directly to receivers.
