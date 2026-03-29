@@ -523,6 +523,12 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.layout().callFromInstantLayer = _callFromInstantLayer;
 	}
 
+	/// @notice Sets the flag to skip pending balance tracking in atomic open flows.
+	/// @param _instantOpenMode True when entering instant open execution, false when exiting.
+	function setInstantOpenMode(bool _instantOpenMode) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
+		GlobalAppStorage.layout().instantOpenMode = _instantOpenMode;
+	}
+
 	/// @notice Enables or disables Auto-Deleveraging (ADL) for a Party B. When enabled, positions can be force-closed to reduce risk.
 	/// @param partyB The address of the Party B to configure ADL for.
 	/// @param enabled True to enable ADL for this Party B, false to disable.

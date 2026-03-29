@@ -59,6 +59,10 @@ interface ISymmio {
 	/// @notice Enable or disable instant layer mode
 	/// @param _callFromInstantLayer True to enable instant layer mode
 	function setCallFromInstantLayer(bool _callFromInstantLayer) external;
+
+	/// @notice Enable or disable instant open mode (skips pending balance tracking)
+	/// @param _instantOpenMode True to skip pending balances in send+lock+open flows
+	function setInstantOpenMode(bool _instantOpenMode) external;
 }
 
 contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
@@ -147,6 +151,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @notice Tracking of operation usage counts for replay protection
 	/// @dev    Must be < maxUses to execute (or unlimited if maxUses=0).
 	mapping(bytes32 => uint256) public operationUsageCount;
+
+	/// @notice Templates that skip pending balance tracking (send+lock+open flows)
+	mapping(uint256 => bool) public templateInstantOpenMode;
 
 	/// @notice Tracking of executed delegation hashes to prevent replay attacks
 	/// @dev    Each delegation can only be executed once
@@ -643,6 +650,14 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		emit TemplateAdded(templateId, name);
 	}
 
+	/// @notice Mark a template as using instant-open mode (skips pending balance tracking).
+	/// @param templateId ID of the template to configure
+	/// @param mode       True to enable instant-open mode for this template
+	function setTemplateInstantOpenMode(uint256 templateId, bool mode) external onlyRole(SETTER_ROLE) {
+		if (templateId >= nextTemplateId) revert InvalidTemplate(templateId);
+		templateInstantOpenMode[templateId] = mode;
+	}
+
 	/// @notice Enable or disable a template.
 	/// @dev    Disabled templates cannot be executed.
 	/// @param templateId ID of the template to update
@@ -745,7 +760,11 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		if (signedOps.length != template.operations.length) revert TemplateOperationLengthMismatch();
 
 		// Enable instant mode for optimized execution
+		bool useInstantOpen = templateInstantOpenMode[templateId];
 		symmio.setCallFromInstantLayer(true);
+		if (useInstantOpen) {
+			symmio.setInstantOpenMode(true);
+		}
 
 		results = new bytes[](signedOps.length);
 
@@ -770,6 +789,9 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		}
 
 		// Disable instant mode
+		if (useInstantOpen) {
+			symmio.setInstantOpenMode(false);
+		}
 		symmio.setCallFromInstantLayer(false);
 	}
 
@@ -1254,8 +1276,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 			// Inject fill value at the specified offset (after 4-byte selector)
 			uint256 insertPos = 4 + field.offset;
-			for (uint256 j = 0; j < value.length; j++) {
-				callData[insertPos + j] = value[j];
+			assembly ("memory-safe") {
+				calldatacopy(add(add(callData, 32), insertPos), value.offset, value.length)
 			}
 		}
 	}

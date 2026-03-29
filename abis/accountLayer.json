@@ -2609,6 +2609,25 @@
                 "type": "address"
             }
         ],
+        "name": "getAffiliateExpressRate",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            }
+        ],
         "name": "getAffiliateFeeDistributor",
         "outputs": [
             {

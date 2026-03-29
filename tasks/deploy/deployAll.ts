@@ -1089,6 +1089,11 @@ async function setupInstantLayerTemplates(hre: any, deployedContracts: DeployedC
 		await instantLayer.connect(deployer).addTemplate("InstantOpen", instantOpenOps)
 	})
 
+	// Enable instantOpenMode for InstantOpen (template id=0) — skips wasteful pending balance round-trips
+	await checkpointedStep(checkpoint, "templates.instantOpenMode", "Enabling instantOpenMode on InstantOpen template", async () => {
+		await instantLayer.connect(deployer).setTemplateInstantOpenMode(0, true)
+	})
+
 	// InstantClose Template (2 ops)
 	await checkpointedStep(checkpoint, "templates.instantClose", "Adding InstantClose template", async () => {
 		const instantCloseOps = [
