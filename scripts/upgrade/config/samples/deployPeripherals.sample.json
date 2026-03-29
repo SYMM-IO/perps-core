@@ -4,3 +4,11 @@
 	"symmioFeeReceiver": "0x...",
 	"symmioPartyBAddress": "0x..."
 }
+
+eth_estimateGas                                                                    
+Contract call:    Diamond#<unrecognized-selector>                                 
+From:             0x0cbf07176e67671c99222bebdb166efc58dacd95                      
+To:               0x8f06459f184553e5d04f07f868720bdacab39395                      
+Value:            0 ETH                                                          
+│ocean@dev-ai-01-hz-symm:~/dev/perps-core$ ls scripts/upgrade/config/
+Error: reverted with reason string 'LibDiamondCut: Replace facet has no code'

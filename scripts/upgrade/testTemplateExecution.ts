@@ -426,10 +426,16 @@ async function main() {
 
 		try {
 			await (await symmioPartyB.grantRole(roleHash("TRUSTED_ROLE"), adminAddress)).wait()
-		} catch {
-			// May already have role
+			console.log("  PartyB: TRUSTED_ROLE granted to admin")
+		} catch (e: any) {
+			console.log(`  PartyB: grantRole(TRUSTED_ROLE) failed: ${e.shortMessage ?? e.message?.slice(0, 150)}`)
 		}
-		await (await symmioPartyB._approve(collateralAddress, col(100000n))).wait()
+		try {
+			await (await symmioPartyB._approve(collateralAddress, col(100000n))).wait()
+		} catch (e: any) {
+			console.log(`  PartyB: _approve failed: ${e.shortMessage ?? e.message?.slice(0, 150)}`)
+			throw e
+		}
 
 		const partyBAccountFacet = await ethers.getContractAt(
 			"contracts/core/facets/PartyBAccount/PartyBAccountFacet.sol:PartyBAccountFacet",
