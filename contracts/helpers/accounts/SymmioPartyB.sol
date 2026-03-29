@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
-import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
@@ -18,7 +18,7 @@ interface ISymmio {
 }
 
 /// @notice PartyB (solver/hedger) contract that manages positions and executes calls against Symmio
-contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, UUPSUpgradeable, IERC1271 {
+contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgradeable, UUPSUpgradeable, IERC1271 {
 	bytes32 public constant TRUSTED_ROLE = keccak256("TRUSTED_ROLE");
 	bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
