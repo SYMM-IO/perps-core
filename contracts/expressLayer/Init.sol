@@ -32,7 +32,7 @@ contract Init {
 		s.collateral = IERC20(_collateral);
 		s.securityWindow = 20;
 		s.tolerancePeriod = 60;
-		s.validatorApprovalTimeout = 30;
+		s.validatorApprovalTimeout[address(0)] = 30;
 
 		s.hashedName = keccak256(bytes("ExpressProvider"));
 		s.hashedVersion = keccak256(bytes("1"));

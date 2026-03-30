@@ -8,7 +8,6 @@ const { ethers } = connection
 
 const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 const SIGNER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE"))
-const VALIDATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("VALIDATOR_ROLE"))
 const WITHDRAWER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("WITHDRAWER_ROLE"))
 const LOCKER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("LOCKER_ROLE"))
 const UNLOCK_ROLE = ethers.keccak256(ethers.toUtf8Bytes("UNLOCK_ROLE"))
@@ -312,9 +311,9 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const validator1 = signers[6]
 			const validator2 = signers[7]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator2.address)
-			await expressProvider.setMinValidatorSignatures(2)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setValidator(fixture.affiliate, validator2.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -398,8 +397,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(2)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -460,8 +459,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -539,8 +538,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -615,9 +614,9 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const { expressProvider, symmio, user } = fixture
 
 			const signers = await ethers.getSigners()
-			const nonValidator = signers[6] // Not granted VALIDATOR_ROLE
+			const nonValidator = signers[6] // Not registered as validator
 
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -674,8 +673,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(2)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -757,8 +756,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -818,8 +817,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -877,7 +876,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const { expressProvider, symmio, user } = fixture
 
 			// Default is 0 -- no validator signatures needed
-			expect(await expressProvider.minValidatorSignatures()).to.equal(0n)
+			expect(await expressProvider.minValidatorSignatures(fixture.affiliate)).to.equal(0n)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -928,8 +927,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -974,13 +973,13 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			})
 
 			// Revoke the validator role BEFORE the on-chain submission
-			await expressProvider.revokeRole(VALIDATOR_ROLE, validator1.address)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, false)
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
 
 			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
 
-			// Signature recovery yields the correct address, but that address no longer has VALIDATOR_ROLE
+			// Signature recovery yields the correct address, but that address is no longer a registered validator
 			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(expressProvider, "InvalidValidator")
 		})
 
@@ -993,10 +992,10 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const validator2 = signers[7]
 			const validator3 = signers[8]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator2.address)
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator3.address)
-			await expressProvider.setMinValidatorSignatures(2) // Only require 2, but provide 3
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setValidator(fixture.affiliate, validator2.address, true)
+			await expressProvider.setValidator(fixture.affiliate, validator3.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2) // Only require 2, but provide 3
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -1063,9 +1062,9 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
 			// Start with 1 validator required
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -1110,7 +1109,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			})
 
 			// Admin raises the requirement to 2
-			await expressProvider.setMinValidatorSignatures(2)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
 
 			const providerData = encodeProviderData(nonce, 1, 0, fixture.affiliate, 0n, 0n, 0n, 0n, deadline, signature, undefined, [valSig], [now])
 
@@ -1130,10 +1129,10 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 			// Start with a generous timeout
-			await expressProvider.setValidatorApprovalTimeout(120)
+			await expressProvider.setValidatorApprovalTimeout(fixture.affiliate, 120)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -1178,7 +1177,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			})
 
 			// Admin reduces timeout to 5 seconds
-			await expressProvider.setValidatorApprovalTimeout(5)
+			await expressProvider.setValidatorApprovalTimeout(fixture.affiliate, 5)
 
 			// Advance time 10 seconds so the signature is expired under the new 5s timeout
 			await ethers.provider.send("evm_increaseTime", [10])
@@ -1202,9 +1201,9 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const validator1 = signers[6]
 			const validator2 = signers[7]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator2.address)
-			await expressProvider.setMinValidatorSignatures(2)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setValidator(fixture.affiliate, validator2.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 2)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -1288,8 +1287,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
 
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			// Default timeout = 30s
 			const timeout = 30
@@ -1376,8 +1375,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -1452,8 +1451,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[6]
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(fixture.affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(fixture.affiliate, 1)
 
 			// Set SYMMIO nonce to 42
 			await symmio.setUserNonce(user.address, 42)
@@ -1728,9 +1727,9 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		})
 
 		it("should reject non-admin calling setMinValidatorSignatures", async function () {
-			const { expressProvider, user } = await deployFixture()
+			const { expressProvider, user, affiliate } = await deployFixture()
 
-			await expect(expressProvider.connect(user).setMinValidatorSignatures(2)).to.be.revert(ethers)
+			await expect(expressProvider.connect(user).setMinValidatorSignatures(affiliate, 2)).to.be.revert(ethers)
 		})
 
 		it("should reject non-withdrawer calling withdrawFromGeneral", async function () {

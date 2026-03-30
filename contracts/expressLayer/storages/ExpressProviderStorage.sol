@@ -39,9 +39,10 @@ library ExpressProviderStorage {
 		mapping(address => uint256) sponsorBalances;
 		mapping(address => address) sponsors;
 		mapping(address => SponsorConfig) sponsorConfigs;
-		// ── Validators ──
-		uint256 minValidatorSignatures;
-		uint256 validatorApprovalTimeout;
+		// ── Validators (per-affiliate, address(0) = default for all) ──
+		mapping(address => uint256) minValidatorSignatures;
+		mapping(address => uint256) validatorApprovalTimeout;
+		mapping(address => mapping(address => bool)) validators;
 		// ── Access control ──
 		mapping(address => mapping(bytes32 => bool)) hasRole;
 		// ── EIP-712 ──

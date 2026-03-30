@@ -28,8 +28,9 @@ contract AdminFacet {
 	event SponsorWithdraw(address indexed affiliate, uint256 amount);
 	event SponsorConfigUpdated(address indexed affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount);
 	event OperatorFeesClaimed(address indexed affiliate, uint256 amount);
-	event MinValidatorSignaturesUpdated(uint256 minValidatorSignatures);
-	event ValidatorApprovalTimeoutUpdated(uint256 timeout);
+	event MinValidatorSignaturesUpdated(address indexed affiliate, uint256 minValidatorSignatures);
+	event ValidatorApprovalTimeoutUpdated(address indexed affiliate, uint256 timeout);
+	event ValidatorUpdated(address indexed affiliate, address indexed validator, bool enabled);
 
 	// ── Config setters ──
 
@@ -50,16 +51,25 @@ contract AdminFacet {
 		ExpressProviderStorage.layout().tolerancePeriod = _tolerancePeriod;
 	}
 
-	function setMinValidatorSignatures(uint256 _minValidatorSignatures) external {
+	/// @notice Sets the minimum validator signatures for an affiliate (address(0) = default for all).
+	function setMinValidatorSignatures(address affiliate, uint256 _minValidatorSignatures) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		ExpressProviderStorage.layout().minValidatorSignatures = _minValidatorSignatures;
-		emit MinValidatorSignaturesUpdated(_minValidatorSignatures);
+		ExpressProviderStorage.layout().minValidatorSignatures[affiliate] = _minValidatorSignatures;
+		emit MinValidatorSignaturesUpdated(affiliate, _minValidatorSignatures);
 	}
 
-	function setValidatorApprovalTimeout(uint256 _timeout) external {
+	/// @notice Sets the validator approval timeout for an affiliate (address(0) = default for all).
+	function setValidatorApprovalTimeout(address affiliate, uint256 _timeout) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		ExpressProviderStorage.layout().validatorApprovalTimeout = _timeout;
-		emit ValidatorApprovalTimeoutUpdated(_timeout);
+		ExpressProviderStorage.layout().validatorApprovalTimeout[affiliate] = _timeout;
+		emit ValidatorApprovalTimeoutUpdated(affiliate, _timeout);
+	}
+
+	/// @notice Registers or removes a validator for an affiliate (address(0) = default for all).
+	function setValidator(address affiliate, address validator, bool enabled) external {
+		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		ExpressProviderStorage.layout().validators[affiliate][validator] = enabled;
+		emit ValidatorUpdated(affiliate, validator, enabled);
 	}
 
 	function setAffiliateConfig(address affiliate, uint256 feeRate, uint256 _operatorFee) external {

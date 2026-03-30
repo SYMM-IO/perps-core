@@ -12,7 +12,6 @@ library LibAccessControl {
 	bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 	bytes32 public constant LOCKER_ROLE = keccak256("LOCKER_ROLE");
 	bytes32 public constant SIGNER_ROLE = keccak256("SIGNER_ROLE");
-	bytes32 public constant VALIDATOR_ROLE = keccak256("VALIDATOR_ROLE");
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 	bytes32 public constant SPONSOR_MANAGER_ROLE = keccak256("SPONSOR_MANAGER_ROLE");
 	bytes32 public constant FEE_CLAIMER_ROLE = keccak256("FEE_CLAIMER_ROLE");

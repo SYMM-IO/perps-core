@@ -2126,12 +2126,11 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const fixture = await deployFixture()
 			const { botSigner, user, receiver, expressProvider, symmio, affiliate, collateral } = fixture
 
-			const VALIDATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("VALIDATOR_ROLE"))
 			const signers = await ethers.getSigners()
 			const user2 = signers[8]
 			const validator1 = signers[9]
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
 
 			const withdrawAmount = 8_000n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -2302,8 +2301,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 	})
 
 	describe("IMMEDIATE (same-tx transfer)", function () {
-		const VALIDATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("VALIDATOR_ROLE"))
-
 		async function signValidatorApproval(
 			expressProvider: any,
 			validator: any,
@@ -2328,8 +2325,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[8]
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -2441,8 +2438,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[8]
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
 			await expressProvider.setAffiliateConfig(affiliate, 100, 1_000_000n) // 1% fee rate + 1 USDC operator fee
 
 			const withdrawAmount = 500n * 10n ** 6n
@@ -2504,8 +2501,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[8]
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -2575,8 +2572,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[8]
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()
@@ -2636,8 +2633,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const signers = await ethers.getSigners()
 			const validator1 = signers[8]
-			await expressProvider.grantRole(VALIDATOR_ROLE, validator1.address)
-			await expressProvider.setMinValidatorSignatures(1)
+			await expressProvider.setValidator(affiliate, validator1.address, true)
+			await expressProvider.setMinValidatorSignatures(affiliate, 1)
 
 			const withdrawAmount = 500n * 10n ** 6n
 			const expressAddr = await expressProvider.getAddress()

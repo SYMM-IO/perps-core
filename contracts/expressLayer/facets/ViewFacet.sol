@@ -98,12 +98,16 @@ contract ViewFacet {
 
 	// ── Validators ──
 
-	function minValidatorSignatures() external view returns (uint256) {
-		return ExpressProviderStorage.layout().minValidatorSignatures;
+	function minValidatorSignatures(address affiliate) external view returns (uint256) {
+		return ExpressProviderStorage.layout().minValidatorSignatures[affiliate];
 	}
 
-	function validatorApprovalTimeout() external view returns (uint256) {
-		return ExpressProviderStorage.layout().validatorApprovalTimeout;
+	function validatorApprovalTimeout(address affiliate) external view returns (uint256) {
+		return ExpressProviderStorage.layout().validatorApprovalTimeout[affiliate];
+	}
+
+	function isValidator(address affiliate, address validator) external view returns (bool) {
+		return ExpressProviderStorage.layout().validators[affiliate][validator];
 	}
 
 	// ── Access control ──

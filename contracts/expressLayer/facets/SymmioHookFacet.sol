@@ -56,7 +56,8 @@ contract SymmioHookFacet {
 
 		ComputedAmounts memory amounts = LibParts.computeAmounts(withdrawRequest.parts, opt.affiliateAmount, opt.creditAmount);
 
-		if (optionType == OptionType.IMMEDIATE && s.minValidatorSignatures == 0) {
+		uint256 minSigs = _getMinValidatorSignatures(s, opt.affiliate);
+		if (optionType == OptionType.IMMEDIATE && minSigs == 0) {
 			revert LibErrors.ValidatorsRequiredForImmediate();
 		}
 
@@ -65,8 +66,8 @@ contract SymmioHookFacet {
 		if (opt.operatorFee != s.affiliateConfigs[opt.affiliate].operatorFee) revert LibErrors.OperatorFeeMismatch();
 		if (opt.fee + opt.operatorFee > feeBasis) revert LibErrors.FeesExceedExpressAmount();
 
-		if (s.minValidatorSignatures > 0) {
-			_validateValidators(withdrawRequest.user, opt.nonce, amounts.expressAmount, validatorData);
+		if (minSigs > 0) {
+			_validateValidators(opt.affiliate, withdrawRequest.user, opt.nonce, amounts.expressAmount, validatorData);
 		}
 
 		if (optionType != OptionType.STANDARD) {
@@ -317,27 +318,49 @@ contract SymmioHookFacet {
 	//                     INTERNAL: VALIDATORS
 	// ═══════════════════════════════════════════════════════════════════
 
-	function _validateValidators(address user, uint256 nonce, uint256 amount, bytes memory validatorData) internal view {
+	function _validateValidators(address affiliate, address user, uint256 nonce, uint256 amount, bytes memory validatorData) internal view {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 		(bytes[] memory signatures, uint256[] memory timestamps, uint256 symmioNonce) = abi.decode(validatorData, (bytes[], uint256[], uint256));
 
 		if (signatures.length != timestamps.length) revert LibErrors.ArrayLengthMismatch();
-		if (signatures.length < s.minValidatorSignatures) revert LibErrors.InsufficientValidatorSignatures();
+
+		uint256 minSigs = _getMinValidatorSignatures(s, affiliate);
+		if (signatures.length < minSigs) revert LibErrors.InsufficientValidatorSignatures();
 		if (ISymmio(s.symmio).getUserNonce(user) != symmioNonce) revert LibErrors.InvalidNonce();
 
+		uint256 timeout = _getValidatorApprovalTimeout(s, affiliate);
 		address lastSigner = address(0);
 		for (uint256 i = 0; i < signatures.length; i++) {
-			if (timestamps[i] > block.timestamp || block.timestamp - timestamps[i] > s.validatorApprovalTimeout) {
+			if (timestamps[i] > block.timestamp || block.timestamp - timestamps[i] > timeout) {
 				revert LibErrors.ValidatorApprovalExpired();
 			}
 
 			bytes32 structHash = keccak256(abi.encode(LibAccessControl.VALIDATOR_APPROVAL_TYPEHASH, user, nonce, amount, timestamps[i], symmioNonce));
 			address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), signatures[i]);
 
-			if (!LibAccessControl.hasRole(LibAccessControl.VALIDATOR_ROLE, signer)) revert LibErrors.InvalidValidator();
+			if (!_isValidator(s, affiliate, signer)) revert LibErrors.InvalidValidator();
 			if (signer <= lastSigner) revert LibErrors.DuplicateValidator();
 			lastSigner = signer;
 		}
+	}
+
+	/// @dev Returns the minValidatorSignatures for the affiliate, falling back to address(0) default.
+	function _getMinValidatorSignatures(ExpressProviderStorage.Layout storage s, address affiliate) internal view returns (uint256) {
+		uint256 v = s.minValidatorSignatures[affiliate];
+		if (v > 0) return v;
+		return s.minValidatorSignatures[address(0)];
+	}
+
+	/// @dev Returns the validatorApprovalTimeout for the affiliate, falling back to address(0) default.
+	function _getValidatorApprovalTimeout(ExpressProviderStorage.Layout storage s, address affiliate) internal view returns (uint256) {
+		uint256 v = s.validatorApprovalTimeout[affiliate];
+		if (v > 0) return v;
+		return s.validatorApprovalTimeout[address(0)];
+	}
+
+	/// @dev Returns true if signer is a validator for the affiliate or the default (address(0)).
+	function _isValidator(ExpressProviderStorage.Layout storage s, address affiliate, address signer) internal view returns (bool) {
+		return s.validators[affiliate][signer] || s.validators[address(0)][signer];
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
