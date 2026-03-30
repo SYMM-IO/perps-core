@@ -1017,7 +1017,7 @@ For IMMEDIATE, INSTANT, and SCHEDULED options, the bot can include a `creditAmou
 - Credit is NOT supported for STANDARD (`CreditNotSupportedForStandard` error)
 - Credit debt follows the lifecycle: reserved → activated → settled (see Section 11)
 
-When pool liquidity alone is insufficient for INSTANT but the user has eligible credit balance, the bot can offer a credit-backed option:
+When pool liquidity alone is insufficient for INSTANT but the affiliate has eligible credit capacity, the bot can offer a credit-backed option:
 
 ```
 Example: 500 USDC withdrawal
@@ -1393,7 +1393,7 @@ Step 1 -- Bot sees: User requests options for 1,500 USDC withdrawal
     Shortfall = 1,500 - 1,400 = 100e6 minimum from credit
     CLM headroom = protocolMaxDebt - totalDebt = 5,000 - 200 = 4,800e6
     100 <= 4,800 -- YES, credit line has headroom.
-    Bot also obtains Muon attestation for user's eligibleBase.
+    Bot also obtains Muon attestation for the affiliate's aggregate eligibleBase.
 
   Decision: Use pools + credit line. creditAmount = 100e6 to cover the gap.
 
@@ -2560,7 +2560,7 @@ Credit lines let the ExpressProvider front more capital than it holds in its gen
 ```solidity
 struct CreditData {
     bytes   reqId;             // Muon request identifier
-    uint256 eligibleBase;      // Muon-computed eligible balance for the affiliate
+    uint256 eligibleBase;      // Muon-computed aggregate eligible balance for the affiliate
     uint256 timestamp;         // when the Muon oracle produced this attestation
     bytes   gatewaySignature;  // Muon gateway signature
     IMuonSignatureVerifier.SchnorrSign sigs;  // Schnorr signature for verification
@@ -2569,7 +2569,7 @@ struct CreditData {
 
 The Muon oracle computes `eligibleBase` off-chain as `freeEligible + haircutted(allocatedEligible) - excludedEligible`. The on-chain contract verifies:
 1. **Freshness:** `block.timestamp <= data.timestamp + muonFreshnessWindow` (default 60s). Stale signatures revert `MuonSignatureExpired`.
-2. **Schnorr signature:** The hash covers `(muonAppId, reqId, CLM address, user, eligibleBase, timestamp, chainId)`. Invalid signatures revert in the MuonSignatureVerifier.
+2. **Schnorr signature:** The hash covers `(muonAppId, reqId, CLM address, eligibleBase, timestamp, chainId)`. Invalid signatures revert in the MuonSignatureVerifier.
 3. **Debt caps:** Both absolute and percentage caps are checked against `totalDebt + creditAmount`.
 
 **Flow during acceptance (`onWithdrawRequest`):**

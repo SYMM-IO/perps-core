@@ -248,7 +248,7 @@ validatorData = abi.encode(
 creditDataRaw = abi.encode(CreditData) // empty bytes if creditAmount == 0
 // CreditData contains:
 //   bytes   reqId,             // Muon request ID
-//   uint256 eligibleBase,      // Muon-verified eligible balance
+//   uint256 eligibleBase,      // Muon-verified affiliate-level eligible balance
 //   uint256 timestamp,         // Muon signature timestamp
 //   bytes   gatewaySignature,  // Gateway signature from Muon
 //   SchnorrSign sigs           // Schnorr signatures
@@ -852,7 +852,7 @@ All four options use the same EIP-712 signature and go through ExpressProvider.
 5. Collect validator attestations: query N validator services with `(user, nonce, amount)`. Each validator signs `ValidatorApproval` with current timestamp.
 6. Read `affiliateConfigs(affiliate)` to get `feeRate` and `operatorFee`
 7. Compute `fee = expressAmount * feeRate / 10000`
-8. If using credit line: obtain Muon attestation (`CreditData`) for the user's eligible balance. Credit is not supported for STANDARD.
+8. If using credit line: obtain Muon attestation (`CreditData`) for the affiliate's aggregate eligible balance. Credit is not supported for STANDARD.
 9. For SCHEDULED, both `generalAmount` and `affiliateAmount` are reserved via their respective ring buffers; both use forecasted liquidity rather than requiring current unlocked balance
 10. Construct `WithdrawReceiverPart[]` with the correct `expressProvider` (set `virtualProvider` to `address(0)`)
 11. Sign EIP-712 typed data (including `creditAmount`, `fee`, `operatorFee`, and `maxUserFee` fields)
@@ -923,7 +923,7 @@ Funds are transferred in the same transaction as acceptance. The only risk gatin
 
 ## 10. Credit Line System
 
-The credit line system allows users to withdraw against their eligible balance (as attested by the Muon oracle) without requiring the full amount to be available in express pools. Credit is only supported for IMMEDIATE, INSTANT, and SCHEDULED withdrawals — not STANDARD.
+The credit line system allows users to withdraw against the affiliate's aggregate eligible balance (as attested by the Muon oracle) without requiring the full amount to be available in express pools. Credit is only supported for IMMEDIATE, INSTANT, and SCHEDULED withdrawals — not STANDARD.
 
 ### 10.1 Architecture
 
@@ -937,7 +937,7 @@ sequenceDiagram
     participant Muon as Muon Oracle
     participant SYMMIO
 
-    Bot->>Muon: Request eligible balance attestation for user
+    Bot->>Muon: Request eligible balance attestation for affiliate
     Muon->>Bot: Return CreditData (eligibleBase, signatures)
     Bot->>Bot: Sign EIP-712 option with creditAmount
 
@@ -965,7 +965,7 @@ The CreditLineManager tracks two types of debt:
 
 The effective cap is the stricter of the two levels.
 
-**Muon verification**: `reserveDebt` validates the Muon oracle attestation (signature, freshness within `muonFreshnessWindow`), ensuring the user's `eligibleBase` is current and authentic.
+**Muon verification**: `reserveDebt` validates the Muon oracle attestation (signature, freshness within `muonFreshnessWindow`), ensuring the affiliate's `eligibleBase` is current and authentic.
 
 ### 10.3 Credit Lifecycle
 
@@ -1251,7 +1251,7 @@ struct WithdrawReceiverPart {
 // Credit line types
 struct CreditData {
     bytes   reqId;             // Muon request ID
-    uint256 eligibleBase;      // Muon-verified eligible balance
+    uint256 eligibleBase;      // Muon-verified affiliate-level eligible balance
     uint256 timestamp;         // Muon signature timestamp
     bytes   gatewaySignature;  // Gateway signature from Muon
     SchnorrSign sigs;          // Schnorr signatures
