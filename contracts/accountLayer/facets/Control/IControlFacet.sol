@@ -34,6 +34,18 @@ interface IControlFacetEvents {
 
 /// @notice Administrative interface for role management, pause control, and system configuration
 interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
+	// ==================== Ownership ====================
+
+	/// @notice Initiates a two-step ownership transfer to a new address
+	/// @param owner The address of the pending new owner
+	function transferOwnership(address owner) external;
+
+	/// @notice Cancels the pending ownership transfer
+	function cancelOwnershipTransfer() external;
+
+	/// @notice Completes the two-step ownership transfer. Must be called by the pending owner.
+	function acceptOwnership() external;
+
 	// ==================== Role Management ====================
 
 	/// @notice Grants a role to a user

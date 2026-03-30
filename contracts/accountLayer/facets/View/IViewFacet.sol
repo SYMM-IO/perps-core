@@ -189,6 +189,14 @@ interface IViewFacet {
 	/// @param role The role identifier
 	function isRoleAdmin(address user, bytes32 role) external view returns (bool);
 
+	// ==================== Ownership ====================
+
+	/// @notice Returns the current diamond owner address
+	function owner() external view returns (address);
+
+	/// @notice Returns the pending owner address (for two-step ownership transfer)
+	function pendingOwner() external view returns (address);
+
 	// ==================== Pause Control ====================
 
 	/// @notice Returns whether the AccountLayer diamond is paused
