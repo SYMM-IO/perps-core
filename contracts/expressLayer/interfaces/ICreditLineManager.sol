@@ -11,10 +11,10 @@ import { CreditData } from "../types/CreditTypes.sol";
 ///         Called exclusively by ExpressProvider to reserve, activate, settle, and cancel credit.
 interface ICreditLineManager {
 	/// @notice Reserves credit for a pending withdrawal. Validates Muon data and caps.
-	/// @param user The withdrawing user.
+	/// @param user The withdrawing user (used for blacklist check and request key).
 	/// @param requestId The SYMMIO withdrawal request ID.
 	/// @param creditAmount Amount of credit to reserve.
-	/// @param data Muon-signed eligible balance attestation.
+	/// @param data Muon-signed affiliate-level eligible balance attestation.
 	function reserveDebt(address user, uint256 requestId, uint256 creditAmount, CreditData calldata data) external;
 
 	/// @notice Moves reserved debt to active. Called when funds are actually advanced.

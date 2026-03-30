@@ -20,7 +20,7 @@ import { ICreditLineManager } from "./interfaces/ICreditLineManager.sol";
 ///
 /// Controls (affiliate can set stricter than protocol, never looser):
 ///   - maxDebt:    absolute cap on total outstanding debt (0 = no limit)
-///   - maxDebtBps: max debt as basis points of Muon-provided eligibleBase (0 = no limit)
+///   - maxDebtBps: max debt as basis points of Muon-provided affiliate-level eligibleBase (0 = no limit)
 ///   - paused:     kills the credit line
 ///   - blacklist:  per-user block
 ///
@@ -130,7 +130,9 @@ contract CreditLineManager is ICreditLineManager, Initializable, AccessControlEn
 		if (block.timestamp > data.timestamp + muonFreshnessWindow) revert MuonSignatureExpired();
 
 		// Verify Muon signature via the shared verifier
-		bytes32 hash = keccak256(abi.encodePacked(muonAppId, data.reqId, address(this), user, data.eligibleBase, data.timestamp, block.chainid));
+		// eligibleBase is per-affiliate (aggregate of all users), not per-user.
+		// address(this) identifies the affiliate since there is one CLM per affiliate.
+		bytes32 hash = keccak256(abi.encodePacked(muonAppId, data.reqId, address(this), data.eligibleBase, data.timestamp, block.chainid));
 		IMuonSignatureVerifier(signatureVerifier).verify(hash, data.sigs, data.gatewaySignature);
 
 		// Check caps
