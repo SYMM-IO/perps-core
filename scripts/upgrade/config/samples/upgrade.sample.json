@@ -3,6 +3,7 @@
 	"adminAddress": "0x...",
 	"safeAddress": "0x...",
 	"migrationRunner": "0x...",
+	"timelockAddress": "",
 	"diamondCutChunkSize": 1000,
 	"subgraphEndpoint": "",
 	"spotCheckCount": 20,
