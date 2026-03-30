@@ -4,16 +4,17 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { AffiliateConfig, SponsorConfig } from "../types/ConfigTypes.sol";
-import { WithdrawInfo } from "../types/WithdrawTypes.sol";
+import { IViewFacet } from "./IViewFacet.sol";
+import { AffiliateConfig, SponsorConfig } from "../../types/ConfigTypes.sol";
+import { WithdrawInfo } from "../../types/WithdrawTypes.sol";
 
-import { LibAccessControl } from "../libraries/LibAccessControl.sol";
+import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 
-import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
+import { ExpressProviderStorage } from "../../storages/ExpressProviderStorage.sol";
 
 /// @title ViewFacet
 /// @notice Read-only facet exposing all state getters for the ExpressProvider diamond.
-contract ViewFacet {
+contract ViewFacet is IViewFacet {
 	// ── Core addresses ──
 
 	function symmio() external view returns (address) {

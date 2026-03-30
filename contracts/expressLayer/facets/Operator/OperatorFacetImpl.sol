@@ -4,34 +4,20 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { WithdrawReceiverPart } from "../../core/storages/WithdrawStorage.sol";
-import { WithdrawInfo, Status, OptionType } from "../types/WithdrawTypes.sol";
+import { WithdrawReceiverPart } from "../../../core/storages/WithdrawStorage.sol";
+import { WithdrawInfo, Status, OptionType } from "../../types/WithdrawTypes.sol";
 
-import { ISymmio } from "../interfaces/ISymmio.sol";
+import { ISymmio } from "../../interfaces/ISymmio.sol";
 
-import { LibAccessControl } from "../libraries/LibAccessControl.sol";
-import { LibCreditLine } from "../libraries/LibCreditLine.sol";
-import { LibErrors } from "../libraries/LibErrors.sol";
-import { LibParts } from "../libraries/LibParts.sol";
+import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
+import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
+import { LibErrors } from "../../libraries/LibErrors.sol";
+import { LibParts } from "../../libraries/LibParts.sol";
 
-import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
+import { ExpressProviderStorage } from "../../storages/ExpressProviderStorage.sol";
 
-/// @title OperatorFacet
-/// @notice Bot/operator functions for processing, locking, and unlocking withdrawals.
-contract OperatorFacet {
-	event WithdrawProcessed(address indexed user, uint256 indexed requestId);
-	event WithdrawLocked(address indexed user, uint256 indexed requestId);
-	event WithdrawUnlockedAndProcessed(address indexed user, uint256 indexed requestId);
-
-	modifier nonReentrant() {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		if (s.reentrancyStatus == 1) revert LibErrors.Reentrancy();
-		s.reentrancyStatus = 1;
-		_;
-		s.reentrancyStatus = 0;
-	}
-
-	function processWithdraw(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts) external nonReentrant {
+library OperatorFacetImpl {
+	function processWithdraw(address user, uint256 requestId, WithdrawReceiverPart[] memory parts) internal {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 		WithdrawInfo storage info = s.withdrawInfos[user][requestId];
 
@@ -72,18 +58,16 @@ contract OperatorFacet {
 		}
 
 		info.status = Status.PROCESSED;
-		emit WithdrawProcessed(user, requestId);
 	}
 
-	function lockWithdraw(address user, uint256 requestId) external nonReentrant {
+	function lockWithdraw(address user, uint256 requestId) internal {
 		LibAccessControl.enforceRole(LibAccessControl.LOCKER_ROLE);
 		WithdrawInfo storage info = ExpressProviderStorage.layout().withdrawInfos[user][requestId];
 		if (info.status != Status.ACCEPTED) revert LibErrors.NotAccepted();
 		info.status = Status.LOCKED;
-		emit WithdrawLocked(user, requestId);
 	}
 
-	function unlockAndProcess(address user, uint256 requestId, WithdrawReceiverPart[] calldata parts) external nonReentrant {
+	function unlockAndProcess(address user, uint256 requestId, WithdrawReceiverPart[] memory parts) internal {
 		LibAccessControl.enforceRole(LibAccessControl.UNLOCK_ROLE);
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 		WithdrawInfo storage info = s.withdrawInfos[user][requestId];
@@ -102,7 +86,6 @@ contract OperatorFacet {
 		}
 
 		info.status = Status.PROCESSED;
-		emit WithdrawUnlockedAndProcessed(user, requestId);
 	}
 
 	function _collectAndTransfer(address user, uint256 requestId, WithdrawReceiverPart[] memory parts, WithdrawInfo storage info) internal {

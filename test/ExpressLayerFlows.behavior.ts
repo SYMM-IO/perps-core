@@ -1,7 +1,7 @@
 import { expect } from "chai"
 import hre, { network } from "hardhat"
 
-import { deployExpressProvider, deployCreditLineManager } from "../contracts/expressLayer/lib/deploy.js"
+import { deployExpressProvider, deployCreditLineManager } from "../tasks/deploy/expressLayerDiamond.js"
 
 const connection = await network.connect()
 const { ethers } = connection

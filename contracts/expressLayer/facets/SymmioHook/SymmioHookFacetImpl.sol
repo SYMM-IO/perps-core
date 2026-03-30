@@ -6,40 +6,27 @@ pragma solidity >=0.8.18;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-import { SponsorConfig } from "../types/ConfigTypes.sol";
-import { CreditData } from "../types/CreditTypes.sol";
-import { DecodedOption, ComputedAmounts } from "../types/OptionTypes.sol";
-import { WithdrawReceiverPart, WithdrawRequest } from "../../core/storages/WithdrawStorage.sol";
-import { WithdrawInfo, Status, OptionType } from "../types/WithdrawTypes.sol";
+import { SponsorConfig } from "../../types/ConfigTypes.sol";
+import { CreditData } from "../../types/CreditTypes.sol";
+import { DecodedOption, ComputedAmounts } from "../../types/OptionTypes.sol";
+import { WithdrawReceiverPart, WithdrawRequest } from "../../../core/storages/WithdrawStorage.sol";
+import { WithdrawInfo, Status, OptionType } from "../../types/WithdrawTypes.sol";
 
-import { ICreditLineManager } from "../interfaces/ICreditLineManager.sol";
-import { ISymmio } from "../interfaces/ISymmio.sol";
+import { ICreditLineManager } from "../../interfaces/ICreditLineManager.sol";
+import { ISymmio } from "../../interfaces/ISymmio.sol";
 
-import { LibAccessControl } from "../libraries/LibAccessControl.sol";
-import { LibCreditLine } from "../libraries/LibCreditLine.sol";
-import { LibErrors } from "../libraries/LibErrors.sol";
-import { LibParts } from "../libraries/LibParts.sol";
+import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
+import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
+import { LibErrors } from "../../libraries/LibErrors.sol";
+import { LibParts } from "../../libraries/LibParts.sol";
 
-import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
+import { ExpressProviderStorage } from "../../storages/ExpressProviderStorage.sol";
 
-/// @title SymmioHookFacet
-/// @notice Handles SYMMIO callbacks for the ExpressProvider diamond.
-contract SymmioHookFacet {
-	event WithdrawAccepted(address indexed user, uint256 indexed requestId, uint8 optionType);
-	event WithdrawProcessed(address indexed user, uint256 indexed requestId);
-	event WithdrawFinalized(address indexed user, uint256 indexed requestId);
-	event WithdrawCancelled(address indexed user, uint256 indexed requestId);
-	event WithdrawSuspended(address indexed user, uint256 indexed requestId);
-
-	modifier nonReentrant() {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		if (s.reentrancyStatus == 1) revert LibErrors.Reentrancy();
-		s.reentrancyStatus = 1;
-		_;
-		s.reentrancyStatus = 0;
-	}
-
-	function onWithdrawRequest(WithdrawRequest memory withdrawRequest, address) external nonReentrant {
+library SymmioHookFacetImpl {
+	/// @notice Processes a new withdraw request: decodes/verifies the option, locks funds, accepts the request.
+	/// @return optionType The option type for event emission.
+	/// @return processed Whether the withdraw was immediately processed (IMMEDIATE mode).
+	function onWithdrawRequest(WithdrawRequest memory withdrawRequest) internal returns (uint8 optionType, bool processed) {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
 
@@ -51,13 +38,13 @@ contract SymmioHookFacet {
 		DecodedOption memory opt = _decodeAndVerifyOption(withdrawRequest, optionData);
 		if (opt.optionType > uint8(OptionType.STANDARD)) revert LibErrors.InvalidOptionType();
 
-		OptionType optionType = OptionType(opt.optionType);
-		if (optionType == OptionType.STANDARD && opt.creditAmount > 0) revert LibErrors.CreditNotSupportedForStandard();
+		OptionType optType = OptionType(opt.optionType);
+		if (optType == OptionType.STANDARD && opt.creditAmount > 0) revert LibErrors.CreditNotSupportedForStandard();
 
 		ComputedAmounts memory amounts = LibParts.computeAmounts(withdrawRequest.parts, opt.affiliateAmount, opt.creditAmount);
 
 		uint256 minSigs = _getMinValidatorSignatures(s, opt.affiliate);
-		if (optionType == OptionType.IMMEDIATE && minSigs == 0) {
+		if (optType == OptionType.IMMEDIATE && minSigs == 0) {
 			revert LibErrors.ValidatorsRequiredForImmediate();
 		}
 
@@ -70,7 +57,7 @@ contract SymmioHookFacet {
 			_validateValidators(opt.affiliate, withdrawRequest.user, opt.nonce, amounts.expressAmount, validatorData);
 		}
 
-		if (optionType != OptionType.STANDARD) {
+		if (optType != OptionType.STANDARD) {
 			_lockFunds(opt, amounts);
 		}
 
@@ -87,7 +74,7 @@ contract SymmioHookFacet {
 		}
 
 		WithdrawInfo storage info = s.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
-		info.optionType = optionType;
+		info.optionType = optType;
 		info.availableAt = opt.availableAt;
 		info.expressAmount = amounts.expressAmount;
 		info.generalAmount = amounts.generalAmount;
@@ -111,20 +98,22 @@ contract SymmioHookFacet {
 		if (actualUserFee > opt.maxUserFee) revert LibErrors.UserFeeExceedsMaximum();
 
 		ISymmio(s.symmio).acceptWithdrawRequest(withdrawRequest.user, withdrawRequest.id);
-		emit WithdrawAccepted(withdrawRequest.user, withdrawRequest.id, opt.optionType);
+		optionType = opt.optionType;
 
-		if (optionType == OptionType.IMMEDIATE) {
+		if (optType == OptionType.IMMEDIATE) {
 			LibCreditLine.activate(s.symmio, withdrawRequest.user, withdrawRequest.id, info);
 			_collectAndTransfer(withdrawRequest.user, withdrawRequest.id, withdrawRequest.parts, info);
 			_unlockAndDeductPools(info);
 			info.status = Status.PROCESSED;
-			emit WithdrawProcessed(withdrawRequest.user, withdrawRequest.id);
+			processed = true;
 		} else {
 			info.status = Status.ACCEPTED;
+			processed = false;
 		}
 	}
 
-	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external {
+	/// @notice Handles withdraw completion callback from Symmio.
+	function onWithdrawComplete(WithdrawRequest memory withdrawRequest) internal {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
 
@@ -150,11 +139,10 @@ contract SymmioHookFacet {
 			LibCreditLine.settle(withdrawRequest.user, withdrawRequest.id, info);
 			info.status = Status.FINALIZED;
 		}
-
-		emit WithdrawFinalized(withdrawRequest.user, withdrawRequest.id);
 	}
 
-	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external nonReentrant {
+	/// @notice Handles withdraw cancel request callback from Symmio.
+	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) internal {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
 
@@ -166,10 +154,12 @@ contract SymmioHookFacet {
 		info.status = Status.CANCELLED;
 
 		ISymmio(s.symmio).acceptWithdrawCancelRequest(withdrawRequest.user, withdrawRequest.id);
-		emit WithdrawCancelled(withdrawRequest.user, withdrawRequest.id);
 	}
 
-	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external nonReentrant {
+	/// @notice Handles force withdraw cancel callback from Symmio.
+	/// @return cancelled Whether the status ended as CANCELLED (true) vs other terminal states.
+	/// @return wasProcessed Whether the withdraw had been in PROCESSED status (rollback path).
+	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) internal returns (bool cancelled, bool wasProcessed) {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
 
@@ -179,8 +169,9 @@ contract SymmioHookFacet {
 		if (info.status == Status.PROCESSED) {
 			_handleProcessedRollback(withdrawRequest.user, withdrawRequest.id, info);
 			info.status = Status.CANCELLED;
-			emit WithdrawCancelled(withdrawRequest.user, withdrawRequest.id);
-			return;
+			cancelled = true;
+			wasProcessed = true;
+			return (cancelled, wasProcessed);
 		}
 
 		if (info.status != Status.ACCEPTED && info.status != Status.LOCKED) {
@@ -192,10 +183,13 @@ contract SymmioHookFacet {
 
 		_releaseWithdraw(withdrawRequest.user, withdrawRequest.id, info);
 		info.status = Status.CANCELLED;
-		emit WithdrawCancelled(withdrawRequest.user, withdrawRequest.id);
+		cancelled = true;
+		wasProcessed = false;
 	}
 
-	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) external nonReentrant {
+	/// @notice Handles withdraw suspend callback from Symmio.
+	/// @return wasProcessed Whether the withdraw had been in PROCESSED status (rollback path).
+	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) internal returns (bool wasProcessed) {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
 
@@ -205,8 +199,8 @@ contract SymmioHookFacet {
 		if (info.status == Status.PROCESSED) {
 			_handleProcessedRollback(withdrawRequest.user, withdrawRequest.id, info);
 			info.status = Status.SUSPENDED;
-			emit WithdrawSuspended(withdrawRequest.user, withdrawRequest.id);
-			return;
+			wasProcessed = true;
+			return wasProcessed;
 		}
 
 		if (info.status != Status.ACCEPTED && info.status != Status.LOCKED) {
@@ -218,7 +212,7 @@ contract SymmioHookFacet {
 
 		_releaseWithdraw(withdrawRequest.user, withdrawRequest.id, info);
 		info.status = Status.SUSPENDED;
-		emit WithdrawSuspended(withdrawRequest.user, withdrawRequest.id);
+		wasProcessed = false;
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

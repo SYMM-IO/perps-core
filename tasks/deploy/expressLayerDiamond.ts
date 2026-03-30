@@ -1,7 +1,7 @@
 import type { HardhatRuntimeEnvironment } from "hardhat/types/hre"
 import type { NetworkConnection } from "hardhat/types/network"
 
-import { FacetCutAction, getSelectors } from "../../../tasks/utils/diamondCut.js"
+import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 
 export interface DeployExpressOptions {
 	admin: string
@@ -33,11 +33,10 @@ export async function deployExpressProvider(hre: HardhatRuntimeEnvironment, conn
 	// 3. Deploy all facets (use fully qualified names for ambiguous contracts)
 	const facetNames = [
 		"DiamondLoupeFacet",
-		"AdminFacet",
-		"contracts/expressLayer/facets/SymmioHookFacet.sol:SymmioHookFacet",
-		"OperatorFacet",
-		"contracts/expressLayer/facets/ViewFacet.sol:ViewFacet",
-		"OwnershipFacet",
+		"contracts/expressLayer/facets/Control/ControlFacet.sol:ControlFacet",
+		"contracts/expressLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
+		"contracts/expressLayer/facets/Operator/OperatorFacet.sol:OperatorFacet",
+		"contracts/expressLayer/facets/View/ViewFacet.sol:ViewFacet",
 	]
 	const cuts = []
 	const factories = []

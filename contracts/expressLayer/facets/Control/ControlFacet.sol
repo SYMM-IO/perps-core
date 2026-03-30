@@ -7,30 +7,18 @@ pragma solidity >=0.8.18;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { AffiliateConfig, SponsorConfig } from "../types/ConfigTypes.sol";
+import { AffiliateConfig, SponsorConfig } from "../../types/ConfigTypes.sol";
 
-import { LibAccessControl } from "../libraries/LibAccessControl.sol";
-import { LibDiamond } from "../../diamond/libraries/LibDiamond.sol";
-import { LibErrors } from "../libraries/LibErrors.sol";
+import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
+import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
+import { LibErrors } from "../../libraries/LibErrors.sol";
 
-import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
+import { ExpressProviderStorage } from "../../storages/ExpressProviderStorage.sol";
 
-contract AdminFacet {
+import { IControlFacet } from "./IControlFacet.sol";
+
+contract ControlFacet is IControlFacet {
 	using SafeERC20 for IERC20;
-
-	event GeneralDeposit(uint256 amount);
-	event GeneralWithdraw(uint256 amount);
-	event AffiliateDeposit(address indexed affiliate, uint256 amount);
-	event AffiliateWithdraw(address indexed affiliate, uint256 amount);
-	event AffiliateConfigUpdated(address indexed affiliate, uint256 feeRate, uint256 operatorFee);
-	event FeesClaimed(address indexed affiliate, uint256 amount);
-	event SponsorDeposit(address indexed affiliate, uint256 amount);
-	event SponsorWithdraw(address indexed affiliate, uint256 amount);
-	event SponsorConfigUpdated(address indexed affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount);
-	event OperatorFeesClaimed(address indexed affiliate, uint256 amount);
-	event MinValidatorSignaturesUpdated(address indexed affiliate, uint256 minValidatorSignatures);
-	event ValidatorApprovalTimeoutUpdated(address indexed affiliate, uint256 timeout);
-	event ValidatorUpdated(address indexed affiliate, address indexed validator, bool enabled);
 
 	// ── Config setters ──
 
@@ -175,5 +163,29 @@ contract AdminFacet {
 	function revokeRole(bytes32 role, address account) external {
 		LibDiamond.enforceIsContractOwner();
 		LibAccessControl.revokeRole(account, role);
+	}
+
+	// ── Ownership ──
+
+	function owner() external view returns (address) {
+		return LibDiamond.contractOwner();
+	}
+
+	function pendingOwner() external view returns (address) {
+		return LibDiamond.diamondStorage().pendingOwner;
+	}
+
+	function transferOwnership(address _newOwner) external {
+		LibDiamond.enforceIsContractOwner();
+		LibDiamond.transferOwnership(_newOwner);
+	}
+
+	function acceptOwnership() external {
+		LibDiamond.acceptOwnership();
+	}
+
+	function cancelOwnershipTransfer() external {
+		LibDiamond.enforceIsContractOwner();
+		LibDiamond.cancelOwnershipTransfer();
 	}
 }
