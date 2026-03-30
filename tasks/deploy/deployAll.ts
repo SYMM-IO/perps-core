@@ -898,6 +898,11 @@ async function setupSystem(
 			name: "setBalanceLimitPerUser",
 			action: () => controlFacet.connect(deployer).setBalanceLimitPerUser(ethers.parseEther("10000")),
 		},
+		{
+			key: "setup.setMaxWithdrawParts",
+			name: "setMaxWithdrawParts",
+			action: () => controlFacet.connect(deployer).setMaxWithdrawParts(30),
+		},
 		{ key: "setup.setDeallocateCooldown", name: "setDeallocateCooldown", action: () => controlFacet.connect(deployer).setDeallocateCooldown(120) },
 		{ key: "setup.setSettlementCooldown", name: "setSettlementCooldown", action: () => controlFacet.connect(deployer).setSettlementCooldown(300) },
 		{
