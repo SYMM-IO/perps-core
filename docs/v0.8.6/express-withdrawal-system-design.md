@@ -1,6 +1,6 @@
 # Express Withdrawal System - Design Document
 
-This document describes the implemented Express and Virtual withdrawal system for SYMMIO. It covers the architecture, contract interfaces, every user/bot/admin flow, the signature scheme, the ring-buffer-based liquidity scheduler, and the events the bot must monitor.
+This document describes the implemented Express withdrawal system for SYMMIO. It covers the architecture, contract interfaces, every user/bot/admin flow, the signature scheme, the ring-buffer-based liquidity scheduler, and the credit line system.
 
 ## 1. System Overview
 
@@ -13,34 +13,37 @@ sequenceDiagram
     participant Validators
     participant SYMMIO
     participant Express as ExpressProvider
+    participant CLM as CreditLineManager
 
     User->>Bot: 1. Request withdrawal options (amount, receiver)
     Bot->>Bot: Check liquidity, risk, sign EIP-712 option
     Bot->>Validators: Request risk attestations
     Validators->>Bot: Return signed ValidatorApprovals
-    Bot->>User: 2. Return signed option + validator attestations + parts (IMMEDIATE, INSTANT, SCHEDULED, or STANDARD)
+    Bot->>User: 2. Return signed option + validator attestations + credit data + parts (IMMEDIATE, INSTANT, SCHEDULED, or STANDARD)
 
     User->>SYMMIO: 3. initiateWithdraw(parts, providerData)
     SYMMIO->>Express: 4. onWithdrawRequest(request, collateral)
     Express->>Express: Verify signatures, validate validators, enforce fees
+    Express->>CLM: Reserve credit debt (if creditAmount > 0)
     Express->>SYMMIO: 5. acceptWithdrawRequest(user, reqId)
 
     alt IMMEDIATE (same-tx transfer, validators required)
+        Express->>SYMMIO: advanceWithdraw (activate credit, if any)
         Express->>User: Transfer tokens inside onWithdrawRequest
         Note over User: User has funds immediately
         Note over SYMMIO: 12 hours later...
         Bot->>SYMMIO: 6. finalizeWithdrawRequest
         SYMMIO->>Express: 7. Tokens + onWithdrawComplete
-        Express->>Express: Replenish pools
+        Express->>Express: Replenish pools, settle credit debt
     else INSTANT / SCHEDULED (capital fronted)
         Note over Bot: ~20s (INSTANT) or availableAt (SCHEDULED)
-        Bot->>Express: 6. processWithdraw (front from pools)
+        Bot->>Express: 6. processWithdraw (front from pools + activate credit)
         Express->>User: 7. Transfer tokens
         Note over SYMMIO: 12 hours later...
         Bot->>SYMMIO: 8. finalizeWithdrawRequest
         SYMMIO->>Express: 9. Tokens + onWithdrawComplete
-        Express->>Express: Replenish pools
-    else STANDARD
+        Express->>Express: Replenish pools, settle credit debt
+    else STANDARD (credit not supported)
         Note over SYMMIO: 12 hours later...
         Bot->>SYMMIO: 6. finalizeWithdrawRequest
         SYMMIO->>Express: 7. Tokens + onWithdrawComplete
@@ -54,9 +57,9 @@ sequenceDiagram
 | Option | Name | When user gets funds | Capital source |
 |--------|------|---------------------|----------------|
 | IMMEDIATE | Immediate | Same transaction | Express pools front it, transferred in onWithdrawRequest |
-| INSTANT | Instant | ~20 seconds | Express/Virtual pools front it |
-| SCHEDULED | Scheduled | 1-11 hours | Both general and affiliate portions are reserved via ring buffers against future liquidity; virtual parts are locked immediately on their VirtualProviders |
-| STANDARD | Standard | 12 hours | SYMMIO sends to Express after cooldown, Express forwards to user |
+| INSTANT | Instant | ~20 seconds | Express pools front it (general + affiliate + credit line) |
+| SCHEDULED | Scheduled | 1-11 hours | Both general and affiliate portions are reserved via ring buffers against future liquidity; credit line debt is reserved immediately |
+| STANDARD | Standard | 12 hours | SYMMIO sends to Express after cooldown, Express forwards to user (credit not supported) |
 
 All four options go through the ExpressProvider. This gives the bot full control over the withdrawal lifecycle for every option, including finalization after cooldown. The per-affiliate operator fee discourages dust withdrawals by making them uneconomical for griefers.
 
@@ -71,34 +74,36 @@ flowchart LR
         EC[ExpressProvider<br/>EIP-2535 Diamond<br/>1 per chain]
     end
     subgraph "Per Chain Per Affiliate"
-        VC1[VirtualProvider<br/>UUPS Proxy<br/>Affiliate A]
-        VC2[VirtualProvider<br/>UUPS Proxy<br/>Affiliate B]
+        CLM1[CreditLineManager<br/>UUPS Proxy<br/>Affiliate A]
+        CLM2[CreditLineManager<br/>UUPS Proxy<br/>Affiliate B]
     end
     subgraph "Global"
         Bot[Bot Service]
+        Muon[Muon Oracle]
     end
 
     EC --> SYMMIO
-    VC1 --> SYMMIO
-    VC2 --> SYMMIO
-    EC --> VC1
-    EC --> VC2
+    CLM1 --> SYMMIO
+    CLM2 --> SYMMIO
+    EC --> CLM1
+    EC --> CLM2
     Bot --> EC
     Bot --> SYMMIO
+    Muon --> CLM1
+    Muon --> CLM2
 ```
 
 | Component | Count | Upgradeable | Description |
 |-----------|-------|-------------|-------------|
 | **ExpressProvider** | 1 per chain | Yes (EIP-2535 Diamond) | Main coordinator. Manages liquidity pools, validates bot signatures, locks/transfers funds. Split into AdminFacet, SymmioHookFacet, OperatorFacet, ViewFacet. |
-| **VirtualProvider** | 1 per chain per affiliate | Yes (UUPS proxy) | Holds liquidity funded by express deposit fees. Locks/releases funds on ExpressProvider instruction. |
+| **CreditLineManager** | 1 per chain per affiliate | Yes (UUPS proxy) | Manages per-affiliate credit lines backed by Muon oracle attestations. Tracks reserved/active debt and enforces protocol/affiliate caps. |
 | **Bot Service** | 1 global | N/A | Off-chain. Provides options API, signs options, monitors events, calls `processWithdraw` and `finalizeWithdrawRequest`. |
 
 ### 2.2 Trust Relationships
 
 - ExpressProvider is registered as an **Express Provider** on SYMMIO
-- VirtualProvider is registered as a **Virtual Provider** on SYMMIO
-- ExpressProvider holds `EXPRESS_PROVIDER_ROLE` on VirtualProvider for `lockForWithdraw` / `releaseToUser` / `unlock`
-- `VirtualProvider.onExpressDeposit` is a SYMMIO-only hook. AccountLayer logic may trigger it conceptually, but the on-chain caller seen by VirtualProvider is SYMMIO.
+- ExpressProvider holds `EXPRESS_PROVIDER_ROLE` on each CreditLineManager for `reserveDebt` / `activateDebt` / `settleDebt` / `cancelReservation`
+- CreditLineManager verifies Muon oracle attestations to validate credit eligibility
 - Bot holds `OPERATOR_ROLE` and `SIGNER_ROLE` on ExpressProvider
 - Validators hold `VALIDATOR_ROLE` on ExpressProvider — their EIP-712 signatures are verified during onWithdrawRequest
 
@@ -123,7 +128,7 @@ Roles are stored in diamond storage and managed via `grantRole`/`revokeRole` on 
 
 ### 3.1 Balance Pools
 
-The ExpressProvider maintains two types of pools:
+The ExpressProvider maintains two types of pools, plus an optional credit line per affiliate:
 
 ```mermaid
 flowchart TD
@@ -131,30 +136,30 @@ flowchart TD
         GP[General Pool<br/>generalBalance / lockedGeneralBalance]
         FP[Affiliate Pool per affiliate<br/>affiliateBalances / lockedAffiliateBalances]
     end
-    subgraph "VirtualProvider (per affiliate)"
-        VP[Virtual Pool<br/>_balance / _lockedBalance]
+    subgraph "CreditLineManager (per affiliate)"
+        CL[Credit Line<br/>reservedDebt / activeDebt]
     end
 
     Admin -->|depositToGeneral| GP
     AffiliateOp -->|depositToAffiliate| FP
-    Deposits -->|onExpressDeposit fee| VP
+    MuonOracle -->|eligibleBase attestation| CL
 ```
 
 **General Pool**: System-wide, available to all users. Funded by operators via `depositToGeneral()`.
 
 **Affiliate Pool**: Per-affiliate, available only to that affiliate's users. Funded by affiliate operators via `depositToAffiliate(affiliate, amount)`.
 
-**Virtual Pool** (in VirtualProvider): Per-affiliate, auto-funded by the express deposit fee (X% of every user deposit). Configured in SYMMIO's AccountLayer per affiliate.
+**Credit Line** (in CreditLineManager): Per-affiliate, allows withdrawals backed by Muon-attested eligible balances. The CreditLineManager tracks reserved and active debt, enforces protocol and affiliate caps, and verifies Muon oracle signatures. Credit is not supported for STANDARD withdrawals.
 
 ### 3.2 Liquidity Priority (for Express-Fronted Source Selection)
 
-When constructing an IMMEDIATE or INSTANT option, and when choosing the pool split for a SCHEDULED option, the bot chooses pools in this order:
+When constructing an IMMEDIATE or INSTANT option, and when choosing the pool split for a SCHEDULED option, the bot chooses funding sources in this order:
 
 1. **Affiliate Pool** (lowest system risk -- affiliate's own capital)
-2. **Virtual Pool** (auto-funded from deposits)
+2. **Credit Line** (backed by Muon-attested eligible balances, not supported for STANDARD)
 3. **General Pool** (system-wide fallback)
 
-The bot encodes its decision into the signed option as `affiliateAmount` (how much from the affiliate pool) and the parts structure (which parts use `virtualProvider`).
+The bot encodes its decision into the signed option as `affiliateAmount` (how much from the affiliate pool) and `creditAmount` (how much from the credit line). The remainder comes from the general pool: `generalAmount = expressAmount - affiliateAmount - creditAmount`.
 
 For SCHEDULED withdrawals, both general and affiliate amounts are reserved via their respective ring buffers, relying on future liquidity forecasting. No counter locks are used for SCHEDULED -- ring buffers handle everything.
 
@@ -165,22 +170,20 @@ sequenceDiagram
     participant User
     participant SYMMIO
     participant Express as ExpressProvider
-    participant Virtual as VirtualProvider
+    participant CLM as CreditLineManager
 
-    Note over User,Virtual: === DEPOSIT (funds the system) ===
-    User->>SYMMIO: deposit 1000 USDC
-    Note over SYMMIO: AccountLayer splits: 970 real + 30 express fee
-    SYMMIO->>SYMMIO: depositFor(user, 970 USDC)
-    SYMMIO->>Virtual: transfer 30 USDC + onExpressDeposit(user, 30)
-    Virtual->>SYMMIO: virtualDepositFor(user, 30e18)
-    Note over Virtual: Virtual pool += 30 USDC
-
-    Note over User,Virtual: === WITHDRAWAL (drains then replenishes) ===
+    Note over User,CLM: === WITHDRAWAL (drains then replenishes) ===
     User->>Express: (via SYMMIO callback) withdraw 500 USDC
-    Express->>User: transfer 500 USDC from pools (T+20s)
-    Note over Express: Pools reduced by 500
-    SYMMIO->>Express: finalizeWithdrawRequest (T+12h) sends 500 USDC back
-    Note over Express: Pools replenished by 500
+    Note over Express: 300 from general, 100 from affiliate, 100 from credit line
+    Express->>CLM: reserveDebt(user, reqId, 100, creditData)
+    Note over Express: Pools locked / ring buffers updated
+    Express->>CLM: activateDebt(user, reqId)
+    Express->>SYMMIO: advanceWithdraw(user, reqId, 100)
+    Express->>User: transfer 500 USDC from pools + credit (T+20s)
+    Note over Express: Pools reduced by 400, credit active for 100
+    SYMMIO->>Express: finalizeWithdrawRequest (T+12h) sends 400 USDC back
+    Note over Express: Pools replenished by 400
+    Express->>CLM: settleDebt(user, reqId)
 ```
 
 ## 4. Signature Scheme (EIP-712)
@@ -206,6 +209,7 @@ WithdrawOption(
     uint256 availableAt,   // 0 for IMMEDIATE/INSTANT/STANDARD, timestamp for SCHEDULED
     address affiliate,      // affiliate pool to use
     uint256 affiliateAmount,// how much from affiliate pool
+    uint256 creditAmount,  // how much from credit line (must be 0 for STANDARD)
     uint256 fee,           // affiliate fee in collateral decimals
     uint256 operatorFee,   // fixed operator fee in collateral decimals
     uint256 maxUserFee,    // max fee the user pays (reverts if exceeded)
@@ -216,10 +220,10 @@ WithdrawOption(
 
 ### 4.3 Provider Data Encoding
 
-The signed option and validator attestations are packed into `providerData` which the user passes to `SYMMIO.initiateWithdraw(parts, speedUp, providerData)`. The encoding is nested:
+The signed option, validator attestations, and credit data are packed into `providerData` which the user passes to `SYMMIO.initiateWithdraw(parts, speedUp, providerData)`. The encoding is nested:
 
 ```
-providerData = abi.encode(optionData, validatorData)
+providerData = abi.encode(optionData, validatorData, creditDataRaw)
 
 optionData = abi.encode(
     uint256 nonce,
@@ -227,6 +231,7 @@ optionData = abi.encode(
     uint256 availableAt,
     address affiliate,
     uint256 affiliateAmount,
+    uint256 creditAmount,   // how much from credit line (0 if not using credit)
     uint256 fee,
     uint256 operatorFee,
     uint256 maxUserFee,
@@ -239,6 +244,14 @@ validatorData = abi.encode(
     uint256[] timestamps,   // corresponding signing timestamps
     uint256   symmioNonce   // user's SYMMIO nonce at validation time (read via getUserNonce)
 )
+
+creditDataRaw = abi.encode(CreditData) // empty bytes if creditAmount == 0
+// CreditData contains:
+//   bytes   reqId,             // Muon request ID
+//   uint256 eligibleBase,      // Muon-verified eligible balance
+//   uint256 timestamp,         // Muon signature timestamp
+//   bytes   gatewaySignature,  // Gateway signature from Muon
+//   SchnorrSign sigs           // Schnorr signatures
 ```
 
 ### 4.4 Nonce Management
@@ -263,7 +276,7 @@ struct WithdrawReceiverPart {
     uint256 amount;          // collateral decimals (e.g. 6 for USDC)
     int256  chainId;
     bytes   receiver;        // 20 bytes, the receiver address
-    address virtualProvider; // VirtualProvider address, or address(0)
+    address virtualProvider; // DEPRECATED: must be address(0), reverts VirtualProviderDeprecated otherwise
     address expressProvider; // ExpressProvider address
 }
 ```
@@ -277,7 +290,7 @@ Validators sign a separate EIP-712 message attesting to user legitimacy:
 ValidatorApproval(
     address user,       // the withdrawing user
     uint256 nonce,      // must match the bot option nonce (ties to specific withdrawal)
-    uint256 amount,     // total withdrawal amount (expressAmount + virtualExpressAmount)
+    uint256 amount,     // total withdrawal amount (expressAmount)
     uint256 timestamp,  // when the validator signed (freshness check)
     uint256 symmioNonce // user's current nonce on SYMMIO (invalidates if user acts on SYMMIO)
 )
@@ -300,7 +313,7 @@ When `minValidatorSignatures == 0`, the validator check is skipped entirely.
 
 ## 5. Fee Model
 
-The system supports per-affiliate fee configuration. Fees are charged on all express parts (both express-only and express+virtual) and accumulated for later collection by the admin. Virtual-only parts (no expressProvider) are not subject to fees.
+The system supports per-affiliate fee configuration. Fees are charged on the total express amount (sum of all parts routed through this ExpressProvider) and accumulated for later collection by the admin.
 
 ### 5.1 Affiliate Configuration
 
@@ -331,17 +344,17 @@ function setAffiliateConfig(
 The bot computes the fee off-chain before signing the EIP-712 option:
 
 ```
-fee = (expressAmount + virtualExpressAmount) * feeRate / 10000
+fee = expressAmount * feeRate / 10000
 ```
 
-Where `expressAmount` is the total from express-only parts and `virtualExpressAmount` is the total from express+virtual parts. The computed `fee` is included as a field in the signed `WithdrawOption` typed data, binding it to the signature.
+Where `expressAmount` is the total amount from all parts routed through this ExpressProvider (i.e., parts where `expressProvider == address(this)`). This includes amounts funded from general pool, affiliate pool, and credit line. The computed `fee` is included as a field in the signed `WithdrawOption` typed data, binding it to the signature.
 
 ### 5.3 On-Chain Validation
 
 When `onWithdrawRequest` decodes and validates the signed option, the contract independently re-derives the fee from the on-chain `affiliateConfigs` and rejects any mismatch:
 
 ```solidity
-uint256 feeBasis = amounts.expressAmount + amounts.virtualExpressAmount;
+uint256 feeBasis = amounts.expressAmount;
 if (opt.fee != feeBasis * affiliateConfigs[opt.affiliate].feeRate / 10000) revert FeeMismatch();
 if (opt.operatorFee != affiliateConfigs[opt.affiliate].operatorFee) revert OperatorFeeMismatch();
 if (opt.fee + opt.operatorFee > feeBasis) revert FeesExceedExpressAmount();
@@ -354,10 +367,9 @@ This ensures the bot cannot overcharge or undercharge -- the contract is the sou
 Fees are deducted during `processWithdraw`, `unlockAndProcess`, or inline within `onWithdrawRequest` for IMMEDIATE:
 
 - The contract first attempts to pay the fee from the affiliate's `sponsorBalances`. Whatever the sponsor balance cannot cover is deducted from the user's withdrawal amount.
-- For **express-only parts** (parts with `virtualProvider == address(0)`): fees are deducted directly from the collateral transfer. The user receives `partAmount - deduction`.
-- For **express+virtual parts** (parts with both providers set): fees are deducted by having each part's VirtualProvider release the fee portion to the ExpressProvider contract, and the remainder to the user.
-- For **virtual-only parts** (no `expressProvider`): skipped entirely — not subject to fees.
-- For **STANDARD** (standard): the fee is deducted from the forwarded tokens during `processWithdraw`, same as for INSTANT/SCHEDULED.
+- Fees are deducted from the collateral transfers by cascading across parts: the `userFee` is subtracted from the first part(s) until exhausted. The user receives `partAmount - deduction` for affected parts.
+- Parts where `expressProvider != address(this)` are skipped (not subject to fees from this provider).
+- For **STANDARD**: the fee is deducted from the forwarded tokens during `processWithdraw`, same as for INSTANT/SCHEDULED.
 - The full fee is always added to `collectedFees[affiliate]` regardless of whether the sponsor or user paid it.
 - **Operator fee**: Accumulated separately per affiliate in `collectedOperatorFees[affiliate]`. Claimable by admin via `claimOperatorFees(affiliate)`. Combined with the affiliate fee for total fee deduction.
 - **maxUserFee guarantee**: After sponsor coverage is locked at acceptance, the contract validates `actualUserFee <= maxUserFee`. If the sponsor balance was drained and the user would pay more than promised, the tx reverts.
@@ -443,7 +455,7 @@ mapping(address => uint256) public sponsorBalances;  // affiliate => sponsor bal
 
 - **`depositSponsorBalance(address affiliate, uint256 amount)`** -- Anyone can deposit collateral to fund fee sponsorship for an affiliate. The caller must have approved the collateral token for the ExpressProvider. The `sponsors[affiliate]` mapping tracks the last depositor.
 - **`withdrawSponsorBalance(address affiliate, uint256 amount, address to)`** -- `SPONSOR_MANAGER_ROLE` only. Withdraws unused sponsor funds to the specified `to` address.
-- **`setSponsorConfig(address affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount)`** -- `SETTER_ROLE` only. Configures caps on sponsorship: `maxFeePerWithdraw` limits how much the sponsor covers per withdrawal (0 = no limit), and `maxWithdrawAmount` restricts sponsorship to withdrawals whose total fee-bearing amount (`expressAmount + virtualExpressAmount`) is at or below this size (0 = no limit).
+- **`setSponsorConfig(address affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount)`** -- `SETTER_ROLE` only. Configures caps on sponsorship: `maxFeePerWithdraw` limits how much the sponsor covers per withdrawal (0 = no limit), and `maxWithdrawAmount` restricts sponsorship to withdrawals whose total fee-bearing amount (`expressAmount`) is at or below this size (0 = no limit).
 
 #### Sponsorship Logic During Withdrawal Processing
 
@@ -474,8 +486,6 @@ sequenceDiagram
     participant Bot
     participant SYMMIO
     participant Express as ExpressProvider
-    participant Virtual as VirtualProvider
-
     User->>Bot: Request withdrawal options (amount, receiver)
     Bot->>Bot: Check liquidity, risk score
     Bot->>Bot: Sign EIP-712 option (type=INSTANT)
@@ -486,9 +496,6 @@ sequenceDiagram
     Express->>Express: Verify signature, check nonce
     Express->>Express: Validate validator signatures
     Express->>Express: Lock funds from pools
-    opt Has virtual parts
-        Express->>Virtual: lockForWithdraw(user, reqId, amount) [per VP]
-    end
     Express->>SYMMIO: acceptWithdrawRequest(user, reqId)
 
     Note over Bot: Wait ~20 seconds (securityWindow)
@@ -496,11 +503,8 @@ sequenceDiagram
 
     alt User is LOW RISK
         Bot->>Express: processWithdraw(user, reqId, parts)
-        Express->>User: Transfer express-only amounts
-        opt Has virtual parts
-            Express->>Virtual: releaseToUser(user, reqId, receiver, amount) [per VP]
-            Virtual->>User: Transfer virtual amounts
-        end
+        Express->>Express: Activate credit (if creditAmount > 0)
+        Express->>User: Transfer amounts
     else User is HIGH RISK
         Bot->>Express: lockWithdraw(user, reqId)
         Note over Express: Status = LOCKED, admin reviews
@@ -509,7 +513,7 @@ sequenceDiagram
     Note over SYMMIO: 12 hours later...
     Bot->>SYMMIO: finalizeWithdrawRequest(user, reqId)
     SYMMIO->>Express: Transfer express amounts + onWithdrawComplete()
-    Express->>Express: Replenish pools (general + affiliate)
+    Express->>Express: Replenish pools (general + affiliate), settle credit debt
 ```
 
 **Timing:**
@@ -521,7 +525,7 @@ sequenceDiagram
 Same as INSTANT except:
 
 1. **Both general and affiliate use ring buffers** -- no counter locks are used for SCHEDULED. Both the general and affiliate amounts are reserved via `addReservedOutflow` and verified via `isLiquidityAvailableBy` in their respective ring buffers
-2. **Virtual parts are still locked on accept** -- just like other non-STANDARD options
+2. **Credit debt is reserved on accept** -- just like other non-STANDARD options
 3. **Acceptance includes on-chain feasibility checks** -- if the promised `generalAmount` is not reachable by `availableAt` in the general ring, or the `affiliateAmount` is not reachable by `availableAt` in the affiliate ring, acceptance reverts
 4. **Processing happens at `availableAt`** instead of `acceptedAt + 20s`
 5. **Non-cancellable** -- once accepted, SCHEDULED cannot be cancelled (protects bucket integrity)
@@ -531,7 +535,7 @@ sequenceDiagram
     participant Bot
     participant Express as ExpressProvider
     participant SYMMIO
-    participant Virtual as VirtualProvider(s)
+    participant CLM as CreditLineManager
 
     Note over Bot,Express: On accept (T+0)
     Bot->>Express: (via SYMMIO callback) onWithdrawRequest
@@ -541,27 +545,25 @@ sequenceDiagram
     Express->>Express: Verify affiliateAmount is reachable by availableAt (affiliate ring)
     Express->>Express: Reserve affiliateAmount in affiliate ring at availableAt
     Express->>Express: Record expected affiliate inflow at cooldownEnd
-    opt Has virtual parts
-        Express->>Virtual: lockForWithdraw(user, reqId, amount) [per VP]
+    opt Has credit
+        Express->>CLM: reserveDebt(user, reqId, creditAmount, creditData)
     end
     Express->>SYMMIO: acceptWithdrawRequest
 
     Note over Bot,Express: At availableAt (e.g. T+3h)
     Bot->>Express: processWithdraw(user, reqId, parts)
-    Express->>Express: Transfer from general + affiliate liquidity
-    opt Has virtual parts
-        Express->>Virtual: releaseToUser(user, reqId, receiver, amount) [per VP]
-    end
+    Express->>Express: Activate credit (if creditAmount > 0)
+    Express->>Express: Transfer from general + affiliate liquidity + credit
 
     Note over Bot,Express: At cooldownEnd (T+12h)
     Bot->>SYMMIO: finalizeWithdrawRequest
     SYMMIO->>Express: tokens + onWithdrawComplete
-    Express->>Express: Replenish general + affiliate pools
+    Express->>Express: Replenish general + affiliate pools, settle credit debt
 ```
 
 ### 6.3 STANDARD -- Standard Withdrawal (12 hours)
 
-STANDARD goes through ExpressProvider but does **not front any capital**. Express acts as an intermediary so the bot controls finalization. Parts may reference multiple VirtualProviders — for example when the user's own affiliate has no liquidity but other affiliates' VPs do.
+STANDARD goes through ExpressProvider but does **not front any capital** and **does not support credit lines** (`CreditNotSupportedForStandard` error). Express acts as an intermediary so the bot controls finalization.
 
 ```mermaid
 sequenceDiagram
@@ -569,19 +571,15 @@ sequenceDiagram
     participant Bot
     participant SYMMIO
     participant Express as ExpressProvider
-    participant Virtual as VirtualProvider(s)
 
     User->>Bot: Request withdrawal options
     Bot->>Bot: No instant/scheduled liquidity available
-    Bot->>Bot: Sign EIP-712 option (type=STANDARD)
+    Bot->>Bot: Sign EIP-712 option (type=STANDARD, creditAmount=0)
     Bot->>User: Return STANDARD + parts
 
     User->>SYMMIO: initiateWithdraw(parts, providerData)
     SYMMIO->>Express: onWithdrawRequest(request, collateral)
     Express->>Express: Verify signature, NO pool locking
-    opt Has virtual parts
-        Express->>Virtual: lockForWithdraw(user, reqId, amount) [per VP]
-    end
     Express->>SYMMIO: acceptWithdrawRequest(user, reqId)
     Note over Express: Status = ACCEPTED, pools untouched
 
@@ -593,23 +591,18 @@ sequenceDiagram
 
     Bot->>Express: processWithdraw(user, reqId, parts)
     Express->>User: Forward express tokens to receiver
-    opt Has virtual parts
-        Express->>Virtual: releaseToUser(user, reqId, receiver, amount) [per VP]
-        Virtual->>User: Transfer virtual amounts
-    end
     Note over Express: No risk check needed — 12h cooldown was the security window
 ```
 
 **Key differences from INSTANT/SCHEDULED:**
 - No express pool locking on accept (no capital fronted)
 - No bucket reservation and no scheduler inflow forecast
-- Virtual parts are still locked on each VP at acceptance, released at processWithdraw
+- Credit lines are not supported (`creditAmount` must be 0)
 - `onWithdrawComplete` sets status to FINALIZED (tokens arrive from SYMMIO)
 - `processWithdraw` requires FINALIZED status (not ACCEPTED)
-- `processWithdraw` forwards express tokens and releases virtual parts from their VPs
+- `processWithdraw` forwards express tokens to the user
 - Cancellable before finalization (unlike SCHEDULED)
 - Once finalized, `forceCancel` and `suspend` are no longer valid; a LOCKED STANDARD can be resolved via `unlockAndProcess` or via `processWithdraw` after cooldown expiry (which also triggers finalization from SYMMIO if needed)
-- Can span multiple VirtualProviders when the user's own affiliate has no liquidity
 
 ### 6.4 IMMEDIATE -- Same-Transaction Transfer
 
@@ -665,7 +658,7 @@ flowchart TD
     A -->|STANDARD| D[User cancels on SYMMIO directly]
 
     B -->|ACCEPTED, not processed| E[SYMMIO calls onWithdrawCancelRequest]
-    E --> F[Express unlocks pools + virtual funds on each VP]
+    E --> F[Express unlocks pools + releases credit reservation]
     F --> G[Express calls acceptWithdrawCancelRequest on SYMMIO]
 
     B -->|PROCESSED| H[Cannot cancel - funds already sent]
@@ -681,9 +674,12 @@ flowchart TD
 An operator with `SUSPENDER_ROLE` on SYMMIO can suspend a user's withdrawal (e.g., for compliance). SYMMIO calls `onWithdrawSuspend` on the ExpressProvider, which:
 
 1. Unlocks pool counter locks (for INSTANT/IMMEDIATE only — SCHEDULED uses ring buffers, not counter locks; not applicable for IMMEDIATE after processing — funds already transferred)
-2. Unlocks virtual funds on each involved VirtualProvider
+2. Releases credit line reservation (if `creditAmount > 0`)
 3. Removes forecast inflows from both general and affiliate ring buffers, and clears any SCHEDULED reservations from both ring buffers
-4. Sets status to `SUSPENDED`
+4. Refunds sponsor coverage to sponsor balance
+5. Sets status to `SUSPENDED`
+
+If the withdrawal was already PROCESSED, `_handleProcessedRollback` is called instead, which covers credit loss from the affiliate pool and removes expected inflows.
 
 Note: IMMEDIATE withdrawals cannot be suspended after acceptance because the funds are already transferred in the same transaction. The suspension would need to happen before the user's `initiateWithdraw` tx is mined. STANDARD withdrawals can only be suspended before finalization; once `onWithdrawComplete` has delivered the tokens, suspension is invalid.
 
@@ -800,7 +796,7 @@ Each bucket:
 - Record `expectedInflow` for `affiliateAmount` in the affiliate ring buffer at the bucket where `cooldownEndTime` falls (so future SCHEDULED checks can forecast returning affiliate liquidity)
 
 **On accepting a SCHEDULED withdrawal:**
-- Lock any referenced virtual parts on their VirtualProviders
+- Reserve credit debt on CreditLineManager (if `creditAmount > 0`)
 - Verify `generalAmount` is reachable by `availableAt` in the general ring buffer
 - Verify `affiliateAmount` is reachable by `availableAt` in the affiliate ring buffer
 - Record `reservedOutflow` for `generalAmount` in the general ring buffer at the bucket where `availableAt` falls
@@ -824,12 +820,14 @@ function getEarliestExpressAvailability(
 ```
 
 **Algorithm:**
-1. Start with current unlocked balance (general + current affiliate + current virtual for the selected affiliate)
+1. Start with current unlocked balance (general + current affiliate for the selected affiliate)
 2. Simulate syncs for both the general and affiliate ring buffers (read-only)
 3. Walk both rings in parallel, accumulating `expectedInflow` and `reservedOutflow` from both general and affiliate ring buffers at each step
 4. Return the first bucket where accumulated inflows cover the deficit (amount beyond current balance)
 
 The bot calls this to determine if a SCHEDULED option is feasible and what `availableAt` to offer. Both general and affiliate ring buffers contribute forecasted inflows and reserved outflows to the availability calculation.
+
+**Note:** This function excludes credit-line capacity (which depends on per-request Muon data, not an on-chain snapshot). The bot should consider available credit separately when constructing options.
 
 ## 9. Bot Responsibilities
 
@@ -853,11 +851,12 @@ All four options use the same EIP-712 signature and go through ExpressProvider.
 
 5. Collect validator attestations: query N validator services with `(user, nonce, amount)`. Each validator signs `ValidatorApproval` with current timestamp.
 6. Read `affiliateConfigs(affiliate)` to get `feeRate` and `operatorFee`
-7. Compute `fee = (expressAmount + virtualExpressAmount) * feeRate / 10000`
-8. For SCHEDULED, both `generalAmount` and `affiliateAmount` are reserved via their respective ring buffers; both use forecasted liquidity rather than requiring current unlocked balance
-9. Construct `WithdrawReceiverPart[]` with the correct `expressProvider` / `virtualProvider` routing
-10. Sign EIP-712 typed data (including `fee`, `operatorFee`, and `maxUserFee` fields)
-11. Return to user: `{ parts, providerData (includes option + validator signatures), estimatedTime, fee, operatorFee, maxUserFee }`
+7. Compute `fee = expressAmount * feeRate / 10000`
+8. If using credit line: obtain Muon attestation (`CreditData`) for the user's eligible balance. Credit is not supported for STANDARD.
+9. For SCHEDULED, both `generalAmount` and `affiliateAmount` are reserved via their respective ring buffers; both use forecasted liquidity rather than requiring current unlocked balance
+10. Construct `WithdrawReceiverPart[]` with the correct `expressProvider` (set `virtualProvider` to `address(0)`)
+11. Sign EIP-712 typed data (including `creditAmount`, `fee`, `operatorFee`, and `maxUserFee` fields)
+12. Return to user: `{ parts, providerData (includes option + validator signatures + credit data), estimatedTime, fee, operatorFee, maxUserFee }`
 
 ### 9.2 Event Monitoring
 
@@ -922,32 +921,67 @@ Funds are transferred in the same transaction as acceptance. The only risk gatin
 3. No post-finalization risk check needed — the 12h cooldown itself is the security window
 4. Before finalization, admin may still suspend via SYMMIO; after finalization, the locked withdrawal must be resolved via `unlockAndProcess` (requires `UNLOCK_ROLE`)
 
-## 10. Express Deposit Flow (VirtualProvider Funding)
+## 10. Credit Line System
+
+The credit line system allows users to withdraw against their eligible balance (as attested by the Muon oracle) without requiring the full amount to be available in express pools. Credit is only supported for IMMEDIATE, INSTANT, and SCHEDULED withdrawals — not STANDARD.
+
+### 10.1 Architecture
+
+Each affiliate can have a dedicated `CreditLineManager` contract (UUPS proxy), linked via `setCreditLineManager(affiliate, manager)`.
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant AccountLayer as AccountLayer Logic
+    participant Bot
+    participant Express as ExpressProvider
+    participant CLM as CreditLineManager
+    participant Muon as Muon Oracle
     participant SYMMIO
-    participant Virtual as VirtualProvider
 
-    User->>AccountLayer: deposit 1000 USDC
-    Note over AccountLayer: Affiliate configured 3% express rate
-    AccountLayer->>SYMMIO: depositFor(user, 970 USDC)
-    AccountLayer->>SYMMIO: trigger express deposit hook for 30 USDC
-    SYMMIO->>Virtual: transfer(30 USDC)
-    SYMMIO->>Virtual: onExpressDeposit(user, 30e6, symmioAddr)
-    Virtual->>SYMMIO: virtualDepositFor(user, 30e18)
-    Note over Virtual: _balance += 30e6 (USDC decimals)
-    Note over SYMMIO: user balance += 30e18 (18 decimals)
+    Bot->>Muon: Request eligible balance attestation for user
+    Muon->>Bot: Return CreditData (eligibleBase, signatures)
+    Bot->>Bot: Sign EIP-712 option with creditAmount
+
+    Note over Express: On acceptance (onWithdrawRequest)
+    Express->>CLM: reserveDebt(user, reqId, creditAmount, creditData)
+    Note over CLM: Verify Muon sigs, enforce caps, reserve debt
+
+    Note over Express: On processing (processWithdraw)
+    Express->>CLM: activateDebt(user, reqId)
+    Express->>SYMMIO: advanceWithdraw(user, reqId, creditAmount)
+
+    Note over Express: On finalization (onWithdrawComplete)
+    Express->>CLM: settleDebt(user, reqId)
 ```
 
-The VirtualProvider:
-- Receives real tokens (collateral)
-- Calls `virtualDepositFor` on SYMMIO to credit the user's balance (converts to 18 decimals)
-- Tracks its balance internally
+### 10.2 CreditLineManager
 
-`onExpressDeposit` is a **SYMMIO-only hook**. This is **not triggered by the bot** and cannot be called arbitrarily; it happens automatically on qualifying user deposits through SYMMIO's AccountLayer logic.
+The CreditLineManager tracks two types of debt:
+- **Reserved debt**: Debt that has been committed but the withdrawal hasn't been processed yet
+- **Active debt**: Debt where the withdrawal has been processed (funds advanced from SYMMIO)
+
+**Debt caps** are enforced at two levels:
+- **Protocol level**: `protocolMaxDebt` (absolute) and `protocolMaxDebtBps` (percentage of eligible base)
+- **Affiliate level**: `affiliateMaxDebt` and `affiliateMaxDebtBps` (must be <= protocol limits)
+
+The effective cap is the stricter of the two levels.
+
+**Muon verification**: `reserveDebt` validates the Muon oracle attestation (signature, freshness within `muonFreshnessWindow`), ensuring the user's `eligibleBase` is current and authentic.
+
+### 10.3 Credit Lifecycle
+
+| Phase | Trigger | CreditLineManager Action |
+|-------|---------|--------------------------|
+| Reserve | `onWithdrawRequest` | `reserveDebt` — validates Muon data, checks caps, adds to `reservedDebt` |
+| Activate | `processWithdraw` / `unlockAndProcess` / IMMEDIATE inline | `activateDebt` — moves from `reservedDebt` to `activeDebt` |
+| Settle | `onWithdrawComplete` | `settleDebt` — removes from `activeDebt`, deletes request state |
+| Cancel | `onWithdrawCancelRequest` / `onForceWithdrawCancel` (pre-payout) | `cancelReservation` — removes from `reservedDebt` |
+| Cover Loss | `onForceWithdrawCancel` / `onWithdrawSuspend` (post-payout) | `settleDebt` — deducts `creditAmount` from affiliate pool to cover the loss |
+
+### 10.4 User Blacklisting and Pause
+
+The CreditLineManager supports:
+- **User blacklisting**: `setBlacklisted(user, true)` prevents a user from using credit
+- **Pause**: `setPaused(true)` disables all credit reservations system-wide
 
 ## 11. Contract Interfaces
 
@@ -996,7 +1030,7 @@ function claimFees(address affiliate, address to) external;                 // F
 function claimOperatorFees(address affiliate, address to) external;        // FEE_CLAIMER_ROLE
 
 // Setter functions (SETTER_ROLE)
-function setVirtualProvider(address affiliate, address vc) external;        // Setter only
+function setCreditLineManager(address affiliate, address manager) external; // Setter only
 function setSecurityWindow(uint256 seconds) external;                      // Setter only
 function setTolerancePeriod(uint256 seconds) external;                     // Setter only
 function setBucketDuration(uint256 seconds) external;                      // Setter only, clears general ring + increments configNonce (affiliate rings lazily reset)
@@ -1031,6 +1065,7 @@ function generalBalance() external view returns (uint256);
 function lockedGeneralBalance() external view returns (uint256);
 function affiliateBalances(address affiliate) external view returns (uint256);
 function lockedAffiliateBalances(address affiliate) external view returns (uint256);
+function creditLineManagers(address affiliate) external view returns (address);
 
 // Fee queries
 function affiliateConfigs(address affiliate) external view returns (uint256 feeRate, uint256 operatorFee);
@@ -1057,38 +1092,48 @@ function validatorApprovalTimeout() external view returns (uint256);
 // Access control
 function hasRole(bytes32 role, address account) external view returns (bool);
 
-// Virtual provider
-function virtualProviders(address affiliate) external view returns (address);
-
 // Returns earliest time the amount can be paid, considering ring buffer projections
+// Note: excludes credit-line capacity (depends on per-request Muon data)
 function getEarliestExpressAvailability(address affiliate, uint256 amount)
     external view returns (bool available, uint256 availableAt);
 ```
 
-### 11.2 VirtualProvider (UUPS Proxy)
+### 11.2 CreditLineManager (UUPS Proxy)
 
 ```solidity
 // Initializer (called once on proxy deployment)
-function initialize(address admin, address collateral, address symmio, address expressProvider) external;
+function initialize(
+    address admin,
+    address _symmio,
+    address _expressProvider,
+    address _signatureVerifier,
+    uint256 _muonAppId
+) external;
 
-// Called only by SYMMIO's express-deposit hook
-function onExpressDeposit(address user, uint256 amount, address symmioCore) external;
-
-// Called only by EXPRESS_PROVIDER_ROLE holders
-function lockForWithdraw(address user, uint256 requestId, uint256 amount) external;
-function releaseToUser(address user, uint256 requestId, address receiver, uint256 amount) external;
-function unlock(address user, uint256 requestId) external;
+// Called only by EXPRESS_PROVIDER_ROLE holders (ExpressProvider)
+function reserveDebt(address user, uint256 requestId, uint256 creditAmount, CreditData calldata data) external;
+function activateDebt(address user, uint256 requestId) external;
+function settleDebt(address user, uint256 requestId) external;
+function cancelReservation(address user, uint256 requestId) external;
 
 // View
-function getBalance() external view returns (uint256);
-function getLockedBalance() external view returns (uint256);
-function getLockedForWithdraw(address user, uint256 requestId) external view returns (uint256);
+function totalDebt() external view returns (uint256);    // reservedDebt + activeDebt
+function reservedDebt() external view returns (uint256);
+function activeDebt() external view returns (uint256);
 
-// Role management + enumeration (inherited from AccessControlEnumerable)
+// Protocol admin (PROTOCOL_ADMIN_ROLE)
+function setProtocolConfig(uint256 _maxDebt, uint256 _maxDebtBps, uint256 _muonFreshnessWindow) external;
+function setSignatureVerifier(address _signatureVerifier) external;
+function setMuonAppId(uint256 _muonAppId) external;
+
+// Affiliate admin (AFFILIATE_ADMIN_ROLE)
+function setAffiliateConfig(uint256 _maxDebt, uint256 _maxDebtBps) external;
+function setBlacklisted(address user, bool _blacklisted) external;
+function setPaused(bool _paused) external;
+
+// Role management (inherited from AccessControl)
 function grantRole(bytes32 role, address account) external;   // Admin only
 function revokeRole(bytes32 role, address account) external;  // Admin only
-function getRoleMemberCount(bytes32 role) external view returns (uint256);
-function getRoleMember(bytes32 role, uint256 index) external view returns (address);
 
 // Upgrade (UUPS)
 function upgradeToAndCall(address newImplementation, bytes calldata data) external; // Admin only
@@ -1099,7 +1144,9 @@ function upgradeToAndCall(address newImplementation, bytes calldata data) extern
 | Role | Who | Can do |
 |------|-----|--------|
 | `DEFAULT_ADMIN_ROLE` | Deployer/multisig | Upgrade contract, grant/revoke roles |
-| `EXPRESS_PROVIDER_ROLE` | ExpressProvider | `lockForWithdraw`, `releaseToUser`, `unlock` |
+| `EXPRESS_PROVIDER_ROLE` | ExpressProvider | `reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation` |
+| `PROTOCOL_ADMIN_ROLE` | Deployer/multisig | Set protocol-level debt caps and Muon config |
+| `AFFILIATE_ADMIN_ROLE` | Affiliate operator | Set affiliate-level debt caps, blacklist users, pause |
 
 ## 12. Data Types Reference
 
@@ -1118,11 +1165,12 @@ struct WithdrawInfo {
     Status  status;
     OptionType optionType;
     uint256 availableAt;          // SCHEDULED: when funds available. 0 for IMMEDIATE/INSTANT/STANDARD.
-    uint256 expressAmount;        // sum of express-only part amounts
-    uint256 virtualExpressAmount; // sum of express+virtual part amounts
+    uint256 expressAmount;        // total amount from express provider (general + affiliate + credit)
     uint256 generalAmount;        // how much of expressAmount from general pool
     uint256 affiliateAmount;      // how much of expressAmount from affiliate pool
+    uint256 creditAmount;         // how much of expressAmount from credit line (0 for STANDARD)
     address affiliate;            // which affiliate pool was used
+    address creditLineManager;    // CreditLineManager address (address(0) if no credit used)
     uint256 acceptedAt;           // block.timestamp when accepted
     uint256 finalizedAt;          // block.timestamp when onWithdrawComplete called (STANDARD only)
     uint256 cooldownEndTime;      // when SYMMIO's 12h cooldown expires
@@ -1137,6 +1185,7 @@ struct DecodedOption {
     uint256 availableAt;          // 0 for IMMEDIATE/INSTANT/STANDARD, timestamp for SCHEDULED
     address affiliate;
     uint256 affiliateAmount;
+    uint256 creditAmount;         // how much from credit line (must be 0 for STANDARD)
     uint256 fee;                  // affiliate fee in collateral decimals
     uint256 operatorFee;          // fixed operator fee in collateral decimals
     uint256 maxUserFee;           // max fee user pays (reverts if exceeded)
@@ -1144,9 +1193,14 @@ struct DecodedOption {
     bytes   signature;
 }
 
+struct ComputedAmounts {
+    uint256 expressAmount;        // total from express (general + affiliate + credit)
+    uint256 generalAmount;        // expressAmount - affiliateAmount - creditAmount
+}
+
 struct SponsorConfig {
     uint256 maxFeePerWithdraw;    // max fee sponsor covers per withdrawal (0 = no limit)
-    uint256 maxWithdrawAmount;    // only sponsor withdrawals whose express+virtual fee-bearing amount <= this (0 = no limit)
+    uint256 maxWithdrawAmount;    // only sponsor withdrawals whose express fee-bearing amount <= this (0 = no limit)
 }
 
 struct Bucket {
@@ -1190,8 +1244,17 @@ struct WithdrawReceiverPart {
     uint256 amount;          // collateral decimals
     int256  chainId;
     bytes   receiver;        // 20 bytes
-    address virtualProvider;
+    address virtualProvider; // DEPRECATED: must be address(0)
     address expressProvider;
+}
+
+// Credit line types
+struct CreditData {
+    bytes   reqId;             // Muon request ID
+    uint256 eligibleBase;      // Muon-verified eligible balance
+    uint256 timestamp;         // Muon signature timestamp
+    bytes   gatewaySignature;  // Gateway signature from Muon
+    SchnorrSign sigs;          // Schnorr signatures
 }
 
 struct WithdrawRequest {
@@ -1234,11 +1297,17 @@ SCHEDULED withdrawals cannot be cancelled once accepted. Cancelling would invali
 | SCHEDULED | No | Never | Protects bucket reservations and inflow guarantees |
 | STANDARD | Yes | If status is ACCEPTED (before SYMMIO finalization) | No capital fronted; Express just releases acceptance |
 
-### 13.3 Liquidity Fragmentation
+### 13.3 Credit Line Loss on Post-Payout Rollback
+
+If a withdrawal with credit is force-cancelled or suspended after being PROCESSED (funds already sent to user), the credit amount cannot be recovered from the user. The contract covers this loss by deducting `creditAmount` from the affiliate's pool balance (`affiliateBalances[affiliate] -= creditAmount`). This is a design trade-off: the affiliate pool absorbs credit losses from post-payout rollbacks.
+
+**Note:** In practice, SYMMIO's `forceCancelWithdraw` requires `block.timestamp < cooldownEndTime`, so this path cannot be triggered for PROCESSED express withdrawals (which are processed well before cooldown ends). This is a safety net for edge cases.
+
+### 13.4 Liquidity Fragmentation
 
 Affiliate pools are isolated. An affiliate user cannot access another affiliate's pool. The General Pool serves as the cross-affiliate fallback. This is intentional -- affiliate-specific pools let affiliates guarantee service levels at their own capital risk.
 
-### 13.4 Bot Failure
+### 13.5 Bot Failure
 
 If the bot goes down, users can call `processWithdraw` permissionlessly after `tolerancePeriod`. STANDARD always works without the bot. The system degrades gracefully -- users just wait longer.
 
@@ -1268,12 +1337,12 @@ When a user calls `processWithdraw` permissionlessly (after the tolerance period
 - SYMMIO core deployed with withdraw system enabled
 - Collateral token (e.g. USDC) address known
 - ExpressProvider registered as Express Provider on SYMMIO
-- VirtualProvider(s) registered as Virtual Provider(s) on SYMMIO
+- Muon oracle and signature verifier deployed (if using credit lines)
 
 ### Deploy via Hardhat task
 
 ```bash
-# Deploy both contracts
+# Deploy ExpressProvider (diamond) and CreditLineManager(s)
 npx hardhat deploy \
   --symmio 0x<SYMMIO_ADDRESS> \
   --collateral 0x<USDC_ADDRESS> \
@@ -1285,26 +1354,25 @@ npx hardhat upgrade \
   --proxy 0x<EXPRESS_PROXY_ADDRESS> \
   --network sepolia
 
-# Upgrade VirtualProvider
+# Upgrade CreditLineManager
 npx hardhat upgrade \
-  --proxy 0x<VIRTUAL_PROXY_ADDRESS> \
-  --contract VirtualProvider \
+  --proxy 0x<CLM_PROXY_ADDRESS> \
+  --contract CreditLineManager \
   --network sepolia
 ```
 
 ### Post-deployment setup
 
 ```bash
-# On SYMMIO: register providers (requires SYMMIO admin)
+# On SYMMIO: register provider (requires SYMMIO admin)
 symmio.registerExpressProvider(expressProviderProxy)
-symmio.registerVirtualProvider(virtualProvider)
 
 # On ExpressProvider: configure roles
 expressProvider.grantRole(OPERATOR_ROLE, botAddress)
 expressProvider.grantRole(SIGNER_ROLE, botSignerAddress)
 
-# On ExpressProvider: link virtual contract to frontend
-expressProvider.setVirtualProvider(affiliateAddress, virtualProviderAddress)
+# On ExpressProvider: link credit line manager to affiliate
+expressProvider.setCreditLineManager(affiliateAddress, creditLineManagerAddress)
 
 # On ExpressProvider: configure validators
 expressProvider.grantRole(VALIDATOR_ROLE, validator1Address)

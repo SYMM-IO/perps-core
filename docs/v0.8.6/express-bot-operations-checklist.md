@@ -16,7 +16,7 @@ Complete reference of every flow, state, edge case, and scenario the operator bo
 8. [Validator System](#8-validator-system)
 9. [Scheduler / Bucket System](#9-scheduler--bucket-system)
 10. [Multi-Part Withdrawals](#10-multi-part-withdrawals)
-11. [VirtualProvider Integration](#11-virtualprovider-integration)
+11. [Credit Line Integration](#11-credit-line-integration)
 12. [Risk Lock / Unlock Flows](#12-risk-lock--unlock-flows)
 13. [Cancellation & Suspension](#13-cancellation--suspension)
 14. [Permissionless Fallback](#14-permissionless-fallback)
@@ -133,7 +133,7 @@ stateDiagram-v2
 ### Numeric Example: State Transitions for a 500 USDC INSTANT Withdrawal
 
 ```
-Scenario: Single-part INSTANT withdrawal, no virtual provider, no sponsor
+Scenario: Single-part INSTANT withdrawal, no credit, no sponsor
 
 Setup:
   generalBalance          = 10,000 USDC   lockedGeneralBalance          = 0
@@ -153,10 +153,10 @@ Step 1 — Bot sees: user requests a 500 USDC express withdrawal quote
   Bot computes:
     - 1 part: { amount: 500e6, expressProvider: EP, virtualProvider: 0x0 }
     - expressAmount        = 500e6
-    - virtualExpressAmount = 0
+    - creditAmount         = 0
     - affiliateAmount      = 200e6 (bot decides how much to draw from affiliate pool)
     - generalAmount        = expressAmount - affiliateAmount = 500e6 - 200e6 = 300e6
-    - feeBasis             = expressAmount + virtualExpressAmount = 500e6
+    - feeBasis             = expressAmount = 500e6
     - fee                  = 500e6 * 50 / 10000 = 2,500,000 (2.5 USDC)
     - operatorFee          = 1e6 (must match on-chain config exactly; reverts OperatorFeeMismatch otherwise)
     - totalFee             = 2.5 + 1 = 3.5 USDC
@@ -271,7 +271,7 @@ sequenceDiagram
     participant U as User
     participant S as SYMMIO
     participant EP as ExpressProvider
-    participant VP as VirtualProvider
+    participant CLM as CreditLineManager
 
     U->>S: initiateWithdraw(parts, providerData)
     S->>EP: onWithdrawRequest(req, collateral)
@@ -280,18 +280,20 @@ sequenceDiagram
     Note over EP: Validate validator signatures
     Note over EP: Verify fee matches on-chain config
     Note over EP: Lock general + affiliate pools
-    EP->>VP: lockForWithdraw(user, reqId, amount)
+    EP->>CLM: reserveDebt(reqId, creditAmount)
+    EP->>CLM: activateDebt(reqId, creditAmount)
+    EP->>S: advanceWithdraw(user, reqId, creditAmount)
     EP->>S: acceptWithdrawRequest(user, reqId)
 
     Note over EP: ═══ SAME TX ═══
     Note over EP: Deduct fees
     EP->>U: transfer(receiver, amount - fee)
-    VP->>U: releaseToUser(receiver, amount)
     Note over EP: Status = PROCESSED
 
     Note over EP,S: ═══ 12 HOURS LATER ═══
     S->>EP: onWithdrawComplete(req)
     Note over EP: Replenish pools
+    EP->>CLM: settleDebt(reqId)
     Note over EP: Status = FINALIZED
 ```
 
@@ -299,7 +301,7 @@ sequenceDiagram
 - [ ] `minValidatorSignatures > 0` (REQUIRED, reverts `ValidatorsRequiredForImmediate` otherwise)
 - [ ] Sufficient general pool liquidity
 - [ ] Sufficient affiliate pool liquidity (if affiliateAmount > 0)
-- [ ] Sufficient VirtualProvider balance (if virtual parts exist)
+- [ ] Sufficient credit line capacity (if creditAmount > 0)
 - [ ] Valid validator attestations gathered
 
 **Bot checklist:**
@@ -315,14 +317,14 @@ sequenceDiagram
 #### Numeric Example: IMMEDIATE 1,000 USDC
 
 ```
-Scenario: Multi-part IMMEDIATE withdrawal with express + virtual, no sponsor
+Scenario: Credit-backed IMMEDIATE withdrawal with express + credit line, no sponsor
 
 Setup:
   generalBalance          = 10,000 USDC   lockedGeneralBalance          = 0
   affiliateBalances[aff]  =  5,000 USDC   lockedAffiliateBalances[aff]  = 0
   affiliateConfigs[aff]   = { feeRate: 100 (1%), operatorFee: 2e6 (2 USDC) }
   minValidatorSignatures  = 2             validatorApprovalTimeout      = 30s
-  VP._balance             =  2,000 USDC   VP._lockedBalance             = 0
+  CLM.availableCredit     =  3,000 USDC   CLM.outstandingDebt           = 0
   nonces[user]            = 3
   sponsorBalances[aff]    = 0 USDC (no sponsor)
 
@@ -332,21 +334,20 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
       ValidatorsRequiredForImmediate otherwise)
     - generalBalance - lockedGeneralBalance                 = 10,000 - 0 = 10,000 USDC available
     - affiliateBalances[aff] - lockedAffiliateBalances[aff] = 5,000 - 0  = 5,000 USDC available
-    - VP.getBalance()                                       = 2,000 USDC available
+    - CLM.availableCredit                                   = 3,000 USDC available
     - nonces[user]                                          = 3
     - affiliateConfigs[aff].feeRate                         = 100 bps (1%)
     - affiliateConfigs[aff].operatorFee                     = 2e6 (2 USDC)
-  Bot decides: This user qualifies for IMMEDIATE. Validators are configured, and all three
-  pools (general, affiliate, virtual) have sufficient liquidity.
+  Bot decides: This user qualifies for IMMEDIATE. Validators are configured, and pools
+  plus credit line have sufficient liquidity.
   Bot constructs parts:
-    Part 1: { amount: 800e6, expressProvider: EP, virtualProvider: 0x0,  receiver: 0xUser }
-    Part 2: { amount: 200e6, expressProvider: EP, virtualProvider: VP,   receiver: 0xUser }
+    Part 1: { amount: 1000e6, expressProvider: EP, virtualProvider: 0x0, receiver: 0xUser }
   Bot computes fee parameters:
-    - expressAmount        = 800e6 (sum of parts where virtualProvider == 0x0)
-    - virtualExpressAmount = 200e6 (sum of parts where virtualProvider != 0x0)
+    - expressAmount        = 1000e6 (total withdrawal amount)
     - affiliateAmount      = 300e6 (bot chooses how much of expressAmount to draw from affiliate pool)
-    - generalAmount        = expressAmount - affiliateAmount = 800e6 - 300e6 = 500e6
-    - feeBasis             = expressAmount + virtualExpressAmount = 800e6 + 200e6 = 1,000e6
+    - creditAmount         = 200e6 (portion backed by credit line)
+    - generalAmount        = expressAmount - affiliateAmount - creditAmount = 1000e6 - 300e6 - 200e6 = 500e6
+    - feeBasis             = expressAmount = 1000e6
     - fee                  = feeBasis * feeRate / 10000 = 1,000e6 * 100 / 10000 = 10e6 (10 USDC)
     - operatorFee          = 2e6 (must match on-chain config exactly)
     - totalFee             = 10 + 2 = 12 USDC
@@ -355,14 +356,14 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
   Bot checks before signing:
     - generalBalance - lockedGeneralBalance >= generalAmount?   10,000 >= 500?   YES
     - affiliateBalances[aff] - lockedAffiliateBalances[aff] >= affiliateAmount?   5,000 >= 300?   YES
-    - VP.getBalance() >= virtualExpressAmount?   2,000 >= 200?   YES
+    - CLM.availableCredit >= creditAmount?   3,000 >= 200?   YES
     - fee + operatorFee <= feeBasis?   12e6 <= 1,000e6?   YES
   Decision: Offer IMMEDIATE (optionType=0). Proceed to gather validator attestations.
 
-    What if VP.getBalance() were only 150 USDC?
-      200 > 150 — VirtualProvider would revert InsufficientBalance during lockForWithdraw.
-      Bot must reduce the virtual part to 150 (and increase express-only to 850),
-      or fall back to INSTANT/SCHEDULED without a virtual part.
+    What if CLM.availableCredit were only 150 USDC?
+      200 > 150 — CreditLineManager would revert InsufficientCredit during reserveDebt.
+      Bot must reduce creditAmount to 150 (and increase generalAmount to 550),
+      or fall back to INSTANT/SCHEDULED without credit.
 
     What if minValidatorSignatures were 0?
       Contract reverts ValidatorsRequiredForImmediate. Bot cannot offer IMMEDIATE.
@@ -407,47 +408,39 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
   d. Lock general + affiliate pools (_lockFunds, IMMEDIATE path):
      - lockedGeneralBalance:          0 + 500 = 500
      - lockedAffiliateBalances[aff]:  0 + 300 = 300
-  e. Lock virtual funds (lockVirtualFunds):
-     - VP.lockForWithdraw(user, reqId, 200e6)
-     - VP._balance:        2,000 - 200 = 1,800
-     - VP._lockedBalance:  0 + 200     = 200
-  f. Lock fee (sponsor coverage = 0, so userFee = totalFee = 12 USDC)
-  g. acceptWithdrawRequest on SYMMIO
-  h. IMMEDIATE path — _collectAndTransfer runs IN THE SAME TX:
+  e. Reserve and activate credit line debt:
+     - CLM.reserveDebt(reqId, 200e6)
+     - CLM.activateDebt(reqId, 200e6)
+     - CLM.availableCredit:  3,000 - 200 = 2,800
+     - CLM.outstandingDebt:  0 + 200     = 200
+  f. Advance credit-backed funds from SYMMIO:
+     - SYMMIO.advanceWithdraw(user, reqId, 200e6)
+  g. Lock fee (sponsor coverage = 0, so userFee = totalFee = 12 USDC)
+  h. acceptWithdrawRequest on SYMMIO
+  i. IMMEDIATE path — _collectAndTransfer runs IN THE SAME TX:
      userFee = totalFee - sponsorCoverage = 12 - 0 = 12 USDC
-     Fee cascading across parts (feeRemaining = 12e6):
-       Part 1 (800 express-only):
-         deduction = min(12e6, 800e6) = 12e6
-         Transfer to receiver: 800e6 - 12e6 = 788e6 (788 USDC)
+     Fee deduction from the single part (feeRemaining = 12e6):
+       Part 1 (1000 express):
+         deduction = min(12e6, 1000e6) = 12e6
+         Transfer to receiver: 1000e6 - 12e6 = 988e6 (988 USDC)
          feeRemaining = 0
-       Part 2 (200 express+virtual):
-         deduction = min(0, 200e6) = 0 (fee already exhausted)
-         VP.releaseToUser(user, reqId, receiver, 200e6) — 200 USDC to user
-         VP._lockedBalance: 200 - 200 = 0
-  i. Pool deductions (unlocking then deducting):
+  j. Pool deductions (unlocking then deducting):
      lockedGeneralBalance:          500 - 500 = 0
      lockedAffiliateBalances[aff]:  300 - 300 = 0
      generalBalance:                10,000 - 500 = 9,500
      affiliateBalances[aff]:        5,000 - 300 = 4,700
      collectedFees[aff]            += 10 USDC
      collectedOperatorFees[aff]    += 2 USDC
-  j. status = PROCESSED (skips ACCEPTED — funds already sent)
+  k. status = PROCESSED (skips ACCEPTED — funds already sent)
   Decision: No further bot action needed until finalization. User received funds in this tx.
 
-  Result: User receives 788 + 200 = 988 USDC in the same transaction as initiateWithdraw.
+  Result: User receives 988 USDC in the same transaction as initiateWithdraw.
 
     What if the bot had offered INSTANT (optionType=1) instead?
-      Step (h) would NOT execute. Status would be ACCEPTED, not PROCESSED.
+      Step (i) would NOT execute. Status would be ACCEPTED, not PROCESSED.
       The user would wait securityWindow (20s) before the bot calls processWithdraw.
       IMMEDIATE skips that wait by requiring validators upfront as a substitute for
       the post-acceptance risk window.
-
-    What if the fee had been larger than Part 1 (e.g., totalFee = 900 USDC)?
-      feeRemaining after Part 1: 900 - 800 = 100 (Part 1 sends 0 to user)
-      Part 2: deduction = min(100e6, 200e6) = 100e6
-        VP.releaseToUser(user, reqId, address(this), 100e6) — fee portion to ExpressProvider
-        VP.releaseToUser(user, reqId, receiver, 100e6)      — 100 USDC to user
-      User receives 0 + 100 = 100 USDC. Fee cascading spans both parts.
 
 Step 4 — Bot sees: cooldownEndTime reached (T0 + 12h)
   Bot reads on-chain:
@@ -459,26 +452,29 @@ Step 4 — Bot sees: cooldownEndTime reached (T0 + 12h)
     - Has cooldown elapsed?     YES
   Decision: Finalize. Call ISymmio(symmio).finalizeWithdrawRequest(user, reqId).
 
-  SYMMIO sends 800 USDC (expressAmount — only the express-only total; virtual part was
-  already funded by VP and is not reimbursed through this path) to ExpressProvider.
+  SYMMIO sends 1000 USDC (expressAmount) to ExpressProvider.
   SYMMIO calls onWithdrawComplete(req).
-  Contract replenishes pools:
+  Contract replenishes pools and settles credit debt:
     - generalBalance:          9,500 + 500 = 10,000 (restored by generalAmount)
     - affiliateBalances[aff]:  4,700 + 300 = 5,000 (restored by affiliateAmount)
+    - CLM.settleDebt(reqId)
+    - CLM.outstandingDebt:     200 - 200   = 0 (debt fully settled)
+    - CLM.availableCredit:     2,800 + 200 = 3,000 (credit capacity restored)
     - status = FINALIZED
 
     What if the bot forgot to call finalizeWithdrawRequest?
       Pools remain depleted (generalBalance = 9,500, affiliateBalances = 4,700).
-      The 500 + 300 = 800 USDC stays locked in SYMMIO. No one else can trigger
+      Credit debt remains outstanding (CLM.outstandingDebt = 200).
+      The 1000 USDC stays locked in SYMMIO. No one else can trigger
       finalization for this request. Bot should schedule this call reliably.
 
 Result:
   User received 988 USDC instantly (same transaction, zero wait).
   Pools are fully restored to pre-withdrawal levels after 12h.
+  Credit line debt is fully settled after 12h (no outstanding debt remains).
   Bot earned 12 USDC total (10 affiliate fee + 2 operator fee).
-  VP balance: 1,800 after withdrawal, unchanged by finalization (VP was already released).
-  Net capital at risk for 12 hours: 800 USDC (fronted from general + affiliate pools).
-  VP fronted 200 USDC which was released immediately (no 12h exposure for VP).
+  Net capital at risk for 12 hours: 800 USDC (fronted from general + affiliate pools)
+    + 200 USDC credit line debt (settled on finalization).
 ```
 
 ---
@@ -492,13 +488,11 @@ sequenceDiagram
     participant U as User
     participant S as SYMMIO
     participant EP as ExpressProvider
-    participant VP as VirtualProvider
     participant Bot as Bot
 
     U->>S: initiateWithdraw(parts, providerData)
     S->>EP: onWithdrawRequest(req, collateral)
-    Note over EP: Verify sig, lock pools, lock VP
-    EP->>VP: lockForWithdraw(user, reqId, amount)
+    Note over EP: Verify sig, lock pools, reserve credit (if any)
     EP->>S: acceptWithdrawRequest(user, reqId)
     EP-->>Bot: emit WithdrawAccepted
     Note over EP: Status = ACCEPTED
@@ -509,7 +503,6 @@ sequenceDiagram
     Bot->>EP: processWithdraw(user, reqId, parts)
     Note over EP: Verify partsHash, deduct fees
     EP->>U: transfer(receiver, amount - fee)
-    VP->>U: releaseToUser(receiver, amount)
     EP-->>Bot: emit WithdrawProcessed
     Note over EP: Status = PROCESSED
 
@@ -560,7 +553,7 @@ Step 1 — Bot sees: User requests a 500 USDC withdrawal through this affiliate.
     - unlocked affiliate (5,000) >= affiliateAmount (200)?  YES
     --> Both pools have enough. INSTANT is feasible.
   Bot computes fees (must match on-chain affiliateConfigs exactly):
-    - feeBasis    = expressAmount + virtualExpressAmount = 500 + 0 = 500
+    - feeBasis    = expressAmount = 500
     - fee         = 500 * 50 / 10,000 = 2.50 USDC
     - operatorFee = 1 USDC
     - totalFee    = 2.50 + 1 = 3.50 USDC
@@ -673,7 +666,6 @@ sequenceDiagram
     participant U as User
     participant S as SYMMIO
     participant EP as ExpressProvider
-    participant VP as VirtualProvider
     participant Bot as Bot
 
     U->>S: initiateWithdraw(parts, providerData)
@@ -683,7 +675,6 @@ sequenceDiagram
     Note over EP: Reserve affiliate portion in affiliate ring buffer
     Note over EP: Check isLiquidityAvailableBy for both rings
     Note over EP: Record expectedInflow at cooldownEndTime (both rings)
-    EP->>VP: lockForWithdraw(user, reqId, amount)
     EP->>S: acceptWithdrawRequest(user, reqId)
     EP-->>Bot: emit WithdrawAccepted
     Note over EP: Status = ACCEPTED
@@ -693,7 +684,6 @@ sequenceDiagram
     Bot->>EP: processWithdraw(user, reqId, parts)
     Note over EP: Verify partsHash, deduct fees
     EP->>U: transfer(receiver, amount - fee)
-    VP->>U: releaseToUser(receiver, amount)
     Note over EP: Status = PROCESSED
 
     Note over EP,S: 12 hours after initiation
@@ -725,7 +715,6 @@ Setup:
   lockedGeneralBalance        = 9,000          (only 1,000 unlocked)
   affiliateBalances[affiliate] = 5,000 USDC
   lockedAffiliateBalances[affiliate] = 0
-  VP.getBalance()             = 500 USDC       (VirtualProvider liquidity)
   affiliateConfigs[affiliate] = { feeRate: 200 bps (2%), operatorFee: 5 USDC }
   bucketDuration              = 3,600s (1h)
   schedulingWindow            = 43,200s (12h)
@@ -752,9 +741,9 @@ Step 1 — Bot sees: User requests a 2,000 USDC withdrawal through this affiliat
 
 Step 2 — Bot sees: INSTANT rejected. Queries bucket scheduler for earliest availability.
   Bot calls (read-only): getEarliestExpressAvailability(affiliate, 2000)
-    currentAvailable = unlocked general + unlocked affiliate + VP balance
-                     = 1,000 + 5,000 + 500 = 6,500
-    6,500 >= 2,000? YES for total liquidity — but the contract will separately verify
+    currentAvailable = unlocked general + unlocked affiliate
+                     = 1,000 + 5,000 = 6,000
+    6,000 >= 2,000? YES for total liquidity — but the contract will separately verify
     that the general-pool portion alone is reachable via isLiquidityAvailableBy.
   Bot must verify the general-pool portion (1,200) via the general ring buffer:
     isLiquidityAvailableBy(generalRing, generalFree=1000, 1200, targetOffset):
@@ -778,7 +767,7 @@ Step 2 — Bot sees: INSTANT rejected. Queries bucket scheduler for earliest ava
 
 Step 3 — Bot sees: Option signed. Computes fees and signs EIP-712 option.
   Bot computes fees (must match on-chain affiliateConfigs exactly):
-    - feeBasis    = expressAmount + virtualExpressAmount = 2,000 + 0 = 2,000
+    - feeBasis    = expressAmount = 2,000
     - fee         = 2,000 * 200 / 10,000 = 40 USDC
     - operatorFee = 5 USDC
     - totalFee    = 40 + 5 = 45 USDC
@@ -876,21 +865,19 @@ sequenceDiagram
     participant U as User
     participant S as SYMMIO
     participant EP as ExpressProvider
-    participant VP as VirtualProvider
     participant Bot as Bot
 
     U->>S: initiateWithdraw(parts, providerData)
     S->>EP: onWithdrawRequest(req, collateral)
     Note over EP: Verify sig, verify fees
     Note over EP: NO pool locking (STANDARD)
-    EP->>VP: lockForWithdraw(user, reqId, amount)
     EP->>S: acceptWithdrawRequest(user, reqId)
     EP-->>Bot: emit WithdrawAccepted
     Note over EP: Status = ACCEPTED
 
     Note over EP,S: 12 hours later
     Bot->>S: finalizeWithdrawRequest(user, reqId)
-    S-->>EP: transfer 500 USDC (express tokens)
+    S-->>EP: transfer 1,000 USDC (express tokens)
     S->>EP: onWithdrawComplete(req)
     Note over EP: finalizedAt = now
     EP-->>Bot: emit WithdrawFinalized
@@ -899,7 +886,6 @@ sequenceDiagram
     Bot->>EP: processWithdraw(user, reqId, parts)
     Note over EP: Forward tokens to user
     EP->>U: transfer(receiver, amount - fee)
-    VP->>U: releaseToUser(receiver, amount)
     Note over EP: Status = PROCESSED
 ```
 
@@ -913,61 +899,50 @@ sequenceDiagram
 - [ ] Once finalized: cannot cancel or suspend (tokens already on ExpressProvider)
 - [ ] LOCKED + finalized STANDARD: must be resolved via `unlockAndProcess` (UNLOCK_ROLE)
 
-#### Numeric Example: STANDARD 1,000 USDC (mixed express + 2 VirtualProviders)
+#### Numeric Example: STANDARD 1,000 USDC
 
 ```
-Scenario: Mixed STANDARD withdrawal — express-only part + two VirtualProvider parts
+Scenario: Simple STANDARD withdrawal — all from express pools, no credit
 
 Setup:
-  generalBalance = 2,000 USDC, lockedGeneralBalance = 1,800
-  affiliateBalances[affiliate] = 500, lockedAffiliateBalances[affiliate] = 500
-  affiliateConfigs[affiliate] = { feeRate: 100 bps (1%), operatorFee: 0 }
-  VP1.getBalance() = 2,000 USDC, VP1._lockedBalance = 0
-  VP2.getBalance() = 3,000 USDC, VP2._lockedBalance = 0
+  generalBalance = 10,000 USDC, lockedGeneralBalance = 8,000
+  affiliateBalances[affiliate] = 5,000, lockedAffiliateBalances[affiliate] = 4,600
+  affiliateConfigs[affiliate] = { feeRate: 50 bps (0.5%), operatorFee: 0 }
   sponsorBalances[affiliate] = 0, nonces[user] = 0
+  NOTE: Credit is NOT supported for STANDARD (CreditNotSupportedForStandard error).
 
 Step 1 — Bot sees: User requests withdrawal of 1,000 USDC
   Bot reads on-chain:
-    - generalBalance - lockedGeneralBalance = 2,000 - 1,800 = 200 (unlocked general)
-    - affiliateBalances - lockedAffiliateBalances = 500 - 500 = 0 (unlocked affiliate)
-    - VP1.getBalance() = 2,000
-    - VP2.getBalance() = 3,000
-    - affiliateConfigs[affiliate] = { feeRate: 100, operatorFee: 0 }
+    - generalBalance - lockedGeneralBalance = 10,000 - 8,000 = 2,000 (unlocked general)
+    - affiliateBalances - lockedAffiliateBalances = 5,000 - 4,600 = 400 (unlocked affiliate)
+    - affiliateConfigs[affiliate] = { feeRate: 50, operatorFee: 0 }
   Bot checks: Can I offer INSTANT?
     INSTANT requires locking generalAmount from the general pool immediately.
-    Express-only portion would be 400, affiliateAmount must be 0 (no unlocked affiliate).
-    generalAmount = 400 - 0 = 400. But unlocked general = 200 < 400. NOT FEASIBLE.
-  Bot checks: Can I offer SCHEDULED?
-    Bucket forecasts show no expected inflows. NOT FEASIBLE.
-  Bot checks: Can I offer STANDARD?
-    STANDARD skips _lockFunds entirely — no pool locking needed.
-    VPs only need liquidity: VP1 has 2,000 >= 350, VP2 has 3,000 >= 250. FEASIBLE.
-  Decision: Offer STANDARD. No capital fronting, no pool locks.
+    expressAmount = 1,000, affiliateAmount = 400, generalAmount = 1,000 - 400 = 600.
+    Unlocked general = 2,000 >= 600. FEASIBLE, but bot prefers STANDARD for this user.
+  Decision: Offer STANDARD. No capital fronting, no pool locks, no ring buffer usage.
 
 Step 2 — Bot constructs parts and signs
-  Bot constructs parts:
-    Part 0: { amount: 400, expressProvider: EP, virtualProvider: 0x0 }   — express-only
-    Part 1: { amount: 350, expressProvider: EP, virtualProvider: VP1 }   — express+virtual
-    Part 2: { amount: 250, expressProvider: EP, virtualProvider: VP2 }   — express+virtual
+  Bot constructs parts (all parts have virtualProvider = 0x0):
+    Part 0: { amount: 400, expressProvider: EP, virtualProvider: 0x0 }   — affiliate pool
+    Part 1: { amount: 600, expressProvider: EP, virtualProvider: 0x0 }   — general pool
   Bot computes:
-    expressAmount = 400 (sum of parts where virtualProvider == 0x0)
-    virtualExpressAmount = 350 + 250 = 600 (sum of parts where virtualProvider != 0x0)
-    affiliateAmount = 0 (no unlocked affiliate pool)
-    generalAmount = expressAmount - affiliateAmount = 400 - 0 = 400
-    feeBasis = expressAmount + virtualExpressAmount = 400 + 600 = 1,000
-    fee = 1,000 * 100 / 10,000 = 10 USDC
-    operatorFee = 0, totalFee = 10, sponsorCoverage = 0, maxUserFee = 10
-  Decision: Sign STANDARD option with nonce=0, affiliateAmount=0, fee=10, availableAt=0
+    expressAmount = 1,000 (sum of all parts, all virtualProvider == 0x0)
+    creditAmount = 0 (credit NOT supported for STANDARD)
+    affiliateAmount = 400 (from unlocked affiliate pool)
+    generalAmount = expressAmount - affiliateAmount = 1,000 - 400 = 600
+    feeBasis = expressAmount = 1,000
+    fee = 1,000 * 50 / 10,000 = 5 USDC
+    operatorFee = 0, totalFee = 5, sponsorCoverage = 0, maxUserFee = 5
+  Decision: Sign STANDARD option with nonce=0, affiliateAmount=400, fee=5, availableAt=0
 
 Step 3 — Bot sees: WithdrawAccepted event (SYMMIO called onWithdrawRequest)
   Bot reads on-chain:
     - status = ACCEPTED (1), nonces[user] = 1
-    - VP1._balance = 1,650 (locked 350), VP1._lockedBalance = 350
-    - VP2._balance = 2,750 (locked 250), VP2._lockedBalance = 250
-    - lockedGeneralBalance = 1,800 (unchanged — STANDARD skipped _lockFunds)
-  Bot checks: Did the contract lock the VP funds correctly? YES.
-    NOTE: The 400 express-only USDC is NOT locked anywhere. STANDARD does not front capital.
-    That 400 will arrive from SYMMIO only after the 12h cooldown.
+    - lockedGeneralBalance = 8,000 (unchanged — STANDARD skips _lockFunds)
+    - lockedAffiliateBalances[affiliate] = 4,600 (unchanged — STANDARD skips _lockFunds)
+    NOTE: Pools are NOT locked for STANDARD. The ring buffer is also NOT used.
+    The 1,000 USDC will arrive from SYMMIO only after the 12h cooldown.
   Decision: Schedule finalizeWithdrawRequest call at cooldownEndTime (T+12h). Wait.
 
     What if risk is detected at T=30s?
@@ -977,8 +952,7 @@ Step 3 — Bot sees: WithdrawAccepted event (SYMMIO called onWithdrawRequest)
 
     What if user cancels at T=5min?
       STANDARD + ACCEPTED is cancellable. onWithdrawCancelRequest triggers _releaseWithdraw:
-        VP1.unlock(user, reqId) → _lockedBalance 350→0, _balance 1,650→2,000
-        VP2.unlock(user, reqId) → _lockedBalance 250→0, _balance 2,750→3,000
+        No pool unlocking needed (pools were never locked for STANDARD).
         Status = CANCELLED. No pool changes, no sponsor refund (sponsor=0).
 
 Step 4 — Bot sees: block.timestamp >= cooldownEndTime (T=12h)
@@ -989,7 +963,7 @@ Step 4 — Bot sees: block.timestamp >= cooldownEndTime (T=12h)
   Decision: Call SYMMIO.finalizeWithdrawRequest(user, reqId).
 
   On-chain result:
-    SYMMIO transfers 400 USDC (expressAmount) to ExpressProvider.
+    SYMMIO transfers 1,000 USDC (expressAmount) to ExpressProvider.
     SYMMIO calls onWithdrawComplete(req):
       optionType == STANDARD, status == ACCEPTED → status = FINALIZED (4)
       finalizedAt = block.timestamp
@@ -1008,351 +982,56 @@ Step 5 — Bot sees: WithdrawFinalized event
       At T+12h: REVERT TooEarly. Must wait until T+12h+60s.
 
   Fee cascading in transferToReceivers:
-    userFee = fee + operatorFee - sponsorCoverage = 10 + 0 - 0 = 10
-    feeRemaining = 10
+    userFee = fee + operatorFee - sponsorCoverage = 5 + 0 - 0 = 5
+    feeRemaining = 5
 
-    Part 0 (400, express-only):
-      deduction = min(10, 400) = 10
+    Part 0 (400, affiliate pool):
+      deduction = min(5, 400) = 5
       feeRemaining = 0
-      collateral.safeTransfer(receiver, 400 - 10 = 390)
+      collateral.safeTransfer(receiver, 400 - 5 = 395)
 
-    Part 1 (350, VP1):
-      deduction = min(0, 350) = 0
-      VP1.releaseToUser(user, reqId, receiver, 350) → 350 USDC to receiver
-      VP1._lockedBalance: 350 → 0
-
-    Part 2 (250, VP2):
-      deduction = min(0, 250) = 0
-      VP2.releaseToUser(user, reqId, receiver, 250) → 250 USDC to receiver
-      VP2._lockedBalance: 250 → 0
+    Part 1 (600, general pool):
+      deduction = min(0, 600) = 0
+      collateral.safeTransfer(receiver, 600 - 0 = 600)
 
   Pool updates: optionType == STANDARD → no generalBalance or affiliateBalance deduction.
-  collectedFees[affiliate] += 10
+  collectedFees[affiliate] += 5
   Status = PROCESSED (terminal for STANDARD — no further FINALIZED step)
 
-    What if VP1 only had 300 at signing time?
-      Bot would have constructed Part 1 as { amount: 300 } and shifted 50 elsewhere
-      (or found a third VP). The bot MUST verify VP.getBalance() >= part.amount before
-      signing — otherwise lockForWithdraw reverts InsufficientBalance on-chain.
-
 Final accounting:
-  User receives: 390 + 350 + 250 = 990 USDC
-  Fees collected: 10 USDC
-  Total: 990 + 10 = 1,000 ✓
-  VP1: _balance = 1,650, _lockedBalance = 0
-  VP2: _balance = 2,750, _lockedBalance = 0
-  generalBalance = 2,000 (unchanged — STANDARD doesn't touch it)
+  User receives: 395 + 600 = 995 USDC
+  Fees collected: 5 USDC
+  Total: 995 + 5 = 1,000 ✓
+  generalBalance = 10,000 (unchanged — STANDARD doesn't touch it)
+  affiliateBalances[affiliate] = 5,000 (unchanged — STANDARD doesn't touch it)
 ```
 
 ---
 
-### 2.5 PURE VIRTUAL Withdrawal (STANDARD with no express-only parts)
+### 2.5 Credit-Backed Withdrawal
 
-**User experience:** ~12 hours. User's own affiliate has no express liquidity, but other affiliates' VirtualProviders have funds. The entire withdrawal comes from VP(s). No general pool, no affiliate pool, no capital fronting. ExpressProvider acts purely as a coordinator.
+For IMMEDIATE, INSTANT, and SCHEDULED options, the bot can include a `creditAmount` in the signed option to draw from the affiliate's credit line (CreditLineManager). This supplements pool liquidity:
 
-**When this happens:** The user's SYMMIO balance was funded via express deposits (which seeded the VPs), but the express general/affiliate pools are drained or insufficient. The user can still withdraw by routing through one or more VirtualProviders — potentially from different affiliates.
+- `generalAmount = expressAmount - affiliateAmount - creditAmount`
+- Credit requires a valid Muon oracle attestation (`CreditData`)
+- Credit is NOT supported for STANDARD (`CreditNotSupportedForStandard` error)
+- Credit debt follows the lifecycle: reserved → activated → settled (see Section 11)
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant S as SYMMIO
-    participant EP as ExpressProvider
-    participant VP1 as VirtualProvider A
-    participant VP2 as VirtualProvider B
-    participant Bot as Bot
-
-    Note over U: User has 1,000 USDC on SYMMIO\nbut general pool is empty.\nVP-A has 600, VP-B has 400.
-
-    U->>S: initiateWithdraw(parts, providerData)
-    S->>EP: onWithdrawRequest(req, collateral)
-
-    Note over EP: expressAmount = 0 (no express-only parts)
-    Note over EP: virtualExpressAmount = 1,000
-    Note over EP: generalAmount = 0, affiliateAmount = 0
-    Note over EP: feeBasis = 0 + 1,000 = 1,000
-    Note over EP: STANDARD: skip _lockFunds entirely
-
-    EP->>VP1: lockForWithdraw(user, reqId, 600)
-    EP->>VP2: lockForWithdraw(user, reqId, 400)
-    EP->>S: acceptWithdrawRequest(user, reqId)
-    EP-->>Bot: emit WithdrawAccepted
-    Note over EP: Status = ACCEPTED
-
-    Note over EP,S: 12 hours later
-
-    Bot->>S: finalizeWithdrawRequest(user, reqId)
-    Note over S: Express-only amount = 0\nSYMMIO sends NO tokens to EP
-    S->>EP: onWithdrawComplete(req)
-    Note over EP: finalizedAt = now
-    EP-->>Bot: emit WithdrawFinalized
-    Note over EP: Status = FINALIZED
-
-    Bot->>EP: processWithdraw(user, reqId, parts)
-    Note over EP: Fee deducted from VP parts
-    VP1-->>EP: releaseToUser(EP, fee_deduction)
-    VP1->>U: releaseToUser(receiver, 600 - fee)
-    VP2->>U: releaseToUser(receiver, 400)
-    Note over EP: No pool balance changes\n(STANDARD + no express-only parts)
-    Note over EP: Status = PROCESSED
-```
-
-**Key differences from regular STANDARD:**
-- `expressAmount = 0`, `virtualExpressAmount = total amount`
-- `generalAmount = 0`, `affiliateAmount = 0` (must be 0 — any affiliateAmount > 0 would underflow `generalAmount = expressAmount - affiliateAmount`)
-- No tokens sent by SYMMIO during finalization (express-only amount = 0)
-- No pool balance changes at any point (no pools involved)
-- Fee is deducted entirely from VP parts (cascading through VPs)
-- ExpressProvider never holds or transfers any tokens — only coordinates VP releases
-
-**Bot checklist:**
-- [ ] Sign with `affiliateAmount = 0` (REQUIRED — any other value causes arithmetic underflow)
-- [ ] Compute `feeBasis = virtualExpressAmount` (expressAmount is 0)
-- [ ] Fee = `virtualExpressAmount * feeRate / 10000` (fees are on VPs, not express pools)
-- [ ] Verify each VirtualProvider has sufficient `getBalance()` for its part
-- [ ] VPs can be from different affiliates — each is locked/released independently
-- [ ] After finalization: call `processWithdraw` immediately (no tokens to wait for)
-- [ ] All option types technically work, but STANDARD is the natural fit (no capital fronting = no benefit from INSTANT/SCHEDULED)
-- [ ] On cancel/suspend: each VP is unlocked independently
-- [ ] If risk-locked: `unlockAndProcess` after finalization, or `processWithdraw` after cooldown
-
-**Why INSTANT/SCHEDULED are suboptimal for pure virtual:**
-- INSTANT: Locks VP funds at acceptance but still waits `securityWindow` (20s). No express capital is fronted. The 20s delay exists for risk checks on pool capital — but there's no pool capital at risk. Still valid but unnecessary delay.
-- SCHEDULED: Ring buffer reservation for `generalAmount = 0` and `affiliateAmount = 0` is a no-op (`isLiquidityAvailableBy` with amount=0 always returns true). Works but adds no value.
-- STANDARD is the correct choice: no pretense of speed, just route through VPs after cooldown.
-
-#### Numeric Example: Pure Virtual Withdrawal — 1,000 USDC from 2 VPs
+When pool liquidity alone is insufficient for INSTANT but the user has eligible credit balance, the bot can offer a credit-backed option:
 
 ```
-Scenario: Pure virtual STANDARD — entire withdrawal from VirtualProviders, no express pools
-
-Setup:
-  generalBalance = 500 USDC, lockedGeneralBalance = 500 (zero unlocked)
-  affiliateBalances[userAffiliate] = 0 (no affiliate liquidity)
-  VP-A (affiliate X): _balance = 2,000, _lockedBalance = 0
-  VP-B (affiliate Y): _balance = 3,000, _lockedBalance = 0
-  affiliateConfigs[affiliate] = { feeRate: 100 bps (1%), operatorFee: 2 USDC }
-  sponsorBalances[affiliate] = 0, nonces[user] = 12
-
-Step 1 — Bot sees: User requests withdrawal of 1,000 USDC
-  Bot reads on-chain:
-    - generalBalance - lockedGeneralBalance = 500 - 500 = 0 (zero unlocked general)
-    - affiliateBalances[userAffiliate] = 0 (zero affiliate)
-    - VP-A.getBalance() = 2,000
-    - VP-B.getBalance() = 3,000
-  Bot checks: Are any express pools available?
-    Unlocked general = 0, affiliate = 0. NO express pool liquidity.
-    expressAmount must be 0 (no express-only parts possible).
-  Bot checks: Must affiliateAmount be 0?
-    YES. generalAmount = expressAmount - affiliateAmount. If affiliateAmount > 0 with
-    expressAmount = 0, the subtraction 0 - affiliateAmount causes arithmetic underflow
-    and reverts. affiliateAmount MUST be 0 for pure virtual.
-  Bot checks: Can VPs cover the full amount?
-    VP-A: 2,000 >= 600? YES. VP-B: 3,000 >= 400? YES. Route 600 via VP-A, 400 via VP-B.
-  Bot checks: Which option type?
-    No express capital is fronted, so INSTANT (20s securityWindow) adds no value —
-    there's no pool capital at risk. STANDARD is the natural fit.
-  Decision: Offer STANDARD pure-virtual withdrawal. Sign with affiliateAmount=0.
-
-Step 2 — Bot constructs parts and signs
-  Bot constructs parts:
-    Part 0: { amount: 600, expressProvider: EP, virtualProvider: VP-A, receiver: 0xUser }
-    Part 1: { amount: 400, expressProvider: EP, virtualProvider: VP-B, receiver: 0xUser }
-  Bot computes:
-    expressAmount = 0 (every part has a virtualProvider — no express-only parts)
-    virtualExpressAmount = 600 + 400 = 1,000
-    affiliateAmount = 0 (MUST be 0)
-    generalAmount = 0 - 0 = 0
-    feeBasis = 0 + 1,000 = 1,000
-    fee = 1,000 * 100 / 10,000 = 10 USDC
-    operatorFee = 2 USDC (matches on-chain config)
-    totalFee = 12, sponsorCoverage = 0, maxUserFee = 12
-  Decision: Sign STANDARD option with nonce=12, affiliateAmount=0, fee=10, operatorFee=2
-
-Step 3 — Bot sees: WithdrawAccepted event
-  Bot reads on-chain:
-    - status = ACCEPTED (1), nonces[user] = 13
-    - Contract verified: fee = feeBasis * feeRate / 10000 → 10 == 1,000 * 100 / 10000 ✓
-    - Contract verified: operatorFee = affiliateConfigs.operatorFee → 2 == 2 ✓
-    - Contract verified: fee + operatorFee <= feeBasis → 12 <= 1,000 ✓
-    - STANDARD → _lockFunds SKIPPED (no pool locking)
-    - VP-A: _balance = 1,400 (locked 600), _lockedBalance = 600
-    - VP-B: _balance = 2,600 (locked 400), _lockedBalance = 400
-    - lockedGeneralBalance = 500 (unchanged), affiliateBalances = 0 (unchanged)
-  Bot checks: Did everything lock correctly? YES. No express pools were touched.
-  Decision: Schedule finalizeWithdrawRequest at cooldownEndTime (T+12h). Wait.
-
-    What if user cancels at T=5s?
-      STANDARD + ACCEPTED is cancellable. _releaseWithdraw triggers:
-        VP-A.unlock(user, reqId) → _lockedBalance 600→0, _balance 1,400→2,000
-        VP-B.unlock(user, reqId) → _lockedBalance 400→0, _balance 2,600→3,000
-        No pool changes, no sponsor refund (sponsor = 0). Status = CANCELLED.
-
-    What if VP-A only had 500 at signing time?
-      Bot would split differently: 500 from VP-A, 500 from VP-B (VP-B has 3,000).
-      The bot MUST check VP.getBalance() >= part.amount for each VP before signing.
-      If total VP liquidity < 1,000, bot cannot offer this withdrawal at all.
-
-Step 4 — Bot sees: block.timestamp >= cooldownEndTime (T=12h)
-  Bot reads on-chain:
-    - status == ACCEPTED (no lock or cancel occurred)
-  Bot checks: Need to finalize. For pure virtual, SYMMIO will send 0 tokens
-    (expressAmount = 0), but onWithdrawComplete still sets finalizedAt.
-  Decision: Call SYMMIO.finalizeWithdrawRequest(user, reqId).
-
-  On-chain result:
-    SYMMIO computes express-only amount = 0 → NO TOKEN TRANSFER to ExpressProvider.
-    SYMMIO calls onWithdrawComplete(req):
-      optionType == STANDARD, status == ACCEPTED → status = FINALIZED (4)
-      finalizedAt = block.timestamp
-      No pool replenishment (generalAmount = 0, affiliateAmount = 0)
-
-Step 5 — Bot sees: WithdrawFinalized event
-  Bot reads on-chain:
-    - status = FINALIZED (4), finalizedAt = T+12h
-    - optionType = STANDARD → processableAt = finalizedAt
-  Bot checks: Am I OPERATOR_ROLE? YES → no tolerancePeriod added.
-    block.timestamp >= processableAt? YES.
-  Decision: Call processWithdraw immediately. No tokens to wait for — VPs hold everything.
-
-  Fee cascading in transferToReceivers:
-    userFee = totalFee - sponsorCoverage = 12 - 0 = 12
-    collectedFees[affiliate] += 10, collectedOperatorFees[affiliate] += 2
-    feeRemaining = 12
-
-    Part 0 (600 via VP-A):
-      deduction = min(12, 600) = 12
-      Fee portion: VP-A.releaseToUser(user, reqId, EP_address, 12)
-        → 12 USDC from VP-A to ExpressProvider (fee)
-        VP-A._lockedForWithdraw -= 12, _lockedBalance = 600 - 12 = 588
-      User portion: VP-A.releaseToUser(user, reqId, receiver, 588)
-        → 588 USDC from VP-A to user
-        VP-A._lockedForWithdraw -= 588, _lockedBalance = 588 - 588 = 0
-      feeRemaining = 0
-
-    Part 1 (400 via VP-B):
-      deduction = min(0, 400) = 0 (fee already exhausted)
-      VP-B.releaseToUser(user, reqId, receiver, 400)
-        → 400 USDC from VP-B to user
-        VP-B._lockedBalance = 400 - 400 = 0
-
-  Pool updates: optionType == STANDARD → no generalBalance or affiliateBalance changes.
-  ExpressProvider never held or forwarded any tokens from its own pools — only coordinated VP releases.
-  Status = PROCESSED
-
-Final accounting:
-  User receives: 588 + 400 = 988 USDC
-  Fees collected: 12 USDC (10 affiliate + 2 operator)
-  Total: 988 + 12 = 1,000 ✓
-  VP-A: _balance = 1,400, _lockedBalance = 0
-  VP-B: _balance = 2,600, _lockedBalance = 0
+Example: 500 USDC withdrawal
+  - affiliateAmount = 100 (from affiliate pool)
+  - creditAmount = 200 (from credit line)
+  - generalAmount = 200 (from general pool)
+  - expressAmount = 500 (total)
 ```
 
-#### Numeric Example: Pure Virtual Withdrawal — LOCKED + Finalized Resolution
-
-```
-Scenario: Pure virtual STANDARD withdrawal gets risk-locked, then resolved after finalization
-
-Setup:
-  Same as the pure virtual example above:
-    VP-A: _balance = 1,400, _lockedBalance = 600 (locked for this withdrawal)
-    VP-B: _balance = 2,600, _lockedBalance = 400 (locked for this withdrawal)
-    affiliateConfigs[affiliate] = { feeRate: 100 bps (1%), operatorFee: 2 USDC }
-    fee = 10, operatorFee = 2, totalFee = 12, sponsorCoverage = 0
-    expressAmount = 0, virtualExpressAmount = 1,000, generalAmount = 0
-    status = ACCEPTED, cooldownEndTime = T+12h
-
-Step 1 — Bot sees: WithdrawAccepted event at T=0
-  Bot reads on-chain:
-    - status = ACCEPTED (1)
-    - VP-A._lockedBalance = 600, VP-B._lockedBalance = 400
-  Bot checks: Risk signals for this user/withdrawal.
-  Decision: Accept and monitor. Schedule finalization at T+12h.
-
-Step 2 — LOCKER_ROLE sees: Risk signal at T=5s
-  LOCKER_ROLE reads on-chain:
-    - status == ACCEPTED (1) — lockWithdraw requires ACCEPTED
-  LOCKER_ROLE checks: Is this withdrawal suspicious? YES (anomaly detected).
-  Decision: Call lockWithdraw(user, reqId).
-
-  On-chain result:
-    status: ACCEPTED → LOCKED (2)
-    Emits: WithdrawLocked(user, reqId)
-    VP funds remain locked (VP-A: 600, VP-B: 400) — unlock only happens on cancel/suspend.
-
-Step 3 — Bot sees: block.timestamp reaches cooldownEndTime (T=12h)
-  Bot reads on-chain:
-    - status == LOCKED (2) — not ACCEPTED, not FINALIZED
-  Bot checks: Can I call processWithdraw?
-    isLockedAfterCooldown = (status == LOCKED && block.timestamp >= cooldownEndTime)
-      = (true && true) = true
-    For STANDARD: need finalizedAt != 0. But finalizedAt == 0 (not finalized yet).
-    Code path: `if (isLockedAfterCooldown && info.finalizedAt == 0)` → contract will
-    call SYMMIO.finalizeWithdrawRequest internally before processing.
-  Decision: Call processWithdraw(user, reqId, parts) — the contract will auto-finalize.
-
-    What if UNLOCK_ROLE wants to resolve BEFORE cooldown?
-      UNLOCK_ROLE calls unlockAndProcess(user, reqId, parts).
-      Contract checks: status == LOCKED? YES. finalizedAt != 0? NO → REVERT NotFinalized.
-      unlockAndProcess CANNOT be used before finalization for STANDARD.
-      The UNLOCK_ROLE must wait for onWithdrawComplete to set finalizedAt first.
-
-  Auto-finalize on-chain (inside processWithdraw, before transfers):
-    Contract calls SYMMIO.finalizeWithdrawRequest(user, reqId).
-    SYMMIO computes express-only amount = 0 → NO TOKEN TRANSFER.
-    SYMMIO calls onWithdrawComplete(req):
-      status == LOCKED → status stays LOCKED (code: `if (info.status == ACCEPTED)` is false)
-      finalizedAt = block.timestamp
-    Now finalizedAt != 0, and isLockedAfterCooldown is still true → processing proceeds.
-
-  Fee cascading (same as non-locked case):
-    userFee = 12, feeRemaining = 12
-
-    Part 0 (600 via VP-A):
-      deduction = min(12, 600) = 12
-      VP-A.releaseToUser(EP_address, 12) → 12 USDC fee to ExpressProvider
-      VP-A.releaseToUser(receiver, 588) → 588 USDC to user
-      VP-A._lockedBalance: 600 → 0
-
-    Part 1 (400 via VP-B):
-      deduction = min(0, 400) = 0
-      VP-B.releaseToUser(receiver, 400) → 400 USDC to user
-      VP-B._lockedBalance: 400 → 0
-
-  collectedFees[affiliate] += 10, collectedOperatorFees[affiliate] += 2
-  Status = PROCESSED
-  User receives: 588 + 400 = 988 USDC. Fees: 12. Total: 1,000 ✓
-
---- Alternative resolution paths ---
-
-Alternative A — UNLOCK_ROLE resolves after finalization (but before cooldown expires):
-  Precondition: onWithdrawComplete has already been called (e.g., someone else finalized
-    at T=12h), setting finalizedAt != 0. But it's now T=12h+5s.
-  UNLOCK_ROLE reads on-chain:
-    - status == LOCKED (2), finalizedAt != 0
-  UNLOCK_ROLE checks: unlockAndProcess requires LOCKED and finalizedAt != 0. Both met.
-  Decision: Call unlockAndProcess(user, reqId, parts).
-  On-chain result: Same fee cascading and VP releases as above. Status = PROCESSED.
-
-Alternative B — SYMMIO suspends BEFORE finalization (T=1h):
-  Bot sees: onWithdrawSuspend callback at T=1h
-  Bot reads on-chain:
-    - status == LOCKED (2), finalizedAt == 0
-  Contract checks: status == LOCKED? YES. finalizedAt != 0? NO (== 0) → suspension allowed.
-    (Code: `if (info.optionType == OptionType.STANDARD && info.finalizedAt != 0) revert`)
-  On-chain result:
-    _releaseWithdraw:
-      VP-A.unlock(user, reqId) → _lockedBalance 600→0, _balance 1,400→2,000
-      VP-B.unlock(user, reqId) → _lockedBalance 400→0, _balance 2,600→3,000
-      No pool changes (pure virtual), no sponsor refund (sponsor=0)
-    Status = SUSPENDED (terminal)
-
-    What if SYMMIO tries to suspend AFTER finalization (T=13h)?
-      status == LOCKED (2), finalizedAt != 0
-      Code: `if (info.optionType == OptionType.STANDARD && info.finalizedAt != 0)` → true
-      REVERT: InvalidStatusForSuspend
-      Cannot suspend a finalized STANDARD — tokens are already committed. Must resolve
-      via unlockAndProcess or processWithdraw (after cooldown).
-```
+The bot MUST verify:
+- [ ] `creditLineManagers(affiliate) != address(0)` — credit line is configured
+- [ ] CreditLineManager is not paused
+- [ ] User is not blacklisted on the CreditLineManager
+- [ ] `affiliateAmount + creditAmount <= expressAmount` (else reverts `FundingSplitExceedsExpress`)
 
 ---
 
@@ -1368,7 +1047,7 @@ flowchart TD
     B --> B3["sponsorBalances(affiliate)"]
     B --> B4["generalBalance, lockedGeneralBalance"]
     B --> B5["affiliateBalances, lockedAffiliateBalances"]
-    B --> B6["VP.getBalance()"]
+    B --> B6["CLM.totalDebt()"]
 
     B1 & B2 & B3 & B4 & B5 & B6 --> C{Compute available liquidity}
 
@@ -1384,10 +1063,7 @@ flowchart TD
 
     C --> G[Always offer STANDARD]
 
-    C --> PV{General + affiliate pools\ninsufficient but VPs\nfrom other affiliates\nhave liquidity?}
-    PV -->|Yes| PV1["Offer PURE VIRTUAL STANDARD\n(affiliateAmount=0, all VP parts)"]
-
-    D2 & E1 & F1 & G & PV1 --> H[Compute fees & sponsor coverage]
+    D2 & E1 & F1 & G --> H[Compute fees & sponsor coverage]
     H --> I[Sign EIP-712 WithdrawOption]
     I --> J[Return options to user]
 ```
@@ -1396,13 +1072,13 @@ flowchart TD
 
 - [ ] Read `expressProvider.nonces(user)` for current nonce
 - [ ] Read `affiliateConfigs(affiliate)` for `feeRate` and `operatorFee`
-- [ ] Compute fee: `fee = (expressAmount + virtualExpressAmount) * feeRate / 10000`
+- [ ] Compute fee: `fee = expressAmount * feeRate / 10000`
 - [ ] Read `sponsorBalances(affiliate)` and `sponsorConfigs(affiliate)` for sponsor coverage
 - [ ] Compute `maxUserFee = (fee + operatorFee) - sponsorCoverage`
-- [ ] Check `fee + operatorFee <= expressAmount + virtualExpressAmount` (else reverts `FeesExceedExpressAmount`)
+- [ ] Check `fee + operatorFee <= expressAmount` (else reverts `FeesExceedExpressAmount`)
 - [ ] Check available general pool: `generalBalance - lockedGeneralBalance >= generalAmount`
 - [ ] Check available affiliate pool: `affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate] >= affiliateAmount`
-- [ ] Check VirtualProvider balance: `getBalance() >= virtualAmount` for each VP
+- [ ] Check credit line capacity: `creditLineManagers(affiliate) != address(0)` if using credit
 - [ ] For IMMEDIATE: verify `minValidatorSignatures > 0`
 - [ ] For SCHEDULED: call `getEarliestExpressAvailability(affiliate, totalAmount)` to find `availableAt`
 - [ ] If validators required: gather >= `minValidatorSignatures` attestations
@@ -1494,7 +1170,7 @@ Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
 
   Bot decides the parts split:
     1 part, express-only: 500e6 to 0xReceiver, expressProvider=0xEP, virtualProvider=0x0
-    expressAmount = 500e6, virtualExpressAmount = 0
+    expressAmount = 500e6, creditAmount = 0
     affiliateAmount = 200e6 (bot chooses to draw 200 from affiliate pool)
     generalAmount = 500 - 200 = 300e6
 
@@ -1507,7 +1183,7 @@ Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
     minValidatorSignatures = 0 -- NO (validators required for IMMEDIATE)
 
   Bot computes fee:
-    feeBasis = expressAmount + virtualExpressAmount = 500e6 + 0 = 500e6
+    feeBasis = expressAmount = 500e6
     fee = 500e6 * 50 / 10000 = 2.5e6 (2.50 USDC)
     operatorFee = 1e6 (1.00 USDC)
     sponsorCoverage = 0 (no sponsor balance)
@@ -1644,47 +1320,48 @@ flowchart LR
 
 Each `WithdrawReceiverPart`:
 
-| Field | Express-only | Express+Virtual | Non-express |
-|-------|-------------|-----------------|-------------|
-| `expressProvider` | ExpressProvider address | ExpressProvider address | `address(0)` |
-| `virtualProvider` | `address(0)` | VirtualProvider address | varies |
-| `amount` | collateral decimals | collateral decimals | collateral decimals |
-| `receiver` | user's receiver address | user's receiver address | user's receiver address |
+| Field | Express part | Non-express |
+|-------|-------------|-------------|
+| `expressProvider` | ExpressProvider address | `address(0)` |
+| `virtualProvider` | `address(0)` (DEPRECATED, must be zero) | varies |
+| `amount` | collateral decimals | collateral decimals |
+| `receiver` | user's receiver address | user's receiver address |
 
 **Amount classification:**
-- `expressAmount` = sum of parts where `expressProvider == this` AND `virtualProvider == address(0)`
-- `virtualExpressAmount` = sum of parts where `expressProvider == this` AND `virtualProvider != address(0)`
-- `generalAmount = expressAmount - affiliateAmount`
-- `feeBasis = expressAmount + virtualExpressAmount`
+- `expressAmount` = sum of parts where `expressProvider == address(this)`
+- `generalAmount = expressAmount - affiliateAmount - creditAmount`
+- `feeBasis = expressAmount`
+
+Note: `virtualProvider` must always be `address(0)`. Any non-zero value reverts `VirtualProviderDeprecated`.
 
 ```mermaid
 flowchart TD
     P[Parts Array] --> C1{expressProvider == this?}
     C1 -->|No| SKIP[Skipped by ExpressProvider]
-    C1 -->|Yes| C2{virtualProvider == 0?}
-    C2 -->|Yes| EO[Express-only\n→ adds to expressAmount]
-    C2 -->|No| EV[Express+Virtual\n→ adds to virtualExpressAmount]
+    C1 -->|Yes| EO[Adds to expressAmount]
 
-    EO --> GA["generalAmount = expressAmount - affiliateAmount"]
-    EV --> FB["feeBasis = expressAmount + virtualExpressAmount"]
+    EO --> GA["generalAmount = expressAmount - affiliateAmount - creditAmount"]
+    EO --> FB["feeBasis = expressAmount"]
 ```
 
 ### 4.3 providerData Encoding
 
 ```
-providerData = abi.encode(optionData, validatorData)
+providerData = abi.encode(optionData, validatorData, creditDataRaw)
   where:
-    optionData = abi.encode(DecodedOption struct)
+    optionData = abi.encode(DecodedOption struct — includes creditAmount field)
     validatorData = abi.encode(bytes[] signatures, uint256[] timestamps, uint256 symmioNonce)
+    creditDataRaw = abi.encode(CreditData) if creditAmount > 0, else empty bytes
 ```
 
 If no validators needed, `validatorData = abi.encode(new bytes[](0), new uint256[](0), uint256(0))`.
+If no credit used, `creditDataRaw` is empty bytes (`""`).
 
-#### Numeric Example: Parts Construction for Mixed Withdrawal
+#### Numeric Example: Parts Construction for Credit-Backed Withdrawal
 
 ```
 Scenario: User wants to withdraw 1,500 USDC, sent to two different receivers.
-          Bot must decide which pools and VirtualProviders to draw from,
+          Bot must decide how to split across pools and credit line,
           construct the parts array, and compute all derived amounts.
 
 Setup:
@@ -1692,9 +1369,9 @@ Setup:
   lockedGeneralBalance     = 4,600e6 USDC   (heavy utilization)
   affiliateBalances[0xAff] = 1,000e6 USDC
   lockedAffiliateBalances  =     0e6 USDC
-  virtualProviders[0xAff]  = 0xVP1           (affiliate's own VP)
-  VP1.getBalance()         = 800e6 USDC
-  VP2.getBalance()         = 500e6 USDC      (a different affiliate's VP)
+  creditLineManagers[0xAff]= 0xCLM           (affiliate's credit line manager)
+  CLM.totalDebt()          = 200e6 USDC      (existing debt)
+  CLM.protocolMaxDebt      = 5,000e6         (plenty of headroom)
   affiliateConfigs(0xAff)  = { feeRate: 100 bps, operatorFee: 2e6 }
   sponsorBalances(0xAff)   = 10e6 USDC
   sponsorConfigs(0xAff)    = { maxFeePerWithdraw: 0, maxWithdrawAmount: 0 } (no caps)
@@ -1707,84 +1384,51 @@ Step 1 -- Bot sees: User requests options for 1,500 USDC withdrawal
   Bot reads on-chain:
     Unlocked general = generalBalance - lockedGeneralBalance = 5,000 - 4,600 = 400e6
     Unlocked affiliate = affiliateBalances[0xAff] - lockedAffiliateBalances[0xAff] = 1,000 - 0 = 1,000e6
-    VP1.getBalance() = 800e6
-    VP2.getBalance() = 500e6
 
-  Bot checks: "Can I cover 1,500 USDC from express pools alone (express-only parts)?"
-    Total unlocked express = 400 (general) + 1,000 (affiliate) = 1,400e6
-    1,400 < 1,500 -- NO, not enough for pure express-only.
+  Bot checks: "Can I cover 1,500 USDC from pools alone?"
+    Total unlocked = 400 (general) + 1,000 (affiliate) = 1,400e6
+    1,400 < 1,500 -- NO, not enough from pools alone.
 
-  Bot checks: "Can I cover the gap using VirtualProviders?"
-    Shortfall = 1,500 - 1,400 = 100e6 minimum from VPs
-    VP1 has 800e6, VP2 has 500e6 -- YES, plenty of VP liquidity.
+  Bot checks: "Can I cover the gap using the credit line?"
+    Shortfall = 1,500 - 1,400 = 100e6 minimum from credit
+    CLM headroom = protocolMaxDebt - totalDebt = 5,000 - 200 = 4,800e6
+    100 <= 4,800 -- YES, credit line has headroom.
+    Bot also obtains Muon attestation for user's eligibleBase.
 
-  Decision: Use a mix of express-only and express+virtual parts.
-    The bot must decide HOW to split across pools. Key constraints:
-      - expressAmount (express-only parts) draws from general + affiliate pools
-      - Each VP part is independent: locked on that VP, released from that VP
-      - affiliateAmount <= expressAmount (it's a subset of the express-only pool)
-      - Fee is computed on feeBasis = expressAmount + virtualExpressAmount
+  Decision: Use pools + credit line. creditAmount = 100e6 to cover the gap.
 
 ----------------------------------------------------------------------
 
-Step 2 -- Bot decides: How to split into parts
+Step 2 -- Bot decides: How to split into parts and funding sources
 
-  Strategy: Minimize capital from the tight general pool. Use VPs for the rest.
+  Strategy: Maximize affiliate pool usage, use credit for the shortfall.
 
-  Bot assigns to 0xReceiverA (1,000 USDC total):
-    - 700e6 as express-only (draws from general + affiliate pools)
-    - 300e6 as express+virtual from VP2
+  affiliateAmount = 1,000e6 (use full unlocked affiliate pool)
+  creditAmount    = 100e6   (cover the shortfall via credit line)
+  generalAmount   = expressAmount - affiliateAmount - creditAmount
+                  = 1,500 - 1,000 - 100 = 400e6
+  Unlocked general (400e6) >= generalAmount (400e6)?  YES, exactly enough.
 
-  Bot assigns to 0xReceiverB (500 USDC total):
-    - 500e6 as express+virtual from VP1
+  Bot checks: affiliateAmount + creditAmount <= expressAmount?
+    1,000 + 100 = 1,100 <= 1,500?  YES (else reverts FundingSplitExceedsExpress)
 
-  Why this split?
-    - Express-only total is 700e6. Bot sets affiliateAmount = 200e6, so
-      generalAmount = 700 - 200 = 500e6.
-    - But wait: unlocked general is only 400e6 and generalAmount is 500e6.
-      500 > 400 -- this would revert with InsufficientGeneralBalance!
-
-  Bot catches this and adjusts:
-    - Reduce express-only to 600e6 for 0xReceiverA.
-    - Increase VP2 part to 400e6 for 0xReceiverA.
-    - Keep VP1 part at 500e6 for 0xReceiverB.
-    - Set affiliateAmount = 200e6, so generalAmount = 600 - 200 = 400e6.
-    - Unlocked general (400e6) >= generalAmount (400e6)?  YES, exactly enough.
-    - Unlocked affiliate (1,000e6) >= affiliateAmount (200e6)?  YES.
-
-  Bot checks VP balances:
-    VP1.getBalance() (800e6) >= 500e6?  YES
-    VP2.getBalance() (500e6) >= 400e6?  YES
-
-  Final parts array:
+  Final parts array (all virtualProvider = address(0)):
   [
-    { id: 0, amount: 600e6, receiver: 0xReceiverA,
-      expressProvider: 0xEP, virtualProvider: 0x0 },        // express-only
-    { id: 1, amount: 400e6, receiver: 0xReceiverA,
-      expressProvider: 0xEP, virtualProvider: 0xVP2 },      // express+virtual
-    { id: 2, amount: 500e6, receiver: 0xReceiverB,
-      expressProvider: 0xEP, virtualProvider: 0xVP1 },      // express+virtual
+    { id: 0, amount: 1000e6, receiver: 0xReceiverA,
+      expressProvider: 0xEP, virtualProvider: 0x0 },
+    { id: 1, amount: 500e6, receiver: 0xReceiverB,
+      expressProvider: 0xEP, virtualProvider: 0x0 },
   ]
 
-  What if VP2 only had 300e6 instead of 500e6?
-    Bot cannot fit 400e6 into VP2. Options:
-    a) Reduce VP2 part to 300e6, increase express-only to 700e6,
-       but then generalAmount = 700 - 200 = 500 > 400 unlocked. Still fails.
-    b) Increase affiliateAmount to 300e6: generalAmount = 700 - 300 = 400. Works,
-       if affiliate pool has enough (1,000 >= 300, yes).
-    c) Fall back to SCHEDULED or STANDARD if no split works for INSTANT.
-
 ----------------------------------------------------------------------
 
-Step 3 -- Bot decides: Classification and fee computation
+Step 3 -- Bot computes: Fee computation
 
   From the parts array, computeAmounts will derive:
-    expressAmount        = 600e6   (part 0: expressProvider=0xEP, virtualProvider=0x0)
-    virtualExpressAmount = 400e6 + 500e6 = 900e6   (parts 1+2: both providers set)
-    affiliateAmount      = 200e6   (bot's choice, signed in the option)
-    generalAmount        = 600 - 200 = 400e6
+    expressAmount   = 1,000 + 500 = 1,500e6
+    generalAmount   = 1,500 - 1,000 - 100 = 400e6
 
-  feeBasis = expressAmount + virtualExpressAmount = 600 + 900 = 1,500e6
+  feeBasis = expressAmount = 1,500e6
   fee = 1,500e6 * 100 / 10000 = 15e6 (15 USDC, at 1% rate)
   operatorFee = 2e6 (2 USDC)
   totalFee = 15 + 2 = 17e6
@@ -1798,49 +1442,45 @@ Step 3 -- Bot decides: Classification and fee computation
     sponsorCoverage = min(sponsorBal=10e6, maxCoverage=17e6) = 10e6
     maxUserFee = 17 - 10 = 7e6  (user pays 7 USDC out of 17 total)
 
-  Bot checks: maxUserFee (7e6) -- is this acceptable to offer?  YES
-
   partsHash = keccak256(abi.encode(parts))  -- bot MUST store this
 
-  Decision: Sign the option with these parameters and return to user.
+  Decision: Sign the option (including creditAmount=100e6) and return to user.
 
 ----------------------------------------------------------------------
 
 Step 4 -- What happens on-chain at acceptance (for reference)
 
   onWithdrawRequest will:
-    1. Verify EIP-712 signature and nonce
-    2. Call computeAmounts -> expressAmount=600, virtualExpressAmount=900, generalAmount=400
+    1. Verify EIP-712 signature and nonce (includes creditAmount in struct hash)
+    2. Call computeAmounts -> expressAmount=1500, generalAmount=400
     3. Verify fee = (1500e6 * 100) / 10000 = 15e6  (matches signed fee)
     4. Verify operatorFee = 2e6  (matches on-chain config)
     5. Lock general pool: lockedGeneralBalance += 400e6  (now 5,000e6)
-    6. Lock affiliate pool: lockedAffiliateBalances[0xAff] += 200e6
-    7. Lock virtual funds:
-       VP2.lockForWithdraw(user, reqId, 400e6) -- VP2._balance -= 400, VP2._lockedBalance += 400
-       VP1.lockForWithdraw(user, reqId, 500e6) -- VP1._balance -= 500, VP1._lockedBalance += 500
+    6. Lock affiliate pool: lockedAffiliateBalances[0xAff] += 1,000e6
+    7. Reserve credit: CLM.reserveDebt(user, reqId, 100e6, creditData)
+       CLM.reservedDebt += 100e6
     8. Lock sponsor coverage: sponsorBalances[0xAff] -= 10e6 (now 0)
-    9. Store WithdrawInfo with partsHash
+    9. Store WithdrawInfo with partsHash, creditAmount=100, creditLineManager=0xCLM
    10. Status = ACCEPTED
 
-  At processWithdraw, fee deduction cascades across parts in order:
-    userFee = 17 - 10 (sponsor) = 7e6 remaining
-    Part 0 (express-only, 600e6): deduction = min(7e6, 600e6) = 7e6
-      Transfer 600 - 7 = 593e6 USDC from EP to 0xReceiverA
-      feeRemaining = 0
-    Part 1 (express+virtual via VP2, 400e6): deduction = min(0, 400e6) = 0
-      VP2.releaseToUser(user, reqId, 0xReceiverA, 400e6)
-    Part 2 (express+virtual via VP1, 500e6): deduction = min(0, 500e6) = 0
-      VP1.releaseToUser(user, reqId, 0xReceiverB, 500e6)
+  At processWithdraw:
+    1. Activate credit: CLM.activateDebt -> reservedDebt -= 100, activeDebt += 100
+    2. Advance from core: SYMMIO.advanceWithdraw(user, reqId, 100e6)
+    3. Fee deduction cascades across parts in order:
+       userFee = 17 - 10 (sponsor) = 7e6 remaining
+       Part 0 (1,000e6): deduction = min(7e6, 1,000e6) = 7e6
+         Transfer 1,000 - 7 = 993e6 USDC to 0xReceiverA
+         feeRemaining = 0
+       Part 1 (500e6): deduction = 0
+         Transfer 500e6 USDC to 0xReceiverB
 
   Net result:
-    0xReceiverA gets 593 + 400 = 993 USDC
+    0xReceiverA gets 993 USDC
     0xReceiverB gets 500 USDC
     collectedFees[0xAff] += 15e6
     collectedOperatorFees[0xAff] += 2e6
-    Total distributed: 993 + 500 + 15 + 2 = 1,510 -- but wait,
-      10 came from sponsor, so: 993 + 500 = 1,493 from pools,
-      15 + 2 = 17 fees (10 sponsor-funded + 7 user-funded). Checks out:
-      user deposited 1,500, got back 1,500 - 7 = 1,493.
+    User deposited 1,500, got back 1,500 - 7 = 1,493.
+    Credit line: 100 USDC active debt, settled on finalization.
 ```
 
 ---
@@ -1980,7 +1620,7 @@ Step 4 — Bot sees: cooldownEndTime reached at T=43,200s (~block 43400)
 
 ```mermaid
 flowchart TD
-    A["feeBasis = expressAmount + virtualExpressAmount"] --> B["fee = (feeBasis × feeRate) / 10,000"]
+    A["feeBasis = expressAmount"] --> B["fee = (feeBasis × feeRate) / 10,000"]
     B --> C["operatorFee = affiliateConfigs[affiliate].operatorFee"]
     C --> D["totalFee = fee + operatorFee"]
     D --> E{On-chain validation}
@@ -2006,11 +1646,8 @@ flowchart TD
     B -->|Yes| C["deduction = min(feeRemaining, part.amount)"]
     C --> D["feeRemaining -= deduction"]
     D --> E["netTransfer = part.amount - deduction"]
-    E --> F{Express-only?}
-    F -->|Yes| G["EP.transfer(receiver, netTransfer)"]
-    F -->|No virtual| H["VP.releaseToUser(EP, deduction)\nVP.releaseToUser(receiver, netTransfer)"]
+    E --> G["Transfer(receiver, netTransfer)"]
     G --> I{netTransfer == 0?}
-    H --> I
     I -->|Yes| J[Skip transfer]
     I -->|No| B
     B -->|No more parts| K[Done]
@@ -2026,12 +1663,11 @@ Setup:
   feeRate                = 150 bps (1.5%)
   operatorFee            = 0 USDC
   sponsorBalance         = 0 USDC (no sponsor)
-  expressAmount          = 500 USDC (parts 1+2 combined, express-only)
-  virtualExpressAmount   = 500 USDC (part 3, express+virtual via VP1)
+  expressAmount          = 1,000 USDC (all 3 parts combined, express-only)
   Parts (order matters for fee cascading):
-    Part 0: { amount: 100 USDC, express-only,         receiver: 0xA }
-    Part 1: { amount: 400 USDC, express-only,         receiver: 0xB }
-    Part 2: { amount: 500 USDC, express+virtual VP1,  receiver: 0xC }
+    Part 0: { amount: 100 USDC, express-only, virtualProvider: 0x0, receiver: 0xA }
+    Part 1: { amount: 400 USDC, express-only, virtualProvider: 0x0, receiver: 0xB }
+    Part 2: { amount: 500 USDC, express-only, virtualProvider: 0x0, receiver: 0xC }
 
 Step 1 — Bot sees: withdraw request from Alice for 1,000 USDC across 3 parts
   Bot reads on-chain:
@@ -2039,7 +1675,7 @@ Step 1 — Bot sees: withdraw request from Alice for 1,000 USDC across 3 parts
     affiliateConfigs[0xFrontend].operatorFee = 0
     sponsorBalances[0xFrontend]             = 0
   Bot checks:
-    feeBasis   = expressAmount + virtualExpressAmount = 500 + 500 = 1,000 USDC
+    feeBasis   = expressAmount = 1,000 USDC
     fee        = (1,000 * 150) / 10,000 = 15 USDC
     operatorFee = 0 USDC
     totalFee   = 15 + 0 = 15 USDC
@@ -2067,11 +1703,11 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
     -> collateral.safeTransfer(0xB, 400)
     Receiver B gets: 400 USDC
 
-  Part 2 (500 USDC, express+virtual VP1, receiver 0xC):
+  Part 2 (500 USDC, express-only, receiver 0xC):
     deduction = min(0, 500) = 0
     feeRemaining = 0
     netTransfer = 500 - 0 = 500 USDC
-    -> VP1.releaseToUser(Alice, reqId, 0xC, 500)
+    -> collateral.safeTransfer(0xC, 500)
     Receiver C gets: 500 USDC
 
   Decision: Proceed — total received = 85 + 400 + 500 = 985 USDC (out of 1,000; 15 fee)
@@ -2377,7 +2013,7 @@ ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp
 
 - `user` -- withdrawing user
 - `nonce` -- same nonce as the WithdrawOption (the user's current nonce on ExpressProvider)
-- `amount` -- `expressAmount + virtualExpressAmount` (total fee-bearing amount)
+- `amount` -- `expressAmount` (total fee-bearing amount)
 - `timestamp` -- when the validator signed (must be <= `block.timestamp`)
 - `symmioNonce` -- user's current nonce on SYMMIO (`getUserNonce(user)`)
 
@@ -2432,7 +2068,7 @@ Setup:
   User: 0xAlice
     nonces[Alice]          = 5  (ExpressProvider nonce)
     getUserNonce(Alice)     = 12 (SYMMIO nonce)
-    expressAmount + virtualExpressAmount = 1,000e6 (1,000 USDC)
+    expressAmount = 1,000e6 (1,000 USDC)
 
 Step 1 — Bot sees: Alice requests IMMEDIATE withdrawal of 1,000 USDC
   Bot reads on-chain:
@@ -2453,7 +2089,7 @@ Step 2 — Bot sees: validator responses arrive
     V2 timestamp 102: is it in the past? YES
     Both used nonce=5 matching nonces[Alice]? YES
     Both used symmioNonce=12 matching getUserNonce(Alice)? YES
-    Both used amount=1000e6 matching expressAmount+virtualExpressAmount? YES
+    Both used amount=1000e6 matching expressAmount? YES
     Count: 2 valid sigs >= minValidatorSignatures (2)? YES
   Decision: Sort by signer address for encoding
     0xAAA...1 < 0xBBB...2 -> order: [sig_V1, sig_V2], timestamps: [100, 102]
@@ -2579,7 +2215,6 @@ getEarliestExpressAvailability(affiliate, amount):
   Simulates sync for both general and affiliate ring buffers (read-only)
   baseAvailable = (generalBalance - lockedGeneralBalance)
                 + (affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate])
-                + virtualProvider.getBalance()
   if baseAvailable >= amount: return (true, block.timestamp)
   deficit = amount - baseAvailable
 
@@ -2617,7 +2252,7 @@ Setup:
     Bucket 2 (+2h -> +3h):  expectedInflow = 3,000, reservedOutflow = 0
     Bucket 3 (+3h -> +4h):  expectedInflow = 0,     reservedOutflow = 1,000
 
-Step 1 -- Bot sees: withdrawal request from 0xAlice for 2,000 USDC (express-only, no VP)
+Step 1 -- Bot sees: withdrawal request from 0xAlice for 2,000 USDC
   Bot reads on-chain:
     nonces[0xAlice] = 7
     generalBalance - lockedGeneralBalance = 10,000 - 9,500 = 500 unlocked
@@ -2695,15 +2330,12 @@ Step 5 -- Bot processes at availableAt:
 flowchart TD
     A[WithdrawReceiverPart] --> B{"expressProvider\n== address(this)?"}
     B -->|No| C[Non-express\nSkipped entirely]
-    B -->|Yes| D{"virtualProvider\n== address(0)?"}
-    D -->|Yes| E["Express-only\nAdds to expressAmount\nFunds from EP pools"]
-    D -->|No| F["Express+Virtual\nAdds to virtualExpressAmount\nFunds from VirtualProvider"]
+    B -->|Yes| D["Express\nAdds to expressAmount\nFunds from EP pools"]
 ```
 
 | Part Type | Condition | Contributes to |
 |-----------|-----------|---------------|
-| Express-only | `expressProvider == this` AND `virtualProvider == address(0)` | `expressAmount` |
-| Express+Virtual | `expressProvider == this` AND `virtualProvider != address(0)` | `virtualExpressAmount` |
+| Express | `expressProvider == this` (virtualProvider must be `address(0)`) | `expressAmount` |
 | Non-express | `expressProvider != this` | Skipped entirely |
 
 ### 10.2 Multi-Part Fee Cascading
@@ -2719,13 +2351,13 @@ flowchart LR
     FEE -.->|"0"| P3
 ```
 
-### 10.3 Multiple VirtualProviders
+### 10.3 Credit Line in Multi-Part Withdrawals
 
-A single withdrawal can span multiple VirtualProviders (different affiliates):
-- Each VP's portion is locked independently via `lockForWithdraw`
-- Each VP's portion is released independently via `releaseToUser`
-- On cancel/suspend: each VP is unlocked independently via `unlock`
-- Fee is deducted from the first parts; VP fee portions are released to ExpressProvider
+When a withdrawal uses credit (creditAmount > 0), the credit line applies to the total withdrawal, not per-part:
+- At acceptance: `reserveDebt(creditAmount)` reserves the total credit across all parts
+- At processing: `activateDebt(creditAmount)` activates the debt when funds are transferred
+- At finalization: `settleDebt(creditAmount)` settles when SYMMIO reimburses
+- On cancel/suspend: `cancelReservation(creditAmount)` releases the reserved credit
 
 ### 10.4 partsHash Integrity
 
@@ -2734,46 +2366,47 @@ A single withdrawal can span multiple VirtualProviders (different affiliates):
 - [ ] ANY difference (amounts, receivers, order, count) causes `PartsMismatch` revert
 - [ ] Bot MUST store and replay the exact same parts array
 
-#### Numeric Example: 3-Part Withdrawal Across 2 VirtualProviders with Fee
+#### Numeric Example: 3-Part Express Withdrawal with Credit
 
 ```
-Scenario: Bot handles a multi-part INSTANT withdrawal spanning 2 VirtualProviders
+Scenario: Bot handles a multi-part INSTANT withdrawal with credit line
 
 Setup:
   generalBalance = 5,000 USDC,   lockedGeneralBalance = 4,500 USDC (500 unlocked)
   affiliateBalances[0xAffiliate] = 200 USDC, lockedAffiliateBalances[0xAffiliate] = 0
-  VP1.getBalance() = 800 USDC,   VP2.getBalance() = 600 USDC
+  creditLine.available() = 1,000 USDC
   affiliateConfigs[0xAffiliate] = { feeRate: 100 (1%), operatorFee: 2e6 }
   sponsorBalances[0xAffiliate] = 0 (no sponsor)
 
 Step 1 -- Bot sees: 0xAlice requests withdrawal of 1,300 USDC total, split into 3 parts:
-  Part 0: { amount: 300, expressProvider: EP, virtualProvider: 0x0,  receiver: 0xA }
-  Part 1: { amount: 600, expressProvider: EP, virtualProvider: VP1,  receiver: 0xA }
-  Part 2: { amount: 400, expressProvider: EP, virtualProvider: VP2,  receiver: 0xB }
+  Part 0: { amount: 300, expressProvider: EP, virtualProvider: 0x0, receiver: 0xA }
+  Part 1: { amount: 600, expressProvider: EP, virtualProvider: 0x0, receiver: 0xA }
+  Part 2: { amount: 400, expressProvider: EP, virtualProvider: 0x0, receiver: 0xB }
 
 Step 2 -- Bot classifies parts and computes amounts:
-  Bot reads each part's expressProvider and virtualProvider:
-    Part 0: expressProvider == EP, virtualProvider == 0x0 -> express-only
-    Part 1: expressProvider == EP, virtualProvider == VP1 -> express+virtual
-    Part 2: expressProvider == EP, virtualProvider == VP2 -> express+virtual
+  Bot reads each part's expressProvider:
+    Part 0: expressProvider == EP -> express
+    Part 1: expressProvider == EP -> express
+    Part 2: expressProvider == EP -> express
   Bot computes:
-    expressAmount = 300 (sum of express-only parts)
-    virtualExpressAmount = 600 + 400 = 1,000 (sum of express+virtual parts)
+    expressAmount = 300 + 600 + 400 = 1,300 (sum of all express parts)
 
-Step 3 -- Bot decides the affiliate/general split for the express-only portion:
+Step 3 -- Bot decides the affiliate/general/credit split:
   Bot checks: affiliateBalances[0xAffiliate] - lockedAffiliateBalances[0xAffiliate]
               = 200 - 0 = 200 unlocked affiliate USDC
   Bot checks: generalBalance - lockedGeneralBalance = 500 unlocked general USDC
-  Bot decides: allocate affiliateAmount = 100 from affiliate pool
-    -> generalAmount = expressAmount - affiliateAmount = 300 - 100 = 200
-  Bot checks: 200 <= 500 (unlocked general) -> OK
-              100 <= 200 (unlocked affiliate) -> OK
+  Bot checks: creditLine.available() = 1,000 USDC
+  Bot decides: allocate affiliateAmount = 200, generalAmount = 500, creditAmount = 600
+    -> expressAmount = affiliateAmount + generalAmount + creditAmount = 200 + 500 + 600 = 1,300
+  Bot checks: 500 <= 500 (unlocked general) -> OK
+              200 <= 200 (unlocked affiliate) -> OK
+              600 <= 1,000 (available credit) -> OK
 
 Step 4 -- Bot computes fees:
   Bot reads on-chain: affiliateConfigs[0xAffiliate].feeRate = 100 (1%)
   Bot reads on-chain: affiliateConfigs[0xAffiliate].operatorFee = 2e6
   Bot computes:
-    feeBasis = expressAmount + virtualExpressAmount = 300 + 1,000 = 1,300
+    feeBasis = expressAmount = 1,300
     fee = 1,300 * 100 / 10,000 = 13 USDC
     operatorFee = 2 USDC
     totalFee = 13 + 2 = 15 USDC
@@ -2782,25 +2415,18 @@ Step 4 -- Bot computes fees:
   Bot checks: totalFee (15) <= feeBasis (1,300) -> OK (fees do not exceed amount)
   Decision: Sign INSTANT option with these fee values.
 
-Step 5 -- Bot checks VP liquidity before signing:
+Step 5 -- Bot checks credit line capacity before signing:
   Bot reads on-chain:
-    VP1.getBalance() = 800 >= 600 (Part 1 amount) -> OK
-    VP2.getBalance() = 600 >= 400 (Part 2 amount) -> OK
-  Decision: Both VPs have sufficient liquidity. Sign and offer.
-
-  What if VP1.getBalance() were 400 (< 600)?
-    Bot must NOT sign: onWithdrawRequest would revert InsufficientBalance
-    when calling VP1.lockForWithdraw(0xAlice, reqId, 600).
+    creditLine.available() = 1,000 >= 600 (creditAmount) -> OK
+  Decision: Credit line has sufficient capacity. Sign and offer.
+  At acceptance: reserveDebt(600) reserves 600 USDC on the credit line.
     Decision: Reject the request or offer a smaller amount.
 
 Step 6 -- Bot observes: WithdrawAccepted(0xAlice, 99, INSTANT) event
   Bot reads on-chain (what the contract did during acceptance):
-    lockedGeneralBalance: 4,500 -> 4,700 (+200 generalAmount)
-    lockedAffiliateBalances[0xAffiliate]: 0 -> 100 (+100 affiliateAmount)
-    VP1.lockForWithdraw(0xAlice, 99, 600):
-      VP1._balance: 800 -> 200, VP1._lockedBalance: 0 -> 600
-    VP2.lockForWithdraw(0xAlice, 99, 400):
-      VP2._balance: 600 -> 200, VP2._lockedBalance: 0 -> 400
+    lockedGeneralBalance: 4,500 -> 5,000 (+500 generalAmount)
+    lockedAffiliateBalances[0xAffiliate]: 0 -> 200 (+200 affiliateAmount)
+    CLM.reserveDebt(0xAlice, 99, 600, creditData): reservedDebt += 600
     partsHash stored for integrity check
   Bot checks: withdrawInfos[0xAlice][99].status == ACCEPTED
   Bot stores: the exact parts array (needed for processWithdraw)
@@ -2850,212 +2476,273 @@ Step 7 -- Bot processes after security window:
 
 ---
 
-## 11. VirtualProvider Integration
+## 11. Credit Line Integration
 
-### 11.1 Balance Lifecycle
+### 11.1 VirtualProvider is DEPRECATED
+
+The `virtualProvider` field in `WithdrawReceiverPart` **must be `address(0)`**. Any part with a non-zero `virtualProvider` causes the contract to revert with `VirtualProviderDeprecated`. The Credit Line system fully replaces VirtualProvider for fast withdrawals.
+
+```
+// In LibParts.computeAmounts and transferToReceivers:
+if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderDeprecated();
+```
+
+- [ ] **Never set `virtualProvider`** in any withdrawal part -- always `address(0)`
+- [ ] **Remove all VirtualProvider monitoring** from the bot (balance polling, lock tracking, etc.)
+- [ ] **Do not deploy new VirtualProvider contracts** -- existing ones are inert
+
+### 11.2 Credit Debt Lifecycle
+
+Each credit-backed withdrawal tracks a debt through four possible states.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Available : onExpressDeposit\n_balance += amount
+    [*] --> Reserved : reserveDebt\nreservedDebt += amount
 
-    Available --> Locked : lockForWithdraw\n_balance -= amount\n_lockedBalance += amount
+    Reserved --> Active : activateDebt\nreservedDebt -= amount\nactiveDebt += amount
 
-    Locked --> Released : releaseToUser\n_lockedBalance -= amount\ntokens → receiver
+    Active --> Settled : settleDebt\nactiveDebt -= amount\ndelete requestDebt
 
-    Locked --> Available : unlock (cancel/suspend)\n_lockedBalance -= amount\n_balance += amount
+    Reserved --> Cancelled : cancelReservation\nreservedDebt -= amount\ndelete requestDebt
 
-    Released --> [*]
+    Settled --> [*]
+    Cancelled --> [*]
 ```
 
 ```
-onExpressDeposit:   _balance += amount  (tokens received from SYMMIO deposit fee)
-lockForWithdraw:    _balance -= amount, _lockedBalance += amount
-releaseToUser:      _lockedBalance -= amount, tokens transferred out
-unlock (cancel):    _lockedBalance -= amount, _balance += amount
+reserveDebt:         reservedDebt += creditAmount  (on acceptance, before payout)
+activateDebt:        reservedDebt -= amount, activeDebt += amount  (on processing, funds advanced)
+settleDebt:          activeDebt -= amount, delete requestDebt[key]  (on finalization, debt cleared)
+cancelReservation:   reservedDebt -= amount, delete requestDebt[key]  (cancel/suspend before payout)
 ```
 
-**Invariant:** `collateral.balanceOf(VP) >= _balance + _lockedBalance`
+**Who calls what:**
 
-### 11.2 Bot Monitoring for VirtualProvider
+| Lifecycle event | Trigger | Called by |
+|-----------------|---------|-----------|
+| `reserveDebt` | `onWithdrawRequest` (acceptance) | ExpressProvider via SymmioHookFacet |
+| `activateDebt` | `processWithdraw` / IMMEDIATE acceptance | ExpressProvider via LibCreditLine.activate |
+| `settleDebt` | `onWithdrawComplete` (finalization) | ExpressProvider via LibCreditLine.settle |
+| `cancelReservation` | `onWithdrawCancelRequest` / `onForceWithdrawCancel` / `onSuspendWithdraw` | ExpressProvider via LibCreditLine.releaseReservation |
 
-- [ ] Monitor `getBalance()` for available liquidity
-- [ ] High `getLockedBalance()` / total ratio means liquidity pressure
-- [ ] `InsufficientBalance` revert from `lockForWithdraw` means VP needs more deposits
-- [ ] `unlock` is idempotent (safe to call on already-unlocked keys)
-- [ ] `releaseToUser` supports partial releases (fee portion then remainder)
-- [ ] `lockForWithdraw` uses `+=` internally -- calling it twice for the same `(user, requestId)` correctly accumulates amounts (no overwrite)
-- [ ] Decimal conversion only in `onExpressDeposit` (6 -> 18 for `virtualDepositFor`)
+**Key invariant:** `CreditLineManager.totalDebt() == reservedDebt + activeDebt`
 
-### 11.3 How VP Balances Grow (onExpressDeposit)
+**Credit is NOT supported for STANDARD withdrawals.** The contract reverts `CreditNotSupportedForStandard` if `opt.creditAmount > 0` and `opt.optionType == STANDARD`.
 
-VP balances grow exclusively via `onExpressDeposit`, which is called by SYMMIO (the AccountLayer) whenever a user deposits through a frontend that has an express rate configured. The AccountLayer transfers the fee portion of the deposit to the VP contract, then calls `onExpressDeposit(user, amount, symmioCore)`. The VP increments `_balance += amount` and calls `virtualDepositFor` on SYMMIO to credit the user.
+### 11.3 Bot Monitoring for Credit Lines
 
-**Key limitation: VP emits no event on deposit.** The `onExpressDeposit` function does not emit any event. The bot cannot rely on event subscriptions to detect VP balance changes from deposits. Instead:
+Each affiliate has its own `CreditLineManager` (a UUPS proxy). The bot must track one CLM per active affiliate.
 
-- [ ] **Poll `getBalance()`** periodically (e.g., every block or every N seconds) to detect VP balance increases
-- [ ] **Track VP capacity over time** by recording `getBalance()` readings at regular intervals; plot trends to forecast when a VP will run low on liquidity
-- [ ] **Cross-reference SYMMIO deposit events** -- when the bot sees a user deposit through an affiliate with an express rate, compute the expected fee (deposit * expressRate%) and verify the VP balance increased by that amount on the next poll
-- [ ] **Alert on low capacity** -- if `getBalance()` drops below a configurable threshold, alert the operator that the VP needs more deposit flow or manual top-up
+- [ ] **Check `totalDebt()`** -- total outstanding credit exposure (reserved + active). Compare against caps to estimate remaining capacity.
+- [ ] **Check `paused`** -- if `true`, all `reserveDebt` calls revert `CreditLinePaused`. The bot must not sign options with `creditAmount > 0` for this affiliate.
+- [ ] **Check `blacklisted[user]`** -- if `true` for the requesting user, `reserveDebt` reverts `UserBlacklisted`. The bot must reject credit for blacklisted users.
+- [ ] **Monitor debt cap headroom:**
+  - `protocolMaxDebt` and `affiliateMaxDebt` -- absolute caps (0 = no limit). The effective cap is the tighter (non-zero minimum) of the two.
+  - `protocolMaxDebtBps` and `affiliateMaxDebtBps` -- percentage caps as basis points of Muon `eligibleBase` (0 = no limit). Same tighter-of-two logic.
+  - New debt is allowed only if `totalDebt() + creditAmount <= effectiveMaxDebt` AND `totalDebt() + creditAmount <= eligibleBase * effectiveMaxBps / 10000`.
+- [ ] **Monitor `reservedDebt` vs `activeDebt` ratio** -- high `reservedDebt` means many accepted-but-not-yet-processed credit withdrawals. This is normal during the security window but may indicate processing delays if it persists.
+- [ ] **Listen for CLM events** to maintain an accurate local state:
+  - `DebtReserved(user, requestId, amount)` -- new credit accepted
+  - `DebtActivated(user, requestId, amount)` -- credit advanced to user
+  - `DebtSettled(user, requestId, amount)` -- credit repaid on finalization
+  - `DebtCancelled(user, requestId, amount)` -- credit released on cancel
+  - `PausedUpdated(bool)` -- credit line paused/unpaused
+  - `UserBlacklistUpdated(user, bool)` -- user blacklist change
+- [ ] **Alert on approaching caps** -- when `totalDebt()` exceeds 80% of `effectiveMaxDebt`, alert the affiliate operator
+- [ ] **Verify CLM is set** -- `s.creditLineManagers[affiliate]` must not be `address(0)`. If unset, the contract reverts `CreditLineManagerNotSet` and credit cannot be used for that affiliate.
 
-#### Numeric Example: VirtualProvider Express Deposit + Withdrawal Cycle
+### 11.4 How Credit Lines Work
+
+Credit lines let the ExpressProvider front more capital than it holds in its general and affiliate pools. The shortfall is covered by a "credit advance" from SYMMIO core via `advanceWithdraw`, backed by the affiliate's pool as implicit collateral.
+
+**Muon oracle attestation:** Before accepting a credit-backed withdrawal, the contract verifies a Muon-signed `CreditData` struct:
+
+```solidity
+struct CreditData {
+    bytes   reqId;             // Muon request identifier
+    uint256 eligibleBase;      // Muon-computed eligible balance for the affiliate
+    uint256 timestamp;         // when the Muon oracle produced this attestation
+    bytes   gatewaySignature;  // Muon gateway signature
+    IMuonSignatureVerifier.SchnorrSign sigs;  // Schnorr signature for verification
+}
+```
+
+The Muon oracle computes `eligibleBase` off-chain as `freeEligible + haircutted(allocatedEligible) - excludedEligible`. The on-chain contract verifies:
+1. **Freshness:** `block.timestamp <= data.timestamp + muonFreshnessWindow` (default 60s). Stale signatures revert `MuonSignatureExpired`.
+2. **Schnorr signature:** The hash covers `(muonAppId, reqId, CLM address, user, eligibleBase, timestamp, chainId)`. Invalid signatures revert in the MuonSignatureVerifier.
+3. **Debt caps:** Both absolute and percentage caps are checked against `totalDebt + creditAmount`.
+
+**Flow during acceptance (`onWithdrawRequest`):**
+1. Bot signs option with `creditAmount > 0` and provides encoded `CreditData` as `creditDataRaw`.
+2. Contract looks up `s.creditLineManagers[affiliate]`; reverts if `address(0)`.
+3. Contract calls `CLM.reserveDebt(user, requestId, creditAmount, creditData)`.
+4. CLM verifies pause/blacklist, Muon signature, and caps. Records `requestDebt[key] = creditAmount`, increments `reservedDebt`.
+
+**Flow during processing (`processWithdraw` or IMMEDIATE):**
+1. `LibCreditLine.activate` calls `CLM.activateDebt(user, requestId)` -- moves debt from reserved to active.
+2. `LibCreditLine.activate` calls `SYMMIO.advanceWithdraw(user, requestId, creditAmount)` -- SYMMIO transfers `creditAmount` of collateral to the ExpressProvider, which can then pay the user.
+
+**Flow during finalization (`onWithdrawComplete`):**
+1. SYMMIO sends back the non-credit portion of the withdrawal.
+2. `LibCreditLine.settle` calls `CLM.settleDebt(user, requestId)` -- clears active debt and deletes the record.
+
+**Flow on cancellation (before payout):**
+1. `LibCreditLine.releaseReservation` calls `CLM.cancelReservation(user, requestId)` -- decrements `reservedDebt`, deletes the record.
+
+**Credit loss on post-payout rollback:** If a withdrawal is force-cancelled or suspended after processing (Status = PROCESSED), the credit amount has already been advanced and paid to the user. `LibCreditLine.coverLoss` deducts `creditAmount` from `s.affiliateBalances[affiliate]` (the affiliate pool absorbs the loss) and calls `settleDebt` to clear the record.
+
+### 11.5 Bot Decision Logic for Credit
 
 ```
-Scenario: Bot monitors a VP through deposit, withdrawal, and cancellation
+On withdrawal request with creditAmount > 0:
+  1. Verify: optionType != STANDARD (credit not supported)
+  2. Verify: s.creditLineManagers[affiliate] != address(0)
+  3. Read CLM state:
+     - clm.paused() == false
+     - clm.blacklisted(user) == false
+     - currentDebt = clm.totalDebt()
+  4. Estimate cap headroom (requires knowing eligibleBase from Muon):
+     - effectiveMaxDebt = tighter_of(protocolMaxDebt, affiliateMaxDebt)
+     - effectiveMaxBps  = tighter_of(protocolMaxDebtBps, affiliateMaxDebtBps)
+     - absoluteOk = effectiveMaxDebt == 0 || currentDebt + creditAmount <= effectiveMaxDebt
+     - percentOk  = effectiveMaxBps == 0  || currentDebt + creditAmount <= eligibleBase * effectiveMaxBps / 10000
+  5. If all checks pass: sign the option and include fresh CreditData
+  6. If any check fails: reject credit, or sign with creditAmount = 0
+```
+
+#### Numeric Example: INSTANT Withdrawal with Credit Line
+
+```
+Scenario: 500 USDC INSTANT withdrawal, 200 USDC backed by credit line
 
 Setup:
-  VP deployed for affiliate 0xAffiliate, collateral = USDC (6 decimals)
-  VP._balance = 0, VP._lockedBalance = 0
-  EP has EXPRESS_PROVIDER_ROLE on VP
-  affiliateConfigs[0xAffiliate] = { feeRate: 50 (0.5%), operatorFee: 0 }
+  Affiliate: 0xAffiliate
+  CreditLineManager: CLM (deployed as UUPS proxy for 0xAffiliate)
+  affiliateConfigs[0xAffiliate] = { feeRate: 100 (1%), operatorFee: 0 }
+  ExpressProvider pools:
+    generalBalance = 2,000 USDC
+    affiliateBalances[0xAffiliate] = 500 USDC
+  CLM state:
+    reservedDebt = 0, activeDebt = 0
+    protocolMaxDebt = 10,000 USDC, affiliateMaxDebt = 5,000 USDC
+    paused = false, blacklisted[0xAlice] = false
 
-Step 1 -- Bot sees: express deposit event on SYMMIO
-  A user deposits 1,000 USDC through 0xAffiliate's frontend (3% express rate).
-  Bot reads on-chain (what SYMMIO + AccountLayer did):
-    AccountLayer split: 970 USDC real deposit + 30 USDC express fee
-    SYMMIO transferred 30 USDC to VP, then called VP.onExpressDeposit(user, 30e6)
-  Bot reads VP state after deposit:
-    VP._balance = 30e6 (30 USDC)
-    VP._lockedBalance = 0
-    VP did decimal conversion: 30e6 * 1e18 / 1e6 = 30e18
-    VP called SYMMIO.virtualDepositFor(user, 30e18)
-    -> User sees full 1,000 USDC on SYMMIO (970 real + 30 virtual)
-  Bot checks: VP.getBalance() = 30e6 -> VP now has 30 USDC available for withdrawals
-  Decision: Log VP liquidity. No action needed.
-
-Step 2 -- Bot sees: withdrawal request for 20 USDC via express+virtual through this VP
-  0xBob requests a 20 USDC withdrawal:
-    Part 0: { amount: 20e6, expressProvider: EP, virtualProvider: VP, receiver: 0xBob }
-  Bot reads on-chain:
-    VP.getBalance() = 30e6 (30 USDC available)
-  Bot checks: 30 >= 20 -> VP has enough liquidity for this part
-  Bot computes:
-    expressAmount = 0 (no express-only parts)
-    virtualExpressAmount = 20e6
-    feeBasis = 0 + 20 = 20
-    fee = 20 * 50 / 10,000 = 0.1 USDC (0.5% of 20)
+Step 1 -- Bot sees: withdrawal request for 500 USDC from 0xAlice
+  Part 0: { amount: 500e6, expressProvider: EP, virtualProvider: address(0), receiver: 0xAlice }
+  Bot decides to use credit for 200 USDC of the 500 USDC total.
+  Bot computes funding split:
+    creditAmount = 200e6
+    affiliateAmount = 100e6  (from affiliate pool)
+    generalAmount  = 200e6  (from general pool, computed as 500 - 100 - 200)
+    expressAmount  = 500e6  (total across all parts for this EP)
+  Bot computes fee:
+    fee = 500 * 100 / 10,000 = 5 USDC (1% of 500)
     operatorFee = 0
-    totalFee = 0.1 USDC, userFee = 0.1 USDC (no sponsor)
-  Decision: Sign INSTANT option. VP can cover the full 20 USDC.
+    userFee = 5 USDC (no sponsor)
 
-  What if VP.getBalance() were only 15e6?
-    Bot checks: 15 < 20 -> VP cannot cover this part
-    Decision: Reject or reduce the amount. Signing would cause
-    VP.lockForWithdraw to revert with InsufficientBalance.
+  Bot reads CLM state:
+    clm.paused() = false -> OK
+    clm.blacklisted(0xAlice) = false -> OK
+    clm.totalDebt() = 0 -> headroom = 5,000 (affiliateMaxDebt)
+    0 + 200 = 200 <= 5,000 -> within absolute cap -> OK
+  Bot obtains fresh CreditData from Muon oracle:
+    eligibleBase = 50,000 USDC, timestamp = now - 10s
+    effectiveMaxBps = min(protocolMaxDebtBps, affiliateMaxDebtBps) -- say 1000 (10%)
+    200 <= 50,000 * 1000 / 10,000 = 5,000 -> within percentage cap -> OK
 
-Step 3 -- Bot observes: WithdrawAccepted(0xBob, 5, INSTANT) event
-  Bot reads on-chain (what EP did during acceptance):
-    EP called VP.lockForWithdraw(0xBob, 5, 20e6):
-      VP._balance: 30e6 -> 10e6
-      VP._lockedBalance: 0 -> 20e6
-      VP._lockedForWithdraw[keccak256(0xBob, 5)] = 20e6
-  Bot reads VP state:
-    VP.getBalance() = 10e6 (only 10 USDC left for new withdrawals)
-    VP.getLockedBalance() = 20e6 (20 USDC reserved for this withdrawal)
-  Bot checks: locked ratio = 20 / 30 = 67% -> high liquidity pressure
-  Decision: Schedule processWithdraw after securityWindow (20s).
-    Also: monitor if more deposits are needed for this VP.
+  Decision: Sign INSTANT option with creditAmount = 200e6 and include CreditData.
 
-Step 4a -- Bot processes (happy path):
-  Bot checks: block.timestamp >= acceptedAt + 20s
-  Bot checks: withdrawInfos[0xBob][5].status == ACCEPTED
-  Decision: Call processWithdraw(0xBob, 5, parts).
+Step 2 -- On-chain acceptance (SymmioHookFacet.onWithdrawRequest):
+  Contract validates parts: virtualProvider == address(0) -> OK
+  Contract checks: optionType == INSTANT, creditAmount > 0 -> not STANDARD -> OK
+  Contract calls CLM.reserveDebt(0xAlice, reqId=7, 200e6, creditData):
+    CLM verifies: not paused, not blacklisted -> OK
+    CLM verifies: timestamp + 60 >= block.timestamp -> fresh -> OK
+    CLM verifies: Muon Schnorr signature -> valid -> OK
+    CLM verifies: 0 + 200e6 <= 5,000e6 (effective absolute cap) -> OK
+    CLM verifies: 0 + 200e6 <= 50,000e6 * 1000 / 10,000 = 5,000e6 -> OK
+    CLM state after:
+      requestDebt[key] = 200e6
+      reservedDebt = 200e6
+      activeDebt = 0
+  Contract locks pools:
+    generalBalance: 2,000 -> 1,800 (locked 200)
+    affiliateBalances[0xAffiliate]: 500 -> 400 (locked 100)
+  Emits WithdrawAccepted(0xAlice, 7, INSTANT)
 
-  Contract executes transferToReceivers with userFee = 0.1e6:
-    Part 0 (20e6, VP, receiver 0xBob):
-      deduction = min(0.1e6, 20e6) = 0.1e6
-      feeRemaining = 0
+Step 3 -- Bot processes after security window (20s):
+  Bot checks: block.timestamp >= acceptedAt + 20s -> YES
+  Bot checks: withdrawInfos[0xAlice][7].status == ACCEPTED -> YES
+  Decision: Call processWithdraw(0xAlice, 7, parts).
 
-      Fee portion: VP.releaseToUser(0xBob, 5, EP_address, 0.1e6)
-        VP._lockedForWithdraw[key]: 20e6 -> 19.9e6
-        VP._lockedBalance: 20e6 -> 19.9e6
-        0.1 USDC transferred to ExpressProvider (fee revenue)
+  Contract executes:
+    a) LibCreditLine.activate(symmio, 0xAlice, 7, info):
+       CLM.activateDebt(0xAlice, 7):
+         requestActivated[key] = true
+         reservedDebt: 200e6 -> 0
+         activeDebt: 0 -> 200e6
+       SYMMIO.advanceWithdraw(0xAlice, 7, 200e6):
+         SYMMIO transfers 200 USDC to ExpressProvider
+         (these are locked funds released early from SYMMIO's withdrawal escrow)
 
-      User portion: VP.releaseToUser(0xBob, 5, 0xBob, 19.9e6)
-        VP._lockedForWithdraw[key]: 19.9e6 -> 0
-        VP._lockedBalance: 19.9e6 -> 0
-        19.9 USDC transferred to 0xBob
+    b) transferToReceivers with userFee = 5e6:
+       Part 0 (500e6, EP, receiver 0xAlice):
+         deduction = min(5e6, 500e6) = 5e6
+         feeRemaining = 0
+         collateral.transfer(EP, 5e6)       -- 5 USDC fee to EP
+         collateral.transfer(0xAlice, 495e6) -- 495 USDC to user
 
-  Bot reads VP state after processing:
-    VP._balance = 10e6 (unchanged -- only locked funds were released)
-    VP._lockedBalance = 0
-    collectedFees[0xAffiliate] += 0.1e6
-  Bot checks: VP.getBalance() = 10e6 -> 10 USDC available for future withdrawals
-  Decision: Status -> PROCESSED. Wait for SYMMIO finalization (no action needed,
-    VP parts are not replenished by finalization -- only new deposits grow VP balance).
+    ExpressProvider state after processing:
+      generalBalance = 1,800 (locked portion was spent, replenished by advance)
+      affiliateBalances[0xAffiliate] = 400
+      collectedFees[0xAffiliate] += 5e6
+      CLM: reservedDebt = 0, activeDebt = 200e6
+    Status -> PROCESSED
 
-Step 4b -- Cancellation (alternative to 4a):
-  Bot sees: onWithdrawCancelRequest or onForceWithdrawCancel for 0xBob, request 5
-  Bot reads on-chain (what EP did):
-    EP called VP.unlock(0xBob, 5):
-      VP._lockedForWithdraw[key]: 20e6 -> deleted
-      VP._lockedBalance: 20e6 -> 0
-      VP._balance: 10e6 -> 30e6 (restored!)
-  Bot reads VP state after cancel:
-    VP.getBalance() = 30e6 (full liquidity restored)
-    VP.getLockedBalance() = 0
-  Decision: Cancel any scheduled processWithdraw. VP liquidity is back to normal.
+  Where did the 500 USDC come from?
+    200 USDC from general pool
+    100 USDC from affiliate pool
+    200 USDC from SYMMIO advance (credit)
+    Total: 500 USDC paid to user (minus 5 USDC fee = 495 USDC received)
 
-  What if the bot detects risk before processing (step 4a)?
-    Bot (LOCKER_ROLE) calls EP.lockWithdraw(0xBob, 5) -> Status becomes LOCKED.
-    VP funds stay locked (VP._lockedBalance remains 20e6).
-    Resolution requires UNLOCK_ROLE (unlockAndProcess) or SYMMIO suspend/cancel.
-    Bot must NOT call processWithdraw on LOCKED status (reverts NotAccepted).
-```
+Step 4a -- Finalization (happy path, ~12 hours later):
+  SYMMIO finalizes: sends back the non-advanced portion (500 - 200 = 300 USDC)
+  to the ExpressProvider via onWithdrawComplete.
+  Contract replenishes pools:
+    generalBalance: 1,800 + 200 = 2,000 (restored)
+    affiliateBalances[0xAffiliate]: 400 + 100 = 500 (restored)
+  LibCreditLine.settle(0xAlice, 7, info):
+    CLM.settleDebt(0xAlice, 7):
+      activeDebt: 200e6 -> 0
+      delete requestDebt[key]
+      delete requestActivated[key]
+  Final CLM state: reservedDebt = 0, activeDebt = 0 -- fully cleared.
+  Status -> FINALIZED
 
-#### Numeric Example: Two Parts Through the Same VirtualProvider
+Step 4b -- Cancellation before processing (alternative to step 3):
+  Bot sees: onWithdrawCancelRequest or onForceWithdrawCancel for 0xAlice, request 7
+  Contract calls LibCreditLine.releaseReservation(0xAlice, 7, info):
+    CLM.cancelReservation(0xAlice, 7):
+      reservedDebt: 200e6 -> 0
+      delete requestDebt[key]
+  Contract unlocks pools:
+    generalBalance: 1,800 + 200 = 2,000 (restored)
+    affiliateBalances[0xAffiliate]: 400 + 100 = 500 (restored)
+  CLM state: reservedDebt = 0, activeDebt = 0 -- fully cleared, no loss.
+  Status -> CANCELLED
 
-```
-Scenario: Two parts through same VP
-
-Setup:
-  VP1._balance = 1,000 USDC, VP1._lockedForWithdraw[key] = 0
-  key = keccak256(abi.encodePacked(user, requestId))
-
-Step 1 -- Bot sees: withdrawal request with parts = [{amount: 300, vp: VP1}, {amount: 200, vp: VP1}]
-  Bot reads on-chain: VP1.getBalance() = 1,000
-  Bot checks: 300 + 200 = 500 <= 1,000? YES
-  Decision: Sign the option. Both parts route through VP1.
-
-Step 2 -- On-chain acceptance (ExpressProvider calls lockForWithdraw for each part):
-  lockForWithdraw(user, reqId, 300):
-    VP1._balance: 1,000 - 300 = 700
-    VP1._lockedBalance: 0 + 300 = 300
-    VP1._lockedForWithdraw[key]: 0 + 300 = 300   (uses +=, not =)
-
-  lockForWithdraw(user, reqId, 200):
-    VP1._balance: 700 - 200 = 500
-    VP1._lockedBalance: 300 + 200 = 500
-    VP1._lockedForWithdraw[key]: 300 + 200 = 500  (correctly accumulates)
-
-  Result after acceptance:
-    VP1.getBalance() = 500  (available for new withdrawals)
-    VP1.getLockedBalance() = 500
-    VP1.getLockedForWithdraw(user, reqId) = 500  (total of both parts)
-
-Step 3 -- Processing (releaseToUser called for each part, after fee deduction):
-  Assuming totalFee = 5 USDC, cascaded through parts in order:
-
-  Part 0 (300 USDC):
-    feeDeduction = min(5, 300) = 5
-    releaseToUser(user, reqId, EP, 5):    fee to ExpressProvider
-      VP1._lockedForWithdraw[key]: 500 -> 495
-    releaseToUser(user, reqId, receiver, 295):  remainder to user
-      VP1._lockedForWithdraw[key]: 495 -> 200
-    feeRemaining = 0
-
-  Part 1 (200 USDC):
-    feeDeduction = min(0, 200) = 0  (fee already fully covered by Part 0)
-    releaseToUser(user, reqId, receiver, 200):  full amount to user
-      VP1._lockedForWithdraw[key]: 200 -> 0
-
-  Final state:
-    VP1.getBalance() = 500  (unchanged during release -- only locked funds moved)
-    VP1.getLockedBalance() = 0
-    VP1.getLockedForWithdraw(user, reqId) = 0
-
-Key takeaway: lockForWithdraw uses += so multiple parts through the same VP
-for the same (user, requestId) accumulate safely. The bot only needs to verify
-that the VP has enough total available balance to cover the sum of all parts.
+Step 4c -- Post-payout rollback (force-cancel after PROCESSED, rare):
+  If SYMMIO force-cancels AFTER processing (status was PROCESSED):
+    The 200 USDC credit advance was already paid to 0xAlice.
+    SYMMIO will not send those funds on finalization (they were already advanced).
+    LibCreditLine.coverLoss(collateral, symmio, 0xAlice, 7, info):
+      affiliateBalances[0xAffiliate] -= 200e6  (affiliate pool absorbs the loss)
+      CLM.settleDebt(0xAlice, 7):
+        activeDebt: 200e6 -> 0
+        delete requestDebt[key]
+    The 200 USDC loss comes from the affiliate pool.
+    Note: In practice, forceCancelWithdraw requires block.timestamp < cooldownEndTime,
+    so this path is extremely unlikely for PROCESSED express withdrawals.
 ```
 
 ---
@@ -3137,7 +2824,7 @@ Setup:
   acceptedAt = T=0, cooldownEndTime = T+43200 (T+12h)
   securityWindow = 20s, tolerancePeriod = 60s
   sponsorCoverage locked = 5 USDC, fee = 2.5 USDC, operatorFee = 0.5 USDC
-  VP._lockedBalance includes 100 (virtual part locked on VirtualProvider)
+  creditAmount = 100 (credit line reservation active on CLM)
   lockedGeneralBalance includes 350, lockedAffiliateBalances[aff] includes 150
 
 Step 1 — Bot sees: WithdrawLocked(user, reqId) event at T=5s
@@ -3155,7 +2842,7 @@ Step 2A — Bot sees: WithdrawUnlockedAndProcessed(user, reqId) at T=300s
     - lockedGeneralBalance decreased by 350
     - lockedAffiliateBalances[aff] decreased by 150
     - generalBalance decreased by 350, affiliateBalances[aff] decreased by 150
-    - VP.releaseToUser sent virtual 100 USDC to receiver
+    - Credit line debt activated and advanced from SYMMIO (100 USDC)
     - Fees collected: 2.5 (affiliate) + 0.5 (operator); sponsor covered 5 -> userFee = 0
   Decision: No further action needed on ExpressProvider side.
             Schedule finalizeWithdrawRequest on SYMMIO at T+43200 (cooldown end)
@@ -3185,7 +2872,7 @@ Step 2C — Bot sees: WithdrawSuspended(user, reqId) at T=600s
   Bot checks: What did _releaseWithdraw clean up?
     - lockedGeneralBalance decreased by 350 (INSTANT unlocks general lock)
     - lockedAffiliateBalances[aff] decreased by 150 (INSTANT unlocks affiliate lock)
-    - VP.unlock(user, reqId) -> VP._lockedBalance -= 100, VP._balance += 100
+    - Credit line reservation released (if creditAmount > 0)
     - sponsorBalances[aff] += 5 (sponsor coverage refunded)
     - General ring: expectedInflow at cooldown bucket cleared for generalAmount 350
     - Affiliate ring: expectedInflow at cooldown bucket cleared for affiliateAmount (if > 0)
@@ -3258,7 +2945,7 @@ All of the following are restored/cleaned up:
 - [ ] `lockedGeneralBalance -= generalAmount` (INSTANT/IMMEDIATE only)
 - [ ] `lockedAffiliateBalances[affiliate] -= affiliateAmount` (INSTANT/IMMEDIATE only)
 - [ ] `generalBalance` and `affiliateBalances` values unchanged (locks are released, not balances)
-- [ ] VirtualProvider `unlock(user, requestId)` called for each virtual part
+- [ ] Credit line reservation released via `cancelReservation` (if creditAmount > 0)
 - [ ] Sponsor coverage refunded: `sponsorBalances[affiliate] += sponsorCoverage`
 - [ ] Non-STANDARD: general ring `expectedInflow` removed at `cooldownEndTime` bucket
 - [ ] Non-STANDARD: affiliate ring `expectedInflow` removed at `cooldownEndTime` bucket (if affiliateAmount > 0)
@@ -3286,7 +2973,7 @@ Setup:
   General ring: bucket at T+4h has reservedOutflow including 500, bucket at T+12h has expectedInflow including 500
   Affiliate ring: bucket at T+4h has reservedOutflow including 300, bucket at T+12h has expectedInflow including 300
   (SCHEDULED does NOT counter-lock affiliate — both pools use ring buffers)
-  VP._lockedBalance includes 200 (virtual part)
+  creditAmount = 200 (credit line reservation active)
   sponsorBalances[aff] = 47 (was 50 before 3 locked at acceptance)
   Status = ACCEPTED
 
@@ -3307,7 +2994,7 @@ Step 2 — Bot checks: What did _releaseWithdraw restore?
     - Affiliate ring: expectedInflow decreased by 300 at T+12h bucket
       (affiliate reimbursement forecast removed)
     - lockedAffiliateBalances[aff] unchanged (SCHEDULED does not counter-lock affiliate)
-    - VP.unlock(user, reqId) -> VP._lockedBalance -= 200, VP._balance += 200
+    - CLM.cancelReservation(user, reqId) -> reservedDebt -= 200
     - sponsorBalances[aff]: 47 -> 50 (3 USDC sponsor coverage refunded)
 
 Step 3 — Bot decides:
@@ -3319,7 +3006,7 @@ Step 3 — Bot decides:
   Update internal liquidity tracking:
     - Affiliate ring buffer: 300 USDC reservation freed (available for new withdrawals)
     - General ring buffer: 500 USDC reservation freed
-    - Virtual pool: 200 USDC returned to VP available balance
+    - Credit line: 200 USDC reservation released, debt capacity restored
     - Sponsor: 3 USDC refunded, back to 50
 ```
 
@@ -3832,7 +3519,7 @@ Scenario:
 Bot sees: User requests withdrawal. Bot computes fee and operatorFee from on-chain config.
 
 Bot checks:
-  feeBasis = expressAmount + virtualExpressAmount
+  feeBasis = expressAmount
   fee = (feeBasis * feeRate) / 10000
   operatorFee = affiliateConfigs[affiliate].operatorFee
   Is fee + operatorFee <= feeBasis?
@@ -4126,15 +3813,17 @@ Correct strategy:
 | `securityWindow = 0` | Operator can process same block as acceptance |
 | `tolerancePeriod = 0` | Anyone can process as soon as operator can |
 
-### 17.5 Multi-VirtualProvider Edge Cases
+### 17.5 Credit Line Edge Cases
 
 | Scenario | Behavior |
 |----------|----------|
-| Cancel with multiple VPs | Each VP unlocked independently |
-| Fee deduction across VP parts | Fee cascades through all parts in order |
-| VP `lockForWithdraw` called twice for same key | Second call ACCUMULATES via `+=` (safe) -- amounts add up correctly |
-| VP `unlock` called on already-unlocked key | No-op (safe) |
-| VP balance insufficient | `lockForWithdraw` reverts `InsufficientBalance` |
+| Cancel with active credit reservation | `cancelReservation` releases reserved debt |
+| Credit line paused between signing and acceptance | `reserveDebt` reverts (paused) |
+| User blacklisted between signing and acceptance | `reserveDebt` reverts (blacklisted) |
+| Credit amount exceeds debt cap | `reserveDebt` reverts (cap exceeded) |
+| Muon attestation expired | `reserveDebt` reverts (freshness check fails) |
+| Credit used with STANDARD | Reverts `CreditNotSupportedForStandard` |
+| Post-payout rollback with credit | Affiliate pool absorbs credit loss via `coverLoss` |
 
 ### 17.6 STANDARD-Specific Edge Cases
 
@@ -4146,10 +3835,8 @@ Correct strategy:
 | LOCKED + finalized then suspend | Reverts `InvalidStatusForSuspend` |
 | LOCKED + finalized: resolution | Only `unlockAndProcess` (UNLOCK_ROLE) |
 | LOCKED + NOT finalized + cooldown expired | `processWithdraw` calls `finalizeWithdrawRequest` on SYMMIO first, then processes |
-| Pure virtual (expressAmount = 0) | SYMMIO sends 0 tokens on finalization. All funds come from VP releases. No pool changes at any step. See [section 2.5](#25-pure-virtual-withdrawal-standard-with-no-express-only-parts) |
-| Pure virtual with affiliateAmount > 0 | Arithmetic underflow revert (`generalAmount = 0 - affiliateAmount`). Bot MUST set affiliateAmount = 0 |
-| Pure virtual across multiple affiliates' VPs | Each VP locked/released independently. Fee cascades through VP parts. Different affiliates' VPs in same withdrawal is valid |
-| Pure virtual LOCKED + finalized | Same as regular STANDARD: finalizedAt set, status stays LOCKED. forceCancel/suspend blocked. Resolve via unlockAndProcess or processWithdraw after cooldown |
+| `affiliateAmount + creditAmount > expressAmount` | Reverts `FundingSplitExceedsExpress`. Bot must ensure the sum never exceeds expressAmount |
+| Credit with STANDARD | Reverts `CreditNotSupportedForStandard`. Bot must set creditAmount = 0 for STANDARD |
 
 ### 17.7 Admin / Configuration Change Scenarios
 
@@ -4271,54 +3958,53 @@ Correct strategy — re-read securityWindow before EVERY processWithdraw call:
     No TooEarly revert possible
 ```
 
-#### Scenario 3: VP Mapping Change
+#### Scenario 3: Credit Line Manager Change
 
 ```
-Scenario: Admin changes VirtualProvider mapping while bot has signed options referencing the old VP
+Scenario: Admin changes CreditLineManager mapping while bot has signed options using credit
 
 Setup:
-  virtualProviders[0xAffiliate] = VP1 (at address 0xVP1)
-  VP1.getBalance() = 10,000 USDC
-  Bot has signed 3 pending options for affiliate 0xAffiliate referencing VP1:
-    Option A: Alice, 2,000 USDC (virtualExpressAmount from VP1)
-    Option B: Bob,   3,000 USDC (virtualExpressAmount from VP1)
-    Option C: Carol, 1,500 USDC (virtualExpressAmount from VP1)
+  creditLineManagers[0xAffiliate] = CLM1 (at address 0xCLM1)
+  CLM1.totalDebt() = 500 USDC, protocolMaxDebt = 10,000 USDC
+  Bot has signed 2 pending options for affiliate 0xAffiliate using credit:
+    Option A: Alice, 2,000 USDC (creditAmount=500 from CLM1)
+    Option B: Bob,   3,000 USDC (creditAmount=1,000 from CLM1)
 
-Step 1 — Admin calls: setVirtualProvider(0xAffiliate, 0xVP2)
+Step 1 — Admin calls: setCreditLineManager(0xAffiliate, 0xCLM2)
   On-chain state changes:
-    virtualProviders[0xAffiliate] = 0xVP2 (was 0xVP1)
-  WARNING: No event is emitted for setVirtualProvider
+    creditLineManagers[0xAffiliate] = 0xCLM2 (was 0xCLM1)
+  NOTE: No event is emitted for setCreditLineManager
   Bot has NO immediate notification of this change
 
-Step 2 — Alice submits her withdrawal tx (Option A, signed referencing VP1's liquidity)
+Step 2 — Alice submits her withdrawal tx (Option A, signed with creditAmount=500)
   On-chain:
-    Contract reads virtualProviders[0xAffiliate] = 0xVP2
-    lockForWithdraw called on VP2, NOT VP1
-    VP2 may have different balance, different state
-  Outcome depends on VP2's balance:
-    - If VP2 has >= 2,000 USDC: tx succeeds, but funds come from VP2 (possibly unexpected)
-    - If VP2 has < 2,000 USDC: REVERT: InsufficientBalance
+    Contract reads creditLineManagers[0xAffiliate] = 0xCLM2
+    reserveDebt called on CLM2, NOT CLM1
+    CLM2 may have different debt caps, different state
+  Outcome depends on CLM2's configuration:
+    - If CLM2 has sufficient capacity: tx succeeds, debt reserved on CLM2
+    - If CLM2 is paused or at capacity: REVERT from reserveDebt
 
-Step 3 — Bot sees: Option A reverted or succeeded against wrong VP
+Step 3 — Bot sees: Option A reverted or succeeded against different CLM
   Bot reads on-chain:
-    virtualProviders[0xAffiliate] = 0xVP2
+    creditLineManagers[0xAffiliate] = 0xCLM2
   Bot checks:
-    Cached VP for 0xAffiliate was 0xVP1, now 0xVP2
-    Options B and C were signed based on VP1's liquidity
-    VP2 may have less liquidity — these options may fail
+    Cached CLM for 0xAffiliate was 0xCLM1, now 0xCLM2
+    Option B was signed based on CLM1's capacity
+    CLM2 may have different caps — this option may fail
   Decision:
-    1. Invalidate pending options B and C
-    2. Read VP2.getBalance() — new available liquidity
-    3. Re-sign options with amounts that respect VP2's capacity
-    4. Update cached VP mapping: 0xAffiliate -> 0xVP2
+    1. Invalidate pending option B
+    2. Read CLM2 state: totalDebt(), protocolMaxDebt, paused, etc.
+    3. Re-sign options with creditAmounts that respect CLM2's capacity
+    4. Update cached CLM mapping: 0xAffiliate -> 0xCLM2
 
-Correct strategy — poll virtualProviders periodically:
-  Since setVirtualProvider emits NO event, the bot CANNOT rely on event-driven detection.
+Correct strategy — poll creditLineManagers periodically:
+  Since setCreditLineManager emits NO event, the bot CANNOT rely on event-driven detection.
   Bot must:
-    - Poll virtualProviders[affiliate] on a regular interval (e.g., every 30s or every block)
-    - Before signing any option involving a VP, read virtualProviders[affiliate] fresh
-    - Compare against cached value; if changed, invalidate all pending VP-referencing options
-    - Read new VP's getBalance() to update liquidity estimates
+    - Poll creditLineManagers[affiliate] on a regular interval (e.g., every 30s or every block)
+    - Before signing any option with creditAmount > 0, read creditLineManagers[affiliate] fresh
+    - Compare against cached value; if changed, invalidate all pending credit-referencing options
+    - Read new CLM's state to update capacity estimates
 ```
 
 #### Scenario 4: Role Grant / Revoke
@@ -4555,7 +4241,7 @@ Step 2C — onForceWithdrawCancel at T+2h
     - General ring: reservedOutflow -= 1,200 at availableAt bucket, expectedInflow -= 1,200 at cooldown bucket
     - Affiliate ring: reservedOutflow -= 800 at availableAt bucket, expectedInflow -= 800 at cooldown bucket
     - No counter locks to release (SCHEDULED does not use them)
-  VP unlocked, sponsor refunded.
+  Credit released, sponsor refunded.
   Bot clears all timers for this withdrawal.
 ```
 
@@ -4629,12 +4315,11 @@ Bot mitigation: Always track accepted withdrawals via WithdrawAccepted events.
 ```
 Scenario: A part with amount = 0 in the parts array
 
-Setup: parts = [{amount: 500, vp: 0x0}, {amount: 0, vp: VP1}, {amount: 300, vp: VP1}]
+Setup: parts = [{amount: 500, vp: 0x0}, {amount: 0, vp: 0x0}, {amount: 300, vp: 0x0}]
 
 On-chain behavior:
-  computeAmounts: part[1] contributes 0 to virtualExpressAmount. Harmless.
-  lockVirtualFunds: lockForWithdraw(user, reqId, 0) on VP1. VP1._lockedForWithdraw += 0. No-op.
-  transferToReceivers: toSend/toRelease for part[1] = 0. Skipped by if-guard.
+  computeAmounts: part[1] contributes 0 to expressAmount. Harmless.
+  transferToReceivers: toSend for part[1] = 0. Skipped by if-guard.
 
 Bot consideration: Zero-amount parts waste gas but don't cause reverts.
   Decision: Filter out zero-amount parts before signing. No benefit to including them.
@@ -4708,7 +4393,7 @@ flowchart TD
 |------|-----------|----------|---------------|
 | General (`generalBalance`) | `depositToGeneral` | INSTANT/IMMEDIATE general portion | `lockedGeneralBalance` |
 | Affiliate (`affiliateBalances[affiliate]`) | `depositToAffiliate` | Express affiliate portion | `lockedAffiliateBalances[affiliate]` |
-| VirtualProvider (`_balance`) | Express deposit fees (auto) | Express+virtual portions | `_lockedBalance` |
+| Credit Line (`CreditLineManager`) | Muon-attested eligible balances | Credit-backed portions (non-STANDARD) | `reservedDebt` / `activeDebt` |
 | Sponsor (`sponsorBalances[affiliate]`) | `depositSponsorBalance` | Fee coverage | `info.sponsorCoverage` (stored on WithdrawInfo) |
 
 ### 18.3 Available Liquidity Formulas
@@ -4716,8 +4401,8 @@ flowchart TD
 ```
 availableGeneral = generalBalance - lockedGeneralBalance
 availableAffiliate = affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate]
-availableVirtual = virtualProvider.getBalance()
-totalAvailable = availableGeneral + availableAffiliate + availableVirtual
+availableCredit = creditLineManager.protocolMaxDebt - creditLineManager.totalDebt() (if configured)
+totalAvailable = availableGeneral + availableAffiliate + availableCredit
 ```
 
 ### 18.4 Bot Pool Monitoring
@@ -4728,7 +4413,7 @@ totalAvailable = availableGeneral + availableAffiliate + availableVirtual
 - [ ] Do not offer SCHEDULED if `getEarliestExpressAvailability` returns false
 - [ ] Monitor `GeneralDeposit`/`GeneralWithdraw` and `AffiliateDeposit`/`AffiliateWithdraw` events
 - [ ] Verify `withdrawFromGeneral` / `withdrawFromAffiliate` cannot touch locked funds (enforced on-chain)
-- [ ] Monitor VirtualProvider `getBalance()` for express+virtual capacity
+- [ ] Monitor CreditLineManager `totalDebt()`, `paused`, and debt cap headroom
 
 #### Numeric Example: Pool Utilization Tracking
 
@@ -4740,11 +4425,9 @@ Setup:
   lockedGeneralBalance       = 0
   affiliateBalances[FrontA]  = 5_000 USDC
   lockedAffiliateBalances[FrontA] = 0
-  VP(FrontA).getBalance()    = 2_000 USDC
   Available general          = 10_000 - 0     = 10_000
   Available affiliate        = 5_000  - 0     = 5_000
-  Available VP               = 2_000
-  Total available            = 17_000
+  Total available            = 15_000
 
 Step 1 — Bot sees: 3 INSTANT withdrawals accepted in rapid succession
   W1: 3_000 USDC (general=2_000, affiliate=1_000)
@@ -4756,8 +4439,7 @@ Step 1 — Bot sees: 3 INSTANT withdrawals accepted in rapid succession
   Bot checks remaining capacity:
     Available general   = 10_000 - 6_500 = 3_500
     Available affiliate = 5_000  - 2_500 = 2_500
-    Available VP        = 2_000          = 2_000
-    Total available     = 8_000
+    Total available     = 6_000
 
 Step 2 — Bot sees: new request from Bob for 5_000 USDC via FrontA
   Bot reads on-chain (same state as above):
@@ -4786,7 +4468,7 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
   Bot checks:
     Available general   = 10_000 - 3_500 = 6_500
     Available affiliate = 5_000  - 1_500 = 3_500
-    Total available     = 12_000 (+ VP)
+    Total available     = 10_000
   Decision: capacity restored; resume offering INSTANT for larger requests
 ```
 
@@ -4844,16 +4526,18 @@ flowchart TD
 | `SPONSOR_MANAGER_ROLE` | `keccak256("SPONSOR_MANAGER_ROLE")` | Admin | `withdrawSponsorBalance` |
 | `FEE_CLAIMER_ROLE` | `keccak256("FEE_CLAIMER_ROLE")` | Admin | `claimFees`, `claimOperatorFees` |
 
-### 19.3 VirtualProvider Roles
+### 19.3 CreditLineManager Roles
 
 | Role | Holder | Functions |
 |------|--------|-----------|
-| `DEFAULT_ADMIN_ROLE` | Admin | diamondCut, manage roles |
-| `EXPRESS_PROVIDER_ROLE` | ExpressProvider contract | `lockForWithdraw`, `releaseToUser`, `unlock` |
+| `DEFAULT_ADMIN_ROLE` | Admin | Upgrade contract, manage roles |
+| `EXPRESS_PROVIDER_ROLE` | ExpressProvider contract | `reserveDebt`, `activateDebt`, `settleDebt`, `cancelReservation` |
+| `PROTOCOL_ADMIN_ROLE` | Admin | `setProtocolConfig`, `setSignatureVerifier`, `setMuonAppId` |
+| `AFFILIATE_ADMIN_ROLE` | Affiliate operator | `setAffiliateConfig`, `setBlacklisted`, `setPaused` |
 
 ### 19.4 SYMMIO-Gated Functions (no role, `msg.sender == symmio`)
 
-`onWithdrawRequest`, `onWithdrawComplete`, `onWithdrawCancelRequest`, `onForceWithdrawCancel`, `onWithdrawSuspend`, `onExpressDeposit`
+`onWithdrawRequest`, `onWithdrawComplete`, `onWithdrawCancelRequest`, `onForceWithdrawCancel`, `onWithdrawSuspend`
 
 ---
 
@@ -4865,7 +4549,7 @@ flowchart TD
 flowchart TD
     A["Token balance check"] --> B["collateral.balanceOf(EP) >= \ngeneralBalance + Σ(affiliateBalances)\n+ Σ(collectedFees) + Σ(collectedOperatorFees)\n+ Σ(sponsorBalances)\n+ finalized STANDARD tokens"]
 
-    C["VP balance check"] --> D["collateral.balanceOf(VP) >= \nVP._balance + VP._lockedBalance"]
+    C["Credit line invariant"] --> D["CLM.totalDebt() ==\nCLM.reservedDebt + CLM.activeDebt"]
 
     E["Lock invariants"] --> F["lockedGeneralBalance <= generalBalance"]
     E --> G["lockedAffiliateBalances[a] <= affiliateBalances[a]"]
@@ -4878,7 +4562,7 @@ flowchart TD
 ### 20.2 Accounting Invariants
 
 - [ ] `collateral.balanceOf(expressProvider) >= generalBalance + sum(affiliateBalances) + sum(collectedFees) + sum(collectedOperatorFees) + sum(sponsorBalances) + (tokens from finalized STANDARD awaiting processing)`
-- [ ] `collateral.balanceOf(virtualProvider) >= _balance + _lockedBalance`
+- [ ] `CreditLineManager.totalDebt() == reservedDebt + activeDebt` (credit line accounting)
 - [ ] `lockedGeneralBalance <= generalBalance`
 - [ ] `lockedAffiliateBalances[a] <= affiliateBalances[a]` for all affiliates
 - [ ] For each ring buffer (general and per-affiliate): `sum(reservedOutflow across buckets) <= available free balance + sum(expectedInflow in prior buckets)` (ensures feasibility)
@@ -4941,11 +4625,11 @@ Step 1 — Bot runs: scheduled invariant check (all passing)
     lockedAffiliateBalances[A] = 500    <= affiliateBalances[A] (3_000)  --> PASS
     lockedAffiliateBalances[B] = 0      <= affiliateBalances[B] (1_000)  --> PASS
 
-  Bot checks: VirtualProvider invariant
-    collateral.balanceOf(VP)   = 2_500
-    VP.getBalance()            = 1_800  (_balance)
-    VP.getLockedBalance()      = 700    (_lockedBalance)
-    1_800 + 700 = 2_500 = token balance --> PASS
+  Bot checks: Credit line invariant
+    CLM(FrontendA).totalDebt()    = 500
+    CLM(FrontendA).reservedDebt() = 200
+    CLM(FrontendA).activeDebt()   = 300
+    200 + 300 = 500 = totalDebt --> PASS
   Decision: all invariants hold; continue normal operations
 
 Step 2 — Bot runs: next invariant check (failure detected)
@@ -4967,10 +4651,10 @@ What-if: lock invariant fails instead (lockedGeneralBalance > generalBalance)?
   corrupted state read. Bot treats this as a critical alert and halts
   all operations until manual investigation confirms root cause.
 
-What-if: VP invariant fails (VP token balance < _balance + _lockedBalance)?
-  Bot stops offering express+virtual withdrawals for that affiliate's VP.
-  Express-only withdrawals from the general and affiliate pools can continue.
-  Bot alerts ops to investigate whether tokens were extracted from the VP.
+What-if: credit line invariant fails (totalDebt != reservedDebt + activeDebt)?
+  Bot stops offering credit-backed withdrawals for that affiliate.
+  Pool-only withdrawals from the general and affiliate pools can continue.
+  Bot alerts ops to investigate the CreditLineManager state.
 ```
 
 ---
@@ -5048,7 +4732,7 @@ Each cell tells the bot exactly what to do, what to watch for, what actions are 
 2. Ensure `minValidatorSignatures > 0` (contract reverts otherwise: `ValidatorsRequiredForImmediate`)
 3. Gather validator signatures (each from a `VALIDATOR_ROLE` holder, within `validatorApprovalTimeout`)
 4. Verify sufficient general + affiliate pool liquidity for the express amount
-5. Verify VirtualProvider balance for any virtual parts
+5. Verify credit line capacity (if creditAmount > 0)
 
 **Available actions:**
 - User: calls `initiateWithdraw` on SYMMIO, which triggers `onWithdrawRequest` on ExpressProvider
@@ -5153,7 +4837,7 @@ Result: status -> FINALIZED, generalBalance += generalAmount, affiliateBalances[
 **Bot should:**
 1. Check that `generalBalance - lockedGeneralBalance >= generalAmount` (else `InsufficientGeneralBalance`)
 2. Check that `affiliateBalances[aff] - lockedAffiliateBalances[aff] >= affiliateAmount` (else `InsufficientAffiliateBalance`)
-3. Check VirtualProvider balances for any virtual parts
+3. Check credit line capacity (if creditAmount > 0)
 4. Sign the EIP-712 WithdrawOption with `optionType = 1 (INSTANT)`, `availableAt = 0`
 5. Optionally gather validator signatures (if `minValidatorSignatures > 0`)
 
@@ -5315,7 +4999,7 @@ Result: status -> FINALIZED
 
 ### INSTANT x CANCELLED
 
-**Bot situation:** Terminal state. The withdrawal was cancelled (by user via `onWithdrawCancelRequest` or by admin via `onForceWithdrawCancel`). All pool counter locks released, virtual funds unlocked, sponsor coverage refunded, ring buffer entries cleaned (both general and affiliate rings).
+**Bot situation:** Terminal state. The withdrawal was cancelled (by user via `onWithdrawCancelRequest` or by admin via `onForceWithdrawCancel`). All pool counter locks released, credit reservation released, sponsor coverage refunded, ring buffer entries cleaned (both general and affiliate rings).
 
 **Bot should:**
 1. Archive this withdrawal
@@ -5332,7 +5016,7 @@ Result: status -> FINALIZED
 
 ### INSTANT x SUSPENDED
 
-**Bot situation:** Terminal state. A SYMMIO operator suspended this withdrawal. All pool locks released, virtual funds unlocked, sponsor coverage refunded.
+**Bot situation:** Terminal state. A SYMMIO operator suspended this withdrawal. All pool locks released, credit reservation released, sponsor coverage refunded.
 
 **Bot should:**
 1. Archive this withdrawal
@@ -5358,7 +5042,7 @@ Result: status -> FINALIZED
 4. Both `generalAmount` and `affiliateAmount` are reserved via ring buffers (NOT immediate counter locks)
 5. General ring: `isLiquidityAvailableBy(generalRing, generalFree, generalAmount, targetOffset)` must pass (else `InsufficientScheduledLiquidity`)
 6. Affiliate ring: `isLiquidityAvailableBy(affiliateRing, affiliateFree, affiliateAmount, affOffset)` must pass (else `InsufficientScheduledAffiliateLiquidity`)
-7. Check VirtualProvider balances for any virtual parts
+7. Check credit line capacity (if creditAmount > 0)
 8. Sign the EIP-712 WithdrawOption with `optionType = 2 (SCHEDULED)`, `availableAt = <computed>`
 
 **Available actions:**
@@ -5518,7 +5202,7 @@ Result: status -> FINALIZED
 
 ### SCHEDULED x CANCELLED
 
-**Bot situation:** Terminal state. Cancelled via `onForceWithdrawCancel` (note: regular `onWithdrawCancelRequest` always reverts with `ScheduledNotCancellable`). Ring buffer reservations cleared (both general and affiliate), virtual funds unlocked, sponsor coverage refunded.
+**Bot situation:** Terminal state. Cancelled via `onForceWithdrawCancel` (note: regular `onWithdrawCancelRequest` always reverts with `ScheduledNotCancellable`). Ring buffer reservations cleared (both general and affiliate), credit reservation released, sponsor coverage refunded.
 
 **Bot should:**
 1. Archive this withdrawal
@@ -5535,7 +5219,7 @@ Result: status -> FINALIZED
 
 ### SCHEDULED x SUSPENDED
 
-**Bot situation:** Terminal state. SYMMIO operator suspended the withdrawal. Ring buffer reservations cleared (both general and affiliate), virtual funds unlocked, sponsor coverage refunded.
+**Bot situation:** Terminal state. SYMMIO operator suspended the withdrawal. Ring buffer reservations cleared (both general and affiliate), credit reservation released, sponsor coverage refunded.
 
 **Bot should:**
 1. Archive this withdrawal
@@ -5744,7 +5428,7 @@ Non-operator at T=1700043250:
 
 ### STANDARD x CANCELLED
 
-**Bot situation:** Terminal state. Withdrawal was cancelled (by user via `onWithdrawCancelRequest` or by admin via `onForceWithdrawCancel`). Since STANDARD does not front capital, there are no pool locks to release. Virtual fund locks are released, sponsor coverage is refunded.
+**Bot situation:** Terminal state. Withdrawal was cancelled (by user via `onWithdrawCancelRequest` or by admin via `onForceWithdrawCancel`). Since STANDARD does not front capital, there are no pool locks to release. Credit reservation is released, sponsor coverage is refunded.
 
 **Bot should:**
 1. Archive this withdrawal
@@ -5760,7 +5444,7 @@ Non-operator at T=1700043250:
 
 ### STANDARD x SUSPENDED
 
-**Bot situation:** Terminal state. SYMMIO operator suspended the withdrawal. Since STANDARD does not front capital, there are no pool locks to release. Virtual fund locks are released, sponsor coverage is refunded.
+**Bot situation:** Terminal state. SYMMIO operator suspended the withdrawal. Since STANDARD does not front capital, there are no pool locks to release. Credit reservation is released, sponsor coverage is refunded.
 
 **Bot should:**
 1. Archive this withdrawal
