@@ -112,10 +112,10 @@ async function main() {
 	} else {
 		const factory = await ethers.getContractFactory("SymmioPartyB")
 		const contract = await factory.deploy()
-		await contract.waitForDeployment()
 		symmioPartyBImpl = await contract.getAddress()
 		state.symmioPartyBImplementation = symmioPartyBImpl
 		saveState(state)
+		await contract.waitForDeployment()
 		log.deployed("SymmioPartyB", symmioPartyBImpl)
 	}
 	log.stepDone(t)

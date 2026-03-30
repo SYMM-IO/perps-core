@@ -110,10 +110,10 @@ export async function deployAccountLayerDiamond(
 	} else {
 		const factory = await ethers.getContractFactory("DiamondCutFacet")
 		const contract = await factory.deploy()
-		await contract.waitForDeployment()
 		diamondCutFacetAddress = await contract.getAddress()
 		al.diamondCutFacet = diamondCutFacetAddress
 		if (stateFile) saveState(stateFile, state)
+		await contract.waitForDeployment()
 		log.deployed("DiamondCutFacet", diamondCutFacetAddress)
 	}
 
@@ -130,10 +130,10 @@ export async function deployAccountLayerDiamond(
 		const factory = await ethers.getContractFactory("Diamond")
 		const deployOwner = adminSigner ? adminAddress : await deployer.getAddress()
 		const contract = await factory.deploy(deployOwner, diamondCutFacetAddress)
-		await contract.waitForDeployment()
 		diamondAddress = await contract.getAddress()
 		al.diamond = diamondAddress
 		if (stateFile) saveState(stateFile, state)
+		await contract.waitForDeployment()
 		log.deployed("Diamond", diamondAddress)
 	}
 
@@ -145,10 +145,10 @@ export async function deployAccountLayerDiamond(
 	} else {
 		const factory = await ethers.getContractFactory("contracts/accountLayer/Init.sol:Init")
 		const contract = await factory.deploy()
-		await contract.waitForDeployment()
 		initAddress = await contract.getAddress()
 		al.init = initAddress
 		if (stateFile) saveState(stateFile, state)
+		await contract.waitForDeployment()
 		log.deployed("Init", initAddress)
 	}
 
@@ -161,10 +161,10 @@ export async function deployAccountLayerDiamond(
 	} else {
 		const factory = await ethers.getContractFactory("contracts/accountLayer/libraries/LibQuoteParams.sol:LibQuoteParams")
 		const contract = await factory.deploy()
-		await contract.waitForDeployment()
 		libraryAddresses["LibQuoteParams"] = await contract.getAddress()
 		al.libraries["LibQuoteParams"] = libraryAddresses["LibQuoteParams"]
 		if (stateFile) saveState(stateFile, state)
+		await contract.waitForDeployment()
 		log.deployed("LibQuoteParams", libraryAddresses["LibQuoteParams"])
 	}
 
@@ -195,11 +195,14 @@ export async function deployAccountLayerDiamond(
 				factory = await ethers.getContractFactory(contractPath)
 			}
 			const facet = await factory.deploy()
-			await facet.waitForDeployment()
+			// Save address immediately after tx is submitted (before mining) so a crash
+			// during waitForDeployment doesn't lose the deployed address and cause a
+			// nonce-too-low error on retry.
 			facetAddress = await facet.getAddress()
 			facetAddresses[facetName] = facetAddress
 			al.facets[facetName] = facetAddress
 			if (stateFile) saveState(stateFile, state)
+			await facet.waitForDeployment()
 			log.progress(i + 1, AccountLayerFacetNames.length, `${log.name(facetName)}  ${log.addr(facetAddress)}`)
 		}
 
@@ -283,13 +286,13 @@ export async function deployInstantLayer(symmioAddress: string, adminAddress: st
 
 	const factory = await ethers.getContractFactory("InstantLayer")
 	const contract = await factory.deploy(symmioAddress, adminAddress)
-	await contract.waitForDeployment()
 	const address = await contract.getAddress()
 
 	if (!state.instantLayer) state.instantLayer = {}
 	state.instantLayer.address = address
 	if (stateFile) saveState(stateFile, state)
 
+	await contract.waitForDeployment()
 	log.deployed("InstantLayer", address)
 	return { address }
 }
