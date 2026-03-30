@@ -297,16 +297,16 @@ sequenceDiagram
 ```
 
 **Prerequisites:**
-- [ ] `minValidatorSignatures > 0` (REQUIRED, reverts `ValidatorsRequiredForImmediate` otherwise)
+- [ ] `minValidatorSignatures(affiliate) > 0` (REQUIRED, reverts `ValidatorsRequiredForImmediate` otherwise; falls back to `minValidatorSignatures(address(0))` default)
 - [ ] Sufficient general pool liquidity
 - [ ] Sufficient affiliate pool liquidity (if affiliateAmount > 0)
 - [ ] Sufficient credit line capacity (if creditAmount > 0)
-- [ ] Valid validator attestations gathered
+- [ ] Valid validator attestations gathered from validators registered for this affiliate (or `address(0)` default)
 
 **Bot checklist:**
-- [ ] Gather >= `minValidatorSignatures` validator sigs before offering IMMEDIATE
+- [ ] Gather >= `minValidatorSignatures(affiliate)` validator sigs before offering IMMEDIATE (from validators registered for this affiliate or `address(0)` default)
 - [ ] Validator sigs must be address-sorted ascending (dedup check)
-- [ ] Each validator timestamp must be within `validatorApprovalTimeout` of current time
+- [ ] Each validator timestamp must be within `validatorApprovalTimeout(affiliate)` of current time
 - [ ] Verify `symmioNonce` matches user's current SYMMIO nonce
 - [ ] Schedule `finalizeWithdrawRequest` at `cooldownEndTime`
 - [ ] No `processWithdraw` needed (funds already sent)
@@ -322,14 +322,14 @@ Setup:
   generalBalance          = 10,000 USDC   lockedGeneralBalance          = 0
   affiliateBalances[aff]  =  5,000 USDC   lockedAffiliateBalances[aff]  = 0
   affiliateConfigs[aff]   = { feeRate: 100 (1%), operatorFee: 2e6 (2 USDC) }
-  minValidatorSignatures  = 2             validatorApprovalTimeout      = 30s
+  minValidatorSignatures(aff)  = 2        validatorApprovalTimeout(aff)      = 30s
   CLM.availableCredit     =  3,000 USDC   CLM.outstandingDebt           = 0
   nonces[user]            = 3
   sponsorBalances[aff]    = 0 USDC (no sponsor)
 
 Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
   Bot reads on-chain:
-    - minValidatorSignatures                                = 2 (must be > 0 for IMMEDIATE; reverts
+    - minValidatorSignatures(aff)                            = 2 (must be > 0 for IMMEDIATE; reverts
       ValidatorsRequiredForImmediate otherwise)
     - generalBalance - lockedGeneralBalance                 = 10,000 - 0 = 10,000 USDC available
     - affiliateBalances[aff] - lockedAffiliateBalances[aff] = 5,000 - 0  = 5,000 USDC available
@@ -364,7 +364,7 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
       Bot must reduce creditAmount to 150 (and increase generalAmount to 550),
       or fall back to INSTANT without credit.
 
-    What if minValidatorSignatures were 0?
+    What if minValidatorSignatures(aff) were 0?
       Contract reverts ValidatorsRequiredForImmediate. Bot cannot offer IMMEDIATE.
       Must fall back to INSTANT (optionType=1), which adds a securityWindow delay.
 
@@ -372,18 +372,18 @@ Step 2 — Bot sees: validator attestations gathered
   Bot reads on-chain:
     - ISymmio(symmio).getUserNonce(user)                    = 42 (SYMMIO-side nonce)
     - block.timestamp                                       = T_now
-  Bot requests ValidatorApproval signatures from 2 independent VALIDATOR_ROLE holders:
+  Bot requests ValidatorApproval signatures from 2 independent validators registered for aff (or address(0) default):
     Each validator signs: ValidatorApproval(user, nonce=3, amount=1000e6, timestamp=T_now, symmioNonce=42)
   Bot checks:
     - Received 2 signatures?                                                       YES
-    - Each signature timestamp within validatorApprovalTimeout (30s) of current time? YES
+    - Each signature timestamp within validatorApprovalTimeout(aff) (30s) of current time? YES
     - Validator addresses sorted ascending (contract enforces DuplicateValidator)?   YES
-    - Each signer has VALIDATOR_ROLE?                                               YES
+    - Each signer is a registered validator (isValidator(aff, signer))?              YES
   Decision: All attestations valid. Sign the EIP-712 option with nonce=3, optionType=0,
   deadline=T_now+30s, then send both option + validator data to the user.
 
     What if one validator timestamp were 45s old?
-      45 > 30 (validatorApprovalTimeout) — contract reverts ValidatorApprovalExpired.
+      45 > 30 (validatorApprovalTimeout(aff)) — contract reverts ValidatorApprovalExpired.
       Bot must request a fresh signature from that validator.
 
     What if both validators had the same address (or unsorted)?
@@ -400,7 +400,7 @@ Step 3 — Bot sees: user submits withdrawal (SYMMIO calls onWithdrawRequest —
      - opt.operatorFee == affiliateConfigs[aff].operatorFee?   2e6 == 2e6?          YES (reverts OperatorFeeMismatch otherwise)
      - fee + operatorFee <= feeBasis?   12e6 <= 1,000e6?                           YES (reverts FeesExceedExpressAmount otherwise)
   c. Validate 2 validator signatures:
-     - Each signer has VALIDATOR_ROLE?   YES
+     - Each signer is a registered validator (isValidator(aff, signer))?   YES
      - Each timestamp within 30s?   YES
      - Addresses sorted ascending?   YES
      - getUserNonce(user) == symmioNonce?   42 == 42?   YES (reverts InvalidNonce otherwise)
@@ -849,7 +849,7 @@ flowchart TD
 
     B1 & B2 & B3 & B4 & B5 & B6 --> C{Compute available liquidity}
 
-    C --> D{minValidatorSignatures > 0\nAND sufficient liquidity?}
+    C --> D{minValidatorSignatures&#40;affiliate&#41; > 0\nAND sufficient liquidity?}
     D -->|Yes| D1[Gather validator sigs]
     D1 --> D2[Offer IMMEDIATE]
 
@@ -874,8 +874,8 @@ flowchart TD
 - [ ] Check available general pool: `generalBalance - lockedGeneralBalance >= generalAmount`
 - [ ] Check available affiliate pool: `affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate] >= affiliateAmount`
 - [ ] Check credit line capacity: `creditLineManagers(affiliate) != address(0)` if using credit
-- [ ] For IMMEDIATE: verify `minValidatorSignatures > 0`
-- [ ] If validators required: gather >= `minValidatorSignatures` attestations
+- [ ] For IMMEDIATE: verify `minValidatorSignatures(affiliate) > 0` (falls back to `address(0)` default)
+- [ ] If validators required: gather >= `minValidatorSignatures(affiliate)` attestations from validators registered for this affiliate (or `address(0)` default)
 - [ ] Construct `WithdrawReceiverPart[]` array
 - [ ] Compute `partsHash = keccak256(abi.encode(parts))`
 - [ ] Sign EIP-712 `WithdrawOption` with SIGNER_ROLE key
@@ -958,7 +958,7 @@ Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
     generalBalance - lockedGeneralBalance = 10,000 - 2,000 = 8,000e6 unlocked
     affiliateBalances[0xAff] - lockedAffiliateBalances[0xAff] = 3,000 - 0 = 3,000e6 unlocked
     sponsorBalances(0xAff) = 0
-    minValidatorSignatures = 0
+    minValidatorSignatures(0xAff) = 0
 
   Bot decides the parts split:
     1 part, express-only: 500e6 to 0xReceiver, expressProvider=0xEP, virtualProvider=0x0
@@ -972,7 +972,7 @@ Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
     INSTANT is feasible.
 
   Bot checks: "Can I offer IMMEDIATE?"
-    minValidatorSignatures = 0 -- NO (validators required for IMMEDIATE)
+    minValidatorSignatures(0xAff) = 0 -- NO (validators required for IMMEDIATE)
 
   Bot computes fee:
     feeBasis = expressAmount = 500e6
@@ -1306,7 +1306,7 @@ flowchart TD
     T -->|AffiliateConfigUpdated| H1[Update cached fee config]
     H1 --> H2[Invalidate pending\nunsigned options]
 
-    T -->|MinValidatorSignaturesUpdated| I1[Update validator logic]
+    T -->|MinValidatorSignaturesUpdated&#40;affiliate&#41;| I1[Update validator logic]
     I1 --> I2[Check if pending\nsigs sufficient]
 ```
 
@@ -1323,8 +1323,9 @@ flowchart TD
 | `WithdrawSuspended(user, requestId)` | ExpressProvider | Cancel all scheduled actions for this withdrawal |
 | `AffiliateConfigUpdated(affiliate, feeRate, operatorFee)` | ExpressProvider | Update cached fee config. Re-sign any pending options |
 | `SponsorConfigUpdated(affiliate, ...)` | ExpressProvider | Update cached sponsor config |
-| `MinValidatorSignaturesUpdated(min)` | ExpressProvider | Update validator gathering logic. If raised, pending ops may be invalidated |
-| `ValidatorApprovalTimeoutUpdated(timeout)` | ExpressProvider | Update timestamp freshness check. Pending sigs may expire |
+| `MinValidatorSignaturesUpdated(affiliate, min)` | ExpressProvider | Update validator gathering logic for this affiliate. If raised, pending ops may be invalidated |
+| `ValidatorApprovalTimeoutUpdated(affiliate, timeout)` | ExpressProvider | Update timestamp freshness check for this affiliate. Pending sigs may expire |
+| `ValidatorUpdated(affiliate, validator, enabled)` | ExpressProvider | Update tracked validators for this affiliate. If disabled, pending sigs from that validator become invalid |
 | `GeneralDeposit(amount)` | ExpressProvider | Update available liquidity tracking |
 | `GeneralWithdraw(amount)` | ExpressProvider | Update available liquidity tracking |
 | `AffiliateDeposit(affiliate, amount)` | ExpressProvider | Update per-affiliate liquidity tracking |
@@ -1781,17 +1782,17 @@ sequenceDiagram
     S->>EP: onWithdrawRequest(req)
 
     Note over EP: Decode validatorData
-    Note over EP: Check sig count >= minValidatorSignatures
+    Note over EP: Check sig count >= minValidatorSignatures(affiliate)
     Note over EP: Check symmioNonce matches getUserNonce(user)
-    Note over EP: For each sig: check freshness, role, no duplicates
+    Note over EP: For each sig: check freshness, isValidator, no duplicates
 ```
 
 ### 8.2 When Validators Are Required
 
 | Condition | Validators Checked? |
 |-----------|-------------------|
-| `minValidatorSignatures > 0` | Yes, for ALL option types |
-| `minValidatorSignatures == 0` | No |
+| `minValidatorSignatures(affiliate) > 0` | Yes, for ALL option types |
+| `minValidatorSignatures(affiliate) == 0` | No |
 | IMMEDIATE option type | ALWAYS required (reverts `ValidatorsRequiredForImmediate` if disabled) |
 
 ### 8.3 ValidatorApproval EIP-712 Structure
@@ -1809,25 +1810,25 @@ ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp
 ### 8.4 Validation Rules
 
 - [ ] `signatures.length == timestamps.length` (else `ArrayLengthMismatch`)
-- [ ] `signatures.length >= minValidatorSignatures` (else `InsufficientValidatorSignatures`)
+- [ ] `signatures.length >= minValidatorSignatures(affiliate)` (else `InsufficientValidatorSignatures`; falls back to `minValidatorSignatures(address(0))` default)
 - [ ] `symmioNonce == ISymmio(symmio).getUserNonce(user)` (else `InvalidNonce`)
 - [ ] For each signature:
   - [ ] `timestamps[i] <= block.timestamp` (no future-dating, else `ValidatorApprovalExpired`)
-  - [ ] `block.timestamp - timestamps[i] <= validatorApprovalTimeout` (not stale, else `ValidatorApprovalExpired`)
-  - [ ] Recovered signer has `VALIDATOR_ROLE` (else `InvalidValidator`)
+  - [ ] `block.timestamp - timestamps[i] <= validatorApprovalTimeout(affiliate)` (not stale, else `ValidatorApprovalExpired`; falls back to `validatorApprovalTimeout(address(0))` default)
+  - [ ] Recovered signer passes `isValidator(affiliate, signer)` — checks affiliate-specific registration first, then `address(0)` default (else `InvalidValidator`)
   - [ ] Signers are sorted ascending by address (else `DuplicateValidator`)
   - [ ] No duplicate signers
 
 ### 8.5 Bot Checklist for Validators
 
-- [ ] Gather >= `minValidatorSignatures` from distinct VALIDATOR_ROLE holders
+- [ ] Gather >= `minValidatorSignatures(affiliate)` from distinct registered validators for this affiliate (or `address(0)` default)
 - [ ] Sort signatures by signer address (ascending) before encoding
-- [ ] Verify each timestamp is recent (within `validatorApprovalTimeout` of expected block time)
+- [ ] Verify each timestamp is recent (within `validatorApprovalTimeout(affiliate)` of expected block time)
 - [ ] Verify user's SYMMIO nonce hasn't changed since validators signed
 - [ ] If user acts on SYMMIO after validators sign: re-gather all attestations
-- [ ] If admin raises `minValidatorSignatures`: previously gathered sets may be insufficient
-- [ ] If admin reduces `validatorApprovalTimeout`: previously valid sigs may expire
-- [ ] Monitor `RoleRevoked` events for VALIDATOR_ROLE: revoked validators' pending sigs become invalid
+- [ ] If admin raises `minValidatorSignatures(affiliate)`: previously gathered sets may be insufficient
+- [ ] If admin reduces `validatorApprovalTimeout(affiliate)`: previously valid sigs may expire
+- [ ] Monitor `ValidatorUpdated` events: disabled validators' pending sigs become invalid
 
 ### 8.6 Edge Cases
 
@@ -1836,9 +1837,9 @@ ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp
 | Exact expiry boundary (`timestamp + timeout == block.timestamp`) | VALID (strict `>` check) |
 | Future-dated timestamp | REJECTED (`ValidatorApprovalExpired`) |
 | Same validator signs twice | REJECTED (`DuplicateValidator`) |
-| Wrong amount in validator sig | REJECTED (`InvalidValidator` -- recovered address differs) |
-| Wrong nonce in validator sig | REJECTED (`InvalidValidator` -- recovered address differs) |
-| Validator role revoked after signing | REJECTED at submission time |
+| Wrong amount in validator sig | REJECTED (`InvalidValidator` -- recovered address not a registered validator) |
+| Wrong nonce in validator sig | REJECTED (`InvalidValidator` -- recovered address not a registered validator) |
+| Validator disabled after signing | REJECTED at submission time |
 | More sigs than minimum | All validated, extras must also be valid |
 | symmioNonce changed after signing | REJECTED (`InvalidNonce`) |
 
@@ -1848,9 +1849,9 @@ ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp
 Scenario: Bot gathers validator sigs, checks timestamps, decides if enough valid sigs
 
 Setup:
-  minValidatorSignatures  = 2
-  validatorApprovalTimeout = 30s
-  Validators with VALIDATOR_ROLE:
+  minValidatorSignatures(affiliate)  = 2
+  validatorApprovalTimeout(affiliate) = 30s
+  Validators registered for this affiliate (or address(0) default):
     V1 at 0xAAA...1
     V2 at 0xBBB...2
     V3 at 0xCCC...3
@@ -1861,13 +1862,13 @@ Setup:
 
 Step 1 — Bot sees: Alice requests IMMEDIATE withdrawal of 1,000 USDC
   Bot reads on-chain:
-    minValidatorSignatures  = 2
-    validatorApprovalTimeout = 30s
+    minValidatorSignatures(affiliate)  = 2
+    validatorApprovalTimeout(affiliate) = 30s
     nonces[Alice]           = 5
     getUserNonce(Alice)      = 12
   Bot checks:
-    IMMEDIATE requires minValidatorSignatures > 0? YES (2 > 0) — validators enabled
-    Need >= 2 valid signatures from distinct VALIDATOR_ROLE holders
+    IMMEDIATE requires minValidatorSignatures(affiliate) > 0? YES (2 > 0) — validators enabled
+    Need >= 2 valid signatures from distinct registered validators
   Decision: Request attestations from V1, V2 (and optionally V3 as backup)
 
 Step 2 — Bot sees: validator responses arrive
@@ -1879,7 +1880,7 @@ Step 2 — Bot sees: validator responses arrive
     Both used nonce=5 matching nonces[Alice]? YES
     Both used symmioNonce=12 matching getUserNonce(Alice)? YES
     Both used amount=1000e6 matching expressAmount? YES
-    Count: 2 valid sigs >= minValidatorSignatures (2)? YES
+    Count: 2 valid sigs >= minValidatorSignatures(affiliate) (2)? YES
   Decision: Sort by signer address for encoding
     0xAAA...1 < 0xBBB...2 -> order: [sig_V1, sig_V2], timestamps: [100, 102]
     Encode: validatorData = abi.encode([sig_V1, sig_V2], [100, 102], 12)
@@ -1905,15 +1906,15 @@ Step 4 — Bot considers: what if Alice acted on SYMMIO between T=102 and submis
     -> Bot must re-gather ALL attestations with symmioNonce = 13
     -> Previous validator sigs are permanently invalidated (wrong symmioNonce baked in)
 
-  What if V2's VALIDATOR_ROLE is revoked between T=102 and submission?
-    On submission: contract recovers signer from sig_V2, checks hasRole(VALIDATOR_ROLE, V2)
-    V2 no longer has role -> Reverts: InvalidValidator
-    -> Bot monitors RoleRevoked events; if V2 revoked, re-gather with V3 replacing V2
+  What if V2 is disabled via setValidator(affiliate, V2, false) between T=102 and submission?
+    On submission: contract recovers signer from sig_V2, checks isValidator(affiliate, V2)
+    V2 is no longer a registered validator -> Reverts: InvalidValidator
+    -> Bot monitors ValidatorUpdated events; if V2 disabled, re-gather with V3 replacing V2
 
   What if bot sends only 1 sig (from V1)?
-    signatures.length (1) < minValidatorSignatures (2)
+    signatures.length (1) < minValidatorSignatures(affiliate) (2)
     -> Reverts: InsufficientValidatorSignatures
-    -> Bot must always gather at least minValidatorSignatures before returning option
+    -> Bot must always gather at least minValidatorSignatures(affiliate) before returning option
 ```
 
 ---
@@ -2684,8 +2685,8 @@ gantt
 |-----------|---------|--------|-------------|
 | `securityWindow` | 20s | SETTER_ROLE | Min delay before operator `processWithdraw` for INSTANT |
 | `tolerancePeriod` | 60s | SETTER_ROLE | Extra delay for permissionless processing |
-| `validatorApprovalTimeout` | 30s | SETTER_ROLE | Max age of validator signatures |
-| `minValidatorSignatures` | 0 | SETTER_ROLE | Required validator attestation count |
+| `validatorApprovalTimeout(affiliate)` | 30s | SETTER_ROLE | Max age of validator signatures (per-affiliate, `address(0)` = default) |
+| `minValidatorSignatures(affiliate)` | 0 | SETTER_ROLE | Required validator attestation count (per-affiliate, `address(0)` = default) |
 
 ### 15.3 Fixed Timing
 
@@ -2866,7 +2867,7 @@ flowchart TD
     S --> S1["InvalidSigner → Check SIGNER_ROLE"]
     S --> S2["OptionExpired → Re-sign with later deadline"]
     S --> S3["InvalidNonce → Re-read nonces(user)"]
-    S --> S4["InvalidValidator → Re-gather from valid validators"]
+    S --> S4["InvalidValidator → Re-gather from registered validators"]
     S --> S5["DuplicateValidator → Sort & deduplicate"]
     S --> S6["ValidatorApprovalExpired → Re-gather fresh sigs"]
 
@@ -2890,7 +2891,7 @@ flowchart TD
 
     A -->|Validation| V{Which?}
     V --> V1["InvalidOptionType → Use optionType 0-2"]
-    V --> V2["ValidatorsRequiredForImmediate → Enable validators"]
+    V --> V2["ValidatorsRequiredForImmediate → Register validators for affiliate"]
     V --> V3["InvalidAddressBytesLength → Fix receiver encoding"]
 
 ```
@@ -2903,9 +2904,9 @@ flowchart TD
 | `OptionExpired` | `block.timestamp > opt.deadline` | Extend deadline or re-sign |
 | `InvalidNonce` | Option nonce != `nonces[user]` | Re-read nonce, re-sign |
 | `OnlySymmio` | Non-SYMMIO calling callback | N/A (contract architecture issue) |
-| `InvalidValidator` | Recovered validator lacks VALIDATOR_ROLE | Re-gather from valid validators |
+| `InvalidValidator` | Recovered validator not registered for this affiliate (or `address(0)` default) | Re-gather from registered validators |
 | `DuplicateValidator` | Same validator signed twice | Sort and deduplicate |
-| `InsufficientValidatorSignatures` | Fewer sigs than `minValidatorSignatures` | Gather more |
+| `InsufficientValidatorSignatures` | Fewer sigs than `minValidatorSignatures(affiliate)` | Gather more |
 | `ValidatorApprovalExpired` | Timestamp too old or future-dated | Re-gather with fresh timestamps |
 | `ArrayLengthMismatch` | signatures.length != timestamps.length | Fix encoding |
 
@@ -2950,7 +2951,7 @@ flowchart TD
 | Error | Cause | Bot Action |
 |-------|-------|------------|
 | `InvalidOptionType` | `opt.optionType > 2` in `onWithdrawRequest` | Use only 0 (IMMEDIATE), 1 (INSTANT), or 2 (STANDARD) |
-| `ValidatorsRequiredForImmediate` | IMMEDIATE option when `minValidatorSignatures == 0` | Do not offer IMMEDIATE unless validators are configured; fall back to INSTANT |
+| `ValidatorsRequiredForImmediate` | IMMEDIATE option when `minValidatorSignatures(affiliate) == 0` | Do not offer IMMEDIATE unless validators are configured for this affiliate (or `address(0)` default); fall back to INSTANT |
 | `InvalidAddressBytesLength` | `parts[i].receiver` is not exactly 20 bytes | Ensure all receiver fields are valid 20-byte Ethereum addresses |
 
 ### 16.7 Bot Scenarios for Key Errors
@@ -2983,24 +2984,25 @@ Scenario:
 Bot sees: User requests fastest possible withdrawal. Bot considers IMMEDIATE.
 
 Bot checks:
-  Read minValidatorSignatures on-chain.
-  If minValidatorSignatures == 0, IMMEDIATE is not available.
-  Contract enforces: if optionType == IMMEDIATE && minValidatorSignatures == 0,
+  Read minValidatorSignatures(affiliate) on-chain (falls back to address(0) default).
+  If minValidatorSignatures(affiliate) == 0, IMMEDIATE is not available.
+  Contract enforces: if optionType == IMMEDIATE && minValidatorSignatures(affiliate) == 0,
   revert ValidatorsRequiredForImmediate.
 
 Decision:
-  If minValidatorSignatures == 0:
+  If minValidatorSignatures(affiliate) == 0:
     Do NOT offer IMMEDIATE. Fall back to INSTANT (next fastest option).
     INSTANT provides funds after securityWindow (default 20s), which is still fast.
-  If minValidatorSignatures > 0:
-    Gather at least minValidatorSignatures validator attestations, then sign IMMEDIATE.
+  If minValidatorSignatures(affiliate) > 0:
+    Gather at least minValidatorSignatures(affiliate) validator attestations from
+    validators registered for this affiliate (or address(0) default), then sign IMMEDIATE.
 
 Scenario:
-  minValidatorSignatures = 0 (validators not yet configured)
+  minValidatorSignatures(affiliate) = 0 (validators not yet configured for this affiliate)
   Bot signs IMMEDIATE option for Alice, 1000 USDC
-  -> onWithdrawRequest checks: ot == IMMEDIATE && minValidatorSignatures == 0
+  -> onWithdrawRequest checks: ot == IMMEDIATE && minValidatorSignatures(affiliate) == 0
   -> REVERT ValidatorsRequiredForImmediate
-  -> Bot reads minValidatorSignatures = 0
+  -> Bot reads minValidatorSignatures(affiliate) = 0
   -> Bot re-signs as INSTANT instead. User gets funds after 20s security window.
 ```
 
@@ -3139,12 +3141,12 @@ sequenceDiagram
 |---------------|---------------------------------|
 | `feeRate` changed | Options signed with old rate will revert `FeeMismatch` |
 | `operatorFee` changed | Options signed with old value will revert `OperatorFeeMismatch` |
-| `minValidatorSignatures` raised | Pending options with insufficient sigs will revert |
-| `validatorApprovalTimeout` reduced | Previously valid sigs may expire |
+| `minValidatorSignatures(affiliate)` raised | Pending options with insufficient sigs for this affiliate will revert |
+| `validatorApprovalTimeout(affiliate)` reduced | Previously valid sigs for this affiliate may expire |
 | `securityWindow` changed | Affects timing for unprocessed INSTANT withdrawals |
 | `tolerancePeriod` changed | Affects permissionless processing window |
 | SIGNER_ROLE revoked | All options signed by that key become invalid |
-| VALIDATOR_ROLE revoked | Pending validator sigs from that key become invalid |
+| Validator disabled (via `setValidator`) | Pending validator sigs from that key become invalid |
 
 ### 17.3 Nonce Edge Cases
 
@@ -3514,7 +3516,7 @@ Critical roles to monitor (via RoleGranted / RoleRevoked events):
   - OPERATOR_ROLE:  affects processWithdraw — delays user fund delivery
   - LOCKER_ROLE:    affects risk detection — reduces security capabilities
   - UNLOCK_ROLE:    affects locked withdrawal resolution
-  - VALIDATOR_ROLE: affects validator attestations for IMMEDIATE withdrawals
+  Also monitor ValidatorUpdated events: affects validator attestations for IMMEDIATE withdrawals
 ```
 
 #### Scenario 5: Sponsor Replacement
@@ -3641,7 +3643,7 @@ Impossible actions (all revert):
   processWithdraw: status is PROCESSED (not ACCEPTED) → NotAccepted
 
 Bot implication: Risk for IMMEDIATE must be caught BEFORE acceptance.
-  This is why minValidatorSignatures > 0 is required for IMMEDIATE.
+  This is why minValidatorSignatures(affiliate) > 0 is required for IMMEDIATE.
   Validators serve as the pre-acceptance risk check since post-acceptance intervention is impossible.
   If validators are unavailable, bot MUST offer INSTANT instead (which allows post-acceptance locking).
 ```
@@ -3789,18 +3791,22 @@ flowchart TD
         SIGNER["SIGNER_ROLE\n(Bot key)"]
         LOCKER["LOCKER_ROLE\n(Risk service)"]
         UNLOCKER["UNLOCK_ROLE\n(Security team)"]
-        VALIDATOR["VALIDATOR_ROLE\n(Monitors)"]
+    end
+
+    subgraph "Per-Affiliate Validators"
+        VALIDATORS["Validators\n(Per-affiliate, not a role)\nRegistered via setValidator"]
     end
 
     ADMIN -->|grants/revokes| SETTER & WITHDRAWER & SPONSOR_MGR & FEE_CLAIMER
-    ADMIN -->|grants/revokes| OPERATOR & SIGNER & LOCKER & UNLOCKER & VALIDATOR
+    ADMIN -->|grants/revokes| OPERATOR & SIGNER & LOCKER & UNLOCKER
     ADMIN -->|diamondCut| EP["ExpressProvider"]
+    SETTER -->|setValidator| VALIDATORS
 
     OPERATOR -->|processWithdraw| EP
     SIGNER -->|signs options| EP
     LOCKER -->|lockWithdraw| EP
     UNLOCKER -->|unlockAndProcess| EP
-    VALIDATOR -->|signs attestations| EP
+    VALIDATORS -->|signs attestations| EP
     SETTER -->|set* config| EP
     WITHDRAWER -->|withdraw pools| EP
     FEE_CLAIMER -->|claim fees| EP
@@ -3817,7 +3823,7 @@ flowchart TD
 | `LOCKER_ROLE` | `keccak256("LOCKER_ROLE")` | Risk service | `lockWithdraw` |
 | `UNLOCK_ROLE` | `keccak256("UNLOCK_ROLE")` | Security team | `unlockAndProcess` |
 | `SIGNER_ROLE` | `keccak256("SIGNER_ROLE")` | Bot signing key | EIP-712 option signatures (verified on-chain) |
-| `VALIDATOR_ROLE` | `keccak256("VALIDATOR_ROLE")` | Monitoring services | EIP-712 validator attestations |
+| Validators (per-affiliate) | N/A (not a role, tracked in `mapping(address => mapping(address => bool))`) | Monitoring services | EIP-712 validator attestations. Managed via `setValidator(affiliate, validator, enabled)` |
 | `WITHDRAWER_ROLE` | `keccak256("WITHDRAWER_ROLE")` | Admin | `withdrawFromGeneral`, `withdrawFromAffiliate` |
 | `SPONSOR_MANAGER_ROLE` | `keccak256("SPONSOR_MANAGER_ROLE")` | Admin | `withdrawSponsorBalance` |
 | `FEE_CLAIMER_ROLE` | `keccak256("FEE_CLAIMER_ROLE")` | Admin | `claimFees`, `claimOperatorFees` |
@@ -3878,7 +3884,7 @@ flowchart TD
 |--------------|-----------------|
 | Bot offline | Users can `processWithdraw` permissionlessly after `tolerancePeriod`. STANDARD always works without bot |
 | Bot fails to finalize | Anyone can call `finalizeWithdrawRequest` on SYMMIO after cooldown |
-| Validator service offline | IMMEDIATE unavailable; other types still work if `minValidatorSignatures == 0` |
+| Validator service offline | IMMEDIATE unavailable; other types still work if `minValidatorSignatures(affiliate) == 0` |
 | Insufficient pool liquidity | Only STANDARD available (no capital fronting) |
 | Sponsor drained | Users pay full fees; system still functional |
 | Config change invalidates pending sigs | Re-sign options with updated config |
@@ -4006,7 +4012,7 @@ Each cell tells the bot exactly what to do, what to watch for, what actions are 
 **Default contract parameters used in numeric scenarios:**
 - `securityWindow = 20s`
 - `tolerancePeriod = 60s`
-- `validatorApprovalTimeout = 30s`
+- `validatorApprovalTimeout(affiliate) = 30s`
 
 ---
 
@@ -4016,8 +4022,8 @@ Each cell tells the bot exactly what to do, what to watch for, what actions are 
 
 **Bot should:**
 1. Pre-sign the EIP-712 WithdrawOption with `optionType = 0 (IMMEDIATE)`
-2. Ensure `minValidatorSignatures > 0` (contract reverts otherwise: `ValidatorsRequiredForImmediate`)
-3. Gather validator signatures (each from a `VALIDATOR_ROLE` holder, within `validatorApprovalTimeout`)
+2. Ensure `minValidatorSignatures(affiliate) > 0` (contract reverts otherwise: `ValidatorsRequiredForImmediate`)
+3. Gather validator signatures (each from a registered validator for this affiliate or `address(0)` default, within `validatorApprovalTimeout(affiliate)`)
 4. Verify sufficient general + affiliate pool liquidity for the express amount
 5. Verify credit line capacity (if creditAmount > 0)
 
@@ -4126,7 +4132,7 @@ Result: status -> FINALIZED, generalBalance += generalAmount, affiliateBalances[
 2. Check that `affiliateBalances[aff] - lockedAffiliateBalances[aff] >= affiliateAmount` (else `InsufficientAffiliateBalance`)
 3. Check credit line capacity (if creditAmount > 0)
 4. Sign the EIP-712 WithdrawOption with `optionType = 1 (INSTANT)`, `availableAt = 0`
-5. Optionally gather validator signatures (if `minValidatorSignatures > 0`)
+5. Optionally gather validator signatures (if `minValidatorSignatures(affiliate) > 0`)
 
 **Available actions:**
 - User: calls `initiateWithdraw` on SYMMIO
@@ -4323,7 +4329,7 @@ Result: status -> FINALIZED
 **Bot should:**
 1. No pool liquidity check needed (no capital is fronted)
 2. Sign the EIP-712 WithdrawOption with `optionType = 2 (STANDARD)`, `availableAt = 0`
-3. Optionally gather validator signatures (if `minValidatorSignatures > 0`)
+3. Optionally gather validator signatures (if `minValidatorSignatures(affiliate) > 0`)
 
 **Available actions:**
 - User: calls `initiateWithdraw` on SYMMIO
@@ -4547,7 +4553,7 @@ The table below provides a quick-reference view. "I" = Impossible combination. T
 
 | Status \ OptionType | IMMEDIATE | INSTANT | STANDARD |
 |---|---|---|---|
-| **NONE** | Sign option, gather validators | Sign option, check pool liquidity | Sign option, no liquidity needed |
+| **NONE** | Sign option, gather validators (per-affiliate) | Sign option, check pool liquidity | Sign option, no liquidity needed |
 | **ACCEPTED** | **I** -- skips to PROCESSED | Wait securityWindow, then processWithdraw | Wait for onWithdrawComplete (12h) |
 | **LOCKED** | **I** -- never ACCEPTED | Await UNLOCK_ROLE or cooldown expiry | Await UNLOCK_ROLE or cooldown expiry + finalize |
 | **PROCESSED** | Await finalization (12h) | Await finalization (12h) | Terminal (no pool replenishment) |
@@ -4560,7 +4566,7 @@ The table below provides a quick-reference view. "I" = Impossible combination. T
 | Aspect | IMMEDIATE | INSTANT | STANDARD |
 |---|---|---|---|
 | **Capital fronted?** | Yes (same-tx) | Yes (pools locked) | No |
-| **Validators required?** | Always | Only if `minValidatorSignatures > 0` | Only if `minValidatorSignatures > 0` |
+| **Validators required?** | Always | Only if `minValidatorSignatures(affiliate) > 0` | Only if `minValidatorSignatures(affiliate) > 0` |
 | **processWithdraw needed?** | No | Yes | Yes (after finalization) |
 | **processableAt (operator)** | N/A | `acceptedAt + securityWindow` | `finalizedAt` |
 | **processableAt (anyone)** | N/A | `acceptedAt + securityWindow + tolerancePeriod` | `finalizedAt + tolerancePeriod` |

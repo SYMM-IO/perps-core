@@ -104,7 +104,7 @@ flowchart LR
 - ExpressProvider holds `EXPRESS_PROVIDER_ROLE` on each CreditLineManager for `reserveDebt` / `activateDebt` / `settleDebt` / `cancelReservation`
 - CreditLineManager verifies Muon oracle attestations to validate credit eligibility
 - Bot holds `OPERATOR_ROLE` and `SIGNER_ROLE` on ExpressProvider
-- Validators hold `VALIDATOR_ROLE` on ExpressProvider — their EIP-712 signatures are verified during onWithdrawRequest
+- Validators are registered per-affiliate on ExpressProvider via `setValidator(affiliate, validator, enabled)` — their EIP-712 signatures are verified during onWithdrawRequest. Validators registered for `address(0)` serve as defaults for all affiliates
 
 ### 2.3 Access Control (ExpressProvider)
 
@@ -119,7 +119,7 @@ flowchart LR
 | `LOCKER_ROLE` | Risk detection service | `lockWithdraw` (separated from operator so the processing key cannot freeze funds) |
 | `UNLOCK_ROLE` | Deployer/multisig | `unlockAndProcess` (separated from bot to prevent lock-unlock hostage attacks) |
 | `SIGNER_ROLE` | Bot signer key | Signs withdrawal options (verified on-chain via EIP-712) |
-| `VALIDATOR_ROLE` | Anomaly detectors / monitoring services | Signs `ValidatorApproval` attestations verified on-chain |
+Validators are not a role — they are registered per-affiliate via `setValidator(affiliate, validator, enabled)` (SETTER_ROLE). Using `address(0)` as affiliate sets a default validator for all affiliates. See [Section 4.6](#46-validator-approval-signature) for details.
 
 Roles are stored in diamond storage and managed via `grantRole`/`revokeRole` on AdminFacet (owner-only).
 
@@ -296,17 +296,17 @@ ValidatorApproval(
 Uses the same EIP-712 domain as the bot option (same contract, chain).
 
 **On-chain validation (in `onWithdrawRequest`):**
-1. Check `signatures.length >= minValidatorSignatures`
+1. Check `signatures.length >= minValidatorSignatures(affiliate)` (falls back to `minValidatorSignatures(address(0))` if affiliate-specific not set)
 2. Verify `symmioNonce == ISymmio(symmio).getUserNonce(user)` — if the user acted on SYMMIO since validators signed, the nonce won't match and the withdrawal is rejected
 3. For each signature:
    - Reject future timestamps (`timestamp > block.timestamp`)
-   - Verify `block.timestamp - timestamp <= validatorApprovalTimeout` (default 30s)
+   - Verify `block.timestamp - timestamp <= validatorApprovalTimeout(affiliate)` (falls back to `validatorApprovalTimeout(address(0))` if affiliate-specific not set, default 30s)
    - Recover signer from EIP-712 digest (includes `symmioNonce`)
-   - Verify signer has `VALIDATOR_ROLE`
+   - Verify signer is a valid validator for the affiliate via `isValidator(affiliate, signer)` — checks affiliate-specific registration first, then falls back to `address(0)` default
    - Verify signer address is strictly greater than the previous (ascending order = no duplicates)
 4. If any check fails → revert (withdrawal auto-rejected)
 
-When `minValidatorSignatures == 0`, the validator check is skipped entirely.
+When `minValidatorSignatures(affiliate) == 0` (and no default set), the validator check is skipped entirely.
 
 ## 5. Fee Model
 
@@ -561,7 +561,7 @@ sequenceDiagram
 
 ### 6.3 IMMEDIATE -- Same-Transaction Transfer
 
-IMMEDIATE transfers funds to the user inside `onWithdrawRequest` itself — the user gets funds in the same transaction as `initiateWithdraw`. This requires validators to be enabled (`minValidatorSignatures > 0`).
+IMMEDIATE transfers funds to the user inside `onWithdrawRequest` itself — the user gets funds in the same transaction as `initiateWithdraw`. This requires validators to be enabled (`minValidatorSignatures(affiliate) > 0`).
 
 ```mermaid
 sequenceDiagram
@@ -594,7 +594,7 @@ sequenceDiagram
 ```
 
 **Key properties:**
-- Validators are mandatory — `ValidatorsRequiredForImmediate` error if `minValidatorSignatures == 0`
+- Validators are mandatory — `ValidatorsRequiredForImmediate` error if `minValidatorSignatures(affiliate) == 0`
 - Status goes directly NONE → PROCESSED (skips ACCEPTED)
 - `processWithdraw` cannot be called (already PROCESSED)
 - Lock/cancel/suspend not applicable (funds already transferred)
@@ -730,13 +730,13 @@ When a user requests withdrawal options:
 
 | Check | Option Generated |
 |-------|-----------------|
-| Sufficient instant liquidity + validators enabled | **IMMEDIATE** (optionType=0) |
+| Sufficient instant liquidity + validators enabled for affiliate | **IMMEDIATE** (optionType=0) |
 | Sufficient instant liquidity + low risk | **INSTANT** (optionType=1) |
 | Always | **STANDARD** (optionType=2) |
 
 All three options use the same EIP-712 signature and go through ExpressProvider.
 
-5. Collect validator attestations: query N validator services with `(user, nonce, amount)`. Each validator signs `ValidatorApproval` with current timestamp.
+5. Collect validator attestations: query N validator services registered for this affiliate (or the `address(0)` default) with `(user, nonce, amount)`. Each validator signs `ValidatorApproval` with current timestamp.
 6. Read `affiliateConfigs(affiliate)` to get `feeRate` and `operatorFee`
 7. Compute `fee = expressAmount * feeRate / 10000`
 8. If using credit line: obtain Muon attestation (`CreditData`) for the affiliate's aggregate eligible balance. Credit is not supported for STANDARD.
@@ -923,8 +923,9 @@ function setAffiliateConfig(
     uint256 feeRate,
     uint256 operatorFee
 ) external;                                                                // Setter only
-function setMinValidatorSignatures(uint256 count) external;                // Setter only
-function setValidatorApprovalTimeout(uint256 seconds) external;            // Setter only
+function setValidator(address affiliate, address validator, bool enabled) external; // Setter only
+function setMinValidatorSignatures(address affiliate, uint256 count) external;     // Setter only
+function setValidatorApprovalTimeout(address affiliate, uint256 seconds) external; // Setter only
 
 // Fee sponsorship
 function depositSponsorBalance(address affiliate, uint256 amount) external; // Anyone
@@ -960,8 +961,9 @@ function securityWindow() external view returns (uint256);
 function tolerancePeriod() external view returns (uint256);
 
 // Validator queries
-function minValidatorSignatures() external view returns (uint256);
-function validatorApprovalTimeout() external view returns (uint256);
+function minValidatorSignatures(address affiliate) external view returns (uint256);
+function validatorApprovalTimeout(address affiliate) external view returns (uint256);
+function isValidator(address affiliate, address validator) external view returns (bool);
 
 // Access control
 function hasRole(bytes32 role, address account) external view returns (bool);
@@ -1077,19 +1079,24 @@ struct SponsorConfig {
 OPERATOR_ROLE        = keccak256("OPERATOR_ROLE")
 LOCKER_ROLE          = keccak256("LOCKER_ROLE")
 SIGNER_ROLE          = keccak256("SIGNER_ROLE")
-VALIDATOR_ROLE       = keccak256("VALIDATOR_ROLE")
 SETTER_ROLE          = keccak256("SETTER_ROLE")
 SPONSOR_MANAGER_ROLE = keccak256("SPONSOR_MANAGER_ROLE")
 FEE_CLAIMER_ROLE     = keccak256("FEE_CLAIMER_ROLE")
 UNLOCK_ROLE          = keccak256("UNLOCK_ROLE")
 WITHDRAWER_ROLE      = keccak256("WITHDRAWER_ROLE")
 
+// Validators (per-affiliate, not a role)
+// Tracked in: mapping(address => mapping(address => bool)) validators
+// Registered via: setValidator(affiliate, validator, enabled)
+// address(0) as affiliate = default validator for all affiliates
+// Fallback: affiliate-specific checked first, then address(0) default
+
 // Configurable parameters (defaults)
 securityWindow    = 20 seconds   // delay before operator can process INSTANT
 tolerancePeriod   = 60 seconds   // extra delay for permissionless processing
 operatorFee           = per-affiliate // fixed fee per withdrawal (collateral decimals), covers bot gas; set via setAffiliateConfig
-minValidatorSignatures = 0           // number of validator attestations required (0 = disabled)
-validatorApprovalTimeout = 30 seconds // max age of validator signatures
+minValidatorSignatures = mapping(address => uint256) // per-affiliate, number of validator attestations required (0 = disabled), address(0) = default
+validatorApprovalTimeout = mapping(address => uint256) // per-affiliate, max age of validator signatures, address(0) = default (30 seconds)
 ```
 
 ```solidity
@@ -1216,10 +1223,13 @@ expressProvider.grantRole(SIGNER_ROLE, botSignerAddress)
 # On ExpressProvider: link credit line manager to affiliate
 expressProvider.setCreditLineManager(affiliateAddress, creditLineManagerAddress)
 
-# On ExpressProvider: configure validators
-expressProvider.grantRole(VALIDATOR_ROLE, validator1Address)
-expressProvider.grantRole(VALIDATOR_ROLE, validator2Address)
-expressProvider.setMinValidatorSignatures(2)
+# On ExpressProvider: configure validators (per-affiliate, or address(0) for default)
+expressProvider.setValidator(address(0), validator1Address, true)   # default validator for all affiliates
+expressProvider.setValidator(address(0), validator2Address, true)   # default validator for all affiliates
+expressProvider.setMinValidatorSignatures(address(0), 2)            # default min signatures for all affiliates
+# Optionally configure affiliate-specific validators:
+# expressProvider.setValidator(affiliateAddress, validator3Address, true)
+# expressProvider.setMinValidatorSignatures(affiliateAddress, 3)
 
 # Fund pools
 usdc.approve(expressProvider, amount)
