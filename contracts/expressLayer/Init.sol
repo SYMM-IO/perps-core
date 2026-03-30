@@ -32,10 +32,6 @@ contract Init {
 		s.collateral = IERC20(_collateral);
 		s.securityWindow = 20;
 		s.tolerancePeriod = 60;
-		s.bucketDuration = 1 hours;
-		s.schedulingWindow = 12 hours;
-		s.configNonce = 1;
-		s.generalRing.configNonce = 1;
 		s.validatorApprovalTimeout = 30;
 
 		s.hashedName = keccak256(bytes("ExpressProvider"));

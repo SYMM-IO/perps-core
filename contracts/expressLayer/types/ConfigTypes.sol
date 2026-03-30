@@ -16,19 +16,3 @@ struct SponsorConfig {
 	uint256 maxWithdrawAmount;
 }
 
-/// @notice A single time-slot in the ring buffer used for liquidity forecasting.
-struct Bucket {
-	uint256 expectedInflow;
-	uint256 reservedOutflow;
-}
-
-/// @notice Self-contained ring buffer instance for liquidity scheduling.
-/// @dev One instance exists for the general pool, plus one per affiliate.
-///      Global config (bucketDuration, schedulingWindow) is shared; only the
-///      per-bucket data and sync state are per-ring.
-struct RingBuffer {
-	mapping(uint256 => Bucket) buckets;
-	uint256 anchorTimestamp;
-	uint256 startIndex;
-	uint256 configNonce;
-}

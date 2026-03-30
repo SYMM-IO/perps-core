@@ -246,68 +246,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		return { parts, requestId, withdrawAmount, affiliateAmount }
 	}
 
-	// Helper: build a SCHEDULED withdrawal request
-	async function buildScheduledRequest(
-		fixture: any,
-		opts?: { withdrawAmount?: bigint; hoursFromNow?: number; affiliateAmount?: bigint; creditAmount?: bigint },
-	) {
-		const { botSigner, user, receiver, expressProvider, symmio, affiliate } = fixture
-		const withdrawAmount = opts?.withdrawAmount ?? 500n * 10n ** 6n
-		const hoursFromNow = opts?.hoursFromNow ?? 3
-		const affiliateAmount = opts?.affiliateAmount ?? 0n
-		const creditAmount = opts?.creditAmount ?? 0n
-		const expressAddr = await expressProvider.getAddress()
-
-		const parts = [
-			{
-				id: 0n,
-				amount: withdrawAmount,
-				chainId: 31337n,
-				receiver: receiver.address,
-				virtualProvider: ethers.ZeroAddress,
-				expressProvider: expressAddr,
-			},
-		]
-
-		const partsHash = computePartsHash(parts)
-		const now = (await ethers.provider.getBlock("latest"))!.timestamp
-		const availableAt = now + hoursFromNow * 3600
-		const deadline = now + 3600 * 24
-		const nonce = await expressProvider.nonces(user.address)
-
-		const signature = await signWithdrawOption(expressProvider, botSigner, {
-			user: user.address,
-			nonce,
-			optionType: 2,
-			availableAt,
-			affiliate,
-			affiliateAmount,
-			creditAmount,
-			fee: 0n,
-			operatorFee: 0n,
-			partsHash,
-			deadline,
-		})
-
-		const providerData = encodeProviderData(nonce, 2, availableAt, affiliate, affiliateAmount, creditAmount, 0n, 0n, deadline, signature)
-
-		return { user, symmio, parts, providerData, withdrawAmount, availableAt, affiliateAmount, now }
-	}
-
-	// Helper: accept a SCHEDULED withdrawal
-	async function acceptScheduled(
-		fixture: any,
-		opts?: { withdrawAmount?: bigint; hoursFromNow?: number; affiliateAmount?: bigint; creditAmount?: bigint },
-	) {
-		const { user, symmio, parts, providerData, withdrawAmount, availableAt, affiliateAmount, now } = await buildScheduledRequest(fixture, opts)
-
-		await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-		await symmio.mockInitiateWithdraw(user.address, parts, providerData)
-
-		const requestId = await symmio.lastWithdrawRequestId(user.address)
-		return { parts, requestId, withdrawAmount, availableAt, affiliateAmount }
-	}
-
 	// Helper: accept a STANDARD withdrawal
 	async function acceptStandard(fixture: any, opts?: { withdrawAmount?: bigint; creditAmount?: bigint }) {
 		const { botSigner, user, receiver, expressProvider, symmio, affiliate } = fixture
@@ -334,7 +272,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		const signature = await signWithdrawOption(expressProvider, botSigner, {
 			user: user.address,
 			nonce,
-			optionType: 3,
+			optionType: 2,
 			availableAt: 0,
 			affiliate,
 			affiliateAmount: 0n,
@@ -345,7 +283,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			deadline,
 		})
 
-		const providerData = encodeProviderData(nonce, 3, 0, affiliate, 0n, creditAmount, 0n, 0n, deadline, signature)
+		const providerData = encodeProviderData(nonce, 2, 0, affiliate, 0n, creditAmount, 0n, 0n, deadline, signature)
 
 		await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
 		await symmio.mockInitiateWithdraw(user.address, parts, providerData)
@@ -387,175 +325,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.affiliateAmount).to.equal(affiliateAmount)
 		})
 
-		it("should accept INSTANT when cooldown end lands exactly at the 12-hour horizon", async function () {
-			const fixture = await deployFixture()
-			const { botSigner, user, receiver, expressProvider, symmio, affiliate } = fixture
-
-			// Move to the middle of an hour so the remaining partial bucket would have previously
-			// truncated the effective 12h scheduling horizon.
-			const latest = (await ethers.provider.getBlock("latest"))!.timestamp
-			const secondsIntoHour = latest % 3600
-			const delta = secondsIntoHour <= 1800 ? 1800 - secondsIntoHour : 3600 - secondsIntoHour + 1800
-			if (delta > 0) {
-				await ethers.provider.send("evm_increaseTime", [delta])
-				await ethers.provider.send("evm_mine", [])
-			}
-
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const withdrawAmount = 500n * 10n ** 6n
-			const expressAddr = await expressProvider.getAddress()
-			const parts = [
-				{
-					id: 0n,
-					amount: withdrawAmount,
-					chainId: 31337n,
-					receiver: receiver.address,
-					virtualProvider: ethers.ZeroAddress,
-					expressProvider: expressAddr,
-				},
-			]
-
-			const partsHash = computePartsHash(parts)
-			const deadline = now + 3600
-			const nonce = await expressProvider.nonces(user.address)
-			const signature = await signWithdrawOption(expressProvider, botSigner, {
-				user: user.address,
-				nonce,
-				optionType: 1,
-				availableAt: 0,
-				affiliate,
-				affiliateAmount: 0n,
-				creditAmount: 0n,
-				fee: 0n,
-				operatorFee: 0n,
-				partsHash,
-				deadline,
-			})
-
-			const providerData = encodeProviderData(nonce, 1, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature)
-
-			// Full cooldown remains, so cooldownEndTime is exactly now + 12h.
-			await symmio.setDeallocateTimestamp(user.address, now)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
-
-			expect(await symmio.acceptedRequests(user.address, 1)).to.be.true
-		})
-
-		it("should accept INSTANT with full cooldown even when anchorTimestamp has a residual gap", async function () {
-			const fixture = await deployFixture()
-			const { botSigner, user, receiver, expressProvider, symmio, affiliate } = fixture
-			const expressAddr = await expressProvider.getAddress()
-			const withdrawAmount = 500n * 10n ** 6n
-
-			// --- First withdrawal: initializes anchorTimestamp = block.timestamp ---
-			await acceptInstant(fixture)
-
-			// --- Advance time by 500 seconds (partial bucket, less than 1 hour) ---
-			await ethers.provider.send("evm_increaseTime", [500])
-			await ethers.provider.send("evm_mine", [])
-
-			// --- Second withdrawal: fresh 12h cooldown (deallocateTimestamp = now) ---
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const parts = [
-				{
-					id: 0n,
-					amount: withdrawAmount,
-					chainId: 31337n,
-					receiver: receiver.address,
-					virtualProvider: ethers.ZeroAddress,
-					expressProvider: expressAddr,
-				},
-			]
-			const partsHash = computePartsHash(parts)
-			const deadline = now + 3600
-			const nonce = await expressProvider.nonces(user.address)
-			const signature = await signWithdrawOption(expressProvider, botSigner, {
-				user: user.address,
-				nonce,
-				optionType: 1,
-				availableAt: 0,
-				affiliate,
-				affiliateAmount: 0n,
-				creditAmount: 0n,
-				fee: 0n,
-				operatorFee: 0n,
-				partsHash,
-				deadline,
-			})
-			const providerData = encodeProviderData(nonce, 1, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature)
-
-			// cooldownEndTime = now + 12h, anchorTimestamp is 500s behind "now".
-			// Without the headroom bucket this would revert with TimestampTooFarInFuture
-			// because offset = (12h + 500 - 1) / 1h = 12 >= old numBuckets (12).
-			// The +1 headroom bucket makes numBuckets = 13, so offset 12 fits.
-			await symmio.setDeallocateTimestamp(user.address, now)
-			await symmio.mockInitiateWithdraw(user.address, parts, providerData)
-
-			const requestId = await symmio.lastWithdrawRequestId(user.address)
-			expect(await symmio.acceptedRequests(user.address, requestId)).to.be.true
-		})
-
-		it("should accept valid SCHEDULED withdrawal and verify bucket reservation (no pool locks)", async function () {
-			const fixture = await deployFixture()
-			const { expressProvider, user } = fixture
-			const { requestId } = await acceptScheduled(fixture)
-
-			// No pool locks for SCHEDULED
-			expect(await expressProvider.lockedGeneralBalance()).to.equal(0n)
-
-			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
-			expect(info.status).to.equal(1n) // ACCEPTED
-			expect(info.optionType).to.equal(2n) // SCHEDULED
-		})
-
-		it("should reject SCHEDULED when the promised general liquidity is not reachable by availableAt", async function () {
-			const fixture = await deployFixture()
-			const { expressProvider } = fixture
-			const { user, symmio, parts, providerData, now } = await buildScheduledRequest(fixture, {
-				withdrawAmount: 10_001n * 10n ** 6n,
-			})
-
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
-				expressProvider,
-				"InsufficientScheduledLiquidity",
-			)
-		})
-
-		it("should reserve the affiliate-backed portion via ring buffer for SCHEDULED (no counter lock)", async function () {
-			const fixture = await deployFixture()
-			const { expressProvider, user, affiliate } = fixture
-			const affiliateAmount = 200n * 10n ** 6n
-			const withdrawAmount = 600n * 10n ** 6n
-			const { requestId } = await acceptScheduled(fixture, { withdrawAmount, affiliateAmount })
-
-			// SCHEDULED uses ring buffers for both general and affiliate — no counter locks
-			expect(await expressProvider.lockedGeneralBalance()).to.equal(0n)
-			expect(await expressProvider.lockedAffiliateBalances(affiliate)).to.equal(0n)
-
-			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
-			expect(info.status).to.equal(1n) // ACCEPTED
-			expect(info.generalAmount).to.equal(withdrawAmount - affiliateAmount)
-			expect(info.affiliateAmount).to.equal(affiliateAmount)
-		})
-
-		it("should reject SCHEDULED when affiliate-backed liquidity is unavailable", async function () {
-			const fixture = await deployFixture()
-			const { expressProvider } = fixture
-			const { user, symmio, parts, providerData, now } = await buildScheduledRequest(fixture, {
-				withdrawAmount: 6_000n * 10n ** 6n,
-				affiliateAmount: 5_500n * 10n ** 6n,
-			})
-
-			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
-
-			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(
-				expressProvider,
-				"InsufficientScheduledAffiliateLiquidity",
-			)
-		})
-
 		it("should accept valid STANDARD withdrawal and verify no pool locks", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, user, generalFunding } = fixture
@@ -567,7 +336,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(1n) // ACCEPTED
-			expect(info.optionType).to.equal(3n) // STANDARD
+			expect(info.optionType).to.equal(2n) // STANDARD
 		})
 
 		it("should reject invalid signer", async function () {
@@ -832,7 +601,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await expect(symmio.mockInitiateWithdraw(user.address, parts, providerData)).to.be.revertedWithCustomError(expressProvider, "InvalidNonce")
 		})
 
-		it("should reject invalid optionType > 3 (reverts with Panic due to enum out of range)", async function () {
+		it("should reject invalid optionType > 2 (reverts with Panic due to enum out of range)", async function () {
 			const fixture = await deployFixture()
 			const { botSigner, user, receiver, expressProvider, symmio, affiliate } = fixture
 			const withdrawAmount = 500n * 10n ** 6n
@@ -852,11 +621,11 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const partsHash = computePartsHash(parts)
 			const deadline = (await ethers.provider.getBlock("latest"))!.timestamp + 3600
 
-			// optionType = 4 (invalid, enum only has 0,1,2,3)
+			// optionType = 3 (invalid, enum only has 0,1,2)
 			const signature = await signWithdrawOption(expressProvider, botSigner, {
 				user: user.address,
 				nonce: 0n,
-				optionType: 4,
+				optionType: 3,
 				availableAt: 0,
 				affiliate,
 				affiliateAmount: 0n,
@@ -867,7 +636,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				deadline,
 			})
 
-			const providerData = encodeProviderData(0n, 4, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature)
+			const providerData = encodeProviderData(0n, 3, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature)
 			const now = (await ethers.provider.getBlock("latest"))!.timestamp
 			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
 
@@ -1005,78 +774,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await ethers.provider.send("evm_mine", [])
 
 			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
-			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
-		})
-
-		it("SCHEDULED: process at availableAt by operator", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, receiver, expressProvider, collateral } = fixture
-			const { parts, requestId, withdrawAmount, availableAt } = await acceptScheduled(fixture, { hoursFromNow: 3 })
-
-			// Advance to availableAt
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const timeToWait = availableAt - now + 1
-			await ethers.provider.send("evm_increaseTime", [timeToWait])
-			await ethers.provider.send("evm_mine", [])
-
-			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
-			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
-		})
-
-		it("SCHEDULED: process affiliate-backed reservation and deduct the affiliate pool", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, receiver, affiliate, expressProvider, collateral, generalFunding, affiliateFunding } = fixture
-			const affiliateAmount = 200n * 10n ** 6n
-			const withdrawAmount = 600n * 10n ** 6n
-			const { parts, requestId, availableAt } = await acceptScheduled(fixture, {
-				withdrawAmount,
-				affiliateAmount,
-				hoursFromNow: 3,
-			})
-
-			// SCHEDULED uses ring buffers — no counter lock for affiliate
-			expect(await expressProvider.lockedAffiliateBalances(affiliate)).to.equal(0n)
-
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const timeToWait = availableAt - now + 1
-			await ethers.provider.send("evm_increaseTime", [timeToWait])
-			await ethers.provider.send("evm_mine", [])
-
-			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
-
-			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
-			expect(await expressProvider.lockedAffiliateBalances(affiliate)).to.equal(0n)
-			expect(await expressProvider.generalBalance()).to.equal(generalFunding - (withdrawAmount - affiliateAmount))
-			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding - affiliateAmount)
-		})
-
-		it("SCHEDULED: reject before availableAt (TooEarly)", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, expressProvider } = fixture
-			const { parts, requestId } = await acceptScheduled(fixture, { hoursFromNow: 3 })
-
-			// Only advance 1 hour (need 3)
-			await ethers.provider.send("evm_increaseTime", [3600])
-			await ethers.provider.send("evm_mine", [])
-
-			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revertedWithCustomError(
-				expressProvider,
-				"TooEarly",
-			)
-		})
-
-		it("SCHEDULED: permissionless at availableAt + tolerancePeriod", async function () {
-			const fixture = await deployFixture()
-			const { user, receiver, expressProvider, collateral } = fixture
-			const { parts, requestId, withdrawAmount, availableAt } = await acceptScheduled(fixture, { hoursFromNow: 3 })
-
-			// Advance to availableAt + tolerancePeriod (60s)
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const timeToWait = availableAt - now + 61
-			await ethers.provider.send("evm_increaseTime", [timeToWait])
-			await ethers.provider.send("evm_mine", [])
-
-			await expressProvider.connect(user).processWithdraw(user.address, requestId, parts)
 			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
 		})
 
@@ -1270,34 +967,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(info.status).to.equal(4n) // FINALIZED
 		})
 
-		it("SCHEDULED: replenish pools after cooldown", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, expressProvider, symmio, collateral, generalFunding } = fixture
-			const { parts, requestId, withdrawAmount, availableAt } = await acceptScheduled(fixture, { hoursFromNow: 3 })
-
-			// Advance to availableAt and process
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const timeToWait = availableAt - now + 1
-			await ethers.provider.send("evm_increaseTime", [timeToWait])
-			await ethers.provider.send("evm_mine", [])
-			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
-
-			// Pools reduced after processing
-			expect(await expressProvider.generalBalance()).to.equal(generalFunding - withdrawAmount)
-
-			// Mint tokens to SYMMIO and finalize
-			await collateral.mint(await symmio.getAddress(), withdrawAmount)
-			await ethers.provider.send("evm_increaseTime", [12 * 3600])
-			await ethers.provider.send("evm_mine", [])
-			await symmio.finalizeWithdrawRequest(user.address, requestId)
-
-			// Pools replenished
-			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
-
-			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
-			expect(info.status).to.equal(4n) // FINALIZED
-		})
-
 		it("STANDARD: onWithdrawComplete sets FINALIZED (no pool replenishment)", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, generalFunding } = fixture
@@ -1329,195 +998,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			info = await expressProvider.getWithdrawInfo(user.address, requestId)
 			expect(info.status).to.equal(2n) // Still LOCKED
 			expect(info.finalizedAt).to.be.greaterThan(0n) // But finalizedAt recorded
-		})
-	})
-
-	describe("Scheduler Accounting", function () {
-		async function acceptWithCustomCooldown(
-			fixture: any,
-			params: {
-				user: any
-				receiverAddress: string
-				optionType: number
-				withdrawAmount: bigint
-				remainingCooldown: number
-			},
-		) {
-			const { botSigner, expressProvider, symmio, affiliate } = fixture
-			const expressAddr = await expressProvider.getAddress()
-			const parts = [
-				{
-					id: 0n,
-					amount: params.withdrawAmount,
-					chainId: 31337n,
-					receiver: params.receiverAddress,
-					virtualProvider: ethers.ZeroAddress,
-					expressProvider: expressAddr,
-				},
-			]
-
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const partsHash = computePartsHash(parts)
-			const deadline = now + 3600
-			const nonce = await expressProvider.nonces(params.user.address)
-			const signature = await signWithdrawOption(expressProvider, botSigner, {
-				user: params.user.address,
-				nonce,
-				optionType: params.optionType,
-				availableAt: 0,
-				affiliate,
-				affiliateAmount: 0n,
-				creditAmount: 0n,
-				fee: 0n,
-				operatorFee: 0n,
-				partsHash,
-				deadline,
-			})
-
-			const providerData = encodeProviderData(nonce, params.optionType, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature)
-			await symmio.setDeallocateTimestamp(params.user.address, now - 12 * 3600 + params.remainingCooldown)
-			await symmio.mockInitiateWithdraw(params.user.address, parts, providerData)
-
-			const requestId = await symmio.lastWithdrawRequestId(params.user.address)
-			return { parts, requestId }
-		}
-
-		it("should not double count realized inflows in earliest-availability quotes", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, receiver, expressProvider, symmio, collateral } = fixture
-			const withdrawAmount = 10_000n * 10n ** 6n
-
-			const { parts, requestId } = await acceptWithCustomCooldown(fixture, {
-				user,
-				receiverAddress: receiver.address,
-				optionType: 1,
-				withdrawAmount,
-				remainingCooldown: 10 * 60,
-			})
-
-			await ethers.provider.send("evm_increaseTime", [21])
-			await ethers.provider.send("evm_mine", [])
-			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
-
-			await collateral.mint(await symmio.getAddress(), withdrawAmount)
-			const request = await symmio.getWithdrawRequest(user.address, requestId)
-			const now = BigInt((await ethers.provider.getBlock("latest"))!.timestamp)
-			const secondsUntilCooldown = Number(request.cooldownEndTime > now ? request.cooldownEndTime - now : 0n)
-			await ethers.provider.send("evm_increaseTime", [secondsUntilCooldown + 1])
-			await ethers.provider.send("evm_mine", [])
-			await symmio.finalizeWithdrawRequest(user.address, requestId)
-
-			const [available, availableAt] = await expressProvider.getEarliestExpressAvailability(ethers.ZeroAddress, 20_000n * 10n ** 6n)
-			expect(available).to.equal(false)
-			expect(availableAt).to.equal(0n)
-		})
-
-		it("should not erase other withdrawals' forecast inflow when cancelling STANDARD", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, receiver, expressProvider, symmio } = fixture
-			const [, , , user2, receiver2] = await ethers.getSigners()
-			const withdrawAmount = 10_000n * 10n ** 6n
-
-			const instant = await acceptWithCustomCooldown(fixture, {
-				user,
-				receiverAddress: receiver.address,
-				optionType: 1,
-				withdrawAmount,
-				remainingCooldown: 10 * 60,
-			})
-
-			await ethers.provider.send("evm_increaseTime", [21])
-			await ethers.provider.send("evm_mine", [])
-			await expressProvider.connect(operator).processWithdraw(user.address, instant.requestId, instant.parts)
-
-			const standard = await acceptWithCustomCooldown(fixture, {
-				user: user2,
-				receiverAddress: receiver2.address,
-				optionType: 3,
-				withdrawAmount: 300n * 10n ** 6n,
-				remainingCooldown: 10 * 60,
-			})
-
-			await symmio.mockCancelWithdraw(user2.address, standard.requestId)
-
-			const [available, availableAt] = await expressProvider.getEarliestExpressAvailability(ethers.ZeroAddress, withdrawAmount)
-			expect(available).to.equal(true)
-			expect(availableAt).to.not.equal(0n)
-		})
-
-		it("should clean up bucket reservedOutflow after processing a SCHEDULED withdrawal", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, expressProvider } = fixture
-
-			// Accept SCHEDULED #1 for 5,000 USDC
-			const {
-				parts: parts1,
-				requestId: requestId1,
-				availableAt: availableAt1,
-			} = await acceptScheduled(fixture, {
-				withdrawAmount: 5_000n * 10n ** 6n,
-				hoursFromNow: 3,
-			})
-
-			// Advance time past availableAt
-			const now1 = (await ethers.provider.getBlock("latest"))!.timestamp
-			await ethers.provider.send("evm_increaseTime", [availableAt1 - now1 + 1])
-			await ethers.provider.send("evm_mine", [])
-
-			// Process
-			await expressProvider.connect(operator).processWithdraw(user.address, requestId1, parts1)
-
-			// generalBalance should be 10,000 - 5,000 = 5,000
-			expect(await expressProvider.generalBalance()).to.equal(5_000n * 10n ** 6n)
-
-			// Another SCHEDULED for 5,000 should succeed (bucket was cleaned up)
-			const { requestId: requestId2 } = await acceptScheduled(fixture, {
-				withdrawAmount: 5_000n * 10n ** 6n,
-				hoursFromNow: 3,
-			})
-
-			const info2 = await expressProvider.getWithdrawInfo(user.address, requestId2)
-			expect(info2.status).to.equal(1n) // ACCEPTED
-		})
-
-		it("should handle back-to-back SCHEDULED withdrawals with bucket cleanup", async function () {
-			const fixture = await deployFixture()
-			const { operator, user, expressProvider } = fixture
-
-			const {
-				parts: parts1,
-				requestId: requestId1,
-				availableAt: availableAt1,
-			} = await acceptScheduled(fixture, {
-				withdrawAmount: 3_000n * 10n ** 6n,
-				hoursFromNow: 2,
-			})
-			const {
-				parts: parts2,
-				requestId: requestId2,
-				availableAt: availableAt2,
-			} = await acceptScheduled(fixture, {
-				withdrawAmount: 3_000n * 10n ** 6n,
-				hoursFromNow: 3,
-			})
-
-			const now = (await ethers.provider.getBlock("latest"))!.timestamp
-			const maxAt = availableAt1 > availableAt2 ? availableAt1 : availableAt2
-			await ethers.provider.send("evm_increaseTime", [maxAt - now + 1])
-			await ethers.provider.send("evm_mine", [])
-
-			await expressProvider.connect(operator).processWithdraw(user.address, requestId1, parts1)
-			await expressProvider.connect(operator).processWithdraw(user.address, requestId2, parts2)
-
-			expect(await expressProvider.generalBalance()).to.equal(4_000n * 10n ** 6n)
-
-			// Third SCHEDULED for remaining 4,000 should succeed
-			const { requestId: requestId3 } = await acceptScheduled(fixture, {
-				withdrawAmount: 4_000n * 10n ** 6n,
-				hoursFromNow: 3,
-			})
-			const info3 = await expressProvider.getWithdrawInfo(user.address, requestId3)
-			expect(info3.status).to.equal(1n)
 		})
 	})
 
@@ -1584,30 +1064,6 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			// Cancel after finalization+processing should fail
 			await expect(symmio.mockCancelWithdraw(user.address, requestId)).to.be.revert(ethers)
-		})
-
-		it("should reject cancel SCHEDULED (ScheduledNotCancellable)", async function () {
-			const fixture = await deployFixture()
-			const { user, expressProvider, symmio } = fixture
-			const { requestId } = await acceptScheduled(fixture)
-
-			await expect(symmio.mockCancelWithdraw(user.address, requestId)).to.be.revert(ethers) // onWithdrawCancelRequest reverts with ScheduledNotCancellable
-		})
-
-		it("should force cancel SCHEDULED and release any affiliate reservation", async function () {
-			const fixture = await deployFixture()
-			const { user, expressProvider, symmio, generalFunding, affiliate, affiliateFunding } = fixture
-			const affiliateAmount = 200n * 10n ** 6n
-			const { requestId } = await acceptScheduled(fixture, { affiliateAmount })
-
-			// Force cancel bypasses the SCHEDULED check
-			await symmio.mockForceCancelWithdraw(user.address, requestId)
-
-			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
-			expect(info.status).to.equal(5n) // CANCELLED
-			expect(await expressProvider.generalBalance()).to.equal(generalFunding)
-			expect(await expressProvider.lockedAffiliateBalances(affiliate)).to.equal(0n)
-			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding)
 		})
 
 		it("should force cancel on any status (ACCEPTED instant)", async function () {
@@ -2464,7 +1920,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const signature = await signWithdrawOption(expressProvider, botSigner, {
 				user: user.address,
 				nonce: 0n,
-				optionType: 3,
+				optionType: 2,
 				availableAt: 0,
 				affiliate,
 				affiliateAmount: 0n,
@@ -2478,7 +1934,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const creditDataRaw = buildCreditData(10_000n * 10n ** 6n, now)
 			const providerData = encodeProviderData(
 				0n,
-				3,
+				2,
 				0,
 				affiliate,
 				0n,

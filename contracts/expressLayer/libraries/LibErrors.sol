@@ -12,10 +12,6 @@ library LibErrors {
 	error NoFeesToClaim();
 	error NoOperatorFeesToClaim();
 	error InsufficientSponsorBalance();
-	error DurationMustBePositive();
-	error MustDivideEvenly();
-	error WindowMustBePositive();
-	error MustBeDivisibleByBucketDuration();
 	error InsufficientUnlockedGeneralBalance();
 	error InsufficientUnlockedAffiliateBalance();
 	error FeesExceedExpressAmount();
@@ -25,10 +21,8 @@ library LibErrors {
 	error InvalidSigner();
 	error InsufficientGeneralBalance();
 	error InsufficientAffiliateBalance();
-	error InsufficientScheduledLiquidity();
 	error InvalidStatusForStandard();
 	error NotProcessed();
-	error ScheduledNotCancellable();
 	error NotAccepted();
 	error NotFinalized();
 	error InvalidStatusForForceCancel();
@@ -49,9 +43,6 @@ library LibErrors {
 	error AlreadyInitialized();
 	error SecurityWindowTooLow();
 	error TolerancePeriodTooLow();
-	error InsufficientScheduledAffiliateLiquidity();
-	error TimestampInThePast();
-	error TimestampTooFarInFuture();
 	error CreditLineManagerNotSet();
 	error CreditNotSupportedForStandard();
 	error InvalidPostPayoutRollback();

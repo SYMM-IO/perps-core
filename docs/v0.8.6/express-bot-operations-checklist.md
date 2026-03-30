@@ -14,8 +14,7 @@ Complete reference of every flow, state, edge case, and scenario the operator bo
 6. [Fee Computation & Validation](#6-fee-computation--validation)
 7. [Sponsor System](#7-sponsor-system)
 8. [Validator System](#8-validator-system)
-9. [Scheduler / Bucket System](#9-scheduler--bucket-system)
-10. [Multi-Part Withdrawals](#10-multi-part-withdrawals)
+9. [Multi-Part Withdrawals](#10-multi-part-withdrawals)
 11. [Credit Line Integration](#11-credit-line-integration)
 12. [Risk Lock / Unlock Flows](#12-risk-lock--unlock-flows)
 13. [Cancellation & Suspension](#13-cancellation--suspension)
@@ -37,10 +36,10 @@ Complete reference of every flow, state, edge case, and scenario the operator bo
 | Status | Value | Meaning |
 |--------|-------|---------|
 | `NONE` | 0 | No withdrawal exists for this (user, requestId) |
-| `ACCEPTED` | 1 | Withdrawal accepted, funds locked (INSTANT/IMMEDIATE) or ring-buffer-reserved (SCHEDULED). Awaiting processing |
+| `ACCEPTED` | 1 | Withdrawal accepted, funds locked (INSTANT/IMMEDIATE). Awaiting processing |
 | `LOCKED` | 2 | Risk-flagged by LOCKER_ROLE. Processing blocked until resolved |
 | `PROCESSED` | 3 | Funds transferred to user. Awaiting SYMMIO finalization to replenish pools |
-| `FINALIZED` | 4 | Terminal. Pools replenished (INSTANT/SCHEDULED/IMMEDIATE) or tokens arrived (STANDARD) |
+| `FINALIZED` | 4 | Terminal. Pools replenished (INSTANT/IMMEDIATE) or tokens arrived (STANDARD) |
 | `CANCELLED` | 5 | Terminal. All locks released, sponsor refunded |
 | `SUSPENDED` | 6 | Terminal. All locks released, sponsor refunded |
 
@@ -62,16 +61,16 @@ stateDiagram-v2
     end note
 ```
 
-#### INSTANT / SCHEDULED State Machine
+#### INSTANT State Machine
 
 ```mermaid
 stateDiagram-v2
     [*] --> NONE
     NONE --> ACCEPTED : onWithdrawRequest
 
-    ACCEPTED --> PROCESSED : processWithdraw\n(after securityWindow / availableAt)
+    ACCEPTED --> PROCESSED : processWithdraw\n(after securityWindow)
     ACCEPTED --> LOCKED : lockWithdraw\n(LOCKER_ROLE)
-    ACCEPTED --> CANCELLED : onWithdrawCancelRequest\n(INSTANT only)
+    ACCEPTED --> CANCELLED : onWithdrawCancelRequest
     ACCEPTED --> CANCELLED : onForceWithdrawCancel
     ACCEPTED --> SUSPENDED : onWithdrawSuspend
 
@@ -116,7 +115,7 @@ stateDiagram-v2
 
 | From | To | Trigger | Who |
 |------|----|---------|-----|
-| NONE | ACCEPTED | `onWithdrawRequest` (INSTANT/SCHEDULED/STANDARD) | SYMMIO callback |
+| NONE | ACCEPTED | `onWithdrawRequest` (INSTANT/STANDARD) | SYMMIO callback |
 | NONE | PROCESSED | `onWithdrawRequest` (IMMEDIATE, same-tx transfer) | SYMMIO callback |
 | ACCEPTED | PROCESSED | `processWithdraw` | OPERATOR_ROLE (or anyone after tolerancePeriod) |
 | ACCEPTED | LOCKED | `lockWithdraw` | LOCKER_ROLE |
@@ -169,7 +168,7 @@ Step 1 — Bot sees: user requests a 500 USDC express withdrawal quote
   Decision: Offer INSTANT (optionType=1). Sign EIP-712 option with nonce=7, deadline=now+60s.
 
     What if generalBalance were only 200 USDC?
-      300 > 200 — bot cannot offer INSTANT. Must fall back to SCHEDULED or STANDARD.
+      300 > 200 — bot cannot offer INSTANT. Must fall back to STANDARD.
 
     What if feeRate were 10000 (100%) and operatorFee were 1e6?
       fee = 500e6, fee + operatorFee = 501e6 > 500e6 — reverts FeesExceedExpressAmount.
@@ -363,7 +362,7 @@ Step 1 — Bot sees: user requests an express withdrawal for 1,000 USDC
     What if CLM.availableCredit were only 150 USDC?
       200 > 150 — CreditLineManager would revert InsufficientCredit during reserveDebt.
       Bot must reduce creditAmount to 150 (and increase generalAmount to 550),
-      or fall back to INSTANT/SCHEDULED without credit.
+      or fall back to INSTANT without credit.
 
     What if minValidatorSignatures were 0?
       Contract reverts ValidatorsRequiredForImmediate. Bot cannot offer IMMEDIATE.
@@ -566,8 +565,7 @@ Step 1 — Bot sees: User requests a 500 USDC withdrawal through this affiliate.
 
   What if unlocked general was only 200 instead of 10,000?
     200 < generalAmount (300) --> _lockFunds would revert InsufficientGeneralBalance.
-    Bot cannot offer INSTANT. Bot would query getEarliestExpressAvailability to
-    see if SCHEDULED is viable (see SCHEDULED example below).
+    Bot cannot offer INSTANT. Must fall back to STANDARD.
 
 Step 2 — Bot sees: WithdrawAccepted event (SYMMIO called onWithdrawRequest).
   What happened on-chain during acceptance:
@@ -646,7 +644,7 @@ Step 5 — Bot sees: block.timestamp >= cooldownEndTime (~T0 + 12h).
 
   BRANCH — What if user had cancelled at T0+10s (before processing)?
     SYMMIO calls onWithdrawCancelRequest.
-    Contract checks: optionType == SCHEDULED? NO (INSTANT) --> cancellable.
+    Contract checks: INSTANT --> cancellable.
     Contract checks: status == ACCEPTED? YES --> allowed.
     _releaseWithdraw:
       - lockedGeneralBalance:    300 --> 0
@@ -657,207 +655,7 @@ Step 5 — Bot sees: block.timestamp >= cooldownEndTime (~T0 + 12h).
 
 ---
 
-### 2.3 SCHEDULED (optionType = 2)
-
-**User experience:** 1-11 hours. No immediate counter locks; both general and affiliate portions are reserved via ring buffers.
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant S as SYMMIO
-    participant EP as ExpressProvider
-    participant Bot as Bot
-
-    U->>S: initiateWithdraw(parts, providerData)
-    S->>EP: onWithdrawRequest(req, collateral)
-    Note over EP: Verify sig, verify fees
-    Note over EP: Reserve general portion in general ring buffer
-    Note over EP: Reserve affiliate portion in affiliate ring buffer
-    Note over EP: Check isLiquidityAvailableBy for both rings
-    Note over EP: Record expectedInflow at cooldownEndTime (both rings)
-    EP->>S: acceptWithdrawRequest(user, reqId)
-    EP-->>Bot: emit WithdrawAccepted
-    Note over EP: Status = ACCEPTED
-
-    Note over Bot: Wait until availableAt (e.g. 3 hours)
-
-    Bot->>EP: processWithdraw(user, reqId, parts)
-    Note over EP: Verify partsHash, deduct fees
-    EP->>U: transfer(receiver, amount - fee)
-    Note over EP: Status = PROCESSED
-
-    Note over EP,S: 12 hours after initiation
-    Bot->>S: finalizeWithdrawRequest(user, reqId)
-    S->>EP: onWithdrawComplete(req)
-    Note over EP: Replenish pools, remove expectedInflow (both rings)
-    Note over EP: Status = FINALIZED
-```
-
-**Bot checklist:**
-- [ ] Use `getEarliestExpressAvailability(affiliate, amount)` to determine `availableAt`
-- [ ] `availableAt` must map to a valid bucket within `schedulingWindow`
-- [ ] Both `generalAmount` and `affiliateAmount` are reserved via ring buffers (NOT immediate counter locks)
-- [ ] Wait until `availableAt` before calling `processWithdraw`
-- [ ] NOT cancellable by user (reverts `ScheduledNotCancellable`); only force-cancel/suspend work
-- [ ] If general liquidity insufficient by `availableAt`, acceptance reverts `InsufficientScheduledLiquidity`
-- [ ] If affiliate liquidity insufficient by `availableAt`, acceptance reverts `InsufficientScheduledAffiliateLiquidity`
-- [ ] Schedule `finalizeWithdrawRequest` at `cooldownEndTime`
-
-#### Numeric Example: SCHEDULED 2,000 USDC (available in 3 hours)
-
-```
-Scenario: User requests 2,000 USDC but the general pool lacks enough unlocked
-          liquidity for INSTANT. Bot falls back to SCHEDULED, reserving against a
-          future bucket inflow so funds arrive in 3 hours instead of ~20 seconds.
-
-Setup:
-  generalBalance              = 10,000 USDC
-  lockedGeneralBalance        = 9,000          (only 1,000 unlocked)
-  affiliateBalances[affiliate] = 5,000 USDC
-  lockedAffiliateBalances[affiliate] = 0
-  affiliateConfigs[affiliate] = { feeRate: 200 bps (2%), operatorFee: 5 USDC }
-  bucketDuration              = 3,600s (1h)
-  schedulingWindow            = 43,200s (12h)
-  numBuckets                  = 13  (schedulingWindow / bucketDuration + 1 = 12 + 1)
-  Bucket state (general ring buffer):
-    bucket[0]: expectedInflow = 0,     reservedOutflow = 0
-    bucket[1]: expectedInflow = 0,     reservedOutflow = 0
-    bucket[2]: expectedInflow = 1,500, reservedOutflow = 0   (prior INSTANT finalization due ~2h)
-    buckets[3..11]: all zeros
-  No sponsor for this affiliate (sponsorBalances = 0)
-  nonces[user]                = 10
-
-Step 1 — Bot sees: User requests a 2,000 USDC withdrawal through this affiliate.
-  Bot reads on-chain:
-    - unlocked general   = generalBalance - lockedGeneralBalance = 10,000 - 9,000 = 1,000
-    - unlocked affiliate = affiliateBalances - lockedAffiliateBalances = 5,000 - 0 = 5,000
-  Bot decides pool split:
-    - affiliateAmount = 800   (bot chooses how much to draw from affiliate pool)
-    - generalAmount   = 2,000 - 800 = 1,200
-  Bot checks: Can INSTANT work?
-    - unlocked general (1,000) >= generalAmount (1,200)?  NO
-    --> INSTANT is not feasible. _lockFunds would revert InsufficientGeneralBalance.
-  Decision: Cannot offer INSTANT. Evaluate SCHEDULED instead.
-
-Step 2 — Bot sees: INSTANT rejected. Queries bucket scheduler for earliest availability.
-  Bot calls (read-only): getEarliestExpressAvailability(affiliate, 2000)
-    currentAvailable = unlocked general + unlocked affiliate
-                     = 1,000 + 5,000 = 6,000
-    6,000 >= 2,000? YES for total liquidity — but the contract will separately verify
-    that the general-pool portion alone is reachable via isLiquidityAvailableBy.
-  Bot must verify the general-pool portion (1,200) via the general ring buffer:
-    isLiquidityAvailableBy(generalRing, generalFree=1000, 1200, targetOffset):
-      Bucket 0: running = 1,000 + inflow(0) - outflow(0) = 1,000 + 0 - 0 = 1,000
-        1,000 >= 1,200?  NO --> keep walking
-      Bucket 1: running = 1,000 + 0 - 0 = 1,000
-        1,000 >= 1,200?  NO --> keep walking
-      Bucket 2: running = 1,000 + 1,500 - 0 = 2,500
-        2,500 >= 1,200?  YES --> sufficient at bucket offset 2
-    And verify the affiliate portion (800) via the affiliate ring buffer:
-    isLiquidityAvailableBy(affiliateRing, affiliateFree=5000, 800, affOffset):
-      affiliateFree 5,000 >= 800 at offset 0?  YES --> sufficient immediately
-    availableAt = anchorTimestamp + (2 + 1) * bucketDuration = anchor + 3h
-  Decision: Offer SCHEDULED with availableAt = T0 + 3h. Sign the option.
-
-  What if bucket[2] had only 100 expectedInflow instead of 1,500?
-    Bucket 2: running = 1,000 + 100 - 0 = 1,100, still < 1,200 --> keep walking.
-    Bot would walk further buckets. If no bucket reaches 1,200 within the 12h window:
-    getEarliestExpressAvailability returns (false, 0).
-    Decision: Reject the request entirely — neither INSTANT nor SCHEDULED is viable.
-
-Step 3 — Bot sees: Option signed. Computes fees and signs EIP-712 option.
-  Bot computes fees (must match on-chain affiliateConfigs exactly):
-    - feeBasis    = expressAmount = 2,000
-    - fee         = 2,000 * 200 / 10,000 = 40 USDC
-    - operatorFee = 5 USDC
-    - totalFee    = 40 + 5 = 45 USDC
-    - sponsorBalances = 0 --> no sponsor coverage, user pays full 45 USDC
-    - maxUserFee  = 45
-  Decision: Sign SCHEDULED option (optionType=2), nonce=10, availableAt=T0+3h, maxUserFee=45.
-
-  User submits withdrawal. SYMMIO calls onWithdrawRequest:
-    Contract verifies the bot's EIP-712 signature and nonce.
-    Contract verifies fee == feeBasis * feeRate / 10000 and operatorFee == affiliateConfigs.operatorFee.
-    _lockFunds (SCHEDULED path):
-      - General ring buffer:
-          generalFree = generalBalance - lockedGeneralBalance = 10,000 - 9,000 = 1,000
-          availableOffset = getBucketOffset(generalRing, T0+3h) = 2
-          isLiquidityAvailableBy(generalRing, 1000, 1200, offset=2)?  YES (1,000 + 1,500 >= 0 + 1,200)
-          generalRing.buckets[offset 2].reservedOutflow += 1,200  (now 1,200)
-          generalRing.buckets[cooldown bucket].expectedInflow += 1,200
-      - Affiliate ring buffer (SCHEDULED uses ring buffer, NOT immediate counter lock):
-          affiliateFree = affiliateBalances - lockedAffiliateBalances = 5,000 - 0 = 5,000
-          affOffset = getBucketOffset(affiliateRing, T0+3h) = 2
-          isLiquidityAvailableBy(affiliateRing, 5000, 800, affOffset=2)?  YES (5,000 >= 800)
-          affiliateRing.buckets[offset 2].reservedOutflow += 800
-          affiliateRing.buckets[cooldown bucket].expectedInflow += 800
-      - lockedAffiliateBalances: UNCHANGED (SCHEDULED does NOT counter-lock affiliate)
-    actualUserFee = 45 - 0 = 45 <= maxUserFee (45)?  YES
-    nonces[user] = 10 --> 11
-    Status = ACCEPTED
-
-  BRANCH — What if the bot had set availableAt = T0+1h (too optimistic)?
-    availableOffset = getBucketOffset(generalRing, T0+1h) = 0
-    isLiquidityAvailableBy(generalRing, 1000, 1200, offset=0):
-      Bucket 0: running = 1,000 + 0 - 0 = 1,000 < 1,200
-    --> REVERT InsufficientScheduledLiquidity.
-    The contract enforces that the bot's promise is backed by actual projected liquidity
-    (checked independently for both general and affiliate ring buffers).
-
-Step 4 — Bot sees: block.timestamp >= availableAt (T0 + 3h).
-  Bot reads on-chain:
-    - withdrawInfos[user][reqId].status = ACCEPTED
-    - withdrawInfos[user][reqId].availableAt = T0 + 3h
-    - block.timestamp = T0 + 3h
-  Bot checks: block.timestamp (T0+3h) >= availableAt (T0+3h)?  YES
-  Decision: Process now. Call processWithdraw(user, reqId, parts).
-  Contract executes:
-    processableAt = availableAt = T0+3h (for SCHEDULED, processableAt = availableAt)
-    block.timestamp >= processableAt?  YES
-    _collectAndTransfer:
-      - userFee = totalFee - sponsorCoverage = 45 - 0 = 45 USDC
-      - feeRemaining = 45e6
-      - Part 1 (2,000 express-only): deduction = min(45e6, 2000e6) = 45e6
-          collateral.safeTransfer(receiver, 2000e6 - 45e6 = 1,955e6)
-      - User receives: 1,955 USDC
-    Pool updates (both general and affiliate deducted NOW, not at acceptance):
-      - generalBalance:                   10,000 --> 8,800  (general deducted 1,200)
-      - affiliateBalances[affiliate]:       5,000 --> 4,200  (affiliate deducted 800)
-      - lockedAffiliateBalances:          unchanged (SCHEDULED does not use counter locks)
-      - collectedFees[affiliate]          += 40
-      - collectedOperatorFees[affiliate]  += 5
-      - Ring buffer cleanup: reservedOutflow removed from both general and affiliate rings
-    Status = PROCESSED
-
-  BRANCH — What if the bot tried to process at T0+2h (1 hour early)?
-    processableAt = availableAt = T0+3h.
-    block.timestamp (T0+2h) < processableAt (T0+3h) --> REVERT TooEarly.
-    The contract enforces the scheduled time. Bot must wait.
-
-  BRANCH — Can the user cancel a SCHEDULED withdrawal?
-    NO. onWithdrawCancelRequest checks: optionType == SCHEDULED -->
-    REVERT ScheduledNotCancellable. This protects ring buffer reservation integrity.
-    Only onForceWithdrawCancel (SYMMIO admin) or onWithdrawSuspend can undo it.
-
-Step 5 — Bot sees: block.timestamp >= cooldownEndTime (~T0 + 12h).
-  Bot reads on-chain:
-    - withdrawInfos[user][reqId].status = PROCESSED
-    - withdrawInfos[user][reqId].cooldownEndTime = T0 + 12h
-  Decision: Finalize. Call SYMMIO.finalizeWithdrawRequest(user, reqId).
-  SYMMIO transfers 2,000 USDC (expressAmount) to ExpressProvider, then calls onWithdrawComplete.
-  Contract replenishes pools and cleans up both ring buffers:
-    - General ring: removeExpectedInflow clears the 1,200 from the cooldown bucket
-    - Affiliate ring: removeExpectedInflow clears the 800 from the cooldown bucket
-    - generalBalance:    8,800 + 1,200 = 10,000  (restored)
-    - affiliateBalances: 4,200 + 800   = 5,000   (restored)
-  Status = FINALIZED
-  Pools fully restored. Ring buffer forecasts cleaned up.
-```
-
----
-
-### 2.4 STANDARD (optionType = 3)
-
+### 2.3 STANDARD (optionType = 2)
 **User experience:** ~12 hours. No capital fronting. ExpressProvider acts as intermediary.
 
 ```mermaid
@@ -920,7 +718,7 @@ Step 1 — Bot sees: User requests withdrawal of 1,000 USDC
     INSTANT requires locking generalAmount from the general pool immediately.
     expressAmount = 1,000, affiliateAmount = 400, generalAmount = 1,000 - 400 = 600.
     Unlocked general = 2,000 >= 600. FEASIBLE, but bot prefers STANDARD for this user.
-  Decision: Offer STANDARD. No capital fronting, no pool locks, no ring buffer usage.
+  Decision: Offer STANDARD. No capital fronting, no pool locks.
 
 Step 2 — Bot constructs parts and signs
   Bot constructs parts (all parts have virtualProvider = 0x0):
@@ -941,7 +739,7 @@ Step 3 — Bot sees: WithdrawAccepted event (SYMMIO called onWithdrawRequest)
     - status = ACCEPTED (1), nonces[user] = 1
     - lockedGeneralBalance = 8,000 (unchanged — STANDARD skips _lockFunds)
     - lockedAffiliateBalances[affiliate] = 4,600 (unchanged — STANDARD skips _lockFunds)
-    NOTE: Pools are NOT locked for STANDARD. The ring buffer is also NOT used.
+    NOTE: Pools are NOT locked for STANDARD.
     The 1,000 USDC will arrive from SYMMIO only after the 12h cooldown.
   Decision: Schedule finalizeWithdrawRequest call at cooldownEndTime (T+12h). Wait.
 
@@ -1010,7 +808,7 @@ Final accounting:
 
 ### 2.5 Credit-Backed Withdrawal
 
-For IMMEDIATE, INSTANT, and SCHEDULED options, the bot can include a `creditAmount` in the signed option to draw from the affiliate's credit line (CreditLineManager). This supplements pool liquidity:
+For IMMEDIATE and INSTANT options, the bot can include a `creditAmount` in the signed option to draw from the affiliate's credit line (CreditLineManager). This supplements pool liquidity:
 
 - `generalAmount = expressAmount - affiliateAmount - creditAmount`
 - Credit requires a valid Muon oracle attestation (`CreditData`)
@@ -1058,12 +856,9 @@ flowchart TD
     C --> E{Unlocked liquidity >= amount\nAND risk = LOW?}
     E -->|Yes| E1[Offer INSTANT]
 
-    C --> F{"getEarliestExpressAvailability\nreturns (true, timestamp)?"}
-    F -->|Yes| F1[Offer SCHEDULED]
-
     C --> G[Always offer STANDARD]
 
-    D2 & E1 & F1 & G --> H[Compute fees & sponsor coverage]
+    D2 & E1 & G --> H[Compute fees & sponsor coverage]
     H --> I[Sign EIP-712 WithdrawOption]
     I --> J[Return options to user]
 ```
@@ -1080,7 +875,6 @@ flowchart TD
 - [ ] Check available affiliate pool: `affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate] >= affiliateAmount`
 - [ ] Check credit line capacity: `creditLineManagers(affiliate) != address(0)` if using credit
 - [ ] For IMMEDIATE: verify `minValidatorSignatures > 0`
-- [ ] For SCHEDULED: call `getEarliestExpressAvailability(affiliate, totalAmount)` to find `availableAt`
 - [ ] If validators required: gather >= `minValidatorSignatures` attestations
 - [ ] Construct `WithdrawReceiverPart[]` array
 - [ ] Compute `partsHash = keccak256(abi.encode(parts))`
@@ -1092,8 +886,8 @@ flowchart TD
 **WithdrawOption EIP-712 fields (all must be exact):**
 - [ ] `user` -- the withdrawing user address
 - [ ] `nonce` -- must match `nonces[user]` at execution time
-- [ ] `optionType` -- 0-3
-- [ ] `availableAt` -- timestamp for SCHEDULED, 0 for others
+- [ ] `optionType` -- 0-2
+- [ ] `availableAt` -- 0 (reserved field)
 - [ ] `affiliate` -- affiliate address
 - [ ] `affiliateAmount` -- amount from affiliate pool
 - [ ] `fee` -- must equal `(feeBasis * feeRate) / 10000` on-chain
@@ -1111,18 +905,16 @@ flowchart TD
 |--------|----------------------------|-------------------------------------|
 | IMMEDIATE | N/A (already processed) | `cooldownEndTime` |
 | INSTANT | `acceptedAt + securityWindow` | `cooldownEndTime` |
-| SCHEDULED | `availableAt` | `cooldownEndTime` |
 | STANDARD | After `onWithdrawComplete` | `cooldownEndTime` |
 
 ### 3.5 Processing (`processWithdraw`)
 
 - [ ] Verify status is correct for the option type:
-  - INSTANT/SCHEDULED: must be ACCEPTED (or LOCKED after cooldown)
+  - INSTANT: must be ACCEPTED (or LOCKED after cooldown)
   - STANDARD: must be FINALIZED (or LOCKED after cooldown)
 - [ ] Provide exact `parts` array (verified against stored `partsHash`)
 - [ ] Check timing:
   - INSTANT: `block.timestamp >= acceptedAt + securityWindow`
-  - SCHEDULED: `block.timestamp >= availableAt`
   - STANDARD: `block.timestamp >= finalizedAt` (operator) or `+ tolerancePeriod` (anyone)
   - LOCKED after cooldown: `block.timestamp >= cooldownEndTime`
 - [ ] For LOCKED STANDARD without finalization: `processWithdraw` calls `finalizeWithdrawRequest` on SYMMIO first
@@ -1134,7 +926,7 @@ flowchart TD
 - [ ] Must wait until `block.timestamp >= cooldownEndTime`
 - [ ] SYMMIO transfers express-only token amounts to ExpressProvider
 - [ ] SYMMIO calls `onWithdrawComplete` on ExpressProvider
-- [ ] Pools are replenished (INSTANT/SCHEDULED/IMMEDIATE) or tokens arrive (STANDARD)
+- [ ] Pools are replenished (INSTANT/IMMEDIATE) or tokens arrive (STANDARD)
 - [ ] Verify status becomes FINALIZED (or stays LOCKED for STANDARD)
 
 #### Numeric Example: Bot Action Timeline for a 500 USDC INSTANT
@@ -1201,8 +993,7 @@ Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
 
   What if unlocked general were only 100e6?
     generalAmount (300e6) > 100e6 -- INSTANT not feasible.
-    Bot would check getEarliestExpressAvailability() for SCHEDULED,
-    or fall back to STANDARD.
+    Bot must fall back to STANDARD.
 
 ----------------------------------------------------------------------
 
@@ -1311,7 +1102,6 @@ flowchart LR
     subgraph "For each user withdrawal request"
         A{Validators enabled\n& liquidity OK?} -->|Yes| IM[IMMEDIATE]
         B{Unlocked liquidity\n>= amount?} -->|Yes| IN[INSTANT]
-        C{Bucket availability\nreturns true?} -->|Yes| SC[SCHEDULED]
         D[Always] --> ST[STANDARD]
     end
 ```
@@ -1496,7 +1286,6 @@ flowchart TD
     T -->|WithdrawAccepted| A1{optionType?}
     A1 -->|IMMEDIATE| A2[No action needed\nAlready PROCESSED]
     A1 -->|INSTANT| A3["Schedule processWithdraw\nat acceptedAt + securityWindow"]
-    A1 -->|SCHEDULED| A4["Schedule processWithdraw\nat availableAt"]
     A1 -->|STANDARD| A5["Wait for WithdrawFinalized\nthen schedule processWithdraw"]
 
     T -->|WithdrawProcessed| B1["Schedule finalizeWithdrawRequest\nat cooldownEndTime"]
@@ -2129,199 +1918,6 @@ Step 4 — Bot considers: what if Alice acted on SYMMIO between T=102 and submis
 
 ---
 
-## 9. Scheduler / Bucket System
-
-### 9.1 Architecture
-
-```mermaid
-flowchart LR
-    subgraph "Ring Buffer (12 buckets, 1h each)"
-        B0["Bucket 0\nNow → +1h\nInflow: 500\nOutflow: 0"]
-        B1["Bucket 1\n+1h → +2h\nInflow: 0\nOutflow: 300"]
-        B2["Bucket 2\n+2h → +3h\nInflow: 1500\nOutflow: 0"]
-        B3["Bucket 3\n+3h → +4h\nInflow: 0\nOutflow: 1200"]
-        B4["Bucket 4..11\n+4h → +12h\n..."]
-    end
-
-    B0 --> B1 --> B2 --> B3 --> B4
-
-    style B1 fill:#ff9,stroke:#aa0
-    style B3 fill:#ff9,stroke:#aa0
-```
-
-- Ring buffer of `numBuckets = schedulingWindow / bucketDuration + 1` (default: 12h / 1h + 1 = 13)
-- Each bucket: `{ expectedInflow, reservedOutflow }`
-- `anchorTimestamp`: moving origin for bucket 0
-- `startIndex`: current first bucket in the ring
-- Auto-syncs on every state-changing call (`LibRingBuffer.sync`); lazy reset via `configNonce` when bucket config changes
-
-### 9.2 What Gets Recorded
-
-Both a **general ring buffer** and **per-affiliate ring buffers** are maintained. All non-STANDARD option types record entries in both rings.
-
-| Event | Ring Buffer | Bucket Field | Which Bucket |
-|-------|-------------|-------------|--------------|
-| Accept INSTANT/IMMEDIATE (general portion) | General | `expectedInflow += generalAmount` | Bucket at `cooldownEndTime` |
-| Accept INSTANT/IMMEDIATE (affiliate portion) | Affiliate | `expectedInflow += affiliateAmount` | Bucket at `cooldownEndTime` |
-| Accept SCHEDULED (general portion) | General | `reservedOutflow += generalAmount` | Bucket at `availableAt` |
-| Accept SCHEDULED (general portion) | General | `expectedInflow += generalAmount` | Bucket at `cooldownEndTime` |
-| Accept SCHEDULED (affiliate portion) | Affiliate | `reservedOutflow += affiliateAmount` | Bucket at `availableAt` |
-| Accept SCHEDULED (affiliate portion) | Affiliate | `expectedInflow += affiliateAmount` | Bucket at `cooldownEndTime` |
-| Finalize non-STANDARD (general) | General | Remove `expectedInflow` (inflow materialized) | Bucket at `cooldownEndTime` |
-| Finalize non-STANDARD (affiliate) | Affiliate | Remove `expectedInflow` (inflow materialized) | Bucket at `cooldownEndTime` |
-| Process SCHEDULED (general) | General | Remove `reservedOutflow` | Bucket at `availableAt` |
-| Process SCHEDULED (affiliate) | Affiliate | Remove `reservedOutflow` | Bucket at `availableAt` |
-| Cancel/suspend SCHEDULED (general) | General | Remove `reservedOutflow` | Bucket at `availableAt` |
-| Cancel/suspend SCHEDULED (affiliate) | Affiliate | Remove `reservedOutflow` | Bucket at `availableAt` |
-| Cancel/suspend non-STANDARD (general) | General | Remove `expectedInflow` | Bucket at `cooldownEndTime` |
-| Cancel/suspend non-STANDARD (affiliate) | Affiliate | Remove `expectedInflow` | Bucket at `cooldownEndTime` |
-
-### 9.3 Liquidity Availability Check (SCHEDULED)
-
-SCHEDULED checks both the general and affiliate ring buffers independently:
-
-**General ring buffer check:**
-```mermaid
-flowchart TD
-    A["running = generalBalance - lockedGeneralBalance"] --> B["offset = 0"]
-    B --> C{"offset <= targetBucketOffset?"}
-    C -->|Yes| D["running += generalRing.buckets[offset].expectedInflow"]
-    D --> E["running -= generalRing.buckets[offset].reservedOutflow"]
-    E --> F{"running >= generalAmount?"}
-    F -->|Yes at this offset| G["✓ General liquidity available"]
-    F -->|No| H["offset++"]
-    H --> C
-    C -->|No| I["✗ InsufficientScheduledLiquidity"]
-```
-
-**Affiliate ring buffer check (if affiliateAmount > 0):**
-```mermaid
-flowchart TD
-    A2["running = affiliateBalances - lockedAffiliateBalances"] --> B2["offset = 0"]
-    B2 --> C2{"offset <= targetBucketOffset?"}
-    C2 -->|Yes| D2["running += affiliateRing.buckets[offset].expectedInflow"]
-    D2 --> E2["running -= affiliateRing.buckets[offset].reservedOutflow"]
-    E2 --> F2{"running >= affiliateAmount?"}
-    F2 -->|Yes at this offset| G2["✓ Affiliate liquidity available"]
-    F2 -->|No| H2["offset++"]
-    H2 --> C2
-    C2 -->|No| I2["✗ InsufficientScheduledAffiliateLiquidity"]
-```
-
-### 9.4 getEarliestExpressAvailability View Function
-
-```
-getEarliestExpressAvailability(affiliate, amount):
-  Simulates sync for both general and affiliate ring buffers (read-only)
-  baseAvailable = (generalBalance - lockedGeneralBalance)
-                + (affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate])
-  if baseAvailable >= amount: return (true, block.timestamp)
-  deficit = amount - baseAvailable
-
-  Walk future buckets in BOTH rings simultaneously:
-    totalInflow  += generalRing.buckets[i].expectedInflow
-    totalInflow  += affiliateRing.buckets[i].expectedInflow
-    totalOutflow += generalRing.buckets[i].reservedOutflow
-    totalOutflow += affiliateRing.buckets[i].reservedOutflow
-    if totalInflow >= totalOutflow + deficit: return (true, bucketEndTimestamp)
-  return (false, 0)
-```
-
-### 9.5 Bot Checklist for Scheduling
-
-- [ ] Call `getEarliestExpressAvailability` to find best `availableAt` (walks both general and affiliate ring buffers)
-- [ ] `availableAt` must fall within `schedulingWindow` from now
-- [ ] For SCHEDULED, both `generalAmount` and `affiliateAmount` are reserved via ring buffers (no immediate counter locks)
-- [ ] If `setBucketDuration` or `setSchedulingWindow` is called, the general ring is cleared immediately and `configNonce` is incremented; affiliate rings are lazily reset on their next `sync` when they detect a `configNonce` mismatch
-- [ ] Cancelled/suspended inflows are cleaned up from both general and affiliate ring buffers -- but already-accepted SCHEDULED withdrawals referencing those inflows may face shortfalls
-- [ ] STANDARD withdrawals never create ring buffer entries (no pool fronting)
-
-#### Numeric Example: Bucket Walk for SCHEDULED Availability
-
-```
-Scenario: Bot decides whether to offer a SCHEDULED withdrawal
-
-Setup:
-  bucketDuration = 1h, schedulingWindow = 12h, numBuckets = 13
-  generalBalance = 10,000 USDC
-  lockedGeneralBalance = 9,500 USDC
-  affiliateBalances[0xAffiliate] = 0 (no affiliate pool for this user)
-  General ring buffer state:
-    Bucket 0 (now -> +1h):  expectedInflow = 0,     reservedOutflow = 200
-    Bucket 1 (+1h -> +2h):  expectedInflow = 0,     reservedOutflow = 0
-    Bucket 2 (+2h -> +3h):  expectedInflow = 3,000, reservedOutflow = 0
-    Bucket 3 (+3h -> +4h):  expectedInflow = 0,     reservedOutflow = 1,000
-
-Step 1 -- Bot sees: withdrawal request from 0xAlice for 2,000 USDC
-  Bot reads on-chain:
-    nonces[0xAlice] = 7
-    generalBalance - lockedGeneralBalance = 10,000 - 9,500 = 500 unlocked
-  Bot checks: Can I offer INSTANT?
-    500 < 2,000 -> NO, not enough unlocked liquidity for INSTANT
-  Decision: Try SCHEDULED. Call getEarliestExpressAvailability(0xAffiliate, 2,000).
-
-Step 2 -- Bot walks buckets to find earliest availability:
-  Bot reads on-chain (getEarliestExpressAvailability simulation):
-    Start: running = 500 (current unlocked general balance)
-
-    Bucket 0: running = 500 + 0 (inflow) - 200 (outflow) = 300
-              300 < 2,000 -> not yet, keep walking
-
-    Bucket 1: running = 300 + 0 - 0 = 300
-              300 < 2,000 -> not yet
-              (Why not pick bucket 1? No inflow arrives, balance stays at 300)
-
-    Bucket 2: running = 300 + 3,000 - 0 = 3,300
-              3,300 >= 2,000 -> FOUND! Enough liquidity by end of bucket 2
-              (Why bucket 2 and not bucket 1? The 3,000 inflow from a prior
-               withdrawal's SYMMIO reimbursement lands in bucket 2)
-              availableAt = anchorTimestamp + 3 * bucketDuration = now + 3h
-
-    Bot skips buckets 3-11: already found availability.
-  Bot checks return: available = true, availableAt = now + 3h
-  Decision: Offer SCHEDULED with availableAt = now + 3h.
-
-Step 3 -- Bot signs and user submits:
-  Bot signs EIP-712 option:
-    nonce = 7, optionType = SCHEDULED, availableAt = now + 3h,
-    affiliate = 0xAffiliate, affiliateAmount = 0, fee = 20, operatorFee = 2,
-    maxUserFee = 22, deadline = now + 60s
-  User submits initiateWithdraw with this signed option as providerData.
-
-Step 4 -- Bot observes: WithdrawAccepted(0xAlice, 42, SCHEDULED) event
-  Bot reads on-chain (what the contract did during acceptance):
-    _lockFunds reserved the outflow in general ring buffer:
-      generalRing.buckets[2].reservedOutflow: 0 -> 2,000 (general amount reserved)
-    _lockFunds recorded future replenishment in general ring buffer:
-      generalRing.buckets at cooldownEndTime (12h from now): expectedInflow += 2,000
-    lockedAffiliateBalances unchanged (affiliateAmount = 0, no affiliate ring activity)
-  Bot checks: withdrawInfos[0xAlice][42].status == ACCEPTED
-  Decision: Schedule processWithdraw for availableAt = now + 3h.
-
-  What if a second 1,500 USDC SCHEDULED request arrives now?
-    Re-walk with updated buckets:
-      Bucket 2 now has reservedOutflow = 2,000
-      Bucket 2: running = 300 + 3,000 - 2,000 = 1,300
-               1,300 < 1,500 -> not enough at bucket 2 anymore
-      Bucket 3: running = 1,300 + 0 - 1,000 = 300
-               300 < 1,500 -> still not enough
-      Walk continues to later buckets (or fails if window exhausted)
-
-Step 5 -- Bot processes at availableAt:
-  Bot checks: block.timestamp >= now + 3h (availableAt)
-  Bot checks: withdrawInfos[0xAlice][42].status == ACCEPTED (not LOCKED or CANCELLED)
-  Decision: Call processWithdraw(0xAlice, 42, parts).
-    Contract removes reservedOutflow from general ring at availableAt bucket
-    Contract deducts generalBalance -= 2,000 (no affiliate portion)
-    Contract transfers 2,000 - 22 (userFee) = 1,978 USDC to 0xAlice's receiver
-    Status -> PROCESSED
-
-  What if status == LOCKED? Bot must NOT call processWithdraw (reverts NotAccepted).
-    Wait for UNLOCK_ROLE to resolve, or wait until cooldownEndTime.
-```
-
----
-
 ## 10. Multi-Part Withdrawals
 
 ### 10.1 Part Classification
@@ -2874,8 +2470,6 @@ Step 2C — Bot sees: WithdrawSuspended(user, reqId) at T=600s
     - lockedAffiliateBalances[aff] decreased by 150 (INSTANT unlocks affiliate lock)
     - Credit line reservation released (if creditAmount > 0)
     - sponsorBalances[aff] += 5 (sponsor coverage refunded)
-    - General ring: expectedInflow at cooldown bucket cleared for generalAmount 350
-    - Affiliate ring: expectedInflow at cooldown bucket cleared for affiliateAmount (if > 0)
   Decision: Withdrawal is terminated. Cancel ALL scheduled actions for
             (user, reqId). Do not attempt processWithdraw (reverts NotAccepted)
             or finalizeWithdrawRequest (withdrawal is dead on SYMMIO side).
@@ -2910,7 +2504,6 @@ flowchart TD
 
     B -->|IMMEDIATE| B1["N/A — already PROCESSED"]
     B -->|INSTANT| B2{"Status == ACCEPTED?"}
-    B -->|SCHEDULED| B3["REVERT:\nScheduledNotCancellable"]
     B -->|STANDARD| B4{"Status == ACCEPTED?"}
 
     B2 -->|Yes| OK1["CANCELLED ✓"]
@@ -2935,7 +2528,6 @@ flowchart TD
 |-------------|-----------|------------|---------|
 | IMMEDIATE | N/A (already PROCESSED) | N/A (already PROCESSED) | N/A (already PROCESSED) |
 | INSTANT | YES if ACCEPTED | YES if ACCEPTED or LOCKED | YES if ACCEPTED or LOCKED |
-| SCHEDULED | NO (`ScheduledNotCancellable`) | YES if ACCEPTED or LOCKED | YES if ACCEPTED or LOCKED |
 | STANDARD | YES if ACCEPTED | YES if ACCEPTED or LOCKED (pre-finalize) | YES if ACCEPTED or LOCKED (pre-finalize) |
 | STANDARD (finalized) | N/A | NO (`InvalidStatusForForceCancel`) | NO (`InvalidStatusForSuspend`) |
 
@@ -2947,10 +2539,6 @@ All of the following are restored/cleaned up:
 - [ ] `generalBalance` and `affiliateBalances` values unchanged (locks are released, not balances)
 - [ ] Credit line reservation released via `cancelReservation` (if creditAmount > 0)
 - [ ] Sponsor coverage refunded: `sponsorBalances[affiliate] += sponsorCoverage`
-- [ ] Non-STANDARD: general ring `expectedInflow` removed at `cooldownEndTime` bucket
-- [ ] Non-STANDARD: affiliate ring `expectedInflow` removed at `cooldownEndTime` bucket (if affiliateAmount > 0)
-- [ ] SCHEDULED: general ring `reservedOutflow` removed at `availableAt` bucket
-- [ ] SCHEDULED: affiliate ring `reservedOutflow` removed at `availableAt` bucket (if affiliateAmount > 0)
 - [ ] Status set to CANCELLED or SUSPENDED
 
 ### 13.4 Bot Reactions to Cancel/Suspend
@@ -2960,55 +2548,6 @@ All of the following are restored/cleaned up:
 - [ ] Do not attempt `finalizeWithdrawRequest` on SYMMIO (withdrawal is terminated)
 - [ ] Update internal liquidity tracking (pools restored)
 - [ ] Update sponsor balance tracking (coverage refunded)
-
-#### Numeric Example: SCHEDULED Cancellation (Force Cancel) with Full Cleanup
-
-```
-Scenario: SCHEDULED withdrawal is force-cancelled by admin — bot detects and cleans up
-
-Setup:
-  SCHEDULED 800 USDC (affiliateAmount = 300, generalAmount = 500)
-  acceptedAt = T=0, availableAt = T+14400 (T+4h), cooldownEndTime = T+43200 (T+12h)
-  fee = 4 USDC, operatorFee = 1 USDC, sponsorCoverage locked = 3 USDC
-  General ring: bucket at T+4h has reservedOutflow including 500, bucket at T+12h has expectedInflow including 500
-  Affiliate ring: bucket at T+4h has reservedOutflow including 300, bucket at T+12h has expectedInflow including 300
-  (SCHEDULED does NOT counter-lock affiliate — both pools use ring buffers)
-  creditAmount = 200 (credit line reservation active)
-  sponsorBalances[aff] = 47 (was 50 before 3 locked at acceptance)
-  Status = ACCEPTED
-
-Step 1 — Bot sees: WithdrawCancelled(user, reqId) event at T=7200 (T+2h)
-  Bot reads on-chain: withdrawInfos[user][reqId].status == CANCELLED
-  Bot checks: This was a SCHEDULED withdrawal — user cancel is impossible
-              (ScheduledNotCancellable). So this must be a force cancel
-              via onForceWithdrawCancel.
-
-Step 2 — Bot checks: What did _releaseWithdraw restore?
-  Bot reads on-chain:
-    - General ring: reservedOutflow decreased by 500 at T+4h bucket
-      (general outflow reservation cleared — no longer paying out at T+4h)
-    - General ring: expectedInflow decreased by 500 at T+12h bucket
-      (SYMMIO reimbursement forecast removed — no finalization will occur)
-    - Affiliate ring: reservedOutflow decreased by 300 at T+4h bucket
-      (affiliate outflow reservation cleared)
-    - Affiliate ring: expectedInflow decreased by 300 at T+12h bucket
-      (affiliate reimbursement forecast removed)
-    - lockedAffiliateBalances[aff] unchanged (SCHEDULED does not counter-lock affiliate)
-    - CLM.cancelReservation(user, reqId) -> reservedDebt -= 200
-    - sponsorBalances[aff]: 47 -> 50 (3 USDC sponsor coverage refunded)
-
-Step 3 — Bot decides:
-  Decision: Cancel ALL scheduled actions for (user, reqId):
-    - Cancel the processWithdraw task scheduled for T+14400 (availableAt)
-    - Cancel the finalizeWithdrawRequest task scheduled for T+43200 (cooldown end)
-    - Do NOT attempt processWithdraw — reverts (status is CANCELLED, not ACCEPTED)
-    - Do NOT attempt finalizeWithdrawRequest on SYMMIO — withdrawal is terminated
-  Update internal liquidity tracking:
-    - Affiliate ring buffer: 300 USDC reservation freed (available for new withdrawals)
-    - General ring buffer: 500 USDC reservation freed
-    - Credit line: 200 USDC reservation released, debt capacity restored
-    - Sponsor: 3 USDC refunded, back to 50
-```
 
 ---
 
@@ -3036,7 +2575,6 @@ gantt
 | Option | Operator processableAt | Anyone processableAt |
 |--------|----------------------|---------------------|
 | INSTANT | `acceptedAt + securityWindow` | `acceptedAt + securityWindow + tolerancePeriod` |
-| SCHEDULED | `availableAt` | `availableAt + tolerancePeriod` |
 | STANDARD | `finalizedAt` | `finalizedAt + tolerancePeriod` |
 | LOCKED (after cooldown) | `cooldownEndTime` | `cooldownEndTime + tolerancePeriod` |
 
@@ -3133,13 +2671,6 @@ gantt
     SYMMIO Cooldown (12h)     :active, 0, 43200
     Finalization              :milestone, 43200, 43200
 
-    section SCHEDULED (3h)
-    Accept                    :done, 0, 1
-    Wait for availableAt      :active, 0, 10800
-    Process                   :milestone, 10800, 10800
-    SYMMIO Cooldown (12h)     :active, 0, 43200
-    Finalization              :milestone, 43200, 43200
-
     section STANDARD
     Accept                    :done, 0, 1
     SYMMIO Cooldown (12h)     :active, 0, 43200
@@ -3153,8 +2684,6 @@ gantt
 |-----------|---------|--------|-------------|
 | `securityWindow` | 20s | SETTER_ROLE | Min delay before operator `processWithdraw` for INSTANT |
 | `tolerancePeriod` | 60s | SETTER_ROLE | Extra delay for permissionless processing |
-| `bucketDuration` | 1h | SETTER_ROLE | Ring buffer bucket duration |
-| `schedulingWindow` | 12h | SETTER_ROLE | Total scheduling window for SCHEDULED |
 | `validatorApprovalTimeout` | 30s | SETTER_ROLE | Max age of validator signatures |
 | `minValidatorSignatures` | 0 | SETTER_ROLE | Required validator attestation count |
 
@@ -3174,8 +2703,6 @@ by option type, status, and caller role. This table is the definitive reference.
 |-------------|--------|-------------------------------|------------------------|
 | INSTANT | ACCEPTED | `acceptedAt + securityWindow` | `acceptedAt + securityWindow + tolerancePeriod` |
 | INSTANT | LOCKED | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod` |
-| SCHEDULED | ACCEPTED | `availableAt` | `availableAt + tolerancePeriod` |
-| SCHEDULED | LOCKED | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod` |
 | STANDARD | FINALIZED | `finalizedAt` | `finalizedAt + tolerancePeriod` |
 | STANDARD | LOCKED | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod` |
 | IMMEDIATE | N/A | N/A (processed atomically inside `onWithdrawRequest`) | N/A |
@@ -3196,7 +2723,6 @@ Scenario: Bot computes processableAt for various withdrawals
 Shared parameters:
   securityWindow   = 20
   tolerancePeriod  = 60
-  schedulingWindow = 43200 (12h)
 
 ────────────────────────────────────────────────────────────
 Withdrawal A (INSTANT, ACCEPTED):
@@ -3215,21 +2741,7 @@ Withdrawal A (INSTANT, ACCEPTED):
     Permissionless fallback available 80s after acceptance.
 
 ────────────────────────────────────────────────────────────
-Withdrawal B (SCHEDULED, ACCEPTED):
-  availableAt = 1700010800 (3h after acceptance)
-
-  Bot (OPERATOR_ROLE):
-    processableAt = availableAt
-                  = 1700010800
-    Wait until block.timestamp >= 1700010800, then call processWithdraw.
-
-  Anyone (no OPERATOR_ROLE):
-    processableAt = availableAt + tolerancePeriod
-                  = 1700010800 + 60
-                  = 1700010860
-
-────────────────────────────────────────────────────────────
-Withdrawal C (STANDARD, FINALIZED):
+Withdrawal B (STANDARD, FINALIZED):
   finalizedAt = 1700043200 (12h after acceptance, SYMMIO sent tokens)
 
   Bot (OPERATOR_ROLE):
@@ -3244,7 +2756,7 @@ Withdrawal C (STANDARD, FINALIZED):
                   = 1700043260
 
 ────────────────────────────────────────────────────────────
-Withdrawal D (INSTANT, LOCKED — cooldown expired):
+Withdrawal C (INSTANT, LOCKED — cooldown expired):
   acceptedAt      = 1700000000
   cooldownEndTime = 1700043200 (12h later)
   block.timestamp = 1700050000 (well past cooldown)
@@ -3264,7 +2776,7 @@ Withdrawal D (INSTANT, LOCKED — cooldown expired):
     Already past -> anyone can call processWithdraw now.
 
 ────────────────────────────────────────────────────────────
-Withdrawal E (STANDARD, LOCKED — cooldown expired, not yet finalized):
+Withdrawal D (STANDARD, LOCKED — cooldown expired, not yet finalized):
   acceptedAt      = 1700000000
   cooldownEndTime = 1700043200
   finalizedAt     = 0 (SYMMIO hasn't finalized yet)
@@ -3283,7 +2795,7 @@ Withdrawal E (STANDARD, LOCKED — cooldown expired, not yet finalized):
     Same auto-finalize behavior applies.
 
 ────────────────────────────────────────────────────────────
-Withdrawal F (IMMEDIATE):
+Withdrawal E (IMMEDIATE):
   Not applicable. IMMEDIATE withdrawals are processed atomically inside
   onWithdrawRequest. The status goes directly to PROCESSED. There is no
   processWithdraw call and no processableAt computation.
@@ -3361,8 +2873,6 @@ flowchart TD
     A -->|Liquidity| L{Which?}
     L --> L1["InsufficientGeneralBalance → Reduce or wait"]
     L --> L2["InsufficientAffiliateBalance → Reduce affiliateAmount"]
-    L --> L3["InsufficientScheduledLiquidity → Later availableAt"]
-    L --> L4["InsufficientScheduledAffiliateLiquidity → Reduce affiliateAmount or later availableAt"]
 
     A -->|Fee| F{Which?}
     F --> F1["FeeMismatch → Re-read feeRate"]
@@ -3379,15 +2889,10 @@ flowchart TD
     ST --> ST6["InvalidStatusForStandard → Check status is ACCEPTED or LOCKED"]
 
     A -->|Validation| V{Which?}
-    V --> V1["InvalidOptionType → Use optionType 0-3"]
+    V --> V1["InvalidOptionType → Use optionType 0-2"]
     V --> V2["ValidatorsRequiredForImmediate → Enable validators"]
     V --> V3["InvalidAddressBytesLength → Fix receiver encoding"]
 
-    A -->|Scheduler| SC{Which?}
-    SC --> SC1["TimestampInThePast → Use future availableAt"]
-    SC --> SC2["TimestampTooFarInFuture → Shorten availableAt"]
-    SC --> SC3["DurationMustBePositive → Non-zero duration"]
-    SC --> SC4["WindowMustBePositive → Non-zero window"]
 ```
 
 ### 16.2 Signature & Auth Errors
@@ -3410,8 +2915,6 @@ flowchart TD
 |-------|-------|------------|
 | `InsufficientGeneralBalance` | INSTANT/IMMEDIATE generalAmount > available | Reduce amount or wait for pool refill |
 | `InsufficientAffiliateBalance` | affiliateAmount > available affiliate balance | Reduce affiliateAmount |
-| `InsufficientScheduledLiquidity` | SCHEDULED generalAmount unreachable by availableAt | Choose later availableAt or STANDARD |
-| `InsufficientScheduledAffiliateLiquidity` | SCHEDULED affiliateAmount unreachable by availableAt in affiliate ring buffer | Reduce affiliateAmount, choose later availableAt, or STANDARD |
 | `InsufficientUnlockedGeneralBalance` | Withdraw attempt touches locked funds | Wait for withdrawals to complete |
 | `InsufficientUnlockedAffiliateBalance` | Same for affiliate pool | Wait for withdrawals to complete |
 
@@ -3435,11 +2938,10 @@ flowchart TD
 | `NotAccepted` | `processWithdraw` on non-ACCEPTED (or lock on non-ACCEPTED) | Check status first |
 | `NotFinalized` | `processWithdraw` on STANDARD before finalization | Wait for `onWithdrawComplete` |
 | `NotLocked` | `unlockAndProcess` on non-LOCKED status | Check status first |
-| `NotProcessed` | `onWithdrawComplete` on INSTANT/SCHEDULED/IMMEDIATE before processing | Wait for `processWithdraw` to complete first |
+| `NotProcessed` | `onWithdrawComplete` on INSTANT/IMMEDIATE before processing | Wait for `processWithdraw` to complete first |
 | `InvalidStatusForStandard` | `onWithdrawComplete` on STANDARD when status is not ACCEPTED or LOCKED | Check status -- may already be CANCELLED or SUSPENDED |
 | `TooEarly` | Processing before allowed time | Wait for correct timestamp (see [processableAt lookup table](#154-processableat-lookup-table)) |
 | `PartsMismatch` | Parts array doesn't match stored hash | Use exact same parts |
-| `ScheduledNotCancellable` | User cancel on SCHEDULED | Expected behavior |
 | `InvalidStatusForForceCancel` | Force cancel on PROCESSED or LOCKED+finalized | Cannot cancel at this stage |
 | `InvalidStatusForSuspend` | Suspend on PROCESSED, FINALIZED, or LOCKED+finalized | Cannot suspend at this stage |
 
@@ -3447,22 +2949,11 @@ flowchart TD
 
 | Error | Cause | Bot Action |
 |-------|-------|------------|
-| `InvalidOptionType` | `opt.optionType > 3` in `onWithdrawRequest` | Use only 0 (IMMEDIATE), 1 (INSTANT), 2 (SCHEDULED), or 3 (STANDARD) |
+| `InvalidOptionType` | `opt.optionType > 2` in `onWithdrawRequest` | Use only 0 (IMMEDIATE), 1 (INSTANT), or 2 (STANDARD) |
 | `ValidatorsRequiredForImmediate` | IMMEDIATE option when `minValidatorSignatures == 0` | Do not offer IMMEDIATE unless validators are configured; fall back to INSTANT |
 | `InvalidAddressBytesLength` | `parts[i].receiver` is not exactly 20 bytes | Ensure all receiver fields are valid 20-byte Ethereum addresses |
 
-### 16.7 Scheduler Errors
-
-| Error | Cause | Bot Action |
-|-------|-------|------------|
-| `DurationMustBePositive` | `setBucketDuration(0)` | Admin error -- use non-zero duration |
-| `WindowMustBePositive` | `setSchedulingWindow(0)` | Admin error -- use non-zero window |
-| `MustDivideEvenly` | `schedulingWindow % bucketDuration != 0` | Fix config so schedulingWindow is evenly divisible by bucketDuration |
-| `MustBeDivisibleByBucketDuration` | `schedulingWindow % bucketDuration != 0` | Fix config so schedulingWindow is evenly divisible by bucketDuration |
-| `TimestampInThePast` | `availableAt < anchorTimestamp` in bucket offset computation | Use a future timestamp for SCHEDULED `availableAt` |
-| `TimestampTooFarInFuture` | `availableAt` beyond scheduling window | Use `availableAt` within `schedulingWindow` of current time |
-
-### 16.8 Bot Scenarios for Key Errors
+### 16.7 Bot Scenarios for Key Errors
 
 #### InvalidOptionType
 
@@ -3470,19 +2961,19 @@ flowchart TD
 Bot sees: User requests a withdrawal. Bot has option type value from config/logic.
 
 Bot checks:
-  optionType must be 0 (IMMEDIATE), 1 (INSTANT), 2 (SCHEDULED), or 3 (STANDARD).
-  Any value > 3 will cause onWithdrawRequest to revert InvalidOptionType.
+  optionType must be 0 (IMMEDIATE), 1 (INSTANT), or 2 (STANDARD).
+  Any value > 2 will cause onWithdrawRequest to revert InvalidOptionType.
 
 Decision:
   Validate optionType before signing the EIP-712 option. If the bot's logic
   produces an out-of-range value (e.g., from a misconfigured enum), fix the
-  configuration. Never sign an option with optionType > 3.
+  configuration. Never sign an option with optionType > 2.
 
 Scenario:
-  Bot computes optionType = 4 (bug in routing logic)
-  -> Signs option with optionType = 4
+  Bot computes optionType = 3 (bug in routing logic)
+  -> Signs option with optionType = 3
   -> User submits to SYMMIO -> onWithdrawRequest called
-  -> Contract checks: 4 > 3 -> REVERT InvalidOptionType
+  -> Contract checks: 3 > 2 -> REVERT InvalidOptionType
   -> Bot detects revert, fixes routing logic, re-signs with correct type
 ```
 
@@ -3563,46 +3054,13 @@ Scenario:
   -> Bot validates receiver byte lengths before accepting the withdrawal request.
 ```
 
-#### TimestampInThePast / TimestampTooFarInFuture
-
-```
-Bot sees: onWithdrawRequest reverts on a SCHEDULED withdrawal with a bucket error.
-
-Bot checks:
-  For SCHEDULED, availableAt must satisfy:
-    availableAt >= anchorTimestamp  (not in the past)
-    availableAt <= anchorTimestamp + schedulingWindow  (not too far in future)
-  Read anchorTimestamp and schedulingWindow on-chain.
-
-Decision:
-  TimestampInThePast:
-    The bot's availableAt is stale (behind the anchor). Re-read anchorTimestamp,
-    recompute availableAt using getEarliestExpressAvailability(), and re-sign.
-  TimestampTooFarInFuture:
-    The availableAt exceeds the scheduling window. Use a closer timestamp
-    (within schedulingWindow of current time), or switch to STANDARD if the
-    needed liquidity is not reachable within the window.
-
-Scenario (TimestampInThePast):
-  anchorTimestamp = 1700003600 (synced forward)
-  Bot signed availableAt = 1700002000 (before anchor)
-  -> getBucketOffset: 1700002000 < 1700003600 -> REVERT TimestampInThePast
-  -> Bot re-reads anchor, calls getEarliestExpressAvailability(), re-signs.
-
-Scenario (TimestampTooFarInFuture):
-  anchorTimestamp = 1700000000, schedulingWindow = 43200
-  Bot signed availableAt = 1700050000 (50000s > 43200s from anchor)
-  -> getBucketOffset: offset >= numBuckets -> REVERT TimestampTooFarInFuture
-  -> Bot chooses availableAt within 12h window or switches to STANDARD.
-```
-
 #### NotProcessed / InvalidStatusForStandard
 
 ```
 Bot sees: onWithdrawComplete callback reverts.
 
 Bot checks:
-  NotProcessed: For INSTANT/SCHEDULED/IMMEDIATE, onWithdrawComplete requires
+  NotProcessed: For INSTANT/IMMEDIATE, onWithdrawComplete requires
     status == PROCESSED. If the bot hasn't called processWithdraw yet, SYMMIO's
     finalization attempt will revert. This is a SYMMIO callback, so the bot
     doesn't call it directly -- but the bot must ensure processWithdraw completes
@@ -3615,8 +3073,7 @@ Bot checks:
 Decision:
   NotProcessed: Ensure the bot's processWithdraw runs before SYMMIO's
     finalizeWithdrawRequest. For INSTANT, this means processing within 12h
-    (easily met with the 20s security window). For SCHEDULED, process at
-    availableAt (also well before 12h). If something blocked processing,
+    (easily met with the 20s security window). If something blocked processing,
     investigate and resolve before finalization.
   InvalidStatusForStandard: No bot action needed -- the withdrawal was
     already cancelled/suspended. The bot should have cleaned up its tracking.
@@ -3656,7 +3113,6 @@ sequenceDiagram
 | Two INSTANT withdrawals for more than half the pool | Second reverts `InsufficientGeneralBalance` |
 | First withdrawal cancelled, second retried | Succeeds (pool freed) |
 | Two IMMEDIATE withdrawals racing | Second reverts (funds transferred atomically in first's tx) |
-| SCHEDULED depends on inflow from another withdrawal that gets cancelled | Inflow removed from bucket; SCHEDULED may face shortfall at processing time |
 | Sponsor balance drained between sign and execution | Reverts `UserFeeExceedsMaximum` if maxUserFee too low |
 
 ### 17.2 Config Changes Mid-Flight
@@ -3687,7 +3143,6 @@ sequenceDiagram
 | `validatorApprovalTimeout` reduced | Previously valid sigs may expire |
 | `securityWindow` changed | Affects timing for unprocessed INSTANT withdrawals |
 | `tolerancePeriod` changed | Affects permissionless processing window |
-| `bucketDuration` / `schedulingWindow` changed | General ring cleared immediately; affiliate rings lazily reset via `configNonce`; existing SCHEDULED reservations are lost |
 | SIGNER_ROLE revoked | All options signed by that key become invalid |
 | VALIDATOR_ROLE revoked | Pending validator sigs from that key become invalid |
 
@@ -3806,7 +3261,6 @@ Correct strategy:
 | Scenario | Behavior |
 |----------|----------|
 | `processWithdraw` at exact securityWindow boundary | Succeeds (uses `>=` check) |
-| SCHEDULED processing at exact `availableAt` | Succeeds |
 | Finalization at exact `cooldownEndTime` | Succeeds |
 | LOCKED after cooldown + tolerancePeriod | Anyone can process |
 | cooldownEndTime in the past (user deallocated long ago) | Cooldown already expired, finalization possible immediately |
@@ -4117,133 +3571,7 @@ Step 3 — Bot sees: SponsorDeposit(0xAffiliate, 50)
     The sponsor identity field is informational; withdrawSponsorBalance is SPONSOR_MANAGER_ROLE-gated.
 ```
 
-#### Scenario 6: Bucket Duration / Scheduling Window Change
-
-```
-Scenario: Admin changes bucketDuration, clearing all bucket forecast data,
-while bot has pending SCHEDULED withdrawals
-
-Setup:
-  bucketDuration   = 3,600s (1 hour)
-  schedulingWindow = 43,200s (12 hours)
-  numBuckets       = 12 + 1 = 13
-  generalBalance   = 20,000 USDC
-
-  Bot has 3 pending SCHEDULED withdrawals:
-    W1: Alice, 3,000 USDC, availableAt = T + 7,200s (bucket 2), status=ACCEPTED
-    W2: Bob,   2,000 USDC, availableAt = T + 14,400s (bucket 4), status=ACCEPTED
-    W3: Carol, 4,000 USDC, availableAt = T + 21,600s (bucket 6), status=ACCEPTED
-
-  Bucket state before change:
-    bucket[2].reservedOutflow = 3,000 (for W1)
-    bucket[4].reservedOutflow = 2,000 (for W2)
-    bucket[6].reservedOutflow = 4,000 (for W3)
-    Various buckets have expectedInflow from pending finalizations
-
-Step 1 — Admin calls: setBucketDuration(1800) (change from 1h to 30min)
-  On-chain:
-    LibRingBuffer.clear(generalRing) is called:
-      General ring bucket data zeroed, anchorTimestamp = 0, startIndex = 0
-    s.configNonce++ (incremented to signal all affiliate rings are stale)
-    s.generalRing.configNonce = s.configNonce (general ring updated immediately)
-    Affiliate rings are NOT cleared immediately — they are lazily reset on their
-      next sync() call when they detect ring.configNonce != s.configNonce
-    bucketDuration = 1,800s
-    numBuckets = 43,200 / 1,800 + 1 = 25
-  NOTE: No event is emitted for setBucketDuration
-
-Step 2 — Impact on existing SCHEDULED withdrawals:
-  WithdrawInfo for W1, W2, W3 is UNCHANGED:
-    withdrawInfos[Alice][W1].availableAt = T + 7,200s   (preserved)
-    withdrawInfos[Alice][W1].status      = ACCEPTED      (preserved)
-    withdrawInfos[Alice][W1].generalAmount = 3,000 USDC  (preserved)
-    (Same for W2, W3)
-  processWithdraw for W1, W2, W3 will still work at their original availableAt times
-  BUT: the ring buffer reservations that guaranteed liquidity are GONE
-    - No reservedOutflow protecting W1's 3,000 USDC at T+7,200s
-    - No expectedInflow tracking when reimbursements will arrive
-    - New SCHEDULED requests may be signed against the same liquidity
-
-Step 3 — Risk: bot may over-promise liquidity
-  Example:
-    generalBalance = 20,000 USDC (all unlocked)
-    W1, W2, W3 need 3,000 + 2,000 + 4,000 = 9,000 USDC total
-    After ring buffer clear, new getEarliestExpressAvailability queries see NO reservations
-    Bot might sign new SCHEDULED options promising 20,000 USDC capacity
-    But 9,000 of that is already committed to W1, W2, W3
-    Actual available = 20,000 - 9,000 = 11,000 USDC
-
-Step 4 — Bot detects: bucketDuration changed (via polling, since no event)
-  Bot reads on-chain:
-    bucketDuration = 1,800 (was 3,600)
-    All buckets cleared (anchorTimestamp = 0)
-  Bot checks:
-    3 pending SCHEDULED withdrawals exist with ring buffer reservations now lost
-    Must re-evaluate liquidity promises
-  Decision:
-    1. Re-read ALL pending SCHEDULED withdrawals from internal tracking
-    2. Sum their generalAmounts: 3,000 + 2,000 + 4,000 = 9,000 USDC committed
-    3. Subtract from generalBalance for new availability calculations:
-       effective available = generalBalance - lockedGeneralBalance - 9,000
-    4. Do NOT cancel or re-sign W1/W2/W3 — their WithdrawInfo is intact,
-       processWithdraw will succeed at their original availableAt times
-    5. For NEW SCHEDULED option requests, account for the 9,000 USDC already
-       committed but no longer tracked in buckets
-    6. Poll bucketDuration and schedulingWindow on a regular interval
-       (e.g., every 60s) since neither setter emits an event
-
-  What if schedulingWindow changes instead of bucketDuration?
-    Same effect: general ring cleared immediately, configNonce incremented, affiliate
-    rings lazily reset on next sync. All forecast data lost.
-    Same bot reaction: re-evaluate all pending SCHEDULED commitments
-
-  What if both change simultaneously?
-    Admin calls setBucketDuration then setSchedulingWindow (or vice versa)
-    General ring cleared twice (no-op on second), configNonce incremented twice.
-    Affiliate rings lazily reset on next sync (only need one mismatch detection).
-    Bot must handle both config reads in a single poll cycle
-```
-
-### 17.8 LOCKED + SCHEDULED Scenario
-
-```
-Scenario: SCHEDULED 2,000 USDC gets locked at T+1h, three resolution paths
-
-Setup:
-  SCHEDULED 2,000 USDC, generalAmount=1,200, affiliateAmount=800
-  acceptedAt=T, availableAt=T+3h, cooldownEndTime=T+12h
-  generalRing: bucket at availableAt has reservedOutflow including 1,200
-  affiliateRing: bucket at availableAt has reservedOutflow including 800
-  (SCHEDULED does NOT use counter locks — both pools reserved via ring buffers)
-
-Step 1 — Bot sees: WithdrawLocked(user, reqId) at T+1h
-  Bot reads: status = LOCKED
-  Bot checks: optionType = SCHEDULED, availableAt = T+3h, cooldownEndTime = T+12h
-  Decision: Cancel scheduled processWithdraw at T+3h. Alert admin.
-  NOTE: Ring buffer reservations are NOT released — 1,200 (general) and 800 (affiliate) stay reserved.
-
---- Path A: unlockAndProcess (false alarm) ---
-Step 2A — UNLOCK_ROLE calls unlockAndProcess at T+2h
-  Status → PROCESSED. generalBalance -= 1,200, affiliateBalance -= 800
-  Ring buffer reservations "materialize" — the reserved amounts are actually spent.
-  Bot schedules finalizeWithdrawRequest at T+12h.
-
---- Path B: cooldown expires, lock bypassed ---
-Step 2B — Block.timestamp reaches T+12h, status still LOCKED
-  Bot reads: isLockedAfterCooldown? status==LOCKED && now>=cooldownEndTime → YES
-  Decision: Call processWithdraw(user, reqId, parts) as OPERATOR_ROLE
-  Ring buffer reservations may have been swept by sync, but processing succeeds.
-
---- Path C: force cancel ---
-Step 2C — onForceWithdrawCancel at T+2h
-  Status → CANCELLED. All reservations released.
-  _releaseWithdraw:
-    - General ring: reservedOutflow -= 1,200 at availableAt bucket, expectedInflow -= 1,200 at cooldown bucket
-    - Affiliate ring: reservedOutflow -= 800 at availableAt bucket, expectedInflow -= 800 at cooldown bucket
-    - No counter locks to release (SCHEDULED does not use them)
-  Credit released, sponsor refunded.
-  Bot clears all timers for this withdrawal.
-```
+### 17.8 LOCKED Scenario
 
 ### 17.9 STANDARD processWithdraw Too Early
 
@@ -4267,34 +3595,7 @@ Correct behavior:
   Then call processWithdraw immediately after finalization.
 ```
 
-### 17.10 SCHEDULED General Pool Underflow at Processing Time
-
-```
-Scenario: Bucket projected enough liquidity, but expected inflow didn't materialize
-
-Setup:
-  generalBalance = 5,000, lockedGeneralBalance = 4,000 (1,000 unlocked)
-  SCHEDULED 2,000 USDC accepted, generalAmount = 1,500, availableAt = T+3h
-  Bucket projected: at T+3h, withdrawal W1 would finalize adding 2,000 inflow
-  So projected available = 1,000 + 2,000 = 3,000 >= 1,500 ✓
-
-Step 1 — Between T+0 and T+3h: W1 is force-cancelled
-  The 2,000 expected inflow never materializes
-  Actual available at T+3h = 1,000 (unchanged)
-
-Step 2 — Bot calls processWithdraw at T+3h
-  Contract does: generalBalance -= 1,500 → 5,000 - 1,500 = 3,500 ✓ (balance itself is enough)
-  BUT lockedGeneralBalance was 4,000 and this withdrawal's general portion was reserved in bucket, not locked.
-  Actually: for SCHEDULED, general portion is NOT locked at acceptance (only affiliate is).
-  So generalBalance -= generalAmount works IF generalBalance >= generalAmount.
-  5,000 >= 1,500 → succeeds.
-
-  What if generalBalance had dropped to 1,000 (admin withdrew 4,000)?
-  1,000 - 1,500 would underflow → tx reverts
-  Bot's recovery: retry later (if more finalization inflows are expected), or alert admin.
-```
-
-### 17.11 Non-Existent Withdrawal
+### 17.10 Non-Existent Withdrawal
 
 ```
 Scenario: Bot references a (user, requestId) that was never accepted
@@ -4310,7 +3611,7 @@ Bot mitigation: Always track accepted withdrawals via WithdrawAccepted events.
   Never call processWithdraw/lockWithdraw for IDs not in the bot's accepted set.
 ```
 
-### 17.12 Zero-Amount Parts
+### 17.11 Zero-Amount Parts
 
 ```
 Scenario: A part with amount = 0 in the parts array
@@ -4325,7 +3626,7 @@ Bot consideration: Zero-amount parts waste gas but don't cause reverts.
   Decision: Filter out zero-amount parts before signing. No benefit to including them.
 ```
 
-### 17.13 IMMEDIATE Cannot Be Locked / Cancelled / Suspended
+### 17.12 IMMEDIATE Cannot Be Locked / Cancelled / Suspended
 
 ```
 Scenario: IMMEDIATE withdrawal — impossible state transitions documented
@@ -4345,7 +3646,7 @@ Bot implication: Risk for IMMEDIATE must be caught BEFORE acceptance.
   If validators are unavailable, bot MUST offer INSTANT instead (which allows post-acceptance locking).
 ```
 
-### 17.14 Duplicate Finalization Callback
+### 17.13 Duplicate Finalization Callback
 
 ```
 Scenario: onWithdrawComplete called twice for same withdrawal
@@ -4371,7 +3672,7 @@ Bot implication: No action needed. SYMMIO won't call twice.
 
 ```mermaid
 flowchart TD
-    subgraph "INSTANT/SCHEDULED/IMMEDIATE Lifecycle"
+    subgraph "INSTANT/IMMEDIATE Lifecycle"
         A1["depositToGeneral\n+10,000"] --> B1["Lock on accept\nlockedGeneral += 500"]
         B1 --> C1["Process: deduct\ngeneralBalance -= 500\nUser gets 500"]
         C1 --> D1["Finalize: replenish\ngeneralBalance += 500\n(SYMMIO sends tokens back)"]
@@ -4410,7 +3711,6 @@ totalAvailable = availableGeneral + availableAffiliate + availableCredit
 - [ ] Track available liquidity across all pools
 - [ ] Alert when available liquidity drops below threshold
 - [ ] Do not offer INSTANT/IMMEDIATE if insufficient liquidity
-- [ ] Do not offer SCHEDULED if `getEarliestExpressAvailability` returns false
 - [ ] Monitor `GeneralDeposit`/`GeneralWithdraw` and `AffiliateDeposit`/`AffiliateWithdraw` events
 - [ ] Verify `withdrawFromGeneral` / `withdrawFromAffiliate` cannot touch locked funds (enforced on-chain)
 - [ ] Monitor CreditLineManager `totalDebt()`, `paused`, and debt cap headroom
@@ -4450,13 +3750,9 @@ Step 2 — Bot sees: new request from Bob for 5_000 USDC via FrontA
       3_500 <= 3_500 available general --> fits (barely)
     If affiliateAmount = 1_000, generalAmount = 4_000
       4_000 > 3_500 available general --> would revert InsufficientGeneralBalance
-  Bot checks: can SCHEDULED work?
-    Calls getEarliestExpressAvailability(FrontA, 5_000)
-    Returns (true, now + 3h) -- W1 finalizes in ~3h, freeing 2_000 general
   Decision tree:
     INSTANT with affiliateAmount=1_500 --> sign it (tight but feasible)
     INSTANT with affiliateAmount=1_000 --> reject (insufficient general)
-    SCHEDULED with availableAt=now+3h  --> offer as fallback
     STANDARD                           --> always available (no pool lock)
 
 Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
@@ -4554,8 +3850,6 @@ flowchart TD
     E["Lock invariants"] --> F["lockedGeneralBalance <= generalBalance"]
     E --> G["lockedAffiliateBalances[a] <= affiliateBalances[a]"]
 
-    H["Scheduler invariant"] --> I["Per ring buffer:\nΣ(reservedOutflow) <= \navailableFree + Σ(expectedInflow)\n(checked for both general and affiliate rings)"]
-
     J["State invariant"] --> K["Each (user, reqId) has\nexactly one status"]
 ```
 
@@ -4565,7 +3859,6 @@ flowchart TD
 - [ ] `CreditLineManager.totalDebt() == reservedDebt + activeDebt` (credit line accounting)
 - [ ] `lockedGeneralBalance <= generalBalance`
 - [ ] `lockedAffiliateBalances[a] <= affiliateBalances[a]` for all affiliates
-- [ ] For each ring buffer (general and per-affiliate): `sum(reservedOutflow across buckets) <= available free balance + sum(expectedInflow in prior buckets)` (ensures feasibility)
 - [ ] Each `(user, requestId)` pair has exactly one status and follows valid transitions
 
 ### 20.3 Bot Reliability Requirements
@@ -4686,10 +3979,6 @@ sequenceDiagram
         Note over Bot: Wait 20s (securityWindow)
         Bot->>EP: processWithdraw
         Note over EP: Status = PROCESSED
-    else SCHEDULED
-        Note over Bot: Wait until availableAt
-        Bot->>EP: processWithdraw
-        Note over EP: Status = PROCESSED
     else STANDARD
         Note over Bot: Wait 12h
     end
@@ -4710,15 +3999,13 @@ sequenceDiagram
 
 ## 21. Complete State x Option Type Decision Matrix
 
-This section provides a definitive lookup table for every combination of **ExpressProvider Status** (7 values: NONE, ACCEPTED, LOCKED, PROCESSED, FINALIZED, CANCELLED, SUSPENDED) and **OptionType** (4 values: IMMEDIATE, INSTANT, SCHEDULED, STANDARD). That is 28 cells total.
+This section provides a definitive lookup table for every combination of **ExpressProvider Status** (7 values: NONE, ACCEPTED, LOCKED, PROCESSED, FINALIZED, CANCELLED, SUSPENDED) and **OptionType** (3 values: IMMEDIATE, INSTANT, STANDARD). That is 21 cells total.
 
 Each cell tells the bot exactly what to do, what to watch for, what actions are available (and to whom), what will revert, and what timers should be running. Impossible combinations -- those that can never occur due to the state machine design -- are marked as such with an explanation.
 
 **Default contract parameters used in numeric scenarios:**
 - `securityWindow = 20s`
 - `tolerancePeriod = 60s`
-- `schedulingWindow = 12 hours (43200s)`
-- `bucketDuration = 3600s (1 hour)`
 - `validatorApprovalTimeout = 30s`
 
 ---
@@ -4739,7 +4026,7 @@ Each cell tells the bot exactly what to do, what to watch for, what actions are 
 - No bot action needed after signing -- IMMEDIATE processes entirely within `onWithdrawRequest`
 
 **Will revert:**
-- `processWithdraw`: status is `NONE`, reverts with `NotAccepted` (INSTANT/SCHEDULED path) or `NotFinalized` (STANDARD path)
+- `processWithdraw`: status is `NONE`, reverts with `NotAccepted` (INSTANT path) or `NotFinalized` (STANDARD path)
 - `lockWithdraw`: reverts with `NotAccepted`
 - `unlockAndProcess`: reverts with `NotLocked`
 
@@ -4975,8 +4262,6 @@ SYMMIO calls: EP.onWithdrawComplete(...)
 Result: status -> FINALIZED
   generalBalance += generalAmount
   affiliateBalances[affiliate] += affiliateAmount
-  General ring: expectedInflow decremented at cooldownEndTime bucket
-  Affiliate ring: expectedInflow decremented at cooldownEndTime bucket (if affiliateAmount > 0)
 ```
 
 ---
@@ -4999,7 +4284,7 @@ Result: status -> FINALIZED
 
 ### INSTANT x CANCELLED
 
-**Bot situation:** Terminal state. The withdrawal was cancelled (by user via `onWithdrawCancelRequest` or by admin via `onForceWithdrawCancel`). All pool counter locks released, credit reservation released, sponsor coverage refunded, ring buffer entries cleaned (both general and affiliate rings).
+**Bot situation:** Terminal state. The withdrawal was cancelled (by user via `onWithdrawCancelRequest` or by admin via `onForceWithdrawCancel`). All pool counter locks released, credit reservation released, sponsor coverage refunded.
 
 **Bot should:**
 1. Archive this withdrawal
@@ -5031,216 +4316,13 @@ Result: status -> FINALIZED
 
 ---
 
-### SCHEDULED x NONE
-
-**Bot situation:** No withdrawal exists yet. The bot may be about to sign a SCHEDULED option.
-
-**Bot should:**
-1. Call `getEarliestExpressAvailability(affiliate, amount)` to determine `availableAt` (walks both general and affiliate ring buffers)
-2. If `available == false`: cannot offer SCHEDULED for this amount, fall back to STANDARD
-3. If `available == true`: use the returned `availableAt` timestamp
-4. Both `generalAmount` and `affiliateAmount` are reserved via ring buffers (NOT immediate counter locks)
-5. General ring: `isLiquidityAvailableBy(generalRing, generalFree, generalAmount, targetOffset)` must pass (else `InsufficientScheduledLiquidity`)
-6. Affiliate ring: `isLiquidityAvailableBy(affiliateRing, affiliateFree, affiliateAmount, affOffset)` must pass (else `InsufficientScheduledAffiliateLiquidity`)
-7. Check credit line capacity (if creditAmount > 0)
-8. Sign the EIP-712 WithdrawOption with `optionType = 2 (SCHEDULED)`, `availableAt = <computed>`
-
-**Available actions:**
-- User: calls `initiateWithdraw` on SYMMIO
-
-**Will revert:**
-- All ExpressProvider functions targeting this (user, requestId): no info exists yet
-
-**Timers:** None yet.
-
----
-
-### SCHEDULED x ACCEPTED
-
-**Bot situation:** SCHEDULED withdrawal accepted. Both general and affiliate portions are reserved via their respective ring buffers (no immediate counter locks). Waiting until `availableAt` to process.
-
-**Bot should:**
-1. Timer set: `processWithdraw` at `availableAt`
-2. Risk check is running
-3. Monitoring for: `WithdrawLocked`, `WithdrawSuspended`
-4. Note: `onWithdrawCancelRequest` is blocked for SCHEDULED (`ScheduledNotCancellable`)
-
-**Available actions:**
-- OPERATOR_ROLE: `processWithdraw(user, reqId, parts)` after `availableAt`
-- LOCKER_ROLE: `lockWithdraw(user, reqId)` anytime while ACCEPTED
-- Anyone: `processWithdraw(user, reqId, parts)` after `availableAt + tolerancePeriod`
-- SYMMIO (callback): `onForceWithdrawCancel` transitions to CANCELLED (bypasses SCHEDULED restriction)
-- SYMMIO (callback): `onWithdrawSuspend` transitions to SUSPENDED
-
-**Will revert:**
-- `processWithdraw` before `availableAt`: `TooEarly`
-- `processWithdraw` by non-operator before `availableAt + tolerancePeriod`: `TooEarly`
-- `onWithdrawCancelRequest`: `ScheduledNotCancellable` (always, regardless of status)
-- `unlockAndProcess`: `NotLocked`
-- `onWithdrawComplete`: `NotProcessed`
-
-**Numeric scenario:**
-```
-acceptedAt = 1700000000, availableAt = 1700010800 (3h from now)
-tolerancePeriod = 60s
-
-Bot reads: status = ACCEPTED, block.timestamp = 1700005000
-Bot checks: 1700005000 < 1700010800? YES -- too early
-Decision: Wait until availableAt
-
-At T=1700010801:
-Bot reads: status still ACCEPTED
-Bot checks: 1700010801 >= 1700010800? YES
-Decision: Call processWithdraw(user, reqId, parts)
-
-Non-operator at T=1700010855:
-processableAt = 1700010800 + 60 = 1700010860
-1700010855 >= 1700010860? NO -- too early, wait 5s more
-```
-
----
-
-### SCHEDULED x LOCKED
-
-**Bot situation:** SCHEDULED withdrawal was risk-flagged. Ring buffer reservations (both general and affiliate) remain in place. Processing is blocked.
-
-**Bot should:**
-1. Investigate the risk flag
-2. If false alarm: request UNLOCK_ROLE holder to call `unlockAndProcess`
-3. If confirmed threat: request SYMMIO operator to suspend
-4. Fallback: after `cooldownEndTime`, OPERATOR_ROLE or anyone can `processWithdraw` (locked-after-cooldown path)
-5. Monitor for: `WithdrawUnlockedAndProcessed`, `WithdrawSuspended`, `WithdrawCancelled`
-
-**Available actions:**
-- UNLOCK_ROLE: `unlockAndProcess(user, reqId, parts)` (immediate, no time gate)
-- OPERATOR_ROLE: `processWithdraw(user, reqId, parts)` after `cooldownEndTime`
-- Anyone: `processWithdraw(user, reqId, parts)` after `cooldownEndTime + tolerancePeriod`
-- SYMMIO (callback): `onForceWithdrawCancel` transitions to CANCELLED
-- SYMMIO (callback): `onWithdrawSuspend` transitions to SUSPENDED
-
-**Will revert:**
-- `processWithdraw` before `cooldownEndTime`: `NotAccepted` (status LOCKED, `isLockedAfterCooldown` false)
-- `lockWithdraw`: `NotAccepted` (already LOCKED)
-- `onWithdrawCancelRequest`: `ScheduledNotCancellable`
-- `onWithdrawComplete`: `NotProcessed`
-
-**Numeric scenario:**
-```
-acceptedAt = 1700000000, availableAt = 1700010800, cooldownEndTime = 1700043200
-Bot reads: status = LOCKED, block.timestamp = 1700010900
-isLockedAfterCooldown = (LOCKED && 1700010900 >= 1700043200)? NO
-Decision: Cannot process. Await UNLOCK_ROLE or SYMMIO suspend.
-
-UNLOCK_ROLE calls unlockAndProcess(user, reqId, parts):
-  Checks: status == LOCKED? YES
-  Transfers funds to receivers, status -> PROCESSED
-
-Alternative -- at T=1700043201 (cooldown expired):
-isLockedAfterCooldown = YES
-OPERATOR_ROLE calls processWithdraw:
-  processableAt = cooldownEndTime = 1700043200
-  1700043201 >= 1700043200? YES -- proceed
-```
-
----
-
-### SCHEDULED x PROCESSED
-
-**Bot situation:** Funds transferred to user. Awaiting SYMMIO finalization to replenish pools.
-
-**Bot should:**
-1. Timer set: call `finalizeWithdrawRequest(user, reqId)` on SYMMIO at `cooldownEndTime`
-2. Monitor for: `WithdrawFinalized` event
-
-**Available actions:**
-- OPERATOR_ROLE: call `finalizeWithdrawRequest` on SYMMIO at `cooldownEndTime`
-- SYMMIO (callback): `onWithdrawComplete` replenishes pools and transitions to FINALIZED
-
-**Will revert:**
-- `processWithdraw`: `NotAccepted`
-- `lockWithdraw`: `NotAccepted`
-- `onWithdrawCancelRequest`: `ScheduledNotCancellable`
-- `onWithdrawSuspend`: `InvalidStatusForSuspend`
-- `onForceWithdrawCancel`: `InvalidStatusForForceCancel`
-
-**Timers:**
-- Finalization timer: `cooldownEndTime`
-
-**Numeric scenario:**
-```
-acceptedAt = 1700000000, cooldownEndTime = 1700043200
-Bot reads: status = PROCESSED, block.timestamp = 1700011000
-Decision: Wait until 1700043200, then finalize
-
-At T=1700043200:
-Bot calls: SYMMIO.finalizeWithdrawRequest(user, reqId)
-SYMMIO calls: EP.onWithdrawComplete(...)
-Result: status -> FINALIZED
-  generalBalance += generalAmount
-  affiliateBalances[affiliate] += affiliateAmount
-  General ring: expectedInflow decremented at cooldownEndTime bucket
-  Affiliate ring: expectedInflow decremented at cooldownEndTime bucket (if affiliateAmount > 0)
-```
-
----
-
-### SCHEDULED x FINALIZED
-
-**Bot situation:** Terminal state. Pools replenished, bucket entries cleared. No further action.
-
-**Bot should:**
-1. Archive this withdrawal
-2. Remove all timers
-
-**Available actions:** None.
-
-**Will revert:** All state-changing functions revert.
-
-**Timers:** None.
-
----
-
-### SCHEDULED x CANCELLED
-
-**Bot situation:** Terminal state. Cancelled via `onForceWithdrawCancel` (note: regular `onWithdrawCancelRequest` always reverts with `ScheduledNotCancellable`). Ring buffer reservations cleared (both general and affiliate), credit reservation released, sponsor coverage refunded.
-
-**Bot should:**
-1. Archive this withdrawal
-2. Remove all timers
-3. Note: this can only happen via admin force-cancel, not user-initiated cancel
-
-**Available actions:** None.
-
-**Will revert:** All state-changing functions revert.
-
-**Timers:** None.
-
----
-
-### SCHEDULED x SUSPENDED
-
-**Bot situation:** Terminal state. SYMMIO operator suspended the withdrawal. Ring buffer reservations cleared (both general and affiliate), credit reservation released, sponsor coverage refunded.
-
-**Bot should:**
-1. Archive this withdrawal
-2. Remove all timers
-3. Log for compliance review
-
-**Available actions:** None.
-
-**Will revert:** All state-changing functions revert.
-
-**Timers:** None.
-
----
-
 ### STANDARD x NONE
 
 **Bot situation:** No withdrawal exists yet. The bot may be about to sign a STANDARD option. STANDARD means no capital fronting -- Express acts as an intermediary and forwards tokens after SYMMIO's 12-hour cooldown.
 
 **Bot should:**
 1. No pool liquidity check needed (no capital is fronted)
-2. Sign the EIP-712 WithdrawOption with `optionType = 3 (STANDARD)`, `availableAt = 0`
+2. Sign the EIP-712 WithdrawOption with `optionType = 2 (STANDARD)`, `availableAt = 0`
 3. Optionally gather validator signatures (if `minValidatorSignatures > 0`)
 
 **Available actions:**
@@ -5361,7 +4443,7 @@ Scenario B -- locked-after-cooldown path:
 
 **Bot situation:** Tokens have been forwarded to the user. For STANDARD, this is the effective terminal state from the user's perspective. The FINALIZED transition already happened before PROCESSED.
 
-Note: Unlike INSTANT/SCHEDULED/IMMEDIATE where PROCESSED -> FINALIZED, for STANDARD the flow is ACCEPTED -> FINALIZED -> PROCESSED (or LOCKED -> PROCESSED via unlockAndProcess/locked-after-cooldown). The `onWithdrawComplete` callback that would transition PROCESSED -> FINALIZED does not apply here because STANDARD's `onWithdrawComplete` requires `status == ACCEPTED || status == LOCKED`.
+Note: Unlike INSTANT/IMMEDIATE where PROCESSED -> FINALIZED, for STANDARD the flow is ACCEPTED -> FINALIZED -> PROCESSED (or LOCKED -> PROCESSED via unlockAndProcess/locked-after-cooldown). The `onWithdrawComplete` callback that would transition PROCESSED -> FINALIZED does not apply here because STANDARD's `onWithdrawComplete` requires `status == ACCEPTED || status == LOCKED`.
 
 **Bot should:**
 1. Archive this withdrawal
@@ -5463,27 +4545,27 @@ Non-operator at T=1700043250:
 
 The table below provides a quick-reference view. "I" = Impossible combination. Terminal states (FINALIZED, CANCELLED, SUSPENDED) are marked with their nature.
 
-| Status \ OptionType | IMMEDIATE | INSTANT | SCHEDULED | STANDARD |
-|---|---|---|---|---|
-| **NONE** | Sign option, gather validators | Sign option, check pool liquidity | Sign option, query ring buffer availability | Sign option, no liquidity needed |
-| **ACCEPTED** | **I** -- skips to PROCESSED | Wait securityWindow, then processWithdraw | Wait until availableAt, then processWithdraw | Wait for onWithdrawComplete (12h) |
-| **LOCKED** | **I** -- never ACCEPTED | Await UNLOCK_ROLE or cooldown expiry | Await UNLOCK_ROLE or cooldown expiry | Await UNLOCK_ROLE or cooldown expiry + finalize |
-| **PROCESSED** | Await finalization (12h) | Await finalization (12h) | Await finalization (12h) | Terminal (no pool replenishment) |
-| **FINALIZED** | Terminal (pools replenished) | Terminal (pools replenished) | Terminal (pools replenished) | Forward tokens via processWithdraw |
-| **CANCELLED** | **I** -- never ACCEPTED/LOCKED | Terminal (locks released) | Terminal (force-cancel only) | Terminal (locks released) |
-| **SUSPENDED** | **I** -- never ACCEPTED/LOCKED | Terminal (locks released) | Terminal (locks released) | Terminal (locks released) |
+| Status \ OptionType | IMMEDIATE | INSTANT | STANDARD |
+|---|---|---|---|
+| **NONE** | Sign option, gather validators | Sign option, check pool liquidity | Sign option, no liquidity needed |
+| **ACCEPTED** | **I** -- skips to PROCESSED | Wait securityWindow, then processWithdraw | Wait for onWithdrawComplete (12h) |
+| **LOCKED** | **I** -- never ACCEPTED | Await UNLOCK_ROLE or cooldown expiry | Await UNLOCK_ROLE or cooldown expiry + finalize |
+| **PROCESSED** | Await finalization (12h) | Await finalization (12h) | Terminal (no pool replenishment) |
+| **FINALIZED** | Terminal (pools replenished) | Terminal (pools replenished) | Forward tokens via processWithdraw |
+| **CANCELLED** | **I** -- never ACCEPTED/LOCKED | Terminal (locks released) | Terminal (locks released) |
+| **SUSPENDED** | **I** -- never ACCEPTED/LOCKED | Terminal (locks released) | Terminal (locks released) |
 
 ### Key Differences by Option Type
 
-| Aspect | IMMEDIATE | INSTANT | SCHEDULED | STANDARD |
-|---|---|---|---|---|
-| **Capital fronted?** | Yes (same-tx) | Yes (pools locked) | Yes (ring-buffer-reserved) | No |
-| **Validators required?** | Always | Only if `minValidatorSignatures > 0` | Only if `minValidatorSignatures > 0` | Only if `minValidatorSignatures > 0` |
-| **processWithdraw needed?** | No | Yes | Yes | Yes (after finalization) |
-| **processableAt (operator)** | N/A | `acceptedAt + securityWindow` | `availableAt` | `finalizedAt` |
-| **processableAt (anyone)** | N/A | `acceptedAt + securityWindow + tolerancePeriod` | `availableAt + tolerancePeriod` | `finalizedAt + tolerancePeriod` |
-| **User-cancellable?** | No (already processed) | Yes (while ACCEPTED) | No (`ScheduledNotCancellable`) | Yes (while ACCEPTED) |
-| **Force-cancellable?** | No (already processed) | Yes (ACCEPTED or LOCKED) | Yes (ACCEPTED or LOCKED) | Yes (ACCEPTED or LOCKED, if `finalizedAt == 0`) |
-| **Suspendable?** | No (already processed) | Yes (ACCEPTED or LOCKED) | Yes (ACCEPTED or LOCKED) | Yes (ACCEPTED or LOCKED, if `finalizedAt == 0`) |
-| **Pool replenishment** | `onWithdrawComplete` | `onWithdrawComplete` | `onWithdrawComplete` | N/A (no pool capital used) |
-| **Lifecycle order** | NONE->PROCESSED->FINALIZED | NONE->ACCEPTED->PROCESSED->FINALIZED | NONE->ACCEPTED->PROCESSED->FINALIZED | NONE->ACCEPTED->FINALIZED->PROCESSED |
+| Aspect | IMMEDIATE | INSTANT | STANDARD |
+|---|---|---|---|
+| **Capital fronted?** | Yes (same-tx) | Yes (pools locked) | No |
+| **Validators required?** | Always | Only if `minValidatorSignatures > 0` | Only if `minValidatorSignatures > 0` |
+| **processWithdraw needed?** | No | Yes | Yes (after finalization) |
+| **processableAt (operator)** | N/A | `acceptedAt + securityWindow` | `finalizedAt` |
+| **processableAt (anyone)** | N/A | `acceptedAt + securityWindow + tolerancePeriod` | `finalizedAt + tolerancePeriod` |
+| **User-cancellable?** | No (already processed) | Yes (while ACCEPTED) | Yes (while ACCEPTED) |
+| **Force-cancellable?** | No (already processed) | Yes (ACCEPTED or LOCKED) | Yes (ACCEPTED or LOCKED, if `finalizedAt == 0`) |
+| **Suspendable?** | No (already processed) | Yes (ACCEPTED or LOCKED) | Yes (ACCEPTED or LOCKED, if `finalizedAt == 0`) |
+| **Pool replenishment** | `onWithdrawComplete` | `onWithdrawComplete` | N/A (no pool capital used) |
+| **Lifecycle order** | NONE->PROCESSED->FINALIZED | NONE->ACCEPTED->PROCESSED->FINALIZED | NONE->ACCEPTED->FINALIZED->PROCESSED |

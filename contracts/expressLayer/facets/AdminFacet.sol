@@ -7,18 +7,16 @@ pragma solidity >=0.8.18;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { AffiliateConfig, SponsorConfig, RingBuffer } from "../types/ConfigTypes.sol";
+import { AffiliateConfig, SponsorConfig } from "../types/ConfigTypes.sol";
 
 import { LibAccessControl } from "../libraries/LibAccessControl.sol";
 import { LibDiamond } from "../../diamond/libraries/LibDiamond.sol";
 import { LibErrors } from "../libraries/LibErrors.sol";
-import { LibRingBuffer } from "../libraries/LibRingBuffer.sol";
 
 import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
 
 contract AdminFacet {
 	using SafeERC20 for IERC20;
-	using LibRingBuffer for RingBuffer;
 
 	event GeneralDeposit(uint256 amount);
 	event GeneralWithdraw(uint256 amount);
@@ -118,30 +116,6 @@ contract AdminFacet {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
 		ExpressProviderStorage.layout().sponsorConfigs[affiliate] = SponsorConfig(maxFeePerWithdraw, maxWithdrawAmount);
 		emit SponsorConfigUpdated(affiliate, maxFeePerWithdraw, maxWithdrawAmount);
-	}
-
-	// ── Bucket config ──
-
-	function setBucketDuration(uint256 _bucketDuration) external {
-		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		if (_bucketDuration == 0) revert LibErrors.DurationMustBePositive();
-		if (s.schedulingWindow % _bucketDuration != 0) revert LibErrors.MustDivideEvenly();
-		s.generalRing.clear(s.bucketDuration, s.schedulingWindow);
-		s.bucketDuration = _bucketDuration;
-		s.configNonce++;
-		s.generalRing.configNonce = s.configNonce;
-	}
-
-	function setSchedulingWindow(uint256 _schedulingWindow) external {
-		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		if (_schedulingWindow == 0) revert LibErrors.WindowMustBePositive();
-		if (_schedulingWindow % s.bucketDuration != 0) revert LibErrors.MustBeDivisibleByBucketDuration();
-		s.generalRing.clear(s.bucketDuration, s.schedulingWindow);
-		s.schedulingWindow = _schedulingWindow;
-		s.configNonce++;
-		s.generalRing.configNonce = s.configNonce;
 	}
 
 	// ── General pool ──

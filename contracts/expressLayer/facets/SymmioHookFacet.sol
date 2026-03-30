@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-import { SponsorConfig, RingBuffer } from "../types/ConfigTypes.sol";
+import { SponsorConfig } from "../types/ConfigTypes.sol";
 import { CreditData } from "../types/CreditTypes.sol";
 import { DecodedOption, ComputedAmounts } from "../types/OptionTypes.sol";
 import { WithdrawReceiverPart, WithdrawRequest } from "../../core/storages/WithdrawStorage.sol";
@@ -19,15 +19,12 @@ import { LibAccessControl } from "../libraries/LibAccessControl.sol";
 import { LibCreditLine } from "../libraries/LibCreditLine.sol";
 import { LibErrors } from "../libraries/LibErrors.sol";
 import { LibParts } from "../libraries/LibParts.sol";
-import { LibRingBuffer } from "../libraries/LibRingBuffer.sol";
 
 import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
 
 /// @title SymmioHookFacet
 /// @notice Handles SYMMIO callbacks for the ExpressProvider diamond.
 contract SymmioHookFacet {
-	using LibRingBuffer for RingBuffer;
-
 	event WithdrawAccepted(address indexed user, uint256 indexed requestId, uint8 optionType);
 	event WithdrawProcessed(address indexed user, uint256 indexed requestId);
 	event WithdrawFinalized(address indexed user, uint256 indexed requestId);
@@ -73,7 +70,7 @@ contract SymmioHookFacet {
 		}
 
 		if (optionType != OptionType.STANDARD) {
-			_lockFunds(optionType, opt, amounts, withdrawRequest.cooldownEndTime);
+			_lockFunds(opt, amounts);
 		}
 
 		address manager = address(0);
@@ -132,10 +129,6 @@ contract SymmioHookFacet {
 
 		WithdrawInfo storage info = s.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
 
-		if (info.optionType != OptionType.STANDARD) {
-			_removeExpectedInflows(info);
-		}
-
 		if (info.optionType == OptionType.STANDARD) {
 			if (info.status != Status.ACCEPTED && info.status != Status.LOCKED) {
 				revert LibErrors.InvalidStatusForStandard();
@@ -165,7 +158,6 @@ contract SymmioHookFacet {
 		if (msg.sender != s.symmio) revert LibErrors.OnlySymmio();
 
 		WithdrawInfo storage info = s.withdrawInfos[withdrawRequest.user][withdrawRequest.id];
-		if (info.optionType == OptionType.SCHEDULED) revert LibErrors.ScheduledNotCancellable();
 		if (info.status != Status.ACCEPTED) revert LibErrors.NotAccepted();
 		if (keccak256(abi.encode(withdrawRequest.parts)) != info.partsHash) revert LibErrors.PartsMismatch();
 
@@ -284,52 +276,16 @@ contract SymmioHookFacet {
 	//                     INTERNAL: FUND LOCKING
 	// ═══════════════════════════════════════════════════════════════════
 
-	function _lockFunds(OptionType optionType, DecodedOption memory opt, ComputedAmounts memory amounts, uint256 cooldownEndTime) internal {
+	function _lockFunds(DecodedOption memory opt, ComputedAmounts memory amounts) internal {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		uint256 numBuckets = LibRingBuffer.numBuckets(s.schedulingWindow, s.bucketDuration);
 
-		if (optionType == OptionType.INSTANT || optionType == OptionType.IMMEDIATE) {
-			if (s.generalBalance - s.lockedGeneralBalance < amounts.generalAmount) revert LibErrors.InsufficientGeneralBalance();
-			if (s.affiliateBalances[opt.affiliate] - s.lockedAffiliateBalances[opt.affiliate] < opt.affiliateAmount) {
-				revert LibErrors.InsufficientAffiliateBalance();
-			}
-
-			s.lockedGeneralBalance += amounts.generalAmount;
-			s.lockedAffiliateBalances[opt.affiliate] += opt.affiliateAmount;
-
-			s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-			s.generalRing.addExpectedInflow(cooldownEndTime, amounts.generalAmount, s.bucketDuration, numBuckets);
-
-			if (opt.affiliateAmount > 0) {
-				s.affiliateRings[opt.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-				s.affiliateRings[opt.affiliate].addExpectedInflow(cooldownEndTime, opt.affiliateAmount, s.bucketDuration, numBuckets);
-			}
-			return;
+		if (s.generalBalance - s.lockedGeneralBalance < amounts.generalAmount) revert LibErrors.InsufficientGeneralBalance();
+		if (s.affiliateBalances[opt.affiliate] - s.lockedAffiliateBalances[opt.affiliate] < opt.affiliateAmount) {
+			revert LibErrors.InsufficientAffiliateBalance();
 		}
 
-		s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-
-		uint256 availableOffset = s.generalRing.getBucketOffset(opt.availableAt, s.bucketDuration, numBuckets);
-		uint256 generalFree = s.generalBalance - s.lockedGeneralBalance;
-		if (!s.generalRing.isLiquidityAvailableBy(generalFree, amounts.generalAmount, availableOffset, numBuckets)) {
-			revert LibErrors.InsufficientScheduledLiquidity();
-		}
-
-		s.generalRing.addReservedOutflow(opt.availableAt, amounts.generalAmount, s.bucketDuration, numBuckets);
-		s.generalRing.addExpectedInflow(cooldownEndTime, amounts.generalAmount, s.bucketDuration, numBuckets);
-
-		if (opt.affiliateAmount > 0) {
-			s.affiliateRings[opt.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-
-			uint256 affiliateOffset = s.affiliateRings[opt.affiliate].getBucketOffset(opt.availableAt, s.bucketDuration, numBuckets);
-			uint256 affiliateFree = s.affiliateBalances[opt.affiliate] - s.lockedAffiliateBalances[opt.affiliate];
-			if (!s.affiliateRings[opt.affiliate].isLiquidityAvailableBy(affiliateFree, opt.affiliateAmount, affiliateOffset, numBuckets)) {
-				revert LibErrors.InsufficientScheduledAffiliateLiquidity();
-			}
-
-			s.affiliateRings[opt.affiliate].addReservedOutflow(opt.availableAt, opt.affiliateAmount, s.bucketDuration, numBuckets);
-			s.affiliateRings[opt.affiliate].addExpectedInflow(cooldownEndTime, opt.affiliateAmount, s.bucketDuration, numBuckets);
-		}
+		s.lockedGeneralBalance += amounts.generalAmount;
+		s.lockedAffiliateBalances[opt.affiliate] += opt.affiliateAmount;
 	}
 
 	function _lockFee(address user, uint256 requestId, WithdrawInfo storage info) internal {
@@ -408,11 +364,9 @@ contract SymmioHookFacet {
 	function _unlockAndDeductPools(WithdrawInfo storage info) internal {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 
-		if (info.optionType == OptionType.INSTANT || info.optionType == OptionType.IMMEDIATE) {
-			s.lockedGeneralBalance -= info.generalAmount;
-			if (info.affiliateAmount > 0) {
-				s.lockedAffiliateBalances[info.affiliate] -= info.affiliateAmount;
-			}
+		s.lockedGeneralBalance -= info.generalAmount;
+		if (info.affiliateAmount > 0) {
+			s.lockedAffiliateBalances[info.affiliate] -= info.affiliateAmount;
 		}
 
 		s.generalBalance -= info.generalAmount;
@@ -437,24 +391,6 @@ contract SymmioHookFacet {
 		}
 
 		LibCreditLine.releaseReservation(user, requestId, info);
-
-		if (info.optionType != OptionType.STANDARD) {
-			uint256 numBuckets = LibRingBuffer.numBuckets(s.schedulingWindow, s.bucketDuration);
-
-			s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-			s.generalRing.removeExpectedInflow(info.cooldownEndTime, info.generalAmount, s.bucketDuration, numBuckets);
-			if (info.optionType == OptionType.SCHEDULED) {
-				s.generalRing.removeReservedOutflow(info.availableAt, info.generalAmount, s.bucketDuration, numBuckets);
-			}
-
-			if (info.affiliateAmount > 0) {
-				s.affiliateRings[info.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-				s.affiliateRings[info.affiliate].removeExpectedInflow(info.cooldownEndTime, info.affiliateAmount, s.bucketDuration, numBuckets);
-				if (info.optionType == OptionType.SCHEDULED) {
-					s.affiliateRings[info.affiliate].removeReservedOutflow(info.availableAt, info.affiliateAmount, s.bucketDuration, numBuckets);
-				}
-			}
-		}
 	}
 
 	function _handleProcessedRollback(address user, uint256 requestId, WithdrawInfo storage info) internal {
@@ -462,19 +398,5 @@ contract SymmioHookFacet {
 		if (info.optionType == OptionType.STANDARD) revert LibErrors.InvalidPostPayoutRollback();
 
 		LibCreditLine.coverLoss(s.collateral, s.symmio, user, requestId, info);
-		_removeExpectedInflows(info);
-	}
-
-	function _removeExpectedInflows(WithdrawInfo storage info) internal {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		uint256 numBuckets = LibRingBuffer.numBuckets(s.schedulingWindow, s.bucketDuration);
-
-		s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-		s.generalRing.removeExpectedInflow(info.cooldownEndTime, info.generalAmount, s.bucketDuration, numBuckets);
-
-		if (info.affiliateAmount > 0) {
-			s.affiliateRings[info.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-			s.affiliateRings[info.affiliate].removeExpectedInflow(info.cooldownEndTime, info.affiliateAmount, s.bucketDuration, numBuckets);
-		}
 	}
 }

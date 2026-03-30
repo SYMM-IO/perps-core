@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import { WithdrawReceiverPart } from "../../core/storages/WithdrawStorage.sol";
 import { WithdrawInfo, Status, OptionType } from "../types/WithdrawTypes.sol";
-import { RingBuffer } from "../types/ConfigTypes.sol";
 
 import { ISymmio } from "../interfaces/ISymmio.sol";
 
@@ -14,15 +13,12 @@ import { LibAccessControl } from "../libraries/LibAccessControl.sol";
 import { LibCreditLine } from "../libraries/LibCreditLine.sol";
 import { LibErrors } from "../libraries/LibErrors.sol";
 import { LibParts } from "../libraries/LibParts.sol";
-import { LibRingBuffer } from "../libraries/LibRingBuffer.sol";
 
 import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
 
 /// @title OperatorFacet
 /// @notice Bot/operator functions for processing, locking, and unlocking withdrawals.
 contract OperatorFacet {
-	using LibRingBuffer for RingBuffer;
-
 	event WithdrawProcessed(address indexed user, uint256 indexed requestId);
 	event WithdrawLocked(address indexed user, uint256 indexed requestId);
 	event WithdrawUnlockedAndProcessed(address indexed user, uint256 indexed requestId);
@@ -57,8 +53,6 @@ contract OperatorFacet {
 			processableAt = info.cooldownEndTime;
 		} else if (info.optionType == OptionType.INSTANT) {
 			processableAt = info.acceptedAt + s.securityWindow;
-		} else if (info.optionType == OptionType.SCHEDULED) {
-			processableAt = info.availableAt;
 		} else {
 			processableAt = info.finalizedAt;
 		}
@@ -75,17 +69,6 @@ contract OperatorFacet {
 		_collectAndTransfer(user, requestId, parts, info);
 		if (info.optionType != OptionType.STANDARD) {
 			_unlockAndDeductPools(info);
-		}
-
-		if (info.optionType == OptionType.SCHEDULED) {
-			uint256 numBuckets = LibRingBuffer.numBuckets(s.schedulingWindow, s.bucketDuration);
-			s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-			s.generalRing.removeReservedOutflow(info.availableAt, info.generalAmount, s.bucketDuration, numBuckets);
-
-			if (info.affiliateAmount > 0) {
-				s.affiliateRings[info.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-				s.affiliateRings[info.affiliate].removeReservedOutflow(info.availableAt, info.affiliateAmount, s.bucketDuration, numBuckets);
-			}
 		}
 
 		info.status = Status.PROCESSED;
@@ -118,17 +101,6 @@ contract OperatorFacet {
 			_unlockAndDeductPools(info);
 		}
 
-		if (info.optionType == OptionType.SCHEDULED) {
-			uint256 numBuckets = LibRingBuffer.numBuckets(s.schedulingWindow, s.bucketDuration);
-			s.generalRing.sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-			s.generalRing.removeReservedOutflow(info.availableAt, info.generalAmount, s.bucketDuration, numBuckets);
-
-			if (info.affiliateAmount > 0) {
-				s.affiliateRings[info.affiliate].sync(s.bucketDuration, s.schedulingWindow, s.configNonce);
-				s.affiliateRings[info.affiliate].removeReservedOutflow(info.availableAt, info.affiliateAmount, s.bucketDuration, numBuckets);
-			}
-		}
-
 		info.status = Status.PROCESSED;
 		emit WithdrawUnlockedAndProcessed(user, requestId);
 	}
@@ -152,11 +124,9 @@ contract OperatorFacet {
 	function _unlockAndDeductPools(WithdrawInfo storage info) internal {
 		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
 
-		if (info.optionType == OptionType.INSTANT || info.optionType == OptionType.IMMEDIATE) {
-			s.lockedGeneralBalance -= info.generalAmount;
-			if (info.affiliateAmount > 0) {
-				s.lockedAffiliateBalances[info.affiliate] -= info.affiliateAmount;
-			}
+		s.lockedGeneralBalance -= info.generalAmount;
+		if (info.affiliateAmount > 0) {
+			s.lockedAffiliateBalances[info.affiliate] -= info.affiliateAmount;
 		}
 
 		s.generalBalance -= info.generalAmount;

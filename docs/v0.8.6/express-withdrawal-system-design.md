@@ -1,6 +1,6 @@
 # Express Withdrawal System - Design Document
 
-This document describes the implemented Express withdrawal system for SYMMIO. It covers the architecture, contract interfaces, every user/bot/admin flow, the signature scheme, the ring-buffer-based liquidity scheduler, and the credit line system.
+This document describes the implemented Express withdrawal system for SYMMIO. It covers the architecture, contract interfaces, every user/bot/admin flow, the signature scheme, and the credit line system.
 
 ## 1. System Overview
 
@@ -19,7 +19,7 @@ sequenceDiagram
     Bot->>Bot: Check liquidity, risk, sign EIP-712 option
     Bot->>Validators: Request risk attestations
     Validators->>Bot: Return signed ValidatorApprovals
-    Bot->>User: 2. Return signed option + validator attestations + credit data + parts (IMMEDIATE, INSTANT, SCHEDULED, or STANDARD)
+    Bot->>User: 2. Return signed option + validator attestations + credit data + parts (IMMEDIATE, INSTANT, or STANDARD)
 
     User->>SYMMIO: 3. initiateWithdraw(parts, providerData)
     SYMMIO->>Express: 4. onWithdrawRequest(request, collateral)
@@ -35,8 +35,8 @@ sequenceDiagram
         Bot->>SYMMIO: 6. finalizeWithdrawRequest
         SYMMIO->>Express: 7. Tokens + onWithdrawComplete
         Express->>Express: Replenish pools, settle credit debt
-    else INSTANT / SCHEDULED (capital fronted)
-        Note over Bot: ~20s (INSTANT) or availableAt (SCHEDULED)
+    else INSTANT (capital fronted)
+        Note over Bot: ~20s (INSTANT)
         Bot->>Express: 6. processWithdraw (front from pools + activate credit)
         Express->>User: 7. Transfer tokens
         Note over SYMMIO: 12 hours later...
@@ -52,16 +52,15 @@ sequenceDiagram
     end
 ```
 
-**Four withdrawal options:**
+**Three withdrawal options:**
 
 | Option | Name | When user gets funds | Capital source |
 |--------|------|---------------------|----------------|
 | IMMEDIATE | Immediate | Same transaction | Express pools front it, transferred in onWithdrawRequest |
 | INSTANT | Instant | ~20 seconds | Express pools front it (general + affiliate + credit line) |
-| SCHEDULED | Scheduled | 1-11 hours | Both general and affiliate portions are reserved via ring buffers against future liquidity; credit line debt is reserved immediately |
 | STANDARD | Standard | 12 hours | SYMMIO sends to Express after cooldown, Express forwards to user (credit not supported) |
 
-All four options go through the ExpressProvider. This gives the bot full control over the withdrawal lifecycle for every option, including finalization after cooldown. The per-affiliate operator fee discourages dust withdrawals by making them uneconomical for griefers.
+All three options go through the ExpressProvider. This gives the bot full control over the withdrawal lifecycle for every option, including finalization after cooldown. The per-affiliate operator fee discourages dust withdrawals by making them uneconomical for griefers.
 
 ## 2. Components
 
@@ -113,7 +112,7 @@ flowchart LR
 |------|-----|--------|
 | Diamond Owner | Deployer/multisig | Diamond cut (add/replace/remove facets), grant/revoke roles |
 | `WITHDRAWER_ROLE` | Deployer/multisig | Withdraw liquidity from general and affiliate pools (`withdrawFromGeneral`, `withdrawFromAffiliate`) |
-| `SETTER_ROLE` | Deployer/multisig | Set all contract parameters: affiliate configs, security window, tolerance period, bucket config, validators, virtual providers |
+| `SETTER_ROLE` | Deployer/multisig | Set all contract parameters: affiliate configs, security window, tolerance period, validators |
 | `SPONSOR_MANAGER_ROLE` | Deployer/multisig | Withdraw sponsor balances (`withdrawSponsorBalance`) |
 | `FEE_CLAIMER_ROLE` | Deployer/multisig | Claim accumulated fees (`claimFees`, `claimOperatorFees`) |
 | `OPERATOR_ROLE` | Bot service | `processWithdraw` |
@@ -153,15 +152,13 @@ flowchart TD
 
 ### 3.2 Liquidity Priority (for Express-Fronted Source Selection)
 
-When constructing an IMMEDIATE or INSTANT option, and when choosing the pool split for a SCHEDULED option, the bot chooses funding sources in this order:
+When constructing an IMMEDIATE or INSTANT option, the bot chooses funding sources in this order:
 
 1. **Affiliate Pool** (lowest system risk -- affiliate's own capital)
 2. **Credit Line** (backed by Muon-attested eligible balances, not supported for STANDARD)
 3. **General Pool** (system-wide fallback)
 
 The bot encodes its decision into the signed option as `affiliateAmount` (how much from the affiliate pool) and `creditAmount` (how much from the credit line). The remainder comes from the general pool: `generalAmount = expressAmount - affiliateAmount - creditAmount`.
-
-For SCHEDULED withdrawals, both general and affiliate amounts are reserved via their respective ring buffers, relying on future liquidity forecasting. No counter locks are used for SCHEDULED -- ring buffers handle everything.
 
 ### 3.3 Funding Cycle
 
@@ -176,7 +173,7 @@ sequenceDiagram
     User->>Express: (via SYMMIO callback) withdraw 500 USDC
     Note over Express: 300 from general, 100 from affiliate, 100 from credit line
     Express->>CLM: reserveDebt(user, reqId, 100, creditData)
-    Note over Express: Pools locked / ring buffers updated
+    Note over Express: Pools locked
     Express->>CLM: activateDebt(user, reqId)
     Express->>SYMMIO: advanceWithdraw(user, reqId, 100)
     Express->>User: transfer 500 USDC from pools + credit (T+20s)
@@ -205,8 +202,8 @@ verifyingContract: <ExpressProvider proxy address>
 WithdrawOption(
     address user,
     uint256 nonce,
-    uint8 optionType,      // 0 = IMMEDIATE, 1 = INSTANT, 2 = SCHEDULED, 3 = STANDARD
-    uint256 availableAt,   // 0 for IMMEDIATE/INSTANT/STANDARD, timestamp for SCHEDULED
+    uint8 optionType,      // 0 = IMMEDIATE, 1 = INSTANT, 2 = STANDARD
+    uint256 availableAt,   // 0 (reserved field, not currently used)
     address affiliate,      // affiliate pool to use
     uint256 affiliateAmount,// how much from affiliate pool
     uint256 creditAmount,  // how much from credit line (must be 0 for STANDARD)
@@ -369,7 +366,7 @@ Fees are deducted during `processWithdraw`, `unlockAndProcess`, or inline within
 - The contract first attempts to pay the fee from the affiliate's `sponsorBalances`. Whatever the sponsor balance cannot cover is deducted from the user's withdrawal amount.
 - Fees are deducted from the collateral transfers by cascading across parts: the `userFee` is subtracted from the first part(s) until exhausted. The user receives `partAmount - deduction` for affected parts.
 - Parts where `expressProvider != address(this)` are skipped (not subject to fees from this provider).
-- For **STANDARD**: the fee is deducted from the forwarded tokens during `processWithdraw`, same as for INSTANT/SCHEDULED.
+- For **STANDARD**: the fee is deducted from the forwarded tokens during `processWithdraw`, same as for INSTANT.
 - The full fee is always added to `collectedFees[affiliate]` regardless of whether the sponsor or user paid it.
 - **Operator fee**: Accumulated separately per affiliate in `collectedOperatorFees[affiliate]`. Claimable by admin via `claimOperatorFees(affiliate)`. Combined with the affiliate fee for total fee deduction.
 - **maxUserFee guarantee**: After sponsor coverage is locked at acceptance, the contract validates `actualUserFee <= maxUserFee`. If the sponsor balance was drained and the user would pay more than promised, the tx reverts.
@@ -520,48 +517,7 @@ sequenceDiagram
 - `processWithdraw` by operator: allowed after `acceptedAt + securityWindow` (default 20s)
 - `processWithdraw` by anyone (permissionless fallback): allowed after `acceptedAt + securityWindow + tolerancePeriod` (default 80s)
 
-### 6.2 SCHEDULED -- Scheduled Withdrawal (1-11 hours)
-
-Same as INSTANT except:
-
-1. **Both general and affiliate use ring buffers** -- no counter locks are used for SCHEDULED. Both the general and affiliate amounts are reserved via `addReservedOutflow` and verified via `isLiquidityAvailableBy` in their respective ring buffers
-2. **Credit debt is reserved on accept** -- just like other non-STANDARD options
-3. **Acceptance includes on-chain feasibility checks** -- if the promised `generalAmount` is not reachable by `availableAt` in the general ring, or the `affiliateAmount` is not reachable by `availableAt` in the affiliate ring, acceptance reverts
-4. **Processing happens at `availableAt`** instead of `acceptedAt + 20s`
-5. **Non-cancellable** -- once accepted, SCHEDULED cannot be cancelled (protects bucket integrity)
-
-```mermaid
-sequenceDiagram
-    participant Bot
-    participant Express as ExpressProvider
-    participant SYMMIO
-    participant CLM as CreditLineManager
-
-    Note over Bot,Express: On accept (T+0)
-    Bot->>Express: (via SYMMIO callback) onWithdrawRequest
-    Express->>Express: Verify generalAmount is reachable by availableAt (general ring)
-    Express->>Express: Reserve generalAmount in general ring at availableAt
-    Express->>Express: Record expected general inflow at cooldownEnd
-    Express->>Express: Verify affiliateAmount is reachable by availableAt (affiliate ring)
-    Express->>Express: Reserve affiliateAmount in affiliate ring at availableAt
-    Express->>Express: Record expected affiliate inflow at cooldownEnd
-    opt Has credit
-        Express->>CLM: reserveDebt(user, reqId, creditAmount, creditData)
-    end
-    Express->>SYMMIO: acceptWithdrawRequest
-
-    Note over Bot,Express: At availableAt (e.g. T+3h)
-    Bot->>Express: processWithdraw(user, reqId, parts)
-    Express->>Express: Activate credit (if creditAmount > 0)
-    Express->>Express: Transfer from general + affiliate liquidity + credit
-
-    Note over Bot,Express: At cooldownEnd (T+12h)
-    Bot->>SYMMIO: finalizeWithdrawRequest
-    SYMMIO->>Express: tokens + onWithdrawComplete
-    Express->>Express: Replenish general + affiliate pools, settle credit debt
-```
-
-### 6.3 STANDARD -- Standard Withdrawal (12 hours)
+### 6.2 STANDARD -- Standard Withdrawal (12 hours)
 
 STANDARD goes through ExpressProvider but does **not front any capital** and **does not support credit lines** (`CreditNotSupportedForStandard` error). Express acts as an intermediary so the bot controls finalization.
 
@@ -573,7 +529,7 @@ sequenceDiagram
     participant Express as ExpressProvider
 
     User->>Bot: Request withdrawal options
-    Bot->>Bot: No instant/scheduled liquidity available
+    Bot->>Bot: No instant liquidity available
     Bot->>Bot: Sign EIP-712 option (type=STANDARD, creditAmount=0)
     Bot->>User: Return STANDARD + parts
 
@@ -594,17 +550,16 @@ sequenceDiagram
     Note over Express: No risk check needed — 12h cooldown was the security window
 ```
 
-**Key differences from INSTANT/SCHEDULED:**
+**Key differences from INSTANT:**
 - No express pool locking on accept (no capital fronted)
-- No bucket reservation and no scheduler inflow forecast
 - Credit lines are not supported (`creditAmount` must be 0)
 - `onWithdrawComplete` sets status to FINALIZED (tokens arrive from SYMMIO)
 - `processWithdraw` requires FINALIZED status (not ACCEPTED)
 - `processWithdraw` forwards express tokens to the user
-- Cancellable before finalization (unlike SCHEDULED)
+- Cancellable before finalization
 - Once finalized, `forceCancel` and `suspend` are no longer valid; a LOCKED STANDARD can be resolved via `unlockAndProcess` or via `processWithdraw` after cooldown expiry (which also triggers finalization from SYMMIO if needed)
 
-### 6.4 IMMEDIATE -- Same-Transaction Transfer
+### 6.3 IMMEDIATE -- Same-Transaction Transfer
 
 IMMEDIATE transfers funds to the user inside `onWithdrawRequest` itself — the user gets funds in the same transaction as `initiateWithdraw`. This requires validators to be enabled (`minValidatorSignatures > 0`).
 
@@ -647,14 +602,13 @@ sequenceDiagram
 - `nonReentrant` guard on `onWithdrawRequest` prevents reentrancy during transfers
 - User pays gas for the transfer (included in their `initiateWithdraw` tx)
 
-### 6.5 Cancellation
+### 6.4 Cancellation
 
 ```mermaid
 flowchart TD
     A{Option Type?}
     A -->|IMMEDIATE| Z[NOT CANCELLABLE — funds already transferred]
     A -->|INSTANT| B{Status?}
-    A -->|SCHEDULED| C[NOT CANCELLABLE — protects bucket integrity]
     A -->|STANDARD| D[User cancels on SYMMIO directly]
 
     B -->|ACCEPTED, not processed| E[SYMMIO calls onWithdrawCancelRequest]
@@ -665,25 +619,23 @@ flowchart TD
 ```
 
 **IMMEDIATE is non-cancellable** because funds are already transferred to the user in the same transaction.
-**SCHEDULED is non-cancellable** because cancelling would invalidate bucket reservations that other SCHEDULED withdrawals depend on.
 
-`forceCancel` is separate from user cancellation: SYMMIO can still force-cancel ACCEPTED or LOCKED withdrawals (including SCHEDULED) before payout. Once a withdrawal is already PROCESSED, or a STANDARD withdrawal has already finalized, `forceCancel` is invalid.
+`forceCancel` is separate from user cancellation: SYMMIO can still force-cancel ACCEPTED or LOCKED withdrawals before payout. Once a withdrawal is already PROCESSED, or a STANDARD withdrawal has already finalized, `forceCancel` is invalid.
 
-### 6.6 Suspension
+### 6.5 Suspension
 
 An operator with `SUSPENDER_ROLE` on SYMMIO can suspend a user's withdrawal (e.g., for compliance). SYMMIO calls `onWithdrawSuspend` on the ExpressProvider, which:
 
-1. Unlocks pool counter locks (for INSTANT/IMMEDIATE only — SCHEDULED uses ring buffers, not counter locks; not applicable for IMMEDIATE after processing — funds already transferred)
+1. Unlocks pool counter locks (for INSTANT/IMMEDIATE only; not applicable for IMMEDIATE after processing — funds already transferred)
 2. Releases credit line reservation (if `creditAmount > 0`)
-3. Removes forecast inflows from both general and affiliate ring buffers, and clears any SCHEDULED reservations from both ring buffers
-4. Refunds sponsor coverage to sponsor balance
-5. Sets status to `SUSPENDED`
+3. Refunds sponsor coverage to sponsor balance
+4. Sets status to `SUSPENDED`
 
 If the withdrawal was already PROCESSED, `_handleProcessedRollback` is called instead, which covers credit loss from the affiliate pool and removes expected inflows.
 
 Note: IMMEDIATE withdrawals cannot be suspended after acceptance because the funds are already transferred in the same transaction. The suspension would need to happen before the user's `initiateWithdraw` tx is mined. STANDARD withdrawals can only be suspended before finalization; once `onWithdrawComplete` has delivered the tokens, suspension is invalid.
 
-### 6.7 Risk Lock
+### 6.6 Risk Lock
 
 If the anomaly detection API flags a user as risky between acceptance and processing:
 
@@ -701,7 +653,7 @@ While locked, `processWithdraw` normally reverts. However, once the SYMMIO coold
 
 ### 7.1 ExpressProvider Status
 
-**INSTANT / SCHEDULED (capital fronted):**
+**INSTANT (capital fronted):**
 
 ```mermaid
 stateDiagram-v2
@@ -710,7 +662,7 @@ stateDiagram-v2
 
     ACCEPTED --> PROCESSED: processWithdraw (front from pools)
     ACCEPTED --> LOCKED: lockWithdraw (risk detected)
-    ACCEPTED --> CANCELLED: onWithdrawCancelRequest (INSTANT only)
+    ACCEPTED --> CANCELLED: onWithdrawCancelRequest
     ACCEPTED --> CANCELLED: onForceWithdrawCancel (pre-payout)
     ACCEPTED --> SUSPENDED: onWithdrawSuspend
 
@@ -765,100 +717,34 @@ Note: For STANDARD, risk locking happens **during** the 12-hour cooldown (before
 | `SUSPENDED` | Operator suspended. Funds refunded to user. |
 | `COMPLETED` | Finalized. Tokens transferred. |
 
-## 8. Bucket Ring Buffer (Liquidity Scheduler)
+## 8. Bot Responsibilities
 
-The ExpressProvider uses configurable ring buffers to forecast liquidity for all non-STANDARD withdrawal types. INSTANT and IMMEDIATE record expected inflows; SCHEDULED additionally records reserved outflows and verifies future liquidity availability.
-
-### 8.1 Structure
-
-```
-Configurable: bucketDuration (default 1 hour), schedulingWindow (default 12 hours)
-numBuckets = schedulingWindow / bucketDuration + 1 (derived, includes headroom bucket, e.g. 13, 25, 49)
-
-Examples:
-  1h buckets  → 13 buckets over 12h (default, includes 1 headroom bucket)
-  30min       → 25 buckets over 12h (finer granularity, higher gas on sync)
-  15min       → 49 buckets over 12h (finest, for cheap-gas chains)
-
-Two ring buffer instances exist: one for the general pool (s.generalRing) and one per
-affiliate (s.affiliateRings[affiliate]). Both share global config (bucketDuration,
-schedulingWindow) and use a configNonce for lazy reset on bucket reconfig.
-
-Each bucket:
-  - expectedInflow:  projected reimbursements from SYMMIO finalizations in this window
-  - reservedOutflow: liquidity committed for SCHEDULED payouts in this window
-```
-
-### 8.2 How It Works
-
-**On accepting any express withdrawal (IMMEDIATE, INSTANT, or SCHEDULED):**
-- Record `expectedInflow` for `generalAmount` in the general ring buffer at the bucket where `cooldownEndTime` falls
-- Record `expectedInflow` for `affiliateAmount` in the affiliate ring buffer at the bucket where `cooldownEndTime` falls (so future SCHEDULED checks can forecast returning affiliate liquidity)
-
-**On accepting a SCHEDULED withdrawal:**
-- Reserve credit debt on CreditLineManager (if `creditAmount > 0`)
-- Verify `generalAmount` is reachable by `availableAt` in the general ring buffer
-- Verify `affiliateAmount` is reachable by `availableAt` in the affiliate ring buffer
-- Record `reservedOutflow` for `generalAmount` in the general ring buffer at the bucket where `availableAt` falls
-- Record `reservedOutflow` for `affiliateAmount` in the affiliate ring buffer at the bucket where `availableAt` falls
-
-**Cleanup:**
-- When a non-STANDARD withdrawal finalizes (`onWithdrawComplete`), its projected `expectedInflow` is removed from both general and affiliate ring buffers because the money is no longer "future" — it is already real balance.
-- If a non-STANDARD withdrawal is cancelled or suspended before finalization, the invalidated inflow forecasts and any SCHEDULED reservations are removed from both general and affiliate ring buffers.
-- STANDARD withdrawals never create ring buffer forecasts.
-
-**Sync mechanism:**
-Every state-changing function calls `LibRingBuffer.sync()` on each ring buffer it touches, which advances the ring buffer by clearing expired buckets (periods that have passed). If the ring's `configNonce` doesn't match the global `configNonce`, the ring is lazily reset first — this handles bucket reconfigurations without needing to iterate all per-affiliate rings.
-
-### 8.3 Earliest Availability Query
-
-```solidity
-function getEarliestExpressAvailability(
-    address affiliate,
-    uint256 amount
-) external view returns (bool available, uint256 availableAt)
-```
-
-**Algorithm:**
-1. Start with current unlocked balance (general + current affiliate for the selected affiliate)
-2. Simulate syncs for both the general and affiliate ring buffers (read-only)
-3. Walk both rings in parallel, accumulating `expectedInflow` and `reservedOutflow` from both general and affiliate ring buffers at each step
-4. Return the first bucket where accumulated inflows cover the deficit (amount beyond current balance)
-
-The bot calls this to determine if a SCHEDULED option is feasible and what `availableAt` to offer. Both general and affiliate ring buffers contribute forecasted inflows and reserved outflows to the availability calculation.
-
-**Note:** This function excludes credit-line capacity (which depends on per-request Muon data, not an on-chain snapshot). The bot should consider available credit separately when constructing options.
-
-## 9. Bot Responsibilities
-
-### 9.1 Options API
+### 8.1 Options API
 
 When a user requests withdrawal options:
 
 1. Read `expressProvider.nonces(user)` for current nonce
 2. Check anomaly detection API for user risk
 3. Calculate available liquidity across pools
-4. Generate up to 4 options:
+4. Generate up to 3 options:
 
 | Check | Option Generated |
 |-------|-----------------|
 | Sufficient instant liquidity + validators enabled | **IMMEDIATE** (optionType=0) |
 | Sufficient instant liquidity + low risk | **INSTANT** (optionType=1) |
-| Insufficient now, but `getEarliestExpressAvailability` returns a time | **SCHEDULED** (optionType=2) |
-| Always | **STANDARD** (optionType=3) |
+| Always | **STANDARD** (optionType=2) |
 
-All four options use the same EIP-712 signature and go through ExpressProvider.
+All three options use the same EIP-712 signature and go through ExpressProvider.
 
 5. Collect validator attestations: query N validator services with `(user, nonce, amount)`. Each validator signs `ValidatorApproval` with current timestamp.
 6. Read `affiliateConfigs(affiliate)` to get `feeRate` and `operatorFee`
 7. Compute `fee = expressAmount * feeRate / 10000`
 8. If using credit line: obtain Muon attestation (`CreditData`) for the affiliate's aggregate eligible balance. Credit is not supported for STANDARD.
-9. For SCHEDULED, both `generalAmount` and `affiliateAmount` are reserved via their respective ring buffers; both use forecasted liquidity rather than requiring current unlocked balance
-10. Construct `WithdrawReceiverPart[]` with the correct `expressProvider` (set `virtualProvider` to `address(0)`)
-11. Sign EIP-712 typed data (including `creditAmount`, `fee`, `operatorFee`, and `maxUserFee` fields)
-12. Return to user: `{ parts, providerData (includes option + validator signatures + credit data), estimatedTime, fee, operatorFee, maxUserFee }`
+9. Construct `WithdrawReceiverPart[]` with the correct `expressProvider` (set `virtualProvider` to `address(0)`)
+10. Sign EIP-712 typed data (including `creditAmount`, `fee`, `operatorFee`, and `maxUserFee` fields)
+11. Return to user: `{ parts, providerData (includes option + validator signatures + credit data), estimatedTime, fee, operatorFee, maxUserFee }`
 
-### 9.2 Event Monitoring
+### 8.2 Event Monitoring
 
 The bot must monitor these events on the ExpressProvider:
 
@@ -871,7 +757,7 @@ The bot must monitor these events on the ExpressProvider:
 | `WithdrawSuspended(user, requestId)` | Cancel all scheduled actions for this withdrawal |
 | `WithdrawFinalized(user, requestId)` | Confirm cycle complete, update internal state |
 
-### 9.3 Scheduled Actions
+### 8.3 Scheduled Actions
 
 ```mermaid
 gantt
@@ -892,22 +778,21 @@ gantt
 |--------|------------------------|-----------------|
 | IMMEDIATE | cooldownEndTime (~12h) | N/A (transferred in onWithdrawRequest) |
 | INSTANT | `cooldownEndTime` (~12h) | `acceptedAt + securityWindow` (20s) |
-| SCHEDULED | `cooldownEndTime` (~12h) | `availableAt` |
 | STANDARD | `cooldownEndTime` (~12h) | Operator: immediately after finalization. Anyone: after `tolerancePeriod`. |
 
-### 9.4 Permissionless Fallback
+### 8.4 Permissionless Fallback
 
 If the bot fails to call `processWithdraw`, any address can call it after `processableAt + tolerancePeriod` (default 60s extra). The bot must detect user-initiated processing (via `WithdrawProcessed` events) and cancel its own scheduled call.
 
-### 9.5 Risk Handling
+### 8.5 Risk Handling
 
 **IMMEDIATE — no post-acceptance risk check:**
 
 Funds are transferred in the same transaction as acceptance. The only risk gating is pre-acceptance: validators must attest to user legitimacy before the bot signs the option. Once the user submits `initiateWithdraw`, the transfer is atomic and irreversible.
 
-**INSTANT / SCHEDULED — risk check between acceptance and processing:**
+**INSTANT — risk check between acceptance and processing:**
 
-1. Query anomaly detection API during the `securityWindow` (~20s for INSTANT, before `availableAt` for SCHEDULED)
+1. Query anomaly detection API during the `securityWindow` (~20s)
 2. If **LOW RISK**: call `processWithdraw`
 3. If **HIGH RISK**: `LOCKER_ROLE` holder calls `lockWithdraw` to prevent permissionless processing, then notifies admin
 4. Admin (holding `UNLOCK_ROLE`) reviews and either:
@@ -921,11 +806,11 @@ Funds are transferred in the same transaction as acceptance. The only risk gatin
 3. No post-finalization risk check needed — the 12h cooldown itself is the security window
 4. Before finalization, admin may still suspend via SYMMIO; after finalization, the locked withdrawal must be resolved via `unlockAndProcess` (requires `UNLOCK_ROLE`)
 
-## 10. Credit Line System
+## 9. Credit Line System
 
-The credit line system allows users to withdraw against the affiliate's aggregate eligible balance (as attested by the Muon oracle) without requiring the full amount to be available in express pools. Credit is only supported for IMMEDIATE, INSTANT, and SCHEDULED withdrawals — not STANDARD.
+The credit line system allows users to withdraw against the affiliate's aggregate eligible balance (as attested by the Muon oracle) without requiring the full amount to be available in express pools. Credit is only supported for IMMEDIATE and INSTANT withdrawals — not STANDARD.
 
-### 10.1 Architecture
+### 9.1 Architecture
 
 Each affiliate can have a dedicated `CreditLineManager` contract (UUPS proxy), linked via `setCreditLineManager(affiliate, manager)`.
 
@@ -953,7 +838,7 @@ sequenceDiagram
     Express->>CLM: settleDebt(user, reqId)
 ```
 
-### 10.2 CreditLineManager
+### 9.2 CreditLineManager
 
 The CreditLineManager tracks two types of debt:
 - **Reserved debt**: Debt that has been committed but the withdrawal hasn't been processed yet
@@ -967,7 +852,7 @@ The effective cap is the stricter of the two levels.
 
 **Muon verification**: `reserveDebt` validates the Muon oracle attestation (signature, freshness within `muonFreshnessWindow`), ensuring the affiliate's `eligibleBase` is current and authentic.
 
-### 10.3 Credit Lifecycle
+### 9.3 Credit Lifecycle
 
 | Phase | Trigger | CreditLineManager Action |
 |-------|---------|--------------------------|
@@ -977,15 +862,15 @@ The effective cap is the stricter of the two levels.
 | Cancel | `onWithdrawCancelRequest` / `onForceWithdrawCancel` (pre-payout) | `cancelReservation` — removes from `reservedDebt` |
 | Cover Loss | `onForceWithdrawCancel` / `onWithdrawSuspend` (post-payout) | `settleDebt` — deducts `creditAmount` from affiliate pool to cover the loss |
 
-### 10.4 User Blacklisting and Pause
+### 9.4 User Blacklisting and Pause
 
 The CreditLineManager supports:
 - **User blacklisting**: `setBlacklisted(user, true)` prevents a user from using credit
 - **Pause**: `setPaused(true)` disables all credit reservations system-wide
 
-## 11. Contract Interfaces
+## 10. Contract Interfaces
 
-### 11.1 ExpressProvider
+### 10.1 ExpressProvider
 
 #### SYMMIO Callbacks (called by SYMMIO, not by bot)
 
@@ -1033,8 +918,6 @@ function claimOperatorFees(address affiliate, address to) external;        // FE
 function setCreditLineManager(address affiliate, address manager) external; // Setter only
 function setSecurityWindow(uint256 seconds) external;                      // Setter only
 function setTolerancePeriod(uint256 seconds) external;                     // Setter only
-function setBucketDuration(uint256 seconds) external;                      // Setter only, clears general ring + increments configNonce (affiliate rings lazily reset)
-function setSchedulingWindow(uint256 seconds) external;                    // Setter only, clears general ring + increments configNonce (affiliate rings lazily reset)
 function setAffiliateConfig(
     address affiliate,
     uint256 feeRate,
@@ -1056,9 +939,6 @@ function revokeRole(bytes32 role, address account) external;  // Diamond owner o
 #### View Functions
 
 ```solidity
-function bucketDuration() external view returns (uint256);
-function schedulingWindow() external view returns (uint256);
-function numBuckets() external view returns (uint256);             // derived: schedulingWindow / bucketDuration + 1 (includes headroom)
 function nonces(address user) external view returns (uint256);
 function getWithdrawInfo(address user, uint256 requestId) external view returns (WithdrawInfo memory);
 function generalBalance() external view returns (uint256);
@@ -1075,12 +955,6 @@ function collectedOperatorFees(address affiliate) external view returns (uint256
 function sponsors(address affiliate) external view returns (address);
 function sponsorConfigs(address affiliate) external view returns (uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount);
 
-// Ring buffer getters
-function generalAnchorTimestamp() external view returns (uint256);
-function generalStartIndex() external view returns (uint256);
-function affiliateAnchorTimestamp(address affiliate) external view returns (uint256);
-function affiliateStartIndex(address affiliate) external view returns (uint256);
-
 // Security getters
 function securityWindow() external view returns (uint256);
 function tolerancePeriod() external view returns (uint256);
@@ -1092,13 +966,9 @@ function validatorApprovalTimeout() external view returns (uint256);
 // Access control
 function hasRole(bytes32 role, address account) external view returns (bool);
 
-// Returns earliest time the amount can be paid, considering ring buffer projections
-// Note: excludes credit-line capacity (depends on per-request Muon data)
-function getEarliestExpressAvailability(address affiliate, uint256 amount)
-    external view returns (bool available, uint256 availableAt);
 ```
 
-### 11.2 CreditLineManager (UUPS Proxy)
+### 10.2 CreditLineManager (UUPS Proxy)
 
 ```solidity
 // Initializer (called once on proxy deployment)
@@ -1148,12 +1018,12 @@ function upgradeToAndCall(address newImplementation, bytes calldata data) extern
 | `PROTOCOL_ADMIN_ROLE` | Deployer/multisig | Set protocol-level debt caps and Muon config |
 | `AFFILIATE_ADMIN_ROLE` | Affiliate operator | Set affiliate-level debt caps, blacklist users, pause |
 
-## 12. Data Types Reference
+## 11. Data Types Reference
 
 ```solidity
 // ExpressProvider enums
 enum Status { NONE, ACCEPTED, LOCKED, PROCESSED, FINALIZED, CANCELLED, SUSPENDED }
-enum OptionType { IMMEDIATE, INSTANT, SCHEDULED, STANDARD }
+enum OptionType { IMMEDIATE, INSTANT, STANDARD }
 
 // ExpressProvider structs
 struct AffiliateConfig {
@@ -1164,7 +1034,7 @@ struct AffiliateConfig {
 struct WithdrawInfo {
     Status  status;
     OptionType optionType;
-    uint256 availableAt;          // SCHEDULED: when funds available. 0 for IMMEDIATE/INSTANT/STANDARD.
+    uint256 availableAt;          // Reserved field, not currently used. Always 0.
     uint256 expressAmount;        // total amount from express provider (general + affiliate + credit)
     uint256 generalAmount;        // how much of expressAmount from general pool
     uint256 affiliateAmount;      // how much of expressAmount from affiliate pool
@@ -1181,8 +1051,8 @@ struct WithdrawInfo {
 
 struct DecodedOption {
     uint256 nonce;
-    uint8   optionType;           // 0=IMMEDIATE, 1=INSTANT, 2=SCHEDULED, 3=STANDARD
-    uint256 availableAt;          // 0 for IMMEDIATE/INSTANT/STANDARD, timestamp for SCHEDULED
+    uint8   optionType;           // 0=IMMEDIATE, 1=INSTANT, 2=STANDARD
+    uint256 availableAt;          // Reserved field, not currently used. Always 0.
     address affiliate;
     uint256 affiliateAmount;
     uint256 creditAmount;         // how much from credit line (must be 0 for STANDARD)
@@ -1203,18 +1073,6 @@ struct SponsorConfig {
     uint256 maxWithdrawAmount;    // only sponsor withdrawals whose express fee-bearing amount <= this (0 = no limit)
 }
 
-struct Bucket {
-    uint256 expectedInflow;       // projected reimbursements from SYMMIO finalizations in this window
-    uint256 reservedOutflow;      // liquidity committed for SCHEDULED payouts in this window
-}
-
-struct RingBuffer {
-    mapping(uint256 => Bucket) buckets; // per-bucket data indexed by ring position
-    uint256 anchorTimestamp;            // start of the current ring window
-    uint256 startIndex;                 // index of the oldest active bucket
-    uint256 configNonce;                // must match global configNonce or ring is lazily reset on next sync
-}
-
 // ExpressProvider roles
 OPERATOR_ROLE        = keccak256("OPERATOR_ROLE")
 LOCKER_ROLE          = keccak256("LOCKER_ROLE")
@@ -1229,9 +1087,6 @@ WITHDRAWER_ROLE      = keccak256("WITHDRAWER_ROLE")
 // Configurable parameters (defaults)
 securityWindow    = 20 seconds   // delay before operator can process INSTANT
 tolerancePeriod   = 60 seconds   // extra delay for permissionless processing
-bucketDuration    = 1 hour       // duration of each ring buffer bucket (configurable per chain)
-schedulingWindow  = 12 hours     // total scheduling window (should match SYMMIO cooldown)
-numBuckets()      = derived      // schedulingWindow / bucketDuration + 1 (e.g. 13, 25, 49; includes headroom bucket)
 operatorFee           = per-affiliate // fixed fee per withdrawal (collateral decimals), covers bot gas; set via setAffiliateConfig
 minValidatorSignatures = 0           // number of validator attestations required (0 = disabled)
 validatorApprovalTimeout = 30 seconds // max age of validator signatures
@@ -1274,50 +1129,37 @@ struct WithdrawRequest {
 }
 ```
 
-## 13. Known Risks
+## 12. Known Risks
 
-### 13.1 Suspension Risk (SCHEDULED)
-
-If a withdrawal that contributed projected inflow to a ring buffer bucket gets suspended or force-cancelled before finalization, that inflow never materializes. Other already-accepted SCHEDULED withdrawals that relied on that projected inflow may find insufficient liquidity at their `availableAt`. This applies to both general and affiliate ring buffers.
-
-**Scenario:** User A's withdrawal has `generalAmount = 500 USDC` and `affiliateAmount = 200 USDC`, expected to finalize at H+5, contributing inflow to both the general and affiliate ring buffers. User B subsequently receives a SCHEDULED quote that depends on those H+5 inflows. If User A is suspended before finalization, SYMMIO refunds User A directly, and the inflows never reach the ExpressProvider. At H+5, User B's scheduled payout may find less liquidity than originally projected in either or both pools.
-
-**Mitigation:** The contract removes invalidated forecasts from both general and affiliate ring buffers when the cancellation/suspension/finalization callback happens, so future quotes stop relying on the vanished inflow. But already-accepted SCHEDULED withdrawals may still have been priced using the old assumption.
-
-### 13.2 SCHEDULED Non-Cancellable
-
-SCHEDULED withdrawals cannot be cancelled once accepted. Cancelling would invalidate bucket reservations that subsequent SCHEDULED withdrawals depend on.
-
-**User impact:** Frontends must clearly warn users before they confirm a SCHEDULED selection. Unlike INSTANT (cancellable before processing) and STANDARD (cancellable before finalization), both IMMEDIATE and SCHEDULED provide no cancellation path.
+### 12.1 Cancellation Rules
 
 | Option | Cancellable | Condition | Rationale |
 |--------|-------------|-----------|-----------|
 | IMMEDIATE | No | Never | Funds already transferred in same tx |
 | INSTANT | Yes | If status is ACCEPTED (not yet processed) | Funds locked but not transferred; unlocking is safe |
-| SCHEDULED | No | Never | Protects bucket reservations and inflow guarantees |
 | STANDARD | Yes | If status is ACCEPTED (before SYMMIO finalization) | No capital fronted; Express just releases acceptance |
 
-### 13.3 Credit Line Loss on Post-Payout Rollback
+### 12.2 Credit Line Loss on Post-Payout Rollback
 
 If a withdrawal with credit is force-cancelled or suspended after being PROCESSED (funds already sent to user), the credit amount cannot be recovered from the user. The contract covers this loss by deducting `creditAmount` from the affiliate's pool balance (`affiliateBalances[affiliate] -= creditAmount`). This is a design trade-off: the affiliate pool absorbs credit losses from post-payout rollbacks.
 
 **Note:** In practice, SYMMIO's `forceCancelWithdraw` requires `block.timestamp < cooldownEndTime`, so this path cannot be triggered for PROCESSED express withdrawals (which are processed well before cooldown ends). This is a safety net for edge cases.
 
-### 13.4 Liquidity Fragmentation
+### 12.3 Liquidity Fragmentation
 
 Affiliate pools are isolated. An affiliate user cannot access another affiliate's pool. The General Pool serves as the cross-affiliate fallback. This is intentional -- affiliate-specific pools let affiliates guarantee service levels at their own capital risk.
 
-### 13.5 Bot Failure
+### 12.4 Bot Failure
 
 If the bot goes down, users can call `processWithdraw` permissionlessly after `tolerancePeriod`. STANDARD always works without the bot. The system degrades gracefully -- users just wait longer.
 
-## 14. Bot Operational Requirements
+## 13. Bot Operational Requirements
 
-### 14.1 Event Idempotency
+### 13.1 Event Idempotency
 
 The bot MUST handle duplicate or replayed event IDs idempotently. If the bot processes the same `WithdrawAccepted` event twice (e.g., due to a chain reorg or indexer replay), it must not schedule duplicate `processWithdraw` calls or corrupt internal state.
 
-### 14.2 Performance Targets
+### 13.2 Performance Targets
 
 | Metric | Target |
 |--------|--------|
@@ -1326,11 +1168,11 @@ The bot MUST handle duplicate or replayed event IDs idempotently. If the bot pro
 | Options API response time | < 2 seconds |
 | Finalization scheduling accuracy | Within 1 block of `cooldownEndTime` |
 
-### 14.3 State Synchronization
+### 13.3 State Synchronization
 
 When a user calls `processWithdraw` permissionlessly (after the tolerance period), the bot must detect the resulting `WithdrawProcessed` event and cancel its own scheduled processing for that withdrawal. Failure to do so results in a reverted transaction (harmless but wasteful).
 
-## 15. Deployment
+## 14. Deployment
 
 ### Prerequisites
 

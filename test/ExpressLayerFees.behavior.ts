@@ -591,7 +591,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			const signature = await signWithdrawOption(expressProvider, botSigner, {
 				user: user.address,
 				nonce: 0n,
-				optionType: 3,
+				optionType: 2,
 				availableAt: 0,
 				affiliate,
 				affiliateAmount: 0n,
@@ -602,7 +602,7 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 				deadline,
 			})
 
-			const providerData = encodeProviderData(0n, 3, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature)
+			const providerData = encodeProviderData(0n, 2, 0, affiliate, 0n, 0n, fee, 0n, deadline, signature)
 
 			await symmio.setDeallocateTimestamp(user.address, now - 13 * 3600)
 			await symmio.mockInitiateWithdraw(user.address, parts, providerData)

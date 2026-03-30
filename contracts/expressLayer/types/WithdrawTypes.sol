@@ -19,7 +19,6 @@ enum Status {
 enum OptionType {
 	IMMEDIATE,
 	INSTANT,
-	SCHEDULED,
 	STANDARD
 }
 

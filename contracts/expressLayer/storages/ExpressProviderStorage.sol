@@ -6,7 +6,7 @@ pragma solidity >=0.8.18;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { WithdrawInfo, Status, OptionType } from "../types/WithdrawTypes.sol";
-import { Bucket, RingBuffer, AffiliateConfig, SponsorConfig } from "../types/ConfigTypes.sol";
+import { AffiliateConfig, SponsorConfig } from "../types/ConfigTypes.sol";
 
 /// @title ExpressProviderStorage
 /// @notice Diamond storage layout for the ExpressProvider system.
@@ -27,12 +27,6 @@ library ExpressProviderStorage {
 		// ── Per-user state ──
 		mapping(address => uint256) nonces;
 		mapping(address => mapping(uint256 => WithdrawInfo)) withdrawInfos;
-		// ── Ring buffers (liquidity forecasting for all non-STANDARD option types) ──
-		RingBuffer generalRing;
-		mapping(address => RingBuffer) affiliateRings;
-		uint256 bucketDuration;
-		uint256 schedulingWindow;
-		uint256 configNonce;
 		// ── Security ──
 		uint256 securityWindow;
 		uint256 tolerancePeriod;
