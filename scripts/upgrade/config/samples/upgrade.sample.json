@@ -7,7 +7,7 @@
 	"subgraphEndpoint": "",
 	"spotCheckCount": 20,
 	"symmioFeeReceiver": "0x...",
-	"setupInstantLayerTemplates": false,
+	"setupInstantLayerTemplates": true,
 	"symmioPartyBAddress": "",
 	"newV085Parameters": {
 		"maxPartyAConnectionLimit": 5,

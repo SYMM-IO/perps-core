@@ -1,6 +1,6 @@
 # AccountLayer + InstantLayer in the Upgrade Process
 
-This doc explains what was added to the upgrade scripts, why, and how it all fits together. Delete this file after reading.
+This doc explains what was added to the upgrade scripts, why, and how it all fits together.
 
 ## Why This Was Needed
 

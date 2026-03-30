@@ -39,7 +39,7 @@ DIAMOND_ADDRESS=0x... npx hardhat run scripts/upgrade/prepareMigrationInput.ts -
 DIAMOND_ADDRESS=0x... SUBGRAPH_ENDPOINT=https://... npx hardhat run scripts/upgrade/prepareMigrationInput.ts --network localhost
 ```
 
-Output: `scripts/output/migration-input.json`
+Output: `scripts/upgrade/output/migration-input.json`
 
 ### How validation works
 
@@ -54,18 +54,18 @@ Output: `scripts/output/migration-input.json`
 | `DIAMOND_ADDRESS` | -- | Diamond proxy address (required) |
 | `SUBGRAPH_ENDPOINT` | Goldsky stage | Subgraph GraphQL endpoint |
 | `SPOT_CHECK_COUNT` | `20` | Number of quotes/balances to spot-check |
-| `PREPARE_OUTPUT_FILE` | `scripts/output/migration-input.json` | Output file path |
+| `PREPARE_OUTPUT_FILE` | `scripts/upgrade/output/migration-input.json` | Output file path |
 
 ## Step 2: Run Migration
 
 Takes the validated input file and runs migration + verification.
 
 ```bash
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
+DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
-Output: `scripts/output/migration-report.json`
+Output: `scripts/upgrade/output/migration-report.json`
 
 ### Configuration
 
@@ -83,7 +83,7 @@ cp scripts/upgrade/config/samples/migrate.sample.json scripts/upgrade/config/mig
 | `dryRun` | `false` | Log operations without executing |
 | `fork` | `false` | Impersonate diamond owner instead of using deployer signer |
 | `progressFile` | `scripts/upgrade/output/migration-progress.json` | Resume file path |
-| `reportFile` | `scripts/upgrade/output/migrate-report.json` | Report file path |
+| `reportFile` | `scripts/upgrade/output/migration-report.json` | Report file path |
 | `outputDir` | `scripts/upgrade/output` | Output directory |
 | `strict` | `false` | Stop immediately on any failure |
 
@@ -142,12 +142,12 @@ The script automatically saves progress after each successful operation. If it f
 
 ```bash
 # First run - fails at chunk 5
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
+DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: error at chunk 5
 
 # Second run - automatically resumes from chunk 5
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
+DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 # Output: Resuming migration from quotes phase
 ```
@@ -159,7 +159,7 @@ The progress file is automatically deleted when migration completes successfully
 Test the migration without executing transactions:
 
 ```bash
-DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/output/migration-input.json \
+DIAMOND_ADDRESS=0x... MIGRATION_INPUT_FILE=./scripts/upgrade/output/migration-input.json \
   DRY_RUN=true npx hardhat run scripts/upgrade/runMigration.ts --network localhost
 ```
 
@@ -212,7 +212,7 @@ The script retries with exponential backoff. Check:
 Quote migration calls `addConnection()` which checks `maxPartyAConnectionLimit`. This defaults to 0 after upgrade and must be set via `ControlFacet.setMaxPartyAConnectionLimit()` before migrating.
 
 ### Stuck migration
-Delete the progress file (`scripts/output/migration-progress.json`) to start fresh. Already-migrated items will be skipped via on-chain checks.
+Delete the progress file (`scripts/upgrade/output/migration-progress.json`) to start fresh. Already-migrated items will be skipped via on-chain checks.
 
 ### Strict mode
 Use `strict: true` in config (or `MIGRATE_STRICT=true` env var) to stop immediately on any failure instead of continuing.

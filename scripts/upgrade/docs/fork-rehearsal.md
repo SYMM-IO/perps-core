@@ -120,7 +120,7 @@ Facet deployment uses `signers[0]` (anyone can deploy contracts). Only `diamondC
 Migration input is fetched from the Goldsky stage subgraph, not scanned on-chain. This is much faster (a few HTTP requests vs thousands of RPC calls).
 
 **Queries used:**
-- `quotes(where: { quoteStatus_in: [4, 6, 7] })` -- all open quotes (OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
+- `quotes(where: { quoteStatus_in: [0, 1, 2, 4, 5, 6] })` -- quotes needing migration (PENDING, LOCKED, CANCEL_PENDING, OPENED, CLOSE_PENDING, CANCEL_CLOSE_PENDING)
 - `latestAccountBalances(where: { accountType: "PARTY_B", counterParty_not: null })` -- partyB-per-partyA balance entries
 
 **Validation against on-chain:**

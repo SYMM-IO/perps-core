@@ -21,6 +21,7 @@ coverage.json
 typechain
 typechain-types
 /scripts/output
+/scripts/upgrade/output
 
 yarn.lock
 .idea

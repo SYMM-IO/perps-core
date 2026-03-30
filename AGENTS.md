@@ -43,5 +43,5 @@
 ## AccountLayer Deployment Notes
 - `deploy:system` wires roles/whitelists across Core/AccountLayer/InstantLayer, but manual AccountLayer deploys need extra setup.
 - AccountLayer requires the core hook registration (`ControlFacet.registerHook(address(0), accountLayerDiamond)`) so virtual account cleanup works.
-- Core must be whitelisted on AccountLayer (`setWhitelistedSymmioCore`), and AccountLayer must be granted `SIGNER_ADMIN_ROLE`, `AFFILIATE_MANAGER_ROLE`, and `INTERNAL_TRANSFER_TO_BALANCE_ROLE` on Core.
+- Core must be whitelisted on AccountLayer (`setWhitelistedSymmioCore`), and AccountLayer must be granted `SIGNER_ADMIN_ROLE`, `AFFILIATE_MANAGER_ROLE`, and `BALANCE_SETTLER_ROLE` on Core.
 - For repeatable setup, use `scripts/setupAccountLayer.ts` (reads from `.env`, supports multi‑affiliate hooks, logs to `tasks/data/accountlayer-setup.log`).
