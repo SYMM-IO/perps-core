@@ -14,7 +14,7 @@ import { WithdrawInfo } from "../types/WithdrawTypes.sol";
 import { ISymmio } from "../interfaces/ISymmio.sol";
 
 import { CreditLineStorage } from "../storages/CreditLineStorage.sol";
-import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
+import { PoolStorage } from "../storages/PoolStorage.sol";
 
 /// @title LibCreditLine
 /// @notice Shared credit line helpers used by SymmioHookFacet and OperatorFacet.
@@ -108,8 +108,7 @@ library LibCreditLine {
 	function coverLoss(IERC20, address, address user, uint256 requestId, WithdrawInfo storage info) internal {
 		if (info.creditAmount == 0) return;
 
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		s.affiliateBalances[info.affiliate] -= info.creditAmount;
+		PoolStorage.layout().affiliateBalances[info.affiliate] -= info.creditAmount;
 
 		_settleDebt(info.affiliate, user, requestId);
 	}

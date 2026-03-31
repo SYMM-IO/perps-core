@@ -14,11 +14,13 @@ import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
 import { LibErrors } from "../../libraries/LibErrors.sol";
 import { LibParts } from "../../libraries/LibParts.sol";
 
-import { ExpressProviderStorage } from "../../storages/ExpressProviderStorage.sol";
+import { GlobalStorage } from "../../storages/GlobalStorage.sol";
+import { PoolStorage } from "../../storages/PoolStorage.sol";
+import { FeeStorage } from "../../storages/FeeStorage.sol";
 
 library OperatorFacetImpl {
 	function processWithdraw(address user, uint256 requestId, WithdrawReceiverPart[] memory parts) internal {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		WithdrawInfo storage info = s.withdrawInfos[user][requestId];
 
 		bool isLockedAfterCooldown = info.status == Status.LOCKED && block.timestamp >= info.cooldownEndTime;
@@ -62,14 +64,14 @@ library OperatorFacetImpl {
 
 	function lockWithdraw(address user, uint256 requestId) internal {
 		LibAccessControl.enforceRole(LibAccessControl.LOCKER_ROLE);
-		WithdrawInfo storage info = ExpressProviderStorage.layout().withdrawInfos[user][requestId];
+		WithdrawInfo storage info = GlobalStorage.layout().withdrawInfos[user][requestId];
 		if (info.status != Status.ACCEPTED) revert LibErrors.NotAccepted();
 		info.status = Status.LOCKED;
 	}
 
 	function unlockAndProcess(address user, uint256 requestId, WithdrawReceiverPart[] memory parts) internal {
 		LibAccessControl.enforceRole(LibAccessControl.UNLOCK_ROLE);
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		WithdrawInfo storage info = s.withdrawInfos[user][requestId];
 
 		if (info.status != Status.LOCKED) revert LibErrors.NotLocked();
@@ -89,32 +91,32 @@ library OperatorFacetImpl {
 	}
 
 	function _collectAndTransfer(address user, uint256 requestId, WithdrawReceiverPart[] memory parts, WithdrawInfo storage info) internal {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		uint256 operatorFee = s.operatorFees[user][requestId];
+		FeeStorage.Layout storage f = FeeStorage.layout();
+		uint256 operatorFee = f.operatorFees[user][requestId];
 		uint256 totalFee = info.fee + operatorFee;
 		uint256 userFee = totalFee - info.sponsorCoverage;
 
 		if (info.fee > 0) {
-			s.collectedFees[info.affiliate] += info.fee;
+			f.collectedFees[info.affiliate] += info.fee;
 		}
 		if (operatorFee > 0) {
-			s.collectedOperatorFees[info.affiliate] += operatorFee;
+			f.collectedOperatorFees[info.affiliate] += operatorFee;
 		}
 
 		LibParts.transferToReceivers(parts, userFee);
 	}
 
 	function _unlockAndDeductPools(WithdrawInfo storage info) internal {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		PoolStorage.Layout storage p = PoolStorage.layout();
 
-		s.lockedGeneralBalance -= info.generalAmount;
+		p.lockedGeneralBalance -= info.generalAmount;
 		if (info.affiliateAmount > 0) {
-			s.lockedAffiliateBalances[info.affiliate] -= info.affiliateAmount;
+			p.lockedAffiliateBalances[info.affiliate] -= info.affiliateAmount;
 		}
 
-		s.generalBalance -= info.generalAmount;
+		p.generalBalance -= info.generalAmount;
 		if (info.affiliateAmount > 0) {
-			s.affiliateBalances[info.affiliate] -= info.affiliateAmount;
+			p.affiliateBalances[info.affiliate] -= info.affiliateAmount;
 		}
 	}
 }

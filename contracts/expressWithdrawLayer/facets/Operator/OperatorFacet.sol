@@ -11,13 +11,13 @@ import { OperatorFacetImpl } from "./OperatorFacetImpl.sol";
 
 import { LibErrors } from "../../libraries/LibErrors.sol";
 
-import { ExpressProviderStorage } from "../../storages/ExpressProviderStorage.sol";
+import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 
 /// @title OperatorFacet
 /// @notice Bot/operator functions for processing, locking, and unlocking withdrawals.
 contract OperatorFacet is IOperatorFacet {
 	modifier nonReentrant() {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		if (s.reentrancyStatus == 1) revert LibErrors.Reentrancy();
 		s.reentrancyStatus = 1;
 		_;

@@ -10,7 +10,10 @@ import { WithdrawInfo } from "../../types/WithdrawTypes.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 
-import { ExpressProviderStorage } from "../../storages/ExpressProviderStorage.sol";
+import { GlobalStorage } from "../../storages/GlobalStorage.sol";
+import { PoolStorage } from "../../storages/PoolStorage.sol";
+import { FeeStorage } from "../../storages/FeeStorage.sol";
+import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
 
 /// @title ViewFacet
 /// @notice Read-only facet exposing all state getters for the ExpressProvider diamond.
@@ -18,93 +21,93 @@ contract ViewFacet is IViewFacet {
 	// ── Core addresses ──
 
 	function symmio() external view returns (address) {
-		return ExpressProviderStorage.layout().symmio;
+		return GlobalStorage.layout().symmio;
 	}
 
 	function collateral() external view returns (address) {
-		return address(ExpressProviderStorage.layout().collateral);
+		return address(GlobalStorage.layout().collateral);
 	}
 
 	// ── Pool balances ──
 
 	function generalBalance() external view returns (uint256) {
-		return ExpressProviderStorage.layout().generalBalance;
+		return PoolStorage.layout().generalBalance;
 	}
 
 	function lockedGeneralBalance() external view returns (uint256) {
-		return ExpressProviderStorage.layout().lockedGeneralBalance;
+		return PoolStorage.layout().lockedGeneralBalance;
 	}
 
 	function affiliateBalances(address affiliate) external view returns (uint256) {
-		return ExpressProviderStorage.layout().affiliateBalances[affiliate];
+		return PoolStorage.layout().affiliateBalances[affiliate];
 	}
 
 	function lockedAffiliateBalances(address affiliate) external view returns (uint256) {
-		return ExpressProviderStorage.layout().lockedAffiliateBalances[affiliate];
+		return PoolStorage.layout().lockedAffiliateBalances[affiliate];
 	}
 
 	// ── Per-user state ──
 
 	function nonces(address user) external view returns (uint256) {
-		return ExpressProviderStorage.layout().nonces[user];
+		return GlobalStorage.layout().nonces[user];
 	}
 
 	function getWithdrawInfo(address user, uint256 requestId) external view returns (WithdrawInfo memory) {
-		return ExpressProviderStorage.layout().withdrawInfos[user][requestId];
+		return GlobalStorage.layout().withdrawInfos[user][requestId];
 	}
 
 	// ── Security ──
 
 	function securityWindow() external view returns (uint256) {
-		return ExpressProviderStorage.layout().securityWindow;
+		return GlobalStorage.layout().securityWindow;
 	}
 
 	function tolerancePeriod() external view returns (uint256) {
-		return ExpressProviderStorage.layout().tolerancePeriod;
+		return GlobalStorage.layout().tolerancePeriod;
 	}
 
 	// ── Fees ──
 
 	function affiliateConfigs(address affiliate) external view returns (uint256 feeRate, uint256 operatorFee) {
-		AffiliateConfig storage cfg = ExpressProviderStorage.layout().affiliateConfigs[affiliate];
+		AffiliateConfig storage cfg = FeeStorage.layout().affiliateConfigs[affiliate];
 		return (cfg.feeRate, cfg.operatorFee);
 	}
 
 	function collectedFees(address affiliate) external view returns (uint256) {
-		return ExpressProviderStorage.layout().collectedFees[affiliate];
+		return FeeStorage.layout().collectedFees[affiliate];
 	}
 
 	function collectedOperatorFees(address affiliate) external view returns (uint256) {
-		return ExpressProviderStorage.layout().collectedOperatorFees[affiliate];
+		return FeeStorage.layout().collectedOperatorFees[affiliate];
 	}
 
 	// ── Sponsorship ──
 
 	function sponsorBalances(address affiliate) external view returns (uint256) {
-		return ExpressProviderStorage.layout().sponsorBalances[affiliate];
+		return FeeStorage.layout().sponsorBalances[affiliate];
 	}
 
 	function sponsors(address affiliate) external view returns (address) {
-		return ExpressProviderStorage.layout().sponsors[affiliate];
+		return FeeStorage.layout().sponsors[affiliate];
 	}
 
 	function sponsorConfigs(address affiliate) external view returns (uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount) {
-		SponsorConfig storage cfg = ExpressProviderStorage.layout().sponsorConfigs[affiliate];
+		SponsorConfig storage cfg = FeeStorage.layout().sponsorConfigs[affiliate];
 		return (cfg.maxFeePerWithdraw, cfg.maxWithdrawAmount);
 	}
 
 	// ── Validators ──
 
 	function minValidatorSignatures(address affiliate) external view returns (uint256) {
-		return ExpressProviderStorage.layout().minValidatorSignatures[affiliate];
+		return ValidatorStorage.layout().minValidatorSignatures[affiliate];
 	}
 
 	function validatorApprovalTimeout(address affiliate) external view returns (uint256) {
-		return ExpressProviderStorage.layout().validatorApprovalTimeout[affiliate];
+		return ValidatorStorage.layout().validatorApprovalTimeout[affiliate];
 	}
 
 	function isValidator(address affiliate, address validator) external view returns (bool) {
-		return ExpressProviderStorage.layout().validators[affiliate][validator];
+		return ValidatorStorage.layout().validators[affiliate][validator];
 	}
 
 	// ── Access control ──

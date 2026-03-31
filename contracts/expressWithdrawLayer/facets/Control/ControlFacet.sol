@@ -13,7 +13,10 @@ import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibErrors } from "../../libraries/LibErrors.sol";
 
-import { ExpressProviderStorage } from "../../storages/ExpressProviderStorage.sol";
+import { GlobalStorage } from "../../storages/GlobalStorage.sol";
+import { PoolStorage } from "../../storages/PoolStorage.sol";
+import { FeeStorage } from "../../storages/FeeStorage.sol";
+import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
 
 import { IControlFacet } from "./IControlFacet.sol";
 
@@ -25,40 +28,40 @@ contract ControlFacet is IControlFacet {
 	function setSecurityWindow(uint256 _securityWindow) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
 		if (_securityWindow < 10) revert LibErrors.SecurityWindowTooLow();
-		ExpressProviderStorage.layout().securityWindow = _securityWindow;
+		GlobalStorage.layout().securityWindow = _securityWindow;
 	}
 
 	function setTolerancePeriod(uint256 _tolerancePeriod) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
 		if (_tolerancePeriod < 10) revert LibErrors.TolerancePeriodTooLow();
-		ExpressProviderStorage.layout().tolerancePeriod = _tolerancePeriod;
+		GlobalStorage.layout().tolerancePeriod = _tolerancePeriod;
 	}
 
 	/// @notice Sets the minimum validator signatures for an affiliate (address(0) = default for all).
 	function setMinValidatorSignatures(address affiliate, uint256 _minValidatorSignatures) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		ExpressProviderStorage.layout().minValidatorSignatures[affiliate] = _minValidatorSignatures;
+		ValidatorStorage.layout().minValidatorSignatures[affiliate] = _minValidatorSignatures;
 		emit MinValidatorSignaturesUpdated(affiliate, _minValidatorSignatures);
 	}
 
 	/// @notice Sets the validator approval timeout for an affiliate (address(0) = default for all).
 	function setValidatorApprovalTimeout(address affiliate, uint256 _timeout) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		ExpressProviderStorage.layout().validatorApprovalTimeout[affiliate] = _timeout;
+		ValidatorStorage.layout().validatorApprovalTimeout[affiliate] = _timeout;
 		emit ValidatorApprovalTimeoutUpdated(affiliate, _timeout);
 	}
 
 	/// @notice Registers or removes a validator for an affiliate (address(0) = default for all).
 	function setValidator(address affiliate, address validator, bool enabled) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		ExpressProviderStorage.layout().validators[affiliate][validator] = enabled;
+		ValidatorStorage.layout().validators[affiliate][validator] = enabled;
 		emit ValidatorUpdated(affiliate, validator, enabled);
 	}
 
 	function setAffiliateConfig(address affiliate, uint256 feeRate, uint256 _operatorFee) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
 		if (feeRate > 10000) revert LibErrors.FeeRateExceeds100Percent();
-		ExpressProviderStorage.layout().affiliateConfigs[affiliate] = AffiliateConfig(feeRate, _operatorFee);
+		FeeStorage.layout().affiliateConfigs[affiliate] = AffiliateConfig(feeRate, _operatorFee);
 		emit AffiliateConfigUpdated(affiliate, feeRate, _operatorFee);
 	}
 
@@ -66,85 +69,93 @@ contract ControlFacet is IControlFacet {
 
 	function claimFees(address affiliate, address to) external {
 		LibAccessControl.enforceRole(LibAccessControl.FEE_CLAIMER_ROLE);
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		uint256 amount = s.collectedFees[affiliate];
+		FeeStorage.Layout storage f = FeeStorage.layout();
+		GlobalStorage.Layout storage g = GlobalStorage.layout();
+		uint256 amount = f.collectedFees[affiliate];
 		if (amount == 0) revert LibErrors.NoFeesToClaim();
-		s.collectedFees[affiliate] = 0;
-		s.collateral.safeTransfer(to, amount);
+		f.collectedFees[affiliate] = 0;
+		g.collateral.safeTransfer(to, amount);
 		emit FeesClaimed(affiliate, amount);
 	}
 
 	function claimOperatorFees(address affiliate, address to) external {
 		LibAccessControl.enforceRole(LibAccessControl.FEE_CLAIMER_ROLE);
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		uint256 amount = s.collectedOperatorFees[affiliate];
+		FeeStorage.Layout storage f = FeeStorage.layout();
+		GlobalStorage.Layout storage g = GlobalStorage.layout();
+		uint256 amount = f.collectedOperatorFees[affiliate];
 		if (amount == 0) revert LibErrors.NoOperatorFeesToClaim();
-		s.collectedOperatorFees[affiliate] = 0;
-		s.collateral.safeTransfer(to, amount);
+		f.collectedOperatorFees[affiliate] = 0;
+		g.collateral.safeTransfer(to, amount);
 		emit OperatorFeesClaimed(affiliate, amount);
 	}
 
 	// ── Sponsor management ──
 
 	function depositSponsorBalance(address affiliate, uint256 amount) external {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		s.collateral.safeTransferFrom(msg.sender, address(this), amount);
-		s.sponsorBalances[affiliate] += amount;
-		if (s.sponsors[affiliate] == address(0)) {
-			s.sponsors[affiliate] = msg.sender;
+		FeeStorage.Layout storage f = FeeStorage.layout();
+		GlobalStorage.Layout storage g = GlobalStorage.layout();
+		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
+		f.sponsorBalances[affiliate] += amount;
+		if (f.sponsors[affiliate] == address(0)) {
+			f.sponsors[affiliate] = msg.sender;
 		}
 		emit SponsorDeposit(affiliate, amount);
 	}
 
 	function withdrawSponsorBalance(address affiliate, uint256 amount, address to) external {
 		LibAccessControl.enforceRole(LibAccessControl.SPONSOR_MANAGER_ROLE);
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		if (s.sponsorBalances[affiliate] < amount) revert LibErrors.InsufficientSponsorBalance();
-		s.sponsorBalances[affiliate] -= amount;
-		s.collateral.safeTransfer(to, amount);
+		FeeStorage.Layout storage f = FeeStorage.layout();
+		GlobalStorage.Layout storage g = GlobalStorage.layout();
+		if (f.sponsorBalances[affiliate] < amount) revert LibErrors.InsufficientSponsorBalance();
+		f.sponsorBalances[affiliate] -= amount;
+		g.collateral.safeTransfer(to, amount);
 		emit SponsorWithdraw(affiliate, amount);
 	}
 
 	function setSponsorConfig(address affiliate, uint256 maxFeePerWithdraw, uint256 maxWithdrawAmount) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		ExpressProviderStorage.layout().sponsorConfigs[affiliate] = SponsorConfig(maxFeePerWithdraw, maxWithdrawAmount);
+		FeeStorage.layout().sponsorConfigs[affiliate] = SponsorConfig(maxFeePerWithdraw, maxWithdrawAmount);
 		emit SponsorConfigUpdated(affiliate, maxFeePerWithdraw, maxWithdrawAmount);
 	}
 
 	// ── General pool ──
 
 	function depositToGeneral(uint256 amount) external {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		s.collateral.safeTransferFrom(msg.sender, address(this), amount);
-		s.generalBalance += amount;
+		PoolStorage.Layout storage p = PoolStorage.layout();
+		GlobalStorage.Layout storage g = GlobalStorage.layout();
+		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
+		p.generalBalance += amount;
 		emit GeneralDeposit(amount);
 	}
 
 	function withdrawFromGeneral(uint256 amount) external {
 		LibAccessControl.enforceRole(LibAccessControl.WITHDRAWER_ROLE);
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		uint256 available = s.generalBalance > s.lockedGeneralBalance ? s.generalBalance - s.lockedGeneralBalance : 0;
+		PoolStorage.Layout storage p = PoolStorage.layout();
+		GlobalStorage.Layout storage g = GlobalStorage.layout();
+		uint256 available = p.generalBalance > p.lockedGeneralBalance ? p.generalBalance - p.lockedGeneralBalance : 0;
 		if (available < amount) revert LibErrors.InsufficientUnlockedGeneralBalance();
-		s.generalBalance -= amount;
-		s.collateral.safeTransfer(msg.sender, amount);
+		p.generalBalance -= amount;
+		g.collateral.safeTransfer(msg.sender, amount);
 		emit GeneralWithdraw(amount);
 	}
 
 	// ── Affiliate pool ──
 
 	function depositToAffiliate(address affiliate, uint256 amount) external {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		s.collateral.safeTransferFrom(msg.sender, address(this), amount);
-		s.affiliateBalances[affiliate] += amount;
+		PoolStorage.Layout storage p = PoolStorage.layout();
+		GlobalStorage.Layout storage g = GlobalStorage.layout();
+		g.collateral.safeTransferFrom(msg.sender, address(this), amount);
+		p.affiliateBalances[affiliate] += amount;
 		emit AffiliateDeposit(affiliate, amount);
 	}
 
 	function withdrawFromAffiliate(address affiliate, uint256 amount) external {
 		LibAccessControl.enforceRole(LibAccessControl.WITHDRAWER_ROLE);
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
-		if (s.affiliateBalances[affiliate] - s.lockedAffiliateBalances[affiliate] < amount) revert LibErrors.InsufficientUnlockedAffiliateBalance();
-		s.affiliateBalances[affiliate] -= amount;
-		s.collateral.safeTransfer(msg.sender, amount);
+		PoolStorage.Layout storage p = PoolStorage.layout();
+		GlobalStorage.Layout storage g = GlobalStorage.layout();
+		if (p.affiliateBalances[affiliate] - p.lockedAffiliateBalances[affiliate] < amount) revert LibErrors.InsufficientUnlockedAffiliateBalance();
+		p.affiliateBalances[affiliate] -= amount;
+		g.collateral.safeTransfer(msg.sender, amount);
 		emit AffiliateWithdraw(affiliate, amount);
 	}
 

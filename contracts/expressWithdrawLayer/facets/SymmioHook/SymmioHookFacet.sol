@@ -8,13 +8,13 @@ import { ISymmioHookFacet } from "./ISymmioHookFacet.sol";
 import { SymmioHookFacetImpl } from "./SymmioHookFacetImpl.sol";
 import { WithdrawRequest } from "../../../core/storages/WithdrawStorage.sol";
 import { LibErrors } from "../../libraries/LibErrors.sol";
-import { ExpressProviderStorage } from "../../storages/ExpressProviderStorage.sol";
+import { GlobalStorage } from "../../storages/GlobalStorage.sol";
 
 /// @title SymmioHookFacet
 /// @notice Handles SYMMIO callbacks for the ExpressProvider diamond.
 contract SymmioHookFacet is ISymmioHookFacet {
 	modifier nonReentrant() {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		if (s.reentrancyStatus == 1) revert LibErrors.Reentrancy();
 		s.reentrancyStatus = 1;
 		_;

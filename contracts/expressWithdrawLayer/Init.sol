@@ -13,14 +13,15 @@ import { LibErrors } from "./libraries/LibErrors.sol";
 import { IDiamondLoupe } from "../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IERC165 } from "../diamond/interfaces/IERC165.sol";
 
-import { ExpressProviderStorage } from "./storages/ExpressProviderStorage.sol";
+import { GlobalStorage } from "./storages/GlobalStorage.sol";
+import { ValidatorStorage } from "./storages/ValidatorStorage.sol";
 
 /// @title Init
 /// @notice Initialization contract for the ExpressProvider diamond.
 /// @dev Executed via delegatecall during the diamond cut to set up initial state.
 contract Init {
 	function init(address admin, address _symmio, address _collateral) external {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		if (s.initialized) revert LibErrors.AlreadyInitialized();
 		s.initialized = true;
 
@@ -32,7 +33,7 @@ contract Init {
 		s.collateral = IERC20(_collateral);
 		s.securityWindow = 20;
 		s.tolerancePeriod = 60;
-		s.validatorApprovalTimeout[address(0)] = 30;
+		ValidatorStorage.layout().validatorApprovalTimeout[address(0)] = 30;
 
 		s.hashedName = keccak256(bytes("ExpressProvider"));
 		s.hashedVersion = keccak256(bytes("1"));

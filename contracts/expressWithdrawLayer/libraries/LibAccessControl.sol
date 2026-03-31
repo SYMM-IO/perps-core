@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
+import { GlobalStorage } from "../storages/GlobalStorage.sol";
 
 /// @title LibAccessControl
 /// @notice Role-based access control and EIP-712 signature helpers for the ExpressProvider diamond.
@@ -31,7 +31,7 @@ library LibAccessControl {
 	error AccessDenied(bytes32 role);
 
 	function hasRole(bytes32 role, address account) internal view returns (bool) {
-		return ExpressProviderStorage.layout().hasRole[account][role];
+		return GlobalStorage.layout().hasRole[account][role];
 	}
 
 	function enforceRole(bytes32 role) internal view {
@@ -39,15 +39,15 @@ library LibAccessControl {
 	}
 
 	function grantRole(address account, bytes32 role) internal {
-		ExpressProviderStorage.layout().hasRole[account][role] = true;
+		GlobalStorage.layout().hasRole[account][role] = true;
 	}
 
 	function revokeRole(address account, bytes32 role) internal {
-		ExpressProviderStorage.layout().hasRole[account][role] = false;
+		GlobalStorage.layout().hasRole[account][role] = false;
 	}
 
 	function domainSeparatorV4() internal view returns (bytes32) {
-		ExpressProviderStorage.Layout storage s = ExpressProviderStorage.layout();
+		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		return keccak256(abi.encode(TYPE_HASH, s.hashedName, s.hashedVersion, block.chainid, address(this)));
 	}
 

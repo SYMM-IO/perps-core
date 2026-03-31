@@ -12,11 +12,11 @@ import { WithdrawReceiverPart } from "../../core/storages/WithdrawStorage.sol";
 
 import { LibErrors } from "./LibErrors.sol";
 
-import { ExpressProviderStorage } from "../storages/ExpressProviderStorage.sol";
+import { GlobalStorage } from "../storages/GlobalStorage.sol";
 
 /// @title LibParts
 /// @notice Withdrawal parts iteration logic — computes amounts and transfers.
-/// @dev Accesses storage directly via ExpressProviderStorage.layout().
+/// @dev Accesses storage directly via GlobalStorage.layout().
 library LibParts {
 	using SafeERC20 for IERC20;
 
@@ -40,7 +40,7 @@ library LibParts {
 
 	/// @dev Iterates parts and transfers funds to each receiver, deducting the userFee.
 	function transferToReceivers(WithdrawReceiverPart[] memory parts, uint256 userFee) internal {
-		IERC20 collateral = ExpressProviderStorage.layout().collateral;
+		IERC20 collateral = GlobalStorage.layout().collateral;
 		uint256 feeRemaining = userFee;
 
 		for (uint256 i = 0; i < parts.length; i++) {
