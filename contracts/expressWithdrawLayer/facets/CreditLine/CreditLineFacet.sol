@@ -9,6 +9,7 @@ import { ICreditLineFacet } from "./ICreditLineFacet.sol";
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
 
+import { AffiliateCredit } from "../../types/CreditTypes.sol";
 import { CreditLineStorage } from "../../storages/CreditLineStorage.sol";
 
 /// @title CreditLineFacet
@@ -29,7 +30,7 @@ contract CreditLineFacet is ICreditLineFacet {
 
 	function setCreditLineProtocolConfig(address affiliate, uint256 maxDebt, uint256 maxDebtBps) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		CreditLineStorage.AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
 		ac.protocolMaxDebt = maxDebt;
 		ac.protocolMaxDebtBps = maxDebtBps;
 		emit CreditLineProtocolConfigUpdated(affiliate, maxDebt, maxDebtBps);
@@ -41,7 +42,7 @@ contract CreditLineFacet is ICreditLineFacet {
 
 	function setCreditLineAffiliateConfig(address affiliate, uint256 maxDebt, uint256 maxDebtBps) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		CreditLineStorage.AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
 
 		// Affiliate limits must be stricter (or equal) to protocol limits
 		if (ac.protocolMaxDebt > 0 && maxDebt > ac.protocolMaxDebt) revert LibCreditLine.AffiliateLimitExceedsProtocol();
@@ -105,7 +106,7 @@ contract CreditLineFacet is ICreditLineFacet {
 	}
 
 	function creditLineTotalDebt(address affiliate) external view returns (uint256) {
-		CreditLineStorage.AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
 		return ac.reservedDebt + ac.activeDebt;
 	}
 

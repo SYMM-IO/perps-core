@@ -8,7 +8,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { IMuonSignatureVerifier } from "../../core/interfaces/IMuonSignatureVerifier.sol";
 
-import { CreditData } from "../types/CreditTypes.sol";
+import { AffiliateCredit, CreditData } from "../types/CreditTypes.sol";
 import { WithdrawInfo } from "../types/WithdrawTypes.sol";
 
 import { ISymmio } from "../interfaces/ISymmio.sol";
@@ -51,7 +51,7 @@ library LibCreditLine {
 	/// @dev Reserves credit for a pending withdrawal. Validates Muon data and caps.
 	function reserveDebt(address affiliate, address user, uint256 requestId, uint256 creditAmount, CreditData memory data) internal {
 		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
-		CreditLineStorage.AffiliateCredit storage ac = cl.affiliates[affiliate];
+		AffiliateCredit storage ac = cl.affiliates[affiliate];
 
 		if (cl.signatureVerifier == address(0)) revert CreditLineNotConfigured();
 		if (ac.paused) revert CreditLinePaused();
@@ -118,7 +118,7 @@ library LibCreditLine {
 	// ═══════════════════════════════════════════════════════════════════
 
 	function _activateDebt(address affiliate, address user, uint256 requestId) private {
-		CreditLineStorage.AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
 		bytes32 key = _key(user, requestId);
 		uint256 amount = ac.requestDebt[key];
 		if (amount == 0) revert NoDebtForRequest();
@@ -132,7 +132,7 @@ library LibCreditLine {
 	}
 
 	function _settleDebt(address affiliate, address user, uint256 requestId) private {
-		CreditLineStorage.AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
 		bytes32 key = _key(user, requestId);
 		uint256 amount = ac.requestDebt[key];
 		if (amount == 0) revert NoDebtForRequest();
@@ -150,7 +150,7 @@ library LibCreditLine {
 	}
 
 	function _cancelReservation(address affiliate, address user, uint256 requestId) private {
-		CreditLineStorage.AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
 		bytes32 key = _key(user, requestId);
 		uint256 amount = ac.requestDebt[key];
 		if (amount == 0) revert NoDebtForRequest();

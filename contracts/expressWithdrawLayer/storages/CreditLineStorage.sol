@@ -4,28 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { AffiliateCredit } from "../types/CreditTypes.sol";
+
 /// @title CreditLineStorage
 /// @notice Diamond storage layout for per-affiliate credit line state.
 /// @dev Uses a unique keccak256 slot to avoid collisions with other diamond storage.
 library CreditLineStorage {
 	bytes32 internal constant STORAGE_SLOT = keccak256("diamond.standard.storage.creditline");
-
-	struct AffiliateCredit {
-		// ── Protocol-set hard caps ──
-		uint256 protocolMaxDebt;
-		uint256 protocolMaxDebtBps;
-		// ── Affiliate-chosen stricter caps ──
-		uint256 affiliateMaxDebt;
-		uint256 affiliateMaxDebtBps;
-		// ── Debt tracking ──
-		uint256 reservedDebt;
-		uint256 activeDebt;
-		mapping(bytes32 => uint256) requestDebt;
-		mapping(bytes32 => bool) requestActivated;
-		// ── State ──
-		bool paused;
-		mapping(address => bool) blacklisted;
-	}
 
 	struct Layout {
 		// ── Global Muon config (protocol-level) ──
