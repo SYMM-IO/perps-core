@@ -108,7 +108,7 @@ RESERVE ──→ ACTIVATE ──→ SETTLE
 
 1. **Reserve** (on acceptance): Validates the Muon attestation, checks debt caps, records the affiliate's debt as "reserved"
 2. **Activate** (on processing): Moves debt from "reserved" to "active", calls `advanceWithdraw` to pull tokens from SYMMIO
-3. **Settle** (on finalization): Clears the debt — SYMMIO finalized the withdrawal, the affiliate's debt is repaid
+3. **Settle** (on finalization): Clears the debt — SYMMIO confirmed the withdrawal won't be suspended, so the advance is now permanent and the affiliate's debt is reduced
 4. **Cancel** (if withdrawal is cancelled pre-processing): Releases the reservation, no tokens were moved
 
 **Caps and controls:**
