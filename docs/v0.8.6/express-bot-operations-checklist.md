@@ -6,30 +6,54 @@ Complete reference of every flow, state, edge case, and scenario the operator bo
 
 ## Table of Contents
 
-1. [State Machine](#1-state-machine)
-2. [Withdrawal Flows by Option Type](#2-withdrawal-flows-by-option-type)
-3. [Bot Actions Checklist](#3-bot-actions-checklist)
-4. [Options API: Constructing & Signing](#4-options-api-constructing--signing)
-5. [Event Monitoring & Reactions](#5-event-monitoring--reactions)
-6. [Fee Computation & Validation](#6-fee-computation--validation)
-7. [Sponsor System](#7-sponsor-system)
-8. [Validator System](#8-validator-system)
-9. [Multi-Part Withdrawals](#10-multi-part-withdrawals)
-11. [Credit Line Integration](#11-credit-line-integration)
-12. [Risk Lock / Unlock Flows](#12-risk-lock--unlock-flows)
+**Part I: Understanding the System**
+1. [Overview](#1-overview)
+2. [State Machine](#2-state-machine)
+3. [Timing](#3-timing)
+
+**Part II: Core Bot Flows**
+4. [Options API](#4-options-api)
+5. [Withdrawal Flows](#5-withdrawal-flows)
+6. [Processing & Finalization](#6-processing--finalization)
+7. [Event Monitoring](#7-event-monitoring)
+
+**Part III: Supporting Systems**
+8. [Fee System](#8-fee-system)
+9. [Validator System](#9-validator-system)
+10. [Credit Line System](#10-credit-line-system)
+11. [Multi-Part Withdrawals](#11-multi-part-withdrawals)
+
+**Part IV: Safety & Risk**
+12. [Risk Lock / Unlock](#12-risk-lock--unlock)
 13. [Cancellation & Suspension](#13-cancellation--suspension)
-14. [Permissionless Fallback](#14-permissionless-fallback)
-15. [Timing Reference](#15-timing-reference)
-16. [Error Catalog](#16-error-catalog)
-17. [Edge Cases & Race Conditions](#17-edge-cases--race-conditions)
-18. [Pool Management](#18-pool-management)
-19. [Role Reference](#19-role-reference)
-20. [Operational Invariants](#20-operational-invariants)
-21. [Complete State x Option Type Decision Matrix](#21-complete-state-x-option-type-decision-matrix)
+14. [Error Catalog](#14-error-catalog)
+15. [Edge Cases & Race Conditions](#15-edge-cases--race-conditions)
+
+**Part V: Operations**
+16. [Pool Management](#16-pool-management)
+17. [Access Control](#17-access-control)
+18. [Operational Invariants](#18-operational-invariants)
+
+**Part VI: Reference**
+19. [Complete State x Option Type Decision Matrix](#19-complete-state-x-option-type-decision-matrix)
 
 ---
 
-## 1. State Machine
+## 1. Overview
+
+The Express Provider bot operates as the automated backend for the ExpressProvider smart contract system, managing withdrawal options for users by reading on-chain state, computing fees and liquidity, signing EIP-712 withdrawal options, processing withdrawals after security windows, and scheduling finalization calls on SYMMIO to replenish pools. It supports three option types that trade off speed against capital requirements and risk.
+
+### Option Types
+
+| Option Type | Value | User Experience | Capital Fronted? | processWithdraw Needed? |
+|-------------|-------|-----------------|------------------|-------------------------|
+| IMMEDIATE | 0 | Same-transaction transfer. Fastest possible. | Yes (same-tx) | No |
+| INSTANT | 1 | ~20 seconds. Capital fronted from pools. | Yes (pools locked) | Yes |
+| STANDARD | 2 | ~12 hours. No capital fronting. ExpressProvider acts as intermediary. | No | Yes (after finalization) |
+
+---
+
+## 2. State Machine
 
 ### ExpressProvider Internal Status
 
@@ -259,9 +283,647 @@ Result:
 
 ---
 
-## 2. Withdrawal Flows by Option Type
+## 3. Timing
 
-### 2.1 IMMEDIATE (optionType = 0)
+### 3.1 processableAt Lookup Table
+
+The `processableAt` timestamp determines when `processWithdraw` can be called. It varies
+by option type, status, and caller role. This table is the definitive reference.
+
+| Option Type | Status | processableAt (OPERATOR_ROLE) | processableAt (Anyone) |
+|-------------|--------|-------------------------------|------------------------|
+| INSTANT | ACCEPTED | `acceptedAt + securityWindow` | `acceptedAt + securityWindow + tolerancePeriod` |
+| INSTANT | LOCKED | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod` |
+| STANDARD | FINALIZED | `finalizedAt` | `finalizedAt + tolerancePeriod` |
+| STANDARD | LOCKED | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod` |
+| IMMEDIATE | N/A | N/A (processed atomically inside `onWithdrawRequest`) | N/A |
+
+Notes:
+- For LOCKED withdrawals, `processWithdraw` only becomes callable once `block.timestamp >= cooldownEndTime`.
+  At that point the risk window is over and the lock becomes ineffective.
+- For LOCKED STANDARD withdrawals with `finalizedAt == 0`, `processWithdraw` calls
+  `finalizeWithdrawRequest` on SYMMIO first to retrieve tokens before processing.
+- The `tolerancePeriod` is the permissionless fallback window. If the bot goes down,
+  anyone can process after an additional `tolerancePeriod` delay.
+
+### 3.2 Security Window & Tolerance Period
+
+The security window is the mandatory delay after acceptance before the operator can process an INSTANT withdrawal. The tolerance period is the additional delay after which anyone (not just the operator) can process permissionlessly.
+
+```mermaid
+gantt
+    title Processing Windows (INSTANT example)
+    dateFormat X
+    axisFormat %s
+
+    section Operator Window
+    securityWindow (20s)      :crit, 0, 20
+    Operator can process      :active, 20, 80
+
+    section Anyone Window
+    tolerancePeriod (60s)     :crit, 20, 80
+    Anyone can process        :active, 80, 120
+```
+
+### 3.3 Complete Timing Diagram
+
+```mermaid
+gantt
+    title Withdrawal Lifecycle Timing
+    dateFormat X
+    axisFormat %Hh
+
+    section IMMEDIATE
+    Accept+Transfer (same tx) :done, 0, 1
+    SYMMIO Cooldown (12h)     :active, 0, 43200
+    Finalization              :milestone, 43200, 43200
+
+    section INSTANT
+    Accept                    :done, 0, 1
+    Security Window (20s)     :crit, 0, 20
+    Process                   :milestone, 20, 20
+    SYMMIO Cooldown (12h)     :active, 0, 43200
+    Finalization              :milestone, 43200, 43200
+
+    section STANDARD
+    Accept                    :done, 0, 1
+    SYMMIO Cooldown (12h)     :active, 0, 43200
+    Finalization              :milestone, 43200, 43200
+    Process                   :milestone, 43201, 43201
+```
+
+### 3.4 Configurable Parameters
+
+| Parameter | Default | Setter | Description |
+|-----------|---------|--------|-------------|
+| `securityWindow` | 20s | SETTER_ROLE | Min delay before operator `processWithdraw` for INSTANT |
+| `tolerancePeriod` | 60s | SETTER_ROLE | Extra delay for permissionless processing |
+| `validatorApprovalTimeout(affiliate)` | 30s | SETTER_ROLE | Max age of validator signatures (per-affiliate, `address(0)` = default) |
+| `minValidatorSignatures(affiliate)` | 0 | SETTER_ROLE | Required validator attestation count (per-affiliate, `address(0)` = default) |
+
+### 3.5 Fixed Timing
+
+| Timing | Value | Source |
+|--------|-------|--------|
+| SYMMIO withdrawal cooldown | 12 hours | SYMMIO core |
+| `cooldownEndTime` | `max(deallocateTimestamp + 12h, block.timestamp)` | Computed from SYMMIO |
+
+### 3.6 Special Timing Cases
+
+| Case | Behavior |
+|------|----------|
+| `securityWindow = 0` | Operator can process INSTANT immediately (same block) |
+| `tolerancePeriod = 0` | Anyone can process as soon as operator window opens |
+| Cooldown already elapsed (`deallocateTimestamp + 12h < now`) | `cooldownEndTime = block.timestamp`, finalization possible immediately |
+| LOCKED after cooldown | processableAt = cooldownEndTime (lock becomes ineffective) |
+
+#### Numeric Scenarios: Bot Computes processableAt
+
+```
+Scenario: Bot computes processableAt for various withdrawals
+
+Shared parameters:
+  securityWindow   = 20
+  tolerancePeriod  = 60
+
+────────────────────────────────────────────────────────────
+Withdrawal A (INSTANT, ACCEPTED):
+  acceptedAt = 1700000000
+
+  Bot (OPERATOR_ROLE):
+    processableAt = acceptedAt + securityWindow
+                  = 1700000000 + 20
+                  = 1700000020
+    Wait until block.timestamp >= 1700000020, then call processWithdraw.
+
+  Anyone (no OPERATOR_ROLE):
+    processableAt = acceptedAt + securityWindow + tolerancePeriod
+                  = 1700000000 + 20 + 60
+                  = 1700000080
+    Permissionless fallback available 80s after acceptance.
+
+────────────────────────────────────────────────────────────
+Withdrawal B (STANDARD, FINALIZED):
+  finalizedAt = 1700043200 (12h after acceptance, SYMMIO sent tokens)
+
+  Bot (OPERATOR_ROLE):
+    processableAt = finalizedAt
+                  = 1700043200
+    SYMMIO's 12h cooldown already served as the security window.
+    Call processWithdraw immediately after finalization.
+
+  Anyone (no OPERATOR_ROLE):
+    processableAt = finalizedAt + tolerancePeriod
+                  = 1700043200 + 60
+                  = 1700043260
+
+────────────────────────────────────────────────────────────
+Withdrawal C (INSTANT, LOCKED — cooldown expired):
+  acceptedAt      = 1700000000
+  cooldownEndTime = 1700043200 (12h later)
+  block.timestamp = 1700050000 (well past cooldown)
+
+  Status is LOCKED but block.timestamp >= cooldownEndTime, so the
+  risk window is over. processWithdraw treats it as processable.
+
+  Bot (OPERATOR_ROLE):
+    processableAt = cooldownEndTime
+                  = 1700043200
+    Already past -> call processWithdraw now.
+
+  Anyone (no OPERATOR_ROLE):
+    processableAt = cooldownEndTime + tolerancePeriod
+                  = 1700043200 + 60
+                  = 1700043260
+    Already past -> anyone can call processWithdraw now.
+
+────────────────────────────────────────────────────────────
+Withdrawal D (STANDARD, LOCKED — cooldown expired, not yet finalized):
+  acceptedAt      = 1700000000
+  cooldownEndTime = 1700043200
+  finalizedAt     = 0 (SYMMIO hasn't finalized yet)
+  block.timestamp = 1700050000
+
+  Bot (OPERATOR_ROLE):
+    processableAt = cooldownEndTime = 1700043200 (already past)
+    processWithdraw detects isLockedAfterCooldown && finalizedAt == 0,
+    so it calls finalizeWithdrawRequest(user, requestId) on SYMMIO first.
+    SYMMIO sends tokens -> then processWithdraw forwards them to the user.
+
+  Anyone (no OPERATOR_ROLE):
+    processableAt = cooldownEndTime + tolerancePeriod
+                  = 1700043200 + 60
+                  = 1700043260
+    Same auto-finalize behavior applies.
+
+────────────────────────────────────────────────────────────
+Withdrawal E (IMMEDIATE):
+  Not applicable. IMMEDIATE withdrawals are processed atomically inside
+  onWithdrawRequest. The status goes directly to PROCESSED. There is no
+  processWithdraw call and no processableAt computation.
+```
+
+#### Numeric Example: Cooldown Already Elapsed
+
+```
+Scenario: Bot detects pre-expired cooldown and fast-tracks a STANDARD withdrawal
+
+Setup:
+  block.timestamp             = 1_700_000_000
+  securityWindow              = 20s
+  tolerancePeriod             = 60s
+  Alice deallocateTimestamp    = 1_699_913_600  (24 hours ago)
+  cooldownEndTime             = max(1_699_913_600 + 43_200, 1_700_000_000)
+                              = max(1_699_956_800, 1_700_000_000)
+                              = 1_700_000_000   (cooldown already passed)
+  generalBalance              = 10_000 USDC
+  Status for (Alice, req#42)  = NONE
+
+Step 1 — Bot sees: WithdrawAccepted event for Alice, 500 USDC STANDARD, req#42
+  Bot reads on-chain:
+    withdrawInfos[Alice][42].status          = ACCEPTED
+    withdrawInfos[Alice][42].cooldownEndTime = 1_700_000_000
+  Bot checks: cooldownEndTime <= block.timestamp?
+    1_700_000_000 <= 1_700_000_000 --> yes, cooldown already expired
+  Decision: call finalizeWithdrawRequest(Alice, 42) immediately
+    (no need to schedule a 12-hour timer)
+
+Step 2 — Bot sees: WithdrawFinalized event for (Alice, req#42)
+  Bot reads on-chain:
+    withdrawInfos[Alice][42].status      = FINALIZED
+    withdrawInfos[Alice][42].finalizedAt = 1_700_000_000
+  Bot checks: for STANDARD, processableAt = finalizedAt = 1_700_000_000
+    Is block.timestamp >= 1_700_000_000? --> yes
+  Decision: call processWithdraw(Alice, 42, parts) in the next block
+    Total user wait: ~2 blocks (a few seconds)
+
+What-if: same withdrawal as INSTANT instead of STANDARD?
+  Bot checks: processableAt = acceptedAt + securityWindow
+    = 1_700_000_000 + 20 = 1_700_000_020
+  Decision: wait 20s for the risk-check window, then call processWithdraw
+  But finalization can happen almost immediately after processing
+  Pool replenishment: ~20s instead of the usual ~12h
+```
+
+---
+
+## 4. Options API
+
+### 4.1 Decision Tree
+
+```mermaid
+flowchart TD
+    A[User requests withdrawal options] --> B[Read on-chain state]
+    B --> B1["nonces(user)"]
+    B --> B2["affiliateConfigs(affiliate)"]
+    B --> B3["sponsorBalances(affiliate)"]
+    B --> B4["generalBalance, lockedGeneralBalance"]
+    B --> B5["affiliateBalances, lockedAffiliateBalances"]
+    B --> B6["CLM.totalDebt()"]
+
+    B1 & B2 & B3 & B4 & B5 & B6 --> C{Compute available liquidity}
+
+    C --> D{minValidatorSignatures&#40;affiliate&#41; > 0\nAND sufficient liquidity?}
+    D -->|Yes| D1[Gather validator sigs]
+    D1 --> D2[Offer IMMEDIATE]
+
+    C --> E{Unlocked liquidity\n>= amount?}
+    E -->|Yes| E1[Offer INSTANT]
+
+    C --> G[Always offer STANDARD]
+
+    D2 & E1 & G --> H[Compute fees & sponsor coverage]
+    H --> I[Sign EIP-712 WithdrawOption]
+    I --> J[Return options to user]
+```
+
+```mermaid
+flowchart LR
+    subgraph "For each user withdrawal request"
+        A{Validators enabled\n& liquidity OK?} -->|Yes| IM[IMMEDIATE]
+        B{Unlocked liquidity\n>= amount?} -->|Yes| IN[INSTANT]
+        D[Always] --> ST[STANDARD]
+    end
+```
+
+### 4.2 On User Withdrawal Request
+
+- [ ] Read `expressProvider.nonces(user)` for current nonce
+- [ ] Read `affiliateConfigs(affiliate)` for `feeRate` and `operatorFee`
+- [ ] Compute fee: `fee = expressAmount * feeRate / 10000`
+- [ ] Read `sponsorBalances(affiliate)` and `sponsorConfigs(affiliate)` for sponsor coverage
+- [ ] Compute `maxUserFee = (fee + operatorFee) - sponsorCoverage`
+- [ ] Check `fee + operatorFee <= expressAmount` (else reverts `FeesExceedExpressAmount`)
+- [ ] Check available general pool: `generalBalance - lockedGeneralBalance >= generalAmount`
+- [ ] Check available affiliate pool: `affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate] >= affiliateAmount`
+- [ ] Check credit line capacity: `creditLineManagers(affiliate) != address(0)` if using credit
+- [ ] For IMMEDIATE: verify `minValidatorSignatures(affiliate) > 0` (falls back to `address(0)` default)
+- [ ] If validators required: gather >= `minValidatorSignatures(affiliate)` attestations from validators registered for this affiliate (or `address(0)` default)
+- [ ] Construct `WithdrawReceiverPart[]` array
+- [ ] Compute `partsHash = keccak256(abi.encode(parts))`
+- [ ] Sign EIP-712 `WithdrawOption` with SIGNER_ROLE key
+- [ ] Return `{ parts, providerData, fee, operatorFee, maxUserFee, estimatedTime }`
+
+### 4.3 Parts Construction
+
+Each `WithdrawReceiverPart`:
+
+| Field | Express part | Non-express |
+|-------|-------------|-------------|
+| `expressProvider` | ExpressProvider address | `address(0)` |
+| `virtualProvider` | `address(0)` (DEPRECATED, must be zero) | varies |
+| `amount` | collateral decimals | collateral decimals |
+| `receiver` | user's receiver address | user's receiver address |
+
+**Amount classification:**
+- `expressAmount` = sum of parts where `expressProvider == address(this)`
+- `generalAmount = expressAmount - affiliateAmount - creditAmount`
+- `feeBasis = expressAmount`
+
+Note: `virtualProvider` must always be `address(0)`. Any non-zero value reverts `VirtualProviderDeprecated`.
+
+```mermaid
+flowchart TD
+    P[Parts Array] --> C1{expressProvider == this?}
+    C1 -->|No| SKIP[Skipped by ExpressProvider]
+    C1 -->|Yes| EO[Adds to expressAmount]
+
+    EO --> GA["generalAmount = expressAmount - affiliateAmount - creditAmount"]
+    EO --> FB["feeBasis = expressAmount"]
+```
+
+### 4.4 providerData Encoding
+
+```
+providerData = abi.encode(optionData, validatorData, creditDataRaw)
+  where:
+    optionData = abi.encode(DecodedOption struct — includes creditAmount field)
+    validatorData = abi.encode(bytes[] signatures, uint256[] timestamps, uint256 symmioNonce)
+    creditDataRaw = abi.encode(CreditData) if creditAmount > 0, else empty bytes
+```
+
+If no validators needed, `validatorData = abi.encode(new bytes[](0), new uint256[](0), uint256(0))`.
+If no credit used, `creditDataRaw` is empty bytes (`""`).
+
+### 4.5 Nonce Management
+
+- [ ] Nonces are per-user and sequential
+- [ ] Read `nonces(user)` before each option signing
+- [ ] Each acceptance increments the nonce by 1
+- [ ] Concurrent options for the same user: only one can succeed
+- [ ] Different users have independent nonce counters and can be signed in parallel
+
+### 4.6 Signing Requirements
+
+**WithdrawOption EIP-712 fields (all must be exact):**
+- [ ] `user` -- the withdrawing user address
+- [ ] `nonce` -- must match `nonces[user]` at execution time
+- [ ] `optionType` -- 0-2
+- [ ] `availableAt` -- 0 (reserved field)
+- [ ] `affiliate` -- affiliate address
+- [ ] `affiliateAmount` -- amount from affiliate pool
+- [ ] `fee` -- must equal `(feeBasis * feeRate) / 10000` on-chain
+- [ ] `operatorFee` -- must match `affiliateConfigs[affiliate].operatorFee` exactly
+- [ ] `maxUserFee` -- max fee user pays after sponsor coverage
+- [ ] `partsHash` -- `keccak256(abi.encode(parts))`
+- [ ] `deadline` -- signature expiry timestamp (future)
+- [ ] `signature` -- signed by SIGNER_ROLE holder
+
+**Domain:** `name="ExpressProvider"`, `version="1"`, `chainId`, `verifyingContract=diamond address`
+
+#### Numeric Example: Parts Construction for Credit-Backed Withdrawal
+
+```
+Scenario: User wants to withdraw 1,500 USDC, sent to two different receivers.
+          Bot must decide how to split across pools and credit line,
+          construct the parts array, and compute all derived amounts.
+
+Setup:
+  generalBalance           = 5,000e6 USDC
+  lockedGeneralBalance     = 4,600e6 USDC   (heavy utilization)
+  affiliateBalances[0xAff] = 1,000e6 USDC
+  lockedAffiliateBalances  =     0e6 USDC
+  creditLineManagers[0xAff]= 0xCLM           (affiliate's credit line manager)
+  CLM.totalDebt()          = 200e6 USDC      (existing debt)
+  CLM.protocolMaxDebt      = 5,000e6         (plenty of headroom)
+  affiliateConfigs(0xAff)  = { feeRate: 100 bps, operatorFee: 2e6 }
+  sponsorBalances(0xAff)   = 10e6 USDC
+  sponsorConfigs(0xAff)    = { maxFeePerWithdraw: 0, maxWithdrawAmount: 0 } (no caps)
+
+----------------------------------------------------------------------
+
+Step 1 -- Bot sees: User requests options for 1,500 USDC withdrawal
+  Receivers: 1,000 USDC to 0xReceiverA, 500 USDC to 0xReceiverB
+
+  Bot reads on-chain:
+    Unlocked general = generalBalance - lockedGeneralBalance = 5,000 - 4,600 = 400e6
+    Unlocked affiliate = affiliateBalances[0xAff] - lockedAffiliateBalances[0xAff] = 1,000 - 0 = 1,000e6
+
+  Bot checks: "Can I cover 1,500 USDC from pools alone?"
+    Total unlocked = 400 (general) + 1,000 (affiliate) = 1,400e6
+    1,400 < 1,500 -- NO, not enough from pools alone.
+
+  Bot checks: "Can I cover the gap using the credit line?"
+    Shortfall = 1,500 - 1,400 = 100e6 minimum from credit
+    CLM headroom = protocolMaxDebt - totalDebt = 5,000 - 200 = 4,800e6
+    100 <= 4,800 -- YES, credit line has headroom.
+    Bot also obtains Muon attestation for the affiliate's aggregate eligibleBase.
+
+  Decision: Use pools + credit line. creditAmount = 100e6 to cover the gap.
+
+----------------------------------------------------------------------
+
+Step 2 -- Bot decides: How to split into parts and funding sources
+
+  Strategy: Maximize affiliate pool usage, use credit for the shortfall.
+
+  affiliateAmount = 1,000e6 (use full unlocked affiliate pool)
+  creditAmount    = 100e6   (cover the shortfall via credit line)
+  generalAmount   = expressAmount - affiliateAmount - creditAmount
+                  = 1,500 - 1,000 - 100 = 400e6
+  Unlocked general (400e6) >= generalAmount (400e6)?  YES, exactly enough.
+
+  Bot checks: affiliateAmount + creditAmount <= expressAmount?
+    1,000 + 100 = 1,100 <= 1,500?  YES (else reverts FundingSplitExceedsExpress)
+
+  Final parts array (all virtualProvider = address(0)):
+  [
+    { id: 0, amount: 1000e6, receiver: 0xReceiverA,
+      expressProvider: 0xEP, virtualProvider: 0x0 },
+    { id: 1, amount: 500e6, receiver: 0xReceiverB,
+      expressProvider: 0xEP, virtualProvider: 0x0 },
+  ]
+
+----------------------------------------------------------------------
+
+Step 3 -- Bot computes: Fee computation
+
+  From the parts array, computeAmounts will derive:
+    expressAmount   = 1,000 + 500 = 1,500e6
+    generalAmount   = 1,500 - 1,000 - 100 = 400e6
+
+  feeBasis = expressAmount = 1,500e6
+  fee = 1,500e6 * 100 / 10000 = 15e6 (15 USDC, at 1% rate)
+  operatorFee = 2e6 (2 USDC)
+  totalFee = 15 + 2 = 17e6
+
+  Bot checks: fee + operatorFee (17e6) <= feeBasis (1,500e6)?  YES
+
+  Bot computes sponsor coverage:
+    sponsorBalances(0xAff) = 10e6
+    sponsorConfigs: maxFeePerWithdraw = 0 (no cap), maxWithdrawAmount = 0 (no cap)
+    maxCoverage = min(totalFee, no-cap) = 17e6
+    sponsorCoverage = min(sponsorBal=10e6, maxCoverage=17e6) = 10e6
+    maxUserFee = 17 - 10 = 7e6  (user pays 7 USDC out of 17 total)
+
+  partsHash = keccak256(abi.encode(parts))  -- bot MUST store this
+
+  Decision: Sign the option (including creditAmount=100e6) and return to user.
+
+----------------------------------------------------------------------
+
+Step 4 -- What happens on-chain at acceptance (for reference)
+
+  onWithdrawRequest will:
+    1. Verify EIP-712 signature and nonce (includes creditAmount in struct hash)
+    2. Call computeAmounts -> expressAmount=1500, generalAmount=400
+    3. Verify fee = (1500e6 * 100) / 10000 = 15e6  (matches signed fee)
+    4. Verify operatorFee = 2e6  (matches on-chain config)
+    5. Lock general pool: lockedGeneralBalance += 400e6  (now 5,000e6)
+    6. Lock affiliate pool: lockedAffiliateBalances[0xAff] += 1,000e6
+    7. Reserve credit: CLM.reserveDebt(user, reqId, 100e6, creditData)
+       CLM.reservedDebt += 100e6
+    8. Lock sponsor coverage: sponsorBalances[0xAff] -= 10e6 (now 0)
+    9. Store WithdrawInfo with partsHash, creditAmount=100, creditLineManager=0xCLM
+   10. Status = ACCEPTED
+
+  At processWithdraw:
+    1. Activate credit: CLM.activateDebt -> reservedDebt -= 100, activeDebt += 100
+    2. Advance from core: SYMMIO.advanceWithdraw(user, reqId, 100e6)
+    3. Fee deduction cascades across parts in order:
+       userFee = 17 - 10 (sponsor) = 7e6 remaining
+       Part 0 (1,000e6): deduction = min(7e6, 1,000e6) = 7e6
+         Transfer 1,000 - 7 = 993e6 USDC to 0xReceiverA
+         feeRemaining = 0
+       Part 1 (500e6): deduction = 0
+         Transfer 500e6 USDC to 0xReceiverB
+
+  Net result:
+    0xReceiverA gets 993 USDC
+    0xReceiverB gets 500 USDC
+    collectedFees[0xAff] += 15e6
+    collectedOperatorFees[0xAff] += 2e6
+    User deposited 1,500, got back 1,500 - 7 = 1,493.
+    Credit line: 100 USDC active debt, settled on finalization.
+```
+
+#### Numeric Example: Bot Action Timeline for a 500 USDC INSTANT
+
+```
+Scenario: User requests 500 USDC INSTANT withdrawal; bot shepherds it through
+          sign -> accept -> risk-check -> process -> finalize.
+
+Setup:
+  generalBalance           = 10,000e6 USDC
+  lockedGeneralBalance     =  2,000e6 USDC  (from other pending withdrawals)
+  affiliateBalances[0xAff] =  3,000e6 USDC
+  lockedAffiliateBalances  =      0e6 USDC
+  nonces(0xUser)           = 3
+  affiliateConfigs(0xAff)  = { feeRate: 50 bps, operatorFee: 1e6 }
+  sponsorBalances(0xAff)   = 0                (no sponsor -- user pays full fee)
+  securityWindow           = 20s
+  tolerancePeriod          = 60s
+  cooldownEndTime will be  = T+12h            (set by SYMMIO at acceptance)
+
+----------------------------------------------------------------------
+
+Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
+  (T=0s, off-chain API call)
+
+  Bot reads on-chain:
+    nonces(0xUser) = 3
+    affiliateConfigs(0xAff).feeRate = 50, .operatorFee = 1e6
+    generalBalance - lockedGeneralBalance = 10,000 - 2,000 = 8,000e6 unlocked
+    affiliateBalances[0xAff] - lockedAffiliateBalances[0xAff] = 3,000 - 0 = 3,000e6 unlocked
+    sponsorBalances(0xAff) = 0
+    minValidatorSignatures(0xAff) = 0
+
+  Bot decides the parts split:
+    1 part, express-only: 500e6 to 0xReceiver, expressProvider=0xEP, virtualProvider=0x0
+    expressAmount = 500e6, creditAmount = 0
+    affiliateAmount = 200e6 (bot chooses to draw 200 from affiliate pool)
+    generalAmount = 500 - 200 = 300e6
+
+  Bot checks: "Can I offer INSTANT?"
+    Unlocked general (8,000e6) >= generalAmount (300e6)?  YES
+    Unlocked affiliate (3,000e6) >= affiliateAmount (200e6)?  YES
+    INSTANT is feasible.
+
+  Bot checks: "Can I offer IMMEDIATE?"
+    minValidatorSignatures(0xAff) = 0 -- NO (validators required for IMMEDIATE)
+
+  Bot computes fee:
+    feeBasis = expressAmount = 500e6
+    fee = 500e6 * 50 / 10000 = 2.5e6 (2.50 USDC)
+    operatorFee = 1e6 (1.00 USDC)
+    sponsorCoverage = 0 (no sponsor balance)
+    maxUserFee = 2.5e6 + 1e6 - 0 = 3.5e6
+    Check: fee + operatorFee (3.5e6) <= feeBasis (500e6)?  YES
+
+  Bot computes partsHash = keccak256(abi.encode(parts))
+
+  Bot signs EIP-712 WithdrawOption:
+    { user: 0xUser, nonce: 3, optionType: 1 (INSTANT), availableAt: 0,
+      affiliate: 0xAff, affiliateAmount: 200e6, fee: 2.5e6, operatorFee: 1e6,
+      maxUserFee: 3.5e6, partsHash: <hash>, deadline: now+3600 }
+
+  Decision: Return signed INSTANT option to user.
+
+  What if unlocked general were only 100e6?
+    generalAmount (300e6) > 100e6 -- INSTANT not feasible.
+    Bot must fall back to STANDARD.
+
+----------------------------------------------------------------------
+
+Step 2 -- Bot sees: WithdrawAccepted(0xUser, 7, INSTANT)
+  (T=5s, on-chain event from ExpressProvider)
+
+  Bot reads on-chain:
+    withdrawInfos(0xUser, 7).status = ACCEPTED
+    withdrawInfos(0xUser, 7).acceptedAt = T=5s
+    withdrawInfos(0xUser, 7).cooldownEndTime = T+12h
+    lockedGeneralBalance is now 2,300e6 (+300 locked)
+    lockedAffiliateBalances[0xAff] is now 200e6 (+200 locked)
+
+  Bot checks: "When can I call processWithdraw?"
+    Earliest = acceptedAt + securityWindow = T+5s + 20s = T+25s
+
+  Decision: Schedule processWithdraw(0xUser, 7, parts) for T=25s.
+            Start risk check immediately (20s security window).
+
+  What if bot detects suspicious activity during risk check?
+    Bot calls lockWithdraw(0xUser, 7) using LOCKER_ROLE.
+    Status becomes LOCKED, processWithdraw is blocked.
+    Must wait for UNLOCK_ROLE to call unlockAndProcess, OR
+    wait until cooldownEndTime passes (then processWithdraw allowed).
+
+----------------------------------------------------------------------
+
+Step 3 -- Bot sees: securityWindow elapsed, time to process
+  (T=25s, bot's scheduled action fires)
+
+  Bot reads on-chain:
+    withdrawInfos(0xUser, 7).status = ACCEPTED  (still -- not locked or cancelled)
+    block.timestamp (T=25s) >= acceptedAt + securityWindow (T=25s)?  YES
+
+  Bot checks: "Is the risk check clean?"
+    Risk check result = CLEAN
+
+  Decision: Call processWithdraw(0xUser, 7, parts) with OPERATOR_ROLE.
+
+  On-chain effect:
+    _collectAndTransfer runs:
+      totalFee = 2.5e6 + 1e6 = 3.5e6
+      sponsorCoverage = 0
+      userFee = 3.5e6
+      collectedFees[0xAff] += 2.5e6
+      collectedOperatorFees[0xAff] += 1e6
+      Part 0 (express-only, 500e6): deduction = min(3.5e6, 500e6) = 3.5e6
+        Transfer 500 - 3.5 = 496.5e6 USDC to 0xReceiver
+    Pool balance updates:
+      lockedGeneralBalance -= 300e6   (back to 2,000e6)
+      lockedAffiliateBalances[0xAff] -= 200e6 (back to 0)
+      generalBalance -= 300e6         (now 9,700e6)
+      affiliateBalances[0xAff] -= 200e6 (now 2,800e6)
+    Status = PROCESSED
+    Emits WithdrawProcessed(0xUser, 7)
+
+  Bot sees: WithdrawProcessed(0xUser, 7)
+  Decision: Schedule finalizeWithdrawRequest at cooldownEndTime (T+12h).
+
+  What if status were LOCKED when the schedule fires?
+    processWithdraw would revert (NotAccepted).
+    Bot cancels the scheduled action, waits for resolution.
+
+  What if someone else already called processWithdraw (permissionless)?
+    Bot sees WithdrawProcessed event for a request it didn't process.
+    Bot cancels its own scheduled processWithdraw.
+    Bot still schedules finalizeWithdrawRequest at cooldownEndTime.
+
+----------------------------------------------------------------------
+
+Step 4 -- Bot sees: cooldownEndTime reached
+  (T=12h, bot's scheduled action fires)
+
+  Bot reads on-chain:
+    withdrawInfos(0xUser, 7).status = PROCESSED
+    block.timestamp >= cooldownEndTime?  YES
+
+  Decision: Call SYMMIO.finalizeWithdrawRequest(0xUser, 7).
+
+  On-chain effect (SYMMIO side):
+    SYMMIO transfers 500e6 USDC (expressAmount) to ExpressProvider.
+    SYMMIO calls onWithdrawComplete on ExpressProvider:
+      status == PROCESSED -- replenish pools:
+        generalBalance += 300e6    (back to 10,000e6)
+        affiliateBalances[0xAff] += 200e6 (back to 3,000e6)
+      Status = FINALIZED
+      Emits WithdrawFinalized(0xUser, 7)
+
+  Bot sees: WithdrawFinalized(0xUser, 7)
+  Decision: Cycle complete. Remove from active tracking. Update liquidity cache.
+
+  What if SYMMIO suspended the withdrawal before T=12h?
+    Status was already PROCESSED -- suspend is impossible.
+    (onWithdrawSuspend reverts if status != ACCEPTED and != LOCKED.)
+    No action needed. The cycle completes normally.
+```
+
+---
+
+## 5. Withdrawal Flows
+
+### 5.1 IMMEDIATE (optionType = 0)
 
 **User experience:** Same-transaction transfer. Fastest possible.
 
@@ -478,7 +1140,7 @@ Result:
 
 ---
 
-### 2.2 INSTANT (optionType = 1)
+### 5.2 INSTANT (optionType = 1)
 
 **User experience:** ~20 seconds. Capital fronted from pools.
 
@@ -655,7 +1317,7 @@ Step 5 — Bot sees: block.timestamp >= cooldownEndTime (~T0 + 12h).
 
 ---
 
-### 2.3 STANDARD (optionType = 2)
+### 5.3 STANDARD (optionType = 2)
 **User experience:** ~12 hours. No capital fronting. ExpressProvider acts as intermediary.
 
 ```mermaid
@@ -806,14 +1468,14 @@ Final accounting:
 
 ---
 
-### 2.5 Credit-Backed Withdrawal
+### 5.4 Credit-Backed Withdrawal
 
 For IMMEDIATE and INSTANT options, the bot can include a `creditAmount` in the signed option to draw from the affiliate's credit line (CreditLineManager). This supplements pool liquidity:
 
 - `generalAmount = expressAmount - affiliateAmount - creditAmount`
 - Credit requires a valid Muon oracle attestation (`CreditData`)
 - Credit is NOT supported for STANDARD (`CreditNotSupportedForStandard` error)
-- Credit debt follows the lifecycle: reserved → activated → settled (see Section 11)
+- Credit debt follows the lifecycle: reserved → activated → settled (see Section 10)
 
 When pool liquidity alone is insufficient for INSTANT but the affiliate has eligible credit capacity, the bot can offer a credit-backed option:
 
@@ -833,73 +1495,9 @@ The bot MUST verify:
 
 ---
 
-## 3. Bot Actions Checklist
+## 6. Processing & Finalization
 
-### 3.1 Options API Decision Flow
-
-```mermaid
-flowchart TD
-    A[User requests withdrawal options] --> B[Read on-chain state]
-    B --> B1["nonces(user)"]
-    B --> B2["affiliateConfigs(affiliate)"]
-    B --> B3["sponsorBalances(affiliate)"]
-    B --> B4["generalBalance, lockedGeneralBalance"]
-    B --> B5["affiliateBalances, lockedAffiliateBalances"]
-    B --> B6["CLM.totalDebt()"]
-
-    B1 & B2 & B3 & B4 & B5 & B6 --> C{Compute available liquidity}
-
-    C --> D{minValidatorSignatures&#40;affiliate&#41; > 0\nAND sufficient liquidity?}
-    D -->|Yes| D1[Gather validator sigs]
-    D1 --> D2[Offer IMMEDIATE]
-
-    C --> E{Unlocked liquidity >= amount\nAND risk = LOW?}
-    E -->|Yes| E1[Offer INSTANT]
-
-    C --> G[Always offer STANDARD]
-
-    D2 & E1 & G --> H[Compute fees & sponsor coverage]
-    H --> I[Sign EIP-712 WithdrawOption]
-    I --> J[Return options to user]
-```
-
-### 3.2 On User Withdrawal Request
-
-- [ ] Read `expressProvider.nonces(user)` for current nonce
-- [ ] Read `affiliateConfigs(affiliate)` for `feeRate` and `operatorFee`
-- [ ] Compute fee: `fee = expressAmount * feeRate / 10000`
-- [ ] Read `sponsorBalances(affiliate)` and `sponsorConfigs(affiliate)` for sponsor coverage
-- [ ] Compute `maxUserFee = (fee + operatorFee) - sponsorCoverage`
-- [ ] Check `fee + operatorFee <= expressAmount` (else reverts `FeesExceedExpressAmount`)
-- [ ] Check available general pool: `generalBalance - lockedGeneralBalance >= generalAmount`
-- [ ] Check available affiliate pool: `affiliateBalances[affiliate] - lockedAffiliateBalances[affiliate] >= affiliateAmount`
-- [ ] Check credit line capacity: `creditLineManagers(affiliate) != address(0)` if using credit
-- [ ] For IMMEDIATE: verify `minValidatorSignatures(affiliate) > 0` (falls back to `address(0)` default)
-- [ ] If validators required: gather >= `minValidatorSignatures(affiliate)` attestations from validators registered for this affiliate (or `address(0)` default)
-- [ ] Construct `WithdrawReceiverPart[]` array
-- [ ] Compute `partsHash = keccak256(abi.encode(parts))`
-- [ ] Sign EIP-712 `WithdrawOption` with SIGNER_ROLE key
-- [ ] Return `{ parts, providerData, fee, operatorFee, maxUserFee, estimatedTime }`
-
-### 3.3 Signing Requirements
-
-**WithdrawOption EIP-712 fields (all must be exact):**
-- [ ] `user` -- the withdrawing user address
-- [ ] `nonce` -- must match `nonces[user]` at execution time
-- [ ] `optionType` -- 0-2
-- [ ] `availableAt` -- 0 (reserved field)
-- [ ] `affiliate` -- affiliate address
-- [ ] `affiliateAmount` -- amount from affiliate pool
-- [ ] `fee` -- must equal `(feeBasis * feeRate) / 10000` on-chain
-- [ ] `operatorFee` -- must match `affiliateConfigs[affiliate].operatorFee` exactly
-- [ ] `maxUserFee` -- max fee user pays after sponsor coverage
-- [ ] `partsHash` -- `keccak256(abi.encode(parts))`
-- [ ] `deadline` -- signature expiry timestamp (future)
-- [ ] `signature` -- signed by SIGNER_ROLE holder
-
-**Domain:** `name="ExpressProvider"`, `version="1"`, `chainId`, `verifyingContract=diamond address`
-
-### 3.4 After Acceptance
+### 6.1 After Acceptance
 
 | Option | Schedule processWithdraw at | Schedule finalizeWithdrawRequest at |
 |--------|----------------------------|-------------------------------------|
@@ -907,7 +1505,7 @@ flowchart TD
 | INSTANT | `acceptedAt + securityWindow` | `cooldownEndTime` |
 | STANDARD | After `onWithdrawComplete` | `cooldownEndTime` |
 
-### 3.5 Processing (`processWithdraw`)
+### 6.2 Processing (`processWithdraw`)
 
 - [ ] Verify status is correct for the option type:
   - INSTANT: must be ACCEPTED (or LOCKED after cooldown)
@@ -920,7 +1518,7 @@ flowchart TD
 - [ ] For LOCKED STANDARD without finalization: `processWithdraw` calls `finalizeWithdrawRequest` on SYMMIO first
 - [ ] After successful processing: schedule `finalizeWithdrawRequest` at `cooldownEndTime`
 
-### 3.6 Finalization (`finalizeWithdrawRequest` on SYMMIO)
+### 6.3 Finalization (`finalizeWithdrawRequest` on SYMMIO)
 
 - [ ] Call on SYMMIO (not ExpressProvider)
 - [ ] Must wait until `block.timestamp >= cooldownEndTime`
@@ -929,355 +1527,107 @@ flowchart TD
 - [ ] Pools are replenished (INSTANT/IMMEDIATE) or tokens arrive (STANDARD)
 - [ ] Verify status becomes FINALIZED (or stays LOCKED for STANDARD)
 
-#### Numeric Example: Bot Action Timeline for a 500 USDC INSTANT
+### 6.4 Permissionless Fallback
+
+#### Processing Timeline
+
+```mermaid
+gantt
+    title Processing Windows (INSTANT example)
+    dateFormat X
+    axisFormat %s
+
+    section Operator Window
+    securityWindow (20s)      :crit, 0, 20
+    Operator can process      :active, 20, 80
+
+    section Anyone Window
+    tolerancePeriod (60s)     :crit, 20, 80
+    Anyone can process        :active, 80, 120
+```
+
+#### When Anyone Can Process
+
+| Option | Operator processableAt | Anyone processableAt |
+|--------|----------------------|---------------------|
+| INSTANT | `acceptedAt + securityWindow` | `acceptedAt + securityWindow + tolerancePeriod` |
+| STANDARD | `finalizedAt` | `finalizedAt + tolerancePeriod` |
+| LOCKED (after cooldown) | `cooldownEndTime` | `cooldownEndTime + tolerancePeriod` |
+
+#### Bot Must Handle
+
+- [ ] If a user calls `processWithdraw` permissionlessly, detect `WithdrawProcessed` event and cancel bot's scheduled processing
+- [ ] Anyone can call `finalizeWithdrawRequest` on SYMMIO -- bot should still schedule it but handle the case where it's already finalized
+- [ ] State sync: always check on-chain status before attempting actions
+
+#### Numeric Example: Permissionless Processing Timeline
 
 ```
-Scenario: User requests 500 USDC INSTANT withdrawal; bot shepherds it through
-          sign -> accept -> risk-check -> process -> finalize.
+Scenario: Bot races against permissionless window across three option types
 
 Setup:
-  generalBalance           = 10,000e6 USDC
-  lockedGeneralBalance     =  2,000e6 USDC  (from other pending withdrawals)
-  affiliateBalances[0xAff] =  3,000e6 USDC
-  lockedAffiliateBalances  =      0e6 USDC
-  nonces(0xUser)           = 3
-  affiliateConfigs(0xAff)  = { feeRate: 50 bps, operatorFee: 1e6 }
-  sponsorBalances(0xAff)   = 0                (no sponsor -- user pays full fee)
-  securityWindow           = 20s
-  tolerancePeriod          = 60s
-  cooldownEndTime will be  = T+12h            (set by SYMMIO at acceptance)
+  securityWindow = 20s, tolerancePeriod = 60s
 
-----------------------------------------------------------------------
+--- Sub-scenario 1: INSTANT ---
 
-Step 1 -- Bot sees: User requests withdrawal options for 500 USDC
-  (T=0s, off-chain API call)
+Step 1 — Bot sees: WithdrawAccepted(user, reqId, INSTANT) at T=100
+  Bot reads on-chain: acceptedAt = 100, status = ACCEPTED
+  Bot checks: When can I (OPERATOR_ROLE) call processWithdraw?
+    - processableAt = acceptedAt + securityWindow = 100 + 20 = 120
+    - At T=119: too early (block.timestamp 119 < 120) -> would REVERT TooEarly
+  Decision: Schedule processWithdraw for T=120.
 
-  Bot reads on-chain:
-    nonces(0xUser) = 3
-    affiliateConfigs(0xAff).feeRate = 50, .operatorFee = 1e6
-    generalBalance - lockedGeneralBalance = 10,000 - 2,000 = 8,000e6 unlocked
-    affiliateBalances[0xAff] - lockedAffiliateBalances[0xAff] = 3,000 - 0 = 3,000e6 unlocked
-    sponsorBalances(0xAff) = 0
-    minValidatorSignatures(0xAff) = 0
+Step 2 — Bot decides at T=120: Call processWithdraw now.
+  Bot checks: Am I still within operator exclusivity?
+    - Anyone's processableAt = 100 + 20 + 60 = 180
+    - Current time 120 < 180 -> yes, only OPERATOR_ROLE can process right now
+  Decision: Execute processWithdraw(user, reqId, parts). Bot has 60s of
+            exclusivity (T=120 to T=180) before anyone else can call it.
 
-  Bot decides the parts split:
-    1 part, express-only: 500e6 to 0xReceiver, expressProvider=0xEP, virtualProvider=0x0
-    expressAmount = 500e6, creditAmount = 0
-    affiliateAmount = 200e6 (bot chooses to draw 200 from affiliate pool)
-    generalAmount = 500 - 200 = 300e6
+  What if bot fails to process by T=180?
+    Any address can call processWithdraw at T=180.
+    Bot should monitor for WithdrawProcessed event and cancel its own task
+    if someone else processes it first.
 
-  Bot checks: "Can I offer INSTANT?"
-    Unlocked general (8,000e6) >= generalAmount (300e6)?  YES
-    Unlocked affiliate (3,000e6) >= affiliateAmount (200e6)?  YES
-    INSTANT is feasible.
+--- Sub-scenario 2: STANDARD ---
 
-  Bot checks: "Can I offer IMMEDIATE?"
-    minValidatorSignatures(0xAff) = 0 -- NO (validators required for IMMEDIATE)
+Step 1 — Bot sees: WithdrawFinalized(user, reqId) at T=43200
+  Bot reads on-chain: status = FINALIZED, finalizedAt = 43200
+  Bot checks: When can I call processWithdraw?
+    - processableAt = finalizedAt = 43200 for OPERATOR_ROLE
+    - STANDARD has no additional securityWindow (12h cooldown was the safety window)
+  Decision: Call processWithdraw immediately — operator can process right now.
 
-  Bot computes fee:
-    feeBasis = expressAmount = 500e6
-    fee = 500e6 * 50 / 10000 = 2.5e6 (2.50 USDC)
-    operatorFee = 1e6 (1.00 USDC)
-    sponsorCoverage = 0 (no sponsor balance)
-    maxUserFee = 2.5e6 + 1e6 - 0 = 3.5e6
-    Check: fee + operatorFee (3.5e6) <= feeBasis (500e6)?  YES
+Step 2 — Bot checks: What is the permissionless deadline?
+    - Anyone's processableAt = finalizedAt + tolerancePeriod = 43200 + 60 = 43260
+    - At T=43259: user would REVERT TooEarly
+    - At T=43260: anyone can process
+  Decision: Execute processWithdraw now. If bot misses T=43260, any user can
+            step in and complete the withdrawal permissionlessly.
 
-  Bot computes partsHash = keccak256(abi.encode(parts))
+--- Sub-scenario 3: LOCKED INSTANT after cooldown ---
 
-  Bot signs EIP-712 WithdrawOption:
-    { user: 0xUser, nonce: 3, optionType: 1 (INSTANT), availableAt: 0,
-      affiliate: 0xAff, affiliateAmount: 200e6, fee: 2.5e6, operatorFee: 1e6,
-      maxUserFee: 3.5e6, partsHash: <hash>, deadline: now+3600 }
+Step 1 — Bot sees: block.timestamp approaching T=43200 (cooldownEndTime)
+  Bot reads on-chain: status = LOCKED, cooldownEndTime = 43200
+  Bot checks: isLockedAfterCooldown?
+    - At T=43199: now (43199) < cooldownEndTime (43200) -> no, still locked
+      processWithdraw would REVERT (not ACCEPTED and not isLockedAfterCooldown)
+    - At T=43200: now (43200) >= cooldownEndTime (43200) -> yes
+      processableAt = cooldownEndTime = 43200 for OPERATOR_ROLE
+  Decision: Schedule processWithdraw for T=43200.
 
-  Decision: Return signed INSTANT option to user.
-
-  What if unlocked general were only 100e6?
-    generalAmount (300e6) > 100e6 -- INSTANT not feasible.
-    Bot must fall back to STANDARD.
-
-----------------------------------------------------------------------
-
-Step 2 -- Bot sees: WithdrawAccepted(0xUser, 7, INSTANT)
-  (T=5s, on-chain event from ExpressProvider)
-
-  Bot reads on-chain:
-    withdrawInfos(0xUser, 7).status = ACCEPTED
-    withdrawInfos(0xUser, 7).acceptedAt = T=5s
-    withdrawInfos(0xUser, 7).cooldownEndTime = T+12h
-    lockedGeneralBalance is now 2,300e6 (+300 locked)
-    lockedAffiliateBalances[0xAff] is now 200e6 (+200 locked)
-
-  Bot checks: "When can I call processWithdraw?"
-    Earliest = acceptedAt + securityWindow = T+5s + 20s = T+25s
-
-  Decision: Schedule processWithdraw(0xUser, 7, parts) for T=25s.
-            Start risk check immediately (20s security window).
-
-  What if bot detects suspicious activity during risk check?
-    Bot calls lockWithdraw(0xUser, 7) using LOCKER_ROLE.
-    Status becomes LOCKED, processWithdraw is blocked.
-    Must wait for UNLOCK_ROLE to call unlockAndProcess, OR
-    wait until cooldownEndTime passes (then processWithdraw allowed).
-
-----------------------------------------------------------------------
-
-Step 3 -- Bot sees: securityWindow elapsed, time to process
-  (T=25s, bot's scheduled action fires)
-
-  Bot reads on-chain:
-    withdrawInfos(0xUser, 7).status = ACCEPTED  (still -- not locked or cancelled)
-    block.timestamp (T=25s) >= acceptedAt + securityWindow (T=25s)?  YES
-
-  Bot checks: "Is the risk check clean?"
-    Risk check result = CLEAN
-
-  Decision: Call processWithdraw(0xUser, 7, parts) with OPERATOR_ROLE.
-
-  On-chain effect:
-    _collectAndTransfer runs:
-      totalFee = 2.5e6 + 1e6 = 3.5e6
-      sponsorCoverage = 0
-      userFee = 3.5e6
-      collectedFees[0xAff] += 2.5e6
-      collectedOperatorFees[0xAff] += 1e6
-      Part 0 (express-only, 500e6): deduction = min(3.5e6, 500e6) = 3.5e6
-        Transfer 500 - 3.5 = 496.5e6 USDC to 0xReceiver
-    Pool balance updates:
-      lockedGeneralBalance -= 300e6   (back to 2,000e6)
-      lockedAffiliateBalances[0xAff] -= 200e6 (back to 0)
-      generalBalance -= 300e6         (now 9,700e6)
-      affiliateBalances[0xAff] -= 200e6 (now 2,800e6)
-    Status = PROCESSED
-    Emits WithdrawProcessed(0xUser, 7)
-
-  Bot sees: WithdrawProcessed(0xUser, 7)
-  Decision: Schedule finalizeWithdrawRequest at cooldownEndTime (T+12h).
-
-  What if status were LOCKED when the schedule fires?
-    processWithdraw would revert (NotAccepted).
-    Bot cancels the scheduled action, waits for resolution.
-
-  What if someone else already called processWithdraw (permissionless)?
-    Bot sees WithdrawProcessed event for a request it didn't process.
-    Bot cancels its own scheduled processWithdraw.
-    Bot still schedules finalizeWithdrawRequest at cooldownEndTime.
-
-----------------------------------------------------------------------
-
-Step 4 -- Bot sees: cooldownEndTime reached
-  (T=12h, bot's scheduled action fires)
-
-  Bot reads on-chain:
-    withdrawInfos(0xUser, 7).status = PROCESSED
-    block.timestamp >= cooldownEndTime?  YES
-
-  Decision: Call SYMMIO.finalizeWithdrawRequest(0xUser, 7).
-
-  On-chain effect (SYMMIO side):
-    SYMMIO transfers 500e6 USDC (expressAmount) to ExpressProvider.
-    SYMMIO calls onWithdrawComplete on ExpressProvider:
-      status == PROCESSED -- replenish pools:
-        generalBalance += 300e6    (back to 10,000e6)
-        affiliateBalances[0xAff] += 200e6 (back to 3,000e6)
-      Status = FINALIZED
-      Emits WithdrawFinalized(0xUser, 7)
-
-  Bot sees: WithdrawFinalized(0xUser, 7)
-  Decision: Cycle complete. Remove from active tracking. Update liquidity cache.
-
-  What if SYMMIO suspended the withdrawal before T=12h?
-    Status was already PROCESSED -- suspend is impossible.
-    (onWithdrawSuspend reverts if status != ACCEPTED and != LOCKED.)
-    No action needed. The cycle completes normally.
+Step 2 — Bot checks: When does exclusivity end?
+    - Anyone's processableAt = cooldownEndTime + tolerancePeriod = 43200 + 60 = 43260
+  Decision: Execute at T=43200. Bot has 60s before permissionless fallback
+            opens at T=43260. If another party processes first, bot detects
+            WithdrawProcessed event and cancels its task.
 ```
 
 ---
 
-## 4. Options API: Constructing & Signing
+## 7. Event Monitoring
 
-### 4.1 Available Options Decision Tree
-
-```mermaid
-flowchart LR
-    subgraph "For each user withdrawal request"
-        A{Validators enabled\n& liquidity OK?} -->|Yes| IM[IMMEDIATE]
-        B{Unlocked liquidity\n>= amount?} -->|Yes| IN[INSTANT]
-        D[Always] --> ST[STANDARD]
-    end
-```
-
-### 4.2 Parts Construction
-
-Each `WithdrawReceiverPart`:
-
-| Field | Express part | Non-express |
-|-------|-------------|-------------|
-| `expressProvider` | ExpressProvider address | `address(0)` |
-| `virtualProvider` | `address(0)` (DEPRECATED, must be zero) | varies |
-| `amount` | collateral decimals | collateral decimals |
-| `receiver` | user's receiver address | user's receiver address |
-
-**Amount classification:**
-- `expressAmount` = sum of parts where `expressProvider == address(this)`
-- `generalAmount = expressAmount - affiliateAmount - creditAmount`
-- `feeBasis = expressAmount`
-
-Note: `virtualProvider` must always be `address(0)`. Any non-zero value reverts `VirtualProviderDeprecated`.
-
-```mermaid
-flowchart TD
-    P[Parts Array] --> C1{expressProvider == this?}
-    C1 -->|No| SKIP[Skipped by ExpressProvider]
-    C1 -->|Yes| EO[Adds to expressAmount]
-
-    EO --> GA["generalAmount = expressAmount - affiliateAmount - creditAmount"]
-    EO --> FB["feeBasis = expressAmount"]
-```
-
-### 4.3 providerData Encoding
-
-```
-providerData = abi.encode(optionData, validatorData, creditDataRaw)
-  where:
-    optionData = abi.encode(DecodedOption struct — includes creditAmount field)
-    validatorData = abi.encode(bytes[] signatures, uint256[] timestamps, uint256 symmioNonce)
-    creditDataRaw = abi.encode(CreditData) if creditAmount > 0, else empty bytes
-```
-
-If no validators needed, `validatorData = abi.encode(new bytes[](0), new uint256[](0), uint256(0))`.
-If no credit used, `creditDataRaw` is empty bytes (`""`).
-
-#### Numeric Example: Parts Construction for Credit-Backed Withdrawal
-
-```
-Scenario: User wants to withdraw 1,500 USDC, sent to two different receivers.
-          Bot must decide how to split across pools and credit line,
-          construct the parts array, and compute all derived amounts.
-
-Setup:
-  generalBalance           = 5,000e6 USDC
-  lockedGeneralBalance     = 4,600e6 USDC   (heavy utilization)
-  affiliateBalances[0xAff] = 1,000e6 USDC
-  lockedAffiliateBalances  =     0e6 USDC
-  creditLineManagers[0xAff]= 0xCLM           (affiliate's credit line manager)
-  CLM.totalDebt()          = 200e6 USDC      (existing debt)
-  CLM.protocolMaxDebt      = 5,000e6         (plenty of headroom)
-  affiliateConfigs(0xAff)  = { feeRate: 100 bps, operatorFee: 2e6 }
-  sponsorBalances(0xAff)   = 10e6 USDC
-  sponsorConfigs(0xAff)    = { maxFeePerWithdraw: 0, maxWithdrawAmount: 0 } (no caps)
-
-----------------------------------------------------------------------
-
-Step 1 -- Bot sees: User requests options for 1,500 USDC withdrawal
-  Receivers: 1,000 USDC to 0xReceiverA, 500 USDC to 0xReceiverB
-
-  Bot reads on-chain:
-    Unlocked general = generalBalance - lockedGeneralBalance = 5,000 - 4,600 = 400e6
-    Unlocked affiliate = affiliateBalances[0xAff] - lockedAffiliateBalances[0xAff] = 1,000 - 0 = 1,000e6
-
-  Bot checks: "Can I cover 1,500 USDC from pools alone?"
-    Total unlocked = 400 (general) + 1,000 (affiliate) = 1,400e6
-    1,400 < 1,500 -- NO, not enough from pools alone.
-
-  Bot checks: "Can I cover the gap using the credit line?"
-    Shortfall = 1,500 - 1,400 = 100e6 minimum from credit
-    CLM headroom = protocolMaxDebt - totalDebt = 5,000 - 200 = 4,800e6
-    100 <= 4,800 -- YES, credit line has headroom.
-    Bot also obtains Muon attestation for the affiliate's aggregate eligibleBase.
-
-  Decision: Use pools + credit line. creditAmount = 100e6 to cover the gap.
-
-----------------------------------------------------------------------
-
-Step 2 -- Bot decides: How to split into parts and funding sources
-
-  Strategy: Maximize affiliate pool usage, use credit for the shortfall.
-
-  affiliateAmount = 1,000e6 (use full unlocked affiliate pool)
-  creditAmount    = 100e6   (cover the shortfall via credit line)
-  generalAmount   = expressAmount - affiliateAmount - creditAmount
-                  = 1,500 - 1,000 - 100 = 400e6
-  Unlocked general (400e6) >= generalAmount (400e6)?  YES, exactly enough.
-
-  Bot checks: affiliateAmount + creditAmount <= expressAmount?
-    1,000 + 100 = 1,100 <= 1,500?  YES (else reverts FundingSplitExceedsExpress)
-
-  Final parts array (all virtualProvider = address(0)):
-  [
-    { id: 0, amount: 1000e6, receiver: 0xReceiverA,
-      expressProvider: 0xEP, virtualProvider: 0x0 },
-    { id: 1, amount: 500e6, receiver: 0xReceiverB,
-      expressProvider: 0xEP, virtualProvider: 0x0 },
-  ]
-
-----------------------------------------------------------------------
-
-Step 3 -- Bot computes: Fee computation
-
-  From the parts array, computeAmounts will derive:
-    expressAmount   = 1,000 + 500 = 1,500e6
-    generalAmount   = 1,500 - 1,000 - 100 = 400e6
-
-  feeBasis = expressAmount = 1,500e6
-  fee = 1,500e6 * 100 / 10000 = 15e6 (15 USDC, at 1% rate)
-  operatorFee = 2e6 (2 USDC)
-  totalFee = 15 + 2 = 17e6
-
-  Bot checks: fee + operatorFee (17e6) <= feeBasis (1,500e6)?  YES
-
-  Bot computes sponsor coverage:
-    sponsorBalances(0xAff) = 10e6
-    sponsorConfigs: maxFeePerWithdraw = 0 (no cap), maxWithdrawAmount = 0 (no cap)
-    maxCoverage = min(totalFee, no-cap) = 17e6
-    sponsorCoverage = min(sponsorBal=10e6, maxCoverage=17e6) = 10e6
-    maxUserFee = 17 - 10 = 7e6  (user pays 7 USDC out of 17 total)
-
-  partsHash = keccak256(abi.encode(parts))  -- bot MUST store this
-
-  Decision: Sign the option (including creditAmount=100e6) and return to user.
-
-----------------------------------------------------------------------
-
-Step 4 -- What happens on-chain at acceptance (for reference)
-
-  onWithdrawRequest will:
-    1. Verify EIP-712 signature and nonce (includes creditAmount in struct hash)
-    2. Call computeAmounts -> expressAmount=1500, generalAmount=400
-    3. Verify fee = (1500e6 * 100) / 10000 = 15e6  (matches signed fee)
-    4. Verify operatorFee = 2e6  (matches on-chain config)
-    5. Lock general pool: lockedGeneralBalance += 400e6  (now 5,000e6)
-    6. Lock affiliate pool: lockedAffiliateBalances[0xAff] += 1,000e6
-    7. Reserve credit: CLM.reserveDebt(user, reqId, 100e6, creditData)
-       CLM.reservedDebt += 100e6
-    8. Lock sponsor coverage: sponsorBalances[0xAff] -= 10e6 (now 0)
-    9. Store WithdrawInfo with partsHash, creditAmount=100, creditLineManager=0xCLM
-   10. Status = ACCEPTED
-
-  At processWithdraw:
-    1. Activate credit: CLM.activateDebt -> reservedDebt -= 100, activeDebt += 100
-    2. Advance from core: SYMMIO.advanceWithdraw(user, reqId, 100e6)
-    3. Fee deduction cascades across parts in order:
-       userFee = 17 - 10 (sponsor) = 7e6 remaining
-       Part 0 (1,000e6): deduction = min(7e6, 1,000e6) = 7e6
-         Transfer 1,000 - 7 = 993e6 USDC to 0xReceiverA
-         feeRemaining = 0
-       Part 1 (500e6): deduction = 0
-         Transfer 500e6 USDC to 0xReceiverB
-
-  Net result:
-    0xReceiverA gets 993 USDC
-    0xReceiverB gets 500 USDC
-    collectedFees[0xAff] += 15e6
-    collectedOperatorFees[0xAff] += 2e6
-    User deposited 1,500, got back 1,500 - 7 = 1,493.
-    Credit line: 100 USDC active debt, settled on finalization.
-```
-
----
-
-## 5. Event Monitoring & Reactions
-
-### 5.1 Event Handling Flow
+### 7.1 Event Handling Flow
 
 ```mermaid
 flowchart TD
@@ -1310,7 +1660,7 @@ flowchart TD
     I1 --> I2[Check if pending\nsigs sufficient]
 ```
 
-### 5.2 Events to Monitor
+### 7.2 Events to Monitor
 
 | Event | Source | Bot Action |
 |-------|--------|------------|
@@ -1333,7 +1683,7 @@ flowchart TD
 | `SponsorDeposit(affiliate, amount)` | ExpressProvider | Update sponsor balance tracking |
 | `SponsorWithdraw(affiliate, amount)` | ExpressProvider | Update sponsor balance tracking |
 
-### 5.3 Idempotency Requirements
+### 7.3 Idempotency Requirements
 
 - [ ] Handle duplicate events (same event emitted in re-org scenarios)
 - [ ] Do not schedule duplicate `processWithdraw` calls for same (user, requestId)
@@ -1404,9 +1754,9 @@ Step 4 — Bot sees: cooldownEndTime reached at T=43,200s (~block 43400)
 
 ---
 
-## 6. Fee Computation & Validation
+## 8. Fee System
 
-### 6.1 Fee Calculation Flow
+### 8.1 Fee Calculation Flow
 
 ```mermaid
 flowchart TD
@@ -1428,7 +1778,7 @@ flowchart TD
     K -->|Yes| L[Fee accepted ✓]
 ```
 
-### 6.2 Fee Deduction Order (in `transferToReceivers`)
+### 8.2 Fee Deduction Order (in `transferToReceivers`)
 
 ```mermaid
 flowchart TD
@@ -1442,6 +1792,12 @@ flowchart TD
     I -->|No| B
     B -->|No more parts| K[Done]
 ```
+
+### 8.3 Bot Must Read Before Signing
+
+- [ ] `affiliateConfigs(affiliate).feeRate` -- current fee rate
+- [ ] `affiliateConfigs(affiliate).operatorFee` -- current operator fee
+- [ ] If these change between signing and execution, the tx reverts
 
 #### Numeric Example: Fee Cascading Across 3 Parts
 
@@ -1516,17 +1872,7 @@ Step 2 — Bot pre-computes: how will 15 USDC fee cascade across parts?
     Bot's signed option becomes invalid — must re-sign with current rate
 ```
 
-### 6.3 Bot Must Read Before Signing
-
-- [ ] `affiliateConfigs(affiliate).feeRate` -- current fee rate
-- [ ] `affiliateConfigs(affiliate).operatorFee` -- current operator fee
-- [ ] If these change between signing and execution, the tx reverts
-
----
-
-## 7. Sponsor System
-
-### 7.1 Sponsor Coverage Flow
+### 8.4 Sponsor Coverage Flow
 
 ```mermaid
 flowchart TD
@@ -1545,7 +1891,7 @@ flowchart TD
     I -->|Yes| OK["Coverage locked ✓"]
 ```
 
-### 7.2 Sponsor Scenarios
+### 8.5 Sponsor Scenarios
 
 | Scenario | Bot Must Handle |
 |----------|----------------|
@@ -1560,7 +1906,7 @@ flowchart TD
 | Both caps active | Both checked independently |
 | Zero caps | 0 means "no limit" for both settings |
 
-### 7.3 Bot Checklist for Sponsors
+### 8.6 Bot Checklist for Sponsors
 
 - [ ] Read `sponsorBalances(affiliate)` at signing time
 - [ ] Read `sponsorConfigs(affiliate)` for caps
@@ -1754,9 +2100,9 @@ Correct strategy:
 
 ---
 
-## 8. Validator System
+## 9. Validator System
 
-### 8.1 Validator Attestation Flow
+### 9.1 Validator Attestation Flow
 
 ```mermaid
 sequenceDiagram
@@ -1787,7 +2133,7 @@ sequenceDiagram
     Note over EP: For each sig: check freshness, isValidator, no duplicates
 ```
 
-### 8.2 When Validators Are Required
+### 9.2 When Validators Are Required
 
 | Condition | Validators Checked? |
 |-----------|-------------------|
@@ -1795,7 +2141,7 @@ sequenceDiagram
 | `minValidatorSignatures(affiliate) == 0` | No |
 | IMMEDIATE option type | ALWAYS required (reverts `ValidatorsRequiredForImmediate` if disabled) |
 
-### 8.3 ValidatorApproval EIP-712 Structure
+### 9.3 ValidatorApproval EIP-712 Structure
 
 ```
 ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp, uint256 symmioNonce)
@@ -1807,7 +2153,7 @@ ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp
 - `timestamp` -- when the validator signed (must be <= `block.timestamp`)
 - `symmioNonce` -- user's current nonce on SYMMIO (`getUserNonce(user)`)
 
-### 8.4 Validation Rules
+### 9.4 Validation Rules
 
 - [ ] `signatures.length == timestamps.length` (else `ArrayLengthMismatch`)
 - [ ] `signatures.length >= minValidatorSignatures(affiliate)` (else `InsufficientValidatorSignatures`; falls back to `minValidatorSignatures(address(0))` default)
@@ -1819,7 +2165,7 @@ ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp
   - [ ] Signers are sorted ascending by address (else `DuplicateValidator`)
   - [ ] No duplicate signers
 
-### 8.5 Bot Checklist for Validators
+### 9.5 Bot Checklist for Validators
 
 - [ ] Gather >= `minValidatorSignatures(affiliate)` from distinct registered validators for this affiliate (or `address(0)` default)
 - [ ] Sort signatures by signer address (ascending) before encoding
@@ -1830,7 +2176,7 @@ ValidatorApproval(address user, uint256 nonce, uint256 amount, uint256 timestamp
 - [ ] If admin reduces `validatorApprovalTimeout(affiliate)`: previously valid sigs may expire
 - [ ] Monitor `ValidatorUpdated` events: disabled validators' pending sigs become invalid
 
-### 8.6 Edge Cases
+### 9.6 Edge Cases
 
 | Edge Case | Result |
 |-----------|--------|
@@ -1919,163 +2265,9 @@ Step 4 — Bot considers: what if Alice acted on SYMMIO between T=102 and submis
 
 ---
 
-## 10. Multi-Part Withdrawals
+## 10. Credit Line System
 
-### 10.1 Part Classification
-
-```mermaid
-flowchart TD
-    A[WithdrawReceiverPart] --> B{"expressProvider\n== address(this)?"}
-    B -->|No| C[Non-express\nSkipped entirely]
-    B -->|Yes| D["Express\nAdds to expressAmount\nFunds from EP pools"]
-```
-
-| Part Type | Condition | Contributes to |
-|-----------|-----------|---------------|
-| Express | `expressProvider == this` (virtualProvider must be `address(0)`) | `expressAmount` |
-| Non-express | `expressProvider != this` | Skipped entirely |
-
-### 10.2 Multi-Part Fee Cascading
-
-```mermaid
-flowchart LR
-    subgraph "Fee = 150 cascading across 3 parts"
-        P1["Part 1: 100\nDeduction: 100\nReceiver gets: 0"] --> P2["Part 2: 400\nDeduction: 50\nReceiver gets: 350"]
-        P2 --> P3["Part 3: 500\nDeduction: 0\nReceiver gets: 500"]
-    end
-    FEE["feeRemaining"] -.->|"150 → 50"| P1
-    FEE -.->|"50 → 0"| P2
-    FEE -.->|"0"| P3
-```
-
-### 10.3 Credit Line in Multi-Part Withdrawals
-
-When a withdrawal uses credit (creditAmount > 0), the credit line applies to the total withdrawal, not per-part:
-- At acceptance: `reserveDebt(creditAmount)` reserves the total credit across all parts
-- At processing: `activateDebt(creditAmount)` activates the debt when funds are transferred
-- At finalization: `settleDebt(creditAmount)` settles when SYMMIO reimburses
-- On cancel/suspend: `cancelReservation(creditAmount)` releases the reserved credit
-
-### 10.4 partsHash Integrity
-
-- [ ] `partsHash = keccak256(abi.encode(parts))` stored at acceptance
-- [ ] `processWithdraw` and `unlockAndProcess` verify provided parts match
-- [ ] ANY difference (amounts, receivers, order, count) causes `PartsMismatch` revert
-- [ ] Bot MUST store and replay the exact same parts array
-
-#### Numeric Example: 3-Part Express Withdrawal with Credit
-
-```
-Scenario: Bot handles a multi-part INSTANT withdrawal with credit line
-
-Setup:
-  generalBalance = 5,000 USDC,   lockedGeneralBalance = 4,500 USDC (500 unlocked)
-  affiliateBalances[0xAffiliate] = 200 USDC, lockedAffiliateBalances[0xAffiliate] = 0
-  creditLine.available() = 1,000 USDC
-  affiliateConfigs[0xAffiliate] = { feeRate: 100 (1%), operatorFee: 2e6 }
-  sponsorBalances[0xAffiliate] = 0 (no sponsor)
-
-Step 1 -- Bot sees: 0xAlice requests withdrawal of 1,300 USDC total, split into 3 parts:
-  Part 0: { amount: 300, expressProvider: EP, virtualProvider: 0x0, receiver: 0xA }
-  Part 1: { amount: 600, expressProvider: EP, virtualProvider: 0x0, receiver: 0xA }
-  Part 2: { amount: 400, expressProvider: EP, virtualProvider: 0x0, receiver: 0xB }
-
-Step 2 -- Bot classifies parts and computes amounts:
-  Bot reads each part's expressProvider:
-    Part 0: expressProvider == EP -> express
-    Part 1: expressProvider == EP -> express
-    Part 2: expressProvider == EP -> express
-  Bot computes:
-    expressAmount = 300 + 600 + 400 = 1,300 (sum of all express parts)
-
-Step 3 -- Bot decides the affiliate/general/credit split:
-  Bot checks: affiliateBalances[0xAffiliate] - lockedAffiliateBalances[0xAffiliate]
-              = 200 - 0 = 200 unlocked affiliate USDC
-  Bot checks: generalBalance - lockedGeneralBalance = 500 unlocked general USDC
-  Bot checks: creditLine.available() = 1,000 USDC
-  Bot decides: allocate affiliateAmount = 200, generalAmount = 500, creditAmount = 600
-    -> expressAmount = affiliateAmount + generalAmount + creditAmount = 200 + 500 + 600 = 1,300
-  Bot checks: 500 <= 500 (unlocked general) -> OK
-              200 <= 200 (unlocked affiliate) -> OK
-              600 <= 1,000 (available credit) -> OK
-
-Step 4 -- Bot computes fees:
-  Bot reads on-chain: affiliateConfigs[0xAffiliate].feeRate = 100 (1%)
-  Bot reads on-chain: affiliateConfigs[0xAffiliate].operatorFee = 2e6
-  Bot computes:
-    feeBasis = expressAmount = 1,300
-    fee = 1,300 * 100 / 10,000 = 13 USDC
-    operatorFee = 2 USDC
-    totalFee = 13 + 2 = 15 USDC
-  Bot checks: sponsorBalances[0xAffiliate] = 0 -> no sponsor coverage
-    sponsorCoverage = 0, userFee = 15, maxUserFee = 15
-  Bot checks: totalFee (15) <= feeBasis (1,300) -> OK (fees do not exceed amount)
-  Decision: Sign INSTANT option with these fee values.
-
-Step 5 -- Bot checks credit line capacity before signing:
-  Bot reads on-chain:
-    creditLine.available() = 1,000 >= 600 (creditAmount) -> OK
-  Decision: Credit line has sufficient capacity. Sign and offer.
-  At acceptance: reserveDebt(600) reserves 600 USDC on the credit line.
-    Decision: Reject the request or offer a smaller amount.
-
-Step 6 -- Bot observes: WithdrawAccepted(0xAlice, 99, INSTANT) event
-  Bot reads on-chain (what the contract did during acceptance):
-    lockedGeneralBalance: 4,500 -> 5,000 (+500 generalAmount)
-    lockedAffiliateBalances[0xAffiliate]: 0 -> 200 (+200 affiliateAmount)
-    CLM.reserveDebt(0xAlice, 99, 600, creditData): reservedDebt += 600
-    partsHash stored for integrity check
-  Bot checks: withdrawInfos[0xAlice][99].status == ACCEPTED
-  Bot stores: the exact parts array (needed for processWithdraw)
-  Decision: Schedule processWithdraw after securityWindow (20s).
-
-Step 7 -- Bot processes after security window:
-  Bot checks: block.timestamp >= acceptedAt + 20s (securityWindow)
-  Bot checks: status still ACCEPTED (not LOCKED, not CANCELLED)
-  Decision: Call processWithdraw(0xAlice, 99, parts).
-
-  Contract executes fee cascading through transferToReceivers:
-    feeRemaining = 15 (userFee)
-
-    Part 0 (300, express-only, receiver 0xA):
-      deduction = min(15, 300) = 15
-      feeRemaining = 15 - 15 = 0
-      EP transfers 300 - 15 = 285 USDC to 0xA
-
-    Part 1 (600, VP1, receiver 0xA):
-      deduction = min(0, 600) = 0 (fee already exhausted)
-      VP1.releaseToUser(0xAlice, 99, 0xA, 600)
-      -> VP1._lockedBalance: 600 -> 0, 600 USDC transferred to 0xA
-
-    Part 2 (400, VP2, receiver 0xB):
-      deduction = 0
-      VP2.releaseToUser(0xAlice, 99, 0xB, 400)
-      -> VP2._lockedBalance: 400 -> 0, 400 USDC transferred to 0xB
-
-  Pool balance updates:
-    lockedGeneralBalance -= 200, lockedAffiliateBalances[0xAffiliate] -= 100
-    generalBalance -= 200, affiliateBalances[0xAffiliate] -= 100
-    collectedFees[0xAffiliate] += 13, collectedOperatorFees[0xAffiliate] += 2
-
-  Results:
-    0xA receives: 285 (from EP) + 600 (from VP1) = 885 USDC
-    0xB receives: 400 USDC (from VP2)
-    Total disbursed: 1,285 out of 1,300 (15 USDC fee retained)
-    Status -> PROCESSED
-
-  What if the user had cancelled before processWithdraw?
-    Contract calls _releaseWithdraw:
-      lockedGeneralBalance -= 200, lockedAffiliateBalances -= 100
-      VP1.unlock(0xAlice, 99): VP1._balance restored 200 -> 800
-      VP2.unlock(0xAlice, 99): VP2._balance restored 200 -> 600
-      All locks released, no funds transferred, Status -> CANCELLED
-```
-
----
-
-## 11. Credit Line Integration
-
-### 11.1 VirtualProvider is DEPRECATED
+### 10.1 VirtualProvider is DEPRECATED
 
 The `virtualProvider` field in `WithdrawReceiverPart` **must be `address(0)`**. Any part with a non-zero `virtualProvider` causes the contract to revert with `VirtualProviderDeprecated`. The Credit Line system fully replaces VirtualProvider for fast withdrawals.
 
@@ -2088,7 +2280,7 @@ if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderDepr
 - [ ] **Remove all VirtualProvider monitoring** from the bot (balance polling, lock tracking, etc.)
 - [ ] **Do not deploy new VirtualProvider contracts** -- existing ones are inert
 
-### 11.2 Credit Debt Lifecycle
+### 10.2 Credit Debt Lifecycle
 
 Each credit-backed withdrawal tracks a debt through four possible states.
 
@@ -2126,7 +2318,7 @@ cancelReservation:   reservedDebt -= amount, delete requestDebt[key]  (cancel/su
 
 **Credit is NOT supported for STANDARD withdrawals.** The contract reverts `CreditNotSupportedForStandard` if `opt.creditAmount > 0` and `opt.optionType == STANDARD`.
 
-### 11.3 Bot Monitoring for Credit Lines
+### 10.3 Bot Monitoring for Credit Lines
 
 Each affiliate has its own `CreditLineManager` (a UUPS proxy). The bot must track one CLM per active affiliate.
 
@@ -2148,7 +2340,7 @@ Each affiliate has its own `CreditLineManager` (a UUPS proxy). The bot must trac
 - [ ] **Alert on approaching caps** -- when `totalDebt()` exceeds 80% of `effectiveMaxDebt`, alert the affiliate operator
 - [ ] **Verify CLM is set** -- `s.creditLineManagers[affiliate]` must not be `address(0)`. If unset, the contract reverts `CreditLineManagerNotSet` and credit cannot be used for that affiliate.
 
-### 11.4 How Credit Lines Work
+### 10.4 How Credit Lines Work
 
 Credit lines let the ExpressProvider front more capital than it holds in its general and affiliate pools. The shortfall is covered by a "credit advance" from SYMMIO core via `advanceWithdraw`, backed by the affiliate's pool as implicit collateral.
 
@@ -2188,7 +2380,7 @@ The Muon oracle computes `eligibleBase` off-chain as `freeEligible + haircutted(
 
 **Credit loss on post-payout rollback:** If a withdrawal is force-cancelled or suspended after processing (Status = PROCESSED), the credit amount has already been advanced and paid to the user. `LibCreditLine.coverLoss` deducts `creditAmount` from `s.affiliateBalances[affiliate]` (the affiliate pool absorbs the loss) and calls `settleDebt` to clear the record.
 
-### 11.5 Bot Decision Logic for Credit
+### 10.5 Bot Decision Logic for Credit
 
 ```
 On withdrawal request with creditAmount > 0:
@@ -2344,7 +2536,161 @@ Step 4c -- Post-payout rollback (force-cancel after PROCESSED, rare):
 
 ---
 
-## 12. Risk Lock / Unlock Flows
+## 11. Multi-Part Withdrawals
+
+### 11.1 Part Classification
+
+```mermaid
+flowchart TD
+    A[WithdrawReceiverPart] --> B{"expressProvider\n== address(this)?"}
+    B -->|No| C[Non-express\nSkipped entirely]
+    B -->|Yes| D["Express\nAdds to expressAmount\nFunds from EP pools"]
+```
+
+| Part Type | Condition | Contributes to |
+|-----------|-----------|---------------|
+| Express | `expressProvider == this` (virtualProvider must be `address(0)`) | `expressAmount` |
+| Non-express | `expressProvider != this` | Skipped entirely |
+
+### 11.2 Multi-Part Fee Cascading
+
+```mermaid
+flowchart LR
+    subgraph "Fee = 150 cascading across 3 parts"
+        P1["Part 1: 100\nDeduction: 100\nReceiver gets: 0"] --> P2["Part 2: 400\nDeduction: 50\nReceiver gets: 350"]
+        P2 --> P3["Part 3: 500\nDeduction: 0\nReceiver gets: 500"]
+    end
+    FEE["feeRemaining"] -.->|"150 → 50"| P1
+    FEE -.->|"50 → 0"| P2
+    FEE -.->|"0"| P3
+```
+
+### 11.3 Credit Line in Multi-Part Withdrawals
+
+When a withdrawal uses credit (creditAmount > 0), the credit line applies to the total withdrawal, not per-part:
+- At acceptance: `reserveDebt(creditAmount)` reserves the total credit across all parts
+- At processing: `activateDebt(creditAmount)` activates the debt when funds are transferred
+- At finalization: `settleDebt(creditAmount)` settles when SYMMIO reimburses
+- On cancel/suspend: `cancelReservation(creditAmount)` releases the reserved credit
+
+### 11.4 partsHash Integrity
+
+- [ ] `partsHash = keccak256(abi.encode(parts))` stored at acceptance
+- [ ] `processWithdraw` and `unlockAndProcess` verify provided parts match
+- [ ] ANY difference (amounts, receivers, order, count) causes `PartsMismatch` revert
+- [ ] Bot MUST store and replay the exact same parts array
+
+#### Numeric Example: 3-Part Express Withdrawal with Credit
+
+```
+Scenario: Bot handles a multi-part INSTANT withdrawal with credit line
+
+Setup:
+  generalBalance = 5,000 USDC,   lockedGeneralBalance = 4,500 USDC (500 unlocked)
+  affiliateBalances[0xAffiliate] = 200 USDC, lockedAffiliateBalances[0xAffiliate] = 0
+  creditLine.available() = 1,000 USDC
+  affiliateConfigs[0xAffiliate] = { feeRate: 100 (1%), operatorFee: 2e6 }
+  sponsorBalances[0xAffiliate] = 0 (no sponsor)
+
+Step 1 -- Bot sees: 0xAlice requests withdrawal of 1,300 USDC total, split into 3 parts:
+  Part 0: { amount: 300, expressProvider: EP, virtualProvider: 0x0, receiver: 0xA }
+  Part 1: { amount: 600, expressProvider: EP, virtualProvider: 0x0, receiver: 0xA }
+  Part 2: { amount: 400, expressProvider: EP, virtualProvider: 0x0, receiver: 0xB }
+
+Step 2 -- Bot classifies parts and computes amounts:
+  Bot reads each part's expressProvider:
+    Part 0: expressProvider == EP -> express
+    Part 1: expressProvider == EP -> express
+    Part 2: expressProvider == EP -> express
+  Bot computes:
+    expressAmount = 300 + 600 + 400 = 1,300 (sum of all express parts)
+
+Step 3 -- Bot decides the affiliate/general/credit split:
+  Bot checks: affiliateBalances[0xAffiliate] - lockedAffiliateBalances[0xAffiliate]
+              = 200 - 0 = 200 unlocked affiliate USDC
+  Bot checks: generalBalance - lockedGeneralBalance = 500 unlocked general USDC
+  Bot checks: creditLine.available() = 1,000 USDC
+  Bot decides: allocate affiliateAmount = 200, generalAmount = 500, creditAmount = 600
+    -> expressAmount = affiliateAmount + generalAmount + creditAmount = 200 + 500 + 600 = 1,300
+  Bot checks: 500 <= 500 (unlocked general) -> OK
+              200 <= 200 (unlocked affiliate) -> OK
+              600 <= 1,000 (available credit) -> OK
+
+Step 4 -- Bot computes fees:
+  Bot reads on-chain: affiliateConfigs[0xAffiliate].feeRate = 100 (1%)
+  Bot reads on-chain: affiliateConfigs[0xAffiliate].operatorFee = 2e6
+  Bot computes:
+    feeBasis = expressAmount = 1,300
+    fee = 1,300 * 100 / 10,000 = 13 USDC
+    operatorFee = 2 USDC
+    totalFee = 13 + 2 = 15 USDC
+  Bot checks: sponsorBalances[0xAffiliate] = 0 -> no sponsor coverage
+    sponsorCoverage = 0, userFee = 15, maxUserFee = 15
+  Bot checks: totalFee (15) <= feeBasis (1,300) -> OK (fees do not exceed amount)
+  Decision: Sign INSTANT option with these fee values.
+
+Step 5 -- Bot checks credit line capacity before signing:
+  Bot reads on-chain:
+    creditLine.available() = 1,000 >= 600 (creditAmount) -> OK
+  Decision: Credit line has sufficient capacity. Sign and offer.
+  At acceptance: reserveDebt(600) reserves 600 USDC on the credit line.
+    Decision: Reject the request or offer a smaller amount.
+
+Step 6 -- Bot observes: WithdrawAccepted(0xAlice, 99, INSTANT) event
+  Bot reads on-chain (what the contract did during acceptance):
+    lockedGeneralBalance: 4,500 -> 5,000 (+500 generalAmount)
+    lockedAffiliateBalances[0xAffiliate]: 0 -> 200 (+200 affiliateAmount)
+    CLM.reserveDebt(0xAlice, 99, 600, creditData): reservedDebt += 600
+    partsHash stored for integrity check
+  Bot checks: withdrawInfos[0xAlice][99].status == ACCEPTED
+  Bot stores: the exact parts array (needed for processWithdraw)
+  Decision: Schedule processWithdraw after securityWindow (20s).
+
+Step 7 -- Bot processes after security window:
+  Bot checks: block.timestamp >= acceptedAt + 20s (securityWindow)
+  Bot checks: status still ACCEPTED (not LOCKED, not CANCELLED)
+  Decision: Call processWithdraw(0xAlice, 99, parts).
+
+  Contract executes fee cascading through transferToReceivers:
+    feeRemaining = 15 (userFee)
+
+    Part 0 (300, express-only, receiver 0xA):
+      deduction = min(15, 300) = 15
+      feeRemaining = 15 - 15 = 0
+      EP transfers 300 - 15 = 285 USDC to 0xA
+
+    Part 1 (600, VP1, receiver 0xA):
+      deduction = min(0, 600) = 0 (fee already exhausted)
+      VP1.releaseToUser(0xAlice, 99, 0xA, 600)
+      -> VP1._lockedBalance: 600 -> 0, 600 USDC transferred to 0xA
+
+    Part 2 (400, VP2, receiver 0xB):
+      deduction = 0
+      VP2.releaseToUser(0xAlice, 99, 0xB, 400)
+      -> VP2._lockedBalance: 400 -> 0, 400 USDC transferred to 0xB
+
+  Pool balance updates:
+    lockedGeneralBalance -= 200, lockedAffiliateBalances[0xAffiliate] -= 100
+    generalBalance -= 200, affiliateBalances[0xAffiliate] -= 100
+    collectedFees[0xAffiliate] += 13, collectedOperatorFees[0xAffiliate] += 2
+
+  Results:
+    0xA receives: 285 (from EP) + 600 (from VP1) = 885 USDC
+    0xB receives: 400 USDC (from VP2)
+    Total disbursed: 1,285 out of 1,300 (15 USDC fee retained)
+    Status -> PROCESSED
+
+  What if the user had cancelled before processWithdraw?
+    Contract calls _releaseWithdraw:
+      lockedGeneralBalance -= 200, lockedAffiliateBalances -= 100
+      VP1.unlock(0xAlice, 99): VP1._balance restored 200 -> 800
+      VP2.unlock(0xAlice, 99): VP2._balance restored 200 -> 600
+      All locks released, no funds transferred, Status -> CANCELLED
+```
+
+---
+
+## 12. Risk Lock / Unlock
 
 ### 12.1 Lock Resolution Paths
 
@@ -2493,6 +2839,8 @@ Step 2D — Bot sees: WithdrawFinalized(user, reqId) at T+43200
 
 ---
 
+## Part IV: Safety & Risk (continued)
+
 ## 13. Cancellation & Suspension
 
 ### 13.1 Cancellation Decision Tree
@@ -2552,312 +2900,9 @@ All of the following are restored/cleaned up:
 
 ---
 
-## 14. Permissionless Fallback
+## 14. Error Catalog
 
-### 14.1 Processing Timeline
-
-```mermaid
-gantt
-    title Processing Windows (INSTANT example)
-    dateFormat X
-    axisFormat %s
-
-    section Operator Window
-    securityWindow (20s)      :crit, 0, 20
-    Operator can process      :active, 20, 80
-
-    section Anyone Window
-    tolerancePeriod (60s)     :crit, 20, 80
-    Anyone can process        :active, 80, 120
-```
-
-### 14.2 When Anyone Can Process
-
-| Option | Operator processableAt | Anyone processableAt |
-|--------|----------------------|---------------------|
-| INSTANT | `acceptedAt + securityWindow` | `acceptedAt + securityWindow + tolerancePeriod` |
-| STANDARD | `finalizedAt` | `finalizedAt + tolerancePeriod` |
-| LOCKED (after cooldown) | `cooldownEndTime` | `cooldownEndTime + tolerancePeriod` |
-
-### 14.3 Bot Must Handle
-
-- [ ] If a user calls `processWithdraw` permissionlessly, detect `WithdrawProcessed` event and cancel bot's scheduled processing
-- [ ] Anyone can call `finalizeWithdrawRequest` on SYMMIO -- bot should still schedule it but handle the case where it's already finalized
-- [ ] State sync: always check on-chain status before attempting actions
-
-#### Numeric Example: Permissionless Processing Timeline
-
-```
-Scenario: Bot races against permissionless window across three option types
-
-Setup:
-  securityWindow = 20s, tolerancePeriod = 60s
-
---- Sub-scenario 1: INSTANT ---
-
-Step 1 — Bot sees: WithdrawAccepted(user, reqId, INSTANT) at T=100
-  Bot reads on-chain: acceptedAt = 100, status = ACCEPTED
-  Bot checks: When can I (OPERATOR_ROLE) call processWithdraw?
-    - processableAt = acceptedAt + securityWindow = 100 + 20 = 120
-    - At T=119: too early (block.timestamp 119 < 120) -> would REVERT TooEarly
-  Decision: Schedule processWithdraw for T=120.
-
-Step 2 — Bot decides at T=120: Call processWithdraw now.
-  Bot checks: Am I still within operator exclusivity?
-    - Anyone's processableAt = 100 + 20 + 60 = 180
-    - Current time 120 < 180 -> yes, only OPERATOR_ROLE can process right now
-  Decision: Execute processWithdraw(user, reqId, parts). Bot has 60s of
-            exclusivity (T=120 to T=180) before anyone else can call it.
-
-  What if bot fails to process by T=180?
-    Any address can call processWithdraw at T=180.
-    Bot should monitor for WithdrawProcessed event and cancel its own task
-    if someone else processes it first.
-
---- Sub-scenario 2: STANDARD ---
-
-Step 1 — Bot sees: WithdrawFinalized(user, reqId) at T=43200
-  Bot reads on-chain: status = FINALIZED, finalizedAt = 43200
-  Bot checks: When can I call processWithdraw?
-    - processableAt = finalizedAt = 43200 for OPERATOR_ROLE
-    - STANDARD has no additional securityWindow (12h cooldown was the safety window)
-  Decision: Call processWithdraw immediately — operator can process right now.
-
-Step 2 — Bot checks: What is the permissionless deadline?
-    - Anyone's processableAt = finalizedAt + tolerancePeriod = 43200 + 60 = 43260
-    - At T=43259: user would REVERT TooEarly
-    - At T=43260: anyone can process
-  Decision: Execute processWithdraw now. If bot misses T=43260, any user can
-            step in and complete the withdrawal permissionlessly.
-
---- Sub-scenario 3: LOCKED INSTANT after cooldown ---
-
-Step 1 — Bot sees: block.timestamp approaching T=43200 (cooldownEndTime)
-  Bot reads on-chain: status = LOCKED, cooldownEndTime = 43200
-  Bot checks: isLockedAfterCooldown?
-    - At T=43199: now (43199) < cooldownEndTime (43200) -> no, still locked
-      processWithdraw would REVERT (not ACCEPTED and not isLockedAfterCooldown)
-    - At T=43200: now (43200) >= cooldownEndTime (43200) -> yes
-      processableAt = cooldownEndTime = 43200 for OPERATOR_ROLE
-  Decision: Schedule processWithdraw for T=43200.
-
-Step 2 — Bot checks: When does exclusivity end?
-    - Anyone's processableAt = cooldownEndTime + tolerancePeriod = 43200 + 60 = 43260
-  Decision: Execute at T=43200. Bot has 60s before permissionless fallback
-            opens at T=43260. If another party processes first, bot detects
-            WithdrawProcessed event and cancels its task.
-```
-
----
-
-## 15. Timing Reference
-
-### 15.1 Complete Timing Diagram
-
-```mermaid
-gantt
-    title Withdrawal Lifecycle Timing
-    dateFormat X
-    axisFormat %Hh
-
-    section IMMEDIATE
-    Accept+Transfer (same tx) :done, 0, 1
-    SYMMIO Cooldown (12h)     :active, 0, 43200
-    Finalization              :milestone, 43200, 43200
-
-    section INSTANT
-    Accept                    :done, 0, 1
-    Security Window (20s)     :crit, 0, 20
-    Process                   :milestone, 20, 20
-    SYMMIO Cooldown (12h)     :active, 0, 43200
-    Finalization              :milestone, 43200, 43200
-
-    section STANDARD
-    Accept                    :done, 0, 1
-    SYMMIO Cooldown (12h)     :active, 0, 43200
-    Finalization              :milestone, 43200, 43200
-    Process                   :milestone, 43201, 43201
-```
-
-### 15.2 Configurable Parameters
-
-| Parameter | Default | Setter | Description |
-|-----------|---------|--------|-------------|
-| `securityWindow` | 20s | SETTER_ROLE | Min delay before operator `processWithdraw` for INSTANT |
-| `tolerancePeriod` | 60s | SETTER_ROLE | Extra delay for permissionless processing |
-| `validatorApprovalTimeout(affiliate)` | 30s | SETTER_ROLE | Max age of validator signatures (per-affiliate, `address(0)` = default) |
-| `minValidatorSignatures(affiliate)` | 0 | SETTER_ROLE | Required validator attestation count (per-affiliate, `address(0)` = default) |
-
-### 15.3 Fixed Timing
-
-| Timing | Value | Source |
-|--------|-------|--------|
-| SYMMIO withdrawal cooldown | 12 hours | SYMMIO core |
-| `cooldownEndTime` | `max(deallocateTimestamp + 12h, block.timestamp)` | Computed from SYMMIO |
-
-### 15.4 processableAt Lookup Table
-
-The `processableAt` timestamp determines when `processWithdraw` can be called. It varies
-by option type, status, and caller role. This table is the definitive reference.
-
-| Option Type | Status | processableAt (OPERATOR_ROLE) | processableAt (Anyone) |
-|-------------|--------|-------------------------------|------------------------|
-| INSTANT | ACCEPTED | `acceptedAt + securityWindow` | `acceptedAt + securityWindow + tolerancePeriod` |
-| INSTANT | LOCKED | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod` |
-| STANDARD | FINALIZED | `finalizedAt` | `finalizedAt + tolerancePeriod` |
-| STANDARD | LOCKED | `cooldownEndTime` (only if `block.timestamp >= cooldownEndTime`) | `cooldownEndTime + tolerancePeriod` |
-| IMMEDIATE | N/A | N/A (processed atomically inside `onWithdrawRequest`) | N/A |
-
-Notes:
-- For LOCKED withdrawals, `processWithdraw` only becomes callable once `block.timestamp >= cooldownEndTime`.
-  At that point the risk window is over and the lock becomes ineffective.
-- For LOCKED STANDARD withdrawals with `finalizedAt == 0`, `processWithdraw` calls
-  `finalizeWithdrawRequest` on SYMMIO first to retrieve tokens before processing.
-- The `tolerancePeriod` is the permissionless fallback window. If the bot goes down,
-  anyone can process after an additional `tolerancePeriod` delay.
-
-#### Numeric Scenarios: Bot Computes processableAt
-
-```
-Scenario: Bot computes processableAt for various withdrawals
-
-Shared parameters:
-  securityWindow   = 20
-  tolerancePeriod  = 60
-
-────────────────────────────────────────────────────────────
-Withdrawal A (INSTANT, ACCEPTED):
-  acceptedAt = 1700000000
-
-  Bot (OPERATOR_ROLE):
-    processableAt = acceptedAt + securityWindow
-                  = 1700000000 + 20
-                  = 1700000020
-    Wait until block.timestamp >= 1700000020, then call processWithdraw.
-
-  Anyone (no OPERATOR_ROLE):
-    processableAt = acceptedAt + securityWindow + tolerancePeriod
-                  = 1700000000 + 20 + 60
-                  = 1700000080
-    Permissionless fallback available 80s after acceptance.
-
-────────────────────────────────────────────────────────────
-Withdrawal B (STANDARD, FINALIZED):
-  finalizedAt = 1700043200 (12h after acceptance, SYMMIO sent tokens)
-
-  Bot (OPERATOR_ROLE):
-    processableAt = finalizedAt
-                  = 1700043200
-    SYMMIO's 12h cooldown already served as the security window.
-    Call processWithdraw immediately after finalization.
-
-  Anyone (no OPERATOR_ROLE):
-    processableAt = finalizedAt + tolerancePeriod
-                  = 1700043200 + 60
-                  = 1700043260
-
-────────────────────────────────────────────────────────────
-Withdrawal C (INSTANT, LOCKED — cooldown expired):
-  acceptedAt      = 1700000000
-  cooldownEndTime = 1700043200 (12h later)
-  block.timestamp = 1700050000 (well past cooldown)
-
-  Status is LOCKED but block.timestamp >= cooldownEndTime, so the
-  risk window is over. processWithdraw treats it as processable.
-
-  Bot (OPERATOR_ROLE):
-    processableAt = cooldownEndTime
-                  = 1700043200
-    Already past -> call processWithdraw now.
-
-  Anyone (no OPERATOR_ROLE):
-    processableAt = cooldownEndTime + tolerancePeriod
-                  = 1700043200 + 60
-                  = 1700043260
-    Already past -> anyone can call processWithdraw now.
-
-────────────────────────────────────────────────────────────
-Withdrawal D (STANDARD, LOCKED — cooldown expired, not yet finalized):
-  acceptedAt      = 1700000000
-  cooldownEndTime = 1700043200
-  finalizedAt     = 0 (SYMMIO hasn't finalized yet)
-  block.timestamp = 1700050000
-
-  Bot (OPERATOR_ROLE):
-    processableAt = cooldownEndTime = 1700043200 (already past)
-    processWithdraw detects isLockedAfterCooldown && finalizedAt == 0,
-    so it calls finalizeWithdrawRequest(user, requestId) on SYMMIO first.
-    SYMMIO sends tokens -> then processWithdraw forwards them to the user.
-
-  Anyone (no OPERATOR_ROLE):
-    processableAt = cooldownEndTime + tolerancePeriod
-                  = 1700043200 + 60
-                  = 1700043260
-    Same auto-finalize behavior applies.
-
-────────────────────────────────────────────────────────────
-Withdrawal E (IMMEDIATE):
-  Not applicable. IMMEDIATE withdrawals are processed atomically inside
-  onWithdrawRequest. The status goes directly to PROCESSED. There is no
-  processWithdraw call and no processableAt computation.
-```
-
-### 15.5 Special Timing Cases
-
-| Case | Behavior |
-|------|----------|
-| `securityWindow = 0` | Operator can process INSTANT immediately (same block) |
-| `tolerancePeriod = 0` | Anyone can process as soon as operator window opens |
-| Cooldown already elapsed (`deallocateTimestamp + 12h < now`) | `cooldownEndTime = block.timestamp`, finalization possible immediately |
-| LOCKED after cooldown | processableAt = cooldownEndTime (lock becomes ineffective) |
-
-#### Numeric Example: Cooldown Already Elapsed
-
-```
-Scenario: Bot detects pre-expired cooldown and fast-tracks a STANDARD withdrawal
-
-Setup:
-  block.timestamp             = 1_700_000_000
-  securityWindow              = 20s
-  tolerancePeriod             = 60s
-  Alice deallocateTimestamp    = 1_699_913_600  (24 hours ago)
-  cooldownEndTime             = max(1_699_913_600 + 43_200, 1_700_000_000)
-                              = max(1_699_956_800, 1_700_000_000)
-                              = 1_700_000_000   (cooldown already passed)
-  generalBalance              = 10_000 USDC
-  Status for (Alice, req#42)  = NONE
-
-Step 1 — Bot sees: WithdrawAccepted event for Alice, 500 USDC STANDARD, req#42
-  Bot reads on-chain:
-    withdrawInfos[Alice][42].status          = ACCEPTED
-    withdrawInfos[Alice][42].cooldownEndTime = 1_700_000_000
-  Bot checks: cooldownEndTime <= block.timestamp?
-    1_700_000_000 <= 1_700_000_000 --> yes, cooldown already expired
-  Decision: call finalizeWithdrawRequest(Alice, 42) immediately
-    (no need to schedule a 12-hour timer)
-
-Step 2 — Bot sees: WithdrawFinalized event for (Alice, req#42)
-  Bot reads on-chain:
-    withdrawInfos[Alice][42].status      = FINALIZED
-    withdrawInfos[Alice][42].finalizedAt = 1_700_000_000
-  Bot checks: for STANDARD, processableAt = finalizedAt = 1_700_000_000
-    Is block.timestamp >= 1_700_000_000? --> yes
-  Decision: call processWithdraw(Alice, 42, parts) in the next block
-    Total user wait: ~2 blocks (a few seconds)
-
-What-if: same withdrawal as INSTANT instead of STANDARD?
-  Bot checks: processableAt = acceptedAt + securityWindow
-    = 1_700_000_000 + 20 = 1_700_000_020
-  Decision: wait 20s for the risk-check window, then call processWithdraw
-  But finalization can happen almost immediately after processing
-  Pool replenishment: ~20s instead of the usual ~12h
-```
-
----
-
-## 16. Error Catalog
-
-### 16.1 Error Decision Tree
+### 14.1 Error Decision Tree
 
 ```mermaid
 flowchart TD
@@ -2896,7 +2941,7 @@ flowchart TD
 
 ```
 
-### 16.2 Signature & Auth Errors
+### 14.2 Signature & Auth Errors
 
 | Error | Cause | Bot Action |
 |-------|-------|------------|
@@ -2910,7 +2955,7 @@ flowchart TD
 | `ValidatorApprovalExpired` | Timestamp too old or future-dated | Re-gather with fresh timestamps |
 | `ArrayLengthMismatch` | signatures.length != timestamps.length | Fix encoding |
 
-### 16.3 Liquidity Errors
+### 14.3 Liquidity Errors
 
 | Error | Cause | Bot Action |
 |-------|-------|------------|
@@ -2919,7 +2964,7 @@ flowchart TD
 | `InsufficientUnlockedGeneralBalance` | Withdraw attempt touches locked funds | Wait for withdrawals to complete |
 | `InsufficientUnlockedAffiliateBalance` | Same for affiliate pool | Wait for withdrawals to complete |
 
-### 16.4 Fee Errors
+### 14.4 Fee Errors
 
 | Error | Cause | Bot Action |
 |-------|-------|------------|
@@ -2932,7 +2977,7 @@ flowchart TD
 | `NoOperatorFeesToClaim` | `collectedOperatorFees == 0` | No action needed |
 | `InsufficientSponsorBalance` | Withdraw exceeds sponsor balance | Reduce amount |
 
-### 16.5 State Errors
+### 14.5 State Errors
 
 | Error | Cause | Bot Action |
 |-------|-------|------------|
@@ -2941,12 +2986,12 @@ flowchart TD
 | `NotLocked` | `unlockAndProcess` on non-LOCKED status | Check status first |
 | `NotProcessed` | `onWithdrawComplete` on INSTANT/IMMEDIATE before processing | Wait for `processWithdraw` to complete first |
 | `InvalidStatusForStandard` | `onWithdrawComplete` on STANDARD when status is not ACCEPTED or LOCKED | Check status -- may already be CANCELLED or SUSPENDED |
-| `TooEarly` | Processing before allowed time | Wait for correct timestamp (see [processableAt lookup table](#154-processableat-lookup-table)) |
+| `TooEarly` | Processing before allowed time | Wait for correct timestamp (see processableAt lookup table) |
 | `PartsMismatch` | Parts array doesn't match stored hash | Use exact same parts |
 | `InvalidStatusForForceCancel` | Force cancel on PROCESSED or LOCKED+finalized | Cannot cancel at this stage |
 | `InvalidStatusForSuspend` | Suspend on PROCESSED, FINALIZED, or LOCKED+finalized | Cannot suspend at this stage |
 
-### 16.6 Validation Errors
+### 14.6 Validation Errors
 
 | Error | Cause | Bot Action |
 |-------|-------|------------|
@@ -2954,7 +2999,7 @@ flowchart TD
 | `ValidatorsRequiredForImmediate` | IMMEDIATE option when `minValidatorSignatures(affiliate) == 0` | Do not offer IMMEDIATE unless validators are configured for this affiliate (or `address(0)` default); fall back to INSTANT |
 | `InvalidAddressBytesLength` | `parts[i].receiver` is not exactly 20 bytes | Ensure all receiver fields are valid 20-byte Ethereum addresses |
 
-### 16.7 Bot Scenarios for Key Errors
+### 14.7 Bot Scenarios for Key Errors
 
 #### InvalidOptionType
 
@@ -3083,9 +3128,9 @@ Decision:
 
 ---
 
-## 17. Edge Cases & Race Conditions
+## 15. Edge Cases & Race Conditions
 
-### 17.1 Liquidity Race Conditions
+### 15.1 Liquidity Race Conditions
 
 ```mermaid
 sequenceDiagram
@@ -3117,7 +3162,7 @@ sequenceDiagram
 | Two IMMEDIATE withdrawals racing | Second reverts (funds transferred atomically in first's tx) |
 | Sponsor balance drained between sign and execution | Reverts `UserFeeExceedsMaximum` if maxUserFee too low |
 
-### 17.2 Config Changes Mid-Flight
+### 15.2 Config Changes Mid-Flight
 
 ```mermaid
 sequenceDiagram
@@ -3148,7 +3193,7 @@ sequenceDiagram
 | SIGNER_ROLE revoked | All options signed by that key become invalid |
 | Validator disabled (via `setValidator`) | Pending validator sigs from that key become invalid |
 
-### 17.3 Nonce Edge Cases
+### 15.3 Nonce Edge Cases
 
 | Scenario | Behavior |
 |----------|----------|
@@ -3258,7 +3303,7 @@ Correct strategy:
   - Never pre-sign multiple options for the same user with speculative nonces
 ```
 
-### 17.4 Timing Edge Cases
+### 15.4 Timing Edge Cases
 
 | Scenario | Behavior |
 |----------|----------|
@@ -3269,7 +3314,7 @@ Correct strategy:
 | `securityWindow = 0` | Operator can process same block as acceptance |
 | `tolerancePeriod = 0` | Anyone can process as soon as operator can |
 
-### 17.5 Credit Line Edge Cases
+### 15.5 Credit Line Edge Cases
 
 | Scenario | Behavior |
 |----------|----------|
@@ -3281,7 +3326,7 @@ Correct strategy:
 | Credit used with STANDARD | Reverts `CreditNotSupportedForStandard` |
 | Post-payout rollback with credit | Affiliate pool absorbs credit loss via `coverLoss` |
 
-### 17.6 STANDARD-Specific Edge Cases
+### 15.6 STANDARD-Specific Edge Cases
 
 | Scenario | Behavior |
 |----------|----------|
@@ -3294,7 +3339,7 @@ Correct strategy:
 | `affiliateAmount + creditAmount > expressAmount` | Reverts `FundingSplitExceedsExpress`. Bot must ensure the sum never exceeds expressAmount |
 | Credit with STANDARD | Reverts `CreditNotSupportedForStandard`. Bot must set creditAmount = 0 for STANDARD |
 
-### 17.7 Admin / Configuration Change Scenarios
+### 15.7 Admin / Configuration Change Scenarios
 
 These scenarios cover race conditions and operational impacts when admin configuration
 changes occur while the bot has in-flight withdrawals, pending options, or scheduled actions.
@@ -3573,9 +3618,9 @@ Step 3 — Bot sees: SponsorDeposit(0xAffiliate, 50)
     The sponsor identity field is informational; withdrawSponsorBalance is SPONSOR_MANAGER_ROLE-gated.
 ```
 
-### 17.8 LOCKED Scenario
+### 15.8 LOCKED Scenario
 
-### 17.9 STANDARD processWithdraw Too Early
+### 15.9 STANDARD processWithdraw Too Early
 
 ```
 Scenario: Bot accidentally calls processWithdraw on STANDARD before finalization
@@ -3597,7 +3642,7 @@ Correct behavior:
   Then call processWithdraw immediately after finalization.
 ```
 
-### 17.10 Non-Existent Withdrawal
+### 15.10 Non-Existent Withdrawal
 
 ```
 Scenario: Bot references a (user, requestId) that was never accepted
@@ -3613,7 +3658,7 @@ Bot mitigation: Always track accepted withdrawals via WithdrawAccepted events.
   Never call processWithdraw/lockWithdraw for IDs not in the bot's accepted set.
 ```
 
-### 17.11 Zero-Amount Parts
+### 15.11 Zero-Amount Parts
 
 ```
 Scenario: A part with amount = 0 in the parts array
@@ -3628,7 +3673,7 @@ Bot consideration: Zero-amount parts waste gas but don't cause reverts.
   Decision: Filter out zero-amount parts before signing. No benefit to including them.
 ```
 
-### 17.12 IMMEDIATE Cannot Be Locked / Cancelled / Suspended
+### 15.12 IMMEDIATE Cannot Be Locked / Cancelled / Suspended
 
 ```
 Scenario: IMMEDIATE withdrawal — impossible state transitions documented
@@ -3648,7 +3693,7 @@ Bot implication: Risk for IMMEDIATE must be caught BEFORE acceptance.
   If validators are unavailable, bot MUST offer INSTANT instead (which allows post-acceptance locking).
 ```
 
-### 17.13 Duplicate Finalization Callback
+### 15.13 Duplicate Finalization Callback
 
 ```
 Scenario: onWithdrawComplete called twice for same withdrawal
@@ -3668,9 +3713,11 @@ Bot implication: No action needed. SYMMIO won't call twice.
 
 ---
 
-## 18. Pool Management
+## Part V: Operations
 
-### 18.1 Pool Lifecycle Diagram
+## 16. Pool Management
+
+### 16.1 Pool Lifecycle Diagram
 
 ```mermaid
 flowchart TD
@@ -3690,7 +3737,7 @@ flowchart TD
     end
 ```
 
-### 18.2 Pool Types
+### 16.2 Pool Types
 
 | Pool | Funded By | Used For | Locked During |
 |------|-----------|----------|---------------|
@@ -3699,7 +3746,7 @@ flowchart TD
 | Credit Line (`CreditLineManager`) | Muon-attested eligible balances | Credit-backed portions (non-STANDARD) | `reservedDebt` / `activeDebt` |
 | Sponsor (`sponsorBalances[affiliate]`) | `depositSponsorBalance` | Fee coverage | `info.sponsorCoverage` (stored on WithdrawInfo) |
 
-### 18.3 Available Liquidity Formulas
+### 16.3 Available Liquidity Formulas
 
 ```
 availableGeneral = generalBalance - lockedGeneralBalance
@@ -3708,7 +3755,7 @@ availableCredit = creditLineManager.protocolMaxDebt - creditLineManager.totalDeb
 totalAvailable = availableGeneral + availableAffiliate + availableCredit
 ```
 
-### 18.4 Bot Pool Monitoring
+### 16.4 Bot Pool Monitoring
 
 - [ ] Track available liquidity across all pools
 - [ ] Alert when available liquidity drops below threshold
@@ -3772,9 +3819,9 @@ Step 3 — Bot sees: WithdrawFinalized event for W1 (pools replenished)
 
 ---
 
-## 19. Role Reference
+## 17. Access Control
 
-### 19.1 Role Interaction Diagram
+### 17.1 Role Interaction Diagram
 
 ```mermaid
 flowchart TD
@@ -3813,7 +3860,7 @@ flowchart TD
     SPONSOR_MGR -->|withdraw sponsor| EP
 ```
 
-### 19.2 ExpressProvider Roles
+### 17.2 ExpressProvider Roles
 
 | Role | Constant | Holder | Functions |
 |------|----------|--------|-----------|
@@ -3828,7 +3875,7 @@ flowchart TD
 | `SPONSOR_MANAGER_ROLE` | `keccak256("SPONSOR_MANAGER_ROLE")` | Admin | `withdrawSponsorBalance` |
 | `FEE_CLAIMER_ROLE` | `keccak256("FEE_CLAIMER_ROLE")` | Admin | `claimFees`, `claimOperatorFees` |
 
-### 19.3 CreditLineManager Roles
+### 17.3 CreditLineManager Roles
 
 | Role | Holder | Functions |
 |------|--------|-----------|
@@ -3837,15 +3884,15 @@ flowchart TD
 | `PROTOCOL_ADMIN_ROLE` | Admin | `setProtocolConfig`, `setSignatureVerifier`, `setMuonAppId` |
 | `AFFILIATE_ADMIN_ROLE` | Affiliate operator | `setAffiliateConfig`, `setBlacklisted`, `setPaused` |
 
-### 19.4 SYMMIO-Gated Functions (no role, `msg.sender == symmio`)
+### 17.4 SYMMIO-Gated Functions (no role, `msg.sender == symmio`)
 
 `onWithdrawRequest`, `onWithdrawComplete`, `onWithdrawCancelRequest`, `onForceWithdrawCancel`, `onWithdrawSuspend`
 
 ---
 
-## 20. Operational Invariants
+## 18. Operational Invariants
 
-### 20.1 Invariant Check Diagram
+### 18.1 Invariant Check Diagram
 
 ```mermaid
 flowchart TD
@@ -3859,7 +3906,7 @@ flowchart TD
     J["State invariant"] --> K["Each (user, reqId) has\nexactly one status"]
 ```
 
-### 20.2 Accounting Invariants
+### 18.2 Accounting Invariants
 
 - [ ] `collateral.balanceOf(expressProvider) >= generalBalance + sum(affiliateBalances) + sum(collectedFees) + sum(collectedOperatorFees) + sum(sponsorBalances) + (tokens from finalized STANDARD awaiting processing)`
 - [ ] `CreditLineManager.totalDebt() == reservedDebt + activeDebt` (credit line accounting)
@@ -3867,7 +3914,7 @@ flowchart TD
 - [ ] `lockedAffiliateBalances[a] <= affiliateBalances[a]` for all affiliates
 - [ ] Each `(user, requestId)` pair has exactly one status and follows valid transitions
 
-### 20.3 Bot Reliability Requirements
+### 18.3 Bot Reliability Requirements
 
 - [ ] **Idempotent event handling:** Duplicate events must not cause duplicate actions
 - [ ] **State sync on restart:** Read on-chain state to rebuild pending action queue
@@ -3878,7 +3925,7 @@ flowchart TD
 - [ ] **Block time awareness:** Account for block time when computing deadlines (validator timeouts, security windows)
 - [ ] **Re-org handling:** Handle chain re-orgs that may reverse accepted/processed states
 
-### 20.4 Graceful Degradation
+### 18.4 Graceful Degradation
 
 | Failure Mode | System Behavior |
 |--------------|-----------------|
@@ -4003,7 +4050,9 @@ sequenceDiagram
 
 ---
 
-## 21. Complete State x Option Type Decision Matrix
+## Part VI: Reference
+
+## 19. Complete State x Option Type Decision Matrix
 
 This section provides a definitive lookup table for every combination of **ExpressProvider Status** (7 values: NONE, ACCEPTED, LOCKED, PROCESSED, FINALIZED, CANCELLED, SUSPENDED) and **OptionType** (3 values: IMMEDIATE, INSTANT, STANDARD). That is 21 cells total.
 
